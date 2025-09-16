@@ -11,7 +11,7 @@ use attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::collections::HashSet;
 
 pub enum TeeValidationResult {
@@ -52,7 +52,7 @@ impl TeeState {
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         attestation: &Attestation,
-        tls_public_key: PublicKey,
+        tls_public_key: ed25519_dalek::VerifyingKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
@@ -74,7 +74,7 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
-        tls_public_key: PublicKey,
+        tls_public_key: ed25519_dalek::VerifyingKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
@@ -118,10 +118,20 @@ impl TeeState {
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
 
+                // skip 1st byte as it is a tag for curve sceheme.
+                let Ok(tls_public_key_bytes) = &tls_public_key.as_bytes()[1..].try_into() else {
+                    return false;
+                };
+                let Ok(tls_public_key_dalek) =
+                    ed25519_dalek::VerifyingKey::from_bytes(tls_public_key_bytes)
+                else {
+                    return false;
+                };
+
                 matches!(
                     self.verify_tee_participant(
                         account_id,
-                        tls_public_key,
+                        tls_public_key_dalek,
                         tee_upgrade_period_blocks
                     ),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None

@@ -1,10 +1,8 @@
 use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::cell::LazyCell;
-use k256::sha2::Sha384;
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
-use sha3::{Digest, Sha3_384};
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 use alloc::string::ToString;
@@ -13,7 +11,6 @@ use crate::{
     attestation::{Attestation, StaticWebData},
     report_data::ReportDataVersion,
 };
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");

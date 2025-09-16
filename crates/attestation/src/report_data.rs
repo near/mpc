@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 

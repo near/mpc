@@ -700,10 +700,15 @@ impl VersionedMpcContract {
     pub fn submit_participant_info(
         &mut self,
         #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        #[serializer(borsh)] tls_public_key: [u8; 32],
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
+
+        let Ok(tls_public_key) = ed25519_dalek::VerifyingKey::from_bytes(&tls_public_key) else {
+            return Err(InvalidParameters::InvalidTeeRemoteAttestation
+                .message("The supplied tls_public_key is not valid.".to_string()));
+        };
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
