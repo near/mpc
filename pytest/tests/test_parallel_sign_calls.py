@@ -21,7 +21,7 @@ def load_parallel_sign_contract() -> bytearray:
     """
     returns test contract for parallel sign
     """
-    return load_binary_file(contracts.PARALLEL_CONTRACT_PATH)
+    return load_binary_file(contracts.PARALLEL_CONTRACT_BINARY_PATH)
 
 
 def get_metric_value(cluster, metric_name: str, node_id: int):

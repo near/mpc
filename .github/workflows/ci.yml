@@ -130,40 +130,8 @@ jobs:
         run: |
           cargo fmt -- --check
 
-  clippy-mpc-contract:
-    name: "MPC Contract: clippy and format"
-    runs-on: warp-ubuntu-2204-x64-8x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
-      - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-
-      - name: Run Clippy fmt
-        run: |
-          cd libs/chain-signatures
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-features --all-targets --locked
-
-      - name: Run Cargo fmt
-        run: |
-          cd libs/chain-signatures
-          cargo fmt -- --check
-
   mpc-unittests:
-    name: "MPC Node: unittests"
+    name: "Cargo test"
     runs-on: warp-ubuntu-2204-x64-8x
     timeout-minutes: 60
     permissions:
@@ -175,29 +143,6 @@ jobs:
 
       - name: Initialize submodules
         run: git submodule update --init --recursive
-
-      - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest
-
-      - name: Run cargo-nextest
-        run: cargo nextest run --release --locked
-
-  mpc-contract-unittests:
-    name: "MPC Contract: unittests"
-    runs-on: warp-ubuntu-2204-x64-8x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Cache Rust dependencies
         uses: WarpBuilds/rust-cache@v2
@@ -213,10 +158,8 @@ jobs:
           cargo install wasm-opt --locked
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Run contract tests
-        run: |
-          cd libs/chain-signatures
-          cargo nextest run -p mpc-contract --release --locked
+      - name: Run cargo-nextest
+        run: cargo nextest run --release --locked
 
   mpc-pytests:
     name: "MPC Node: pytests"

@@ -18,8 +18,8 @@ from common_lib.contract_state import ProtocolState
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import (
-    COMPILED_CONTRACT_PATH,
-    MIGRATE_CURRENT_CONTRACT_PATH,
+    MPC_CONTRACT_BINARY_PATH,
+    MIGRATION_CONTRACT_BINARY_PATH,
     ContractMethod,
     UpdateArgsV2,
     load_mpc_contract,
@@ -31,7 +31,7 @@ def test_update_from_current(compile_migration_contract):
     cluster.init_cluster(mpc_nodes, 2)
     cluster.send_and_await_signature_requests(1)
     cluster.send_and_await_ckd_requests(1)
-    new_contract = UpdateArgsV2(MIGRATE_CURRENT_CONTRACT_PATH)
+    new_contract = UpdateArgsV2(MIGRATION_CONTRACT_BINARY_PATH)
     cluster.propose_update(new_contract.borsh_serialize())
     cluster.vote_update(nodes=cluster.get_voters()[0:2], update_id=0)
     cluster.assert_is_deployed(new_contract.code())
@@ -56,7 +56,7 @@ def test_update_to_current(network, current_contracts):
         args=args,
     )
     cluster.contract_state().print()
-    new_contract = UpdateArgsV2(COMPILED_CONTRACT_PATH)
+    new_contract = UpdateArgsV2(MPC_CONTRACT_BINARY_PATH)
     cluster.propose_update(new_contract.borsh_serialize())
 
     cluster.vote_update(nodes=cluster.get_voters()[0:3], update_id=0)

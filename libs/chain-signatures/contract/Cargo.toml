@@ -12,9 +12,9 @@ crate-type = ["cdylib", "lib"]
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
 # docker image, descriptor of build environment
-image = "sourcescan/cargo-near:0.16.1-rust-1.86.0"
+image = "sourcescan/cargo-near:0.17.0-rust-1.86.0"
 # tag after colon above serves only descriptive purpose; image is identified by digest
-image_digest = "sha256:5dff91e3271ace8e679dec5c12b724108c43c2c441a52ba7c94d7ee9e20a87de"
+image_digest = "sha256:1784ca6310f3496f0048356ce420921c8f5fdf71ee8124d43a2e1ceb1f70db8a"
 # list of environment variables names, whose values, if set, will be used as external build parameters
 # in a reproducible manner
 # supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
@@ -27,12 +27,14 @@ container_build_command = [
     "cargo",
     "near",
     "build",
- # this is counter intuitive, but it correctly follows the docs,
- # the non-reproducible build inside a reproducible environment becomes reproducible
-    "non-reproducible-wasm", 
+    # this is counter intuitive, but it correctly follows the docs,
+    # the non-reproducible build inside a reproducible environment becomes reproducible
+    "non-reproducible-wasm",
     "--locked",
-    "--features", "abi",
-    "--no-embed-abi"
+    "--profile=release-contract",
+    "--features",
+    "abi",
+    "--no-embed-abi",
 ]
 
 [dependencies]
@@ -87,10 +89,9 @@ ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 signature = "2.2.0"
 digest = "0.10.7"
 
-near-workspaces = "0.18"
-near-primitives = "=0.29.2" # not entirely clear why this is needed but otherwise tests don't compile
+near-workspaces = "0.21.0"
 # Current HEAD of main branch as of 12-09-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "de8fd0f3caef0920ba94eda48f9d772d9b88f924"}
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "de8fd0f3caef0920ba94eda48f9d772d9b88f924" }
 fs2 = "0.4"
 rstest = "0.25.0"
 

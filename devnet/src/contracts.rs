@@ -100,7 +100,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
             actions: vec![make_action(
                 "sign",
                 &serde_json::to_vec(&SignArgsV1 {
-                    request: legacy_mpc_contract::primitives::SignRequest {
+                    request: SignRequestV1 {
                         key_version: 0,
                         path: "".to_string(),
                         payload: rand::random(),
@@ -131,7 +131,14 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
 
 #[derive(Serialize)]
 struct SignArgsV1 {
-    pub request: legacy_mpc_contract::primitives::SignRequest,
+    pub request: SignRequestV1,
+}
+
+#[derive(Serialize)]
+struct SignRequestV1 {
+    payload: [u8; 32],
+    path: String,
+    key_version: u32,
 }
 
 #[derive(Serialize)]
