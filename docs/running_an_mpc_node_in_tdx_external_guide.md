@@ -363,7 +363,7 @@ For details on how to map this hash to a specific Docker image published on Dock
 Example digest value:
 
 ```bash
-DEFAULT_IMAGE_DIGEST=sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a
+DEFAULT_IMAGE_DIGEST=sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
 You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
@@ -792,8 +792,8 @@ When a new MPC node is released, the release will along with precompiled binarie
 
 The following steps allow you to inspect the code that was used to build the
 docker image. Let's assume you want to vote for a docker image with tag
-[mpc-node-tee:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-node-tee/main-5bac07e/images/sha256-62800a435ef81fad072379e9006cdb51ca83bd7024d7968db75bfa8ecdf64717),
-corresponding to the commit hash `5bac07e013f3a1e6a373bc706f313aecbfce81d9`.
+[mpc-node:main-828f816](https://hub.docker.com/layers/nearone/mpc-node/main-828f816/),
+corresponding to the commit hash `828f816be36aed6f0d2438e0131b3e9d7d0931ad`.
 Notice that the suffix of the image tag is the short version of the git hash.
 
 * First, we need to obtain the image hash, which is not the same as the manifest
@@ -801,9 +801,9 @@ Notice that the suffix of the image tag is the short version of the git hash.
   have the `docker` daemon running.
 
 ```bash
-$ docker pull nearone/mpc-node-tee:main-5bac07e
-$ docker inspect nearone/mpc-node-tee:main-5bac07e | jq .[0].Id
-"sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a"
+$ docker pull nearone/mpc-node:main-828f816
+$ docker inspect nearone/mpc-node:main-828f816 | jq -r .[0].Id
+sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
 * Download the MPC code from this repository:
@@ -811,7 +811,7 @@ $ docker inspect nearone/mpc-node-tee:main-5bac07e | jq .[0].Id
 ```bash
 git clone https://github.com/near/mpc
 cd mpc/
-git checkout 5bac07e013f3a1e6a373bc706f313aecbfce81d9
+git checkout 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 ```
 
 * Compile it using the reproduce build script. For this you need to install
@@ -821,18 +821,18 @@ git checkout 5bac07e013f3a1e6a373bc706f313aecbfce81d9
 ```bash
 $ ./deployment/build-images.sh
 ...
-commit hash: 5bac07e013f3a1e6a373bc706f313aecbfce81d9
-SOURCE_DATE_EPOCH used: 1758011128
+commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
+SOURCE_DATE_EPOCH used: 1758103448
 node binary hash: 1e2603063f3d4300be0e5d19c9d11f7fe47cf5d7fb7761c4805827512c96ebea
-node tee docker image hash: "sha256:971fb1eddff6d41fc6b8141fc03dce16000c07593e42a41b009da0255f4b007a"
-launcher docker image hash: "sha256:ca56b630fed5040b2508eefb9622306106144ab6221fca0fd9c9fda205918c60"
+node tee docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
+launcher docker image hash: sha256:97e8a9618125c452f1f22528c15008627e9d4cf422ae2bd48150bebeac01346d
 ```
 
 Note that the `node tee docker image hash` must coincide with the one obtained
 before. In the same way, the launcher images published in
 [mpc-launcher tags](https://hub.docker.com/r/nearone/mpc-launcher/tags) can be
 verified. The one shown above corresponds to
-[mpc-launcher:main-5bac07e](https://hub.docker.com/layers/nearone/mpc-launcher/main-5bac07e/images/sha256-b36f9672aecfe17bf1565786e8c51d493f000dfcc56b55007bf2ac5e11ba7ee6)
+[mpc-launcher:main-828f816](https://hub.docker.com/layers/nearone/mpc-launcher/main-828f816/)
 
 * Do your own self do diligence on the code/binary
 
