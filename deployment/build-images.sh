@@ -69,8 +69,8 @@ if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
     exit 1
 fi
 
-DOCKERFILE_NODE=deployment/Dockerfile-mpc-tee
-: "${NODE_IMAGE_NAME:=mpc-node-tee}"
+DOCKERFILE_NODE=deployment/Dockerfile-node
+: "${NODE_IMAGE_NAME:=mpc-node}"
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
