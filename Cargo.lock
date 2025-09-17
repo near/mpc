@@ -4965,6 +4965,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "k256",
+ "mpc-contract",
  "mpc-primitives",
  "near-account-id",
  "near-gas 0.2.5",
