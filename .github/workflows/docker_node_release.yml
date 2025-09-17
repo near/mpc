@@ -1,4 +1,4 @@
-name: Docker Build and Publish MPC Image
+name: Docker Build and Publish MPC Node Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -9,13 +9,13 @@ on:
     inputs:
       build-ref:
         default: 'main'
-        description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
+        description: "The branch, tag or SHA to build node docker image from. Default to latest commit on main branch."
         type: string
     
 
 jobs:
   docker-image-build:
-    name: "Build and push MPC Docker image"
+    name: "Build and push node docker image"
     runs-on: warp-ubuntu-2204-x64-8x
     permissions:
       contents: read
@@ -41,4 +41,4 @@ jobs:
       - name: Build and publish images
         shell: bash
         run: |
-          ./deployment/build-images.sh --push
+          ./deployment/build-images.sh --node --push
