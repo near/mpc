@@ -1,0 +1,12 @@
+[package]
+name = "test-migration-contract"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+near-sdk = { workspace = true }
+borsh = { workspace = true }
