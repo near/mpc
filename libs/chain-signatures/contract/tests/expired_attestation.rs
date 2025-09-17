@@ -81,7 +81,6 @@ fn test_participant_kickout_after_expiration() {
             account_id,
             valid_attestation.clone(),
             &tls_key,
-            INITIAL_TIMESTAMP_NANOS,
         );
     }
 
@@ -96,7 +95,6 @@ fn test_participant_kickout_after_expiration() {
         &participants_list[2].0,
         expiring_attestation,
         &tls_key,
-        INITIAL_TIMESTAMP_NANOS,
     );
 
     assert_eq!(contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
@@ -122,17 +120,11 @@ fn test_participant_kickout_after_expiration() {
         AttemptId::new(),
     );
 
-    testing_env!(create_context_for_participant(
-        &participants_list[0].0,
-        EXPIRED_TIMESTAMP
-    ));
+    testing_env!(create_context_for_participant(&participants_list[0].0));
     contract.start_reshare_instance(key_event_id).unwrap();
 
     for (account_id, _, _) in participants_list.iter().take(2) {
-        testing_env!(create_context_for_participant(
-            account_id,
-            EXPIRED_TIMESTAMP
-        ));
+        testing_env!(create_context_for_participant(account_id));
         contract.vote_reshared(key_event_id).unwrap();
     }
 
@@ -159,19 +151,17 @@ fn submit_participant_attestation(
     account_id: &AccountId,
     attestation: Attestation,
     tls_key: &PublicKey,
-    timestamp: u64,
 ) {
-    let context = create_context_for_participant(account_id, timestamp);
+    let context = create_context_for_participant(account_id);
     testing_env!(context);
     contract
         .submit_participant_info(attestation, tls_key.clone())
         .unwrap();
 }
 
-fn create_context_for_participant(account_id: &AccountId, timestamp: u64) -> VMContext {
+fn create_context_for_participant(account_id: &AccountId) -> VMContext {
     VMContextBuilder::new()
         .signer_account_id(account_id.clone())
-        .block_timestamp(timestamp)
         .attached_deposit(NearToken::from_near(1))
         .build()
 }
