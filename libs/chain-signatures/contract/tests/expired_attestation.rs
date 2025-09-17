@@ -10,6 +10,7 @@ use mpc_contract::{
     VersionedMpcContract,
 };
 
+use assert_matches::assert_matches;
 use attestation::attestation::{Attestation, MockAttestation};
 use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
@@ -136,10 +137,7 @@ fn test_participant_kickout_after_expiration() {
     }
 
     // Verify final state: back to Running with one less participant
-    assert!(matches!(
-        contract.state(),
-        ProtocolContractState::Running(_)
-    ));
+    assert_matches!(contract.state(), ProtocolContractState::Running(_));
 
     contract.clean_tee_status().unwrap();
 
