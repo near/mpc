@@ -1,7 +1,7 @@
 pub mod common;
 
 use anyhow::Result;
-use attestation::attestation::{Attestation, MockAttestation};
+use interfaces::attestation::{Attestation, MockAttestation};
 use near_workspaces::AccountId;
 use serde_json::json;
 use std::collections::HashSet;

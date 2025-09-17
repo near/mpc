@@ -63,6 +63,7 @@ k256 = { version = "0.13.4", features = [
     "expose-field",
 ] }
 mpc-primitives = { path = "../../../crates/primitives" }
+interfaces = { workspace = true }
 attestation = { path = "../../../crates/attestation" }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"

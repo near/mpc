@@ -1,12 +1,6 @@
-use attestation::{
-    attestation::{Attestation, DstackAttestation},
-    collateral::Collateral,
-    quote::QuoteBytes,
-};
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use interfaces::attestation::{Attestation, DstackAttestation, Quote, TcbInfo};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
@@ -34,14 +28,7 @@ pub fn image_digest() -> MpcDockerImageHash {
     MpcDockerImageHash::from(digest)
 }
 
-pub fn collateral() -> Value {
-    let quote_collateral_json_string = include_str!("../assets/collateral.json");
-    quote_collateral_json_string
-        .parse()
-        .expect("Quote collateral file is a valid json.")
-}
-
-pub fn quote() -> QuoteBytes {
+pub fn quote() -> Quote {
     let quote_collateral_json_string = include_str!("../assets/quote.json");
     serde_json::from_str(quote_collateral_json_string)
         .expect("Quote collateral file is a valid json.")
@@ -54,9 +41,10 @@ pub fn p2p_tls_key() -> PublicKey {
 
 pub fn mock_dstack_attestation() -> Attestation {
     let quote = quote();
-    let collateral = Collateral::try_from_json(collateral()).unwrap();
+    let collateral_json_string = include_str!("../assets/collateral.json");
+    let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }

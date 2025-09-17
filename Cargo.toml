@@ -4,6 +4,7 @@ exclude = ["libs/nearcore"]
 members = [
     "libs/chain-signatures/contract",
     "crates/attestation", 
+    "crates/interfaces", 
     "crates/primitives", 
     "crates/tee_authority", 
     "crates/test_utils", 
@@ -40,6 +41,7 @@ overflow-checks = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+interfaces = { path = "crates/interfaces" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
@@ -73,7 +75,6 @@ derive_more = { version = "2.0.1", features = [
     "constructor",
 ] }
 dstack-sdk = { version = "0.1.0" }
-dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 flume = "0.11.1"
 futures = "0.3.31"
@@ -109,7 +110,8 @@ rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
-serde = { version = "=1.0.219", features = ["derive"] }
+serde = { version = "=1.0.220", features = ["derive"] } 
+serde_bytes = "0.11.19"
 serde_json = "1.0.132"
 serde_with = "3.14.0"
 serde_yaml = "0.9.34"
@@ -132,6 +134,7 @@ tracing-subscriber = { version = "0.3.20", features = [
     "std",
     "json",
 ] }
+regex = "1.11.2"
 url = "2"
 x509-parser = "0.16.0"
 

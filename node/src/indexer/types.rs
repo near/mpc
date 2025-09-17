@@ -1,6 +1,6 @@
 use crate::{types::CKDRequest, types::SignatureRequest};
 use anyhow::Context;
-use attestation::attestation::Attestation;
+use interfaces::attestation::Attestation;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},

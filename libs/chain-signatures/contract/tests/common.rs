@@ -1,7 +1,7 @@
-use attestation::attestation::Attestation;
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
+use interfaces::attestation::Attestation;
 use k256::{
     elliptic_curve::{
         hash2curve::{ExpandMsgXof, GroupDigest},

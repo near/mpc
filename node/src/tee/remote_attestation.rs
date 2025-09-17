@@ -1,6 +1,6 @@
 use anyhow::Context;
-use attestation::attestation::Attestation;
 use ed25519_dalek::VerifyingKey;
+use interfaces::attestation::Attestation;
 
 use crate::{
     indexer::{

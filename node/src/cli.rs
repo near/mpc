@@ -1,6 +1,5 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
     config::{
@@ -21,9 +20,9 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
-use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
+use interfaces::attestation::ReportData;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
@@ -325,13 +324,15 @@ impl StartCmd {
 
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
-        let tls_public_key = secrets
+        let tls_public_key_bytes = *secrets
             .persistent_secrets
             .p2p_private_key
             .verifying_key()
-            .to_near_sdk_public_key()?;
+            .as_bytes();
 
-        let report_data = ReportData::new(tls_public_key);
+        let report_data = ReportData::new(interfaces::crypto::Ed25519PublicKey::from(
+            tls_public_key_bytes,
+        ));
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let attestation = tee_authority.generate_attestation(report_data).await?;
         let web_server = start_web_server(

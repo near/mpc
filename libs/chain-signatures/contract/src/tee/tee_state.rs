@@ -6,12 +6,9 @@ use crate::{
         quote::TeeQuoteStatus,
     },
 };
-use attestation::{
-    attestation::Attestation,
-    report_data::{ReportData, ReportDataV1},
-};
+use interfaces::attestation::{Attestation, ReportData, ReportDataV1};
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::collections::HashSet;
 
 pub enum TeeValidationResult {
@@ -52,11 +49,12 @@ impl TeeState {
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         attestation: &Attestation,
-        tls_public_key: PublicKey,
+        tls_public_key: interfaces::crypto::Ed25519PublicKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
-        let is_valid = attestation.verify(
+        let is_valid = attestation::verify(
+            attestation,
             expected_report_data,
             Self::current_time_seconds(),
             &self.get_allowed_hashes(tee_upgrade_period_blocks),
@@ -74,7 +72,7 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         account_id: &AccountId,
-        tls_public_key: PublicKey,
+        tls_public_key: interfaces::crypto::Ed25519PublicKey,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
@@ -88,7 +86,8 @@ impl TeeState {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let time_stamp_seconds = Self::current_time_seconds();
 
-        let quote_result = participant_attestation.verify(
+        let quote_result = attestation::verify(
+            participant_attestation,
             expected_report_data,
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
@@ -117,11 +116,18 @@ impl TeeState {
             .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
+                let public_key_bytes: [u8; 32] = tls_public_key
+                    .as_bytes()
+                    .try_into()
+                    .expect("near_sdk formats keys as 32 byes + 1 byte for scheme padding.");
+
+                let tls_public_key_interface_type =
+                    interfaces::crypto::Ed25519PublicKey::from(public_key_bytes);
 
                 matches!(
                     self.verify_tee_participant(
                         account_id,
-                        tls_public_key,
+                        tls_public_key_interface_type,
                         tee_upgrade_period_blocks
                     ),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
@@ -222,7 +228,7 @@ impl TeeState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::attestation::{Attestation, MockAttestation};
+    use interfaces::attestation::{Attestation, MockAttestation};
     use near_sdk::AccountId;
 
     #[test]

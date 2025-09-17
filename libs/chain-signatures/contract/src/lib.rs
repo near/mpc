@@ -21,7 +21,6 @@ use crate::{
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
-use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -699,8 +698,8 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        proposed_participant_attestation: interfaces::attestation::Attestation,
+        tls_public_key: interfaces::crypto::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
@@ -1442,7 +1441,7 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use attestation::attestation::{Attestation, MockAttestation};
+    use interfaces::attestation::{Attestation, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1701,6 +1700,8 @@ mod tests {
         };
 
         let tls_public_key = participant_info.sign_pk.clone();
+        let tls_public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
+        let tls_public_key_interface_type = tls_public_key_bytes.into();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -1708,7 +1709,10 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), tls_public_key)
+        contract.submit_participant_info(
+            Attestation::Mock(attestation),
+            tls_public_key_interface_type,
+        )
     }
 
     fn submit_valid_attestations(

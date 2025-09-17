@@ -3,11 +3,11 @@ pub mod common;
 use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::attestation::{Attestation, MockAttestation};
 use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
+use interfaces::attestation::{Attestation, MockAttestation};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;

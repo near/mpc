@@ -1,15 +1,12 @@
 use anyhow::{Context, bail};
-use attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::Collateral,
-    quote::QuoteBytes,
-    report_data::ReportData,
-};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
-use dstack_sdk::dstack_client::DstackClient;
+use dstack_sdk::dstack_client::{DstackClient, TcbInfo};
 use http::status::StatusCode;
+use interfaces::attestation::{
+    Attestation, Collateral, DstackAttestation, MockAttestation, Quote, ReportData,
+};
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
 use tracing::error;
@@ -96,7 +93,7 @@ impl TeeAuthority {
 
         let client_info_response =
             get_with_backoff(|| client.info(), "dstack client info", None).await?;
-        let tcb_info = client_info_response.tcb_info;
+        let tcb_info: TcbInfo = client_info_response.tcb_info;
 
         let quote = get_with_backoff(
             || client.get_quote(report_data.to_bytes().into()),
@@ -110,10 +107,12 @@ impl TeeAuthority {
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
             .await?;
 
-        let quote: QuoteBytes = hex::decode(quote)?.into();
+        let quote: Quote = hex::decode(quote)?.into();
 
         Ok(Attestation::Dstack(DstackAttestation::new(
-            quote, collateral, tcb_info,
+            quote,
+            collateral,
+            tcb_info.into(),
         )))
     }
 
@@ -214,14 +213,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::report_data::ReportDataV1;
+    use interfaces::attestation::ReportDataV1;
     use rstest::rstest;
+    use test_utils::attestation::quote;
 
     #[cfg(feature = "external-services-tests")]
     use hex::ToHex;
-
-    #[cfg(feature = "external-services-tests")]
-    use test_utils::attestation::quote;
 
     extern crate std;
 
@@ -278,10 +275,8 @@ mod tests {
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
     ) {
-        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
-            .parse()
-            .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
+        let dummy_tls_key = [0; 32].into();
+        let report_data = ReportData::V1(ReportDataV1::new(dummy_tls_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
@@ -291,7 +286,7 @@ mod tests {
             .unwrap();
         let timestamp_s = 0u64;
         assert_eq!(
-            attestation.verify(report_data, timestamp_s, &[], &[]),
+            attestation::verify(&attestation, report_data, timestamp_s, &[], &[]),
             quote_verification_result
         );
     }
