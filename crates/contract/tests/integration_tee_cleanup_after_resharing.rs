@@ -3,8 +3,6 @@ use anyhow::Result;
 use attestation::attestation::{Attestation, MockAttestation};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
-use std::time::Duration;
-use tokio::time;
 
 use common::{
     assert_running_return_participants, check_call_success, check_call_success_all_receipts,
@@ -123,7 +121,6 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Verify only the new participants remain
     assert_eq!(final_participants_node_uids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up
-    time::sleep(Duration::from_secs(1)).await;
     let tee_participants_after_cleanup = get_tee_accounts(&contract).await.unwrap();
 
     // Verify that the remaining TEE participants match exactly the new contract participants
@@ -161,7 +158,6 @@ async fn do_resharing(
     };
 
     for domain_id in domain_ids {
-        // Use hardcoded key event ID for test simplicity
         let key_event_id = json!({
             "epoch_id": prospective_epoch_id.get(),
             "domain_id": domain_id.0,
