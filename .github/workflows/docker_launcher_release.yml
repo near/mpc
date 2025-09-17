@@ -9,13 +9,13 @@ on:
     inputs:
       build-ref:
         default: 'main'
-        description: "The branch, tag or SHA to build docker image from. Default to latest commit on main branch."
+        description: "The branch, tag or SHA to build launcher docker image from. Default to latest commit on main branch."
         type: string
     
 
 jobs:
   docker-image-build:
-    name: "Build and push docker image"
+    name: "Build and push launcher docker image"
     runs-on: warp-ubuntu-2204-x64-8x
     permissions:
       contents: read
