@@ -338,6 +338,7 @@ mod test {
             private_share,
             app_id,
             app_pk,
+            OsRng,
         );
         match result {
             Ok(_) => panic!("Expected an error, but got Ok"),
@@ -367,6 +368,7 @@ mod test {
             private_share,
             app_id,
             app_pk,
+            OsRng,
         );
         match result {
             Ok(_) => panic!("Expected an error, but got Ok"),
@@ -398,6 +400,7 @@ mod test {
             private_share,
             app_id,
             app_pk,
+            OsRng,
         );
         match result {
             Ok(_) => panic!("Expected an error, but got Ok"),
