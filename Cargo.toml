@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["nearcore"]
+exclude = ["libs/nearcore"]
 members = [
     "crates/attestation", 
     "crates/contract",
