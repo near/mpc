@@ -3,6 +3,7 @@ use mpc_contract::{
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
+        participants::{ParticipantId, ParticipantInfo},
         test_utils::gen_participants,
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -19,6 +20,57 @@ use near_sdk::{
 use std::time::Duration;
 use test_utils::attestation::p2p_tls_key;
 
+struct TestSetup {
+    contract: VersionedMpcContract,
+    participants_list: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+    tls_key: PublicKey,
+}
+
+impl TestSetup {
+    fn new(participant_count: usize, threshold: u64) -> Self {
+        let participants = gen_participants(participant_count);
+        let participants_list = participants.participants().clone();
+        let contract = {
+            let parameters =
+                ThresholdParameters::new(participants, Threshold::new(threshold)).unwrap();
+            let keyset = Keyset::new(
+                EpochId::new(5),
+                vec![KeyForDomain {
+                    domain_id: DomainId::default(),
+                    key: PublicKeyExtended::Secp256k1 {
+                        near_public_key: PublicKey::from_parts(CurveType::SECP256K1, vec![1u8; 64])
+                            .unwrap(),
+                    },
+                    attempt: AttemptId::new(),
+                }],
+            );
+            let domains = vec![DomainConfig {
+                id: DomainId::default(),
+                scheme: SignatureScheme::Secp256k1,
+            }];
+            VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap()
+        };
+
+        Self {
+            contract,
+            participants_list,
+            tls_key: p2p_tls_key(),
+        }
+    }
+
+    fn submit_attestation_for_participant(
+        &mut self,
+        account_id: &AccountId,
+        attestation: Attestation,
+    ) {
+        let context = create_context_for_participant(account_id);
+        testing_env!(context);
+        self.contract
+            .submit_participant_info(attestation, self.tls_key.clone())
+            .unwrap();
+    }
+}
+
 /// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This unit test demonstrates the complete kickout mechanism using direct contract calls:
 /// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s
 /// 2. Submit valid attestations for first 2 participants at time T=1s
@@ -27,8 +79,8 @@ use test_utils::attestation::p2p_tls_key;
 /// 5. Call verify_tee() which detects expired attestation and returns false
 /// 6. Contract automatically transitions from Running to Resharing state
 /// 7. Start resharing instance and have valid participants vote for completion
-/// 8. Contract transitions back to Running state with filtered participant set
-/// 9. Manually trigger TEE cleanup and verify final counts reduced from 3 to 2
+/// 8. Contract transitions back to Running state with filtered participant set (2 participants)
+/// 9. Verify final state: 2 participants in Running state but 3 TEE accounts remain (cleanup tested separately)
 #[test]
 fn test_participant_kickout_after_expiration() {
     const INITIAL_TIME_SECONDS: u64 = 1;
@@ -45,59 +97,34 @@ fn test_participant_kickout_after_expiration() {
         .build());
     let domain_id = DomainId::default();
 
-    // Initialize contract with 3 participants in Running state
-    let participants = gen_participants(PARTICIPANT_COUNT);
-    let mut contract = {
-        let parameters =
-            ThresholdParameters::new(participants.clone(), Threshold::new(THRESHOLD)).unwrap();
-        let keyset = Keyset::new(
-            EpochId::new(5),
-            vec![KeyForDomain {
-                domain_id,
-                key: PublicKeyExtended::Secp256k1 {
-                    near_public_key: PublicKey::from_parts(CurveType::SECP256K1, vec![1u8; 64])
-                        .unwrap(),
-                },
-                attempt: AttemptId::new(),
-            }],
-        );
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
-        }];
-        VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap()
-    };
+    let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD);
 
-    // Submit attestations: valid for first 2 participants, expiring for 3rd
-    let participants_list = participants.participants();
-    let tls_key = p2p_tls_key();
+    assert_eq!(setup.contract.get_tee_accounts().len(), 0);
+
+    // Submit valid attestations for first 2 participants
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+    let participant_accounts: Vec<AccountId> = setup
+        .participants_list
+        .iter()
+        .take(2)
+        .map(|(account_id, _, _)| account_id.clone())
+        .collect();
 
-    assert_eq!(contract.get_tee_accounts().len(), 0);
-
-    for (account_id, _, _) in participants_list.iter().take(2) {
-        submit_participant_attestation(
-            &mut contract,
-            account_id,
-            valid_attestation.clone(),
-            &tls_key,
-        );
+    for account_id in &participant_accounts {
+        setup.submit_attestation_for_participant(account_id, valid_attestation.clone());
     }
 
+    // Submit expiring attestation for 3rd participant
     const EXPIRY_SECONDS: u64 = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_time_stamp_seconds: Some(EXPIRY_SECONDS),
     });
-    submit_participant_attestation(
-        &mut contract,
-        &participants_list[2].0,
-        expiring_attestation,
-        &tls_key,
-    );
+    let third_participant = setup.participants_list[2].0.clone();
+    setup.submit_attestation_for_participant(&third_participant, expiring_attestation);
 
-    assert_eq!(contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
+    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Fast-forward time past expiry and trigger resharing
     const EXPIRED_TIMESTAMP: u64 =
@@ -106,9 +133,9 @@ fn test_participant_kickout_after_expiration() {
         .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
-    assert!(!contract.verify_tee().unwrap());
+    assert!(!setup.contract.verify_tee().unwrap());
 
-    let resharing_state = match contract.state() {
+    let resharing_state = match setup.contract.state() {
         ProtocolContractState::Resharing(r) => r,
         state => panic!("Should be in Resharing state. Actual state {:#?}", state),
     };
@@ -120,43 +147,93 @@ fn test_participant_kickout_after_expiration() {
         AttemptId::new(),
     );
 
-    testing_env!(create_context_for_participant(&participants_list[0].0));
-    contract.start_reshare_instance(key_event_id).unwrap();
+    testing_env!(create_context_for_participant(&participant_accounts[0]));
+    setup.contract.start_reshare_instance(key_event_id).unwrap();
 
-    for (account_id, _, _) in participants_list.iter().take(2) {
+    // Vote for resharing with first 2 participants
+    for account_id in &participant_accounts {
         testing_env!(create_context_for_participant(account_id));
-        contract.vote_reshared(key_event_id).unwrap();
+        setup.contract.vote_reshared(key_event_id).unwrap();
     }
 
     // Verify final state: back to Running with one less participant
-    assert_matches!(contract.state(), ProtocolContractState::Running(_));
+    assert_matches!(setup.contract.state(), ProtocolContractState::Running(_));
 
-    contract.clean_tee_status().unwrap();
+    // At this point we have 2 participants in Running state but 3 TEE accounts
+    // The cleanup step is tested separately in test_clean_tee_status_removes_non_participants
+    let final_running_state = match setup.contract.state() {
+        ProtocolContractState::Running(r) => r,
+        _ => panic!("Should be in Running state after resharing"),
+    };
 
-    let final_running_state = match contract.state() {
+    const EXPECTED_PARTICIPANT_COUNT: usize = PARTICIPANT_COUNT - 1;
+    assert_eq!(
+        final_running_state.parameters.participants().len(),
+        EXPECTED_PARTICIPANT_COUNT
+    );
+    // Before clean_tee_status() cleanup, we still have old TEE accounts
+    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
+}
+
+/// **Unit test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes
+/// TEE accounts for accounts that are no longer in the participant list.
+/// This simulates cleanup after participant removal (e.g., post-resharing).
+#[test]
+fn test_clean_tee_status_removes_non_participants() {
+    const PARTICIPANT_COUNT: usize = 2; // After resharing removed one participant
+    const THRESHOLD: u64 = 2;
+
+    testing_env!(VMContextBuilder::new()
+        .attached_deposit(NearToken::from_near(1))
+        .build());
+
+    // Create contract in Running state with 2 current participants
+    let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD);
+
+    // Submit TEE info for current 2 participants (all have valid attestations)
+    let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+    let participant_accounts: Vec<AccountId> = setup
+        .participants_list
+        .iter()
+        .map(|(account_id, _, _)| account_id.clone())
+        .collect();
+
+    for account_id in &participant_accounts {
+        setup.submit_attestation_for_participant(account_id, valid_attestation.clone());
+    }
+
+    // Add TEE account for someone who is NOT a current participant
+    // (simulates leftover data from a participant who was removed during resharing)
+    let removed_participant_id: AccountId = "removed.participant.near".parse().unwrap();
+    setup.submit_attestation_for_participant(&removed_participant_id, valid_attestation);
+
+    // Verify initial state: 2 participants but 3 TEE accounts
+    assert_eq!(setup.contract.get_tee_accounts().len(), 3); // 2 current + 1 stale
+
+    let running_state = match setup.contract.state() {
+        ProtocolContractState::Running(r) => r,
+        _ => panic!("Should be in Running state"),
+    };
+    assert_eq!(
+        running_state.parameters.participants().len(),
+        PARTICIPANT_COUNT
+    );
+
+    // Test cleanup: should remove TEE account for non-participant
+    setup.contract.clean_tee_status().unwrap();
+
+    // Verify cleanup worked: TEE accounts reduced to match participant count
+    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
+
+    // State should remain Running with same participant count
+    let final_running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-
-    const EXPECTED_COUNT: usize = PARTICIPANT_COUNT - 1;
     assert_eq!(
         final_running_state.parameters.participants().len(),
-        EXPECTED_COUNT
+        PARTICIPANT_COUNT
     );
-    assert_eq!(contract.get_tee_accounts().len(), EXPECTED_COUNT);
-}
-
-fn submit_participant_attestation(
-    contract: &mut VersionedMpcContract,
-    account_id: &AccountId,
-    attestation: Attestation,
-    tls_key: &PublicKey,
-) {
-    let context = create_context_for_participant(account_id);
-    testing_env!(context);
-    contract
-        .submit_participant_info(attestation, tls_key.clone())
-        .unwrap();
 }
 
 fn create_context_for_participant(account_id: &AccountId) -> VMContext {
