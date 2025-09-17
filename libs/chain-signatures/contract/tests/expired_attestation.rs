@@ -208,7 +208,11 @@ fn test_clean_tee_status_removes_non_participants() {
     setup.submit_attestation_for_participant(&removed_participant_id, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
-    assert_eq!(setup.contract.get_tee_accounts().len(), 3); // 2 current + 1 stale
+    const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
+    assert_eq!(
+        setup.contract.get_tee_accounts().len(),
+        INITIAL_TEE_ACCOUNTS
+    );
 
     let running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
