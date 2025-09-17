@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Constructor, Deref, From};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::crypto::Ed25519PublicKey;
 
@@ -50,6 +51,7 @@ pub enum MockAttestation {
     },
 }
 
+#[serde_as]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 // #[cfg_attr(
 //     all(feature = "abi", not(target_arch = "wasm32")),
@@ -57,17 +59,17 @@ pub enum MockAttestation {
 // )]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
-    #[serde(with = "serde_bytes")]
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub root_ca_crl: Vec<u8>,
-    #[serde(with = "serde_bytes")]
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub pck_crl: Vec<u8>,
     pub tcb_info_issuer_chain: String,
     pub tcb_info: String,
-    #[serde(with = "serde_bytes")]
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub tcb_info_signature: Vec<u8>,
     pub qe_identity_issuer_chain: String,
     pub qe_identity: String,
-    #[serde(with = "serde_bytes")]
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub qe_identity_signature: Vec<u8>,
 }
 

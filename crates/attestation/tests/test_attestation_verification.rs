@@ -4,7 +4,9 @@ use interfaces::{
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use rstest::rstest;
-use test_utils::attestation::{image_digest, launcher_compose_digest, mock_dstack_attestation};
+use test_utils::attestation::{
+    image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
+};
 
 #[rstest]
 #[case(MockAttestation::Valid, true)]
@@ -27,9 +29,10 @@ fn test_mock_attestation_verify(
 #[test]
 fn test_verify_method_signature() {
     let dstack_attestation = mock_dstack_attestation();
-    let dummy_tls_key = Ed25519PublicKey::from([0; 32]);
+    let p2p_tls_key: [u8; 32] = p2p_tls_key().as_bytes()[1..].try_into().unwrap();
+    let tls_key = Ed25519PublicKey::from(p2p_tls_key);
 
-    let report_data = ReportData::V1(ReportDataV1::new(dummy_tls_key));
+    let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let timestamp_s = 1755186041_u64;
 
     let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();

@@ -1,8 +1,5 @@
 use core::cell::LazyCell;
-use interfaces::{
-    attestation::{Attestation, ReportDataVersion},
-    node_http_server::StaticWebData,
-};
+use interfaces::attestation::{ReportDataVersion, TcbInfo};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
@@ -78,15 +75,8 @@ impl ExpectedMeasurements {
     /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
     pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
         let cache = LazyCell::new(|| -> Result<ExpectedMeasurements, MeasurementsError> {
-            // Parse embedded tcb_info.json file and extract RTMR values dynamically
-            let static_web_data: StaticWebData = serde_json::from_str(TCB_INFO_STRING)
+            let tcb_info: TcbInfo = serde_json::from_str(TCB_INFO_STRING)
                 .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
-
-            let Attestation::Dstack(attestation) = static_web_data.tee_participant_info else {
-                return Err(MeasurementsError::InvalidTcbInfo);
-            };
-
-            let tcb_info = attestation.tcb_info;
 
             // Helper function to decode hex RTMR values
             let decode_rtmr = |name: &str,

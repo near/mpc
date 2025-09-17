@@ -86,11 +86,6 @@ fn verify_attestation(
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
 ) -> bool {
-    let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
-        Ok(measurements) => measurements,
-        Err(_) => return false,
-    };
-
     // TODO: Avoid this clone.
     let collateral = attestation.collateral.clone();
     let dcap_collateral = dcap_qvl::QuoteCollateralV3::from(collateral);
@@ -99,7 +94,7 @@ fn verify_attestation(
         match dcap_qvl::verify::verify(&attestation.quote, &dcap_collateral, timestamp_seconds) {
             Ok(result) => result,
             Err(err) => {
-                tracing::error!("TEE quote verification failed: {:?}", err);
+                println!("TEE quote verification failed: {:?}", err);
                 return false;
             }
         };
@@ -110,6 +105,11 @@ fn verify_attestation(
             verification_result.report
         );
         return false;
+    };
+
+    let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
+        Ok(measurements) => measurements,
+        Err(_) => return false,
     };
 
     // Verify all attestation components
