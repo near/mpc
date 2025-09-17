@@ -3,6 +3,7 @@ pub mod config;
 pub mod crypto_shared;
 pub mod errors;
 pub mod legacy_contract_state;
+pub mod node_migrations;
 pub mod primitives;
 pub mod state;
 pub mod storage_keys;
@@ -42,6 +43,7 @@ use near_sdk::{
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
 };
+use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
@@ -84,6 +86,10 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Prepaid gas for a `cleanup_orphaned_node_migrations` call
+/// todo: benchmark
+const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
+
 /// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
@@ -104,6 +110,7 @@ pub struct MpcContract {
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
+    node_migrations: NodeMigrations,
 }
 
 impl MpcContract {
@@ -782,6 +789,13 @@ impl MpcContract {
                 NearToken::from_yoctonear(0),
                 CLEAN_TEE_STATUS_GAS,
             );
+            // Spawn a promise to clean up TEE information for non-participants
+            Promise::new(env::current_account_id()).function_call(
+                "cleanup_orphaned_node_migrations".to_string(),
+                vec![],
+                NearToken::from_yoctonear(0),
+                CLEAN_NODE_MIGRATIONS,
+            );
         }
 
         Ok(())
@@ -1078,6 +1092,7 @@ impl MpcContract {
             config: Config::from(init_config),
             tee_state: TeeState::default(),
             accept_requests: true,
+            node_migrations: NodeMigrations::default(),
         })
     }
 
@@ -1124,6 +1139,7 @@ impl MpcContract {
             proposed_updates: Default::default(),
             tee_state: Default::default(),
             accept_requests: true,
+            node_migrations: NodeMigrations::default(),
         })
     }
 
@@ -1250,18 +1266,229 @@ impl MpcContract {
         }
     }
 }
+// todo: whenever we conclude a resharing, we must clean the `BackupServiceInfo`
+#[near_bindgen]
+impl MpcContract {
+    pub fn get_my_migration_info(
+        &self,
+    ) -> (
+        AccountId,
+        Option<BackupServiceInfo>,
+        Option<DestinationNodeInfo>,
+    ) {
+        let account_id = env::signer_account_id();
+        log!("get_my_migration_info: signer={:?}", account_id,);
+        self.node_migrations.get_for_account(&account_id)
+    }
+
+    pub fn get_all_migration_info(
+        &self,
+    ) -> Vec<(
+        AccountId,
+        Option<BackupServiceInfo>,
+        Option<DestinationNodeInfo>,
+    )> {
+        log!("get_all_migration_info");
+        self.node_migrations.get_all()
+    }
+
+    /// Registers or updates the backup service information for the caller account.  
+    ///
+    /// The caller (`signer_account_id`) must be an existing or prospective participant.  
+    /// Otherwise, the transaction will fail.  
+    /// # Notes
+    /// - A deposit requirement may be added in the future.  
+    #[handle_result]
+    pub fn set_backup_service_info(
+        &mut self,
+        backup_service_info: BackupServiceInfo,
+    ) -> Result<(), Error> {
+        let account_id = env::signer_account_id();
+        log!(
+            "set_backup_service: signer={:?}, backup_service_info={:?}",
+            account_id,
+            backup_service_info
+        );
+        if !self
+            .protocol_state
+            .is_existing_or_prospective_participant(&account_id)?
+        {
+            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent or prospective participants and not eligible to store backup service information", account_id)));
+        }
+        self.node_migrations
+            .set_backup_service_info(account_id, backup_service_info);
+        Ok(())
+    }
+
+    /// Sets the destination node for the calling account.
+    ///
+    /// This function can only be called while the protocol is in a `Running` state.
+    /// The signer must be a current participant of the current epoch, otherwise an error is returned.
+    /// On success, the provided [`DestinationNodeInfo`] is stored in the contract state
+    /// under the signer’s account ID.
+    ///
+    /// # Errors
+    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  
+    /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
+    /// # Note:
+    /// - might require a deposit
+    #[handle_result]
+    pub fn start_node_migration(
+        &mut self,
+        destination_node_info: DestinationNodeInfo,
+    ) -> Result<(), Error> {
+        // todo: test
+        // todo: require a deposit
+        let account_id = env::signer_account_id();
+        log!(
+            "start_node_migration: signer={:?}, destination_node_info={:?}",
+            account_id,
+            destination_node_info
+        );
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            return Err(
+                errors::InvalidState::ProtocolStateNotRunning.message(format!(
+                    "migration of nodes is only possible while the protocol is in `Running` state."
+                )),
+            );
+        };
+
+        if !running_state.is_participant(&account_id) {
+            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus not eligible to initiate a node migration.", account_id)));
+        }
+        self.node_migrations
+            .set_destination_node_info(account_id, destination_node_info);
+        Ok(())
+    }
+
+    /// Finalizes a node migration for the calling account.
+    ///
+    /// This method can only be called while the protocol is in a `Running` state
+    /// and by an existing participant. On success, the participant’s information is
+    /// updated to the new destination node.
+    ///
+    /// # Errors
+    /// Returns the following errors:
+    /// - `InvalidState::ProtocolStateNotRunning`: if protocol is not in `Running` state
+    /// - `InvalidState::NotParticipant`: if caller is not a current participant
+    /// - `NodeMigrationError::KeysetMismatch`: if provided keyset does not match the expected keyset
+    /// - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller
+    /// - `NodeMigrationError::AccountPublicKeyMismatch`: if caller’s public key does not match the expected destination node
+    /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
+    #[handle_result]
+    pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
+        // todo: test
+        let account_id = env::signer_account_id();
+        let signer_pk = env::signer_account_pk();
+        log!(
+            "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
+            account_id,
+            signer_pk,
+            keyset
+        );
+        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+            return Err(
+                errors::InvalidState::ProtocolStateNotRunning.message(format!(
+                    "migration of nodes is only possible while the protocol is in `Running` state."
+                )),
+            );
+        };
+
+        if !running_state.is_participant(&account_id) {
+            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus eligible to initiate a node migration.", account_id)));
+        }
+
+        let expected_keyset = &running_state.keyset;
+        if expected_keyset != keyset {
+            return Err(errors::NodeMigrationError::KeysetMismatch.message(format!(
+                "keyset={:?}, expected_keyset={:?}",
+                keyset, expected_keyset
+            )));
+        }
+
+        let Some(expected_destination_node) = self.node_migrations.remove_migration(&account_id)
+        else {
+            return Err(errors::NodeMigrationError::MigrationNotFound.into());
+        };
+        if expected_destination_node.signer_account_pk != signer_pk {
+            return Err(
+                errors::NodeMigrationError::AccountPublicKeyMismatch.message(format!("not found "))
+            );
+        }
+        // ensure that this node has a valid TEE quote
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: expected_destination_node
+                .destination_node_info
+                .sign_pk
+                .clone(),
+        };
+
+        if !(matches!(
+            self.tee_state
+                .verify_tee_participant(&node_id, self.config.tee_upgrade_deadline_duration_blocks),
+            TeeQuoteStatus::Valid
+        )) {
+            return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation.into());
+        };
+
+        log!(
+            "Moving Account {:?} to {:?}",
+            account_id,
+            expected_destination_node.destination_node_info
+        );
+
+        running_state
+            .parameters
+            .update_info(account_id, expected_destination_node.destination_node_info)?;
+        Ok(())
+    }
+
+    #[private]
+    #[handle_result]
+    pub fn cleanup_orphaned_node_migrations(&mut self) -> Result<(), Error> {
+        log!(
+            "cleanup_orphaned_node_migrations signer={:?}",
+            env::signer_account_id(),
+        );
+        let backup_services: Vec<AccountId> = self
+            .node_migrations
+            .backup_services_info
+            .keys()
+            .cloned()
+            .collect();
+
+        for account_id in &backup_services {
+            if !self
+                .protocol_state
+                .is_existing_or_prospective_participant(account_id)?
+            {
+                self.node_migrations.remove_account_data(account_id);
+            }
+        }
+        Ok(())
+    }
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crypto_shared::k256_types::{self, SerializableAffinePoint};
+    use crate::errors::ErrorKind;
+    use crate::primitives::test_utils::{
+        bogus_ed25519_near_public_key, gen_account_id, gen_participant,
+    };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
+    use crate::state::initializing::tests::gen_initializing_state;
+    use crate::state::key_event::tests::Environment;
+    use crate::state::resharing::tests::gen_resharing_state;
+    use crate::state::running::running_tests::gen_running_state;
     use dtos_contract::{Attestation, MockAttestation};
     use k256::{
         self,
@@ -1296,6 +1523,7 @@ mod tests {
         let epoch_id = EpochId::new(0);
         let near_public_key =
             PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data).unwrap();
+
         let key_for_domain = KeyForDomain {
             domain_id,
             key: PublicKeyExtended::Secp256k1 { near_public_key },
@@ -1685,4 +1913,217 @@ mod tests {
         );
         assert!(result.is_ok(), "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)");
     }
+
+    impl MpcContract {
+        pub fn new_from_protocol_sate(protocol_state: ProtocolContractState) -> Self {
+            MpcContract {
+                protocol_state,
+                pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
+                pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                proposed_updates: ProposedUpdates::default(),
+                config: Config::default(),
+                tee_state: TeeState::default(),
+                accept_requests: true,
+                node_migrations: NodeMigrations::default(),
+            }
+        }
+    }
+
+    #[test]
+    fn test_start_node_migration_failure_not_participant() {
+        let running_state = ProtocolContractState::Running(gen_running_state(2));
+        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+
+        // sanity check
+        assert!(contract.get_all_migration_info().is_empty());
+        let destination_node_info = gen_random_destination_info();
+
+        let non_participant = gen_account_id();
+        Environment::new(None, Some(non_participant), None);
+
+        let res = contract.start_node_migration(destination_node_info);
+        assert!(res.is_err());
+        assert!(contract.get_all_migration_info().is_empty());
+    }
+
+    #[test]
+    fn test_start_node_migration_success() {
+        let running_state = ProtocolContractState::Running(gen_running_state(2));
+        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+
+        // sanity check
+        assert!(contract.get_all_migration_info().is_empty());
+
+        let participants = {
+            let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                panic!("expected running state");
+            };
+            running.parameters.participants().clone()
+        };
+        let mut expected_migration_state: Vec<(
+            AccountId,
+            Option<BackupServiceInfo>,
+            Option<DestinationNodeInfo>,
+        )> = Vec::new();
+        let mut test_env = Environment::new(None, None, None);
+        for (account_id, _, _) in participants.participants() {
+            test_env.set_signer(account_id);
+            // sanity check
+            assert_eq!(
+                contract.get_my_migration_info(),
+                (account_id.clone(), None, None)
+            );
+            let destination_node_info = gen_random_destination_info();
+            let res = contract.start_node_migration(destination_node_info.clone());
+            assert!(res.is_ok(), "res: {:?}", res);
+            let expected_res = (account_id.clone(), None, Some(destination_node_info));
+            assert_eq!(contract.get_my_migration_info(), expected_res);
+            expected_migration_state.push(expected_res);
+        }
+        expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
+        let mut result = contract.get_all_migration_info();
+        result.sort_by_key(|(account_id, _, _)| account_id.clone());
+
+        assert_eq!(result, expected_migration_state);
+    }
+
+    fn gen_random_destination_info() -> DestinationNodeInfo {
+        let node_signer_pk = bogus_ed25519_near_public_key();
+        let url_id: usize = rand::random();
+        let (_, participant_info) = gen_participant(url_id);
+        DestinationNodeInfo {
+            signer_account_pk: node_signer_pk,
+            destination_node_info: participant_info,
+        }
+    }
+
+    fn test_start_migration_node_failure_not_running(mut contract: MpcContract) {
+        assert!(contract.get_all_migration_info().is_empty());
+        let destination_node_info = gen_random_destination_info();
+        let res = contract.start_node_migration(destination_node_info);
+        let expected_error_kind = &ErrorKind::InvalidState(InvalidState::ProtocolStateNotRunning);
+        assert_eq!(res.unwrap_err().kind(), expected_error_kind);
+        assert!(contract.get_all_migration_info().is_empty());
+    }
+
+    #[test]
+    fn test_start_node_migration_failure_initializing() {
+        let initializing_state =
+            ProtocolContractState::Initializing(gen_initializing_state(2, 0).1);
+        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        test_start_migration_node_failure_not_running(contract);
+    }
+
+    #[test]
+    fn test_start_node_migration_failure_resharing() {
+        let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
+        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        test_start_migration_node_failure_not_running(contract);
+    }
+
+    fn test_set_backup_service_failure(mut contract: MpcContract) {
+        // sanity check
+        assert!(contract.get_all_migration_info().is_empty());
+        let backup_service_info = BackupServiceInfo {
+            public_key: bogus_ed25519_near_public_key(),
+        };
+
+        let non_participant = gen_account_id();
+        Environment::new(None, Some(non_participant), None);
+        let res = contract.set_backup_service_info(backup_service_info);
+        let expected_error_kind = &ErrorKind::InvalidState(InvalidState::NotParticipant);
+        assert_eq!(res.unwrap_err().kind(), expected_error_kind);
+        assert!(contract.get_all_migration_info().is_empty());
+    }
+
+    #[test]
+    fn test_set_backup_service_failure_running() {
+        let running_state = ProtocolContractState::Running(gen_running_state(2));
+        let contract = MpcContract::new_from_protocol_sate(running_state);
+        test_set_backup_service_failure(contract);
+    }
+
+    #[test]
+    fn test_set_backup_service_failure_initializing() {
+        let initializing_state =
+            ProtocolContractState::Initializing(gen_initializing_state(2, 0).1);
+        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        test_set_backup_service_failure(contract);
+    }
+
+    #[test]
+    fn test_set_backup_service_failure_resharnig() {
+        let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
+        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        test_set_backup_service_failure(contract);
+    }
+
+    fn test_set_backup_service_success(participants: &Participants, mut contract: MpcContract) {
+        // sanity check
+        assert!(contract.get_all_migration_info().is_empty());
+        let mut expected_migration_state: Vec<(
+            AccountId,
+            Option<BackupServiceInfo>,
+            Option<DestinationNodeInfo>,
+        )> = Vec::new();
+        let mut test_env = Environment::new(None, None, None);
+        for (account_id, _, _) in participants.participants() {
+            test_env.set_signer(account_id);
+            // sanity check
+            assert_eq!(
+                contract.get_my_migration_info(),
+                (account_id.clone(), None, None)
+            );
+            let backup_service_info = BackupServiceInfo {
+                public_key: bogus_ed25519_near_public_key(),
+            };
+            let res = contract.set_backup_service_info(backup_service_info.clone());
+            assert!(res.is_ok(), "res: {:?}", res);
+            let expected_res = (account_id.clone(), Some(backup_service_info), None);
+            assert_eq!(contract.get_my_migration_info(), expected_res);
+            expected_migration_state.push(expected_res);
+        }
+        expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
+        let mut result = contract.get_all_migration_info();
+        result.sort_by_key(|(account_id, _, _)| account_id.clone());
+
+        assert_eq!(result, expected_migration_state);
+    }
+
+    #[test]
+    fn test_set_backup_service_success_running() {
+        let running_state = gen_running_state(2);
+        let participants = running_state.parameters.participants().clone();
+        let running_state = ProtocolContractState::Running(running_state);
+        let contract = MpcContract::new_from_protocol_sate(running_state);
+        test_set_backup_service_success(&participants, contract);
+    }
+
+    #[test]
+    fn test_set_backup_service_success_resharing() {
+        let resharing_state = gen_resharing_state(2).1;
+        let participants = resharing_state
+            .resharing_key
+            .proposed_parameters()
+            .participants()
+            .clone();
+        let resharing_state = ProtocolContractState::Resharing(resharing_state);
+        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        test_set_backup_service_success(&participants, contract);
+    }
+
+    #[test]
+    fn test_set_backup_service_success_initializing() {
+        let initializing_state = gen_initializing_state(2, 0).1;
+        let participants = initializing_state
+            .generating_key
+            .proposed_parameters()
+            .participants()
+            .clone();
+        let initializing_state = ProtocolContractState::Initializing(initializing_state);
+        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        test_set_backup_service_success(&participants, contract);
+    }
+    // todo: cleanup_orphaned_node_migrations
+    // todo: conclude_node_migration
 }

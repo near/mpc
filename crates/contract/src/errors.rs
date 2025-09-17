@@ -4,6 +4,16 @@ use crate::primitives::{domain::DomainId, key_state::EpochId};
 mod impls;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum NodeMigrationError {
+    #[error("Node dose not have an ongoing recovery")]
+    MigrationNotFound,
+    #[error("The transaction was submitted by a different public key than expected.")]
+    AccountPublicKeyMismatch,
+    #[error("The submitted keyset differs from the expected keyset.")]
+    KeysetMismatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TeeError {
     #[error("Due to previously failed TEE validation, the network is not accepting new requests at this point in time. Try again later.")]
     TeeValidationFailed,
@@ -220,9 +230,12 @@ pub enum ErrorKind {
     // Tee errors
     #[error("{0}")]
     TeeError(#[from] TeeError),
+    // Tee errors
+    #[error("{0}")]
+    NodeMigrationError(#[from] NodeMigrationError),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 enum ErrorRepr {
     #[error("{0}")]
     Simple(ErrorKind),
@@ -235,7 +248,7 @@ enum ErrorRepr {
 
 /// Error type that this contract will make use of for all the errors
 /// returned from this library
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Error {
     repr: ErrorRepr,
 }
