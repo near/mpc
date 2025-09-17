@@ -14,9 +14,12 @@ use anyhow::anyhow;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId};
-use near_jsonrpc_client::methods::send_tx;
-use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
-use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
+// use near_jsonrpc_client::methods::tx::{RpcTransactionResponse, TransactionInfo};
+// use near_jsonrpc_client::methods::EXPERIMENTAL_tx_status::RpcTransactionStatusRequest;
+// use near_jsonrpc_client_internal::methods::send_tx;
+use near_jsonrpc_primitives::types::transactions::{
+    RpcSendTransactionRequest, RpcTransactionResponse, RpcTransactionStatusRequest, TransactionInfo,
+};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::views::{FinalExecutionStatus, TxExecutionStatus};
 use std::f64;
@@ -309,7 +312,7 @@ impl RunLoadtestCmd {
                     let signed_tx = key.sign_tx_from_actions(action_call).await;
 
                     let rpc_response = rpc_clone
-                        .submit(send_tx::RpcSendTransactionRequest {
+                        .submit(RpcSendTransactionRequest {
                             signed_transaction: signed_tx.clone(),
                             wait_until: near_primitives::views::TxExecutionStatus::Included,
                         })
@@ -387,10 +390,9 @@ impl RunLoadtestCmd {
                 for _ in 0..10 {
                     let waiting_time = 1000 / (config.rpc.total_qps() as u64);
                     tokio::time::sleep(Duration::from_millis(waiting_time)).await;
-                    let request = RpcTransactionStatusRequest{
-                    transaction_info:
-                        TransactionInfo::Transaction(near_jsonrpc_primitives::types::transactions::SignedTransaction::SignedTransaction(tx.clone())),
-                    wait_until: TxExecutionStatus::Final,
+                    let request = RpcTransactionStatusRequest {
+                        transaction_info: TransactionInfo::from_signed_tx(tx.clone()),
+                        wait_until: TxExecutionStatus::Final,
                     };
                     match rpc_clone.submit(request).await {
                         Ok(res) => {

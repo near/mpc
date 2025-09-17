@@ -30,10 +30,10 @@ use mpc_contract::{
     state::ProtocolContractState,
     utils::protocol_state_to_string,
 };
-use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
-use near_jsonrpc_client::methods;
-use near_jsonrpc_client::methods::query::RpcQueryError;
-use near_jsonrpc_primitives::types::query::QueryResponseKind;
+// use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
+// use near_jsonrpc_client::methods;
+// use near_jsonrpc_client::methods::query::RpcQueryError;
+use near_jsonrpc_primitives::types::query::{QueryResponseKind, RpcQueryRequest};
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId, CurveType};
@@ -876,7 +876,7 @@ pub async fn read_contract_state(
     rpc: &Arc<NearRpcClients>,
     contract: &AccountId,
 ) -> ProtocolContractState {
-    let request = methods::query::RpcQueryRequest {
+    let request = RpcQueryRequest {
         block_reference: BlockReference::Finality(Finality::Final),
         request: QueryRequest::CallFunction {
             account_id: contract.clone(),
@@ -895,11 +895,11 @@ pub async fn read_contract_state(
             }
             _ => panic!("Unexpected response: {:?}", result),
         },
-        Err(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
-            RpcQueryError::ContractExecutionError { vm_error, .. },
-        ))) if vm_error.contains("Calling default not allowed.") => {
-            ProtocolContractState::NotInitialized
-        }
+        // Err(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
+        //     RpcQueryError::ContractExecutionError { vm_error, .. },
+        // ))) if vm_error.contains("Calling default not allowed.") => {
+        //     ProtocolContractState::NotInitialized
+        // }
         Err(err) => {
             panic!("Unexpected error: {:?}", err);
         }

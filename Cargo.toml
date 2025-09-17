@@ -92,9 +92,9 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
+# near-jsonrpc-client = "0.15.1"
+# near-jsonrpc-primitives = "0.28.0"
+# near-primitives = "0.28.0"
 near-sdk = { version = "5.15.1", features = [
     "legacy",
     "unit-testing",
@@ -144,3 +144,14 @@ near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
+
+
+
+near-jsonrpc-client-internal = { git = "https://github.com/near/nearcore", tag = "2.7.0", subdirectory = "chain/jsonrpc/client" }
+near-jsonrpc-primitives = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
+near-primitives = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
+
+# near-crypto = "0.31.1"
+# near-jsonrpc-client = "0.18.0"
+# near-jsonrpc-primitives = "0.31.1"
+# near-primitives = "0.31.1"

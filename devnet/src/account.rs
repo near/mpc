@@ -108,10 +108,8 @@ impl OperatingAccessKey {
         let near_crypto_secret_key: SecretKey =
             SecretKey::ED25519(ED25519SecretKey(signing_key.to_keypair_bytes()));
 
-        let signer = Signer::InMemory(InMemorySigner::from_secret_key(
-            account_id.clone(),
-            near_crypto_secret_key.clone(),
-        ));
+        let signer =
+            InMemorySigner::from_secret_key(account_id.clone(), near_crypto_secret_key.clone());
         Self {
             account_id,
             nonce: None,

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::rpc::NearRpcClients;
 use anyhow::anyhow;
-use near_jsonrpc_client::methods::query::RpcQueryRequest;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_jsonrpc_primitives::types::query::RpcQueryRequest;
 use near_primitives::{
     types::{BlockReference, Finality},
     views::{ContractCodeView, QueryRequest},
