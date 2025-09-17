@@ -112,7 +112,7 @@ fn test_participant_kickout_after_expiration() {
 
     let resharing_state = match contract.state() {
         ProtocolContractState::Resharing(r) => r,
-        _ => panic!("Should be in Resharing state"),
+        state => panic!("Should be in Resharing state. Actual state {:#?}", state),
     };
 
     // Complete resharing process
