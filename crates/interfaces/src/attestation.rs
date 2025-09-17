@@ -1,0 +1,184 @@
+use std::fmt;
+
+use derive_more::{Constructor, Deref, From};
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use serde::{Deserialize, Serialize};
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Attestation {
+    Dstack(DstackAttestation),
+    Mock(MockAttestation),
+}
+
+#[derive(Clone, Constructor, Serialize, Deserialize)]
+pub struct DstackAttestation {
+    pub quote: Quote,
+    pub collateral: Collateral,
+    // TODO: This type should be defined within the crate to remove dependency to dstack.
+    pub tcb_info: TcbInfo,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub enum MockAttestation {
+    #[default]
+    /// Always pass validation
+    Valid,
+    /// Always fails validation
+    Invalid,
+    /// Pass validation depending on the set constraints
+    WithConstraints {
+        mpc_docker_image_hash: Option<MpcDockerImageHash>,
+        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+        /// Unix time stamp for when this attestation expires.  
+        expiry_time_stamp_seconds: Option<u64>,
+    },
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Collateral {
+    pub pck_crl_issuer_chain: String,
+    #[serde(with = "serde_bytes")]
+    pub root_ca_crl: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub pck_crl: Vec<u8>,
+    pub tcb_info_issuer_chain: String,
+    pub tcb_info: String,
+    #[serde(with = "serde_bytes")]
+    pub tcb_info_signature: Vec<u8>,
+    pub qe_identity_issuer_chain: String,
+    pub qe_identity: String,
+    #[serde(with = "serde_bytes")]
+    pub qe_identity_signature: Vec<u8>,
+}
+
+impl From<Collateral> for dcap_qvl::QuoteCollateralV3 {
+    fn from(collateral: Collateral) -> Self {
+        let Collateral {
+            pck_crl_issuer_chain,
+            root_ca_crl,
+            pck_crl,
+            tcb_info_issuer_chain,
+            tcb_info,
+            tcb_info_signature,
+            qe_identity_issuer_chain,
+            qe_identity,
+            qe_identity_signature,
+        } = collateral;
+
+        dcap_qvl::QuoteCollateralV3 {
+            pck_crl_issuer_chain,
+            root_ca_crl,
+            pck_crl,
+            tcb_info_issuer_chain,
+            tcb_info,
+            tcb_info_signature,
+            qe_identity_issuer_chain,
+            qe_identity,
+            qe_identity_signature,
+        }
+    }
+}
+
+impl fmt::Debug for DstackAttestation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const MAX_BYTES: usize = 2048;
+
+        fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
+            let debug_str = format!("{:?}", value);
+            if debug_str.len() <= max_bytes {
+                debug_str
+            } else {
+                format!(
+                    "{}... (truncated {} bytes)",
+                    &debug_str[..max_bytes],
+                    debug_str.len() - max_bytes
+                )
+            }
+        }
+
+        f.debug_struct("DstackAttestation")
+            .field("quote", &truncate_debug(&self.quote, MAX_BYTES))
+            .field("collateral", &truncate_debug(&self.collateral, MAX_BYTES))
+            .field("tcb_info", &truncate_debug(&self.tcb_info, MAX_BYTES))
+            .finish()
+    }
+}
+
+/// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
+/// current limitations in the Dstack SDK.
+///
+/// See: https://github.com/Dstack-TEE/dstack/issues/267
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AppCompose {
+    pub manifest_version: u32,
+    pub name: String,
+    pub runner: String,
+    pub docker_compose_file: DockerComposeString,
+    pub kms_enabled: bool,
+    pub tproxy_enabled: Option<bool>,
+    pub gateway_enabled: Option<bool>,
+    pub public_logs: bool,
+    pub public_sysinfo: bool,
+    pub local_key_provider_enabled: bool,
+    pub key_provider_id: Option<String>,
+    pub allowed_envs: Vec<String>,
+    pub no_instance_id: bool,
+    pub secure_time: Option<bool>,
+    pub pre_launch_script: Option<String>,
+    // The following fields that don't have any security implication are omitted:
+    //
+    // - docker_config: JsonValue,
+    // - public_tcbinfo: bool,
+}
+
+/// Trusted Computing Base information structure
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub struct TcbInfo {
+    /// The measurement root of trust
+    pub mrtd: String,
+    /// The value of RTMR0 (Runtime Measurement Register 0)
+    pub rtmr0: String,
+    /// The value of RTMR1 (Runtime Measurement Register 1)
+    pub rtmr1: String,
+    /// The value of RTMR2 (Runtime Measurement Register 2)
+    pub rtmr2: String,
+    /// The value of RTMR3 (Runtime Measurement Register 3)
+    pub rtmr3: String,
+    /// The hash of the OS image. This is empty if the OS image is not measured by KMS.
+    #[serde(default)]
+    pub os_image_hash: String,
+    /// The hash of the compose configuration
+    pub compose_hash: String,
+    /// The device identifier
+    pub device_id: String,
+    /// The app compose
+    pub app_compose: String,
+    /// The event log entries
+    pub event_log: Vec<EventLog>,
+}
+
+/// Represents an event log entry in the system
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub struct EventLog {
+    /// The index of the IMR (Integrity Measurement Register)
+    pub imr: u32,
+    /// The type of event being logged
+    pub event_type: u32,
+    /// The cryptographic digest of the event
+    pub digest: String,
+    /// The type of event as a string
+    pub event: String,
+    /// The payload data associated with the event
+    pub event_payload: String,
+}
+
+/// A type that contains a docker compose the contents of a docker compose file as
+/// a string.
+///
+/// This type does currently not do any validation of the string
+#[derive(Debug, Deserialize, Serialize, From, Deref)]
+pub struct DockerComposeString(String);
+
+#[derive(Clone, Debug, Deserialize, Serialize, From, Deref)]
+pub struct Quote(#[serde(with = "serde_bytes")] Vec<u8>);
