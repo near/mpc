@@ -44,6 +44,7 @@ use near_workspaces::{
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
@@ -683,18 +684,31 @@ pub async fn submit_participant_info(
         .max_gas()
         .transact()
         .await?;
+    dbg!(&result);
     Ok(result.is_success())
+}
+
+pub async fn assert_resharing_return_parameters(
+    contract: &Contract,
+) -> anyhow::Result<ThresholdParameters> {
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Resharing(resharing) = state else {
+        panic!(
+            "Expected contract to be in Resharing state, but got: {:?}",
+            state
+        );
+    };
+    Ok(resharing.resharing_key.proposed_parameters().clone())
 }
 
 pub async fn assert_running_return_participants(
     contract: &Contract,
 ) -> anyhow::Result<Participants> {
-    // Verify contract is back to running state with new threshold
-    let final_state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Running(running_state) = final_state else {
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Running(running_state) = state else {
         panic!(
-            "Expected contract to be in Running state after resharing, but got: {:?}",
-            final_state
+            "Expected contract to be in Running state, but got: {:?}",
+            state
         );
     };
     Ok(running_state.parameters.participants().clone())
@@ -713,6 +727,66 @@ pub async fn submit_tee_attestations(
             submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
                 .await?;
         assert!(result);
+    }
+    Ok(())
+}
+
+pub async fn conclude_resharing(
+    remaining_accounts: &[Account],
+    contract: &Contract,
+    domain_ids: &[DomainId],
+) -> anyhow::Result<()> {
+    // Verify contract is now in resharing state
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Resharing(resharing_state) = state else {
+        panic!("Expected contract to be in Resharing state after voting");
+    };
+    let prospective_epoch_id = resharing_state.resharing_key.epoch_id();
+
+    for domain_id in domain_ids {
+        let key_event_id = json!({
+            "epoch_id": prospective_epoch_id.get(),
+            "domain_id": domain_id.0,
+            "attempt_id": 0,
+        });
+
+        let leader = remaining_accounts
+            .iter()
+            .min_by_key(|a| {
+                resharing_state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .id(a.id())
+                    .unwrap()
+            })
+            .unwrap();
+
+        check_call_success(
+            leader
+                .call(contract.id(), "start_reshare_instance")
+                .args_json(json!({
+                    "key_event_id": key_event_id,
+                }))
+                .max_gas()
+                .transact()
+                .await?,
+        );
+
+        // Wait for threshold participants to vote for resharing (2 out of 3)
+        // The transition should happen after 2 votes when threshold is reached
+        for account in remaining_accounts {
+            check_call_success_all_receipts(
+                account
+                    .call(contract.id(), "vote_reshared")
+                    .args_json(json!({
+                        "key_event_id": key_event_id,
+                    }))
+                    .max_gas()
+                    .transact()
+                    .await?,
+            );
+        }
     }
     Ok(())
 }
