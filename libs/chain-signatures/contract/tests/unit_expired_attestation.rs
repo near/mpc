@@ -85,11 +85,11 @@ fn test_unit_participant_kickout_after_expiration() {
         );
     }
 
-    let expiry_seconds = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
+    const EXPIRY_SECONDS: u64 = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_time_stamp_seconds: Some(expiry_seconds),
+        expiry_time_stamp_seconds: Some(EXPIRY_SECONDS),
     });
     submit_participant_attestation(
         &mut contract,
@@ -102,10 +102,10 @@ fn test_unit_participant_kickout_after_expiration() {
     assert_eq!(contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Fast-forward time past expiry and trigger resharing
-    let expired_timestamp =
+    const EXPIRED_TIMESTAMP: u64 =
         INITIAL_TIMESTAMP_NANOS + Duration::from_secs(POST_EXPIRY_WAIT_SECONDS).as_nanos() as u64;
     testing_env!(VMContextBuilder::new()
-        .block_timestamp(expired_timestamp)
+        .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
     assert!(!contract.verify_tee().unwrap());
@@ -124,14 +124,14 @@ fn test_unit_participant_kickout_after_expiration() {
 
     testing_env!(create_context_for_participant(
         &participants_list[0].0,
-        expired_timestamp
+        EXPIRED_TIMESTAMP
     ));
     contract.start_reshare_instance(key_event_id).unwrap();
 
     for (account_id, _, _) in participants_list.iter().take(2) {
         testing_env!(create_context_for_participant(
             account_id,
-            expired_timestamp
+            EXPIRED_TIMESTAMP
         ));
         contract.vote_reshared(key_event_id).unwrap();
     }
@@ -149,12 +149,12 @@ fn test_unit_participant_kickout_after_expiration() {
         _ => panic!("Should still be Running after cleanup"),
     };
 
-    let expected_count = PARTICIPANT_COUNT - 1;
+    const EXPECTED_COUNT: usize = PARTICIPANT_COUNT - 1;
     assert_eq!(
         final_running_state.parameters.participants().len(),
-        expected_count
+        EXPECTED_COUNT
     );
-    assert_eq!(contract.get_tee_accounts().len(), expected_count);
+    assert_eq!(contract.get_tee_accounts().len(), EXPECTED_COUNT);
 }
 
 fn submit_participant_attestation(
