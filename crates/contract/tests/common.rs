@@ -705,7 +705,7 @@ pub async fn submit_tee_attestations(
     env_accounts: &mut [Account],
     node_uids: &BTreeSet<NodeUid>,
 ) -> anyhow::Result<()> {
-    env_accounts.sort_by(|a, b| a.id().cmp(b.id()));
+    env_accounts.sort_by_key(|account| account.id().clone());
     for (account, node_uid) in env_accounts.iter().zip(node_uids) {
         assert_eq!(*account.id(), node_uid.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
