@@ -1,10 +1,5 @@
 use anyhow::{Context, bail};
-use attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::Collateral,
-    quote::QuoteBytes,
-    report_data::ReportData,
-};
+use attestation::{collateral::Collateral, quote::QuoteBytes, report_data::ReportData};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
@@ -278,9 +273,8 @@ mod tests {
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
     ) {
-        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
-            .parse()
-            .unwrap();
+        let tls_key = todo!();
+
         let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
         let authority =

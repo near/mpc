@@ -1,16 +1,14 @@
 use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::cell::LazyCell;
+use interfaces::{attestation::Attestation, node_http_server::StaticWebData};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 use alloc::string::ToString;
 
-use crate::{
-    attestation::{Attestation, StaticWebData},
-    report_data::ReportDataVersion,
-};
+use crate::report_data::ReportDataVersion;
 
 /// TCB info JSON file containing measurement values.
 const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
@@ -92,9 +90,8 @@ impl ExpectedMeasurements {
     pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
         let cache = LazyCell::new(|| -> Result<ExpectedMeasurements, MeasurementsError> {
             // Parse embedded tcb_info.json file and extract RTMR values dynamically
-            let static_web_data: StaticWebData<ed25519_dalek::VerifyingKey> =
-                serde_json::from_str(TCB_INFO_STRING)
-                    .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
+            let static_web_data: StaticWebData = serde_json::from_str(TCB_INFO_STRING)
+                .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
 
             let Attestation::Dstack(attestation) = static_web_data.tee_participant_info else {
                 return Err(MeasurementsError::InvalidTcbInfo);

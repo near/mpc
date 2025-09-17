@@ -664,11 +664,11 @@ pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
-    tls_key: &PublicKey,
+    tls_key: &[u8; 32],
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
+        .args_json((attestation.clone(), tls_key.clone()))
         .max_gas()
         .transact()
         .await?;

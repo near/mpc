@@ -8,9 +8,9 @@ anyhow = { workspace = true }
 borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
-dstack-sdk-types = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
+interfaces = { workspace = true }
 k256 = { workspace = true }
 mpc-primitives = { workspace = true }
 near-sdk = { workspace = true }
@@ -26,8 +26,4 @@ rstest = { workspace = true }
 test_utils = { workspace = true }
 
 [features]
-abi = [
-    "borsh/unstable__schema",
-    "dcap-qvl/borsh_schema",
-    "dstack-sdk-types/borsh_schema",
-]
+abi = ["borsh/unstable__schema", "dcap-qvl/borsh_schema"]

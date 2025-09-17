@@ -14,14 +14,7 @@ use alloc::string::ToString;
 /// Supplemental data for the TEE quote, including Intel certificates to verify it came from genuine
 /// Intel hardware, along with details about the Trusted Computing Base (TCB) versioning, status,
 /// and other relevant info.
-#[derive(
-    Clone, From, Deref, Into, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
-#[serde(try_from = "Value")]
+#[derive(Clone, From, Deref, Into, Debug, Serialize, Deserialize)]
 pub struct Collateral(QuoteCollateralV3);
 
 impl Collateral {

@@ -127,28 +127,24 @@ impl ReportData {
 mod tests {
     use super::*;
     use crate::report_data::ReportData;
-    use alloc::vec::Vec;
     use dcap_qvl::quote::Quote;
-    use near_sdk::PublicKey;
-    use test_utils::attestation::{p2p_tls_key, quote};
+    use k256::elliptic_curve::rand_core::OsRng;
+    use test_utils::attestation::{DstackAttestationTestUtils, mock_dstack_attestation};
 
     #[test]
     fn test_from_str_valid() {
-        let valid_quote: Vec<u8> =
-            serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();
-        let quote = Quote::parse(&valid_quote).unwrap();
+        let attestation = mock_dstack_attestation();
+        let quote = Quote::parse(&attestation.quote).unwrap();
 
         let td_report = quote.report.as_td10().expect("Should be a TD 1.0 report");
+        let tls_key = attestation.p2p_tls_public_key();
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
-        let near_p2p_public_key: PublicKey = p2p_tls_key();
-        let report_data = ReportData::V1(ReportDataV1::new(near_p2p_public_key));
         assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
 
-    fn create_test_key() -> PublicKey {
-        "secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj"
-            .parse()
-            .unwrap()
+    fn create_test_key() -> ed25519_dalek::VerifyingKey {
+        ed25519_dalek::SigningKey::generate(&mut OsRng).verifying_key()
     }
 
     #[test]

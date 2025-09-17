@@ -8,12 +8,13 @@ use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
+use ed25519_dalek::VerifyingKey;
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
-use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
+use test_utils::attestation::{mock_dstack_attestation, DstackAttestationTestUtils};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
 /// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
@@ -42,7 +43,8 @@ async fn test_tee_verify_no_tee() -> Result<()> {
 async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let allowed_mpc_image_digest = image_digest();
+    let attestation = mock_dstack_attestation();
+    let allowed_mpc_image_digest = attestation.mpc_image_digest();
 
     // Initially, there should be no allowed hashes
     assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
@@ -87,7 +89,8 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let first_hash = image_digest();
+    let attestation = mock_dstack_attestation();
+    let first_hash = attestation.mpc_image_digest();
 
     let arbitrary_bytes = [2; 32];
     let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
@@ -158,7 +161,9 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
     let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
-    let allowed_mpc_image_digest = image_digest();
+
+    let attestation = mock_dstack_attestation();
+    let allowed_mpc_image_digest = attestation.mpc_image_digest();
 
     let res = random_account
         .call(contract.id(), "vote_code_hash")
@@ -226,19 +231,31 @@ async fn get_participants(contract: &Contract) -> Result<usize> {
 /// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
 /// This is a helper function commonly used in tests that require pre-approved hashes.
 async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
-    let mpc_hash = image_digest();
-    vote_for_hash(&accounts[0], contract, &mpc_hash).await?;
-    vote_for_hash(&accounts[1], contract, &mpc_hash).await?;
+    let attestation = mock_dstack_attestation();
+    let allowed_mpc_image_digest = attestation.mpc_image_digest();
+
+    vote_for_hash(&accounts[0], contract, &allowed_mpc_image_digest).await?;
+    vote_for_hash(&accounts[1], contract, &allowed_mpc_image_digest).await?;
     Ok(())
 }
 
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
+async fn setup_tee_test() -> Result<(
+    Contract,
+    Vec<Account>,
+    Attestation,
+    ed25519_dalek::VerifyingKey,
+)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    Ok((contract, accounts, attestation, tls_key))
+    let tls_key = attestation.p2p_tls_public_key();
+    Ok((
+        contract,
+        accounts,
+        Attestation::Dstack(attestation),
+        tls_key,
+    ))
 }
 
 /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
@@ -246,7 +263,8 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Public
 #[tokio::test]
 async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    let success =
+        submit_participant_info(&accounts[0], &contract, &attestation, tls_key.as_bytes()).await?;
     assert!(!success);
     Ok(())
 }
@@ -258,7 +276,8 @@ async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Resul
 async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
     setup_approved_mpc_hash(&contract, &accounts).await?;
-    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    let success =
+        submit_participant_info(&accounts[0], &contract, &attestation, tls_key.as_bytes()).await?;
     assert!(success);
     Ok(())
 }
@@ -270,9 +289,9 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key();
+    let dummy_tls_key = [0; 32];
     let success =
-        submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
+        submit_participant_info(&accounts[0], &contract, &mock_attestation, &dummy_tls_key).await?;
     assert!(success);
     Ok(())
 }
@@ -286,13 +305,17 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     setup_approved_mpc_hash(&contract, &accounts).await?;
 
     // Create invalid TLS key by flipping the last bit
-    let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
+    let mut invalid_tls_key_bytes = tls_key.as_bytes().clone();
     let last_byte_idx = invalid_tls_key_bytes.len() - 1;
     invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-    let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
 
-    let success =
-        submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
+    let success = submit_participant_info(
+        &accounts[0],
+        &contract,
+        &attestation,
+        &invalid_tls_key_bytes,
+    )
+    .await?;
     assert!(!success);
     Ok(())
 }

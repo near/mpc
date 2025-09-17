@@ -1713,7 +1713,10 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), tls_public_key)
+        // First byte contains curve scheme
+        let tls_public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
+
+        contract.submit_participant_info(Attestation::Mock(attestation), tls_public_key_bytes)
     }
 
     fn submit_valid_attestations(

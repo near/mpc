@@ -16,7 +16,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
 };
-use test_utils::attestation::p2p_tls_key;
+use test_utils::attestation::{mock_dstack_attestation, DstackAttestationTestUtils};
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -32,12 +32,12 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let (worker, contract, initial_accounts, _) = init_env_secp256k1(1).await;
 
     // Set up TEE attestations for all initial participants
-    let tls_key = p2p_tls_key();
+    let tls_key = mock_dstack_attestation().p2p_tls_public_key();
     let attestation = Attestation::Mock(MockAttestation::Valid);
 
     for account in &initial_accounts {
         let submission_result =
-            submit_participant_info(account, &contract, &attestation, &tls_key).await?;
+            submit_participant_info(account, &contract, &attestation, tls_key.as_bytes()).await?;
         assert!(submission_result);
     }
 
@@ -51,7 +51,8 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Add stale participants to TEE state
     for stale_account in &stale_accounts {
         let submission_result =
-            submit_participant_info(stale_account, &contract, &attestation, &tls_key).await?;
+            submit_participant_info(stale_account, &contract, &attestation, &tls_key.as_bytes())
+                .await?;
         assert!(submission_result);
     }
 

@@ -1,6 +1,6 @@
-use attestation::{
-    app_compose::AppCompose,
-    attestation::{Attestation, DstackAttestation, StaticWebData},
+use interfaces::{
+    attestation::{AppCompose, Attestation, DstackAttestation},
+    node_http_server::StaticWebData,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
@@ -9,8 +9,7 @@ use regex::Regex;
 pub const STATIC_WEB_DATA_STRING: &str = include_str!("../assets/static_web_data.json");
 
 pub fn mock_dstack_attestation() -> DstackAttestation {
-    let static_web_data: StaticWebData<Vec<u8>> =
-        serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
+    let static_web_data: StaticWebData = serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
 
     let Attestation::Dstack(dstack_attestation) = static_web_data.tee_participant_info else {
         panic!("STATIC_WEB_DATA_STRING must be a dstack attestation.")
@@ -29,10 +28,9 @@ pub trait DstackAttestationTestUtils {
 
 impl DstackAttestationTestUtils for DstackAttestation {
     fn p2p_tls_public_key(&self) -> ed25519_dalek::VerifyingKey {
-        let static_web_data: StaticWebData<ed25519_dalek::VerifyingKey> =
-            serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
+        let static_web_data: StaticWebData = serde_json::from_str(STATIC_WEB_DATA_STRING).unwrap();
 
-        static_web_data.near_p2p_public_key
+        ed25519_dalek::VerifyingKey::from_bytes(&static_web_data.near_p2p_public_key).unwrap()
     }
 
     fn launcher_compose_digest(&self) -> LauncherDockerComposeHash {
