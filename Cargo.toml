@@ -2,8 +2,8 @@
 resolver = "2"
 exclude = ["libs/nearcore"]
 members = [
-    "libs/chain-signatures/contract",
     "crates/attestation", 
+    "crates/contract",
     "crates/primitives", 
     "crates/tee_authority", 
     "crates/test_utils", 
@@ -43,7 +43,8 @@ attestation = { path = "crates/attestation" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
-mpc-contract = { path = "libs/chain-signatures/contract/", features = [
+contract_history = { path = "crates/contract_history" }
+mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
 ] }
 mpc-tls = { path = "crates/tls" }
