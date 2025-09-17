@@ -738,7 +738,7 @@ impl VersionedMpcContract {
         }
 
         // Add the participant information to the contract state
-        mpc_contract.tee_state.add_participant(
+        let is_new_attestation = mpc_contract.tee_state.add_participant(
             NodeUid {
                 account_id: account_id.clone(),
                 tls_public_key,
@@ -748,7 +748,7 @@ impl VersionedMpcContract {
 
         // Both participants and non-participants can propose. Non-participants must pay for the
         // storage they use; participants do not.
-        if self.voter_account().is_err() {
+        if self.voter_account().is_err() || is_new_attestation {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
             let attached = env::attached_deposit();

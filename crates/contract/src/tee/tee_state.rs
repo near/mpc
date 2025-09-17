@@ -153,9 +153,19 @@ impl TeeState {
         }
     }
 
-    pub fn add_participant(&mut self, node_uid: NodeUid, proposed_tee_participant: Attestation) {
+    /// Adds a participant attestation for the given node.
+    ///
+    /// Returns:
+    /// - `true` if this is the first attestation for the node (i.e., a new participant was added).
+    /// - `false` if the node already had an attestation (the existing one was replaced).
+    pub fn add_participant(
+        &mut self,
+        node_uid: NodeUid,
+        proposed_tee_participant: Attestation,
+    ) -> bool {
         self.participants_attestations
-            .insert(node_uid, proposed_tee_participant);
+            .insert(node_uid, proposed_tee_participant)
+            .is_none()
     }
 
     pub fn vote(
