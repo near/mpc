@@ -52,6 +52,9 @@ pub enum ProtocolError {
     #[error("the group element could not be serialized")]
     PointSerialization,
 
+    #[error("hashing operation failed")]
+    HashingError,
+
     #[error("encountered a zero scalar")]
     ZeroScalar,
 
