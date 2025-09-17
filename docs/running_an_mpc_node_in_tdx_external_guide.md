@@ -932,6 +932,8 @@ MPC_IMAGE_TAGS=SHA256:abc
 
 ### Options for performing the update
 
+#### Manually Via Web UI
+
 * Stop the CVM from the WebUI.  
 * Press the **update** button  
 * Update The config file and press **Upgrade**
