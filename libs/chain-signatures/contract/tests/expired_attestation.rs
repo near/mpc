@@ -30,7 +30,7 @@ use test_utils::attestation::p2p_tls_key;
 /// 8. Contract transitions back to Running state with filtered participant set
 /// 9. Manually trigger TEE cleanup and verify final counts reduced from 3 to 2
 #[test]
-fn test_unit_participant_kickout_after_expiration() {
+fn test_participant_kickout_after_expiration() {
     const INITIAL_TIME_SECONDS: u64 = 1;
     const INITIAL_TIMESTAMP_NANOS: u64 =
         Duration::from_secs(INITIAL_TIME_SECONDS).as_nanos() as u64;
