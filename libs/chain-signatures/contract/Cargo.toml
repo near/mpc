@@ -82,7 +82,7 @@ tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
 test_utils = { path = "../../../crates/test_utils" }
 contract_history = { path = "../../../crates/contract_history" }
-mpc-contract = { path = ".", features = ["test-utils"] }
+mpc-contract = { workspace = true, features = ["test-utils"] }
 
 # crypto dependencies
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
