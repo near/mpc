@@ -915,7 +915,7 @@ MPC_IMAGE_TAGS=SHA256:abc
 
 ![](./attachments/cvm_options.png)
 
-![](/attachments/config_upgrade.png)
+![](./attachments/config_upgrade.png)
 
 
 
