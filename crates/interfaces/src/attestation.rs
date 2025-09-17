@@ -53,10 +53,6 @@ pub enum MockAttestation {
 
 #[serde_as]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-// #[cfg_attr(
-//     all(feature = "abi", not(target_arch = "wasm32")),
-//     derive(schemars::JsonSchema)
-// )]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
     #[serde_as(as = "serde_with::hex::Hex")]
@@ -71,6 +67,37 @@ pub struct Collateral {
     pub qe_identity: String,
     #[serde_as(as = "serde_with::hex::Hex")]
     pub qe_identity_signature: Vec<u8>,
+}
+/// We can't use the derive macro in combination with `serde_as`.
+/// The trait bound `As<Hex>: JsonSchema` is not satisfied
+///
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+pub mod json_schema_implementation {
+
+    #[derive(schemars::JsonSchema)]
+    pub struct Collateral {
+        pub pck_crl_issuer_chain: String,
+        pub root_ca_crl: Vec<u8>,
+        pub pck_crl: Vec<u8>,
+        pub tcb_info_issuer_chain: String,
+        pub tcb_info: String,
+        pub tcb_info_signature: Vec<u8>,
+        pub qe_identity_issuer_chain: String,
+        pub qe_identity: String,
+        pub qe_identity_signature: Vec<u8>,
+    }
+
+    impl schemars::JsonSchema for super::Collateral {
+        fn schema_name() -> String {
+            Collateral::schema_name()
+        }
+
+        fn json_schema(
+            generator: &mut schemars::r#gen::SchemaGenerator,
+        ) -> schemars::schema::Schema {
+            Collateral::json_schema(generator)
+        }
+    }
 }
 
 impl From<Collateral> for dcap_qvl::QuoteCollateralV3 {
