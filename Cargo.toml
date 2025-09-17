@@ -72,7 +72,7 @@ derive_more = { version = "2.0.1", features = [
     "as_ref",
     "constructor",
 ] }
-dstack-sdk = { version = "0.1.0" }
+dstack-sdk = { version = "0.1.1" }
 dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 flume = "0.11.1"
@@ -109,7 +109,7 @@ rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
-serde = { version = "1.0.214", features = ["derive"] }
+serde = { version = "1.0.225", features = ["derive"] }
 serde_json = "1.0.132"
 serde_with = "3.14.0"
 serde_yaml = "0.9.34"
