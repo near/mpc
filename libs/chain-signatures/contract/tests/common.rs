@@ -1,7 +1,7 @@
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
-use interfaces::attestation::Attestation;
+use interfaces::{attestation::Attestation, crypto::Ed25519PublicKey};
 use k256::{
     elliptic_curve::{
         hash2curve::{ExpandMsgXof, GroupDigest},
@@ -664,13 +664,14 @@ pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
-    tls_key: &PublicKey,
+    tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
+        .args_json((attestation.clone(), tls_key.clone()))
         .max_gas()
         .transact()
         .await?;
+
     Ok(result.is_success())
 }

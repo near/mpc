@@ -7,10 +7,12 @@ use common::{
     check_call_success, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
     submit_participant_info,
 };
-use interfaces::attestation::{Attestation, MockAttestation};
+use interfaces::{
+    attestation::{Attestation, MockAttestation},
+    crypto::Ed25519PublicKey,
+};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use std::collections::HashSet;
 use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
@@ -234,10 +236,11 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
+async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
+
     Ok((contract, accounts, attestation, tls_key))
 }
 
@@ -286,10 +289,10 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     setup_approved_mpc_hash(&contract, &accounts).await?;
 
     // Create invalid TLS key by flipping the last bit
-    let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
-    let last_byte_idx = invalid_tls_key_bytes.len() - 1;
-    invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-    let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
+    let mut invalid_tls_key_bytes: [u8; 32] = *tls_key;
+    invalid_tls_key_bytes[31] ^= 0x01;
+
+    let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
 
     let success =
         submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;

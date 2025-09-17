@@ -116,8 +116,7 @@ impl TeeState {
             .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
-                let public_key_bytes: [u8; 32] = tls_public_key
-                    .as_bytes()
+                let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..]
                     .try_into()
                     .expect("near_sdk formats keys as 32 byes + 1 byte for scheme padding.");
 

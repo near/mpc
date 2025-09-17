@@ -226,9 +226,9 @@ pub struct TcbInfo {
     pub event_log: Vec<EventLog>,
 }
 
-impl From<dstack_sdk::dstack_client::TcbInfo> for TcbInfo {
-    fn from(tcb_info: dstack_sdk::dstack_client::TcbInfo) -> Self {
-        let dstack_sdk::dstack_client::TcbInfo {
+impl From<dstack_sdk_types::dstack::TcbInfo> for TcbInfo {
+    fn from(tcb_info: dstack_sdk_types::dstack::TcbInfo) -> Self {
+        let dstack_sdk_types::dstack::TcbInfo {
             mrtd,
             rtmr0,
             rtmr1,
@@ -289,9 +289,9 @@ pub struct EventLog {
     pub event_payload: String,
 }
 
-impl From<dstack_sdk::dstack_client::EventLog> for EventLog {
-    fn from(event_log: dstack_sdk::dstack_client::EventLog) -> Self {
-        let dstack_sdk::dstack_client::EventLog {
+impl From<dstack_sdk_types::dstack::EventLog> for EventLog {
+    fn from(event_log: dstack_sdk_types::dstack::EventLog) -> Self {
+        let dstack_sdk_types::dstack::EventLog {
             imr,
             event_type,
             digest,

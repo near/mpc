@@ -1,6 +1,8 @@
-use interfaces::attestation::{Attestation, DstackAttestation, Quote, TcbInfo};
+use interfaces::{
+    attestation::{Attestation, DstackAttestation, Quote, TcbInfo},
+    crypto::Ed25519PublicKey,
+};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_sdk::PublicKey;
 use sha2::{Digest, Sha256};
 
 pub const TEST_TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
@@ -34,9 +36,13 @@ pub fn quote() -> Quote {
         .expect("Quote collateral file is a valid json.")
 }
 
-pub fn p2p_tls_key() -> PublicKey {
+pub fn p2p_tls_key() -> interfaces::crypto::Ed25519PublicKey {
     let key_file = include_str!("../assets/near_p2p_public_key.pub");
-    key_file.parse().expect("File contains a valid public key")
+    let near_public_key: near_sdk::PublicKey =
+        key_file.parse().expect("File contains a valid public key");
+    let tls_key_data: [u8; 32] = near_public_key.as_bytes()[1..].try_into().unwrap();
+
+    Ed25519PublicKey::from(tls_key_data)
 }
 
 pub fn mock_dstack_attestation() -> Attestation {
