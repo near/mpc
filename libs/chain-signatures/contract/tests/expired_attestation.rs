@@ -71,7 +71,7 @@ impl TestSetup {
     }
 }
 
-/// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This unit test demonstrates the complete kickout mechanism using direct contract calls:
+/// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This test demonstrates the complete kickout mechanism using direct contract calls:
 /// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s
 /// 2. Submit valid attestations for first 2 participants at time T=1s
 /// 3. Submit expiring attestation for 3rd participant with expiry at time T+10s
