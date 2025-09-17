@@ -913,7 +913,7 @@ MPC_IMAGE_TAGS=SHA256:abc
 - Update The config file and press **Upgrade**
 - Start the CVM
 
-![](/attachments/cvm_options.png)
+![](./attachments/cvm_options.png)
 
 ![](/attachments/config_upgrade.png)
 
