@@ -1,4 +1,5 @@
 use anyhow::{Context, bail};
+use attestation::ReportDataExt;
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};

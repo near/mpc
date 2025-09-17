@@ -20,6 +20,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::ReportDataExt;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use interfaces::attestation::ReportData;

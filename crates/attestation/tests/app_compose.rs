@@ -1,12 +1,10 @@
-use interfaces::attestation::{AppCompose, Attestation};
-use test_utils::attestation::mock_dstack_attestation;
+use interfaces::attestation::AppCompose;
+use test_utils::attestation::TEST_APP_COMPOSE_WITH_SERVICES_STRING;
 
 #[test]
 fn test_app_compose_deserialization() {
-    let Attestation::Dstack(attestation) = mock_dstack_attestation() else {
-        panic!("expected dstack attestation");
-    };
-    let app_compose: AppCompose = serde_json::from_str(&attestation.tcb_info.app_compose).unwrap();
+    let app_compose: AppCompose =
+        serde_json::from_str(TEST_APP_COMPOSE_WITH_SERVICES_STRING).unwrap();
 
     assert_eq!(app_compose.manifest_version, 2);
     assert_eq!(app_compose.name, "kvin-nb");

@@ -1,4 +1,4 @@
-use crate::expected_measurements::ExpectedMeasurements;
+use crate::{expected_measurements::ExpectedMeasurements, report_data::ReportDataExt};
 use dcap_qvl::verify::VerifiedReport;
 use interfaces::attestation::{
     AppCompose, Attestation, DstackAttestation, EventLog, MockAttestation, ReportData, TcbInfo,
