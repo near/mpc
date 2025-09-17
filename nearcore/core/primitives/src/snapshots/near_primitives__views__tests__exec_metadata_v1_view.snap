@@ -1,8 +1,0 @@
----
-source: core/primitives/src/views.rs
-expression: view
----
-{
-  "version": 1,
-  "gas_profile": null
-}
