@@ -339,7 +339,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 
     let participant_uids = assert_running_return_participants(&contract)
         .await?
-        .get_node_uids();
+        .get_node_ids();
     submit_tee_attestations(&contract, &mut accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
@@ -349,7 +349,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
     let (mut additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
-    let additional_uids = additional_participants.get_node_uids();
+    let additional_uids = additional_participants.get_node_ids();
     submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
 
     // Verify we have TEE data for all accounts before cleanup

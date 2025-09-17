@@ -28,7 +28,7 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
-    tee::tee_state::NodeUid,
+    tee::tee_state::NodeId,
     update::UpdateId,
 };
 use mpc_contract::{
@@ -658,14 +658,14 @@ pub fn check_call_success_all_receipts(result: ExecutionFinalResult) {
 }
 
 /// Helper function to get TEE participants from contract.
-pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeUid>> {
+pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<NodeId>> {
     Ok(contract
         .call("get_tee_accounts")
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()
         .await?
-        .json::<Vec<NodeUid>>()?
+        .json::<Vec<NodeId>>()?
         .into_iter()
         .collect())
 }
@@ -703,14 +703,14 @@ pub async fn assert_running_return_participants(
 pub async fn submit_tee_attestations(
     contract: &Contract,
     env_accounts: &mut [Account],
-    node_uids: &BTreeSet<NodeUid>,
+    node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
     env_accounts.sort_by_key(|account| account.id().clone());
-    for (account, node_uid) in env_accounts.iter().zip(node_uids) {
-        assert_eq!(*account.id(), node_uid.account_id, "AccountId mismatch");
+    for (account, node_id) in env_accounts.iter().zip(node_ids) {
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
         let result =
-            submit_participant_info(account, contract, &attestation, &node_uid.tls_public_key)
+            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
                 .await?;
         assert!(result);
     }

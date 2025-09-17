@@ -50,7 +50,7 @@ use primitives::{
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::MpcDockerImageHash,
-    tee_state::{NodeUid, TeeValidationResult},
+    tee_state::{NodeId, TeeValidationResult},
 };
 
 /// Gas required for a sign request
@@ -739,7 +739,7 @@ impl VersionedMpcContract {
 
         // Add the participant information to the contract state
         let is_new_attestation = mpc_contract.tee_state.add_participant(
-            NodeUid {
+            NodeId {
                 account_id: account_id.clone(),
                 tls_public_key,
             },
@@ -1116,7 +1116,7 @@ impl VersionedMpcContract {
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
-    pub fn get_tee_accounts(&self) -> Vec<NodeUid> {
+    pub fn get_tee_accounts(&self) -> Vec<NodeId> {
         log!("get_tee_accounts: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => contract.tee_state.get_tee_accounts(),

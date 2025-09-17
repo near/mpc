@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone, Hash)]
-pub struct NodeUid {
+pub struct NodeId {
     /// Operator account
     pub account_id: AccountId,
     /// TLS public key
@@ -38,7 +38,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) participants_attestations: IterableMap<NodeUid, Attestation>,
+    pub(crate) participants_attestations: IterableMap<NodeId, Attestation>,
 }
 
 impl Default for TeeState {
@@ -82,19 +82,19 @@ impl TeeState {
     /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
-        node_uid: &NodeUid,
+        node_id: &NodeId,
         tee_upgrade_period_blocks: u64,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
-        let participant_attestation = self.participants_attestations.get(node_uid);
+        let participant_attestation = self.participants_attestations.get(node_id);
         let Some(participant_attestation) = participant_attestation else {
             return TeeQuoteStatus::None;
         };
 
         let expected_report_data =
-            ReportData::V1(ReportDataV1::new(node_uid.tls_public_key.clone()));
+            ReportData::V1(ReportDataV1::new(node_id.tls_public_key.clone()));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(
@@ -129,7 +129,7 @@ impl TeeState {
 
                 matches!(
                     self.verify_tee_participant(
-                        &NodeUid {
+                        &NodeId {
                             account_id: account_id.clone(),
                             tls_public_key
                         },
@@ -160,11 +160,11 @@ impl TeeState {
     /// - `false` if the node already had an attestation (the existing one was replaced).
     pub fn add_participant(
         &mut self,
-        node_uid: NodeUid,
+        node_id: NodeId,
         proposed_tee_participant: Attestation,
     ) -> bool {
         self.participants_attestations
-            .insert(node_uid, proposed_tee_participant)
+            .insert(node_id, proposed_tee_participant)
             .is_none()
     }
 
@@ -209,32 +209,32 @@ impl TeeState {
     /// Removes TEE information for accounts that are not in the provided participants list.
     /// This is used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
-        let participant_accounts: HashSet<NodeUid> = participants
+        let participant_accounts: HashSet<NodeId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeUid {
+            .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
             })
             .collect();
 
         // Collect accounts to remove (can't remove while iterating)
-        let nodes_to_remove: Vec<NodeUid> = self
+        let nodes_to_remove: Vec<NodeId> = self
             .participants_attestations
             .keys()
-            .filter(|node_uid| !participant_accounts.contains(node_uid))
+            .filter(|node_id| !participant_accounts.contains(node_id))
             .cloned()
             .collect();
 
         // Remove non-participant TEE information
-        for node_uid in &nodes_to_remove {
-            self.participants_attestations.remove(node_uid);
+        for node_id in &nodes_to_remove {
+            self.participants_attestations.remove(node_id);
         }
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
     /// Note: This may include accounts that are no longer active protocol participants.
-    pub fn get_tee_accounts(&self) -> Vec<NodeUid> {
+    pub fn get_tee_accounts(&self) -> Vec<NodeId> {
         self.participants_attestations.keys().cloned().collect()
     }
 }
@@ -256,10 +256,10 @@ mod tests {
         let non_participant: AccountId = "dave.near".parse().unwrap();
 
         // Get participant account IDs for verification
-        let participant_nodes: Vec<NodeUid> = participants
+        let participant_nodes: Vec<NodeId> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeUid {
+            .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
             })
@@ -268,7 +268,7 @@ mod tests {
         // Add TEE information for all participants and non-participant
         let local_attestation = Attestation::Mock(MockAttestation::Valid);
 
-        let non_participant_uid = NodeUid {
+        let non_participant_uid = NodeId {
             account_id: non_participant.clone(),
             tls_public_key: bogus_ed25519_near_public_key(),
         };

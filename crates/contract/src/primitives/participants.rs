@@ -4,7 +4,7 @@ use near_sdk::{near, AccountId, PublicKey};
 use std::{collections::BTreeSet, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
-use crate::tee::tee_state::NodeUid;
+use crate::tee::tee_state::NodeId;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -204,10 +204,10 @@ impl Participants {
         Err(crate::errors::InvalidState::NotParticipant.into())
     }
 
-    pub fn get_node_uids(&self) -> BTreeSet<NodeUid> {
+    pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
         self.participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeUid {
+            .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
             })
