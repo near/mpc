@@ -823,7 +823,7 @@ $ ./deployment/build-images.sh
 ...
 commit hash: 828f816be36aed6f0d2438e0131b3e9d7d0931ad
 SOURCE_DATE_EPOCH used: 1758103448
-node binary hash: 1e2603063f3d4300be0e5d19c9d11f7fe47cf5d7fb7761c4805827512c96ebea
+node binary hash: 86c8f7d8913d6fe37a6992bba165d15a3a1d88fbf6cdff605e4827d5183721bc
 node tee docker image hash: sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 launcher docker image hash: sha256:97e8a9618125c452f1f22528c15008627e9d4cf422ae2bd48150bebeac01346d
 ```
