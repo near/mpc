@@ -15,4 +15,6 @@ pub enum StorageKey {
     ProposedUpdatesVotesV2,
     TeeParticipantAttestation,
     PendingCKDRequests,
+    BackupServicesInfo,
+    NodeMigrations,
 }

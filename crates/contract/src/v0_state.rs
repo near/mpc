@@ -12,6 +12,7 @@ use near_sdk::{env, near, store::LookupMap};
 use std::collections::HashSet;
 
 use crate::legacy_contract_state::ConfigV1;
+use crate::node_migrations::NodeMigrations;
 use crate::primitives::votes::ThresholdParametersVotes;
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainRegistry},
@@ -167,6 +168,7 @@ impl From<MpcContractV1> for MpcContract {
             config,
             tee_state,
             accept_requests: true,
+            node_migrations: NodeMigrations::default(),
         }
     }
 }

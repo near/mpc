@@ -6,7 +6,7 @@ use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use near_sdk::near;
+use near_sdk::{near, AccountId};
 use std::collections::BTreeSet;
 
 /// In this state, we generate a new key for each new domain. At any given point of time, we are
@@ -138,10 +138,17 @@ impl InitializingContractState {
         }
         Ok(None)
     }
+
+    pub fn is_participant(&self, account_id: &AccountId) -> bool {
+        self.generating_key
+            .proposed_parameters()
+            .participants()
+            .is_participant(account_id)
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::InitializingContractState;
     use crate::primitives::domain::tests::gen_domains_to_add;
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
@@ -158,7 +165,7 @@ mod tests {
     /// `num_generated` domains, and we are targeting `num_domains` total domains.
     /// This is done by starting from a Running state with `num_generated` keys and then transition
     /// into Initializing state by calling vote_add_domains. (We also test that code path.)
-    fn gen_initializing_state(
+    pub fn gen_initializing_state(
         num_domains: usize,
         num_generated: usize,
     ) -> (Environment, InitializingContractState) {

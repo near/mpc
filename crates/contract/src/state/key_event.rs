@@ -330,6 +330,7 @@ pub mod tests {
             ctx.signer_account_id(self.signer.clone());
             testing_env!(ctx.build());
         }
+
         pub fn set_block_height(&mut self, block_height: BlockHeight) {
             self.block_height = block_height;
             self.set();

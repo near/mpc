@@ -147,6 +147,14 @@ impl ThresholdParameters {
             threshold,
         }
     }
+
+    pub fn update_info(
+        &mut self,
+        account_id: AccountId,
+        new_info: ParticipantInfo,
+    ) -> Result<(), Error> {
+        self.participants.update_info(account_id, new_info)
+    }
 }
 
 #[cfg(test)]
