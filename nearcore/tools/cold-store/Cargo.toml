@@ -1,0 +1,26 @@
+[package]
+name = "cold-store-tool"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+borsh.workspace = true
+clap.workspace = true
+rand.workspace = true
+strum.workspace = true
+tracing.workspace = true
+
+nearcore.workspace = true
+near-chain-configs.workspace = true
+near-epoch-manager.workspace = true
+near-primitives.workspace = true
+near-store.workspace = true

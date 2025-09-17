@@ -1,0 +1,25 @@
+[package]
+name = "indexer-example"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+openssl-probe.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+near-config-utils.workspace = true
+near-indexer.workspace = true
+near-o11y.workspace = true
+near-primitives.workspace = true

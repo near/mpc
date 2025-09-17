@@ -1,0 +1,26 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="last_blocks.css">
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script>
+        // cspell:ignore xarrows
+        // react-xarrows expects dependencies to be named differently... so let's do that.
+        window.react = React;
+        window['prop-types'] = PropTypes;
+        window.lodash = _;
+    </script>
+    <script src="https://unpkg.com/react-xarrows@2.0.2/lib/index.js"></script>
+</head>
+
+<body>
+    <div id="react-container"></div>
+
+    <script type="text/jsx" src="last_blocks.js"></script>
+</body>
+
+</html>

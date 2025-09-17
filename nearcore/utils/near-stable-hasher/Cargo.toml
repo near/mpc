@@ -1,0 +1,12 @@
+[package]
+name = "near-stable-hasher"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "`near-stable-hasher` is a library that is essentially a wrapper around, now deprecated, `std::hash::SipHasher`."
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true

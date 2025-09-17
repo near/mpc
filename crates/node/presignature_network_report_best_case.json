@@ -1,0 +1,1277 @@
+{
+  "num_participants": 10,
+  "steps": [
+    {
+      "peer_to_peer": [
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 95
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 94
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 93
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 89
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ]
+      ]
+    },
+    {
+      "peer_to_peer": [
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 143
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 142
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 141
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 138
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 146
+          }
+        ],
+        [
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 1,
+            "total_bytes": 148
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ]
+      ]
+    },
+    {
+      "peer_to_peer": [
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ],
+        [
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          },
+          {
+            "num_messages": 0,
+            "total_bytes": 0
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+[package]
+name = "near-jsonrpc-primitives"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "This crate hosts structures for the NEAR JSON RPC Requests, Responses and Error types"
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arbitrary.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars = { workspace = true, optional = true }
+thiserror.workspace = true
+time.workspace = true
+
+near-crypto.workspace = true
+near-primitives = { workspace = true, features = ["rand"] }
+near-chain-configs.workspace = true
+near-client-primitives = { workspace = true, optional = true }
+near-schema-checker-lib.workspace = true
+near-time.workspace = true
+
+[features]
+nightly = [
+  "near-chain-configs/nightly",
+  "near-client-primitives/nightly",
+  "near-primitives/nightly",
+]
+full = ["debug_types"]
+debug_types = ["near-client-primitives"]
+test_features = []
+protocol_schema = [
+  "near-crypto/protocol_schema",
+  "near-primitives/protocol_schema",
+  "near-schema-checker-lib/protocol_schema",
+]
+schemars = ["dep:schemars", "near-primitives/schemars", "near-time/schemars", "near-crypto/schemars", "near-chain-configs/schemars"]

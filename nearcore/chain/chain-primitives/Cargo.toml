@@ -1,0 +1,21 @@
+[package]
+name = "near-chain-primitives"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "This crate hosts NEAR chain-related error types"
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+
+near-time.workspace = true
+near-primitives.workspace = true
+near-crypto.workspace = true
+

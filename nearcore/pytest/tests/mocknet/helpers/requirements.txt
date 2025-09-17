@@ -1,0 +1,5 @@
+# cspell:ignore psutil dotenv
+json-rpc
+psutil
+requests
+python-dotenv

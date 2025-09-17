@@ -1,0 +1,53 @@
+[package]
+name = "near-indexer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix.workspace = true
+anyhow.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+rocksdb.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+nearcore.workspace = true
+near-client.workspace = true
+near-chain-configs.workspace = true
+near-config-utils.workspace = true
+near-dyn-configs.workspace = true
+near-epoch-manager.workspace = true
+near-indexer-primitives.workspace = true
+near-o11y.workspace = true
+near-parameters.workspace = true
+near-primitives.workspace = true
+near-store.workspace = true
+node-runtime.workspace = true
+
+[features]
+calimero_zero_storage = ["near-primitives/calimero_zero_storage"]
+nightly = [
+    "near-chain-configs/nightly",
+    "near-client/nightly",
+    "near-dyn-configs/nightly",
+    "near-epoch-manager/nightly",
+    "near-indexer-primitives/nightly",
+    "near-o11y/nightly",
+    "near-parameters/nightly",
+    "near-primitives/nightly",
+    "near-store/nightly",
+    "nearcore/nightly",
+    "node-runtime/nightly",
+]
+
+[package.metadata.cargo-machete]
+ignored = ["near-dyn-configs"]

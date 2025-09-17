@@ -1,0 +1,26 @@
+[package]
+name = "near-pool"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+rand.workspace = true
+
+near-crypto.workspace = true
+near-o11y.workspace = true
+near-primitives.workspace = true
+
+[features]
+nightly = [
+  "near-o11y/nightly",
+  "near-primitives/nightly",
+]

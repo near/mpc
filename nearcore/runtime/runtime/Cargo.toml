@@ -1,0 +1,71 @@
+[package]
+name = "node-runtime"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = { workspace = true, optional = true }
+borsh.workspace = true
+itertools.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+bytesize.workspace = true
+rand_chacha.workspace = true
+
+near-crypto.workspace = true
+near-o11y.workspace = true
+near-parameters.workspace = true
+near-primitives.workspace = true
+near-primitives-core.workspace = true
+near-store.workspace = true
+near-vm-runner = { workspace = true, features = ["near_vm", "wasmtime_vm"] }
+near-wallet-contract.workspace = true
+
+[features]
+default = []
+estimator = ["near-primitives/test_utils"]
+io_trace = ["base64"]
+nightly = [
+    "near-chain-configs/nightly",
+    "near-o11y/nightly",
+    "near-parameters/nightly",
+    "near-primitives-core/nightly",
+    "near-primitives/nightly",
+    "near-store/nightly",
+    "near-vm-runner/nightly",
+    "near-wallet-contract/nightly",
+    "testlib/nightly",
+]
+no_cpu_compatibility_checks = ["near-vm-runner/no_cpu_compatibility_checks"]
+sandbox = ["near-o11y/sandbox", "near-vm-runner/sandbox"]
+test_features = [
+    "near-primitives/test_features",
+    "near-vm-runner/test_features",
+    "near-store/test_features",
+]
+
+[dev-dependencies]
+assert_matches.workspace = true
+enum-map.workspace = true
+hex.workspace = true
+tempfile.workspace = true
+
+near-chain-configs.workspace = true
+near-store = { workspace = true, features = ["test_features"] }
+near-test-contracts.workspace = true
+testlib.workspace = true

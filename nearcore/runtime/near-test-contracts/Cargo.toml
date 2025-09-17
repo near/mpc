@@ -1,0 +1,25 @@
+[package]
+name = "near-test-contracts"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A collection of smart-contract used in nearcore tests."
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+wat.workspace = true
+wasm-encoder.workspace = true
+wasmprinter.workspace = true
+wasm-smith = { workspace = true, features = ["wasmparser"] }
+rand = { workspace = true, features = ["small_rng"] }
+arbitrary.workspace = true
+
+[features]
+nightly = []
+test_features = []

@@ -1,0 +1,34 @@
+[package]
+name = "near-ping"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix-web.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+near-time.workspace = true
+near-jsonrpc.workspace = true
+near-network.workspace = true
+near-o11y.workspace = true
+near-primitives.workspace = true
+
+[features]
+nightly = [
+  "near-jsonrpc/nightly",
+  "near-network/nightly",
+  "near-o11y/nightly",
+  "near-primitives/nightly",
+]

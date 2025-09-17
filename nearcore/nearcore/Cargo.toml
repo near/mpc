@@ -1,0 +1,149 @@
+[package]
+name = "nearcore"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix-rt.workspace = true
+actix-web.workspace = true
+actix.workspace = true
+anyhow.workspace = true
+borsh.workspace = true
+bytesize.workspace = true
+dirs.workspace = true
+easy-ext.workspace = true
+futures.workspace = true
+hex.workspace = true
+hyper-tls.workspace = true
+hyper.workspace = true
+indicatif.workspace = true
+itertools.workspace = true
+num-rational.workspace = true
+object_store.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_ignored.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+xz2.workspace = true
+
+near-async.workspace = true
+near-chain.workspace = true
+near-chain-configs = { workspace = true, features = ["metrics"] }
+near-chunks.workspace = true
+near-client.workspace = true
+near-client-primitives.workspace = true
+near-crypto.workspace = true
+near-dyn-configs.workspace = true
+near-epoch-manager.workspace = true
+near-jsonrpc = { workspace = true, optional = true }
+near-jsonrpc-primitives = { workspace = true, optional = true }
+near-mainnet-res.workspace = true
+near-network.workspace = true
+near-o11y.workspace = true
+near-performance-metrics.workspace = true
+near-pool.workspace = true
+near-parameters.workspace = true
+near-primitives.workspace = true
+near-rosetta-rpc = { workspace = true, optional = true }
+near-store.workspace = true
+near-telemetry.workspace = true
+near-transactions-generator = { workspace = true, optional = true }
+near-vm-runner.workspace = true
+node-runtime.workspace = true
+near-config-utils.workspace = true
+
+[dev-dependencies]
+bencher.workspace = true
+primitive-types.workspace = true
+
+near-actix-test-utils.workspace = true
+near-jsonrpc-primitives.workspace = true
+testlib.workspace = true
+
+[[bench]]
+name = "store"
+harness = false
+
+[features]
+default = ["json_rpc", "rosetta_rpc"]
+
+performance_stats = [
+    "near-performance-metrics/performance_stats",
+]
+c_memory_stats = ["near-performance-metrics/c_memory_stats"]
+test_features = [
+    "near-client/test_features",
+    "near-network/test_features",
+    "near-store/test_features",
+    "near-jsonrpc/test_features",
+    "near-primitives/test_features",
+    "near-vm-runner/test_features",
+]
+expensive_tests = [
+    "near-client/expensive_tests",
+    "near-epoch-manager/expensive_tests",
+    "near-chain/expensive_tests",
+]
+rosetta_rpc = ["near-rosetta-rpc"]
+json_rpc = ["near-jsonrpc", "near-jsonrpc-primitives"]
+
+nightly = [
+    "near-actix-test-utils/nightly",
+    "near-async/nightly",
+    "near-chain-configs/nightly",
+    "near-chain/nightly",
+    "near-chunks/nightly",
+    "near-client-primitives/nightly",
+    "near-client/nightly",
+    "near-dyn-configs/nightly",
+    "near-epoch-manager/nightly",
+    "near-jsonrpc-primitives/nightly",
+    "near-jsonrpc/nightly",
+    "near-mainnet-res/nightly",
+    "near-network/nightly",
+    "near-o11y/nightly",
+    "near-parameters/nightly",
+    "near-pool/nightly",
+    "near-primitives/nightly",
+    "near-rosetta-rpc/nightly",
+    "near-store/nightly",
+    "near-telemetry/nightly",
+    "near-transactions-generator/nightly",
+    "near-vm-runner/nightly",
+    "node-runtime/nightly",
+    "testlib/nightly",
+]
+sandbox = [
+    "near-client/sandbox",
+    "near-jsonrpc/sandbox",
+    "near-o11y/sandbox",
+    "node-runtime/sandbox",
+]
+io_trace = ["node-runtime/io_trace"]
+
+calimero_zero_storage = ["near-primitives/calimero_zero_storage"]
+tx_generator = ["near-transactions-generator"]
+
+[package.metadata.cargo-machete]
+ignored = [
+    "near-client-primitives",
+    "near-parameters",
+    "near-performance-metrics",
+    "near-pool",
+    "node-runtime",
+]

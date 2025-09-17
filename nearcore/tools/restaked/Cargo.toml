@@ -1,0 +1,26 @@
+[package]
+name = "restaked"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+
+near-crypto.workspace = true
+near-chain-configs.workspace = true
+near-primitives.workspace = true
+nearcore.workspace = true
+near-o11y.workspace = true
+
+integration-tests.workspace = true
+
+[features]
+test_features = ["integration-tests/test_features"]

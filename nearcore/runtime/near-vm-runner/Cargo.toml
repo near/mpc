@@ -1,0 +1,120 @@
+[package]
+name = "near-vm-runner"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "This crate implements the specification of the interface that Near blockchain exposes to the smart contracts."
+repository.workspace = true
+license.workspace = true
+categories = ["wasm"]
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true, optional = true }
+blst.workspace = true
+bn.workspace = true
+borsh.workspace = true
+ed25519-dalek.workspace = true
+enum-map.workspace = true
+finite-wasm = { workspace = true, features = ["instrument"], optional = true }
+lru.workspace = true
+memoffset = { workspace = true, optional = true }
+num-rational.workspace = true
+parking_lot.workspace = true
+prefix-sum-vec = { workspace = true, optional = true }
+prometheus = { workspace = true, optional = true }
+rand.workspace = true
+rayon.workspace = true
+ripemd.workspace = true
+rustix = { workspace = true, features = ["fs"] }
+serde.workspace = true
+sha2.workspace = true
+sha3.workspace = true
+stdx.workspace = true
+strum.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+wasm-encoder = { workspace = true, optional = true }
+wasmparser = { workspace = true, optional = true }
+wasmtime = { workspace = true, features = ["runtime"], optional = true }
+
+near-crypto.workspace = true
+near-o11y = { workspace = true, optional = true }
+near-parameters.workspace = true
+near-primitives-core.workspace = true
+near-schema-checker-lib.workspace = true
+
+bytesize.workspace = true
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+near-vm-compiler = { workspace = true, optional = true }
+near-vm-compiler-singlepass = { workspace = true, optional = true }
+near-vm-engine = { workspace = true, optional = true }
+near-vm-types = { workspace = true, optional = true }
+near-vm-vm = { workspace = true, optional = true }
+
+[dev-dependencies]
+arbitrary.workspace = true
+ark-bls12-381.workspace = true
+ark-ec.workspace = true
+ark-ff.workspace = true
+ark-serialize.workspace = true
+ark-std.workspace = true
+assert_matches.workspace = true
+bolero.workspace = true
+csv.workspace = true
+cov-mark.workspace = true
+expect-test.workspace = true
+hex.workspace = true
+near-test-contracts.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+wasmprinter.workspace = true
+wasm-smith.workspace = true
+wat.workspace = true
+
+[features]
+wasmtime_vm = ["wasmtime", "anyhow", "prepare"]
+near_vm = [
+    "near-vm-compiler",
+    "near-vm-compiler-singlepass",
+    "near-vm-engine",
+    "near-vm-types",
+    "near-vm-vm",
+    "memoffset",
+    "prepare",
+]
+prepare = [
+    "finite-wasm",
+    "wasm-encoder",
+    "wasmparser",
+    "prefix-sum-vec",
+    "metrics",
+]
+
+no_cpu_compatibility_checks = []
+
+metrics = ["prometheus", "near-o11y"]
+
+nightly = [
+    "near-o11y/nightly",
+    "near-parameters/nightly",
+    "near-primitives-core/nightly",
+]
+sandbox = ["near-o11y/sandbox"]
+test_features = []
+protocol_schema = [
+    "near-crypto/protocol_schema",
+    "near-parameters/protocol_schema",
+    "near-primitives-core/protocol_schema",
+    "near-schema-checker-lib/protocol_schema",
+]
+
+# Use this feature to enable counting of fees and costs applied.
+costs_counting = []
+
+[package.metadata.cargo-machete]
+ignored = ["prometheus"]

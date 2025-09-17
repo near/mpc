@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-exclude = ["libs/nearcore"]
+exclude = ["nearcore"]
 members = [
     "crates/attestation", 
     "crates/contract",
@@ -11,8 +11,8 @@ members = [
     "crates/contract_history",
     "crates/test_migration_contract",
     "crates/test_parallel_contract",
-    "devnet",
-    "node",
+    "crates/devnet",
+    "crates/node",
 ]
 
 [profile.dev-release]

@@ -1,0 +1,31 @@
+[package]
+name = "near-telemetry"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix.workspace = true
+awc.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+near-async.workspace = true
+near-o11y.workspace = true
+near-performance-metrics.workspace = true
+near-performance-metrics-macros.workspace = true
+
+[features]
+nightly = [
+  "near-async/nightly",
+  "near-o11y/nightly",
+]

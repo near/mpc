@@ -1,0 +1,30 @@
+[package]
+name = "near-dyn-configs"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Dynamic configure helpers for the near codebase"
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+near-time = { workspace = true, features = ["clock"] }
+near-chain-configs.workspace = true
+near-o11y.workspace = true
+near-primitives.workspace = true
+
+[features]
+nightly = [
+  "near-chain-configs/nightly",
+  "near-o11y/nightly",
+  "near-primitives/nightly",
+]

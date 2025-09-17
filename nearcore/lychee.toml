@@ -1,0 +1,23 @@
+exclude = [
+    # these are private repositories, presumably any link to it are in internal documentation only.
+    "^https://github.com/near/near-ops",
+    "^https://github.com/near/nearcore-private",
+    "^https://github.com/PagodaPlatform/",
+
+    # localhost is linked to refer to services supposed to be running on the host.
+    "^http://localhost",
+
+    # jsonrpc internal links
+    "^file://.*/chain/jsonrpc/res/debug/",
+
+    # used as placeholders for a template
+    "^https://github.com/near/nearcore/pull/XXXX$",
+    "^https://github.com/near/NEPs/blob/master/neps/nep-XXXX.md$",
+
+    # StackOverflow bans GHA runners
+    "^https://stackoverflow.com/",
+
+    # GNU websites exist but fail with "Too Many Requests"
+    "^http://www.gnu.org/licenses/",
+    "^https://www.gnu.org/licenses/why-not-lgpl.en.html",
+]

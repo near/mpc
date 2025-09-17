@@ -1,0 +1,42 @@
+[package]
+name = "genesis-populate"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+borsh.workspace = true
+clap.workspace = true
+indicatif.workspace = true
+tempfile.workspace = true
+
+nearcore.workspace = true
+near-time.workspace = true
+near-chain-configs.workspace = true
+near-crypto.workspace = true
+near-epoch-manager.workspace = true
+near-primitives.workspace = true
+near-store.workspace = true
+near-chain.workspace = true
+near-test-contracts.workspace = true
+near-vm-runner.workspace = true
+node-runtime.workspace = true
+
+[features]
+nightly = [
+  "near-chain-configs/nightly",
+  "near-chain/nightly",
+  "near-epoch-manager/nightly",
+  "near-primitives/nightly",
+  "near-store/nightly",
+  "near-vm-runner/nightly",
+  "nearcore/nightly",
+  "node-runtime/nightly",
+]

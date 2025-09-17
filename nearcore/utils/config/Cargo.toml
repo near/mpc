@@ -1,0 +1,19 @@
+[package]
+name = "near-config-utils"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "This is an internal crate to provide utils for reading config files"
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+json_comments.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+

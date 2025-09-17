@@ -1,0 +1,52 @@
+[package]
+name = "near-o11y"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Observability helpers for the near codebase"
+repository.workspace = true
+license.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+near-crypto.workspace = true
+near-fmt = { workspace = true, optional = true }
+near-primitives-core.workspace = true
+
+actix.workspace = true
+base64.workspace = true
+clap.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-semantic-conventions.workspace = true
+parking_lot.workspace = true
+prometheus.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strum = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+bencher.workspace = true
+itoa.workspace = true
+smartstring.workspace = true
+
+[features]
+nightly = [
+    "near-fmt/nightly",
+    "near-primitives-core/nightly",
+]
+io_trace = ["near-fmt", "strum"]
+sandbox = []
+
+[[bench]]
+name = "metrics"
+harness = false

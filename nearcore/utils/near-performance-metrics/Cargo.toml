@@ -1,0 +1,24 @@
+[package]
+name = "near-performance-metrics"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Tools for tracking performance of nearcore"
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+actix.workspace = true
+bytesize = { workspace = true, optional = true }
+futures.workspace = true
+libc.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+
+[features]
+c_memory_stats = []
+performance_stats = ["bytesize"]

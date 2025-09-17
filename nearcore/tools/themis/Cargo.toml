@@ -1,0 +1,19 @@
+[package]
+name = "themis"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "https://en.wikipedia.org/wiki/Themis"
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+toml.workspace = true
+anyhow.workspace = true
+semver.workspace = true
+cargo_metadata.workspace = true

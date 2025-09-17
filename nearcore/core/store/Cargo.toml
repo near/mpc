@@ -1,0 +1,103 @@
+[package]
+name = "near-store"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+actix-rt.workspace = true
+actix.workspace = true
+anyhow.workspace = true
+borsh.workspace = true
+bytesize.workspace = true
+crossbeam.workspace = true
+derive_more = { workspace = true, features = ["as_ref", "into"] }
+derive-where.workspace = true
+smallvec.workspace = true
+enum-map.workspace = true
+hex.workspace = true
+itoa.workspace = true
+itertools.workspace = true
+lru.workspace = true
+num_cpus.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+rayon.workspace = true
+reed-solomon-erasure.workspace = true
+rlimit.workspace = true
+rocksdb.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+static_assertions.workspace = true
+stdx.workspace = true
+strum.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+near-time.workspace = true
+near-chain-configs = { workspace = true, features = ["metrics"] }
+near-chain-primitives.workspace = true
+near-crypto.workspace = true
+near-fmt.workspace = true
+near-o11y.workspace = true
+near-parameters.workspace = true
+near-primitives.workspace = true
+near-vm-runner.workspace = true
+near-schema-checker-lib.workspace = true
+
+[dev-dependencies]
+assert_matches.workspace = true
+bencher.workspace = true
+insta.workspace = true
+near-chain.workspace = true
+near-chunks.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+rand_chacha.workspace = true
+testlib.workspace = true
+
+[[bench]]
+name = "trie_bench"
+harness = false
+
+[[bench]]
+name = "store_bench"
+harness = false
+
+[[bench]]
+name = "finalize_bench"
+harness = false
+
+[features]
+default = []
+io_trace = []
+single_thread_rocksdb = [] # Deactivate RocksDB IO background threads
+test_features = ["near-vm-runner/test_features"]
+
+# TODO(#11639): extract metrics into separate feature
+nightly = [
+    "near-chain-configs/nightly",
+    "near-chain/nightly",
+    "near-chunks/nightly",
+    "near-fmt/nightly",
+    "near-o11y/nightly",
+    "near-parameters/nightly",
+    "near-primitives/nightly",
+    "near-vm-runner/nightly",
+    "testlib/nightly",
+]
+protocol_schema = [
+    "near-crypto/protocol_schema",
+    "near-primitives/protocol_schema",
+    "near-parameters/protocol_schema",
+    "near-schema-checker-lib/protocol_schema",
+]

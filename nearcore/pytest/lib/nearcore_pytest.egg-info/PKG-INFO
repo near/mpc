@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: nearcore_pytest
+Version: 0.1.0
+Summary: A wrapper package for nearcore pytest
+Requires-Python: >=3.6
