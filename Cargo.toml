@@ -9,10 +9,10 @@ members = [
     "crates/test_utils", 
     "crates/tls",
     "crates/contract_history",
+    "crates/test_migration_contract",
+    "crates/test_parallel_contract",
     "devnet",
     "node",
-    "pytest/test_contracts/migration",
-    "pytest/test_contracts/parallel"
 ]
 
 [profile.dev-release]
