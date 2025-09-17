@@ -6,7 +6,7 @@ use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
 use crate::protocol::{errors::InitializationError, errors::ProtocolError, Participant, Protocol};
 
 use frost_core::Ciphersuite;
-use rand_core::OsRng;
+use rand_core::CryptoRngCore;
 
 use frost_secp256k1::Secp256K1Sha256;
 
@@ -27,6 +27,7 @@ fn hash2curve(app_id: &AppId) -> Result<ProjectivePoint, ProtocolError> {
     Ok(hash)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn do_ckd_participant(
     mut chan: SharedChannel,
     participants: ParticipantList,
@@ -35,9 +36,10 @@ async fn do_ckd_participant(
     private_share: SigningShare,
     app_id: &AppId,
     app_pk: VerifyingKey,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutput, ProtocolError> {
     // y <- ZZq* , Y <- y * G
-    let (y, big_y) = Secp256K1Sha256::generate_nonce(&mut OsRng);
+    let (y, big_y) = Secp256K1Sha256::generate_nonce(rng);
     // H(app_id) when H is a random oracle
     let hash_point = hash2curve(app_id)?;
     // S <- x . H(app_id)
@@ -63,9 +65,10 @@ async fn do_ckd_coordinator(
     private_share: SigningShare,
     app_id: &AppId,
     app_pk: VerifyingKey,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutput, ProtocolError> {
     // y <- ZZq* , Y <- y * G
-    let (y, big_y) = Secp256K1Sha256::generate_nonce(&mut OsRng);
+    let (y, big_y) = Secp256K1Sha256::generate_nonce(rng);
     // H(app_id) when H is a random oracle
     let hash_point = hash2curve(app_id)?;
     // S <- x . H(app_id)
@@ -108,6 +111,7 @@ pub fn ckd(
     private_share: SigningShare,
     app_id: impl Into<AppId>,
     app_pk: VerifyingKey,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = CKDOutput>, InitializationError> {
     // not enough participants
     if participants.len() < 2 {
@@ -146,12 +150,14 @@ pub fn ckd(
         private_share,
         app_id.into(),
         app_pk,
+        rng,
     );
     Ok(make_protocol(comms, fut))
 }
 
 /// Depending on whether the current participant is a coordinator or not,
 /// runs the ckd protocol as either a participant or a coordinator.
+#[allow(clippy::too_many_arguments)]
 async fn run_ckd_protocol(
     chan: SharedChannel,
     coordinator: Participant,
@@ -160,9 +166,19 @@ async fn run_ckd_protocol(
     private_share: SigningShare,
     app_id: AppId,
     app_pk: VerifyingKey,
+    mut rng: impl CryptoRngCore,
 ) -> Result<CKDOutput, ProtocolError> {
     if me == coordinator {
-        do_ckd_coordinator(chan, participants, me, private_share, &app_id, app_pk).await
+        do_ckd_coordinator(
+            chan,
+            participants,
+            me,
+            private_share,
+            &app_id,
+            app_pk,
+            &mut rng,
+        )
+        .await
     } else {
         do_ckd_participant(
             chan,
@@ -172,6 +188,7 @@ async fn run_ckd_protocol(
             private_share,
             &app_id,
             app_pk,
+            &mut rng,
         )
         .await
     }
@@ -184,7 +201,7 @@ mod test {
     use crate::protocol::run_protocol;
     use std::error::Error;
 
-    use rand_core::RngCore;
+    use rand_core::{OsRng, RngCore};
 
     #[test]
     fn test_hash2curve() -> Result<(), Box<dyn Error>> {
@@ -241,6 +258,7 @@ mod test {
                 private_share,
                 app_id.clone(),
                 app_pk,
+                OsRng,
             )?;
 
             protocols.push((*p, Box::new(protocol)));
@@ -293,6 +311,7 @@ mod test {
             private_share,
             app_id,
             app_pk,
+            OsRng,
         );
         match result {
             Ok(_) => panic!("Expected an error, but got Ok"),

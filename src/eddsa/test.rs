@@ -81,6 +81,7 @@ pub(crate) fn test_run_signature_protocols(
                 *participant,
                 key_pair.clone(),
                 msg_hash.as_ref().to_vec(),
+                OsRng,
             )?;
             Box::new(protocol)
         } else {
@@ -96,6 +97,7 @@ pub(crate) fn test_run_signature_protocols(
                 coordinator,
                 key_pair.clone(),
                 msg_hash.as_ref().to_vec(),
+                OsRng,
             )?;
             Box::new(protocol)
         };

@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use rand_core::OsRng;
+
 use super::{presign::presign, sign::sign, PresignArguments, PresignOutput};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
@@ -48,6 +50,7 @@ pub fn run_presign(
                 keygen_out,
                 threshold: max_malicious,
             },
+            OsRng,
         )?;
         protocols.push((p, Box::new(protocol)));
     }
@@ -172,7 +175,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let participants_count = 7;
-    let participants = generate_participants_with_random_ids(participants_count);
+    let participants = generate_participants_with_random_ids(participants_count, &mut OsRng);
     let max_malicious = 3;
 
     let keygen_result = run_keygen(&participants.clone(), max_malicious + 1)?;

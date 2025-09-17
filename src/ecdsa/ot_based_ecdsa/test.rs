@@ -202,7 +202,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let participants_count = 3;
-    let participants = generate_participants_with_random_ids(participants_count);
+    let participants = generate_participants_with_random_ids(participants_count, &mut OsRng);
     let threshold = 3;
 
     let key_packages = run_keygen(&participants.clone(), threshold)?;

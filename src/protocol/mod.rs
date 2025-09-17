@@ -9,7 +9,7 @@ pub mod echo_broadcast;
 pub mod errors;
 pub(crate) mod internal;
 
-use std::{collections::HashMap, fmt};
+use std::collections::HashMap;
 
 use ::serde::{Deserialize, Serialize};
 use errors::ProtocolError;
@@ -170,48 +170,55 @@ pub fn run_protocol<T>(
     Ok(out)
 }
 
-/// Like [run_protocol()], except for just two parties.
-///
-/// This is more useful for testing two party protocols with assymetric results,
-/// since the return types for the two protocols can be different.
-pub(crate) fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
-    p0: Participant,
-    p1: Participant,
-    prot0: &mut dyn Protocol<Output = T0>,
-    prot1: &mut dyn Protocol<Output = T1>,
-) -> Result<(T0, T1), ProtocolError> {
-    let mut active0 = true;
+#[cfg(test)]
+pub mod test {
+    use std::fmt;
 
-    let mut out0 = None;
-    let mut out1 = None;
+    use crate::protocol::{errors::ProtocolError, Action, Participant, Protocol};
 
-    while out0.is_none() || out1.is_none() {
-        if active0 {
-            let action = prot0.poke()?;
-            match action {
-                Action::Wait => active0 = false,
-                Action::SendMany(m) => prot1.message(p0, m),
-                Action::SendPrivate(to, m) if to == p1 => {
-                    prot1.message(p0, m);
+    /// Like [run_protocol()], except for just two parties.
+    ///
+    /// This is more useful for testing two party protocols with assymetric results,
+    /// since the return types for the two protocols can be different.
+    pub fn run_two_party_protocol<T0: fmt::Debug, T1: fmt::Debug>(
+        p0: Participant,
+        p1: Participant,
+        prot0: &mut dyn Protocol<Output = T0>,
+        prot1: &mut dyn Protocol<Output = T1>,
+    ) -> Result<(T0, T1), ProtocolError> {
+        let mut active0 = true;
+
+        let mut out0 = None;
+        let mut out1 = None;
+
+        while out0.is_none() || out1.is_none() {
+            if active0 {
+                let action = prot0.poke()?;
+                match action {
+                    Action::Wait => active0 = false,
+                    Action::SendMany(m) => prot1.message(p0, m),
+                    Action::SendPrivate(to, m) if to == p1 => {
+                        prot1.message(p0, m);
+                    }
+                    Action::Return(out) => out0 = Some(out),
+                    // Ignore other actions, which means sending private messages to other people.
+                    _ => {}
                 }
-                Action::Return(out) => out0 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                _ => {}
-            }
-        } else {
-            let action = prot1.poke()?;
-            match action {
-                Action::Wait => active0 = true,
-                Action::SendMany(m) => prot0.message(p1, m),
-                Action::SendPrivate(to, m) if to == p0 => {
-                    prot0.message(p1, m);
+            } else {
+                let action = prot1.poke()?;
+                match action {
+                    Action::Wait => active0 = true,
+                    Action::SendMany(m) => prot0.message(p1, m),
+                    Action::SendPrivate(to, m) if to == p0 => {
+                        prot0.message(p1, m);
+                    }
+                    Action::Return(out) => out1 = Some(out),
+                    // Ignore other actions, which means sending private messages to other people.
+                    _ => {}
                 }
-                Action::Return(out) => out1 = Some(out),
-                // Ignore other actions, which means sending private messages to other people.
-                _ => {}
             }
         }
-    }
 
-    Ok((out0.unwrap(), out1.unwrap()))
+        Ok((out0.unwrap(), out1.unwrap()))
+    }
 }

@@ -8,7 +8,7 @@ use crate::protocol::{Participant, Protocol};
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
 use frost_ed25519::*;
-use rand_core::OsRng;
+use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
 
 /// A function that takes a signing share and a keygenOutput
@@ -48,9 +48,9 @@ async fn do_sign_coordinator(
     me: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Signature, ProtocolError> {
     let mut seen = ParticipantCounter::new(&participants);
-    let mut rng = OsRng;
 
     // --- Round 1.
     // * Send acknowledgment to other participants.
@@ -61,7 +61,7 @@ async fn do_sign_coordinator(
 
     let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
 
-    let (nonces, commitments) = round1::commit(&signing_share, &mut rng);
+    let (nonces, commitments) = round1::commit(&signing_share, rng);
     commitments_map.insert(me.to_identifier(), commitments);
     seen.put(me);
 
@@ -137,8 +137,8 @@ async fn do_sign_participant(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Signature, ProtocolError> {
-    let mut rng = OsRng;
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
@@ -150,7 +150,7 @@ async fn do_sign_participant(
     // create signing share out of private_share
     let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
 
-    let (nonces, commitments) = round1::commit(&signing_share, &mut rng);
+    let (nonces, commitments) = round1::commit(&signing_share, rng);
 
     // --- Round 1.
     // * Wait for an initial message from a coordinator.
@@ -208,6 +208,7 @@ pub fn sign(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = Signature>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -242,10 +243,12 @@ pub fn sign(
         coordinator,
         keygen_output,
         message,
+        rng,
     );
     Ok(make_protocol(comms, fut))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fut_wrapper(
     chan: SharedChannel,
     participants: ParticipantList,
@@ -254,11 +257,30 @@ async fn fut_wrapper(
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
+    mut rng: impl CryptoRngCore,
 ) -> Result<Signature, ProtocolError> {
     if me == coordinator {
-        do_sign_coordinator(chan, participants, threshold, me, keygen_output, message).await
+        do_sign_coordinator(
+            chan,
+            participants,
+            threshold,
+            me,
+            keygen_output,
+            message,
+            &mut rng,
+        )
+        .await
     } else {
-        do_sign_participant(chan, threshold, me, coordinator, keygen_output, message).await
+        do_sign_participant(
+            chan,
+            threshold,
+            me,
+            coordinator,
+            keygen_output,
+            message,
+            &mut rng,
+        )
+        .await
     }
 }
 

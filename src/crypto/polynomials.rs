@@ -1085,7 +1085,7 @@ mod test {
 
     #[test]
     fn test_compute_lagrange_coefficient_cubic_polynomial() {
-        let points = generate_participants_with_random_ids(5)
+        let points = generate_participants_with_random_ids(5, &mut OsRng)
             .iter()
             .map(|p| p.scalar::<C>())
             .collect::<Vec<_>>();

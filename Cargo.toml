@@ -36,8 +36,7 @@ k256 = { version = "0.13.1", features = [
   "hash2curve",
 ] }
 keccak = "0.1.5"
-rand = "0.9.0"
-# updating this one requires quite a few code changes
+# This one cannot be upgraded to remain compatible with frost-core
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 rmp-serde = "1.1.2"
 serde = { version = "1.0.175", features = ["derive"] }

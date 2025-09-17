@@ -1,6 +1,16 @@
+use rand_core::{CryptoRngCore, OsRng};
+
 use crate::{
     crypto::hash::{hash, HashOutput},
-    ecdsa::Scalar,
+    ecdsa::{
+        ot_based_ecdsa::triples::{
+            batch_random_ot::{
+                batch_random_ot_receiver_random_helper, batch_random_ot_sender_helper,
+            },
+            mta::{mta_receiver_random_helper, mta_sender_random_helper},
+        },
+        Scalar,
+    },
     participants::ParticipantList,
     protocol::{
         errors::ProtocolError,
@@ -25,9 +35,11 @@ pub async fn multiplication_sender(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, k) = batch_random_ot_receiver(chan.child(0)).await?;
+    let (delta, x) = batch_random_ot_receiver_random_helper(rng);
+    let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
@@ -39,13 +51,16 @@ pub async fn multiplication_sender(
         },
         delta,
         &k,
+        rng,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let task0 = mta_sender(chan.child(2), res0, *a_i);
-    let task1 = mta_sender(chan.child(3), res1, *b_i);
+    let delta0 = mta_sender_random_helper(res0.len(), rng);
+    let task0 = mta_sender(chan.child(2), res0, *a_i, delta0);
+    let delta1 = mta_sender_random_helper(res1.len(), rng);
+    let task1 = mta_sender(chan.child(3), res1, *b_i, delta1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -58,9 +73,11 @@ pub async fn multiplication_receiver(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (k0, k1) = batch_random_ot_sender(chan.child(0)).await?;
+    let y = batch_random_ot_sender_helper(rng);
+    let (k0, k1) = batch_random_ot_sender(chan.child(0), y).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
@@ -72,13 +89,16 @@ pub async fn multiplication_receiver(
         },
         &k0,
         &k1,
+        rng,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let task0 = mta_receiver(chan.child(2), res0, *b_i);
-    let task1 = mta_receiver(chan.child(3), res1, *a_i);
+    let seed0 = mta_receiver_random_helper(rng);
+    let task0 = mta_receiver(chan.child(2), res0, *b_i, seed0);
+    let seed1 = mta_receiver_random_helper(rng);
+    let task1 = mta_receiver(chan.child(3), res1, *a_i, seed1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -100,9 +120,9 @@ pub async fn multiplication(
             let chan = comms.private_channel(me, p);
             async move {
                 if p < me {
-                    multiplication_sender(chan, sid.as_ref(), &a_i, &b_i).await
+                    multiplication_sender(chan, sid.as_ref(), &a_i, &b_i, &mut OsRng).await
                 } else {
-                    multiplication_receiver(chan, sid.as_ref(), &a_i, &b_i).await
+                    multiplication_receiver(chan, sid.as_ref(), &a_i, &b_i, &mut OsRng).await
                 }
             }
         };
@@ -149,6 +169,7 @@ pub async fn multiplication_many<const N: usize>(
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
+                            &mut OsRng,
                         )
                         .await
                     } else {
@@ -157,6 +178,7 @@ pub async fn multiplication_many<const N: usize>(
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
+                            &mut OsRng,
                         )
                         .await
                     }
@@ -294,9 +316,9 @@ mod test {
         let sids = (0..N)
             .map(|i| hash(&format!("sid{i}")))
             .collect::<Result<Vec<_>, _>>()?;
-
         for (p, a_iv, b_iv) in prep {
             let ctx = Comms::new();
+
             let prot = make_protocol(
                 ctx.clone(),
                 multiplication_many::<N>(

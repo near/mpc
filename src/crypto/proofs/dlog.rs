@@ -5,7 +5,7 @@ use crate::{
     },
     protocol::errors::ProtocolError,
 };
-use frost_core::{serialization::SerializableScalar, Group};
+use frost_core::{serialization::SerializableScalar, Group, Scalar};
 
 use super::strobe_transcript::Transcript;
 use rand_core::CryptoRngCore;
@@ -72,6 +72,30 @@ pub fn prove<C: Ciphersuite>(
     transcript.message(STATEMENT_LABEL, &statement.encode()?);
 
     let (k, big_k) = <C>::generate_nonce(rng);
+
+    // Create a serialization of big_k
+    let ser = C::Group::serialize(&big_k).map_err(|_| ProtocolError::IdentityElement)?;
+    transcript.message(COMMITMENT_LABEL, ser.as_ref());
+    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    let e = frost_core::random_nonzero::<C, _>(&mut rng);
+
+    let s = k + e * witness.x.0;
+    Ok(Proof {
+        e: SerializableScalar(e),
+        s: SerializableScalar(s),
+    })
+}
+
+// Same as the function `prove`, but given nonce
+pub fn prove_with_nonce<C: Ciphersuite>(
+    transcript: &mut Transcript,
+    statement: Statement<'_, C>,
+    witness: Witness<C>,
+    nonce: (Scalar<C>, Element<C>),
+) -> Result<Proof<C>, ProtocolError> {
+    transcript.message(STATEMENT_LABEL, &statement.encode()?);
+
+    let (k, big_k) = nonce;
 
     // Create a serialization of big_k
     let ser = C::Group::serialize(&big_k).map_err(|_| ProtocolError::IdentityElement)?;

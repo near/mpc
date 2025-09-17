@@ -19,7 +19,7 @@ use frost_core::keys::{
 use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
 };
-use rand_core::{OsRng, RngCore};
+use rand_core::CryptoRngCore;
 use std::ops::Index;
 
 /// This function prevents calling keyshare function with inproper inputs
@@ -113,7 +113,7 @@ fn challenge<C: Ciphersuite>(
 
 /// Computes the proof of knowledge of the secret coefficient a_0
 /// used to generate the public polynomial.
-/// generate a random k and compute R = g^k
+/// Generate a random k and compute R = g^k
 /// Compute mu = k + a_0 * H(id, context_string, g^{a_0} , R)
 /// Output (R, mu)
 fn proof_of_knowledge<C: Ciphersuite>(
@@ -122,13 +122,14 @@ fn proof_of_knowledge<C: Ciphersuite>(
     me: Participant,
     coefficients: &Polynomial<C>,
     coefficient_commitment: &PolynomialCommitment<C>,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Signature<C>, ProtocolError> {
     // creates an identifier for the participant
     let id = me.scalar::<C>();
     let vk_share = coefficient_commitment.eval_at_zero()?;
 
     // pick a random k_i and compute R_id = g^{k_id},
-    let (k, big_r) = <C>::generate_nonce(&mut OsRng);
+    let (k, big_r) = <C>::generate_nonce(rng);
 
     // compute H(id, context_string, g^{a_0} , R_id) as a scalar
     let hash = challenge::<C>(session_id, domain_separator, id, &vk_share, &big_r)?;
@@ -332,6 +333,7 @@ async fn do_keyshare<C: Ciphersuite>(
     threshold: usize,
     secret: Scalar<C>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
     let mut all_full_commitments = ParticipantMap::new(&participants);
     let mut domain_separator = 0;
@@ -341,7 +343,7 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // Start Round 0
     let mut my_session_id = [0u8; 32]; // 256 bits
-    OsRng.fill_bytes(&mut my_session_id);
+    rng.fill_bytes(&mut my_session_id);
     let session_ids = do_broadcast(&mut chan, &participants, &me, my_session_id).await?;
 
     // Start Round 1
@@ -353,7 +355,7 @@ async fn do_keyshare<C: Ciphersuite>(
     domain_separator += 1;
     // the degree of the polynomial is threshold - 1
     let secret_coefficients =
-        Polynomial::<C>::generate_polynomial(Some(secret), threshold - 1, &mut OsRng)?;
+        Polynomial::<C>::generate_polynomial(Some(secret), threshold - 1, rng)?;
 
     // Compute the multiplication of every coefficient of p with the generator G
     let coefficient_commitment = generate_coefficient_commitment::<C>(&secret_coefficients)?;
@@ -373,6 +375,7 @@ async fn do_keyshare<C: Ciphersuite>(
             me,
             &secret_coefficients,
             &coefficient_commitment,
+            rng,
         )?)
     } else {
         None
@@ -509,11 +512,14 @@ pub(crate) async fn do_keygen<C: Ciphersuite>(
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
+    mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
+    let rng = &mut rng;
     // pick share at random
-    let secret = SigningKey::<C>::new(&mut OsRng).to_scalar();
+    let secret = SigningKey::<C>::new(rng).to_scalar();
     // call keyshare
-    let keygen_output = do_keyshare::<C>(chan, participants, me, threshold, secret, None).await?;
+    let keygen_output =
+        do_keyshare::<C>(chan, participants, me, threshold, secret, None, rng).await?;
     Ok(keygen_output)
 }
 
@@ -554,6 +560,7 @@ pub(crate) fn assert_keygen_invariants(
 }
 
 /// reshares the keyshares between the parties and allows changing the threshold
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn do_reshare<C: Ciphersuite>(
     chan: SharedChannel,
     participants: ParticipantList,
@@ -562,6 +569,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
+    mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
     let intersection = old_participants.intersection(&participants);
     // either extract the share and linearize it or set it to zero
@@ -582,6 +590,7 @@ pub(crate) async fn do_reshare<C: Ciphersuite>(
         old_threshold,
         secret,
         old_reshare_package,
+        &mut rng,
     )
     .await?;
 

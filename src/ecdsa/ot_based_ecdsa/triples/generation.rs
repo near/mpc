@@ -1,5 +1,6 @@
 use frost_core::serialization::SerializableScalar;
-use rand_core::OsRng;
+use frost_core::Ciphersuite;
+use rand_core::CryptoRngCore;
 
 use crate::{
     crypto::{
@@ -58,8 +59,8 @@ async fn do_generation(
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
+    mut rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<TripleGenerationOutput, ProtocolError> {
-    let mut rng = OsRng;
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
 
@@ -98,6 +99,10 @@ async fn do_generation(
     // Spec 2.3
     transcript.message(b"confirmation", my_confirmation.as_ref());
 
+    let my_phi_proof0_nonce = <C>::generate_nonce(&mut rng);
+    let my_phi_proof1_nonce = <C>::generate_nonce(&mut rng);
+    let my_phi_proof_nonce = frost_core::random_nonzero::<C, _>(&mut rng);
+
     // Spec 2.4
     let multiplication_task = {
         // cannot fail as both polynomials are non-empty (generated locally)
@@ -122,6 +127,7 @@ async fn do_generation(
         a_i: Scalar,
         b_i: Scalar,
     }
+
     let parallel_to_multiplication_task = async {
         // Spec 2.5
         let wait1 = chan.next_waitpoint();
@@ -134,11 +140,11 @@ async fn do_generation(
         let witness0 = dlog::Witness::<C> {
             x: e.eval_at_zero()?,
         };
-        let my_phi_proof0 = dlog::prove(
-            &mut rng,
+        let my_phi_proof0 = dlog::prove_with_nonce(
             &mut transcript.fork(b"dlog0", &me.bytes()),
             statement0,
             witness0,
+            my_phi_proof0_nonce,
         )?;
         let statement1 = dlog::Statement::<C> {
             public: &big_f_i.eval_at_zero()?.value(),
@@ -146,11 +152,11 @@ async fn do_generation(
         let witness1 = dlog::Witness::<C> {
             x: f.eval_at_zero()?,
         };
-        let my_phi_proof1 = dlog::prove(
-            &mut rng,
+        let my_phi_proof1 = dlog::prove_with_nonce(
             &mut transcript.fork(b"dlog1", &me.bytes()),
             statement1,
             witness1,
+            my_phi_proof1_nonce,
         )?;
 
         // Spec 2.7
@@ -316,11 +322,11 @@ async fn do_generation(
         let witness = dlogeq::Witness {
             x: e.eval_at_zero()?,
         };
-        let my_phi_proof = dlogeq::prove(
-            &mut rng,
+        let my_phi_proof = dlogeq::prove_with_nonce(
             &mut transcript.fork(b"dlogeq0", &me.bytes()),
             statement,
             witness,
+            my_phi_proof_nonce,
         )?;
 
         // Spec 3.10
@@ -498,10 +504,10 @@ async fn do_generation_many<const N: usize>(
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
+    mut rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
     assert!(N > 0);
 
-    let mut rng = OsRng;
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
 
@@ -573,6 +579,14 @@ async fn do_generation_many<const N: usize>(
         rmp_serde::encode::to_vec(&my_confirmations).map_err(|_| ProtocolError::ErrorEncoding)?;
     transcript.message(b"confirmation", &enc_confirmations);
 
+    let my_phi_proof0_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
+    let my_phi_proof1_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
+    let my_phi_proof_nonces: Vec<_> = (0..N)
+        .map(|_| frost_core::random_nonzero::<C, _>(&mut rng))
+        .collect();
+
+    let my_l0_phi_proof_nonces: Vec<_> = (0..N).map(|_| <C>::generate_nonce(&mut rng)).collect();
+
     // Spec 2.4
     let multiplication_task = {
         let e0_v = e_v
@@ -622,11 +636,11 @@ async fn do_generation_many<const N: usize>(
             let witness0 = dlog::Witness::<C> {
                 x: e.eval_at_zero()?,
             };
-            let my_phi_proof0 = dlog::prove(
-                &mut rng,
+            let my_phi_proof0 = dlog::prove_with_nonce(
                 &mut transcript.fork(b"dlog0", &me.bytes()),
                 statement0,
                 witness0,
+                my_phi_proof0_nonces[i],
             )?;
             let statement1 = dlog::Statement::<C> {
                 public: &big_f_i.eval_at_zero()?.value(),
@@ -634,11 +648,11 @@ async fn do_generation_many<const N: usize>(
             let witness1 = dlog::Witness::<C> {
                 x: f.eval_at_zero()?,
             };
-            let my_phi_proof1 = dlog::prove(
-                &mut rng,
+            let my_phi_proof1 = dlog::prove_with_nonce(
                 &mut transcript.fork(b"dlog1", &me.bytes()),
                 statement1,
                 witness1,
+                my_phi_proof1_nonces[i],
             )?;
             my_phi_proof0v.push(my_phi_proof0);
             my_phi_proof1v.push(my_phi_proof1);
@@ -853,11 +867,11 @@ async fn do_generation_many<const N: usize>(
             let witness = dlogeq::Witness {
                 x: e.eval_at_zero()?,
             };
-            let my_phi_proof = dlogeq::prove(
-                &mut rng,
+            let my_phi_proof = dlogeq::prove_with_nonce(
                 &mut transcript.fork(b"dlogeq0", &me.bytes()),
                 statement,
                 witness,
+                my_phi_proof_nonces[i],
             )?;
             big_c_i_points.push(CoefficientCommitment::new(big_c_i));
             big_c_i_v.push(big_c_i);
@@ -941,7 +955,8 @@ async fn do_generation_many<const N: usize>(
     let mut hat_big_c_i_points = vec![];
     let mut hat_big_c_i_v = vec![];
     let mut my_phi_proofs = vec![];
-    for l0 in l0_v.iter() {
+
+    for (i, l0) in l0_v.iter().enumerate() {
         // Spec 4.5
         let hat_big_c_i = ProjectivePoint::GENERATOR * l0;
 
@@ -952,15 +967,15 @@ async fn do_generation_many<const N: usize>(
         let witness = dlog::Witness::<C> {
             x: SerializableScalar::<C>(*l0),
         };
-        let my_phi_proof = dlog::prove(
-            &mut rng,
+        let my_l0_phi_proof = dlog::prove_with_nonce(
             &mut transcript.fork(b"dlog2", &me.bytes()),
             statement,
             witness,
+            my_l0_phi_proof_nonces[i],
         )?;
         hat_big_c_i_points.push(CoefficientCommitment::new(hat_big_c_i));
         hat_big_c_i_v.push(hat_big_c_i);
-        my_phi_proofs.push(my_phi_proof);
+        my_phi_proofs.push(my_l0_phi_proof);
     }
 
     // Spec 4.8
@@ -1107,6 +1122,7 @@ pub fn generate_triple(
     participants: &[Participant],
     me: Participant,
     threshold: usize,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -1125,7 +1141,7 @@ pub fn generate_triple(
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     let ctx = Comms::new();
-    let fut = do_generation(ctx.clone(), participants, me, threshold);
+    let fut = do_generation(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
 }
 
@@ -1134,6 +1150,7 @@ pub fn generate_triple_many<const N: usize>(
     participants: &[Participant],
     me: Participant,
     threshold: usize,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -1152,12 +1169,14 @@ pub fn generate_triple_many<const N: usize>(
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
     let ctx = Comms::new();
-    let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold);
+    let fut = do_generation_many::<N>(ctx.clone(), participants, me, threshold, rng);
     Ok(make_protocol(ctx, fut))
 }
 
 #[cfg(test)]
 mod test {
+    use rand_core::OsRng;
+
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
         participants::ParticipantList,
@@ -1179,7 +1198,7 @@ mod test {
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple(&participants, p, threshold).unwrap();
+            let protocol = generate_triple(&participants, p, threshold, OsRng).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1231,7 +1250,7 @@ mod test {
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple_many::<1>(&participants, p, threshold).unwrap();
+            let protocol = generate_triple_many::<1>(&participants, p, threshold, OsRng).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 

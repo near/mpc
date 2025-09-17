@@ -106,7 +106,7 @@ mod tests {
     use super::*;
     use bincode::config;
     use bincode::serde::{decode_from_slice, encode_to_vec};
-    use rand::{rng, RngCore};
+    use rand_core::{OsRng, RngCore};
 
     #[test]
     fn test_app_id_display() {
@@ -148,7 +148,7 @@ mod tests {
         }
 
         // Very large random array
-        let mut rng = rng();
+        let rng = &mut OsRng;
         let mut large_bytes = vec![0u8; 10_000];
         rng.fill_bytes(&mut large_bytes);
         let original = AppId::new(large_bytes.clone());

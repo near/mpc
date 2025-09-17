@@ -115,6 +115,7 @@ fn encode_two_points<C: Ciphersuite>(
 /// Prove that a witness satisfies a given statement.
 /// We need some randomness for the proof, and also a transcript, which is
 /// used for the Fiat-Shamir transform.
+#[allow(dead_code)]
 pub fn prove<C: Ciphersuite>(
     rng: &mut impl CryptoRngCore,
     transcript: &mut Transcript,
@@ -130,6 +131,35 @@ where
     transcript.message(STATEMENT_LABEL, &statement.encode()?);
 
     let k = frost_core::random_nonzero::<C, _>(rng);
+    let (big_k_0, big_k_1) = statement.phi(&k);
+
+    // This will never raise error as k is not zero and generator1 is not the identity
+    let enc = encode_two_points::<C>(&big_k_0, &big_k_1)?;
+
+    transcript.message(COMMITMENT_LABEL, &enc);
+    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    let e = frost_core::random_nonzero::<C, _>(&mut rng);
+
+    let s = k + e * witness.x.0;
+    Ok(Proof {
+        e: SerializableScalar::<C>(e),
+        s: SerializableScalar::<C>(s),
+    })
+}
+
+// Same as `prove` but using fixed nonce
+pub fn prove_with_nonce<C: Ciphersuite>(
+    transcript: &mut Transcript,
+    statement: Statement<'_, C>,
+    witness: Witness<C>,
+    k: Scalar<C>,
+) -> Result<Proof<C>, ProtocolError> {
+    transcript.message(STATEMENT_LABEL, &statement.encode()?);
+
+    if *statement.generator1 == C::Group::identity() {
+        return Err(ProtocolError::IdentityElement);
+    }
+
     let (big_k_0, big_k_1) = statement.phi(&k);
 
     // This will never raise error as k is not zero and generator1 is not the identity
