@@ -1,20 +1,15 @@
 use crate::{
-    app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::QuoteBytes, report_data::ReportData,
+    app_compose::AppCompose, measurements::ExpectedMeasurements, quote::QuoteBytes,
+    report_data::ReportData,
 };
 use alloc::{format, string::String};
-use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
-use dcap_qvl::verify::VerifiedReport;
+use dcap_qvl::{QuoteCollateralV3, verify::VerifiedReport};
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
-use serde::{Deserialize, Serialize};
-
-#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-use alloc::string::ToString;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -30,24 +25,16 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[derive(Clone, Debug)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Mock(MockAttestation),
 }
 
-#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[derive(Clone, Constructor)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
-    pub collateral: Collateral,
+    pub collateral: QuoteCollateralV3,
     pub tcb_info: TcbInfo,
 }
 
@@ -76,11 +63,7 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Default, Clone)]
 pub enum MockAttestation {
     #[default]
     /// Always pass validation
@@ -328,13 +311,15 @@ impl Attestation {
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
     fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
-        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-            Ok(compose) => compose,
-            Err(e) => {
-                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                return false;
-            }
-        };
+        // let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+        //     Ok(compose) => compose,
+        //     Err(e) => {
+        //         tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+        //         return false;
+        //     }
+        // };
+
+        let app_compose = todo!();
 
         let mut events = tcb_info
             .event_log
@@ -403,13 +388,16 @@ impl Attestation {
         tcb_info: &TcbInfo,
         allowed_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-            Ok(compose) => compose,
-            Err(e) => {
-                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                return false;
-            }
-        };
+        // TODO:
+        // let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+        //     Ok(compose) => compose,
+        //     Err(e) => {
+        //         tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+        //         return false;
+        //     }
+        // };
+        let app_compose: AppCompose = todo!();
+
         let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes
             .iter()

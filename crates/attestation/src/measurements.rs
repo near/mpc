@@ -1,11 +1,5 @@
 use alloc::string::String;
-use borsh::{BorshDeserialize, BorshSerialize};
 use core::cell::LazyCell;
-use serde::{Deserialize, Serialize};
-use serde_with::{Bytes, serde_as};
-
-#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-use alloc::string::ToString;
 
 use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
@@ -34,40 +28,25 @@ const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 /// To learn more about the RTMRs, see:
 /// - https://docs.phala.network/phala-cloud/tees-attestation-and-zero-trust-security/attestation#runtime-measurement-fields
 /// - https://arxiv.org/pdf/2303.15540 (Section 9.1)
-#[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[derive(Debug, Clone, Copy)]
 pub struct Measurements {
     /// MRTD (Measurement of Root of Trust for Data) - identifies the virtual firmware.
-    #[serde_as(as = "Bytes")]
     pub mrtd: [u8; 48],
     /// RTMR0 (Runtime Measurement Register 0) - typically measures the bootloader, virtual
     /// firmware data, and configuration.
-    #[serde_as(as = "Bytes")]
     pub rtmr0: [u8; 48],
     /// RTMR1 (Runtime Measurement Register 1) - typically measures the OS kernel, boot parameters,
     /// and initrd (initial ramdisk).
-    #[serde_as(as = "Bytes")]
     pub rtmr1: [u8; 48],
     /// RTMR2 (Runtime Measurement Register 2) - typically measures the OS application.
-    #[serde_as(as = "Bytes")]
     pub rtmr2: [u8; 48],
 }
 
-#[serde_as]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
-)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
     /// Expected digest for the local SGX event.
-    #[serde_as(as = "Bytes")]
     pub local_sgx_event_digest: [u8; 48],
     /// Expected version of the report data.
     pub report_data_version: ReportDataVersion,
@@ -90,8 +69,11 @@ impl ExpectedMeasurements {
     pub fn from_embedded_tcb_info() -> Result<Self, MeasurementsError> {
         let cache = LazyCell::new(|| -> Result<ExpectedMeasurements, MeasurementsError> {
             // Parse embedded tcb_info.json file and extract RTMR values dynamically
-            let tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_STRING)
-                .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
+            // let tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_STRING)
+            //     .map_err(|_| MeasurementsError::InvalidTcbInfo)?;
+
+            let tcb_info: DstackTcbInfo =
+                todo!("Don't depend on serialization for DstackTcbInfo :)");
 
             // Helper function to decode hex RTMR values
             let decode_rtmr = |name: &str,
