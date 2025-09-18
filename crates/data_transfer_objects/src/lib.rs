@@ -1,2 +1,2 @@
-pub mod attestation;
 pub mod crypto;
+pub mod dto_attestation;

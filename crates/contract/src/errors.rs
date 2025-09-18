@@ -110,6 +110,8 @@ pub enum InvalidParameters {
     InvalidTeeRemoteAttestation,
     #[error("Invalid app public key.")]
     InvalidAppPublicKey,
+    #[error("The provided TLS key is not valid.")]
+    InvalidTlsPublicKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

@@ -1,6 +1,7 @@
 #![deny(clippy::mod_module_files)]
 pub mod config;
 pub mod crypto_shared;
+mod data_transfer_object_mapping;
 pub mod errors;
 pub mod legacy_contract_state;
 pub mod primitives;
@@ -14,6 +15,7 @@ pub mod v0_state;
 
 use crate::{
     crypto_shared::types::CKDResponse,
+    data_transfer_object_mapping::ConvertDtoToContractType,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
@@ -702,9 +704,15 @@ impl VersionedMpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        proposed_participant_attestation: data_transfer_objects::dto_attestation::DtoAttestation,
+        tls_public_key: data_transfer_objects::crypto::Ed25519PublicKey,
     ) -> Result<(), Error> {
+        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
+            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
+
+        let proposed_participant_attestation =
+            proposed_participant_attestation.into_contract_type();
+
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
 

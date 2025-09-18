@@ -12,9 +12,9 @@ type Sha256Digest = [u8; 32];
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum Attestation {
-    Dstack(DstackAttestation),
-    Mock(MockAttestation),
+pub enum DtoAttestation {
+    Dstack(DtoDstackAttestation),
+    Mock(DtoMockAttestation),
 }
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -22,10 +22,10 @@ pub enum Attestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct DstackAttestation {
+pub struct DtoDstackAttestation {
     pub quote: Vec<u8>,
-    pub collateral: Collateral,
-    pub tcb_info: TcbInfo,
+    pub collateral: DtoCollateral,
+    pub tcb_info: DtoTcbInfo,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -33,7 +33,7 @@ pub struct DstackAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum MockAttestation {
+pub enum DtoMockAttestation {
     #[default]
     /// Always pass validation
     Valid,
@@ -53,7 +53,7 @@ pub enum MockAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct Collateral {
+pub struct DtoCollateral {
     pub pck_crl_issuer_chain: String,
     pub root_ca_crl: Vec<u8>,
     pub pck_crl: Vec<u8>,
@@ -65,7 +65,7 @@ pub struct Collateral {
     pub qe_identity_signature: Vec<u8>,
 }
 
-impl fmt::Debug for DstackAttestation {
+impl fmt::Debug for DtoDstackAttestation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const MAX_BYTES: usize = 2048;
 
@@ -95,7 +95,7 @@ impl fmt::Debug for DstackAttestation {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct AppCompose {
+pub struct DtoAppCompose {
     pub manifest_version: u32,
     pub name: String,
     pub runner: String,
@@ -131,7 +131,7 @@ pub struct AppCompose {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct TcbInfo {
+pub struct DtoTcbInfo {
     /// The measurement root of trust
     pub mrtd: String,
     /// The value of RTMR0 (Runtime Measurement Register 0)
@@ -152,7 +152,7 @@ pub struct TcbInfo {
     /// The app compose
     pub app_compose: String,
     /// The event log entries
-    pub event_log: Vec<EventLog>,
+    pub event_log: Vec<DtoEventLog>,
 }
 
 /// Represents an event log entry in the system
@@ -173,7 +173,7 @@ pub struct TcbInfo {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EventLog {
+pub struct DtoEventLog {
     /// The index of the IMR (Integrity Measurement Register)
     pub imr: u32,
     /// The type of event being logged

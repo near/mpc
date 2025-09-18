@@ -45,6 +45,7 @@ curve25519-dalek = { version = "4.1.3", features = [
 ], default-features = false }
 borsh = "1.5.0"
 derive_more = { version = "2.0.1", features = ["from"] }
+ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
 near-sdk = { version = "5.15.1", features = [
     "legacy",
     "unit-testing",
@@ -85,8 +86,6 @@ test_utils = { workspace = true }
 contract_history = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 
-# crypto dependencies
-ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 signature = "2.2.0"
 digest = "0.10.7"
