@@ -216,10 +216,11 @@ mod tests {
     use super::*;
     use interfaces::attestation::ReportDataV1;
     use rstest::rstest;
-    use test_utils::attestation::quote;
 
     #[cfg(feature = "external-services-tests")]
     use hex::ToHex;
+    #[cfg(feature = "external-services-tests")]
+    use test_utils::attestation::quote;
 
     extern crate std;
 
