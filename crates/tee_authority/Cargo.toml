@@ -13,6 +13,7 @@ backon = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 dstack-sdk-types = { workspace = true }
+dcap-qvl = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 reqwest = { workspace = true }
