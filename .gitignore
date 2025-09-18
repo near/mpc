@@ -6,6 +6,7 @@ venv
 # Lock file generated in contract integration tests
 *.contract.itest.build.lock
 
+**/res/
 **/target/
 **/__pycache__/
 /pytest/output.log
@@ -13,10 +14,7 @@ venv
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
-res/
-target/
-
-*.presignature_network_report_best_case.json
-*.signature_network_report_best_case.json
-*.triple_network_report_best_case.json
-*.triple_network_report_worst_case.json
+**/presignature_network_report_best_case.json
+**/signature_network_report_best_case.json
+**/triple_network_report_best_case.json
+**/triple_network_report_worst_case.json
