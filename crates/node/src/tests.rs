@@ -91,8 +91,13 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    keygen::<Secp256K1Sha256>(&self.participants, *participant, self.threshold)
-                        .unwrap(),
+                    keygen::<Secp256K1Sha256>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
                 ),
             ));
         }
@@ -105,8 +110,13 @@ impl TestGenerators {
             protocols.push((
                 *participant,
                 Box::new(
-                    keygen::<Ed25519Sha512>(&self.participants, *participant, self.threshold)
-                        .unwrap(),
+                    keygen::<Ed25519Sha512>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
                 ),
             ));
         }
@@ -123,6 +133,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         self.threshold,
+                        OsRng,
                     )
                     .unwrap(),
                 ),
