@@ -1,5 +1,7 @@
 use crate::{
-    app_compose::AppCompose, measurements::ExpectedMeasurements, quote::QuoteBytes,
+    app_compose::AppCompose,
+    measurements::{EXPECTED_MEASUREMENTS, ExpectedMeasurements},
+    quote::QuoteBytes,
     report_data::ReportData,
 };
 use alloc::{format, string::String};
@@ -10,6 +12,7 @@ use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::env::sha256;
+use serde::{Deserialize, Serialize};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -25,13 +28,13 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Mock(MockAttestation),
 }
 
-#[derive(Clone, Constructor)]
+#[derive(Clone, Constructor, Serialize, Deserialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
     pub collateral: QuoteCollateralV3,
@@ -63,7 +66,7 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub enum MockAttestation {
     #[default]
     /// Always pass validation
@@ -147,11 +150,6 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
-            Ok(measurements) => measurements,
-            Err(_) => return false,
-        };
-
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
@@ -171,6 +169,8 @@ impl Attestation {
             );
             return false;
         };
+
+        let expected_measurements = EXPECTED_MEASUREMENTS;
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)
@@ -311,15 +311,13 @@ impl Attestation {
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
     fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
-        // let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-        //     Ok(compose) => compose,
-        //     Err(e) => {
-        //         tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-        //         return false;
-        //     }
-        // };
-
-        let app_compose = todo!();
+        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+            Ok(compose) => compose,
+            Err(e) => {
+                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                return false;
+            }
+        };
 
         let mut events = tcb_info
             .event_log
@@ -388,15 +386,13 @@ impl Attestation {
         tcb_info: &TcbInfo,
         allowed_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
-        // TODO:
-        // let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-        //     Ok(compose) => compose,
-        //     Err(e) => {
-        //         tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-        //         return false;
-        //     }
-        // };
-        let app_compose: AppCompose = todo!();
+        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
+            Ok(compose) => compose,
+            Err(e) => {
+                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
+                return false;
+            }
+        };
 
         let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes

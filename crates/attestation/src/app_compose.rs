@@ -1,12 +1,13 @@
 use alloc::{string::String, vec::Vec};
 use derive_more::{Deref, From};
+use serde::{Deserialize, Serialize};
 
 /// Helper struct to deserialize the `app_compose` JSON from TCB info. This is a workaround due to
 /// current limitations in the Dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
     pub name: String,
@@ -33,5 +34,5 @@ pub struct AppCompose {
 /// a string. For example the docker compose file below can be read as a string and initialize this type.
 ///
 /// This type does currently not do any validation of the string
-#[derive(Debug, From, Deref)]
+#[derive(Debug, From, Deref, Serialize, Deserialize)]
 pub struct DockerComposeString(String);
