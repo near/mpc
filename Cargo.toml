@@ -96,7 +96,13 @@ hkdf = "0.12.4"
 http = "1.3.1"
 humantime = "2.1.0"
 itertools = "0.12.1"
-k256 = "0.13.4"
+k256 = { version = "0.13.4", features = [
+    "sha256",
+    "ecdsa",
+    "serde",
+    "arithmetic",
+    "expose-field",
+]}
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
