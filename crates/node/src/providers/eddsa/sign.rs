@@ -6,6 +6,7 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::types::SignatureId;
 use anyhow::Context;
 use mpc_contract::primitives::signature::Tweak;
+use rand::rngs::OsRng;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::eddsa::sign::sign;
@@ -141,6 +142,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
             channel.sender().get_leader().into(),
             derived_keygen_output.clone(),
             self.message,
+            OsRng,
         )?;
 
         // TODO(#306): metrics

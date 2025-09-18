@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Context;
 use k256::AffinePoint;
 use near_sdk::{AccountId, PublicKey};
+use rand::rngs::OsRng;
 use threshold_signatures::{
     confidential_key_derivation::protocol::ckd, ecdsa::KeygenOutput, frost_secp256k1::VerifyingKey,
     protocol::Participant,
@@ -126,6 +127,7 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
             self.keygen_output.private_share,
             self.app_id.as_bytes(),
             VerifyingKey::from_near_sdk_public_key(&self.app_public_key)?,
+            OsRng,
         )?;
 
         // TODO: this is unused https://github.com/near/mpc/issues/975

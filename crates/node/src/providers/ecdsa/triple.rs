@@ -12,6 +12,7 @@ use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
+use rand::rngs::OsRng;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -223,7 +224,7 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
         let me = channel.my_participant_id();
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::triples::generate_triple_many::<
             N,
-        >(&cs_participants, me.into(), self.threshold)?;
+        >(&cs_participants, me.into(), self.threshold, OsRng)?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = run_protocol("many triple gen", channel, protocol).await?;
         metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);

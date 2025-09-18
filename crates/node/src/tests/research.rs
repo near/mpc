@@ -1,6 +1,7 @@
 use crate::tests::TestGenerators;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
+use rand::rngs::OsRng;
 use serde::Serialize;
 use std::collections::VecDeque;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
@@ -196,6 +197,7 @@ fn triple_network_research_best_case() {
                 &participants,
                 participants[i],
                 THRESHOLD,
+                OsRng,
             )
             .unwrap(),
         );
@@ -225,6 +227,7 @@ fn triple_network_research_worst_case() {
                 &participants,
                 participants[i],
                 THRESHOLD,
+                OsRng,
             )
             .unwrap(),
         );
