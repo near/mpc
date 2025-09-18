@@ -62,8 +62,8 @@ k256 = { version = "0.13.4", features = [
     "arithmetic",
     "expose-field",
 ] }
-mpc-primitives = { path = "../../../crates/primitives" }
-attestation = { path = "../../../crates/attestation" }
+mpc-primitives = { workspace = true }
+attestation = { workspace = true }
 near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-account-id = "1.1.1"
 thiserror = "1"
@@ -80,8 +80,8 @@ assert_matches = "1.5.0"
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 sha2 = "0.10.8"
-test_utils = { path = "../../../crates/test_utils" }
-contract_history = { path = "../../../crates/contract_history" }
+test_utils = { workspace = true }
+contract_history = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 
 # crypto dependencies

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Starts 2 near validators and 2 mpc nodes.
-Deploys mpc contract in 'libs/chain-signatures/res/mpc_contract.wasm'
+Deploys the mpc contract.
 Sends signature/ckd requests.
 Verifies that the mpc nodes index the signature/ckd request.
 Waits for the signature/ckd responses. Fails if timeout is reached.
