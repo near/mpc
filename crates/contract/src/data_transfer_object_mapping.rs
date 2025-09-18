@@ -1,6 +1,6 @@
 use attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::Collateral,
+    collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
 use data_transfer_objects::dto_attestation::{
@@ -83,7 +83,7 @@ impl ConvertDtoToContractType for DtoCollateral {
             qe_identity_signature,
         } = self;
 
-        Collateral {
+        Collateral::from(QuoteCollateralV3 {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -93,7 +93,7 @@ impl ConvertDtoToContractType for DtoCollateral {
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
-        }
+        })
     }
 }
 

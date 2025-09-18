@@ -108,7 +108,8 @@ impl TeeAuthority {
 
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
-            .await?;
+            .await?
+            .into();
 
         let quote: QuoteBytes = hex::decode(quote)?.into();
 

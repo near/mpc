@@ -1,12 +1,11 @@
 use crate::{
-    app_compose::AppCompose,
-    measurements::{EXPECTED_MEASUREMENTS, ExpectedMeasurements},
-    quote::QuoteBytes,
-    report_data::ReportData,
+    app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
+    quote::QuoteBytes, report_data::ReportData,
 };
 use alloc::{format, string::String};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
-use dcap_qvl::{QuoteCollateralV3, verify::VerifiedReport};
+use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use k256::sha2::{Digest as _, Sha384};
@@ -28,16 +27,16 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 const RTMR3_INDEX: u32 = 3;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum Attestation {
     Dstack(DstackAttestation),
     Mock(MockAttestation),
 }
 
-#[derive(Clone, Constructor, Serialize, Deserialize)]
+#[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
-    pub collateral: QuoteCollateralV3,
+    pub collateral: Collateral,
     pub tcb_info: TcbInfo,
 }
 
@@ -66,7 +65,7 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum MockAttestation {
     #[default]
     /// Always pass validation
@@ -150,6 +149,11 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
+        let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
+            Ok(measurements) => measurements,
+            Err(_) => return false,
+        };
+
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
@@ -169,8 +173,6 @@ impl Attestation {
             );
             return false;
         };
-
-        let expected_measurements = EXPECTED_MEASUREMENTS;
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)
@@ -393,7 +395,6 @@ impl Attestation {
                 return false;
             }
         };
-
         let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
         allowed_hashes
             .iter()

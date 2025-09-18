@@ -1,4 +1,5 @@
 use alloc::{string::String, vec::Vec};
+use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{Deref, From};
 use serde::{Deserialize, Serialize};
 
@@ -6,8 +7,7 @@ use serde::{Deserialize, Serialize};
 /// current limitations in the Dstack SDK.
 ///
 /// See: https://github.com/Dstack-TEE/dstack/issues/267
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct AppCompose {
     pub manifest_version: u32,
     pub name: String,
@@ -34,5 +34,5 @@ pub struct AppCompose {
 /// a string. For example the docker compose file below can be read as a string and initialize this type.
 ///
 /// This type does currently not do any validation of the string
-#[derive(Debug, From, Deref, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, BorshSerialize, BorshDeserialize, From, Deref)]
 pub struct DockerComposeString(String);

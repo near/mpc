@@ -1213,6 +1213,7 @@ name = "attestation"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "borsh",
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
@@ -1223,6 +1224,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "serde_with",
  "sha3",
  "test_utils",
  "thiserror 2.0.16",
