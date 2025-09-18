@@ -252,7 +252,7 @@ To upgrade the contract, first propose the upgrade (suppose we wish to use the n
 contract code for the upgrade):
 
 ```shell
-mpc-devnet mpc my-test propose-update-contract --path ../libs/chain-signatures/target/wasm32-unknown-unknown/release/mpc_contract.wasm
+mpc-devnet mpc my-test propose-update-contract --path ../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 ```
 
 This will print out a command to run for voting for the upgrade:

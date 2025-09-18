@@ -62,7 +62,7 @@ use threshold_signatures::{
 };
 
 pub const CONTRACT_FILE_PATH: &str =
-    "../../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
+    "../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
@@ -132,10 +132,10 @@ impl BuildLock {
 
 pub fn current_contract() -> &'static Vec<u8> {
     CONTRACT.get_or_init(|| {
-        // Points to `libs/chain-signatures/contract`
+        // Points to `/crates`
         let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         // pointing to repository root directory.
-        let project_dir = pkg_dir.join("../../../");
+        let project_dir = pkg_dir.join("../..");
         let wasm_path =
             project_dir.join("target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
 

@@ -117,7 +117,7 @@ async fn contract_state(mut state: State<WebServerState>) -> Result<String, Anyh
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
-    Html(include_str!("../../third-party-licenses/licenses.html"))
+    Html(include_str!("../../../third-party-licenses/licenses.html"))
 }
 
 #[derive(Clone, Serialize)]
