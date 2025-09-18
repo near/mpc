@@ -9757,7 +9757,6 @@ dependencies = [
  "anyhow",
  "attestation",
  "backon",
- "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk",
  "dstack-sdk-types",

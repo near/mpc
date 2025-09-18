@@ -1,12 +1,12 @@
 use anyhow::{Context, bail};
 use attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
+    collateral::Collateral,
     quote::QuoteBytes,
     report_data::ReportData,
 };
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
-use dcap_qvl::QuoteCollateralV3;
 use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
@@ -108,8 +108,7 @@ impl TeeAuthority {
 
         let collateral = self
             .upload_quote_for_collateral(&config.quote_upload_url, &quote)
-            .await?
-            .into();
+            .await?;
 
         let quote: QuoteBytes = hex::decode(quote)?.into();
 
@@ -123,7 +122,7 @@ impl TeeAuthority {
         &self,
         quote_upload_url: &Url,
         tdx_quote: &str,
-    ) -> anyhow::Result<QuoteCollateralV3> {
+    ) -> anyhow::Result<Collateral> {
         let reqwest_client = reqwest::Client::builder()
             .timeout(core::time::Duration::from_secs(10))
             .build()
@@ -160,7 +159,7 @@ impl TeeAuthority {
 
 #[derive(Deserialize)]
 struct UploadResponse {
-    quote_collateral: QuoteCollateralV3,
+    quote_collateral: Collateral,
 }
 
 async fn get_with_backoff<Operation, OperationFuture, Value, Error>(
