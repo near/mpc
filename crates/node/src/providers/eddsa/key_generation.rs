@@ -2,6 +2,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
+use rand::rngs::OsRng;
 use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::protocol::Participant;
@@ -44,6 +45,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             &cs_participants,
             me.into(),
             self.threshold,
+            OsRng,
         )?;
         run_protocol("eddsa key generation", channel, protocol).await
     }
