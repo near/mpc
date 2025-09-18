@@ -9,7 +9,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
     tee::tee_state::NodeId,
-    VersionedMpcContract,
+    MpcContract,
 };
 
 use assert_matches::assert_matches;
@@ -21,7 +21,7 @@ use near_sdk::{
 use std::time::Duration;
 
 struct TestSetup {
-    contract: VersionedMpcContract,
+    contract: MpcContract,
     participants_list: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
 
@@ -47,7 +47,7 @@ impl TestSetup {
                 id: DomainId::default(),
                 scheme: SignatureScheme::Secp256k1,
             }];
-            VersionedMpcContract::init_running(domains, 1, keyset, parameters, None).unwrap()
+            MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap()
         };
 
         Self {
