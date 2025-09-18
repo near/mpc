@@ -1184,7 +1184,7 @@ impl VersionedMpcContract {
                     contract.protocol_state = ProtocolContractState::Resharing(resharing);
                 }
 
-                Ok(false)
+                Ok(true)
             }
         }
     }

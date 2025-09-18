@@ -135,7 +135,7 @@ fn test_participant_kickout_after_expiration() {
         .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
-    assert!(!setup.contract.verify_tee().unwrap());
+    assert!(setup.contract.verify_tee().unwrap());
 
     let resharing_state = match setup.contract.state() {
         ProtocolContractState::Resharing(r) => r,
