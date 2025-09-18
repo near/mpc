@@ -142,15 +142,16 @@ impl AllowedDockerImageHashes {
         self.allowed_tee_proposals.insert(insert_index, new_entry);
     }
 
-    /// Returns valid hashes without cleaning expired entries (read-only). Use
-    /// [`Self::cleanup_expired_hashes`] explicitly when cleanup of the internal structure is
-    /// needed.
+    /// Returns valid hashes without cleaning expired entries (read-only). Ensures that at least
+    /// one proposal (the latest) is always returned. Use [`Self::cleanup_expired_hashes`]
+    /// explicitly when cleanup of the internal structure is needed.
     pub fn get(
         &self,
         current_block_height: BlockHeight,
         tee_upgrade_deadline_duration_blocks: u64,
     ) -> Vec<&AllowedMpcDockerImage> {
-        self.allowed_tee_proposals
+        let valid_entries: Vec<_> = self
+            .allowed_tee_proposals
             .iter()
             .filter(|entry| {
                 Self::is_image_hash_valid(
@@ -159,7 +160,14 @@ impl AllowedDockerImageHashes {
                     current_block_height,
                 )
             })
-            .collect()
+            .collect();
+
+        // If no valid entries, return at least the latest entry
+        if valid_entries.is_empty() {
+            self.allowed_tee_proposals.last().into_iter().collect()
+        } else {
+            valid_entries
+        }
     }
 
     // Given a docker image hash obtain the launcher docker compose hash
@@ -254,13 +262,12 @@ mod tests {
         assert_eq!(proposals[0].image_hash, dummy_code_hash(2));
 
         // Move block height far enough to expire both proposals. We always keep at least one
-        // proposal in storage, but get() will return empty since the remaining entry is expired.
+        // proposal in storage
         let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 2;
         allowed.cleanup_expired_hashes(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
         let proposals: Vec<_> =
             allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
-        // Even though we keep one entry in storage, get() returns an empty vector since it's expired
-        assert!(proposals.is_empty());
+        assert_eq!(proposals.len(), 1);
     }
 }
