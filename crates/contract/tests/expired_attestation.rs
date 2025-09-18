@@ -100,8 +100,8 @@ fn test_participant_kickout_after_expiration() {
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
-        .cloned()
         .take(2)
+        .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
@@ -199,8 +199,8 @@ fn test_clean_tee_status_removes_non_participants() {
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
-        .cloned()
         .take(2)
+        .cloned()
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
