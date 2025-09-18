@@ -41,20 +41,14 @@ container_build_command = [
 anyhow = { workspace = true }
 curve25519-dalek = { workspace = true }
 borsh = { workspace = true }
-derive_more = { workspace = true, features = ["from"] }
+derive_more = { workspace = true }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
-k256 = { workspace = true, features = [
-    "sha256",
-    "ecdsa",
-    "serde",
-    "arithmetic",
-    "expose-field",
-] }
+k256 = { workspace = true }
 mpc-primitives = { workspace = true }
 attestation = { workspace = true }
 near-gas = { workspace = true }
