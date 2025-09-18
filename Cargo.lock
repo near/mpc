@@ -4977,12 +4977,11 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "serde_yaml",
  "sha2",
  "sha3",
  "signature",
  "test_utils",
- "thiserror 1.0.69",
+ "thiserror 2.0.16",
  "threshold-signatures",
  "tokio",
 ]
