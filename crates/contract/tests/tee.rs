@@ -253,16 +253,18 @@ async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Resul
 /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
 /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
 /// the attestation data.
-// #[tokio::test]
-// async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
-//     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-//     setup_approved_mpc_hash(&contract, &accounts).await?;
-//     let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
-//     assert!(success);
-//     Ok(())
-// }
-/// **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
-/// Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
+#[ignore]
+#[tokio::test]
+async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
+    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
+    setup_approved_mpc_hash(&contract, &accounts).await?;
+    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
+    assert!(success);
+    Ok(())
+}
+
+// / **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
+// / Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
