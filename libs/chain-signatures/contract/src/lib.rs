@@ -17,7 +17,7 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{proposal::AllowedMpcDockerImage, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
     v0_state::MpcContractV1,
 };
@@ -265,9 +265,9 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
+    pub fn latest_code_hash(&self) -> MpcDockerImageHash {
         self.tee_state
-            .get_allowed_hashes(self.config.tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_image_hashes(self.config.tee_upgrade_deadline_duration_blocks)
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -1082,7 +1082,7 @@ impl VersionedMpcContract {
     }
 
     #[handle_result]
-    pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error> {
+    pub fn allowed_code_hashes(&self) -> Result<Vec<MpcDockerImageHash>, Error> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => {
@@ -1091,14 +1091,14 @@ impl VersionedMpcContract {
 
                 Ok(contract
                     .tee_state
-                    .get_allowed_hashes(tee_upgrade_deadline_duration_blocks))
+                    .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks))
             }
             _ => env::panic_str("expected V2"),
         }
     }
 
     #[handle_result]
-    pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error> {
+    pub fn latest_code_hash(&self) -> Result<MpcDockerImageHash, Error> {
         log!("latest_code_hash: signer={}", env::signer_account_id());
         match self {
             Self::V2(contract) => Ok(contract.latest_code_hash()),
@@ -1121,7 +1121,7 @@ impl VersionedMpcContract {
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case less than `threshold` participants run in an accepted Tee State.
+    /// in case less than `threshold` participants run in an accepted TEE State.
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
@@ -1289,22 +1289,16 @@ impl VersionedMpcContract {
         }
     }
 
-    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedDockerImageHash> {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedMpcDockerImage> {
         match self {
-            Self::V2(mpc_contract) => {
-                let tee_upgrade_deadline_duration_blocks =
-                    mpc_contract.config.tee_upgrade_deadline_duration_blocks;
-
-                let current_block_height = env::block_height();
-
-                // this is a query method, meaning no `&mut self`, so we need to clone.
-                let mut allowed_image_hashes =
-                    mpc_contract.tee_state.allowed_docker_image_hashes.clone();
-
-                allowed_image_hashes
-                    .get(current_block_height, tee_upgrade_deadline_duration_blocks)
-                    .to_vec()
-            }
+            Self::V2(mpc_contract) => mpc_contract
+                .tee_state
+                .get_allowed_mpc_docker_images(
+                    mpc_contract.config.tee_upgrade_deadline_duration_blocks,
+                )
+                .into_iter()
+                .cloned()
+                .collect(),
             _ => env::panic_str("expected V2"),
         }
     }

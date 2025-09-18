@@ -1,6 +1,6 @@
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::proposal::AllowedDockerImageHash;
+use mpc_contract::tee::proposal::AllowedMpcDockerImage;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
@@ -74,5 +74,5 @@ pub struct IndexerAPI<TransactionSender> {
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedDockerImageHash>>,
+    pub allowed_docker_images_receiver: watch::Receiver<Vec<AllowedMpcDockerImage>>,
 }
