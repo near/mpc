@@ -13,7 +13,6 @@ backon = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk = { workspace = true }
 interfaces = { workspace = true }
-ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 reqwest = { workspace = true }

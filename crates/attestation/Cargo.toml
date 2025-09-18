@@ -8,7 +8,6 @@ anyhow = { workspace = true }
 borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
-ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 interfaces = { workspace = true }
 k256 = { workspace = true }
