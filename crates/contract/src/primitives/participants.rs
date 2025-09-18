@@ -1,6 +1,10 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
+
 use near_sdk::{near, AccountId, PublicKey};
 use std::{collections::BTreeSet, fmt::Display};
+
+#[cfg(any(test, feature = "test-utils"))]
+use crate::tee::tee_state::NodeId;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -130,6 +134,12 @@ impl Participants {
             participants,
         }
     }
+    pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
+        self.participants
+            .iter()
+            .find(|(a_id, _, _)| a_id == account_id)
+            .map(|(_, _, info)| info)
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -140,13 +150,6 @@ impl Participants {
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, p_id, _)| p_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
-    }
-
-    pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
-        self.participants
-            .iter()
-            .find(|(a_id, _, _)| a_id == account_id)
-            .map(|(_, _, info)| info)
     }
 
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {
@@ -199,6 +202,16 @@ impl Participants {
             }
         }
         Err(crate::errors::InvalidState::NotParticipant.into())
+    }
+
+    pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
+        self.participants()
+            .iter()
+            .map(|(account_id, _, p_info)| NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: p_info.sign_pk.clone(),
+            })
+            .collect()
     }
 }
 

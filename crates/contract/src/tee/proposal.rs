@@ -253,15 +253,14 @@ mod tests {
         assert_eq!(proposals.len(), 1);
         assert_eq!(proposals[0].image_hash, dummy_code_hash(2));
 
-        // Move block height far enough to expire both proposals; we never allow all proposals in
-        // the whitelist to expire, so there should still be one proposal in storage, but
-        // get_valid_hashes will return 0 since that remaining entry is also expired
+        // Move block height far enough to expire both proposals. We always keep at least one
+        // proposal in storage, but get() will return empty since the remaining entry is expired.
         let expired_height = block_height + TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS + 2;
         allowed.cleanup_expired_hashes(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
         let proposals: Vec<_> =
             allowed.get(expired_height, TEST_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS);
 
-        // Even though we keep one entry in storage, get_valid_hashes returns 0 since it's expired
-        assert_eq!(proposals.len(), 0);
+        // Even though we keep one entry in storage, get() returns an empty vector since it's expired
+        assert!(proposals.is_empty());
     }
 }

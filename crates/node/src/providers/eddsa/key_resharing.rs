@@ -4,6 +4,7 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
+use rand::rngs::OsRng;
 use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
@@ -82,6 +83,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
             &new_participants,
             self.threshold,
             me.into(),
+            OsRng,
         )?;
         run_protocol("eddsa key resharing", channel, protocol).await
     }

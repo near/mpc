@@ -170,3 +170,16 @@ impl From<MpcContractV1> for MpcContract {
         }
     }
 }
+
+/// Previous version of the contract.
+///
+/// Note that the contract was previously represented as a versioned enum.
+/// In #1111 we moved away from this pattern, and represent the contract state
+/// as single structs.
+#[derive(borsh::BorshDeserialize, borsh::BorshSerialize, Debug)]
+pub enum VersionedMpcContract {
+    /// This is no longer deployed
+    V0,
+    /// Currently on mainnet and testnet
+    V1(MpcContractV1),
+}
