@@ -4,10 +4,11 @@ use mpc_contract::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::gen_participants,
+        test_utils::{bogus_ed25519_near_public_key, gen_participants},
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
+    tee::tee_state::NodeId,
     VersionedMpcContract,
 };
 
@@ -18,12 +19,10 @@ use near_sdk::{
     VMContext,
 };
 use std::time::Duration;
-use test_utils::attestation::p2p_tls_key;
 
 struct TestSetup {
     contract: VersionedMpcContract,
     participants_list: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-    tls_key: PublicKey,
 }
 
 impl TestSetup {
@@ -54,19 +53,14 @@ impl TestSetup {
         Self {
             contract,
             participants_list,
-            tls_key: p2p_tls_key(),
         }
     }
 
-    fn submit_attestation_for_participant(
-        &mut self,
-        account_id: &AccountId,
-        attestation: Attestation,
-    ) {
-        let context = create_context_for_participant(account_id);
+    fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
+        let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
         self.contract
-            .submit_participant_info(attestation, self.tls_key.clone())
+            .submit_participant_info(attestation, node_id.tls_public_key.clone())
             .unwrap();
     }
 }
@@ -103,15 +97,19 @@ fn test_participant_kickout_after_expiration() {
 
     // Submit valid attestations for first 2 participants
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let participant_accounts: Vec<AccountId> = setup
+    let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
+        .cloned()
         .take(2)
-        .map(|(account_id, _, _)| account_id.clone())
+        .map(|(account_id, _, participant_info)| NodeId {
+            account_id,
+            tls_public_key: participant_info.sign_pk,
+        })
         .collect();
 
-    for account_id in &participant_accounts {
-        setup.submit_attestation_for_participant(account_id, valid_attestation.clone());
+    for node_id in &participant_nodes {
+        setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
     // Submit expiring attestation for 3rd participant
@@ -121,8 +119,12 @@ fn test_participant_kickout_after_expiration() {
         launcher_docker_compose_hash: None,
         expiry_time_stamp_seconds: Some(EXPIRY_SECONDS),
     });
-    let third_participant = setup.participants_list[2].0.clone();
-    setup.submit_attestation_for_participant(&third_participant, expiring_attestation);
+    let third_node = NodeId {
+        account_id: setup.participants_list[2].0.clone(),
+        tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
+    };
+
+    setup.submit_attestation_for_node(&third_node, expiring_attestation);
 
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
@@ -147,12 +149,14 @@ fn test_participant_kickout_after_expiration() {
         AttemptId::new(),
     );
 
-    testing_env!(create_context_for_participant(&participant_accounts[0]));
+    testing_env!(create_context_for_participant(
+        &participant_nodes[0].account_id
+    ));
     setup.contract.start_reshare_instance(key_event_id).unwrap();
 
     // Vote for resharing with first 2 participants
-    for account_id in &participant_accounts {
-        testing_env!(create_context_for_participant(account_id));
+    for node_id in &participant_nodes {
+        testing_env!(create_context_for_participant(&node_id.account_id));
         setup.contract.vote_reshared(key_event_id).unwrap();
     }
 
@@ -192,20 +196,29 @@ fn test_clean_tee_status_removes_non_participants() {
 
     // Submit TEE info for current 2 participants (all have valid attestations)
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let participant_accounts: Vec<AccountId> = setup
+    let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
-        .map(|(account_id, _, _)| account_id.clone())
+        .cloned()
+        .take(2)
+        .map(|(account_id, _, participant_info)| NodeId {
+            account_id,
+            tls_public_key: participant_info.sign_pk,
+        })
         .collect();
 
-    for account_id in &participant_accounts {
-        setup.submit_attestation_for_participant(account_id, valid_attestation.clone());
+    for node_id in &participant_nodes {
+        setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
     // Add TEE account for someone who is NOT a current participant
     // (simulates leftover data from a participant who was removed during resharing)
-    let removed_participant_id: AccountId = "removed.participant.near".parse().unwrap();
-    setup.submit_attestation_for_participant(&removed_participant_id, valid_attestation);
+    let removed_participant_node = NodeId {
+        account_id: "removed.participant.near".parse().unwrap(),
+        tls_public_key: bogus_ed25519_near_public_key(),
+    };
+
+    setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
