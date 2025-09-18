@@ -1,19 +1,7 @@
 [workspace]
 resolver = "2"
 exclude = ["libs/nearcore"]
-members = [
-    "crates/attestation", 
-    "crates/contract",
-    "crates/primitives", 
-    "crates/tee_authority", 
-    "crates/test_utils", 
-    "crates/tls",
-    "crates/contract_history",
-    "crates/test_migration_contract",
-    "crates/test_parallel_contract",
-    "crates/devnet",
-    "crates/node",
-]
+members = ["crates/*"]
 
 [profile.dev-release]
 inherits = "release"
@@ -40,6 +28,7 @@ overflow-checks = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+data-transfer-objects = { path = "crates/data_transfer_objects" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
@@ -111,8 +100,9 @@ reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
 serde = { version = "1.0.225", features = ["derive"] }
+serde_bytes = "0.11.19"
 serde_json = "1.0.132"
-serde_with = "3.14.0"
+serde_with = { version = "3.14.0", features = ["hex"] }
 serde_yaml = "0.9.34"
 serial_test = "3.2.0"
 sha2 = "0.10.9"

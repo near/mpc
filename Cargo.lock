@@ -1213,7 +1213,6 @@ name = "attestation"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "borsh",
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
@@ -1222,9 +1221,6 @@ dependencies = [
  "mpc-primitives",
  "near-sdk",
  "rstest",
- "serde",
- "serde_json",
- "serde_with",
  "sha3",
  "test_utils",
  "thiserror 2.0.16",
@@ -2550,6 +2546,18 @@ name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
+
+[[package]]
+name = "data-transfer-objects"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "schemars 0.8.22",
+ "serde",
+ "serde_bytes",
+ "serde_with",
+]
 
 [[package]]
 name = "dcap-qvl"
@@ -4957,6 +4965,7 @@ dependencies = [
  "borsh",
  "contract_history",
  "curve25519-dalek",
+ "data-transfer-objects",
  "derive_more 2.0.1",
  "digest 0.10.7",
  "ecdsa",
@@ -9101,11 +9110,12 @@ dependencies = [
 
 [[package]]
 name = "serde_bytes"
-version = "0.11.17"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8437fd221bde2d4ca316d61b90e337e9e702b3820b87d63caa9ba6c02bd06d96"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
 dependencies = [
  "serde",
+ "serde_core",
 ]
 
 [[package]]

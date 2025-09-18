@@ -1,0 +1,17 @@
+[package]
+name = "data-transfer-objects"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+borsh = { workspace = true }
+derive_more = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+serde_with = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+schemars = { workspace = true, optional = true }
+
+[features]
+abi = ["schemars"]
