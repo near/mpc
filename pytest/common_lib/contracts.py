@@ -5,26 +5,33 @@ from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
-COMPILED_CONTRACT_PATH = (
-    MPC_REPO_DIR / "libs" / "chain-signatures" / "res" / "mpc_contract.wasm"
+MIGRATION_CONTRACT_PACKAGE_NAME = "test-migration-contract"
+PARALLEL_CONTRACT_PACKAGE_NAME = "test-parallel-contract"
+MPC_CONTRACT_PACKAGE_NAME = "mpc-contract"
+
+MPC_CONTRACT_MANIFEST_PATH = MPC_REPO_DIR / "crates" / "contract" / "Cargo.toml"
+
+
+def contract_compiled_file_name(contract_package_name: str) -> str:
+    return f"{contract_package_name.replace('-', '_')}.wasm"
+
+
+COMPILED_CONTRACT_DIRECTORY = (
+    MPC_REPO_DIR / "target" / "wasm32-unknown-unknown" / "release-contract"
 )
-MIGRATE_CURRENT_CONTRACT_PATH = (
-    MPC_REPO_DIR
-    / "pytest"
-    / "tests"
-    / "test_contracts"
-    / "migration"
-    / "res"
-    / "migration_contract.wasm"
+
+MIGRATION_CONTRACT_BINARY_PATH = (
+    COMPILED_CONTRACT_DIRECTORY
+    / contract_compiled_file_name(MIGRATION_CONTRACT_PACKAGE_NAME)
 )
-PARALLEL_CONTRACT_PATH = (
-    MPC_REPO_DIR
-    / "pytest"
-    / "tests"
-    / "test_contracts"
-    / "parallel"
-    / "res"
-    / "contract.wasm"
+
+PARALLEL_CONTRACT_BINARY_PATH = (
+    COMPILED_CONTRACT_DIRECTORY
+    / contract_compiled_file_name(PARALLEL_CONTRACT_PACKAGE_NAME)
+)
+
+MPC_CONTRACT_BINARY_PATH = COMPILED_CONTRACT_DIRECTORY / contract_compiled_file_name(
+    MPC_CONTRACT_PACKAGE_NAME
 )
 
 TESTNET_ACCOUNT_ID = "v1.signer-prod.testnet"
@@ -48,7 +55,7 @@ def load_mpc_contract() -> bytearray:
     """
     Returns the current contract.
     """
-    return load_binary_file(COMPILED_CONTRACT_PATH)
+    return load_binary_file(MPC_CONTRACT_BINARY_PATH)
 
 
 class ConfigV2:

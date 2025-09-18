@@ -4,7 +4,7 @@ Interactive integration test for signature requests using a local NEAR cluster.
 
 This script:
 - Starts 2 NEAR validators and 6 MPC (multi-party computation) nodes.
-- Deploys the MPC contract from 'libs/chain-signatures/res/mpc_contract.wasm'.
+- Deploys the MPC contract.
 - Initializes the cluster with multiple access keys for the responder account.
 - Enters an interactive REPL loop where you can:
     - Send signature requests with 'sign <n>'.
