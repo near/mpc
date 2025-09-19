@@ -1,6 +1,6 @@
 use derive_more::From;
 use itertools::Itertools;
-use mpc_contract::tee::proposal::{AllowedDockerImageHash, MpcDockerImageHash};
+use mpc_contract::tee::proposal::{AllowedMpcDockerImage, MpcDockerImageHash};
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
@@ -21,7 +21,7 @@ use mockall::automock;
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
-        latest_allowed_image_hash: &AllowedDockerImageHash,
+        latest_allowed_image_hash: &AllowedMpcDockerImage,
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
@@ -33,7 +33,7 @@ pub struct AllowedImageHashesFile {
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(
         &mut self,
-        latest_allowed_image_hash: &AllowedDockerImageHash,
+        latest_allowed_image_hash: &AllowedMpcDockerImage,
     ) -> Result<(), io::Error> {
         tracing::info!(
             ?self.file_path,
@@ -90,7 +90,7 @@ pub enum ExitError {
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
     current_image: MpcDockerImageHash,
-    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedDockerImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImage>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
 ) -> Result<(), ExitError>
@@ -110,7 +110,7 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedDockerImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImage>>,
     current_image: MpcDockerImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -205,24 +205,24 @@ mod tests {
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
-    fn image_hash_1() -> AllowedDockerImageHash {
-        AllowedDockerImageHash {
+    fn image_hash_1() -> AllowedMpcDockerImage {
+        AllowedMpcDockerImage {
             image_hash: MpcDockerImageHash::from([1; 32]),
             docker_compose_hash: LauncherDockerComposeHash::from([1; 32]),
             added: 1,
         }
     }
 
-    fn image_hash_2() -> AllowedDockerImageHash {
-        AllowedDockerImageHash {
+    fn image_hash_2() -> AllowedMpcDockerImage {
+        AllowedMpcDockerImage {
             image_hash: MpcDockerImageHash::from([2; 32]),
             docker_compose_hash: LauncherDockerComposeHash::from([2; 32]),
             added: 2,
         }
     }
 
-    fn image_hash_3() -> AllowedDockerImageHash {
-        AllowedDockerImageHash {
+    fn image_hash_3() -> AllowedMpcDockerImage {
+        AllowedMpcDockerImage {
             image_hash: MpcDockerImageHash::from([3; 32]),
             docker_compose_hash: LauncherDockerComposeHash::from([3; 32]),
             added: 3,
@@ -236,7 +236,7 @@ mod tests {
     #[case(vec![image_hash_1(), image_hash_2(), image_hash_3()])]
     #[tokio::test]
     async fn test_latest_allowed_image_hash_is_written(
-        #[case] allowed_images: Vec<AllowedDockerImageHash>,
+        #[case] allowed_images: Vec<AllowedMpcDockerImage>,
     ) {
         let current_image = allowed_images[0].clone().image_hash;
 
@@ -286,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
         #[case] current_image: MpcDockerImageHash,
-        #[case] allowed_images: Vec<AllowedDockerImageHash>,
+        #[case] allowed_images: Vec<AllowedMpcDockerImage>,
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
