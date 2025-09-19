@@ -71,7 +71,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Ord
     }
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
+impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
     CompletedRequests<RequestType, ChainRespondArgsType>
 {
     pub fn add_completed_request(
