@@ -430,6 +430,9 @@ impl MpcClient {
                                                     big_c: SerializableAffinePoint {
                                                         affine_point: response.1,
                                                     },
+                                                    big_d: SerializableAffinePoint {
+                                                        affine_point: response.2,
+                                                    },
                                                 },
                                             )?;
 

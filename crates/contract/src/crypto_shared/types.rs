@@ -31,6 +31,7 @@ pub enum SignatureResponse {
 pub struct CKDResponse {
     pub big_y: k256_types::SerializableAffinePoint,
     pub big_c: k256_types::SerializableAffinePoint,
+    pub big_d: k256_types::SerializableAffinePoint,
 }
 
 #[cfg_attr(

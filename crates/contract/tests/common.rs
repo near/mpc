@@ -551,8 +551,10 @@ pub fn create_response_ckd(
     let app_pk = near_public_key_to_affine_point(app_public_key);
     let msk = k256::Scalar::from_uint_unchecked(signing_key.as_scalar_primitive().to_uint());
     let big_s = hash2curve(app_id) * msk;
+    let big_t = app_pk * msk;
     let (y, big_y) = Secp256K1Sha256::generate_nonce(&mut OsRng);
     let big_c = big_s + app_pk * y;
+    let big_d = big_t + app_pk * y;
 
     let response = CKDResponse {
         big_y: SerializableAffinePoint {
@@ -560,6 +562,9 @@ pub fn create_response_ckd(
         },
         big_c: SerializableAffinePoint {
             affine_point: big_c.to_affine(),
+        },
+        big_d: SerializableAffinePoint {
+            affine_point: big_d.to_affine(),
         },
     };
     (request, response)

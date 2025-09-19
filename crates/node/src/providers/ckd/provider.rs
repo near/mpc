@@ -23,7 +23,7 @@ impl CKDProvider {
     pub(super) async fn make_ckd_leader(
         self: Arc<Self>,
         id: CKDId,
-    ) -> anyhow::Result<(AffinePoint, AffinePoint)> {
+    ) -> anyhow::Result<(AffinePoint, AffinePoint, AffinePoint)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
         let threshold = self.mpc_config.participants.threshold as usize;
@@ -59,11 +59,11 @@ impl CKDProvider {
         )
         .await?;
 
-        let Some((big_y, big_c)) = result else {
+        let Some((big_y, big_c, big_d)) = result else {
             anyhow::bail!("ckd result doesn't contain value for the leader!");
         };
 
-        Ok((big_y, big_c))
+        Ok((big_y, big_c, big_d))
     }
 
     pub(super) async fn make_ckd_follower(
@@ -108,11 +108,13 @@ pub struct CKDComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComputation {
+impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint, AffinePoint)>>
+    for CKDComputation
+{
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<Option<(AffinePoint, AffinePoint)>> {
+    ) -> anyhow::Result<Option<(AffinePoint, AffinePoint, AffinePoint)>> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -134,7 +136,13 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
         let _timer = metrics::MPC_CKD_TIME_ELAPSED.start_timer();
         let result = run_protocol("ckd", channel, protocol).await?;
 
-        Ok(result.map(|f| (f.big_y().value().to_affine(), f.big_c().value().to_affine())))
+        Ok(result.map(|f| {
+            (
+                f.big_y().value().to_affine(),
+                f.big_c().value().to_affine(),
+                f.big_d().value().to_affine(),
+            )
+        }))
     }
 
     fn leader_waits_for_success(&self) -> bool {

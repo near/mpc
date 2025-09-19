@@ -55,7 +55,7 @@ impl CKDProvider {
     pub async fn make_ckd(
         self: Arc<Self>,
         id: CKDId,
-    ) -> anyhow::Result<(AffinePoint, AffinePoint)> {
+    ) -> anyhow::Result<(AffinePoint, AffinePoint, AffinePoint)> {
         self.make_ckd_leader(id).await
     }
 

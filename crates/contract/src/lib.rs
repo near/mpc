@@ -1425,6 +1425,9 @@ mod tests {
             big_c: SerializableAffinePoint {
                 affine_point: AffinePoint::GENERATOR,
             },
+            big_d: SerializableAffinePoint {
+                affine_point: AffinePoint::GENERATOR,
+            },
         };
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
