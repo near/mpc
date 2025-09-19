@@ -2124,6 +2124,52 @@ mod tests {
         let contract = MpcContract::new_from_protocol_sate(initializing_state);
         test_set_backup_service_success(&participants, contract);
     }
-    // todo: cleanup_orphaned_node_migrations
     // todo: conclude_node_migration
+    //
+    // test:
+    // - successful case
+    // - not running failure
+    // - not participant failure
+    // - keyset mismatch failure
+    // - migration not found failure
+    // - account public key mismatch failure
+    #[test]
+    fn test_conclude_node_migration() {
+        let running_state = gen_running_state(2);
+        let keyset = running_state.keyset.clone();
+        let participants = running_state.parameters.participants().clone();
+        let running_state = ProtocolContractState::Running(running_state);
+        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut test_env = Environment::new(None, None, None);
+        for (account_id, participant_id, _) in participants.participants() {
+            let destination_node_info = gen_random_destination_info();
+            test_env.set_signer(account_id);
+            test_env.set_pk(destination_node_info.signer_account_pk.clone());
+            assert!(contract
+                .start_node_migration(destination_node_info.clone())
+                .is_ok());
+            let valid_participant_attestation = Attestation::Mock(MockAttestation::Valid);
+            // todo: add tls key
+            assert!(contract
+                .submit_participant_info(
+                    valid_participant_attestation,
+                    destination_node_info.destination_node_info.sign_pk.clone(),
+                )
+                .is_ok());
+            let res = contract.conclude_node_migration(&keyset);
+            dbg!(&res);
+            assert!(res.is_ok());
+            let res_participants = {
+                let ProtocolContractState::Running(running) = &contract.protocol_state else {
+                    panic!("expected running");
+                };
+                running.parameters.participants().clone()
+            };
+            let found_info = res_participants.info(account_id).unwrap();
+            assert_eq!(found_info, &destination_node_info.destination_node_info);
+            let found_id = res_participants.id(account_id).unwrap();
+            assert_eq!(&found_id, participant_id);
+        }
+    }
+    // todo: cleanup_orphaned_node_migrations
 }
