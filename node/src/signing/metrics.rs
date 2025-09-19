@@ -69,4 +69,11 @@ lazy_static! {
             // 2s - 3s - 4.5s .... - 115s
             exponential_buckets(2.0, 1.5, 10).unwrap()
             ).unwrap();
+
+    pub static ref MPC_CLUSTER_FAILED_SIGNATURES_COUNT: prometheus::IntGauge =
+        prometheus::register_int_gauge!(
+            "mpc_cluster_failed_signatures_count",
+            "Number of failed signatures in the cluster (signatures with completion_delay = None)"
+        )
+        .unwrap();
 }

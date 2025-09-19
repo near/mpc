@@ -1,6 +1,7 @@
 use super::queue::{
     PendingSignatureRequests, QueuedSignatureRequest, SignatureComputationProgress,
 };
+use super::metrics;
 use crate::primitives::ParticipantId;
 use crate::sign_request::SignatureRequest;
 use near_indexer_primitives::types::{BlockHeight, NumBlocks};
@@ -59,6 +60,15 @@ impl CompletedSignatureRequests {
         if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
             self.requests.pop();
         }
+        self.update_failed_signatures_metric();
+    }
+
+    /// Count failed signatures (those with completion_delay = None) and update the metric
+    fn update_failed_signatures_metric(&self) {
+        let failed_count = self.requests.iter()
+            .filter(|request| request.completion_delay.is_none())
+            .count();
+        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT.set(failed_count as i64);
     }
 }
 
@@ -146,6 +156,9 @@ impl QueuedSignatureRequest {
 
 impl Debug for PendingSignatureRequests {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Update the failed signatures metric before generating debug output
+        self.recently_completed_requests.update_failed_signatures_metric();
+        
         let mut signature_lines = Vec::new();
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         let online_participants = self.network_api.alive_participants();
