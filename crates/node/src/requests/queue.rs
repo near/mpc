@@ -257,7 +257,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
+impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
     pub fn new(
