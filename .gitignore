@@ -14,13 +14,10 @@ venv
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
-res/
-target/
-
 **/presignature_network_report_best_case.json
 **/signature_network_report_best_case.json
 **/triple_network_report_best_case.json
 **/triple_network_report_worst_case.json
 
-# Generated in MacOs - https://en.wikipedia.org/wiki/.DS_Store
+# Generated on MacOs' file explorer - https://en.wikipedia.org/wiki/.DS_Store
 *.DS_Store
