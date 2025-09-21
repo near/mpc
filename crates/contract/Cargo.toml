@@ -38,25 +38,18 @@ container_build_command = [
 ]
 
 [dependencies]
-anyhow = "1"
-curve25519-dalek = { version = "4.1.3", features = [
-    "group",
-    "serde",
-], default-features = false }
-borsh = "1.5.0"
-derive_more = { version = "2.0.1", features = ["from"] }
+anyhow = { workspace = true }
+curve25519-dalek = { workspace = true }
+borsh = { workspace = true }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
-near-sdk = { version = "5.15.1", features = [
-    "legacy",
-    "unit-testing",
-    "unstable",
-] }
-rand = { version = "0.8", optional = true }
-serde = { version = "1", features = ["derive"] }
-serde_with = { version = "3.12.0" }
-serde_json = "1"
-schemars = "0.8"
-k256 = { version = "0.13.4", features = [
+derive_more = { workspace = true, features = ["from"] }
+near-sdk = { workspace = true }
+rand = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+k256 = { workspace = true, features = [
     "sha256",
     "ecdsa",
     "serde",
@@ -66,39 +59,43 @@ k256 = { version = "0.13.4", features = [
 mpc-primitives = { workspace = true }
 data-transfer-objects = { workspace = true }
 attestation = { workspace = true }
-near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
-near-account-id = "1.1.1"
-thiserror = "1"
-sha3 = "0.10.8"
-hex = "0.4.3"
-serde_yaml = "0.9.34"
+near-gas = { workspace = true }
+near-account-id = { workspace = true }
+thiserror = { workspace = true }
+sha3 = { workspace = true }
+hex = { workspace = true, features = [] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.12", features = ["custom"] }
+getrandom = { workspace = true, features = ["custom"] }
 
 
 [dev-dependencies]
-assert_matches = "1.5.0"
-rand = "0.8"
-tokio = { version = "1", features = ["full"] }
-sha2 = "0.10.8"
+assert_matches = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+sha2 = { workspace = true }
 test_utils = { workspace = true }
 contract_history = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 
-ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
-signature = "2.2.0"
-digest = "0.10.7"
-
-near-workspaces = "0.21.0"
+# crypto dependencies
+ed25519-dalek = { workspace = true }
+ecdsa = { workspace = true }
+signature = { workspace = true }
+digest = { workspace = true }
+near-workspaces = { workspace = true }
 threshold-signatures = { workspace = true }
-fs2 = "0.4"
-rstest = "0.25.0"
+fs2 = { workspace = true }
+rstest = { workspace = true }
 
 [features]
 test-utils = ["rand"]
 dev-utils = ["rand"]
-abi = ["borsh/unstable__schema", "mpc-primitives/abi", "data-transfer-objects/abi"]
+abi = [
+    "borsh/unstable__schema",
+    "mpc-primitives/abi",
+    "data-transfer-objects/abi",
+]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.
