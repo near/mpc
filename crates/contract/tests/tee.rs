@@ -406,7 +406,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
         for approved_hash in previous_and_current_approved_hashes {
             let mock_attestation = DtoMockAttestation::WithConstraints {
-                mpc_docker_image_hash: Some(approved_hash.clone()),
+                mpc_docker_image_hash: Some(*approved_hash),
                 launcher_docker_compose_hash: None,
                 expiry_time_stamp_seconds: None,
             };
