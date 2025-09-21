@@ -108,6 +108,8 @@ async fn export_terraform_vars(
             mpc_nodes,
             mpc_contract_signer: contract,
             ssd: mpc_setup.ssd,
+            image_hash: "f4bea6e5bd4b652455daa25916d6d99ea6b1b8905059cb606f6eea494e83d063".to_string(), //TODO: fill in real hash
+            latest_allowed_hash_file: "/mnt/shared/image-digest.bin".to_string(), // should match value in launcher.py
         };
         serde_json::to_string_pretty(&terraform_file).unwrap()
     };
@@ -133,6 +135,7 @@ struct LegacyTerraformFile {
     legacy_mpc_nodes: Vec<LegacyTerraformMpcNode>,
     mpc_contract_signer: AccountId,
     ssd: bool,
+  
 }
 
 #[derive(Serialize)]
@@ -156,6 +159,8 @@ struct TerraformFile {
     mpc_nodes: Vec<TerraformMpcNode>,
     mpc_contract_signer: AccountId,
     ssd: bool,
+    image_hash: String,
+    latest_allowed_hash_file: String,
 }
 
 #[derive(Serialize)]
