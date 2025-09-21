@@ -86,7 +86,7 @@ fn test_participant_kickout_after_expiration() {
         Duration::from_secs(INITIAL_TIME_SECONDS).as_nanos() as u64;
     const PARTICIPANT_COUNT: usize = 3;
     const THRESHOLD: u64 = 2;
-    const EXPIRY_OFFSET_SECONDS: u64 = 10; // Attestation expires 10 seconds after start
+    const EXPIRY_OFFSET_SECONDS: u64 = 10; // DtoAttestation expires 10 seconds after start
     const POST_EXPIRY_WAIT_SECONDS: u64 = 20; // Wait 20 seconds after start to trigger resharing
 
     testing_env!(VMContextBuilder::new()

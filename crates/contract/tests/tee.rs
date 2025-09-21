@@ -3,16 +3,16 @@ pub mod common;
 use crate::common::gen_accounts;
 use anyhow::Result;
 use assert_matches::assert_matches;
-use attestation::attestation::{Attestation, MockAttestation};
 use common::{
     assert_running_return_participants, check_call_success, get_tee_accounts, init_env_ed25519,
     init_env_secp256k1, submit_participant_info, submit_tee_attestations,
 };
+use data_transfer_objects::dto_attestation::{DtoAttestation, DtoMockAttestation};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
-use test_utils::attestation::{image_digest, mock_dstack_attestation, p2p_tls_key};
+use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
 
 /// Tests the basic TEE verification functionality when no TEE accounts are present.
 /// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
@@ -196,12 +196,12 @@ async fn get_latest_code_hash(contract: &Contract) -> Result<Option<MpcDockerIma
 async fn vote_for_hash(
     account: &Account,
     contract: &Contract,
-    hash: &MpcDockerImageHash,
+    image_hash: &[u8; 32],
 ) -> Result<()> {
     check_call_success(
         account
             .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": hash}))
+            .args_json(serde_json::json!({"code_hash": image_hash}))
             .transact()
             .await?,
     );
@@ -233,9 +233,9 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
+async fn setup_tee_test() -> Result<(Contract, Vec<Account>, DtoAttestation, PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let attestation = mock_dstack_attestation();
+    let attestation = mock_dto_dstack_attestation();
     let tls_key = p2p_tls_key();
     Ok((contract, accounts, attestation, tls_key))
 }
@@ -268,7 +268,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
+    let mock_attestation = DtoAttestation::Mock(DtoMockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
         submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
@@ -382,9 +382,9 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 ) -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
-    let hash_1 = MpcDockerImageHash::from([1; 32]);
-    let hash_2 = MpcDockerImageHash::from([2; 32]);
-    let hash_3 = MpcDockerImageHash::from([3; 32]);
+    let hash_1 = [1; 32];
+    let hash_2 = [2; 32];
+    let hash_3 = [3; 32];
 
     let participant_account_1 = &accounts[0];
     let participant_account_2 = &accounts[1];
@@ -402,12 +402,12 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         let previous_and_current_approved_hashes = &hashes[..=i];
 
         for approved_hash in previous_and_current_approved_hashes {
-            let mock_attestation = MockAttestation::WithConstraints {
+            let mock_attestation = DtoMockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some(approved_hash.clone()),
                 launcher_docker_compose_hash: None,
                 expiry_time_stamp_seconds: None,
             };
-            let attestation = Attestation::Mock(mock_attestation);
+            let attestation = DtoAttestation::Mock(mock_attestation);
 
             let dummy_tls_key = p2p_tls_key();
 
@@ -421,7 +421,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
             assert!(
                 validation_success,
-                "Attestation for all previous images must pass"
+                "DtoAttestation for all previous images must pass"
             );
         }
     }

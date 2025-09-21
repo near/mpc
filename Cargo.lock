@@ -9825,6 +9825,7 @@ name = "test_utils"
 version = "0.1.0"
 dependencies = [
  "attestation",
+ "data-transfer-objects",
  "dstack-sdk-types",
  "hex",
  "mpc-primitives",

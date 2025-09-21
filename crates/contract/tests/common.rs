@@ -1,4 +1,4 @@
-use attestation::attestation::{Attestation, MockAttestation};
+use data_transfer_objects::dto_attestation::{DtoAttestation, DtoMockAttestation};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
@@ -674,12 +674,14 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
-    attestation: &Attestation,
+    attestation: &DtoAttestation,
     tls_key: &PublicKey,
 ) -> anyhow::Result<bool> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
+        .args_json((attestation, dto_tls_key_bytes))
         .max_gas()
         .transact()
         .await?;
@@ -708,7 +710,7 @@ pub async fn submit_tee_attestations(
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let attestation = DtoAttestation::Mock(DtoMockAttestation::Valid); // todo #1109, add TLS key.
         let result =
             submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
                 .await?;
