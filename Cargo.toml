@@ -1,7 +1,20 @@
 [workspace]
 resolver = "2"
 exclude = ["libs/nearcore"]
-members = ["crates/*"]
+members = [
+    "crates/attestation",
+    "crates/contract",
+    "crates/contract_history",
+    "crates/devnet",
+    "crates/dtos_contract",
+    "crates/node",
+    "crates/primitives",
+    "crates/tee_authority",
+    "crates/test_migration_contract",
+    "crates/test_parallel_contract",
+    "crates/test_utils",
+    "crates/tls",
+]
 
 [profile.dev-release]
 inherits = "release"
