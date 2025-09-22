@@ -1278,7 +1278,7 @@ mod tests {
 
     fn basic_setup() -> (VMContext, MpcContract, SigningKey) {
         let context = VMContextBuilder::new()
-            .attached_deposit(NearToken::from_yoctonear(1))
+            .attached_deposit(NearToken::from_yoctonear(ESTIMATED_SIGNATURE_TRANSACTION_COST))
             .build();
         testing_env!(context.clone());
         let secret_key = SigningKey::random(&mut OsRng);
