@@ -1,4 +1,4 @@
-use data_transfer_objects::{
+use dtos_contract::{
     crypto::DtoEd25519PublicKey,
     dto_attestation::{DtoAttestation, DtoMockAttestation},
 };

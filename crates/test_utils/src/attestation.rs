@@ -2,8 +2,8 @@ use attestation::{
     attestation::{Attestation, DstackAttestation},
     quote::QuoteBytes,
 };
-use data_transfer_objects::dto_attestation::{DtoAttestation, DtoDstackAttestation, DtoTcbInfo};
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use dtos_contract::dto_attestation::{DtoAttestation, DtoDstackAttestation, DtoTcbInfo};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use serde_json::Value;

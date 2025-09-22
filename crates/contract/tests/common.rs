@@ -1,5 +1,5 @@
-use data_transfer_objects::dto_attestation::{DtoAttestation, DtoMockAttestation};
 use digest::{Digest, FixedOutput};
+use dtos_contract::dto_attestation::{DtoAttestation, DtoMockAttestation};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
 use k256::{

@@ -2552,18 +2552,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
-name = "data-transfer-objects"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "derive_more 2.0.1",
- "schemars 0.8.22",
- "serde",
- "serde_bytes",
- "serde_with",
-]
-
-[[package]]
 name = "dcap-qvl"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2897,6 +2885,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "dtos-contract"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "schemars 0.8.22",
+ "serde",
+ "serde_bytes",
+ "serde_with",
 ]
 
 [[package]]
@@ -4969,9 +4969,9 @@ dependencies = [
  "borsh",
  "contract_history",
  "curve25519-dalek",
- "data-transfer-objects",
  "derive_more 2.0.1",
  "digest 0.10.7",
+ "dtos-contract",
  "ecdsa",
  "ed25519-dalek",
  "fs2",
@@ -9824,8 +9824,8 @@ name = "test_utils"
 version = "0.1.0"
 dependencies = [
  "attestation",
- "data-transfer-objects",
  "dstack-sdk-types",
+ "dtos-contract",
  "hex",
  "mpc-primitives",
  "near-sdk",
