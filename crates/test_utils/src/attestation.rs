@@ -3,7 +3,7 @@ use attestation::{
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-use dtos_contract::dto_attestation::{DtoAttestation, DtoDstackAttestation, DtoTcbInfo};
+use dtos_contract::{DtoAttestation, DtoDstackAttestation, DtoTcbInfo};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use serde_json::Value;

@@ -1,6 +1,6 @@
 pub mod common;
 use anyhow::Result;
-use dtos_contract::dto_attestation::{DtoAttestation, DtoMockAttestation};
+use dtos_contract::{DtoAttestation, DtoMockAttestation};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 

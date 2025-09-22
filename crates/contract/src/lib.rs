@@ -29,7 +29,7 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos_contract::crypto::DtoEd25519PublicKey;
+use dtos_contract::DtoEd25519PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -515,7 +515,7 @@ impl MpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        proposed_participant_attestation: dtos_contract::dto_attestation::DtoAttestation,
+        proposed_participant_attestation: dtos_contract::DtoAttestation,
         tls_public_key: DtoEd25519PublicKey,
     ) -> Result<(), Error> {
         let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
@@ -1243,7 +1243,7 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use dtos_contract::dto_attestation::{DtoAttestation, DtoMockAttestation};
+    use dtos_contract::{DtoAttestation, DtoMockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,

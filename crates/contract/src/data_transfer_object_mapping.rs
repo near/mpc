@@ -3,7 +3,7 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
-use dtos_contract::dto_attestation::{
+use dtos_contract::{
     DtoAttestation, DtoCollateral, DtoDstackAttestation, DtoEventLog, DtoMockAttestation,
     DtoTcbInfo,
 };

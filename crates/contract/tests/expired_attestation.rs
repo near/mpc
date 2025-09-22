@@ -1,7 +1,4 @@
-use dtos_contract::{
-    crypto::DtoEd25519PublicKey,
-    dto_attestation::{DtoAttestation, DtoMockAttestation},
-};
+use dtos_contract::{DtoAttestation, DtoEd25519PublicKey, DtoMockAttestation};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
