@@ -50,5 +50,6 @@ REQUEST=$(cat << EOF
 }
 EOF)
 
-near call dev-contract.near --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000  --networkId mainnet
+near call mpc-dev-contract.testnet --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000  --networkId testnet
+#near call dev-contract.near --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000  --networkId mainnet
 # near call v1.signer --use-account $SIGNER sign "$REQUEST" --deposit-yocto 1 --gas 60000000000000  --networkId mainnet
