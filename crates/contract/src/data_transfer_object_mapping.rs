@@ -8,16 +8,12 @@ use data_transfer_objects::dto_attestation::{
     DtoTcbInfo,
 };
 
-pub(crate) trait ConvertDtoToContractType {
-    type ContractType;
-
-    fn into_contract_type(self) -> Self::ContractType;
+pub(crate) trait ConvertDtoToContractType<ContractType> {
+    fn into_contract_type(self) -> ContractType;
 }
 
-impl ConvertDtoToContractType for DtoAttestation {
-    type ContractType = Attestation;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<Attestation> for DtoAttestation {
+    fn into_contract_type(self) -> Attestation {
         match self {
             DtoAttestation::Dstack(dstack_attestation) => {
                 Attestation::Dstack(dstack_attestation.into_contract_type())
@@ -29,10 +25,8 @@ impl ConvertDtoToContractType for DtoAttestation {
     }
 }
 
-impl ConvertDtoToContractType for DtoMockAttestation {
-    type ContractType = MockAttestation;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<MockAttestation> for DtoMockAttestation {
+    fn into_contract_type(self) -> MockAttestation {
         match self {
             DtoMockAttestation::Valid => MockAttestation::Valid,
             DtoMockAttestation::Invalid => MockAttestation::Invalid,
@@ -49,10 +43,8 @@ impl ConvertDtoToContractType for DtoMockAttestation {
     }
 }
 
-impl ConvertDtoToContractType for DtoDstackAttestation {
-    type ContractType = DstackAttestation;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<DstackAttestation> for DtoDstackAttestation {
+    fn into_contract_type(self) -> DstackAttestation {
         let DtoDstackAttestation {
             quote,
             collateral,
@@ -67,10 +59,8 @@ impl ConvertDtoToContractType for DtoDstackAttestation {
     }
 }
 
-impl ConvertDtoToContractType for DtoCollateral {
-    type ContractType = Collateral;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<Collateral> for DtoCollateral {
+    fn into_contract_type(self) -> Collateral {
         let DtoCollateral {
             pck_crl_issuer_chain,
             root_ca_crl,
@@ -97,10 +87,8 @@ impl ConvertDtoToContractType for DtoCollateral {
     }
 }
 
-impl ConvertDtoToContractType for DtoTcbInfo {
-    type ContractType = TcbInfo;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<TcbInfo> for DtoTcbInfo {
+    fn into_contract_type(self) -> TcbInfo {
         let DtoTcbInfo {
             mrtd,
             rtmr0,
@@ -134,10 +122,8 @@ impl ConvertDtoToContractType for DtoTcbInfo {
     }
 }
 
-impl ConvertDtoToContractType for DtoEventLog {
-    type ContractType = EventLog;
-
-    fn into_contract_type(self) -> Self::ContractType {
+impl ConvertDtoToContractType<EventLog> for DtoEventLog {
+    fn into_contract_type(self) -> EventLog {
         let DtoEventLog {
             imr,
             event_type,
