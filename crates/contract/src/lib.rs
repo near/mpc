@@ -15,7 +15,7 @@ pub mod v0_state;
 
 use crate::{
     crypto_shared::types::CKDResponse,
-    data_transfer_object_mapping::ConvertDtoToContractType,
+    data_transfer_object_mapping::IntoContractType,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,

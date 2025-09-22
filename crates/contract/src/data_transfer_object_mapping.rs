@@ -8,11 +8,11 @@ use data_transfer_objects::dto_attestation::{
     DtoTcbInfo,
 };
 
-pub(crate) trait ConvertDtoToContractType<ContractType> {
+pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
-impl ConvertDtoToContractType<Attestation> for DtoAttestation {
+impl IntoContractType<Attestation> for DtoAttestation {
     fn into_contract_type(self) -> Attestation {
         match self {
             DtoAttestation::Dstack(dstack_attestation) => {
@@ -25,7 +25,7 @@ impl ConvertDtoToContractType<Attestation> for DtoAttestation {
     }
 }
 
-impl ConvertDtoToContractType<MockAttestation> for DtoMockAttestation {
+impl IntoContractType<MockAttestation> for DtoMockAttestation {
     fn into_contract_type(self) -> MockAttestation {
         match self {
             DtoMockAttestation::Valid => MockAttestation::Valid,
@@ -43,7 +43,7 @@ impl ConvertDtoToContractType<MockAttestation> for DtoMockAttestation {
     }
 }
 
-impl ConvertDtoToContractType<DstackAttestation> for DtoDstackAttestation {
+impl IntoContractType<DstackAttestation> for DtoDstackAttestation {
     fn into_contract_type(self) -> DstackAttestation {
         let DtoDstackAttestation {
             quote,
@@ -59,7 +59,7 @@ impl ConvertDtoToContractType<DstackAttestation> for DtoDstackAttestation {
     }
 }
 
-impl ConvertDtoToContractType<Collateral> for DtoCollateral {
+impl IntoContractType<Collateral> for DtoCollateral {
     fn into_contract_type(self) -> Collateral {
         let DtoCollateral {
             pck_crl_issuer_chain,
@@ -87,7 +87,7 @@ impl ConvertDtoToContractType<Collateral> for DtoCollateral {
     }
 }
 
-impl ConvertDtoToContractType<TcbInfo> for DtoTcbInfo {
+impl IntoContractType<TcbInfo> for DtoTcbInfo {
     fn into_contract_type(self) -> TcbInfo {
         let DtoTcbInfo {
             mrtd,
@@ -104,7 +104,7 @@ impl ConvertDtoToContractType<TcbInfo> for DtoTcbInfo {
 
         let event_log = event_log
             .into_iter()
-            .map(ConvertDtoToContractType::into_contract_type)
+            .map(IntoContractType::into_contract_type)
             .collect();
 
         TcbInfo {
@@ -122,7 +122,7 @@ impl ConvertDtoToContractType<TcbInfo> for DtoTcbInfo {
     }
 }
 
-impl ConvertDtoToContractType<EventLog> for DtoEventLog {
+impl IntoContractType<EventLog> for DtoEventLog {
     fn into_contract_type(self) -> EventLog {
         let DtoEventLog {
             imr,
