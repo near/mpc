@@ -1345,11 +1345,10 @@ impl MpcContract {
             destination_node_info
         );
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            return Err(
-                errors::InvalidState::ProtocolStateNotRunning.message(format!(
-                    "migration of nodes is only possible while the protocol is in `Running` state."
-                )),
-            );
+            return Err(errors::InvalidState::ProtocolStateNotRunning.message(
+                "migration of nodes is only possible while the protocol is in `Running` state."
+                    .to_string(),
+            ));
         };
 
         if !running_state.is_participant(&account_id) {
@@ -1385,11 +1384,10 @@ impl MpcContract {
             keyset
         );
         let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
-            return Err(
-                errors::InvalidState::ProtocolStateNotRunning.message(format!(
-                    "migration of nodes is only possible while the protocol is in `Running` state."
-                )),
-            );
+            return Err(errors::InvalidState::ProtocolStateNotRunning.message(
+                "migration of nodes is only possible while the protocol is in `Running` state."
+                    .to_string(),
+            ));
         };
 
         if !running_state.is_participant(&account_id) {
@@ -1410,7 +1408,10 @@ impl MpcContract {
         };
         if expected_destination_node.signer_account_pk != signer_pk {
             return Err(
-                errors::NodeMigrationError::AccountPublicKeyMismatch.message(format!("not found "))
+                errors::NodeMigrationError::AccountPublicKeyMismatch.message(format!(
+                    "found  {:?}, expected {:?}",
+                    signer_pk, expected_destination_node.signer_account_pk
+                )),
             );
         }
         // ensure that this node has a valid TEE quote
