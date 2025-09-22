@@ -7,7 +7,7 @@ use common::{
     assert_running_return_participants, check_call_success, get_tee_accounts, init_env_ed25519,
     init_env_secp256k1, submit_participant_info, submit_tee_attestations,
 };
-use dtos_contract::{DtoAttestation, DtoMockAttestation};
+use dtos_contract::{Attestation, MockAttestation};
 use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
@@ -233,7 +233,7 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, DtoAttestation, PublicKey)> {
+async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dto_dstack_attestation();
     let tls_key = p2p_tls_key();
@@ -270,7 +270,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    let mock_attestation = DtoAttestation::Mock(DtoMockAttestation::Valid);
+    let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let success =
         submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
@@ -405,12 +405,12 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
         let previous_and_current_approved_hashes = &hashes[..=i];
 
         for approved_hash in previous_and_current_approved_hashes {
-            let mock_attestation = DtoMockAttestation::WithConstraints {
+            let mock_attestation = MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some(*approved_hash),
                 launcher_docker_compose_hash: None,
                 expiry_time_stamp_seconds: None,
             };
-            let attestation = DtoAttestation::Mock(mock_attestation);
+            let attestation = Attestation::Mock(mock_attestation);
 
             let dummy_tls_key = p2p_tls_key();
 

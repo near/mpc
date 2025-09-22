@@ -1,4 +1,4 @@
-use dtos_contract::{DtoAttestation, DtoEd25519PublicKey, DtoMockAttestation};
+use dtos_contract::{Attestation, DtoEd25519PublicKey, MockAttestation};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -56,7 +56,7 @@ impl TestSetup {
         }
     }
 
-    fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: DtoAttestation) {
+    fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
         let tls_key_bytes: [u8; 32] = node_id.tls_public_key.as_bytes()[1..].try_into().unwrap();
@@ -97,7 +97,7 @@ fn test_participant_kickout_after_expiration() {
     assert_eq!(setup.contract.get_tee_accounts().len(), 0);
 
     // Submit valid attestations for first 2 participants
-    let valid_attestation = DtoAttestation::Mock(DtoMockAttestation::Valid);
+    let valid_attestation = Attestation::Mock(MockAttestation::Valid);
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()
@@ -115,7 +115,7 @@ fn test_participant_kickout_after_expiration() {
 
     // Submit expiring attestation for 3rd participant
     const EXPIRY_SECONDS: u64 = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
-    let expiring_attestation = DtoAttestation::Mock(DtoMockAttestation::WithConstraints {
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
         expiry_time_stamp_seconds: Some(EXPIRY_SECONDS),
@@ -196,7 +196,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD);
 
     // Submit TEE info for current 2 participants (all have valid attestations)
-    let valid_attestation = DtoAttestation::Mock(DtoMockAttestation::Valid);
+    let valid_attestation = Attestation::Mock(MockAttestation::Valid);
     let participant_nodes: Vec<NodeId> = setup
         .participants_list
         .iter()

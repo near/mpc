@@ -3,34 +3,30 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
-use dtos_contract::{
-    DtoAttestation, DtoCollateral, DtoDstackAttestation, DtoEventLog, DtoMockAttestation,
-    DtoTcbInfo,
-};
 
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
-impl IntoContractType<Attestation> for DtoAttestation {
+impl IntoContractType<Attestation> for dtos_contract::Attestation {
     fn into_contract_type(self) -> Attestation {
         match self {
-            DtoAttestation::Dstack(dstack_attestation) => {
+            dtos_contract::Attestation::Dstack(dstack_attestation) => {
                 Attestation::Dstack(dstack_attestation.into_contract_type())
             }
-            DtoAttestation::Mock(mock_attestation) => {
+            dtos_contract::Attestation::Mock(mock_attestation) => {
                 Attestation::Mock(mock_attestation.into_contract_type())
             }
         }
     }
 }
 
-impl IntoContractType<MockAttestation> for DtoMockAttestation {
+impl IntoContractType<MockAttestation> for dtos_contract::MockAttestation {
     fn into_contract_type(self) -> MockAttestation {
         match self {
-            DtoMockAttestation::Valid => MockAttestation::Valid,
-            DtoMockAttestation::Invalid => MockAttestation::Invalid,
-            DtoMockAttestation::WithConstraints {
+            dtos_contract::MockAttestation::Valid => MockAttestation::Valid,
+            dtos_contract::MockAttestation::Invalid => MockAttestation::Invalid,
+            dtos_contract::MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_time_stamp_seconds,
@@ -43,9 +39,9 @@ impl IntoContractType<MockAttestation> for DtoMockAttestation {
     }
 }
 
-impl IntoContractType<DstackAttestation> for DtoDstackAttestation {
+impl IntoContractType<DstackAttestation> for dtos_contract::DstackAttestation {
     fn into_contract_type(self) -> DstackAttestation {
-        let DtoDstackAttestation {
+        let dtos_contract::DstackAttestation {
             quote,
             collateral,
             tcb_info,
@@ -59,9 +55,9 @@ impl IntoContractType<DstackAttestation> for DtoDstackAttestation {
     }
 }
 
-impl IntoContractType<Collateral> for DtoCollateral {
+impl IntoContractType<Collateral> for dtos_contract::Collateral {
     fn into_contract_type(self) -> Collateral {
-        let DtoCollateral {
+        let dtos_contract::Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -87,9 +83,9 @@ impl IntoContractType<Collateral> for DtoCollateral {
     }
 }
 
-impl IntoContractType<TcbInfo> for DtoTcbInfo {
+impl IntoContractType<TcbInfo> for dtos_contract::TcbInfo {
     fn into_contract_type(self) -> TcbInfo {
-        let DtoTcbInfo {
+        let dtos_contract::TcbInfo {
             mrtd,
             rtmr0,
             rtmr1,
@@ -122,9 +118,9 @@ impl IntoContractType<TcbInfo> for DtoTcbInfo {
     }
 }
 
-impl IntoContractType<EventLog> for DtoEventLog {
+impl IntoContractType<EventLog> for dtos_contract::EventLog {
     fn into_contract_type(self) -> EventLog {
-        let DtoEventLog {
+        let dtos_contract::EventLog {
             imr,
             event_type,
             digest,

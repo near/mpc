@@ -515,7 +515,7 @@ impl MpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        proposed_participant_attestation: dtos_contract::DtoAttestation,
+        proposed_participant_attestation: dtos_contract::Attestation,
         tls_public_key: DtoEd25519PublicKey,
     ) -> Result<(), Error> {
         let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
@@ -1243,7 +1243,7 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use dtos_contract::{DtoAttestation, DtoMockAttestation};
+    use dtos_contract::{Attestation, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1495,9 +1495,9 @@ mod tests {
         let participants_list = participants.participants();
         let (account_id, _, participant_info) = &participants_list[participant_index];
         let attestation = if is_valid {
-            DtoMockAttestation::Valid
+            MockAttestation::Valid
         } else {
-            DtoMockAttestation::Invalid
+            MockAttestation::Invalid
         };
 
         let tls_public_key = participant_info.sign_pk.clone();
@@ -1510,7 +1510,7 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(DtoAttestation::Mock(attestation), dto_public_key)
+        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
     }
 
     fn submit_valid_attestations(

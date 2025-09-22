@@ -3,7 +3,6 @@ use attestation::{
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-use dtos_contract::{DtoAttestation, DtoDstackAttestation, DtoTcbInfo};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_sdk::PublicKey;
 use serde_json::Value;
@@ -62,12 +61,14 @@ pub fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
 
-pub fn mock_dto_dstack_attestation() -> DtoAttestation {
+pub fn mock_dto_dstack_attestation() -> dtos_contract::Attestation {
     let quote = quote().into();
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: DtoTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    let tcb_info: dtos_contract::TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
-    DtoAttestation::Dstack(DtoDstackAttestation::new(quote, collateral, tcb_info))
+    dtos_contract::Attestation::Dstack(dtos_contract::DstackAttestation::new(
+        quote, collateral, tcb_info,
+    ))
 }
