@@ -56,19 +56,31 @@ impl Ord for CompletedSignatureRequest {
 
 impl CompletedSignatureRequests {
     pub fn add_completed_request(&mut self, request: CompletedSignatureRequest) {
+        self.update_failed_signatures_metric_for_request(&request);
         self.requests.push(request);
         if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
             self.requests.pop();
         }
-        self.update_failed_signatures_metric();
     }
 
-    /// Count failed signatures (those with completion_delay = None) and update the metric
-    fn update_failed_signatures_metric(&self) {
-        let failed_count = self.requests.iter()
-            .filter(|request| request.completion_delay.is_none())
-            .count();
-        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT.set(failed_count as i64);
+    /// Update the metric for a single completed request
+    fn update_failed_signatures_metric_for_request(&self, request: &CompletedSignatureRequest) {
+        match request.completion_delay {
+            None => {
+                // Failed signatures (max tries exceeded)
+                metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                    .with_label_values(&["max_tries_exceeded"])
+                    .inc();
+            }
+            Some((delay_blocks, _)) => {
+                if delay_blocks >= 201 {
+                    // Severely delayed signatures (timeout)
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+            }
+        }
     }
 }
 
@@ -156,9 +168,6 @@ impl QueuedSignatureRequest {
 
 impl Debug for PendingSignatureRequests {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Update the failed signatures metric before generating debug output
-        self.recently_completed_requests.update_failed_signatures_metric();
-        
         let mut signature_lines = Vec::new();
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         let online_participants = self.network_api.alive_participants();

@@ -70,10 +70,11 @@ lazy_static! {
             exponential_buckets(2.0, 1.5, 10).unwrap()
             ).unwrap();
 
-    pub static ref MPC_CLUSTER_FAILED_SIGNATURES_COUNT: prometheus::IntGauge =
-        prometheus::register_int_gauge!(
+    pub static ref MPC_CLUSTER_FAILED_SIGNATURES_COUNT: prometheus::IntCounterVec =
+        prometheus::register_int_counter_vec!(
             "mpc_cluster_failed_signatures_count",
-            "Number of failed signatures in the cluster (signatures with completion_delay = None)"
+            "Number of failed or severely delayed signatures in the cluster",
+            &["reason"]
         )
         .unwrap();
 }
