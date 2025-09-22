@@ -81,9 +81,8 @@ impl AllowedDockerImageHashes {
         let entry_age = current_time
             .checked_sub(entry.added)
             .expect("Near system time is monotonically increasing");
-        let entry_is_not_expired = entry_age <= tee_upgrade_deadline_duration;
 
-        entry_is_not_expired
+        entry_age <= tee_upgrade_deadline_duration
     }
 
     /// Removes all expired code hashes and returns the number of removed entries.

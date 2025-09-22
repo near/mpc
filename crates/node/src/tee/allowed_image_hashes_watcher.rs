@@ -1,6 +1,6 @@
 use derive_more::From;
 use itertools::Itertools;
-use mpc_contract::tee::proposal::{AllowedMpcDockerImage, MpcDockerImageHash};
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
@@ -21,7 +21,7 @@ use mockall::automock;
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
-        latest_allowed_image_hash: &AllowedMpcDockerImage,
+        latest_allowed_image_hash: &MpcDockerImageHash,
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
@@ -33,7 +33,7 @@ pub struct AllowedImageHashesFile {
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(
         &mut self,
-        latest_allowed_image_hash: &AllowedMpcDockerImage,
+        latest_allowed_image_hash: &MpcDockerImageHash,
     ) -> Result<(), io::Error> {
         tracing::info!(
             ?self.file_path,
@@ -53,7 +53,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             ?latest_allowed_image_hash,
             "Writing latest allowed image hash to disk."
         );
-        let image_hash = latest_allowed_image_hash.image_hash.as_hex();
+        let image_hash = latest_allowed_image_hash.as_hex();
         file_handle.write_all(image_hash.as_bytes()).await?;
         file_handle.flush().await?;
 
@@ -78,7 +78,7 @@ pub enum ExitError {
 }
 
 /// Creates a future that monitors the latest allowed image hashes in
-/// `allowed_hashes_in_contract` and writes them to the provided storage `image_hash_storage`.
+/// `allowed_hashes_in_contract` and writes them to the provided storage implementation `image_hash_storage`.
 ///
 /// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
 /// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error]
@@ -90,7 +90,7 @@ pub enum ExitError {
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
     current_image: MpcDockerImageHash,
-    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImage>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
 ) -> Result<(), ExitError>
@@ -110,7 +110,7 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImage>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     current_image: MpcDockerImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -168,19 +168,14 @@ where
         let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
         let image_hash_storage = &mut self.image_hash_storage;
-        let Some(latest_allowed_image_hash) =
-            allowed_image_hashes.iter().max_by_key(|image| image.added)
-        else {
+        let Some(latest_allowed_image_hash) = allowed_image_hashes.first() else {
             tracing::warn!("Indexer provided an empty set of allowed TEE image hashes.");
             return Ok(());
         };
 
         image_hash_storage.set(latest_allowed_image_hash).await?;
 
-        let local_image_is_allowed = allowed_image_hashes
-            .iter()
-            .map(|image| &image.image_hash)
-            .contains(&self.current_image);
+        let local_image_is_allowed = allowed_image_hashes.iter().contains(&self.current_image);
 
         if !local_image_is_allowed {
             tracing::error!(
@@ -197,7 +192,6 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use mockall::predicate;
-    use mpc_contract::tee::proposal::LauncherDockerComposeHash;
     use rstest::rstest;
     use std::{io::ErrorKind, sync::Arc, time::Duration};
     use tokio::sync::{mpsc::error::TryRecvError, Notify};
@@ -205,28 +199,16 @@ mod tests {
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
-    fn image_hash_1() -> AllowedMpcDockerImage {
-        AllowedMpcDockerImage {
-            image_hash: MpcDockerImageHash::from([1; 32]),
-            docker_compose_hash: LauncherDockerComposeHash::from([1; 32]),
-            added: 1,
-        }
+    fn image_hash_1() -> MpcDockerImageHash {
+        MpcDockerImageHash::from([1; 32])
     }
 
-    fn image_hash_2() -> AllowedMpcDockerImage {
-        AllowedMpcDockerImage {
-            image_hash: MpcDockerImageHash::from([2; 32]),
-            docker_compose_hash: LauncherDockerComposeHash::from([2; 32]),
-            added: 2,
-        }
+    fn image_hash_2() -> MpcDockerImageHash {
+        MpcDockerImageHash::from([2; 32])
     }
 
-    fn image_hash_3() -> AllowedMpcDockerImage {
-        AllowedMpcDockerImage {
-            image_hash: MpcDockerImageHash::from([3; 32]),
-            docker_compose_hash: LauncherDockerComposeHash::from([3; 32]),
-            added: 3,
-        }
+    fn image_hash_3() -> MpcDockerImageHash {
+        MpcDockerImageHash::from([3; 32])
     }
 
     /// Assert that the image with highest block height is always written to storage.
@@ -236,9 +218,10 @@ mod tests {
     #[case(vec![image_hash_1(), image_hash_2(), image_hash_3()])]
     #[tokio::test]
     async fn test_latest_allowed_image_hash_is_written(
-        #[case] allowed_images: Vec<AllowedMpcDockerImage>,
+        #[case] allowed_images: Vec<MpcDockerImageHash>,
     ) {
-        let current_image = allowed_images[0].clone().image_hash;
+        let latest_allowed_image = allowed_images[0].clone();
+        let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
         let (sender, receiver) = watch::channel(allowed_images);
@@ -253,7 +236,7 @@ mod tests {
                 .expect_set()
                 .once()
                 // Verify that the latest allowed image is written
-                .with(predicate::eq(image_hash_3()))
+                .with(predicate::eq(latest_allowed_image))
                 .returning(move |_| {
                     write_is_called.notify_one();
                     Box::pin(async { Ok(()) })
@@ -280,13 +263,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::image_is_allowed(image_hash_1().image_hash, vec![image_hash_1()])]
+    #[case::image_is_allowed(image_hash_1(), vec![image_hash_1()])]
     /// - `ErrorKind::StorageProviderError` is returned also if current image is disallowed.
-    #[case::image_is_disallowed(image_hash_2().image_hash, vec![image_hash_1()])]
+    #[case::image_is_disallowed(image_hash_2(), vec![image_hash_1()])]
     #[tokio::test]
     async fn test_shutdown_signal_is_sent_on_write_error(
         #[case] current_image: MpcDockerImageHash,
-        #[case] allowed_images: Vec<AllowedMpcDockerImage>,
+        #[case] allowed_images: Vec<MpcDockerImageHash>,
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
@@ -320,7 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_current_image_not_allowed() {
-        let current_image = image_hash_1().image_hash;
+        let current_image = image_hash_1();
         let allowed_image = image_hash_2();
 
         let cancellation_token = CancellationToken::new();
@@ -382,7 +365,7 @@ mod tests {
 
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
-            image_hash_1().image_hash,
+            image_hash_1(),
             receiver,
             storage_mock,
             sender_shutdown,
