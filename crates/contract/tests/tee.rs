@@ -424,7 +424,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
             assert!(
                 validation_success,
-                "DtoAttestation for all previous images must pass"
+                "Attestation for all previous images must pass"
             );
         }
     }
