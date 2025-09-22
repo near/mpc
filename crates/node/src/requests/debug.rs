@@ -87,7 +87,10 @@ impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
 
     /// Update the metric for a single completed request
     /// This only updates the metric for signature requests, not CKD requests
-    fn update_failed_signatures_metric_for_request(&self, request: &CompletedRequest<RequestType, ChainRespondArgsType>) {
+    fn update_failed_signatures_metric_for_request(
+        &self,
+        request: &CompletedRequest<RequestType, ChainRespondArgsType>,
+    ) {
         // Only update the metric for signature requests
         if std::any::TypeId::of::<RequestType>()
             == std::any::TypeId::of::<crate::types::SignatureRequest>()
@@ -201,7 +204,6 @@ impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondA
     for PendingRequests<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         let mut request_lines = Vec::new();
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
         let online_participants = self.network_api.alive_participants();
