@@ -177,15 +177,13 @@ where
 
         image_hash_storage.set(latest_allowed_image_hash).await?;
 
-        let local_image_is_allowed = allowed_image_hashes
+        let running_image_is_not_allowed = !allowed_image_hashes
             .iter()
             .map(|image| &image.image_hash)
             .contains(&self.current_image);
 
-        if !local_image_is_allowed {
-            tracing::error!(
-                "Current node image not in set of allowed image hashes. Sending shut down signal."
-            );
+        if running_image_is_not_allowed {
+            tracing::error!("Currently running node image not in set of allowed image hashes.");
         }
 
         Ok(())
