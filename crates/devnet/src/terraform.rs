@@ -133,9 +133,7 @@ async fn export_terraform_vars(
                 near_responder_account_id: responding_account_id,
             });
         }
-        let docker_image = docker_image
-            .as_deref()
-            .unwrap_or(DEFAULT_MPC_DOCKER_IMAGE);
+        let docker_image = docker_image.as_deref().unwrap_or(DEFAULT_MPC_DOCKER_IMAGE);
 
         let image_hash =
             get_docker_image_hash(docker_image).expect("Failed to get docker image hash");
