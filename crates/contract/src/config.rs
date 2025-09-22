@@ -4,7 +4,7 @@ use near_sdk::near;
 /// Default for `key_event_timeout_blocks`.
 const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
 /// Maximum time after which TEE MPC nodes must be upgraded to the latest version
-const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS: u64 = 7 * 24 * 60 * 100; // ~7 days @ block time of 600 ms, e.g. 100 blocks every 60 seconds
+const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS: u64 = 7 * 24 * 60 * 60; // 7 Days
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -15,14 +15,14 @@ pub struct Config {
     pub key_event_timeout_blocks: u64,
     /// How long an attestation should be considered valid.
     /// For how many blocks should old
-    pub tee_upgrade_deadline_duration_blocks: u64,
+    pub tee_upgrade_deadline_duration_seconds: u64,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
-            tee_upgrade_deadline_duration_blocks: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
+            tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_BLOCKS,
         }
     }
 }
@@ -51,7 +51,7 @@ impl From<Option<InitConfig>> for Config {
 
         Config {
             key_event_timeout_blocks,
-            tee_upgrade_deadline_duration_blocks,
+            tee_upgrade_deadline_duration_seconds: tee_upgrade_deadline_duration_blocks,
         }
     }
 }
@@ -71,7 +71,7 @@ mod tests {
     fn test_config_serialization() {
         let config = Config {
             key_event_timeout_blocks: 2000,
-            tee_upgrade_deadline_duration_blocks: 3333,
+            tee_upgrade_deadline_duration_seconds: 3333,
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: Config = serde_json::from_str(&json).unwrap();

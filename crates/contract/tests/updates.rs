@@ -81,7 +81,7 @@ async fn test_propose_update_config() {
     // have each participant propose a new update:
     let new_config = Config {
         key_event_timeout_blocks: 20,
-        tee_upgrade_deadline_duration_blocks: 3333,
+        tee_upgrade_deadline_duration_seconds: 3333,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
