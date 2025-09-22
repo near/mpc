@@ -72,6 +72,32 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 /// Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
+/// Estimated gas for a token transfer operation
+const GAS_FOR_REFUND_TRANSFER: Gas = Gas::from_tgas(5);
+
+/// Additional gas buffer for safety margin
+const GAS_BUFFER: Gas = Gas::from_tgas(3);
+
+/// 1 TGas in gas units
+const TGAS: u64 = 1_000_000_000_000;
+
+/// Approximate gas price in yoctoNEAR per TGas (can fluctuate)
+const YOCTONEAR_PER_TGAS: u128 = 1_000_000_000;
+
+/// Total estimated gas for a complete signature transaction
+/// This includes: sign call + callback + refund transfer + buffer
+const TOTAL_SIGNATURE_GAS: Gas = Gas::from_gas(
+    GAS_FOR_SIGN_CALL.as_gas()
+        + RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS.as_gas()
+        + GAS_FOR_REFUND_TRANSFER.as_gas()
+        + GAS_BUFFER.as_gas(),
+);
+
+/// Estimated total transaction cost for a signature operation in yoctoNEAR
+/// Calculated as: TOTAL_SIGNATURE_GAS (30 TGas) * YOCTONEAR_PER_TGAS
+pub const ESTIMATED_SIGNATURE_TRANSACTION_COST: u128 =
+    (TOTAL_SIGNATURE_GAS.as_gas() / TGAS) as u128 * YOCTONEAR_PER_TGAS;
+
 /// Prepaid gas for a `clean_tee_status` call
 const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 
@@ -182,12 +208,14 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        match deposit.checked_sub(NearToken::from_yoctonear(1)) {
+        let required_deposit = NearToken::from_yoctonear(ESTIMATED_SIGNATURE_TRANSACTION_COST);
+        match deposit.checked_sub(required_deposit) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
-                            "Require a deposit of 1 yoctonear, found: {}",
+                            "Require a deposit of {} yoctonear to cover transaction costs, found: {}",
+                            ESTIMATED_SIGNATURE_TRANSACTION_COST,
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),

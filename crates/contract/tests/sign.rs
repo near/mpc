@@ -12,6 +12,7 @@ use mpc_contract::{
         signature::SignRequestArgs,
         thresholds::{Threshold, ThresholdParameters},
     },
+    ESTIMATED_SIGNATURE_TRANSACTION_COST,
 };
 use near_workspaces::types::NearToken;
 
@@ -136,8 +137,8 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
         new_contract_balance.as_millinear(),
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() < 20,
-        "respond should take less than 0.02 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after refunding deposits"
     );
 
     Ok(())
@@ -193,13 +194,14 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
         contract_balance.as_yoctonear(),
         new_contract_balance.as_yoctonear(),
     );
+    assert!(balance >= new_balance, "user balance should not increase");
     assert!(
         balance.as_millinear() - new_balance.as_millinear() < 10,
-        "refund should happen"
+        "user should lose less than 0.01 NEAR (gas + deposit)"
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
-        "refund transfer should take less than 0.001 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after proper deposit handling"
     );
 
     Ok(())
@@ -288,7 +290,9 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
                     "key_version": 0,
                 },
             }))
-            .deposit(NearToken::from_yoctonear(1))
+            .deposit(NearToken::from_yoctonear(
+                ESTIMATED_SIGNATURE_TRANSACTION_COST,
+            ))
             .max_gas()
             .transact_async()
             .await?;
