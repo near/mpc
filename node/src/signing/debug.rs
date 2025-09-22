@@ -1,7 +1,7 @@
+use super::metrics;
 use super::queue::{
     PendingSignatureRequests, QueuedSignatureRequest, SignatureComputationProgress,
 };
-use super::metrics;
 use crate::primitives::ParticipantId;
 use crate::sign_request::SignatureRequest;
 use near_indexer_primitives::types::{BlockHeight, NumBlocks};
