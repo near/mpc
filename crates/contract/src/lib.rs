@@ -17,7 +17,7 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedDockerImageHash, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{proposal::AllowedMpcDockerImage, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 use attestation::attestation::Attestation;
@@ -915,19 +915,18 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn allowed_code_hashes(&mut self) -> Vec<MpcDockerImageHash> {
+    pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
         let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
-
         self.tee_state
-            .get_allowed_hashes(tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks)
     }
 
     pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         log!("latest_code_hash: signer={}", env::signer_account_id());
 
         self.tee_state
-            .get_allowed_hashes(self.config.tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_image_hashes(self.config.tee_upgrade_deadline_duration_blocks)
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -945,7 +944,7 @@ impl MpcContract {
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
     /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case less than `threshold` participants run in an accepted Tee State.
+    /// in case less than `threshold` participants run in an accepted TEE State.
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
@@ -1125,17 +1124,12 @@ impl MpcContract {
         &self.protocol_state
     }
 
-    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedDockerImageHash> {
-        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
-
-        let current_block_height = env::block_height();
-
-        // this is a query method, meaning no `&mut self`, so we need to clone.
-        let mut allowed_image_hashes = self.tee_state.allowed_docker_image_hashes.clone();
-
-        allowed_image_hashes
-            .get(current_block_height, tee_upgrade_deadline_duration_blocks)
-            .to_vec()
+    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedMpcDockerImage> {
+        self.tee_state
+            .get_allowed_mpc_docker_images(self.config.tee_upgrade_deadline_duration_blocks)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {

@@ -2,7 +2,9 @@ use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::{
-        proposal::{AllowedDockerImageHashes, CodeHashesVotes, MpcDockerImageHash},
+        proposal::{
+            AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
+        },
         quote::TeeQuoteStatus,
     },
 };
@@ -62,13 +64,13 @@ impl TeeState {
         &mut self,
         attestation: &Attestation,
         tls_public_key: PublicKey,
-        tee_upgrade_period_blocks: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let is_valid = attestation.verify(
             expected_report_data,
             Self::current_time_seconds(),
-            &self.get_allowed_hashes(tee_upgrade_period_blocks),
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks),
             &self.allowed_launcher_compose_hashes,
         );
 
@@ -83,9 +85,10 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         node_id: &NodeId,
-        tee_upgrade_period_blocks: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> TeeQuoteStatus {
-        let allowed_mpc_docker_image_hashes = self.get_allowed_hashes(tee_upgrade_period_blocks);
+        let allowed_mpc_docker_image_hashes =
+            self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
         let participant_attestation = self.participants_attestations.get(node_id);
@@ -119,9 +122,12 @@ impl TeeState {
     pub fn validate_tee(
         &mut self,
         participants: &Participants,
-        tee_upgrade_period_blocks: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> TeeValidationResult {
-        let new_participants: Vec<_> = participants
+        self.allowed_docker_image_hashes
+            .cleanup_expired_hashes(env::block_height(), tee_upgrade_deadline_duration_blocks);
+
+        let participants_with_valid_attestation: Vec<_> = participants
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
@@ -133,7 +139,7 @@ impl TeeState {
                             account_id: account_id.clone(),
                             tls_public_key
                         },
-                        tee_upgrade_period_blocks
+                        tee_upgrade_deadline_duration_blocks
                     ),
                     TeeQuoteStatus::Valid | TeeQuoteStatus::None
                 )
@@ -141,9 +147,9 @@ impl TeeState {
             .cloned()
             .collect();
 
-        if new_participants.len() != participants.len() {
+        if participants_with_valid_attestation.len() != participants.len() {
             let participants_with_valid_attestation =
-                Participants::init(participants.next_id(), new_participants);
+                Participants::init(participants.next_id(), participants_with_valid_attestation);
 
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
@@ -176,24 +182,28 @@ impl TeeState {
         self.votes.vote(code_hash.clone(), participant)
     }
 
-    /// Retrieves the current allowed hashes, cleaning up any expired entries.
-    pub fn get_allowed_hashes(
-        &mut self,
-        tee_upgrade_period_blocks: u64,
+    pub fn get_allowed_mpc_docker_image_hashes(
+        &self,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) -> Vec<MpcDockerImageHash> {
-        // Clean up expired entries and return the current allowed hashes. Don't remove the get
-        // call, as it ensures we only get hashes valid for the current block height.
-        self.allowed_docker_image_hashes
-            .get(env::block_height(), tee_upgrade_period_blocks)
+        self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration_blocks)
             .iter()
             .map(|entry| entry.image_hash.clone())
             .collect()
     }
 
+    pub fn get_allowed_mpc_docker_images(
+        &self,
+        tee_upgrade_deadline_duration_blocks: u64,
+    ) -> Vec<&AllowedMpcDockerImage> {
+        self.allowed_docker_image_hashes
+            .get(env::block_height(), tee_upgrade_deadline_duration_blocks)
+    }
+
     pub fn whitelist_tee_proposal(
         &mut self,
         tee_proposal: MpcDockerImageHash,
-        tee_upgrade_period_blocks: u64,
+        tee_upgrade_deadline_duration_blocks: u64,
     ) {
         self.votes.clear_votes();
         self.allowed_launcher_compose_hashes.push(
@@ -202,7 +212,7 @@ impl TeeState {
         self.allowed_docker_image_hashes.insert(
             tee_proposal,
             env::block_height(),
-            tee_upgrade_period_blocks,
+            tee_upgrade_deadline_duration_blocks,
         );
     }
 
