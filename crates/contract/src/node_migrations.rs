@@ -132,7 +132,6 @@ mod tests {
 
         migrations.set_backup_service_info(account_id.clone(), info.clone());
 
-        // todo: separate this? clean this up ?
         assert_eq!(
             migrations.backup_services_info.get(&account_id).unwrap(),
             &info

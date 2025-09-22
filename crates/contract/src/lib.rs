@@ -87,7 +87,7 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
-/// todo: benchmark
+/// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
 
 /// Confidential Key Derivation only supports secp256k1
@@ -1266,7 +1266,7 @@ impl MpcContract {
         }
     }
 }
-// todo: whenever we conclude a resharing, we must clean the `BackupServiceInfo`
+
 #[near_bindgen]
 impl MpcContract {
     pub fn get_my_migration_info(
@@ -1337,8 +1337,7 @@ impl MpcContract {
         &mut self,
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
-        // todo: test
-        // todo: require a deposit
+        // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
         let account_id = env::signer_account_id();
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
@@ -1377,7 +1376,6 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        // todo: test
         let account_id = env::signer_account_id();
         let signer_pk = env::signer_account_pk();
         log!(
