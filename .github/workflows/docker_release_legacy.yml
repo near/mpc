@@ -1,0 +1,52 @@
+# This is meant to be used from mainnet-release and testnet-release branches
+name: Docker Build and Publish Legacy Images
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      build-ref:
+        default: 'main'
+        description: "The branch, tag or SHA to build MPC Docker image from. Default to latest commit on main branch."
+        type: string
+    
+
+jobs:
+  docker-image-build:
+    name: "Build and push Legacy MPC Docker image"
+    runs-on: warp-ubuntu-2204-x64-8x
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.build-ref }}
+        
+      - name: Get short SHA
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+  
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push MPC Docker image to Docker Hub
+        uses: Warpbuilds/build-push-action@v6
+        with:
+          context: .
+          profile-name: "mpc-image-builder"
+          push: true
+          file: deployment/Dockerfile-gcp
+          tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }},nearone/mpc-node-gcp:${{ github.event.inputs.build-ref }}-${{ env.sha_short }}
