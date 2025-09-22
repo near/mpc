@@ -87,7 +87,6 @@ fn test_participant_kickout_after_expiration() {
 
     testing_env!(VMContextBuilder::new()
         .block_timestamp(INITIAL_TIMESTAMP_NANOS)
-        .attached_deposit(NearToken::from_near(1))
         .build());
     let domain_id = DomainId::default();
 
@@ -179,7 +178,7 @@ fn test_participant_kickout_after_expiration() {
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 }
 
-/// **Unit test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes
+/// ** Test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes
 /// TEE accounts for accounts that are no longer in the participant list.
 /// This simulates cleanup after participant removal (e.g., post-resharing).
 #[test]
