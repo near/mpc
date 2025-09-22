@@ -78,26 +78,36 @@ impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
         &mut self,
         request: CompletedRequest<RequestType, ChainRespondArgsType>,
     ) {
+        self.update_failed_signatures_metric_for_request(&request);
         self.requests.push(request);
         if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
             self.requests.pop();
         }
-        self.update_failed_signatures_metric();
     }
 
-    /// Count failed signatures (those with completion_delay = None) and update the metric
+    /// Update the metric for a single completed request
     /// This only updates the metric for signature requests, not CKD requests
-    fn update_failed_signatures_metric(&self) {
+    fn update_failed_signatures_metric_for_request(&self, request: &CompletedRequest<RequestType, ChainRespondArgsType>) {
         // Only update the metric for signature requests
         if std::any::TypeId::of::<RequestType>()
             == std::any::TypeId::of::<crate::types::SignatureRequest>()
         {
-            let failed_count = self
-                .requests
-                .iter()
-                .filter(|request| request.completion_delay.is_none())
-                .count();
-            metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT.set(failed_count as i64);
+            match request.completion_delay {
+                None => {
+                    // Failed signatures (max tries exceeded)
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["max_tries_exceeded"])
+                        .inc();
+                }
+                Some((delay_blocks, _)) => {
+                    if delay_blocks >= 201 {
+                        // Severely delayed signatures (timeout)
+                        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                            .with_label_values(&["timeout"])
+                            .inc();
+                    }
+                }
+            }
         }
     }
 }
@@ -191,9 +201,6 @@ impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondA
     for PendingRequests<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Update the failed signatures metric before generating debug output
-        self.recently_completed_requests
-            .update_failed_signatures_metric();
 
         let mut request_lines = Vec::new();
         let (eligible_leaders, maximum_height) = self.eligible_leaders_and_maximum_height();
