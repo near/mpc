@@ -1,7 +1,7 @@
 use derive_more::{Deref, From};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deref, From, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deref, From, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
