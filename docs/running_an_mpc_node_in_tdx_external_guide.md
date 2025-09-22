@@ -79,29 +79,29 @@ Make sure to complete:
 This ensures that your TDX setup is correctly configured.  
 
 ---
-
 #### 2. Dstack Setup and Configuration
-
-##### Dstack Setup
 
 Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).  
 Run the steps in [Getting Started](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#-getting-started):
-* Prerequisites
-* Install Dependencies
-* Build and Run
 
-With some adjustments, see more details below:
-* We are using specific Dstack version for reproducibility
-* We are NOT using KMS and Gateway.
-* Some port adjustment may be needed.
+* Prerequisites  
+* Install Dependencies  
+* Build and Run  
 
+With the following adjustments (see details below):  
+* We use a specific Dstack version for reproducibility.  
+* KMS and Gateway are not used in this setup.  
+* Some port adjustments may be required.  
+
+---
 
 ##### Guest OS Image
 
-> **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes. The OS image is measured, and those measurements are hardcoded in the contract.
+> **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes.  
+> The OS image is measured, and those measurements are hardcoded in the contract.
 
 Clone the [meta-dstack repository](https://github.com/Dstack-TEE/meta-dstack) and check out **release `v0.5.4`** (commit `f7c795b76faa693f218e1c255007e3a68c541d79`).  
-This will automatically pull in the correct version of `dstack` as a submodule (commit `3e4e462cac2a57c204698d2443d252d13e75cd29`).  
+This automatically pulls in the correct version of `dstack` as a submodule (commit `3e4e462cac2a57c204698d2443d252d13e75cd29`).  
 
 ```bash
 #!/bin/bash
@@ -116,25 +116,22 @@ git submodule update --init --recursive
 At this point, you have two options:
 
 * **Download a pre-built OS image (recommended, faster):**
-
 ```bash
 ./build.sh dl 0.5.4
 ```
 
 * **Build a reproducible OS image yourself (slower, ~1–2 hours):**
-
 ```bash
 cd repro-build && ./repro-build.sh -n
 ```
 
 ---
 
-##### Verification
+##### Verification Steps
 
-If you wish to verify your setup is correct:
+Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
 
-**Verify file hashes against expected values:**
-
+**1. Verify file hashes against expected values:**
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -147,7 +144,6 @@ EXPECTED["initramfs.cpio.gz"]="fd5267f04bf95dc073c21934de552517506acde6485524834
 EXPECTED["metadata.json"]="a0a8489dd9f05db9ba26b37c1a7e3c99e94fa4a3e82736b57b1c19b058a11674"
 
 ALL_OK=1
-
 for FILE in "${!EXPECTED[@]}"; do
     if [[ ! -f "$FILE" ]]; then
         echo "$FILE not found"
@@ -174,8 +170,7 @@ else
 fi
 ```
 
-**Verify the rootfs.img.verity:**
-
+**2. Verify the `rootfs.img.verity`:**
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -199,23 +194,71 @@ echo "  Hash offset:   $HASH_OFFSET"
 echo "  Rootfs hash:   $ROOTFS_HASH"
 
 # Run verification
-sudo veritysetup verify   --data-blocks=$DATA_BLOCKS   --hash-offset=$HASH_OFFSET   --data-block-size=$BLOCK_SIZE   --hash-block-size=$BLOCK_SIZE   "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
+sudo veritysetup verify \
+  --data-blocks=$DATA_BLOCKS \
+  --hash-offset=$HASH_OFFSET \
+  --data-block-size=$BLOCK_SIZE \
+  --hash-block-size=$BLOCK_SIZE \
+  "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
 
 echo "✅ Verification succeeded"
 ```
 
-**Optional:** Check that your generated OS image corresponds to the expected RTMR values:
+**3. Check actual vs. expected RTMR values:**
+1. Build `dstack-mr` tool (using Docker).  
+2. Calculate the actual RTMRs of the image.  
+3. Compare against expected RTMRs from the contract (shown below).  
 
+For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
+
+Build `dstack-mr` docker image:
 ```bash
-$dstack-mr -cpu 8 -memory 64G -metadata metadata.json
+# Dockerfile
+FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
+ARG DSTACK_REV
+WORKDIR /build
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    musl-tools \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    clang \
+    libclang-dev
+RUN git clone https://github.com/Dstack-TEE/dstack.git && \
+    cd dstack
+RUN rustup target add x86_64-unknown-linux-musl
+RUN cd dstack && cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
 
+FROM kvin/kms:latest
+COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
+ENTRYPOINT ["dstack-mr"]
+CMD []
+```
+
+Build:
+```bash
+docker build . -t dstack-mr
+```
+
+Run:
+```bash
+docker run --rm \
+  -v "$(pwd)":/dstack-0.5.4 \
+  dstack-mr \
+  measure -c 8 -m 64G /dstack-0.5.4/metadata.json
+```
+
+Example output:
+```text
+Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
-RTMR0: 3744b154069500a466f514253b49858299b2e1bdc44e3d557337d81e828bedf6a0410f27d3a18c932e5e49e1c4215737
+RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
 RTMR1: a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15
 RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef83433947c492b9c201182fc9769bbe
 ```
-
-For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
 
 ---
 
@@ -231,6 +274,7 @@ Update `vmm.toml` as follows:
   ```toml
   max_disk_size = 1000
   ```
+
 
 #### 3. Local Gramine-Sealing-Key-Provider Setup
 
