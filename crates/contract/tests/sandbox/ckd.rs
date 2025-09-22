@@ -1,5 +1,7 @@
-pub mod common;
-use common::{create_response_ckd, derive_confidential_key_and_validate, init_env_secp256k1};
+use crate::common::{
+    create_response_ckd, derive_confidential_key_and_validate, example_secp256k1_point,
+    init_env_secp256k1,
+};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     errors,
@@ -7,8 +9,6 @@ use mpc_contract::{
 };
 use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
-
-use crate::common::example_secp256k1_point;
 
 async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -22,8 +22,8 @@ async fn create_account_given_id(
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
 
     let account_ids: [AccountId; 4] = [
@@ -106,8 +106,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
@@ -236,8 +236,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
