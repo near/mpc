@@ -78,9 +78,6 @@ const GAS_FOR_REFUND_TRANSFER: Gas = Gas::from_tgas(5);
 /// Additional gas buffer for safety margin
 const GAS_BUFFER: Gas = Gas::from_tgas(3);
 
-/// 1 TGas in gas units
-const TGAS: u64 = 1_000_000_000_000;
-
 /// Approximate gas price in yoctoNEAR per TGas (can fluctuate)
 const YOCTONEAR_PER_TGAS: u128 = 1_000_000_000;
 
@@ -96,12 +93,12 @@ const TOTAL_SIGNATURE_GAS: Gas = Gas::from_gas(
 /// Estimated total transaction cost for a signature operation in yoctoNEAR
 /// Calculated as: TOTAL_SIGNATURE_GAS (30 TGas) * YOCTONEAR_PER_TGAS
 pub const ESTIMATED_SIGNATURE_TRANSACTION_COST: u128 =
-    (TOTAL_SIGNATURE_GAS.as_gas() / TGAS) as u128 * YOCTONEAR_PER_TGAS;
+    (TOTAL_SIGNATURE_GAS.as_gas() / Gas::from_tgas(1).as_gas()) as u128 * YOCTONEAR_PER_TGAS;
 
 /// Prepaid gas for a `clean_tee_status` call
 const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 
-/// Confidential Key Derivation only supports secp256k1
+/// Confidential Key Derivation only supports secp256k1const TGAS: u64 = 1_000_000_000_000;
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
 impl Default for MpcContract {

@@ -28,9 +28,9 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
-    ESTIMATED_SIGNATURE_TRANSACTION_COST,
     tee::tee_state::NodeId,
     update::UpdateId,
+    ESTIMATED_SIGNATURE_TRANSACTION_COST,
 };
 use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
@@ -487,7 +487,9 @@ pub async fn sign_and_validate(
         .args_json(serde_json::json!({
             "request": request,
         }))
-        .deposit(NearToken::from_yoctonear(ESTIMATED_SIGNATURE_TRANSACTION_COST))
+        .deposit(NearToken::from_yoctonear(
+            ESTIMATED_SIGNATURE_TRANSACTION_COST,
+        ))
         .max_gas()
         .transact_async()
         .await?;
