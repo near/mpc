@@ -1,3 +1,4 @@
+use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -13,7 +14,6 @@ use mpc_contract::{
 };
 
 use assert_matches::assert_matches;
-use attestation::attestation::{Attestation, MockAttestation};
 use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
     VMContext,
@@ -59,8 +59,9 @@ impl TestSetup {
     fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
+        let tls_key_bytes: [u8; 32] = node_id.tls_public_key.as_bytes()[1..].try_into().unwrap();
         self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone())
+            .submit_participant_info(attestation, Ed25519PublicKey::from(tls_key_bytes))
             .unwrap();
     }
 }

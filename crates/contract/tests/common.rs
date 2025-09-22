@@ -1,5 +1,5 @@
-use attestation::attestation::{Attestation, MockAttestation};
 use digest::{Digest, FixedOutput};
+use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
 use k256::{
@@ -680,9 +680,11 @@ pub async fn submit_participant_info(
     attestation: &Attestation,
     tls_key: &PublicKey,
 ) -> anyhow::Result<bool> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_borsh((attestation.clone(), tls_key.clone()))
+        .args_json((attestation, dto_tls_key_bytes))
         .max_gas()
         .transact()
         .await?;

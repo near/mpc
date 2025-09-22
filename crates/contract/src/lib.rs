@@ -12,15 +12,17 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
+mod dto_mapping;
+
 use crate::{
     crypto_shared::types::CKDResponse,
+    dto_mapping::IntoContractType,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
     tee::{proposal::AllowedMpcDockerImage, quote::TeeQuoteStatus, tee_state::TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
-use attestation::attestation::Attestation;
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -28,6 +30,7 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
+use dtos_contract::Ed25519PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -538,9 +541,15 @@ impl MpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        #[serializer(borsh)] proposed_participant_attestation: Attestation,
-        #[serializer(borsh)] tls_public_key: PublicKey,
+        proposed_participant_attestation: dtos_contract::Attestation,
+        tls_public_key: Ed25519PublicKey,
     ) -> Result<(), Error> {
+        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
+            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
+
+        let proposed_participant_attestation =
+            proposed_participant_attestation.into_contract_type();
+
         let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
 
@@ -1260,7 +1269,7 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use attestation::attestation::{Attestation, MockAttestation};
+    use dtos_contract::{Attestation, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1520,6 +1529,8 @@ mod tests {
         };
 
         let tls_public_key = participant_info.sign_pk.clone();
+        let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
+        let dto_public_key = Ed25519PublicKey::from(public_key_bytes);
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -1527,7 +1538,7 @@ mod tests {
             .build();
         testing_env!(participant_context);
 
-        contract.submit_participant_info(Attestation::Mock(attestation), tls_public_key)
+        contract.submit_participant_info(Attestation::Mock(attestation), dto_public_key)
     }
 
     fn submit_valid_attestations(
