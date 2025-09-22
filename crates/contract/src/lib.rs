@@ -101,7 +101,7 @@ pub const ESTIMATED_SIGNATURE_TRANSACTION_COST: u128 =
 /// Prepaid gas for a `clean_tee_status` call
 const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 
-/// Confidential Key Derivation only supports secp256k1const TGAS: u64 = 1_000_000_000_000;
+/// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
 impl Default for MpcContract {

@@ -16,7 +16,7 @@ GAS_FOR_SIGN_CALL = 15
 # Tgas required by the contract for a ckd call. If this needs modification, ENSURE THE CONSTANT IN THE CONTRACT AND THE TX-BENCH TOOL ALSO GETS ADJUSTED!
 GAS_FOR_CKD_CALL = 15
 # Deposit in Yoctonear required for a sign call.
-SIGNATURE_DEPOSIT = 1
+SIGNATURE_DEPOSIT = 30_000_000_000
 # Deposit in Yoctonear required for a ckd call.
 CKD_DEPOSIT = 1
 # maximum block delay an MPC node is allowed to communicated before being labeled offline
