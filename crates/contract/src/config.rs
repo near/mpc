@@ -31,7 +31,7 @@ impl Default for Config {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
-    pub tee_upgrade_deadline_duration_blocks: Option<u64>,
+    pub tee_upgrade_deadline_duration_seconds: Option<u64>,
 }
 
 impl From<Option<InitConfig>> for Config {
@@ -45,7 +45,7 @@ impl From<Option<InitConfig>> for Config {
             .unwrap_or(DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS);
 
         let tee_upgrade_deadline_duration_blocks = init_config
-            .tee_upgrade_deadline_duration_blocks
+            .tee_upgrade_deadline_duration_seconds
             .unwrap_or(DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS);
 
         Config {
@@ -81,7 +81,7 @@ mod tests {
     fn test_init_config_serialization() {
         let init_config = InitConfig {
             key_event_timeout_blocks: None,
-            tee_upgrade_deadline_duration_blocks: None,
+            tee_upgrade_deadline_duration_seconds: None,
         };
         let json = serde_json::to_string(&init_config).unwrap();
         let deserialized: InitConfig = serde_json::from_str(&json).unwrap();
@@ -92,7 +92,7 @@ mod tests {
     fn test_init_config_to_config_conversion() {
         let init_config = InitConfig {
             key_event_timeout_blocks: None,
-            tee_upgrade_deadline_duration_blocks: None,
+            tee_upgrade_deadline_duration_seconds: None,
         };
         let converted_config: Config = Some(init_config).into();
         let default_config = Config::default();
