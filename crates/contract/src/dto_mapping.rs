@@ -1,3 +1,9 @@
+//! This module provides convenience methods to map `data transfer object`s
+//! from the [`dtos_contract`] crate to internal types that the contract uses.
+//!
+//! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
+//! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
+
 use attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::{Collateral, QuoteCollateralV3},

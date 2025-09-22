@@ -1,7 +1,6 @@
 #![deny(clippy::mod_module_files)]
 pub mod config;
 pub mod crypto_shared;
-mod data_transfer_object_mapping;
 pub mod errors;
 pub mod legacy_contract_state;
 pub mod primitives;
@@ -13,9 +12,11 @@ pub mod update;
 pub mod utils;
 pub mod v0_state;
 
+mod dto_mapping;
+
 use crate::{
     crypto_shared::types::CKDResponse,
-    data_transfer_object_mapping::IntoContractType,
+    dto_mapping::IntoContractType,
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
