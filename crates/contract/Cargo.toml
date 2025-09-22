@@ -41,6 +41,7 @@ container_build_command = [
 anyhow = { workspace = true }
 curve25519-dalek = { workspace = true }
 borsh = { workspace = true }
+ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
 derive_more = { workspace = true, features = ["from"] }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -56,6 +57,7 @@ k256 = { workspace = true, features = [
     "expose-field",
 ] }
 mpc-primitives = { workspace = true }
+dtos-contract = { workspace = true }
 attestation = { workspace = true }
 near-gas = { workspace = true }
 near-account-id = { workspace = true }
@@ -81,7 +83,6 @@ ed25519-dalek = { workspace = true }
 ecdsa = { workspace = true }
 signature = { workspace = true }
 digest = { workspace = true }
-
 near-workspaces = { workspace = true }
 threshold-signatures = { workspace = true }
 fs2 = { workspace = true }
@@ -90,7 +91,11 @@ rstest = { workspace = true }
 [features]
 test-utils = ["rand"]
 dev-utils = ["rand"]
-abi = ["borsh/unstable__schema", "mpc-primitives/abi", "attestation/abi"]
+abi = [
+    "borsh/unstable__schema",
+    "mpc-primitives/abi",
+    "dtos-contract/abi",
+]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.

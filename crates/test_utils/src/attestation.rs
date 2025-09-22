@@ -1,6 +1,5 @@
 use attestation::{
     attestation::{Attestation, DstackAttestation},
-    collateral::Collateral,
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
@@ -54,9 +53,22 @@ pub fn p2p_tls_key() -> PublicKey {
 
 pub fn mock_dstack_attestation() -> Attestation {
     let quote = quote();
-    let collateral = Collateral::try_from_json(collateral()).unwrap();
+    let collateral_json_string = include_str!("../assets/collateral.json");
+    let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
     let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
+}
+
+pub fn mock_dto_dstack_attestation() -> dtos_contract::Attestation {
+    let quote = quote().into();
+    let collateral_json_string = include_str!("../assets/collateral.json");
+    let collateral = serde_json::from_str(collateral_json_string).unwrap();
+
+    let tcb_info: dtos_contract::TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+
+    dtos_contract::Attestation::Dstack(dtos_contract::DstackAttestation::new(
+        quote, collateral, tcb_info,
+    ))
 }
