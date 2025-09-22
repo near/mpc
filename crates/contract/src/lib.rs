@@ -2361,7 +2361,9 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation = Attestation::Mock(MockAttestation::Valid);
+            let valid_participant_attestation = attestation::attestation::Attestation::Mock(
+                attestation::attestation::MockAttestation::Valid,
+            );
             contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
