@@ -22,7 +22,8 @@ use near_sdk::{
 };
 use std::time::Duration;
 
-const NANO: u64 = 1_000_000_000;
+const SECOND: Duration = Duration::from_secs(1);
+const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
 struct TestSetup {
     contract: MpcContract,
@@ -260,9 +261,9 @@ fn test_clean_tee_status_removes_non_participants() {
 #[test]
 fn only_latest_hash_after_grace_period() {
     // Use descriptive timing constants
-    const FIRST_ENTRY_TIME_NANO_SECONDS: u64 = NANO; // 1 second
-    const GRACE_PERIOD_NANO_SECONDS: u64 = 10 * NANO; // 10 seconds
-    const DELAY_BETWEEN_HASH_VOTES: u64 = 3 * NANO; // 3 seconds
+    const FIRST_ENTRY_TIME_NANO_SECONDS: u64 = NANOS_IN_SECOND; // 1 second
+    const GRACE_PERIOD_NANO_SECONDS: u64 = 10 * NANOS_IN_SECOND; // 10 seconds
+    const DELAY_BETWEEN_HASH_VOTES: u64 = 3 * NANOS_IN_SECOND; // 3 seconds
 
     const PARTICIPANT_COUNT: usize = 3;
     const THRESHOLD: u64 = 2;
@@ -272,7 +273,7 @@ fn only_latest_hash_after_grace_period() {
         .build());
 
     let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NANO_SECONDS / NANO),
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NANO_SECONDS / NANOS_IN_SECOND),
         ..Default::default()
     };
 
@@ -394,10 +395,10 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
 #[test]
 fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     // Timing constants
-    const FIRST_ENTRY_TIME: u64 = NANO; // 1 second
-    const SECOND_ENTRY_DELAY: u64 = 3 * NANO; // 3 seconds later
-    const THIRD_ENTRY_DELAY: u64 = 6 * NANO; // 6 seconds later
-    const GRACE_PERIOD: u64 = 10 * NANO; // 10 seconds
+    const FIRST_ENTRY_TIME: u64 = NANOS_IN_SECOND; // 1 second
+    const SECOND_ENTRY_DELAY: u64 = 3 * NANOS_IN_SECOND; // 3 seconds later
+    const THIRD_ENTRY_DELAY: u64 = 6 * NANOS_IN_SECOND; // 6 seconds later
+    const GRACE_PERIOD: u64 = 10 * NANOS_IN_SECOND; // 10 seconds
 
     const PARTICIPANT_COUNT: usize = 3;
     const THRESHOLD: u64 = 2;
@@ -407,7 +408,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
         .build());
 
     let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD / NANO),
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD / NANOS_IN_SECOND),
         ..Default::default()
     };
 
@@ -511,7 +512,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
     const VOTE_THRESHOLD: u64 = 2;
 
     testing_env!(VMContextBuilder::new()
-        .block_timestamp(START_TIME_SECONDS * NANO)
+        .block_timestamp(START_TIME_SECONDS * NANOS_IN_SECOND)
         .build());
 
     let init_config = InitConfig {
@@ -525,7 +526,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
     // Vote-in once
     for (account_id, _, _) in setup.participants_list.iter().take(2) {
         testing_env!(VMContextBuilder::new()
-            .block_timestamp(START_TIME_SECONDS * NANO)
+            .block_timestamp(START_TIME_SECONDS * NANOS_IN_SECOND)
             .signer_account_id(account_id.clone())
             .build());
         setup

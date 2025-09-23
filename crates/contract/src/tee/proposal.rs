@@ -172,7 +172,7 @@ mod tests {
     use super::*;
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
     const SECOND: Duration = Duration::from_secs(1);
-    const NANOS_IN_SECOND: u64 = 1_000_000_000;
+    const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
         MpcDockerImageHash::from([val; 32])
