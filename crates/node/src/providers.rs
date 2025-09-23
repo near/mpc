@@ -13,6 +13,7 @@ pub mod eddsa;
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
+use crate::trait_extensions::crypto::PublicKeyConversion;
 use crate::types::SignatureId;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
@@ -75,10 +76,4 @@ pub trait SignatureProvider {
 /// This trait helps check whether the current set of participants contains `A`.
 pub trait HasParticipants {
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool;
-}
-
-/// Helper functions to convert back and forth public key types
-pub trait PublicKeyConversion: Sized {
-    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
-    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;
 }

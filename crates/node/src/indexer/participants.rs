@@ -2,7 +2,7 @@ use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
-use crate::providers::PublicKeyConversion;
+use crate::trait_extensions::crypto::PublicKeyConversion;
 use anyhow::Context;
 use mpc_contract::primitives::{
     domain::DomainConfig,
@@ -278,7 +278,10 @@ pub fn convert_participant_infos(
 
 #[cfg(test)]
 mod tests {
-    use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
+    use crate::{
+        indexer::participants::convert_participant_infos,
+        trait_extensions::crypto::PublicKeyConversion,
+    };
     use mpc_contract::primitives::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},

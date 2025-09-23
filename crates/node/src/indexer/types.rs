@@ -1,6 +1,5 @@
 use crate::{types::CKDRequest, types::SignatureRequest};
 use anyhow::Context;
-use attestation::attestation::Attestation;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -162,8 +161,8 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_tee_participant: dtos_contract::Attestation,
-    pub sign_pk: dtos_contract::Ed25519PublicKey,
+    pub proposed_participant_attestation: dtos_contract::Attestation,
+    pub tls_public_key: dtos_contract::Ed25519PublicKey,
 }
 
 /// Request to send a transaction to the contract on chain.
