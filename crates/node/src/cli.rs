@@ -325,13 +325,9 @@ impl StartCmd {
 
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
 
-        let tls_public_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key()
-            .to_near_sdk_public_key()?;
+        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
 
-        let report_data = ReportData::new(tls_public_key);
+        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?);
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let attestation = tee_authority.generate_attestation(report_data).await?;
         let web_server = start_web_server(
@@ -364,17 +360,9 @@ impl StartCmd {
             },
         };
 
-        // submit remote attestation
-        {
-            let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
-
-            submit_remote_attestation(
-                indexer_api.txn_sender.clone(),
-                attestation,
-                account_public_key,
-            )
-            .await?;
-        }
+        // Node waits with starting the coordinator until the attestation is submitted.
+        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
+            .await;
 
         let coordinator = Coordinator {
             clock: Clock::real(),

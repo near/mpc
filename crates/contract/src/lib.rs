@@ -33,7 +33,6 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos_contract::Ed25519PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -544,7 +543,7 @@ impl MpcContract {
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos_contract::Attestation,
-        tls_public_key: Ed25519PublicKey,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
             .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;

@@ -29,7 +29,6 @@ pub trait TransactionSender: Clone + Send + Sync {
         transaction: ChainSendTransactionRequest,
     ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
 
-    #[allow(dead_code)]
     fn send_and_wait(
         &self,
         transaction: ChainSendTransactionRequest,
@@ -122,6 +121,7 @@ struct TransactionSenderSubmission {
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
+#[derive(Debug)]
 pub enum TransactionStatus {
     Executed,
     NotExecuted,

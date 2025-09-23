@@ -159,7 +159,7 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
     pub key_event_id: KeyEventId,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
     pub proposed_participant_attestation: dtos_contract::Attestation,
     pub tls_public_key: dtos_contract::Ed25519PublicKey,
