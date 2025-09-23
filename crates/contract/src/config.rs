@@ -28,7 +28,7 @@ impl Default for Config {
 
 /// Config for initializing V2 of the contract.
 #[near(serializers=[borsh, json])]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
