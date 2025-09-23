@@ -23,9 +23,13 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{proposal::AllowedMpcDockerImage, quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{
+        proposal::AllowedMpcDockerImage,
+        tee_state::{TeeQuoteStatus, TeeState},
+    },
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
+use attestation::attestation::{Attestation, MockAttestation};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -1082,6 +1086,22 @@ impl MpcContract {
 
         parameters.validate().unwrap();
 
+        let mut tee_state = TeeState::default();
+
+        // TODO: https://github.com/near/mpc/issues/1087
+        // Every participant must have a valid attestation, otherwise we risk
+        // participants being immediately kicked out once contract transitions into running.
+        parameters.participants().participants().iter().for_each(
+            |(account_id, _, participant_info)| {
+                let node_id = NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: participant_info.sign_pk.clone(),
+                };
+
+                tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+            },
+        );
+
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -1092,7 +1112,7 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: TeeState::default(),
+            tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
         })
