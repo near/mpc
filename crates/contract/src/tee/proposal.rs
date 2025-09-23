@@ -1,14 +1,10 @@
-use borsh::BorshDeserialize;
-use borsh::BorshSerialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env::sha256, log, near};
-use std::collections::BTreeMap;
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
-use crate::primitives::key_state::AuthenticatedParticipantId;
-use crate::primitives::time::Timestamp;
+use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
 
-pub use mpc_primitives::hash::LauncherDockerComposeHash;
-pub use mpc_primitives::hash::MpcDockerImageHash;
+pub use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
