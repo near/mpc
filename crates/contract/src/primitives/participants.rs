@@ -140,6 +140,20 @@ impl Participants {
             .find(|(a_id, _, _)| a_id == account_id)
             .map(|(_, _, info)| info)
     }
+
+    pub fn update_info(
+        &mut self,
+        account_id: AccountId,
+        new_info: ParticipantInfo,
+    ) -> Result<(), Error> {
+        for (participant_account_id, _, participant_info) in self.participants.iter_mut() {
+            if *participant_account_id == account_id {
+                *participant_info = new_info.clone();
+                return Ok(());
+            }
+        }
+        Err(crate::errors::InvalidState::NotParticipant.into())
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -188,20 +202,6 @@ impl Participants {
         {
             self.participants.remove(pos);
         }
-    }
-
-    pub fn update_info(
-        &mut self,
-        account_id: AccountId,
-        new_info: ParticipantInfo,
-    ) -> Result<(), Error> {
-        for (participant_id, _, participant_info) in self.participants.iter_mut() {
-            if *participant_id == account_id {
-                *participant_info = new_info.clone();
-                return Ok(());
-            }
-        }
-        Err(crate::errors::InvalidState::NotParticipant.into())
     }
 
     pub fn get_node_ids(&self) -> BTreeSet<NodeId> {

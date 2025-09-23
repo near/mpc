@@ -1,4 +1,6 @@
-use crate::sandbox::common::{check_call_success, gen_accounts, init_env_secp256k1};
+use crate::sandbox::common::{
+    check_call_success, gen_accounts, init_env_secp256k1, GAS_FOR_VOTE_RESHARED,
+};
 use assert_matches::assert_matches;
 use mpc_contract::{
     primitives::thresholds::{Threshold, ThresholdParameters},
@@ -204,6 +206,7 @@ async fn test_resharing() -> anyhow::Result<()> {
         check_call_success(
             account
                 .call(contract.id(), "vote_reshared")
+                .gas(GAS_FOR_VOTE_RESHARED)
                 .args_json(vote_reshared_args.clone())
                 .transact()
                 .await?,
@@ -707,6 +710,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         check_call_success(
             account
                 .call(contract.id(), "vote_cancel_resharing")
+                .gas(GAS_FOR_VOTE_RESHARED)
                 .transact()
                 .await?,
         );
@@ -779,6 +783,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         check_call_success(
             account
                 .call(contract.id(), "vote_reshared")
+                .gas(GAS_FOR_VOTE_RESHARED)
                 .args_json(vote_reshared_args.clone())
                 .transact()
                 .await?,

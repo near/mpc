@@ -291,7 +291,7 @@ pub mod tests {
         test_utils::{gen_account_id, gen_seed},
     };
     use crate::state::key_event::KeyEvent;
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight, PublicKey};
     use rand::Rng;
 
     pub struct Environment {
@@ -319,6 +319,15 @@ pub mod tests {
                 seed,
             }
         }
+        pub fn set_pk(&mut self, pk: PublicKey) {
+            let mut ctx = VMContextBuilder::new();
+            ctx.signer_account_pk(pk);
+            ctx.block_height(self.block_height);
+            ctx.random_seed(self.seed);
+            ctx.signer_account_id(self.signer.clone());
+            testing_env!(ctx.build());
+        }
+
         pub fn set_signer(&mut self, signer: &AccountId) {
             self.signer = signer.clone();
             self.set();
@@ -330,6 +339,7 @@ pub mod tests {
             ctx.signer_account_id(self.signer.clone());
             testing_env!(ctx.build());
         }
+
         pub fn set_block_height(&mut self, block_height: BlockHeight) {
             self.block_height = block_height;
             self.set();
