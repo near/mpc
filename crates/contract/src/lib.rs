@@ -1267,9 +1267,10 @@ impl MpcContract {
     }
 }
 
+/// Methods for Migration service
 #[near_bindgen]
 impl MpcContract {
-    pub fn get_my_migration_info(
+    pub fn my_migration_info(
         &self,
     ) -> (
         AccountId,
@@ -1277,18 +1278,18 @@ impl MpcContract {
         Option<DestinationNodeInfo>,
     ) {
         let account_id = env::signer_account_id();
-        log!("get_my_migration_info: signer={:?}", account_id,);
+        log!("my_migration_info: signer={:?}", account_id,);
         self.node_migrations.get_for_account(&account_id)
     }
 
-    pub fn get_all_migration_info(
+    pub fn migration_info(
         &self,
     ) -> Vec<(
         AccountId,
         Option<BackupServiceInfo>,
         Option<DestinationNodeInfo>,
     )> {
-        log!("get_all_migration_info");
+        log!("migration_info");
         self.node_migrations.get_all()
     }
 
@@ -1299,13 +1300,13 @@ impl MpcContract {
     /// # Notes
     /// - A deposit requirement may be added in the future.  
     #[handle_result]
-    pub fn set_backup_service_info(
+    pub fn register_backup_service(
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
         let account_id = env::signer_account_id();
         log!(
-            "set_backup_service: signer={:?}, backup_service_info={:?}",
+            "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
             backup_service_info
         );
@@ -1935,7 +1936,7 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_sate(running_state);
 
         // sanity check
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
         let destination_node_info = gen_random_destination_info();
 
         let non_participant = gen_account_id();
@@ -1943,7 +1944,7 @@ mod tests {
 
         let res = contract.start_node_migration(destination_node_info);
         assert!(res.is_err());
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
     }
 
     #[test]
@@ -1952,7 +1953,7 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_sate(running_state);
 
         // sanity check
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
 
         let participants = {
             let ProtocolContractState::Running(running) = &contract.protocol_state else {
@@ -1970,18 +1971,18 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.get_my_migration_info(),
+                contract.my_migration_info(),
                 (account_id.clone(), None, None)
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
-            assert_eq!(contract.get_my_migration_info(), expected_res);
+            assert_eq!(contract.my_migration_info(), expected_res);
             expected_migration_state.push(expected_res);
         }
         expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.get_all_migration_info();
+        let mut result = contract.migration_info();
         result.sort_by_key(|(account_id, _, _)| account_id.clone());
 
         assert_eq!(result, expected_migration_state);
@@ -1998,12 +1999,12 @@ mod tests {
     }
 
     fn test_start_migration_node_failure_not_running(mut contract: MpcContract) {
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
         let destination_node_info = gen_random_destination_info();
         let res = contract.start_node_migration(destination_node_info);
         let expected_error_kind = &ErrorKind::InvalidState(InvalidState::ProtocolStateNotRunning);
         assert_eq!(res.unwrap_err().kind(), expected_error_kind);
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
     }
 
     #[test]
@@ -2023,17 +2024,17 @@ mod tests {
 
     fn test_set_backup_service_failure(mut contract: MpcContract) {
         // sanity check
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
         let backup_service_info = BackupServiceInfo {
             public_key: bogus_ed25519_near_public_key(),
         };
 
         let non_participant = gen_account_id();
         Environment::new(None, Some(non_participant), None);
-        let res = contract.set_backup_service_info(backup_service_info);
+        let res = contract.register_backup_service(backup_service_info);
         let expected_error_kind = &ErrorKind::InvalidState(InvalidState::NotParticipant);
         assert_eq!(res.unwrap_err().kind(), expected_error_kind);
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
     }
 
     #[test]
@@ -2060,7 +2061,7 @@ mod tests {
 
     fn test_set_backup_service_success(participants: &Participants, mut contract: MpcContract) {
         // sanity check
-        assert!(contract.get_all_migration_info().is_empty());
+        assert!(contract.migration_info().is_empty());
         let mut expected_migration_state: Vec<(
             AccountId,
             Option<BackupServiceInfo>,
@@ -2071,20 +2072,20 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.get_my_migration_info(),
+                contract.my_migration_info(),
                 (account_id.clone(), None, None)
             );
             let backup_service_info = BackupServiceInfo {
                 public_key: bogus_ed25519_near_public_key(),
             };
-            let res = contract.set_backup_service_info(backup_service_info.clone());
+            let res = contract.register_backup_service(backup_service_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
-            assert_eq!(contract.get_my_migration_info(), expected_res);
+            assert_eq!(contract.my_migration_info(), expected_res);
             expected_migration_state.push(expected_res);
         }
         expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.get_all_migration_info();
+        let mut result = contract.migration_info();
         result.sort_by_key(|(account_id, _, _)| account_id.clone());
 
         assert_eq!(result, expected_migration_state);
@@ -2452,7 +2453,7 @@ mod tests {
 
         assert!(contract.cleanup_orphaned_node_migrations().is_ok());
         expected_vals.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.get_all_migration_info();
+        let mut result = contract.migration_info();
         result.sort_by_key(|(account_id, _, _)| account_id.clone());
         assert_eq!(result, expected_vals);
     }
