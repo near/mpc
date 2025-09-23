@@ -168,8 +168,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
         new_contract_balance.as_millinear(),
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() < 20,
-        "respond should take less than 0.02 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after refunding deposit"
     );
 
     Ok(())
@@ -219,13 +219,14 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
         contract_balance.as_yoctonear(),
         new_contract_balance.as_yoctonear(),
     );
+    assert!(balance >= new_balance, "user balance should not increase");
     assert!(
         balance.as_millinear() - new_balance.as_millinear() < 10,
         "refund should happen"
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
-        "refund transfer should take less than 0.001 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after refunding deposit"
     );
 
     Ok(())
