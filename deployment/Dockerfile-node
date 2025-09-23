@@ -8,7 +8,7 @@ RUN \
     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
     repro-sources-list.sh && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates openssl && \
+    apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
     : "Clean up for improving reproducibility" && \
     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
