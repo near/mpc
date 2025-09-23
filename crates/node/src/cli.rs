@@ -360,9 +360,12 @@ impl StartCmd {
             },
         };
 
-        // Node waits with starting the coordinator until the attestation is submitted.
-        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
-            .await;
+        // Detach attestation submission to a worker task.
+        tokio::spawn(submit_remote_attestation(
+            indexer_api.txn_sender.clone(),
+            attestation,
+            tls_public_key,
+        ));
 
         let coordinator = Coordinator {
             clock: Clock::real(),
