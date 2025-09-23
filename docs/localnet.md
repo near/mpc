@@ -79,7 +79,7 @@ near account view-account-summary mpc-contract.test.near network-config mpc-loca
 ```
 
 Now it's time to deploy the contract.
-First build the contract from the `libs/chain-singatures/contract` folder with:
+First build the contract from the `./crates/contract` folder with:
 
 ```shell
 cargo near build reproducible-wasm
