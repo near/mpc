@@ -3,11 +3,11 @@ use std::time::Duration;
 
 #[near(serializers=[json])]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct TimeStamp {
+pub(crate) struct Timestamp {
     duration_since_unix_epoch: Duration,
 }
 
-impl TimeStamp {
+impl Timestamp {
     pub(crate) fn now() -> Self {
         let block_time_nano_seconds = near_sdk::env::block_timestamp();
 
@@ -17,20 +17,20 @@ impl TimeStamp {
     }
 }
 
-impl std::ops::Add<Duration> for TimeStamp {
-    type Output = TimeStamp;
+impl std::ops::Add<Duration> for Timestamp {
+    type Output = Timestamp;
 
     fn add(self, rhs: Duration) -> Self::Output {
         let current_time_stamp = self.duration_since_unix_epoch;
         let new_time_stamp = current_time_stamp + rhs;
 
-        TimeStamp {
+        Timestamp {
             duration_since_unix_epoch: new_time_stamp,
         }
     }
 }
 
-impl borsh::BorshSerialize for TimeStamp {
+impl borsh::BorshSerialize for Timestamp {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let duration_milliseconds: u64 = self.duration_since_unix_epoch.as_secs();
         let duration_milliseconds_bytes: [u8; 8] = duration_milliseconds.to_be_bytes();
@@ -39,7 +39,7 @@ impl borsh::BorshSerialize for TimeStamp {
     }
 }
 
-impl borsh::BorshDeserialize for TimeStamp {
+impl borsh::BorshDeserialize for Timestamp {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut duration_milliseconds_bytes: [u8; 8] = [0; 8];
         reader.read_exact(&mut duration_milliseconds_bytes)?;
@@ -60,10 +60,10 @@ mod tests {
 
     #[test]
     fn test_timestamp_equality() {
-        let timestamp_one = TimeStamp {
+        let timestamp_one = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(100),
         };
-        let timestamp_two = TimeStamp {
+        let timestamp_two = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(100),
         };
         assert_eq!(timestamp_one, timestamp_two);
@@ -71,10 +71,10 @@ mod tests {
 
     #[test]
     fn test_timestamp_ordering() {
-        let earlier_timestamp = TimeStamp {
+        let earlier_timestamp = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(50),
         };
-        let later_timestamp = TimeStamp {
+        let later_timestamp = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(100),
         };
 
@@ -86,12 +86,12 @@ mod tests {
 
     #[test]
     fn test_ops_add() {
-        let time_stamp = TimeStamp {
+        let time_stamp = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(200),
         };
         let added_duration = Duration::from_secs(100);
 
-        let expected_time_stamp = TimeStamp {
+        let expected_time_stamp = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(300),
         };
 

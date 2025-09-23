@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::primitives::key_state::AuthenticatedParticipantId;
-use crate::primitives::time::TimeStamp;
+use crate::primitives::time::Timestamp;
 
 pub use mpc_primitives::hash::LauncherDockerComposeHash;
 pub use mpc_primitives::hash::MpcDockerImageHash;
@@ -59,7 +59,7 @@ impl CodeHashesVotes {
 pub struct AllowedMpcDockerImage {
     pub(crate) image_hash: MpcDockerImageHash,
     pub(crate) docker_compose_hash: LauncherDockerComposeHash,
-    pub(crate) added: TimeStamp,
+    pub(crate) added: Timestamp,
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
@@ -74,7 +74,7 @@ pub(crate) struct AllowedDockerImageHashes {
 impl AllowedDockerImageHashes {
     /// Checks if a Docker image hash is still valid (not expired).
     fn valid_entries(&self, tee_upgrade_deadline_duration: Duration) -> Vec<AllowedMpcDockerImage> {
-        let current_time = TimeStamp::now();
+        let current_time = Timestamp::now();
 
         self.allowed_tee_proposals
             .iter()
@@ -123,7 +123,7 @@ impl AllowedDockerImageHashes {
         let new_entry = AllowedMpcDockerImage {
             image_hash: code_hash,
             docker_compose_hash,
-            added: TimeStamp::now(),
+            added: Timestamp::now(),
         };
 
         // Find the correct position to maintain sorted order by `added`
