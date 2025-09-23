@@ -365,7 +365,7 @@ impl MpcContract {
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
         let storage_used = env::storage_usage() - initial_storage;
-        let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
         let cost = std::cmp::max(cost, MINIMUM_CKD_REQUEST_DEPOSIT);
 
         match deposit.checked_sub(cost) {
