@@ -2022,7 +2022,7 @@ mod tests {
         test_start_migration_node_failure_not_running(contract);
     }
 
-    fn test_set_backup_service_failure(mut contract: MpcContract) {
+    fn test_register_backup_service_fail_non_participant(mut contract: MpcContract) {
         // sanity check
         assert!(contract.migration_info().is_empty());
         let backup_service_info = BackupServiceInfo {
@@ -2038,28 +2038,31 @@ mod tests {
     }
 
     #[test]
-    fn test_set_backup_service_failure_running() {
+    fn test_register_backup_service_fail_non_participant_running() {
         let running_state = ProtocolContractState::Running(gen_running_state(2));
         let contract = MpcContract::new_from_protocol_sate(running_state);
-        test_set_backup_service_failure(contract);
+        test_register_backup_service_fail_non_participant(contract);
     }
 
     #[test]
-    fn test_set_backup_service_failure_initializing() {
+    fn test_register_backup_service_fail_non_participant_initializing() {
         let initializing_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 0).1);
         let contract = MpcContract::new_from_protocol_sate(initializing_state);
-        test_set_backup_service_failure(contract);
+        test_register_backup_service_fail_non_participant(contract);
     }
 
     #[test]
-    fn test_set_backup_service_failure_resharnig() {
+    fn test_register_backup_service_fail_non_participant_resharnig() {
         let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
         let contract = MpcContract::new_from_protocol_sate(resharing_state);
-        test_set_backup_service_failure(contract);
+        test_register_backup_service_fail_non_participant(contract);
     }
 
-    fn test_set_backup_service_success(participants: &Participants, mut contract: MpcContract) {
+    fn test_register_backup_service_success(
+        participants: &Participants,
+        mut contract: MpcContract,
+    ) {
         // sanity check
         assert!(contract.migration_info().is_empty());
         let mut expected_migration_state: Vec<(
@@ -2092,16 +2095,16 @@ mod tests {
     }
 
     #[test]
-    fn test_set_backup_service_success_running() {
+    fn test_register_backup_service_success_running() {
         let running_state = gen_running_state(2);
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
         let contract = MpcContract::new_from_protocol_sate(running_state);
-        test_set_backup_service_success(&participants, contract);
+        test_register_backup_service_success(&participants, contract);
     }
 
     #[test]
-    fn test_set_backup_service_success_resharing() {
+    fn test_register_backup_service_success_resharing() {
         let resharing_state = gen_resharing_state(2).1;
         let participants = resharing_state
             .resharing_key
@@ -2110,11 +2113,11 @@ mod tests {
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
         let contract = MpcContract::new_from_protocol_sate(resharing_state);
-        test_set_backup_service_success(&participants, contract);
+        test_register_backup_service_success(&participants, contract);
     }
 
     #[test]
-    fn test_set_backup_service_success_initializing() {
+    fn test_register_backup_service_success_initializing() {
         let initializing_state = gen_initializing_state(2, 0).1;
         let participants = initializing_state
             .generating_key
@@ -2123,7 +2126,7 @@ mod tests {
             .clone();
         let initializing_state = ProtocolContractState::Initializing(initializing_state);
         let contract = MpcContract::new_from_protocol_sate(initializing_state);
-        test_set_backup_service_success(&participants, contract);
+        test_register_backup_service_success(&participants, contract);
     }
 
     #[test]
