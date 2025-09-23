@@ -257,7 +257,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondArgs>
+impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
     PendingRequests<RequestType, ChainRespondArgsType>
 {
     pub fn new(
@@ -454,9 +454,10 @@ impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondA
                                 if progress.attempts >= MAX_ATTEMPTS_PER_REQUEST_AS_LEADER {
                                     tracing::debug!(target: "request", "Discarding {} request {:?} from block {} because it has been attempted too many ({}) times", RequestType::get_type(), request.request.get_id(), request.block_height, MAX_ATTEMPTS_PER_REQUEST_AS_LEADER);
                                     // Increment metric for max retries exceeded (only for signature requests)
-                                    if std::any::TypeId::of::<RequestType>()
-                                        == std::any::TypeId::of::<crate::types::SignatureRequest>()
-                                    {
+                                    if matches!(
+                                        RequestType::get_type(),
+                                        types::RequestType::Signature
+                                    ) {
                                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
                                             .with_label_values(&["max_tries_exceeded"])
                                             .inc();
@@ -489,13 +490,12 @@ impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondA
                 CheckBlockResult::NotIncluded | CheckBlockResult::OlderThanRecentWindow => {
                     tracing::debug!(target: "request", "Discarding {} request {:?} from block {}", RequestType::get_type(), request.request.get_id(), request.block_height);
                     // Increment metric for timeout (only for signature requests)
-                    if std::any::TypeId::of::<RequestType>()
-                        == std::any::TypeId::of::<crate::types::SignatureRequest>()
-                    {
+                    if matches!(RequestType::get_type(), types::RequestType::Signature) {
                         metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
                             .with_label_values(&["timeout"])
                             .inc();
                     }
+
                     // This request is definitely not useful anymore, so discard it.
                     requests_to_remove.push(*id);
                 }

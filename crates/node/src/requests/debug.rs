@@ -70,7 +70,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Ord
     }
 }
 
-impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
+impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     CompletedRequests<RequestType, ChainRespondArgsType>
 {
     pub fn add_completed_request(
@@ -169,7 +169,7 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType: Request + Clone + 'static, ChainRespondArgsType: ChainRespondArgs> Debug
+impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
     for PendingRequests<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
