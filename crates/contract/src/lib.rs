@@ -15,6 +15,8 @@ pub mod v0_state;
 
 mod dto_mapping;
 
+use std::collections::BTreeMap;
+
 use crate::{
     crypto_shared::types::CKDResponse,
     dto_mapping::IntoContractType,
@@ -1284,11 +1286,7 @@ impl MpcContract {
 
     pub fn migration_info(
         &self,
-    ) -> Vec<(
-        AccountId,
-        Option<BackupServiceInfo>,
-        Option<DestinationNodeInfo>,
-    )> {
+    ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
         log!("migration_info");
         self.node_migrations.get_all()
     }
@@ -1453,7 +1451,7 @@ impl MpcContract {
         );
         let backup_services: Vec<AccountId> = self
             .node_migrations
-            .backup_services_info
+            .backup_services_info()
             .keys()
             .cloned()
             .collect();
@@ -1961,11 +1959,7 @@ mod tests {
             };
             running.parameters.participants().clone()
         };
-        let mut expected_migration_state: Vec<(
-            AccountId,
-            Option<BackupServiceInfo>,
-            Option<DestinationNodeInfo>,
-        )> = Vec::new();
+        let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
@@ -1979,11 +1973,10 @@ mod tests {
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
             assert_eq!(contract.my_migration_info(), expected_res);
-            expected_migration_state.push(expected_res);
+            expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
-        expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.migration_info();
-        result.sort_by_key(|(account_id, _, _)| account_id.clone());
+        let expected_migration_state = expected_migration_state.into_iter().collect();
+        let result = contract.migration_info();
 
         assert_eq!(result, expected_migration_state);
     }
@@ -2065,11 +2058,7 @@ mod tests {
     ) {
         // sanity check
         assert!(contract.migration_info().is_empty());
-        let mut expected_migration_state: Vec<(
-            AccountId,
-            Option<BackupServiceInfo>,
-            Option<DestinationNodeInfo>,
-        )> = Vec::new();
+        let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
         for (account_id, _, _) in participants.participants() {
             test_env.set_signer(account_id);
@@ -2085,11 +2074,9 @@ mod tests {
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
             assert_eq!(contract.my_migration_info(), expected_res);
-            expected_migration_state.push(expected_res);
+            expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
-        expected_migration_state.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.migration_info();
-        result.sort_by_key(|(account_id, _, _)| account_id.clone());
+        let result = contract.migration_info();
 
         assert_eq!(result, expected_migration_state);
     }
@@ -2421,7 +2408,7 @@ mod tests {
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
         let mut contract = MpcContract::new_from_protocol_sate(running_state);
-        let mut expected_vals = Vec::new();
+        let mut expected_vals = BTreeMap::new();
         for (account_id, _, _) in participants.participants() {
             let destination_node_info = gen_random_destination_info();
 
@@ -2434,11 +2421,10 @@ mod tests {
             contract
                 .node_migrations
                 .set_backup_service_info(account_id.clone(), backup_service_info.clone());
-            expected_vals.push((
+            expected_vals.insert(
                 account_id.clone(),
-                Some(backup_service_info),
-                Some(destination_node_info),
-            ))
+                (Some(backup_service_info), Some(destination_node_info)),
+            );
         }
         let destination_node_info = gen_random_destination_info();
 
@@ -2455,9 +2441,7 @@ mod tests {
             .set_backup_service_info(non_participant_account_id.clone(), backup_service_info);
 
         assert!(contract.cleanup_orphaned_node_migrations().is_ok());
-        expected_vals.sort_by_key(|(account_id, _, _)| account_id.clone());
-        let mut result = contract.migration_info();
-        result.sort_by_key(|(account_id, _, _)| account_id.clone());
+        let result = contract.migration_info();
         assert_eq!(result, expected_vals);
     }
 }

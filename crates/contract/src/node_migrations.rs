@@ -7,7 +7,7 @@ use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey}
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct NodeMigrations {
-    pub(crate) backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
 }
 
@@ -21,6 +21,9 @@ impl Default for NodeMigrations {
 }
 
 impl NodeMigrations {
+    pub(crate) fn backup_services_info(&self) -> &IterableMap<AccountId, BackupServiceInfo> {
+        &self.backup_services_info
+    }
     pub fn set_backup_service_info(&mut self, account_id: AccountId, info: BackupServiceInfo) {
         self.backup_services_info.insert(account_id, info);
     }
@@ -60,11 +63,7 @@ impl NodeMigrations {
 
     pub fn get_all(
         &self,
-    ) -> Vec<(
-        AccountId,
-        Option<BackupServiceInfo>,
-        Option<DestinationNodeInfo>,
-    )> {
+    ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
         let mut combined: BTreeMap<
             AccountId,
             (Option<BackupServiceInfo>, Option<DestinationNodeInfo>),
@@ -82,9 +81,6 @@ impl NodeMigrations {
         }
 
         combined
-            .into_iter()
-            .map(|(id, (backup, migration))| (id, backup, migration))
-            .collect()
     }
 }
 
@@ -107,6 +103,8 @@ pub struct DestinationNodeInfo {
 #[cfg(test)]
 mod tests {
 
+    use std::collections::BTreeMap;
+
     use crate::{
         node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations},
         primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id, gen_participant},
@@ -128,7 +126,7 @@ mod tests {
             migrations.get_for_account(&account_id),
             (account_id.clone(), None, None)
         );
-        assert_eq!(migrations.get_all(), Vec::new());
+        assert!(migrations.get_all().is_empty());
 
         migrations.set_backup_service_info(account_id.clone(), info.clone());
 
@@ -142,7 +140,7 @@ mod tests {
         );
         assert_eq!(
             migrations.get_all(),
-            vec![(account_id.clone(), Some(info.clone()), None)]
+            BTreeMap::from([(account_id.clone(), (Some(info.clone()), None))])
         );
     }
 
@@ -162,7 +160,7 @@ mod tests {
             migrations.get_for_account(&account_id),
             (account_id.clone(), None, None)
         );
-        assert_eq!(migrations.get_all(), Vec::new());
+        assert!(migrations.get_all().is_empty());
 
         migrations.set_destination_node_info(account_id.clone(), destination_node_info.clone());
         assert_eq!(
@@ -180,11 +178,10 @@ mod tests {
         );
         assert_eq!(
             migrations.get_all(),
-            vec![(
+            BTreeMap::from([(
                 account_id.clone(),
-                None,
-                Some(destination_node_info.clone())
-            )]
+                (None, Some(destination_node_info.clone()))
+            )])
         );
 
         // check removing works
@@ -198,7 +195,7 @@ mod tests {
             migrations.get_for_account(&account_id),
             (account_id.clone(), None, None)
         );
-        assert_eq!(migrations.get_all(), Vec::new());
+        assert!(migrations.get_all().is_empty());
         // sanity check
         assert!(migrations.remove_migration(&account_id).is_none());
     }
@@ -247,11 +244,10 @@ mod tests {
         );
         assert_eq!(
             migrations.get_all(),
-            vec![(
+            BTreeMap::from([(
                 account_id.clone(),
-                Some(info.clone()),
-                Some(destination_node_info.clone())
-            )]
+                (Some(info.clone()), Some(destination_node_info.clone()))
+            )])
         );
 
         migrations.remove_account_data(&account_id);
@@ -262,7 +258,7 @@ mod tests {
             migrations.get_for_account(&account_id),
             (account_id.clone(), None, None)
         );
-        assert_eq!(migrations.get_all(), Vec::new());
+        assert!(migrations.get_all().is_empty());
         // sanity check
         assert!(migrations.remove_migration(&account_id).is_none());
     }
