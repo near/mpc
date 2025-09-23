@@ -164,3 +164,13 @@ pub static SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS: LazyLock<prometheus::Hist
             exponential_buckets(2.0, 1.5, 10).unwrap()
             ).unwrap()
     });
+
+pub static MPC_CLUSTER_FAILED_SIGNATURES_COUNT: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_cluster_failed_signatures_count",
+            "Number of failed or severely delayed signatures in the cluster",
+            &["reason"]
+        )
+        .unwrap()
+    });
