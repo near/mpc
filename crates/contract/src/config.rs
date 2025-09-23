@@ -44,13 +44,13 @@ impl From<Option<InitConfig>> for Config {
             .key_event_timeout_blocks
             .unwrap_or(DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS);
 
-        let tee_upgrade_deadline_duration_blocks = init_config
+        let tee_upgrade_deadline_duration_seconds = init_config
             .tee_upgrade_deadline_duration_seconds
             .unwrap_or(DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS);
 
         Config {
             key_event_timeout_blocks,
-            tee_upgrade_deadline_duration_seconds: tee_upgrade_deadline_duration_blocks,
+            tee_upgrade_deadline_duration_seconds,
         }
     }
 }
