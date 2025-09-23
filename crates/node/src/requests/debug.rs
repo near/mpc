@@ -1,4 +1,3 @@
-use super::metrics;
 use super::queue::{ComputationProgress, PendingRequests, QueuedRequest};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
@@ -78,41 +77,12 @@ impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
         &mut self,
         request: CompletedRequest<RequestType, ChainRespondArgsType>,
     ) {
-        self.update_failed_signatures_metric_for_request(&request);
         self.requests.push(request);
         if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
             self.requests.pop();
         }
     }
 
-    /// Update the metric for a single completed request
-    /// This only updates the metric for signature requests, not CKD requests
-    fn update_failed_signatures_metric_for_request(
-        &self,
-        request: &CompletedRequest<RequestType, ChainRespondArgsType>,
-    ) {
-        // Only update the metric for signature requests
-        if std::any::TypeId::of::<RequestType>()
-            == std::any::TypeId::of::<crate::types::SignatureRequest>()
-        {
-            match request.completion_delay {
-                None => {
-                    // Failed signatures (max tries exceeded)
-                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                        .with_label_values(&["max_tries_exceeded"])
-                        .inc();
-                }
-                Some((delay_blocks, _)) => {
-                    if delay_blocks >= 201 {
-                        // Severely delayed signatures (timeout)
-                        metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
-                            .with_label_values(&["timeout"])
-                            .inc();
-                    }
-                }
-            }
-        }
-    }
 }
 
 impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
