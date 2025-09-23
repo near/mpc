@@ -14,6 +14,12 @@ pub(crate) trait IntoDtoType<DtoType> {
     fn into_dto_type(self) -> DtoType;
 }
 
+impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &ed25519_dalek::VerifyingKey {
+    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
+        dtos_contract::Ed25519PublicKey::from(self.to_bytes())
+    }
+}
+
 impl IntoDtoType<dtos_contract::Attestation> for Attestation {
     fn into_dto_type(self) -> dtos_contract::Attestation {
         match self {
