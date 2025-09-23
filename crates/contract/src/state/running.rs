@@ -8,7 +8,7 @@ use crate::primitives::{
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
-use near_sdk::near;
+use near_sdk::{near, AccountId};
 use std::collections::{BTreeSet, HashSet};
 
 /// In this state, the contract is ready to process signature requests.
@@ -174,6 +174,10 @@ impl RunningContractState {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn is_participant(&self, account_id: &AccountId) -> bool {
+        self.parameters.participants().is_participant(account_id)
     }
 }
 
