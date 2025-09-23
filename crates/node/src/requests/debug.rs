@@ -82,7 +82,6 @@ impl<RequestType: Request + 'static, ChainRespondArgsType: ChainRespondArgs>
             self.requests.pop();
         }
     }
-
 }
 
 impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
