@@ -1,11 +1,9 @@
-use crate::common::{gen_accounts, PARTICIPANT_LEN};
-use common::current_contract;
+use crate::sandbox::common::{current_contract, gen_accounts, PARTICIPANT_LEN};
 use mpc_contract::{
     config::InitConfig,
     primitives::thresholds::{Threshold, ThresholdParameters},
 };
 use near_workspaces::{network::Sandbox, Contract, Worker};
-pub mod common;
 
 enum Network {
     Testnet,

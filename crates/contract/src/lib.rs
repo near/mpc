@@ -82,6 +82,12 @@ const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 /// Prepaid gas for a `clean_tee_status` call
 const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
 
+/// Minimum deposit required for sign requests
+const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
+/// Minimum deposit required for CKD requests
+const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
 /// Confidential Key Derivation only supports secp256k1
 const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
@@ -144,6 +150,7 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
+        let initial_storage = env::storage_usage();
 
         let request: SignRequest = request.try_into().unwrap();
         let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
@@ -185,15 +192,20 @@ impl MpcContract {
             );
         }
 
-        let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
+        let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
-        match deposit.checked_sub(NearToken::from_yoctonear(1)) {
+        let storage_used = env::storage_usage() - initial_storage;
+        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
+        let storage_cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
+
+        match deposit.checked_sub(storage_cost) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
-                            "Require a deposit of 1 yoctonear, found: {}",
+                            "Require a deposit of {} yoctonear, found: {}",
+                            storage_cost.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -312,6 +324,7 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
+        let initial_storage = env::storage_usage();
 
         let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
             env::panic_str(
@@ -354,12 +367,17 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        match deposit.checked_sub(NearToken::from_yoctonear(1)) {
+        let storage_used = env::storage_usage() - initial_storage;
+        let cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
+        let cost = std::cmp::max(cost, MINIMUM_CKD_REQUEST_DEPOSIT);
+
+        match deposit.checked_sub(cost) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
-                            "Require a deposit of 1 yoctonear, found: {}",
+                            "Require a deposit of {} yoctonear, found: {}",
+                            cost.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),

@@ -1,5 +1,7 @@
-pub mod common;
-use common::{create_response_ckd, derive_confidential_key_and_validate, init_env_secp256k1};
+use crate::sandbox::common::{
+    create_response_ckd, derive_confidential_key_and_validate, example_secp256k1_point,
+    init_env_secp256k1,
+};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     errors,
@@ -7,8 +9,6 @@ use mpc_contract::{
 };
 use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
-
-use crate::common::example_secp256k1_point;
 
 async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -22,8 +22,8 @@ async fn create_account_given_id(
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
 
     let account_ids: [AccountId; 4] = [
@@ -106,8 +106,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
@@ -168,8 +168,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
         new_contract_balance.as_millinear(),
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() < 20,
-        "respond should take less than 0.02 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after refunding deposit"
     );
 
     Ok(())
@@ -219,13 +219,14 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
         contract_balance.as_yoctonear(),
         new_contract_balance.as_yoctonear(),
     );
+    assert!(balance >= new_balance, "user balance should not increase");
     assert!(
         balance.as_millinear() - new_balance.as_millinear() < 10,
         "refund should happen"
     );
     assert!(
-        contract_balance.as_millinear() - new_contract_balance.as_millinear() <= 1,
-        "refund transfer should take less than 0.001 NEAR"
+        contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+        "contract balance should not decrease after refunding deposit"
     );
 
     Ok(())
@@ -236,8 +237,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let sk = match &sks[0] {
-        common::SharedSecretKey::Secp256k1(sk) => sk,
-        common::SharedSecretKey::Ed25519(_) => unreachable!(),
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
     let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
