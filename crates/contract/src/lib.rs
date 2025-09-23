@@ -1156,8 +1156,7 @@ impl MpcContract {
         self.tee_state
             .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
-            .map(|allowed_image_hash| &allowed_image_hash.image_hash)
-            .cloned()
+            .map(|allowed_image_hash| allowed_image_hash.image_hash)
             .collect()
     }
 

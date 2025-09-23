@@ -187,15 +187,15 @@ impl TeeState {
         tee_upgrade_deadline_duration: Duration,
     ) -> Vec<MpcDockerImageHash> {
         self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
-            .iter()
-            .map(|entry| entry.image_hash.clone())
+            .into_iter()
+            .map(|entry| entry.image_hash)
             .collect()
     }
 
     pub fn get_allowed_mpc_docker_images(
         &self,
         tee_upgrade_deadline_duration: Duration,
-    ) -> Vec<&AllowedMpcDockerImage> {
+    ) -> Vec<AllowedMpcDockerImage> {
         self.allowed_docker_image_hashes
             .get(tee_upgrade_deadline_duration)
     }

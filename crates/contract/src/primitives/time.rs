@@ -9,16 +9,24 @@ pub(crate) struct TimeStamp {
 
 impl TimeStamp {
     pub(crate) fn now() -> Self {
-        let time_stamp_now = near_sdk::env::block_timestamp_ms();
+        let block_time_nano_seconds = near_sdk::env::block_timestamp();
 
         Self {
-            duration_since_unix_epoch: Duration::from_millis(time_stamp_now),
+            duration_since_unix_epoch: Duration::from_nanos(block_time_nano_seconds),
         }
     }
+}
 
-    pub(crate) fn checked_sub(self, other: TimeStamp) -> Option<Duration> {
-        self.duration_since_unix_epoch
-            .checked_sub(other.duration_since_unix_epoch)
+impl std::ops::Add<Duration> for TimeStamp {
+    type Output = TimeStamp;
+
+    fn add(self, rhs: Duration) -> Self::Output {
+        let current_time_stamp = self.duration_since_unix_epoch;
+        let new_time_stamp = current_time_stamp + rhs;
+
+        TimeStamp {
+            duration_since_unix_epoch: new_time_stamp,
+        }
     }
 }
 
@@ -77,41 +85,17 @@ mod tests {
     }
 
     #[test]
-    fn test_checked_sub_positive_duration() {
-        let larger_timestamp = TimeStamp {
+    fn test_ops_add() {
+        let time_stamp = TimeStamp {
             duration_since_unix_epoch: Duration::from_secs(200),
         };
-        let smaller_timestamp = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(150),
+        let added_duration = Duration::from_secs(100);
+
+        let expected_time_stamp = TimeStamp {
+            duration_since_unix_epoch: Duration::from_secs(350),
         };
 
-        let duration_difference = larger_timestamp.checked_sub(smaller_timestamp);
-        assert_eq!(duration_difference, Some(Duration::from_secs(50)));
-    }
-
-    #[test]
-    fn test_checked_sub_zero_difference() {
-        let timestamp_one = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(1234),
-        };
-        let timestamp_two = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(1234),
-        };
-
-        let duration_difference = timestamp_one.checked_sub(timestamp_two);
-        assert_eq!(duration_difference, Some(Duration::ZERO));
-    }
-
-    #[test]
-    fn test_checked_sub_negative_returns_none() {
-        let smaller_timestamp = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(50),
-        };
-        let larger_timestamp = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(100),
-        };
-
-        let duration_difference = smaller_timestamp.checked_sub(larger_timestamp);
-        assert_eq!(duration_difference, None);
+        let new_time_stamp = time_stamp + added_duration;
+        assert_eq!(new_time_stamp, expected_time_stamp);
     }
 }
