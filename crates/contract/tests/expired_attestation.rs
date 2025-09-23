@@ -15,12 +15,11 @@ use mpc_contract::{
 };
 
 use assert_matches::assert_matches;
-use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
     VMContext,
 };
-use std::time::Duration;
+use std::{time::Duration, u64};
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -69,6 +68,34 @@ impl TestSetup {
             .submit_participant_info(attestation, Ed25519PublicKey::from(tls_key_bytes))
             .unwrap();
     }
+
+    /// Switches testing context to a given participant at a specific timestamp
+    fn with_env(&mut self, account_id: &AccountId, timestamp: u64) {
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(timestamp)
+            .signer_account_id(account_id.clone())
+            .build());
+    }
+
+    /// Makes all participants vote for a given code hash at a specific timestamp
+    fn vote_with_all_participants(&mut self, hash: [u8; 32], timestamp: u64) {
+        for (account_id, _, _) in &self.participants_list.clone() {
+            self.with_env(account_id, timestamp);
+            self.contract.vote_code_hash(hash.into()).unwrap();
+        }
+    }
+}
+
+fn create_context_for_participant(account_id: &AccountId) -> VMContext {
+    VMContextBuilder::new()
+        .signer_account_id(account_id.clone())
+        .build()
+}
+
+fn set_system_time(nano_seconds_since_unix_epoch: u64) {
+    testing_env!(VMContextBuilder::new()
+        .block_timestamp(nano_seconds_since_unix_epoch)
+        .build());
 }
 
 /// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This test demonstrates the complete kickout mechanism using direct contract calls:
@@ -258,293 +285,155 @@ fn test_clean_tee_status_removes_non_participants() {
     );
 }
 
+/// **Test for grace-period expiry of older code hashes**
+///
+/// Verifies that when participants vote for a new image hash, the older
+/// hash remains allowed only until the successor’s grace period deadline.
+/// At the exact deadline both old and new hashes are valid, but immediately
+/// after, only the latest remains.
 #[test]
 fn only_latest_hash_after_grace_period() {
-    // Use descriptive timing constants
-    const FIRST_ENTRY_TIME_NANO_SECONDS: u64 = NANOS_IN_SECOND; // 1 second
-    const GRACE_PERIOD_NANO_SECONDS: u64 = 10 * NANOS_IN_SECOND; // 10 seconds
-    const DELAY_BETWEEN_HASH_VOTES: u64 = 3 * NANOS_IN_SECOND; // 3 seconds
-
-    const PARTICIPANT_COUNT: usize = 3;
-    const THRESHOLD: u64 = 2;
-
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(FIRST_ENTRY_TIME_NANO_SECONDS)
-        .build());
-
-    let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NANO_SECONDS / NANOS_IN_SECOND),
-        ..Default::default()
-    };
-
-    let mut test_setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD, Some(init_config));
-
-    // Two distinct code hashes
-    let old_code_hash_bytes = [1; 32];
-    let new_code_hash_bytes = [2; 32];
-
-    for (account_id, _participant_id, _) in &test_setup.participants_list {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(FIRST_ENTRY_TIME_NANO_SECONDS)
-            .signer_account_id(account_id.clone())
-            .build());
-
-        test_setup
-            .contract
-            .vote_code_hash(old_code_hash_bytes.into())
-            .unwrap();
-    }
-
-    let time_of_new_vote = FIRST_ENTRY_TIME_NANO_SECONDS + DELAY_BETWEEN_HASH_VOTES;
-
-    for (account_id, _participant_id, _) in &test_setup.participants_list {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(time_of_new_vote)
-            .signer_account_id(account_id.clone())
-            .build());
-
-        test_setup
-            .contract
-            .vote_code_hash(new_code_hash_bytes.into())
-            .unwrap();
-    }
-
-    // The grace period deadline should be defined in terms of the insertion time of the successor hash.
-    let grace_period_deadline = time_of_new_vote + GRACE_PERIOD_NANO_SECONDS;
-
-    // Exactly at the deadline of the grace period both hashes are allowed.
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(grace_period_deadline)
-        .build());
-
-    let _: [_; 2] = test_setup.contract.allowed_code_hashes().try_into().expect(
-        "Both hashes should still be allowed during the grace period (at the deadline instant)",
-    );
-
-    // One nanosecond after the grace period ends only the latest image hash is allowed.
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(grace_period_deadline + 1)
-        .build());
-
-    let remaining_allowed: [_; 1] = test_setup
-        .contract
-        .allowed_code_hashes()
-        .try_into()
-        .expect("After the grace period, only the most recent code hash should remain");
-
-    let remaining_hash_bytes = *remaining_allowed[0];
-
-    assert_eq!(
-        remaining_hash_bytes,
-        new_code_hash_bytes,
-        "The latest voted image hash should be the sole allowed hash after the grace period elapses"
-    );
-}
-
-#[test]
-fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
-    const INITIAL_TIME_NANO_SECONDS: u64 = 1;
-    const GRACE_PERIOD_SECONDS: u64 = 10;
-
-    const PARTICIPANT_COUNT: usize = 3;
-    const THRESHOLD: u64 = 2;
-
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(INITIAL_TIME_NANO_SECONDS)
-        .build());
-
-    let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
-        ..Default::default()
-    };
-
-    let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD, Some(init_config));
-
-    let hash_1 = [1; 32];
-    let hash_2 = [2; 32];
-    let hash_3 = [3; 32];
-
-    for code_hash in [hash_1, hash_2, hash_3] {
-        for (account_id, _, _) in &setup.participants_list {
-            testing_env!(VMContextBuilder::new()
-                .block_timestamp(INITIAL_TIME_NANO_SECONDS)
-                .signer_account_id(account_id.clone())
-                .build());
-
-            setup.contract.vote_code_hash(code_hash.into()).unwrap();
-        }
-    }
-
-    testing_env!(VMContextBuilder::new().block_timestamp(u64::MAX).build());
-
-    let allowed_code_hashes: [_; 1] = setup
-        .contract
-        .allowed_code_hashes()
-        .try_into()
-        .expect("1 second after expiry both old image hashes are expired");
-
-    let [allowed_code_hash] = allowed_code_hashes;
-    let allowed_code_hash_bytes: [u8; 32] = *allowed_code_hash;
-
-    assert_eq!(allowed_code_hash_bytes, hash_3, "Hash3 was the latest vote image hash and should be the only allowed image hash after the grace period has passed");
-}
-
-/// Verifies that when three hashes are added at different times,
-/// each hash’s grace period is determined by the insertion time of its
-/// immediate successor, not the latest hash overall.
-#[test]
-fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
-    // Timing constants
-    const FIRST_ENTRY_TIME: u64 = NANOS_IN_SECOND; // 1 second
-    const SECOND_ENTRY_DELAY: u64 = 3 * NANOS_IN_SECOND; // 3 seconds later
-    const THIRD_ENTRY_DELAY: u64 = 6 * NANOS_IN_SECOND; // 6 seconds later
-    const GRACE_PERIOD: u64 = 10 * NANOS_IN_SECOND; // 10 seconds
-
-    const PARTICIPANT_COUNT: usize = 3;
-    const THRESHOLD: u64 = 2;
-
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(FIRST_ENTRY_TIME)
-        .build());
+    const FIRST_ENTRY_TIME: u64 = NANOS_IN_SECOND; // 1s
+    const GRACE_PERIOD: u64 = 10 * NANOS_IN_SECOND; // 10s
+    const DELAY: u64 = 3 * NANOS_IN_SECOND; // 3s
 
     let init_config = InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD / NANOS_IN_SECOND),
         ..Default::default()
     };
+    let mut setup = TestSetup::new(3, 2, Some(init_config));
 
-    let mut test_setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD, Some(init_config));
+    let old_hash = [1; 32];
+    let successor_hash = [2; 32];
 
-    // Distinct hashes
-    let first_hash = [1; 32];
-    let second_hash = [2; 32];
-    let third_hash = [3; 32];
+    setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME);
 
-    // All participants vote for the first hash at FIRST_ENTRY_TIME
-    for (account_id, _, _) in &test_setup.participants_list {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(FIRST_ENTRY_TIME)
-            .signer_account_id(account_id.clone())
-            .build());
+    let successor_vote_time = FIRST_ENTRY_TIME + DELAY;
+    setup.vote_with_all_participants(successor_hash, successor_vote_time);
 
-        test_setup
-            .contract
-            .vote_code_hash(first_hash.into())
-            .unwrap();
+    // The grace period deadline should be defined in terms of the insertion time of the successor hash.
+    let deadline = successor_vote_time + GRACE_PERIOD;
+
+    // At grace deadline → both allowed
+    set_system_time(deadline);
+    let _: [_; 2] = setup.contract.allowed_code_hashes().try_into().unwrap();
+
+    // After grace → only latest
+    set_system_time(deadline + 1);
+    let remaining: [_; 1] = setup.contract.allowed_code_hashes().try_into().unwrap();
+    assert_eq!(*remaining[0], successor_hash);
+}
+
+/// **Test for equal-timestamp precedence**
+///
+/// Ensures that when multiple hashes are inserted at the exact same
+/// timestamp, the contract treats the *last inserted* hash as authoritative.
+/// After the grace period, only this latest hash is allowed.
+#[test]
+fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
+    const INITIAL_TIME: u64 = 1;
+    const GRACE_PERIOD: u64 = 10;
+
+    let init_config = InitConfig {
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD),
+        ..Default::default()
+    };
+    let mut setup = TestSetup::new(3, 2, Some(init_config));
+
+    let hash_1 = [1; 32];
+    let hash_2 = [2; 32];
+    let hash_3 = [3; 32];
+
+    let hashes = [hash_1, hash_2, hash_3];
+
+    for hash in hashes {
+        setup.vote_with_all_participants(hash, INITIAL_TIME);
     }
 
-    let second_entry_time = FIRST_ENTRY_TIME + SECOND_ENTRY_DELAY;
+    // Jump far in future
+    set_system_time(u64::MAX);
 
-    // All participants vote for the second hash at SECOND_ENTRY_TIME
-    for (account_id, _, _) in &test_setup.participants_list {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(second_entry_time)
-            .signer_account_id(account_id.clone())
-            .build());
+    let [allowed] = setup.contract.allowed_code_hashes().try_into().unwrap();
+    assert_eq!(*allowed, hash_3);
+}
 
-        test_setup
-            .contract
-            .vote_code_hash(second_hash.into())
-            .unwrap();
-    }
+/// **Test for successor-based grace periods**
+///
+/// Confirms that a hash’s grace period is tied to the insertion time
+/// of its immediate successor, not to the latest hash overall.
+/// Each hash expires individually once its successor’s grace period ends.
+#[test]
+fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
+    const FIRST_ENTRY_TIME_NANOS: u64 = NANOS_IN_SECOND;
+    const SECOND_ENTRY_DELAY_NANOS: u64 = 3 * NANOS_IN_SECOND;
+    const THIRD_ENTRY_DELAY_NANOS: u64 = 6 * NANOS_IN_SECOND;
+    const GRACE_PERIOD_NANOS: u64 = 10 * NANOS_IN_SECOND;
 
-    let third_entry_time = FIRST_ENTRY_TIME + THIRD_ENTRY_DELAY;
+    let init_config = InitConfig {
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NANOS / NANOS_IN_SECOND),
+        ..Default::default()
+    };
+    let mut test_setup = TestSetup::new(3, 2, Some(init_config));
 
-    // All participants vote for the third hash at THIRD_ENTRY_TIME
-    for (account_id, _, _) in &test_setup.participants_list {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(third_entry_time)
-            .signer_account_id(account_id.clone())
-            .build());
+    let first_code_hash = [1; 32];
+    let second_code_hash = [2; 32];
+    let third_code_hash = [3; 32];
 
-        test_setup
-            .contract
-            .vote_code_hash(third_hash.into())
-            .unwrap();
-    }
+    test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NANOS);
 
-    // The first hash should expire at (second_entry_time + GRACE_PERIOD),
-    // regardless of the third entry.
-    let first_hash_deadline = second_entry_time + GRACE_PERIOD;
+    let second_entry_time_nanos = FIRST_ENTRY_TIME_NANOS + SECOND_ENTRY_DELAY_NANOS;
+    test_setup.vote_with_all_participants(second_code_hash, second_entry_time_nanos);
 
-    // One nanosecond after deadline the first hash must be gone
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(first_hash_deadline + 1)
-        .build());
+    let third_entry_time_nanos = FIRST_ENTRY_TIME_NANOS + THIRD_ENTRY_DELAY_NANOS;
+    test_setup.vote_with_all_participants(third_code_hash, third_entry_time_nanos);
 
-    let allowed_after_deadline = test_setup.contract.allowed_code_hashes();
-    let expected_allowed_hashes: Vec<MpcDockerImageHash> =
-        vec![second_hash.into(), third_hash.into()];
-
+    // First code hash expires at successor’s deadline
+    let first_hash_deadline_nanos = second_entry_time_nanos + GRACE_PERIOD_NANOS;
+    set_system_time(first_hash_deadline_nanos + 1);
     assert_eq!(
-        expected_allowed_hashes, allowed_after_deadline,
-        "First hash should expire immediately after its grace period deadline"
+        test_setup.contract.allowed_code_hashes(),
+        vec![second_code_hash.into(), third_code_hash.into()]
     );
 
-    let second_hash_deadline = third_entry_time + GRACE_PERIOD;
-
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(second_hash_deadline)
-        .build());
-
-    let allowed_before_second_expiry = test_setup.contract.allowed_code_hashes();
+    // Second code hash expires at its own successor’s deadline
+    let second_hash_deadline_nanos = third_entry_time_nanos + GRACE_PERIOD_NANOS;
+    set_system_time(second_hash_deadline_nanos);
     assert_eq!(
-        expected_allowed_hashes, allowed_before_second_expiry,
-        "Second hash should still be allowed until its own successor-based grace period ends"
+        test_setup.contract.allowed_code_hashes(),
+        vec![second_code_hash.into(), third_code_hash.into()]
     );
 
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(second_hash_deadline + 1)
-        .build());
-
-    let expected_allowed_hashes: Vec<MpcDockerImageHash> = vec![third_hash.into()];
-    let allowed_before_second_expiry = test_setup.contract.allowed_code_hashes();
+    set_system_time(second_hash_deadline_nanos + 1);
     assert_eq!(
-        expected_allowed_hashes, allowed_before_second_expiry,
-        "Second hash should still be allowed until its own successor-based grace period ends"
+        test_setup.contract.allowed_code_hashes(),
+        vec![third_code_hash.into()]
     );
 }
 
+/// **Test for indefinite validity of the latest hash**
+///
+/// Ensures that if no successor hash is ever inserted, the most recent
+/// image hash remains valid indefinitely, regardless of how far
+/// blockchain time advances.
 #[test]
 fn latest_image_never_expires_if_its_not_superseded() {
     const START_TIME_SECONDS: u64 = 1;
     const GRACE_PERIOD_SECONDS: u64 = 10;
-    const PARTICIPANT_COUNT: usize = 3;
-    const VOTE_THRESHOLD: u64 = 2;
-
-    testing_env!(VMContextBuilder::new()
-        .block_timestamp(START_TIME_SECONDS * NANOS_IN_SECOND)
-        .build());
 
     let init_config = InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
         ..Default::default()
     };
-    let mut setup = TestSetup::new(PARTICIPANT_COUNT, VOTE_THRESHOLD, Some(init_config));
+    let mut test_setup = TestSetup::new(3, 2, Some(init_config));
 
-    let only_image_hash = [123; 32];
+    let only_image_code_hash = [123; 32];
+    test_setup
+        .vote_with_all_participants(only_image_code_hash, START_TIME_SECONDS * NANOS_IN_SECOND);
 
-    // Vote-in once
-    for (account_id, _, _) in setup.participants_list.iter().take(2) {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(START_TIME_SECONDS * NANOS_IN_SECOND)
-            .signer_account_id(account_id.clone())
-            .build());
-        setup
-            .contract
-            .vote_code_hash(only_image_hash.into())
-            .unwrap();
-    }
+    // Even far in the future, latest remains allowed
+    set_system_time(u64::MAX);
+    let allowed_image_hashes = test_setup.contract.allowed_code_hashes();
 
-    // Jump far beyond any grace window; still the latest; still allowed
-    testing_env!(VMContextBuilder::new().block_timestamp(u64::MAX).build());
-    let allowed_image_hashes_far_future = setup.contract.allowed_code_hashes();
-
-    assert_eq!(allowed_image_hashes_far_future.len(), 1);
-    assert_eq!(*allowed_image_hashes_far_future[0], only_image_hash);
-}
-
-fn create_context_for_participant(account_id: &AccountId) -> VMContext {
-    VMContextBuilder::new()
-        .signer_account_id(account_id.clone())
-        .build()
+    assert_eq!(allowed_image_hashes.len(), 1);
+    assert_eq!(*allowed_image_hashes[0], only_image_code_hash);
 }
