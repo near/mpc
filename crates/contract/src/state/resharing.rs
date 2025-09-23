@@ -7,7 +7,7 @@ use crate::primitives::key_state::{
     AuthenticatedAccountId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
 use crate::primitives::thresholds::ThresholdParameters;
-use near_sdk::near;
+use near_sdk::{near, AccountId};
 
 /// In this state, we reshare the key of every domain onto a new set of participants and threshold.
 /// Similar to key generation, we reshare the key of one domain at a time; when we finish resharing
@@ -177,9 +177,18 @@ impl ResharingContractState {
 
         Ok(running_state)
     }
+
+    pub fn is_participant_or_prospective_participant(&self, account_id: &AccountId) -> bool {
+        self.previous_running_state.is_participant(account_id)
+            || self
+                .resharing_key
+                .proposed_parameters()
+                .participants()
+                .is_participant(account_id)
+    }
 }
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::primitives::{
         domain::{AddDomainsVotes, DomainId},
         key_state::{AttemptId, KeyEventId},
@@ -199,7 +208,7 @@ mod tests {
     /// Generates a resharing state with the given number of domains.
     /// We do this by starting from the Running state and calling vote_new_parameters to have it
     /// transition into Resharing. (This also tests the transitioning code path.)
-    fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
+    pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
         let mut env = Environment::new(Some(100), None, None);
         let mut running = gen_running_state(num_domains);
         let proposal = gen_valid_params_proposal(&running.parameters);

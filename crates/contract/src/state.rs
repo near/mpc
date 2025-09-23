@@ -11,7 +11,7 @@ use crate::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
-use near_sdk::near;
+use near_sdk::{near, AccountId};
 use resharing::ResharingContractState;
 use running::RunningContractState;
 
@@ -209,6 +209,23 @@ impl ProtocolContractState {
             }
         };
         Ok(())
+    }
+
+    pub fn is_existing_or_prospective_participant(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<bool, Error> {
+        let is_existing_or_prospective_participant = match &self {
+            ProtocolContractState::Initializing(state) => state.is_participant(account_id),
+            ProtocolContractState::Running(state) => state.is_participant(account_id),
+            ProtocolContractState::Resharing(state) => {
+                state.is_participant_or_prospective_participant(account_id)
+            }
+            ProtocolContractState::NotInitialized => {
+                return Err(InvalidState::UnexpectedProtocolState.message(self.name()));
+            }
+        };
+        Ok(is_existing_or_prospective_participant)
     }
 }
 

@@ -35,7 +35,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_sdk::{log, CurveType, PublicKey};
+use near_sdk::{log, CurveType, Gas, PublicKey};
 use near_workspaces::{
     network::Sandbox,
     result::ExecutionFinalResult,
@@ -67,6 +67,13 @@ use threshold_signatures::{
 pub const CONTRACT_FILE_PATH: &str =
     "../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
+
+/// Convenience constant used only in tests.  
+/// The contract itself does not require a specific gas attachment; in practice,  
+/// nodes usually attach the maximum available gas.  
+/// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
+/// unexpectedly in the future.
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
