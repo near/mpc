@@ -1,3 +1,4 @@
+use super::metrics;
 use super::queue::{
     PendingSignatureRequests, QueuedSignatureRequest, SignatureComputationProgress,
 };
@@ -55,9 +56,30 @@ impl Ord for CompletedSignatureRequest {
 
 impl CompletedSignatureRequests {
     pub fn add_completed_request(&mut self, request: CompletedSignatureRequest) {
+        self.update_failed_signatures_metric_for_request(&request);
         self.requests.push(request);
         if self.requests.len() > NUM_COMPLETED_REQUESTS_TO_KEEP {
             self.requests.pop();
+        }
+    }
+
+    /// Update the metric for a single completed request
+    fn update_failed_signatures_metric_for_request(&self, request: &CompletedSignatureRequest) {
+        match request.completion_delay {
+            None => {
+                // Failed signatures (max tries exceeded)
+                metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                    .with_label_values(&["max_tries_exceeded"])
+                    .inc();
+            }
+            Some((delay_blocks, _)) => {
+                if delay_blocks >= 201 {
+                    // Severely delayed signatures (timeout)
+                    metrics::MPC_CLUSTER_FAILED_SIGNATURES_COUNT
+                        .with_label_values(&["timeout"])
+                        .inc();
+                }
+            }
         }
     }
 }
