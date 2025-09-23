@@ -5,3 +5,5 @@ pub mod sign;
 pub mod tee;
 pub mod updates;
 pub mod vote;
+
+pub mod common;

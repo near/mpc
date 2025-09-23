@@ -1,4 +1,4 @@
-use crate::common::{init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH};
+use crate::sandbox::common::{init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH};
 use mpc_contract::config::Config;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};

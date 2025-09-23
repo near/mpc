@@ -1,4 +1,4 @@
-use crate::common::{current_contract, gen_accounts, PARTICIPANT_LEN};
+use crate::sandbox::common::{current_contract, gen_accounts, PARTICIPANT_LEN};
 use mpc_contract::{
     config::InitConfig,
     primitives::thresholds::{Threshold, ThresholdParameters},

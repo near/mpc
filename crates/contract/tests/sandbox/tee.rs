@@ -1,4 +1,4 @@
-use crate::common::{
+use crate::sandbox::common::{
     assert_running_return_participants, check_call_success, gen_accounts, get_tee_accounts,
     init_env_ed25519, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
 };

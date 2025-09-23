@@ -1,4 +1,4 @@
-use crate::common::{check_call_success, gen_accounts, init_env_secp256k1};
+use crate::sandbox::common::{check_call_success, gen_accounts, init_env_secp256k1};
 use assert_matches::assert_matches;
 use mpc_contract::{
     primitives::thresholds::{Threshold, ThresholdParameters},
