@@ -193,7 +193,7 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
         let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
         let storage_cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
 
         match deposit.checked_sub(storage_cost) {
