@@ -134,6 +134,9 @@ pub struct ChainGetPendingCKDRequestArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct GetApprovedAttestationsArgs;
+
+#[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
     pub public_key: PublicKey,

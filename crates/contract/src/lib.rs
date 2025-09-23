@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     crypto_shared::types::CKDResponse,
-    dto_mapping::IntoContractType,
+    dto_mapping::{IntoContractType, IntoDtoType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
@@ -610,6 +610,14 @@ impl MpcContract {
         }
 
         Ok(())
+    }
+
+    pub fn stored_attestations(&self) -> Vec<dtos_contract::Attestation> {
+        self.tee_state
+            .participants_attestations
+            .iter()
+            .map(|(_, attestation)| attestation.clone().into_dto_type())
+            .collect()
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -1747,7 +1755,7 @@ mod tests {
 
         let tls_public_key = participant_info.sign_pk.clone();
         let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
-        let dto_public_key = Ed25519PublicKey::from(public_key_bytes);
+        let dto_public_key = dtos_contract::Ed25519PublicKey::from(public_key_bytes);
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
