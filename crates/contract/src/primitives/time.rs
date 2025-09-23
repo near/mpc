@@ -92,7 +92,7 @@ mod tests {
         let added_duration = Duration::from_secs(100);
 
         let expected_time_stamp = TimeStamp {
-            duration_since_unix_epoch: Duration::from_secs(350),
+            duration_since_unix_epoch: Duration::from_secs(300),
         };
 
         let new_time_stamp = time_stamp + added_duration;
