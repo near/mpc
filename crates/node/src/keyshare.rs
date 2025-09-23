@@ -6,14 +6,13 @@ mod temporary;
 #[cfg(test)]
 pub mod test_utils;
 
+use crate::providers::PublicKeyConversion;
 use anyhow::Context;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
-
-use crate::trait_extensions::crypto::PublicKeyConversion;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {

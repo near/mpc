@@ -3,7 +3,7 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetApprovedAttestationsArgs};
+use crate::indexer::types::ChainGetPendingCKDRequestArgs;
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;

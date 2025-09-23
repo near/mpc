@@ -1,6 +1,6 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
-use crate::trait_extensions::crypto::PublicKeyConversion;
+use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
     config::{

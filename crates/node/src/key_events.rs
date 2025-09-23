@@ -5,9 +5,8 @@ use crate::indexer::types::{
 };
 use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::providers::EcdsaTaskId;
+use crate::providers::{EcdsaTaskId, PublicKeyConversion};
 use crate::tracking::AutoAbortTaskCollection;
-use crate::trait_extensions::crypto::PublicKeyConversion;
 use crate::{
     config::ParticipantsConfig,
     indexer::{

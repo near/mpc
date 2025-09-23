@@ -9,6 +9,7 @@ type Sha256Digest = [u8; 32];
 #[allow(clippy::large_enum_variant)]
 #[derive(
     Clone,
+    Debug,
     Eq,
     PartialEq,
     Ord,
@@ -53,6 +54,7 @@ pub struct DstackAttestation {
 
 #[derive(
     Clone,
+    Debug,
     Eq,
     PartialEq,
     Ord,
