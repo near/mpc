@@ -19,7 +19,7 @@ use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
     VMContext,
 };
-use std::{time::Duration, u64};
+use std::time::Duration;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;

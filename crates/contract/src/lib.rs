@@ -1440,8 +1440,10 @@ impl MpcContract {
         };
 
         if !(matches!(
-            self.tee_state
-                .verify_tee_participant(&node_id, self.config.tee_upgrade_deadline_duration_blocks),
+            self.tee_state.verify_tee_participant(
+                &node_id,
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds)
+            ),
             TeeQuoteStatus::Valid
         )) {
             return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation.into());
