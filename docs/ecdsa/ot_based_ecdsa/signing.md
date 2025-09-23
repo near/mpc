@@ -1,66 +1,13 @@
 This document specifies the signing protocol.
-The protocol is split into two main phases, a pre-signing phase
+The protocol is split into two phases, a pre-signing phase and a signing phase.
 
-# 1 Preliminaries
+*Note: Due to the complexity of generating presignatures using multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
 
-Let $\mathbb{G}$ be a cryptographic group, with generator $G$, of prime order $q$.
+### Note: the threshold $t =$ *number_malicious_parties* $+ 1$
 
-Let $\text{Hash} : \\{0, 1\\}^* \to \mathbb{F}_q$ denote a hash function used for hashing messages
-for signatures.
-Let $h : \mathbb{G} \to \mathbb{F}_q$ denote a different "hash function" used for converting points to scalars.
-Commonly, this is done by "simply" taking the x coordinate of the affine
-representation of a point.
-Let $H : \\{0, 1\\}^* \to \\{0, 1\\}^{2\lambda}$ be a generic hash function.
+# Presigning
 
-# 2 ECDSA Recap
-
-ECDSA is defined by algorithms for key generation, signing, and verification:
-
-First, key generation:
-
-$$
-\begin{aligned}
-&\underline{\texttt{Gen}():}\cr
-&\ x \xleftarrow{\$} \mathbb{F}_q\cr
-&\ X \gets x \cdot G\cr
-&\ \texttt{return } (x, X)\cr
-\end{aligned}
-$$
-
-Next, signing:
-
-$$
-\begin{aligned}
-&\underline{\texttt{Sign}(x : \mathbb{F}_q, m : \{0, 1\}^*):}\cr
-&\ k \xleftarrow{\$} \mathbb{F}_q\cr
-&\ R \gets \frac{1}{k} \cdot G\cr
-&\ r \gets h(R)\cr
-&\ \texttt{retry if } r = 0\cr
-&\ s \gets k (\texttt{Hash}(m) + rx)\cr
-&\ \texttt{return } (R, s)
-\end{aligned}
-$$
-
-Note that we deviate slightly from ECDSA specifications by returning
-the entire point $R$ instead of just $r$.
-This makes it easier for downstream implementations to massage
-the result signature into whatever format they need for compatability.
-
-Finally, verification:
-
-$$
-\begin{aligned}
-&\underline{\texttt{Verify}(X : \mathbb{G}, m : \{0, 1\}^*, (R, s) : \mathbb{G} \times \mathbb{F}_q):}\cr
-&\ r \gets h(R)\cr
-&\ \texttt{assert } r \neq 0, s \neq 0\cr
-&\ \hat{R} \gets \frac{\texttt{Hash}(m)}{s} \cdot G + \frac{r}{s} \cdot X\cr
-&\ \texttt{asssert } \hat{R} = R\cr
-\end{aligned}
-$$
-
-# 3 Presigning
-
-In this phase, a set of parties $\mathcal{P}_ 1 \subseteq \mathcal{P}_ 0$
+In this phase, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
 of size $N_1 \geq t$ wishes to generate a threshold $t' = t$ sharing
 of a pre-signature.
 
@@ -121,7 +68,9 @@ $$
 
 **Output:** The presignature $(R, k_i, \sigma_i)$
 
-# 4 Signing
+# Signing
+In this phase, a set of parties $\mathcal{P}_2 \subseteq \mathcal{P}_1$
+of size $N_2 \geq t$ wishes to generate an ECDSA signature.
 
 The inputs to this phase are:
 1) The presignature $(R, k_i, \sigma_i)$
@@ -131,7 +80,7 @@ The inputs to this phase are:
 5) The message hash $h= H(m)$
 
 **Rerandomization & Key Derivation:**
-1. Each $P_i$ derives a randomness $\delta = \mathsf{HKDF}(X, h, R, \rho)$
+1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(X, h, R, \rho)$
 2. Each $P_i$ rerandomizes the following elements:
 
     * $R  \gets R^\delta$
@@ -142,14 +91,12 @@ The inputs to this phase are:
 
 1. Each $P_i$ linearizes their share of $k$, setting $k_i \gets \lambda(\mathcal{P}_2)_i \cdot k_i$.
 2. Each $P_i$ linearizes their share of $\sigma$, setting $\sigma_i \gets \lambda(\mathcal{P}_2)_i \cdot \sigma_i$.
-3. Each $P_i$ sets $s_i \gets h \cdot k_i + R_x \cdot \sigma_i$ where $R_x$ is the x coordinate of $R$
+3. Each $P_i$ sets $s_i \gets h \cdot k_i + R_\mathsf{x} \cdot \sigma_i$ where $R_\mathsf{x}$ is the x coordinate of $R$
 4. $\star$ Each $P_i$ sends $s_i$ to every other party.
-
-
 5. $\bullet$ Each $P_i$ waits to receive $s_j$ from every other party.
-6. Each $P_i$ sets $s \gets \sum_{j \in [N]} s_j$.
-7. Perform the low-S normalization, i.e. $s \gets -s $ if $s\in\\{\frac{q}{2}..~q-1\\}$
-7. $\blacktriangle$ Each $P_i$ asserts that $(R, s)$ is a valid ECDSA signature for $m$.
+6. Each $P_i$ sums the received elements $s \gets \sum_j s_j$.
+7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
+8. $\blacktriangle$ Each $P_i$ asserts that $(R, s)$ is a valid ECDSA signature for $h$.
 
 **Output:** the signature $(R, s)$.
 
