@@ -89,7 +89,7 @@ Now you should have a `mpc_contract.wasm` artifact ready in the target directory
 Let's add an env variable for it. From the workspace root, run the following:
 
 ```shell
-export MPC_CONTRACT_PATH=$(pwd)/libs/chain-signatures/target/near/mpc_contract/mpc_contract.wasm
+export MPC_CONTRACT_PATH=$(pwd)/target/near/mpc_contract/mpc_contract.wasm
 ```
 
 Now we can deploy the contract with this command.
