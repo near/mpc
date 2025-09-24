@@ -378,12 +378,8 @@ impl StartCmd {
             },
         };
 
-        // Detach attestation submission to a worker task.
-        tokio::spawn(submit_remote_attestation(
-            indexer_api.txn_sender.clone(),
-            attestation,
-            tls_public_key,
-        ));
+        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
+            .await?;
 
         let coordinator = Coordinator {
             clock: Clock::real(),
