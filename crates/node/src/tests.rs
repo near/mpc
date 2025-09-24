@@ -1,6 +1,5 @@
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::Keyset;
-use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::HashMap;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
