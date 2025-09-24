@@ -80,7 +80,12 @@ impl AllowedDockerImageHashes {
                 let Some(successor) = self.allowed_tee_proposals.get(i + 1) else {
                     return true;
                 };
-                let grace_period_deadline = successor.added + tee_upgrade_deadline_duration;
+                let Some(grace_period_deadline) =
+                    successor.added.checked_add(tee_upgrade_deadline_duration)
+                else {
+                    log!("Error: timestamp overflowed when calculating grace_period_deadline.");
+                    return false;
+                };
 
                 current_time <= grace_period_deadline
             })

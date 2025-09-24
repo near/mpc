@@ -15,18 +15,14 @@ impl Timestamp {
             duration_since_unix_epoch: Duration::from_nanos(block_time_nano_seconds),
         }
     }
-}
 
-impl std::ops::Add<Duration> for Timestamp {
-    type Output = Timestamp;
-
-    fn add(self, rhs: Duration) -> Self::Output {
+    pub(crate) fn checked_add(self, duration: Duration) -> Option<Self> {
         let current_time_stamp = self.duration_since_unix_epoch;
-        let new_time_stamp = current_time_stamp + rhs;
+        let new_time_stamp = current_time_stamp.checked_add(duration)?;
 
-        Timestamp {
+        Some(Timestamp {
             duration_since_unix_epoch: new_time_stamp,
-        }
+        })
     }
 }
 
@@ -85,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ops_add() {
+    fn test_checked_add_succeeds() {
         let time_stamp = Timestamp {
             duration_since_unix_epoch: Duration::from_secs(200),
         };
@@ -95,7 +91,20 @@ mod tests {
             duration_since_unix_epoch: Duration::from_secs(300),
         };
 
-        let new_time_stamp = time_stamp + added_duration;
-        assert_eq!(new_time_stamp, expected_time_stamp);
+        let new_time_stamp = time_stamp.checked_add(added_duration);
+        assert_eq!(new_time_stamp, Some(expected_time_stamp));
+    }
+
+    #[test]
+    fn test_checked_add_overflow_returns_none() {
+        let max_time_stamp = Timestamp {
+            duration_since_unix_epoch: Duration::from_secs(u64::MAX),
+        };
+
+        let added_duration = Duration::from_secs(100);
+
+        let new_time_stamp = max_time_stamp.checked_add(added_duration);
+
+        assert_eq!(new_time_stamp, None);
     }
 }
