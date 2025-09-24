@@ -53,7 +53,6 @@ pub struct Coordinator<TransactionSender> {
     /// Storage for triples, presignatures, signing requests.
     pub secret_db: Arc<SecretDB>,
     /// Storage config for keyshares.
-    //pub key_storage_config: KeyStorageConfig,
     pub keyshare_storage: Arc<KeyshareStorage>,
 
     /// For interaction with the indexer.
@@ -371,11 +370,7 @@ where
         )
         .await?;
 
-        //if let Some(resharing_state) = running_state.resharing_state.clone() {
-
-        //let resharing_state_receiver = resharing_state_receiver; //.expect("we messed up.");
         let mut running_participants = resharing_state.previous_running_state.participants.clone();
-
         let participants_config = resharing_state.new_participants.clone();
 
         // Only consider the running participants that are also members of the new resharing state.
@@ -398,7 +393,7 @@ where
         let sender = Arc::new(sender);
 
         tracing::info!("Creating network client.");
-        let (network_client, channel_receiver, _handle) =
+        let (network_client, mut channel_receiver, _handle) =
             run_network_client(sender.clone(), Box::new(receiver));
 
         let cancellation_token = CancellationToken::new();
@@ -409,12 +404,43 @@ where
             let (running_sender, running_receiver) = unbounded_channel();
             let (resharing_sender, resharing_receiver) = unbounded_channel();
 
-            let _multiplexer_handle = tokio::spawn(Self::multiplex_running_resharing(
-                channel_receiver,
-                resharing_sender,
-                running_sender,
-                cancellation_token_child,
-            ));
+            let _multiplexer_handle = tokio::spawn(async move {
+                loop {
+                    select! {
+                        network_channel = channel_receiver.recv()  => {
+                            let Some(network_channel) = network_channel else {
+                                tracing::info!("Network channel dropped.");
+                                break;
+                            };
+
+                            let is_resharing_message = matches!(
+                                network_channel.task_id(),
+                                MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { .. })
+                                    | MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { .. })
+                            );
+
+                            if is_resharing_message {
+                                let send_result = resharing_sender.send(network_channel);
+                                if send_result.is_err() {
+                                    error!("resharing receiver dropped.");
+                                }
+                            } else {
+                                let send_result = running_sender.send(network_channel);
+                                if send_result.is_err() {
+                                    error!("running receiver dropped.");
+                                }
+                            }
+                        }
+
+                        _ = cancellation_token_child.cancelled() => {
+                            info!("Network multiplexer cancelled.");
+                            break;
+                        }
+
+                    }
+                }
+                info!("Exiting network multiplexer.");
+            });
 
             (running_receiver, resharing_receiver)
         };
@@ -534,48 +560,6 @@ where
         Ok(MpcJobResult::Done)
     }
 
-    async fn multiplex_running_resharing(
-        mut channel_receiver: tokio::sync::mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        resharing_sender: UnboundedSender<NetworkTaskChannel>,
-        running_sender: UnboundedSender<NetworkTaskChannel>,
-        cancellation_token: CancellationToken,
-    ) {
-        loop {
-            select! {
-                network_channel = channel_receiver.recv()  => {
-                    let Some(network_channel) = network_channel else {
-                        tracing::info!("Network channel dropped.");
-                        break;
-                    };
-
-                    let is_resharing_message = matches!(
-                        network_channel.task_id(),
-                        MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing { .. })
-                            | MpcTaskId::EddsaTaskId(EddsaTaskId::KeyResharing { .. })
-                    );
-
-                    if is_resharing_message {
-                        let send_result = resharing_sender.send(network_channel);
-                        if send_result.is_err() {
-                            error!("resharing receiver dropped.");
-                        }
-                    } else {
-                        let send_result = running_sender.send(network_channel);
-                        if send_result.is_err() {
-                            error!("running receiver dropped.");
-                        }
-                    }
-                }
-
-                _ = cancellation_token.cancelled() => {
-                    info!("Network multiplexer cancelled.");
-                    break;
-                }
-
-            }
-        }
-        info!("Exiting network multiplexer.");
-    }
     async fn execute_running_protocol(
         config_file: ConfigFile,
         running_participants: ParticipantsConfig,
@@ -829,10 +813,6 @@ fn stop_running(
                 tracing::info!("Epoch id changed.");
                 return true;
             }
-            //if new_state.resharing_state.is_some() {
-            //    tracing::info!("A resharing started.");
-            //    return true;
-            //}
             if new_state.participants != current_participant_set {
                 tracing::info!("Participant details changed.");
                 return true;

@@ -100,14 +100,6 @@ pub enum KeyEventIdComparisonResult {
     RemoteBehind,
 }
 
-//#[derive(Debug, Clone, PartialEq, Eq)]
-//pub struct ContractResharingState {
-//    previous_running_state : ContractRunningState,
-//    pub keyset: Keyset,
-//    pub participants: ParticipantsConfig,
-//    pub resharing_state: Option<ContractResharingState>,
-//}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
     pub keyset: Keyset,
