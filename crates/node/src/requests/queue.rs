@@ -361,6 +361,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                                 response_latency_blocks,
                                 response_latency_duration,
                             )),
+                            leader_selection_order: request.leader_selection_order,
                         });
                 }
             }
@@ -509,6 +510,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         request: request.request,
                         progress: request.computation_progress,
                         completion_delay: None,
+                        leader_selection_order: request.leader_selection_order,
                     });
             }
         }

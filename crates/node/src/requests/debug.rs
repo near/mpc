@@ -18,6 +18,8 @@ pub(super) struct CompletedRequest<RequestType: Request, ChainRespondArgsType: C
     /// The block height at which the request was responded to successfully,
     /// as well as the delay in wall time observed from the indexer.
     pub completion_delay: Option<(NumBlocks, near_time::Duration)>,
+    /// The leader selection order for this request, preserved for debugging.
+    pub leader_selection_order: Vec<ParticipantId>,
 }
 
 /// A buffer of completed requests, for exporting to /debug/requests.
@@ -88,13 +90,13 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
     for CompletedRequest<RequestType, ChainRespondArgsType>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (leader, attempts) = {
+        let attempts = {
             let progress = self.progress.lock().unwrap();
-            (progress.selected_leader, progress.attempts)
+            progress.attempts
         };
         write!(
             f,
-            "  [completed] blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2} leader: {:<2}",
+            "  [completed] blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
             self.indexed_block_height,
             self.completion_delay
                 .map(|(delay_blocks, delay_time)| {
@@ -111,8 +113,14 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
             &format!("{:?}", self.request.get_id())[0..6],
             format!("{:?}", self.request.get_receipt_id()),
             attempts,
-            leader.map(|x| x.to_string()).unwrap_or("?".to_string()),
-        )
+        )?;
+        
+        // Add leader election information - show only the elected leader
+        if let Some(elected_leader) = self.leader_selection_order.last() {
+            write!(f, " elected leader: {}", elected_leader)?;
+        }
+        
+        Ok(())
     }
 }
 
@@ -267,6 +275,7 @@ mod tests {
                         near_time::Duration::milliseconds(100),
                     ))
                 },
+                leader_selection_order: vec![],
             });
         }
         let mut kept_indices = completed
@@ -305,6 +314,7 @@ mod tests {
                         near_time::Duration::milliseconds(100),
                     ))
                 },
+                leader_selection_order: vec![],
             });
         }
         let mut kept_indices = completed
