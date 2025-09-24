@@ -1,4 +1,5 @@
 use crate::config::{SecretsConfig, WebUIConfig};
+use crate::indexer::participants::ContractState;
 use crate::tracking::TaskHandle;
 use attestation::attestation::Attestation;
 use axum::body::Body;
@@ -8,11 +9,9 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -53,7 +52,7 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    contract_state: Arc<Mutex<Option<ContractState>>>,
     static_web_data: StaticWebData,
 }
 
@@ -113,10 +112,13 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    Ok(protocol_state_to_string(
-        &state.contract_state_receiver.borrow_and_update(),
-    ))
+async fn contract_state_handler(state: State<WebServerState>) -> String {
+    let contract_state: Option<ContractState> = state.contract_state.lock().unwrap().clone();
+
+    match contract_state {
+        Some(contract_state) => format!("{contract_state:#?}"),
+        None => "Contract state has not been indexed yet.".to_string(),
+    }
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -187,7 +189,7 @@ pub async fn start_web_server(
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    contract_state: Arc<Mutex<Option<ContractState>>>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -203,14 +205,17 @@ pub async fn start_web_server(
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
-        .route("/debug/contract", axum::routing::get(contract_state))
+        .route(
+            "/debug/contract",
+            axum::routing::get(contract_state_handler),
+        )
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
         .with_state(WebServerState {
             root_task_handle,
             debug_request_sender,
-            contract_state_receiver,
+            contract_state,
             static_web_data,
         });
 

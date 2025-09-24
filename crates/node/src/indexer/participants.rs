@@ -12,6 +12,7 @@ use mpc_contract::primitives::{
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use tokio::sync::watch;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +125,6 @@ pub struct ContractResharingState {
 /// that the MPC node cares about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractState {
-    WaitingForSync,
     Invalid,
     Initializing(ContractInitializingState),
     Running(ContractRunningState),
@@ -198,49 +198,71 @@ impl ContractState {
 pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
-    contract_state_sender: tokio::sync::watch::Sender<ContractState>,
-    protocol_state_sender: tokio::sync::watch::Sender<ProtocolContractState>,
-) -> anyhow::Result<()> {
+) -> watch::Receiver<ContractState> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-    let mut prev_state = ContractState::Invalid;
-    loop {
-        //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-        //// We currently assume the participant set is static and do not detect or support any updates.
-        tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-        wait_for_full_sync(&indexer_state.client).await;
+    let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
 
-        tracing::debug!(target: "indexer", "querying contract state");
-        let (height, state) = match get_mpc_contract_state(
-            indexer_state.mpc_contract_id.clone(),
-            &indexer_state.view_client,
-        )
-        .await
-        {
-            Ok(res) => res,
-            Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                continue;
-            }
-        };
-        let _ = protocol_state_sender.send(state.clone());
+    let mut fetch_contract_state = async move || {
+        loop {
+            // first tick returns immediately
+            refresh_interval_tick.tick().await;
 
-        tracing::debug!(target: "indexer", "got mpc contract state {:?}", state);
-        let result = ContractState::from_contract_state(&state, height, port_override);
+            //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
+            //// We currently assume the participant set is static and do not detect or support any updates.
+            tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
+            wait_for_full_sync(&indexer_state.client).await;
 
-        match result {
-            Ok(state) => {
-                if state != prev_state {
-                    tracing::info!("Contract state changed: {:?}", state);
-                    contract_state_sender.send(state.clone()).unwrap();
-                    prev_state = state;
+            tracing::debug!(target: "indexer", "querying contract state");
+
+            let (height, protocol_state) = match get_mpc_contract_state(
+                indexer_state.mpc_contract_id.clone(),
+                &indexer_state.view_client,
+            )
+            .await
+            {
+                Ok(contract_state) => contract_state,
+                Err(e) => {
+                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                    tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
+                    continue;
                 }
-            }
-            Err(e) => {
-                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-            }
+            };
+
+            let result = ContractState::from_contract_state(&protocol_state, height, port_override);
+
+            let state = match result {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+                    continue;
+                }
+            };
+
+            break state;
         }
-        tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
-    }
+    };
+
+    let initial_contract_state = fetch_contract_state().await;
+    let (contract_state_sender, contract_state_receiver) = watch::channel(initial_contract_state);
+
+    tokio::spawn(async move {
+        loop {
+            let contract_state = fetch_contract_state().await;
+            tracing::debug!(target: "indexer", "got mpc contract state {:?}", contract_state);
+
+            contract_state_sender.send_if_modified(|watched_state| {
+                if *watched_state != contract_state {
+                    tracing::info!("Contract state changed: {:?}", contract_state);
+                    *watched_state = contract_state;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    });
+
+    contract_state_receiver
 }
 
 pub fn convert_participant_infos(

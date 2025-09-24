@@ -1,4 +1,5 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
+use crate::indexer::participants::ContractState;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
 use crate::web::{DebugRequest, StaticWebData};
@@ -25,7 +26,6 @@ use attestation::attestation::Attestation;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -251,8 +251,7 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
-        let (web_contract_sender, web_contract_receiver) =
-            tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
+        let contract_state_on_web_server = Arc::new(Mutex::new(None));
 
         // Start web server
         let _web_server_join_handle = root_runtime.spawn(start_web_server(
@@ -260,7 +259,7 @@ impl StartCmd {
             debug_request_sender.clone(),
             config.web_ui.clone(),
             StaticWebData::new(&secrets, Some(attestation.clone())),
-            web_contract_receiver,
+            contract_state_on_web_server.clone(),
         ));
 
         // Create Indexer and wait for indexer to be synced.
@@ -271,9 +270,13 @@ impl StartCmd {
             config.my_near_account_id.clone(),
             persistent_secrets.near_signer_key.clone(),
             respond_config,
-            web_contract_sender,
             indexer_exit_sender,
         );
+
+        root_runtime.spawn(Self::continuously_update_web_server_contract_state(
+            indexer_api.contract_state_receiver.clone(),
+            contract_state_on_web_server,
+        ));
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
@@ -391,6 +394,18 @@ impl StartCmd {
             debug_request_sender,
         };
         coordinator.run().await
+    }
+
+    async fn continuously_update_web_server_contract_state(
+        mut contract_state_from_indexer: watch::Receiver<ContractState>,
+        contract_state_on_web_server: Arc<Mutex<Option<ContractState>>>,
+    ) {
+        contract_state_from_indexer.mark_changed();
+
+        while let Ok(()) = contract_state_from_indexer.changed().await {
+            let contract_state = contract_state_from_indexer.borrow_and_update().clone();
+            *contract_state_on_web_server.lock().unwrap() = Some(contract_state);
+        }
     }
 }
 
