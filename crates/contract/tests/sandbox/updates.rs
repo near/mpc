@@ -32,7 +32,7 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13000);
+const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13333);
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -80,7 +80,7 @@ async fn test_propose_update_config() {
     // have each participant propose a new update:
     let new_config = Config {
         key_event_timeout_blocks: 20,
-        tee_upgrade_deadline_duration_blocks: 3333,
+        tee_upgrade_deadline_duration_seconds: 3333,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
