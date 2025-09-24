@@ -117,8 +117,10 @@ We can now deploy the infra with Terraform:
 mpc-devnet mpc my-test deploy-infra
 ```
 
-This will output the address of the Nomad UI. Go there and wait until
+This will output the address of the **Nomad UI**. Go there and wait until
 the Nomad server UI shows up, we can then deploy the MPC nodes:
+
+In addition, You can find the VMs created in GCP under [this link](https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc).
 
 ```shell
 mpc-devnet mpc my-test deploy-nomad
@@ -163,7 +165,7 @@ each signature scheme. You can specify duplicate schemes here as well if you wis
 to add multiple keys for each scheme.
 
 ```shell
-mpc-devnet mpc my-test vote-add-domains --signature-schemes Secp256k1,Ed25519
+mpc-devnet mpc my-test vote-add-domains --schemes Secp256k1,Ed25519
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
