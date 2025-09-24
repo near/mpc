@@ -295,7 +295,7 @@ impl StartCmd {
                 self.image_hash_config.latest_allowed_hash_file.clone(),
             );
 
-            tokio::spawn(monitor_allowed_image_hashes(
+            root_runtime.spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
