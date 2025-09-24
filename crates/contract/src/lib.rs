@@ -616,12 +616,20 @@ impl MpcContract {
         Ok(())
     }
 
-    pub fn stored_attestations(&self) -> Vec<dtos_contract::Attestation> {
-        self.tee_state
+    #[handle_result]
+    pub fn get_attestation(
+        &self,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
+    ) -> Result<Option<dtos_contract::Attestation>, Error> {
+        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
+            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
+
+        Ok(self
+            .tee_state
             .participants_attestations
             .iter()
-            .map(|(_, attestation)| attestation.clone().into_dto_type())
-            .collect()
+            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key)
+            .map(|(_, attestation)| attestation.clone().into_dto_type()))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.

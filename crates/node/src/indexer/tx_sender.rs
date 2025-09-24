@@ -3,7 +3,7 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::types::ChainGetPendingCKDRequestArgs;
+use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetAttestationArgs};
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -23,7 +23,7 @@ use tokio::time;
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
 
-const GET_TEE_ATTESTATIONS_METHOD_NAME: &str = "stored_attestations";
+const GET_TEE_ATTESTATION_METHOD_NAME: &str = "get_attestation";
 
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
@@ -266,6 +266,12 @@ async fn observe_tx_result(
             }
         }
         SubmitParticipantInfo(submit_participant_info_args) => {
+            let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
+                tls_public_key: submit_participant_info_args.tls_public_key.clone(),
+            })
+            .unwrap()
+            .into_bytes();
+
             let Ok(Ok(query_response)) = indexer_state
                 .view_client
                 .send(
@@ -273,8 +279,8 @@ async fn observe_tx_result(
                         block_reference: BlockReference::Finality(Finality::Final),
                         request: QueryRequest::CallFunction {
                             account_id: indexer_state.mpc_contract_id.clone(),
-                            method_name: GET_TEE_ATTESTATIONS_METHOD_NAME.to_string(),
-                            args: vec![].into(),
+                            method_name: GET_TEE_ATTESTATION_METHOD_NAME.to_string(),
+                            args: get_attestation_args.into(),
                         },
                     }
                     .with_span_context(),
@@ -284,7 +290,7 @@ async fn observe_tx_result(
                 return Ok(TransactionStatus::Unknown);
             };
 
-            let attestations_stored_on_contract: Vec<dtos_contract::Attestation> =
+            let attestation_stored_on_contract: Option<dtos_contract::Attestation> =
                 match query_response.kind {
                     QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
                         .context("Failed to deserialize get_tee_accounts response")?,
@@ -293,8 +299,11 @@ async fn observe_tx_result(
                     }
                 };
 
-            let submitted_attestation_is_on_chain = attestations_stored_on_contract
-                .contains(&submit_participant_info_args.proposed_participant_attestation);
+            let submitted_attestation_is_on_chain =
+                attestation_stored_on_contract.is_some_and(|stored_attestation| {
+                    stored_attestation
+                        == submit_participant_info_args.proposed_participant_attestation
+                });
 
             if submitted_attestation_is_on_chain {
                 Ok(TransactionStatus::Executed)
