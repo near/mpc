@@ -232,7 +232,10 @@ impl QueuedSignatureRequest {
     }
 
     /// Selects the leader given the current state of the network.
-    pub fn current_leader(&self, eligible_leaders: &HashSet<ParticipantId>) -> Option<ParticipantId> {
+    pub fn current_leader(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+    ) -> Option<ParticipantId> {
         for candidate_leader in &self.leader_selection_order {
             if eligible_leaders.contains(candidate_leader) {
                 return Some(*candidate_leader);
