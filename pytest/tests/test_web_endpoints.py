@@ -46,4 +46,4 @@ def test_web_endpoints():
         assert "id:" in response.text, response.text
 
         response = requests.get(f"http://localhost:{port}/debug/contract")
-        assert "Contract is in Running state" in response.text, response.text
+        assert "Running(\n    " in response.text, response.text
