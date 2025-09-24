@@ -725,3 +725,18 @@ pub async fn submit_tee_attestations(
     }
     Ok(())
 }
+
+pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
+    let state = contract
+        .call("state")
+        .args_json(serde_json::json!(""))
+        .max_gas()
+        .transact()
+        .await?;
+    let value: ProtocolContractState = state.json()?;
+    let ProtocolContractState::Running(running) = value else {
+        panic!("Expected running state")
+    };
+
+    Ok(running.parameters.participants().clone())
+}
