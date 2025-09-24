@@ -1,5 +1,6 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
+use crate::keyshare::KeyshareStorage;
 use crate::providers::PublicKeyConversion;
 use crate::web::StaticWebData;
 use crate::{
@@ -219,7 +220,13 @@ pub struct ExportKeyshareCmd {
     #[arg(help = "Hex-encoded 16 byte AES key for local storage encryption")]
     pub local_encryption_key_hex: String,
 }
-
+//async fn migrate(indexer_api: IndexerAPI<TransactionSender>) -> anyhow::Result<()> {
+//    // monitor contract state
+//    // monitor backup service
+//    //
+//    // if you are the destination node: check if you have the keys.
+//    // if you have the keys, then submit transaction to participate.
+//}
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
         let home_dir = PathBuf::from(self.home_dir.clone());
@@ -279,6 +286,7 @@ impl StartCmd {
         };
 
         let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
+
         let root_future = self.create_root_future(
             home_dir.clone(),
             config.clone(),
@@ -363,6 +371,7 @@ impl StartCmd {
                 None
             },
         };
+        let keyshare_storage: Arc<KeyshareStorage> = key_storage_config.create().await?.into();
 
         // submit remote attestation
         {
@@ -381,7 +390,7 @@ impl StartCmd {
             config_file: config,
             secrets,
             secret_db,
-            key_storage_config,
+            keyshare_storage,
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,
