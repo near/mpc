@@ -134,6 +134,11 @@ pub struct ChainGetPendingCKDRequestArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct GetAttestationArgs {
+    pub tls_public_key: dtos_contract::Ed25519PublicKey,
+}
+
+#[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
     pub public_key: PublicKey,
