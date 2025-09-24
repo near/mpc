@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use digest::{Digest, FixedOutput};
 use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
@@ -222,7 +223,7 @@ pub async fn init_with_candidates(
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
     let threshold_parameters = {
         let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-        ThresholdParameters::new(participants, threshold).unwrap()
+        ThresholdParameters::new(participants.clone(), threshold).unwrap()
     };
 
     let call_builder = if !pks.is_empty() {
@@ -270,6 +271,23 @@ pub async fn init_with_candidates(
         .unwrap()
         .into_result()
         .unwrap();
+
+    // Give each participant a valid attestation initially
+    for ((_, _, participant), account) in participants.participants().iter().zip(&accounts) {
+        let tee_submission_result = submit_participant_info(
+            account,
+            &contract,
+            &Attestation::Mock(MockAttestation::Valid),
+            &participant.sign_pk,
+        )
+        .await;
+
+        assert_matches!(
+            tee_submission_result,
+            Ok(true),
+            "`submit_participant_info` must succeed for mock attestations"
+        );
+    }
     dbg!(init);
     (worker, contract, accounts)
 }
@@ -533,6 +551,12 @@ pub async fn sign_and_validate(
 
 pub fn example_secp256k1_point() -> PublicKey {
     "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
+}
+
+pub fn example_edd25519_point() -> PublicKey {
+    "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+        .parse()
+        .unwrap()
 }
 
 // based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
