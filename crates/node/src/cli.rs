@@ -252,15 +252,17 @@ impl StartCmd {
             .build()?;
 
         let contract_state_on_web_server = Arc::new(Mutex::new(None));
+        let web_server = root_runtime
+            .block_on(start_web_server(
+                root_task_handle_receiver,
+                debug_request_sender.clone(),
+                config.web_ui.clone(),
+                StaticWebData::new(&secrets, Some(attestation.clone())),
+                contract_state_on_web_server.clone(),
+            ))
+            .context("Failed to create web server.")?;
 
-        // Start web server
-        let _web_server_join_handle = root_runtime.spawn(start_web_server(
-            root_task_handle_receiver,
-            debug_request_sender.clone(),
-            config.web_ui.clone(),
-            StaticWebData::new(&secrets, Some(attestation.clone())),
-            contract_state_on_web_server.clone(),
-        ));
+        let _web_server_join_handle = root_runtime.spawn(web_server);
 
         // Create Indexer and wait for indexer to be synced.
         let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
