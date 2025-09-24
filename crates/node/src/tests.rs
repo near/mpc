@@ -35,7 +35,7 @@ use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::{ecdsa, eddsa, keygen};
@@ -251,15 +251,14 @@ impl OneNodeTestConfig {
                 let (_root_task_handle_sender, root_task_handle_receiver) =
                     tokio::sync::watch::channel(Some(root_task_handle));
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-                let (_, web_contract_receiver) =
-                    tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
+                let dummy_state_for_web_server = Arc::new(Mutex::new(None));
                 let web_server = start_web_server(
                     root_task_handle_receiver,
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
                     StaticWebData::new(&self.secrets, None),
-                    web_contract_receiver.clone(),
+                    dummy_state_for_web_server,
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
