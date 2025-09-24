@@ -100,11 +100,18 @@ pub enum KeyEventIdComparisonResult {
     RemoteBehind,
 }
 
+//#[derive(Debug, Clone, PartialEq, Eq)]
+//pub struct ContractResharingState {
+//    previous_running_state : ContractRunningState,
+//    pub keyset: Keyset,
+//    pub participants: ParticipantsConfig,
+//    pub resharing_state: Option<ContractResharingState>,
+//}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractRunningState {
     pub keyset: Keyset,
     pub participants: ParticipantsConfig,
-    pub resharing_state: Option<ContractResharingState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +125,7 @@ pub struct ContractResharingState {
     pub new_participants: ParticipantsConfig,
     pub reshared_keys: Keyset,
     pub key_event: ContractKeyEventInstance,
+    pub previous_running_state: ContractRunningState,
 }
 
 /// A stripped-down version of the contract state, containing only the state
@@ -128,6 +136,7 @@ pub enum ContractState {
     Invalid,
     Initializing(ContractInitializingState),
     Running(ContractRunningState),
+    Resharing(ContractResharingState),
 }
 
 impl ContractState {
@@ -158,11 +167,19 @@ impl ContractState {
                         running_state.parameters.clone(),
                         port_override,
                     )?,
-                    resharing_state: None,
                 })
             }
             ProtocolContractState::Resharing(state) => {
-                let resharing_state = Some(ContractResharingState {
+                let previous_running_state = state.previous_running_state.clone();
+
+                let previous_running_state = ContractRunningState {
+                    keyset: previous_running_state.keyset.clone(),
+                    participants: convert_participant_infos(
+                        previous_running_state.parameters.clone(),
+                        port_override,
+                    )?,
+                };
+                ContractState::Resharing(ContractResharingState {
                     new_participants: convert_participant_infos(
                         state.resharing_key.proposed_parameters().clone(),
                         port_override,
@@ -176,17 +193,7 @@ impl ContractState {
                         height,
                         state.reshared_keys.clone(),
                     ),
-                });
-
-                let running_state = state.previous_running_state.clone();
-
-                ContractState::Running(ContractRunningState {
-                    keyset: running_state.keyset.clone(),
-                    participants: convert_participant_infos(
-                        running_state.parameters.clone(),
-                        port_override,
-                    )?,
-                    resharing_state,
+                    previous_running_state,
                 })
             }
         })
@@ -204,8 +211,8 @@ pub async fn monitor_contract_state(
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut prev_state = ContractState::Invalid;
     loop {
-        //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
-        //// We currently assume the participant set is static and do not detect or support any updates.
+        // We wait first to catch up to the chain to avoid reading the participants from an outdated state.
+        // We currently assume the participant set is static and do not detect or support any updates.
         tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
         wait_for_full_sync(&indexer_state.client).await;
 

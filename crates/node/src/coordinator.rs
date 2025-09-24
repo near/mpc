@@ -131,7 +131,6 @@ where
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage.clone(),
-                                //self.key_storage_config.create().await?.into(),
                                 state.participants.clone(),
                                 self.indexer.txn_sender.clone(),
                                 key_event_receiver,
@@ -140,26 +139,40 @@ where
                         stop_fn,
                     }
                 }
-                ContractState::Running(running_state) => {
-                    tracing::info!("Resharing process is: {:?}", &running_state.resharing_state);
-
-                    let (job_name, key_event_receiver, stop_fn): (_, _, StopFn) =
-                        match running_state.resharing_state.clone() {
-                            Some(resharing_state) => {
-                                let (receiver, stop_fn) = make_resharing_stop_fn(resharing_state);
-                                ("Resharing", Some(receiver), stop_fn)
-                            }
-                            None => {
-                                let stop_fn = make_running_stop_fn(
-                                    running_state.keyset.epoch_id,
-                                    running_state.participants.clone(),
-                                );
-                                ("Running", None, stop_fn)
-                            }
-                        };
-
+                ContractState::Resharing(state) => {
+                    let (key_event_receiver, stop_fn) = make_resharing_stop_fn(state.clone());
                     MpcJob {
-                        name: job_name,
+                        name: "Resharing",
+                        fut: Self::create_runtime_and_run(
+                            "Resharing",
+                            self.config_file.cores,
+                            Self::run_resharing(
+                                self.clock.clone(),
+                                self.secret_db.clone(),
+                                self.secrets.clone(),
+                                self.config_file.clone(),
+                                self.keyshare_storage.clone(),
+                                state.clone(),
+                                self.indexer.txn_sender.clone(),
+                                self.indexer
+                                    .block_update_receiver
+                                    .clone()
+                                    .lock_owned()
+                                    .await,
+                                self.debug_request_sender.subscribe(),
+                                key_event_receiver,
+                            ),
+                        )?,
+                        stop_fn,
+                    }
+                }
+                ContractState::Running(running_state) => {
+                    let stop_fn = make_running_stop_fn(
+                        running_state.keyset.epoch_id,
+                        running_state.participants.clone(),
+                    );
+                    MpcJob {
+                        name: "Running",
                         fut: Self::create_runtime_and_run(
                             "Running",
                             self.config_file.cores,
@@ -169,7 +182,6 @@ where
                                 self.secrets.clone(),
                                 self.config_file.clone(),
                                 self.keyshare_storage.clone(),
-                                //self.key_storage_config.create().await?,
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
@@ -178,7 +190,6 @@ where
                                     .lock_owned()
                                     .await,
                                 self.debug_request_sender.subscribe(),
-                                key_event_receiver,
                             ),
                         )?,
                         stop_fn,
@@ -309,26 +320,11 @@ where
         }
         Ok(MpcJobResult::Done)
     }
-
-    /// Entry point to handle the Resharing state of the contract.
-    /// In this state, we reshare, but we also run a running_state in parallel.
-    #[allow(clippy::too_many_arguments)]
-    async fn run_resharing(
-        clock: Clock,
+    async fn cleanup_db(
         secret_db: Arc<SecretDB>,
-        secrets: SecretsConfig,
-        config_file: ConfigFile,
-        keyshare_storage: Arc<KeyshareStorage>,
-        running_state: ContractRunningState,
-        chain_txn_sender: TransactionSender,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
-        debug_request_receiver: broadcast::Receiver<DebugRequest>,
-        resharing_state_receiver: watch::Receiver<ContractKeyEventInstance>,
-    ) -> anyhow::Result<MpcJobResult> {
-        tracing::info!("Entering resharing state.");
-
+        config_file: &ConfigFile,
+        running_state: &ContractRunningState,
+    ) -> anyhow::Result<()> {
         let my_participant_id = running_state
             .participants
             .get_participant_id(&config_file.my_near_account_id);
@@ -347,148 +343,132 @@ where
                 all_domains,
             )?;
         }
+        Ok(())
+    }
 
-        if let Some(resharing_state) = running_state.resharing_state.clone() {
-            let resharing_state_receiver = resharing_state_receiver.expect("we messed up.");
-            let mut running_participants = running_state.participants.clone();
+    /// Entry point to handle the Resharing state of the contract.
+    /// In this state, we reshare, but we also run a running_state in parallel.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_resharing(
+        clock: Clock,
+        secret_db: Arc<SecretDB>,
+        secrets: SecretsConfig,
+        config_file: ConfigFile,
+        keyshare_storage: Arc<KeyshareStorage>,
+        resharing_state: ContractResharingState,
+        chain_txn_sender: TransactionSender,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainBlockUpdate>,
+        >,
+        debug_request_receiver: broadcast::Receiver<DebugRequest>,
+        resharing_state_receiver: watch::Receiver<ContractKeyEventInstance>,
+    ) -> anyhow::Result<MpcJobResult> {
+        tracing::info!("Entering resharing state.");
+        Self::cleanup_db(
+            secret_db.clone(),
+            &config_file,
+            &resharing_state.previous_running_state,
+        )
+        .await?;
 
-            let participants_config = resharing_state.new_participants.clone();
+        //if let Some(resharing_state) = running_state.resharing_state.clone() {
 
-            // Only consider the running participants that are also members of the new resharing state.
-            running_participants
-                .participants
-                .retain(|p| participants_config.participants.contains(p));
+        //let resharing_state_receiver = resharing_state_receiver; //.expect("we messed up.");
+        let mut running_participants = resharing_state.previous_running_state.participants.clone();
 
-            let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-            let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-                participants_config,
-                &config_file.my_near_account_id,
-                &p2p_key.verifying_key(),
-            ) else {
-                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            };
+        let participants_config = resharing_state.new_participants.clone();
 
-            tracing::info!("Creating tls mesh");
-            let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
-            let sender = Arc::new(sender);
+        // Only consider the running participants that are also members of the new resharing state.
+        running_participants
+            .participants
+            .retain(|p| participants_config.participants.contains(p));
 
-            tracing::info!("Creating network client.");
-            let (network_client, channel_receiver, _handle) =
-                run_network_client(sender.clone(), Box::new(receiver));
+        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
+        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+            participants_config,
+            &config_file.my_near_account_id,
+            &p2p_key.verifying_key(),
+        ) else {
+            tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+            return Ok(MpcJobResult::HaltUntilInterrupted);
+        };
 
-            let cancellation_token = CancellationToken::new();
-            let cancellation_token_child = cancellation_token.child_token();
-            let _drop_guard = cancellation_token.drop_guard();
+        tracing::info!("Creating tls mesh");
+        let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
+        let sender = Arc::new(sender);
 
-            let (running_network_receiver, resharing_network_receiver) = {
-                let (running_sender, running_receiver) = unbounded_channel();
-                let (resharing_sender, resharing_receiver) = unbounded_channel();
+        tracing::info!("Creating network client.");
+        let (network_client, channel_receiver, _handle) =
+            run_network_client(sender.clone(), Box::new(receiver));
 
-                let _multiplexer_handle = tokio::spawn(Self::multiplex_running_resharing(
-                    channel_receiver,
-                    resharing_sender,
-                    running_sender,
-                    cancellation_token_child,
-                ));
+        let cancellation_token = CancellationToken::new();
+        let cancellation_token_child = cancellation_token.child_token();
+        let _drop_guard = cancellation_token.drop_guard();
 
-                (running_receiver, resharing_receiver)
-            };
+        let (running_network_receiver, resharing_network_receiver) = {
+            let (running_sender, running_receiver) = unbounded_channel();
+            let (resharing_sender, resharing_receiver) = unbounded_channel();
 
-            // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
-            let resharing_handle = {
-                let config_file = config_file.clone();
-                let running_state = running_state.clone();
-                let keyshare_storage = keyshare_storage.clone();
-                let chain_txn_sender = chain_txn_sender.clone();
-                let network_client = network_client.clone();
-                let mpc_config = mpc_config.clone();
+            let _multiplexer_handle = tokio::spawn(Self::multiplex_running_resharing(
+                channel_receiver,
+                resharing_sender,
+                running_sender,
+                cancellation_token_child,
+            ));
 
-                tracking::spawn_checked("key_resharing", async move {
-                    Self::run_key_resharing(
-                        &config_file,
-                        keyshare_storage.clone(),
-                        running_state.clone(),
-                        &mpc_config,
-                        network_client,
-                        resharing_network_receiver,
-                        chain_txn_sender,
-                        resharing_state_receiver,
-                    )
-                    .await
-                })
-            };
-            let p2p_public_key = p2p_key.verifying_key();
+            (running_receiver, resharing_receiver)
+        };
 
-            let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
-                "running mpc job",
-                Self::execute_running_protocol(
-                    config_file,
-                    running_participants,
-                    p2p_public_key,
-                    running_state.keyset,
-                    secret_db,
-                    clock,
-                    keyshare_storage,
-                    sender.clone(),
-                    network_client.clone(),
-                    chain_txn_sender,
-                    debug_request_receiver,
-                    running_network_receiver,
-                    block_update_receiver,
-                ),
-            );
+        // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
+        let resharing_handle = {
+            let config_file = config_file.clone();
+            let running_state = resharing_state.previous_running_state.clone();
+            let keyshare_storage = keyshare_storage.clone();
+            let chain_txn_sender = chain_txn_sender.clone();
+            let network_client = network_client.clone();
+            let mpc_config = mpc_config.clone();
 
-            tracing::info!("Waiting on resharing handle.");
-            resharing_handle.await?;
-
-            running_handle.await??;
-
-            Ok(MpcJobResult::Done)
-        } else {
-            // this is purely running, no resharing
-            let running_participants = running_state.participants.clone();
-            let participants_config = running_participants.clone();
-            let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-            let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-                participants_config,
-                &config_file.my_near_account_id,
-                &p2p_key.verifying_key(),
-            ) else {
-                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            };
-            tracing::info!("Creating tls mesh");
-            let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
-            let sender = Arc::new(sender);
-
-            tracing::info!("Creating network client.");
-            let (network_client, channel_receiver, _handle) =
-                run_network_client(sender.clone(), Box::new(receiver));
-            let p2p_public_key = p2p_key.verifying_key();
-
-            let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
-                "running mpc job",
-                Self::execute_running_protocol(
-                    config_file.clone(),
-                    running_participants,
-                    p2p_public_key,
-                    running_state.keyset.clone(),
-                    secret_db.clone(),
-                    clock.clone(),
+            tracking::spawn_checked("key_resharing", async move {
+                Self::run_key_resharing(
+                    &config_file,
                     keyshare_storage.clone(),
-                    sender.clone(),
-                    network_client.clone(),
-                    chain_txn_sender.clone(),
-                    debug_request_receiver,
-                    channel_receiver,
-                    block_update_receiver,
-                ),
-            );
-            running_handle.await??;
+                    running_state.clone(),
+                    &mpc_config,
+                    network_client,
+                    resharing_network_receiver,
+                    chain_txn_sender,
+                    resharing_state_receiver,
+                )
+                .await
+            })
+        };
+        let p2p_public_key = p2p_key.verifying_key();
 
-            Ok(MpcJobResult::Done)
-        }
+        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
+            "running mpc job",
+            Self::execute_running_protocol(
+                config_file,
+                running_participants,
+                p2p_public_key,
+                resharing_state.previous_running_state.keyset,
+                secret_db,
+                clock,
+                keyshare_storage,
+                sender.clone(),
+                network_client.clone(),
+                chain_txn_sender,
+                debug_request_receiver,
+                running_network_receiver,
+                block_update_receiver,
+            ),
+        );
+
+        tracing::info!("Waiting on resharing handle.");
+        resharing_handle.await?;
+
+        running_handle.await??;
+
+        Ok(MpcJobResult::Done)
     }
     /// Entry point to handle the Running state of the contract.
     /// In this state, we generate triples and presignatures, and listen to
@@ -506,170 +486,52 @@ where
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
-        resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
+        Self::cleanup_db(secret_db.clone(), &config_file, &running_state).await?;
 
-        let my_participant_id = running_state
-            .participants
-            .get_participant_id(&config_file.my_near_account_id);
-        if let Some(my_participant_id) = my_participant_id {
-            let current_participants_config = running_state.participants.clone();
-            let current_epoch_id = running_state.keyset.epoch_id;
-            let all_domains: Vec<DomainId> = running_state.keyset.get_domain_ids();
-            let current_epoch_data = EpochData {
-                epoch_id: current_epoch_id,
-                participants: current_participants_config,
-            };
-            delete_stale_triples_and_presignatures(
-                &secret_db,
-                current_epoch_data,
-                my_participant_id,
-                all_domains,
-            )?;
-        }
+        // only allow migration in here
+        let running_participants = running_state.participants.clone();
+        let participants_config = running_participants.clone();
+        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
+        let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
+            participants_config,
+            &config_file.my_near_account_id,
+            &p2p_key.verifying_key(),
+        ) else {
+            tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+            return Ok(MpcJobResult::HaltUntilInterrupted);
+        };
+        tracing::info!("Creating tls mesh");
+        let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
+        let sender = Arc::new(sender);
 
-        if let Some(resharing_state) = running_state.resharing_state.clone() {
-            let resharing_state_receiver = resharing_state_receiver.expect("we messed up.");
-            let mut running_participants = running_state.participants.clone();
+        tracing::info!("Creating network client.");
+        let (network_client, channel_receiver, _handle) =
+            run_network_client(sender.clone(), Box::new(receiver));
+        let p2p_public_key = p2p_key.verifying_key();
 
-            let participants_config = resharing_state.new_participants.clone();
+        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
+            "running mpc job",
+            Self::execute_running_protocol(
+                config_file.clone(),
+                running_participants,
+                p2p_public_key,
+                running_state.keyset.clone(),
+                secret_db.clone(),
+                clock.clone(),
+                keyshare_storage.clone(),
+                sender.clone(),
+                network_client.clone(),
+                chain_txn_sender.clone(),
+                debug_request_receiver,
+                channel_receiver,
+                block_update_receiver,
+            ),
+        );
+        running_handle.await??;
 
-            // Only consider the running participants that are also members of the new resharing state.
-            running_participants
-                .participants
-                .retain(|p| participants_config.participants.contains(p));
-
-            let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-            let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-                participants_config,
-                &config_file.my_near_account_id,
-                &p2p_key.verifying_key(),
-            ) else {
-                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            };
-
-            tracing::info!("Creating tls mesh");
-            let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
-            let sender = Arc::new(sender);
-
-            tracing::info!("Creating network client.");
-            let (network_client, channel_receiver, _handle) =
-                run_network_client(sender.clone(), Box::new(receiver));
-
-            let cancellation_token = CancellationToken::new();
-            let cancellation_token_child = cancellation_token.child_token();
-            let _drop_guard = cancellation_token.drop_guard();
-
-            let (running_network_receiver, resharing_network_receiver) = {
-                let (running_sender, running_receiver) = unbounded_channel();
-                let (resharing_sender, resharing_receiver) = unbounded_channel();
-
-                let _multiplexer_handle = tokio::spawn(Self::multiplex_running_resharing(
-                    channel_receiver,
-                    resharing_sender,
-                    running_sender,
-                    cancellation_token_child,
-                ));
-
-                (running_receiver, resharing_receiver)
-            };
-
-            // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
-            let resharing_handle = {
-                let config_file = config_file.clone();
-                let running_state = running_state.clone();
-                let keyshare_storage = keyshare_storage.clone();
-                let chain_txn_sender = chain_txn_sender.clone();
-                let network_client = network_client.clone();
-                let mpc_config = mpc_config.clone();
-
-                tracking::spawn_checked("key_resharing", async move {
-                    Self::run_key_resharing(
-                        &config_file,
-                        keyshare_storage.clone(),
-                        running_state.clone(),
-                        &mpc_config,
-                        network_client,
-                        resharing_network_receiver,
-                        chain_txn_sender,
-                        resharing_state_receiver,
-                    )
-                    .await
-                })
-            };
-            let p2p_public_key = p2p_key.verifying_key();
-
-            let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
-                "running mpc job",
-                Self::execute_running_protocol(
-                    config_file,
-                    running_participants,
-                    p2p_public_key,
-                    running_state.keyset,
-                    secret_db,
-                    clock,
-                    keyshare_storage,
-                    sender.clone(),
-                    network_client.clone(),
-                    chain_txn_sender,
-                    debug_request_receiver,
-                    running_network_receiver,
-                    block_update_receiver,
-                ),
-            );
-
-            tracing::info!("Waiting on resharing handle.");
-            resharing_handle.await?;
-
-            running_handle.await??;
-
-            Ok(MpcJobResult::Done)
-        } else {
-            // this is purely running, no resharing
-            let running_participants = running_state.participants.clone();
-            let participants_config = running_participants.clone();
-            let p2p_key = &secrets.persistent_secrets.p2p_private_key;
-            let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
-                participants_config,
-                &config_file.my_near_account_id,
-                &p2p_key.verifying_key(),
-            ) else {
-                tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
-                return Ok(MpcJobResult::HaltUntilInterrupted);
-            };
-            tracing::info!("Creating tls mesh");
-            let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
-            let sender = Arc::new(sender);
-
-            tracing::info!("Creating network client.");
-            let (network_client, channel_receiver, _handle) =
-                run_network_client(sender.clone(), Box::new(receiver));
-            let p2p_public_key = p2p_key.verifying_key();
-
-            let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
-                "running mpc job",
-                Self::execute_running_protocol(
-                    config_file.clone(),
-                    running_participants,
-                    p2p_public_key,
-                    running_state.keyset.clone(),
-                    secret_db.clone(),
-                    clock.clone(),
-                    keyshare_storage.clone(),
-                    sender.clone(),
-                    network_client.clone(),
-                    chain_txn_sender.clone(),
-                    debug_request_receiver,
-                    channel_receiver,
-                    block_update_receiver,
-                ),
-            );
-            running_handle.await??;
-
-            Ok(MpcJobResult::Done)
-        }
+        Ok(MpcJobResult::Done)
     }
 
     async fn multiplex_running_resharing(
@@ -967,10 +829,10 @@ fn stop_running(
                 tracing::info!("Epoch id changed.");
                 return true;
             }
-            if new_state.resharing_state.is_some() {
-                tracing::info!("A resharing started.");
-                return true;
-            }
+            //if new_state.resharing_state.is_some() {
+            //    tracing::info!("A resharing started.");
+            //    return true;
+            //}
             if new_state.participants != current_participant_set {
                 tracing::info!("Participant details changed.");
                 return true;
@@ -1007,12 +869,7 @@ fn stop_resharing(
     key_event_sender: &tokio::sync::watch::Sender<ContractKeyEventInstance>,
 ) -> bool {
     match new_state {
-        ContractState::Running(new_state) => {
-            let Some(new_resharing_state) = &new_state.resharing_state else {
-                tracing::info!("Concluded resharing state.");
-                return true;
-            };
-
+        ContractState::Resharing(new_resharing_state) => {
             if new_resharing_state.key_event.id.epoch_id != current_resharing_epoch_id {
                 tracing::info!("Epoch changed. We exit resharing state.");
                 return true;
