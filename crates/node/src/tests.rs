@@ -248,12 +248,14 @@ impl OneNodeTestConfig {
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
+                let (_root_task_handle_sender, root_task_handle_receiver) =
+                    tokio::sync::watch::channel(Some(root_task_handle));
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
                 let (_, web_contract_receiver) =
                     tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
                 let web_server = start_web_server(
-                    root_task_handle,
+                    root_task_handle_receiver,
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
                     StaticWebData::new(&self.secrets, None),

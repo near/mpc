@@ -1,7 +1,7 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
-use crate::web::StaticWebData;
+use crate::web::{DebugRequest, StaticWebData};
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -21,6 +21,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::Attestation;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -36,7 +37,7 @@ use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
     DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -149,7 +150,7 @@ pub struct StartCmd {
     pub image_hash_config: MpcImageHashConfig,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum TeeAuthorityConfig {
     Local,
     Dstack {
@@ -222,8 +223,8 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        // Load configuration and initialize persistent secrets
         let home_dir = PathBuf::from(self.home_dir.clone());
-
         let config = load_config_file(&home_dir)?;
         let persistent_secrets = PersistentSecrets::generate_or_get_existing(
             &home_dir,
@@ -231,9 +232,38 @@ impl StartCmd {
         )?;
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
+        // Load secrets from configuration and persistent storage
+        let secrets =
+            SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets.clone())?;
+
+        // Generate attestation
+        let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
+        let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
+        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?);
+        let attestation = tee_authority.generate_attestation(report_data).await?;
+
+        // Create communication channels and runtime
+        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        let (root_task_handle_sender, root_task_handle_receiver) = watch::channel(None);
+
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
         let (web_contract_sender, web_contract_receiver) =
             tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
+        // Start web server
+        let _web_server_join_handle = root_runtime.spawn(start_web_server(
+            root_task_handle_receiver,
+            debug_request_sender.clone(),
+            config.web_ui.clone(),
+            StaticWebData::new(&secrets, Some(attestation.clone())),
+            web_contract_receiver,
+        ));
+
+        // Create Indexer and wait for indexer to be synced.
         let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
         let indexer_api = spawn_real_indexer(
             home_dir.clone(),
@@ -245,15 +275,6 @@ impl StartCmd {
             indexer_exit_sender,
         );
 
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
-        let _tokio_enter_guard = root_runtime.enter();
-
-        // Currently, we only trigger graceful shutdowns from TEE logic,
-        // hence we need to disable the `unused_variables` lint when TEE is disabled.
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
 
@@ -278,13 +299,14 @@ impl StartCmd {
             ))
         };
 
-        let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = self.create_root_future(
             home_dir.clone(),
             config.clone(),
             secrets.clone(),
             indexer_api,
-            web_contract_receiver,
+            attestation,
+            debug_request_sender,
+            root_task_handle_sender,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -313,32 +335,23 @@ impl StartCmd {
         exit_reason
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_root_future(
         self,
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
-        web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
+        attestation: Attestation,
+        debug_request_sender: broadcast::Sender<DebugRequest>,
+        root_task_handle_sender: watch::Sender<Option<Arc<tracking::TaskHandle>>>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
-
-        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        root_task_handle_sender
+            .send(Some(root_task_handle))
+            .context("Web server is not alive")?;
 
         let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-
-        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?);
-        let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
-        let attestation = tee_authority.generate_attestation(report_data).await?;
-        let web_server = start_web_server(
-            root_task_handle,
-            debug_request_sender.clone(),
-            config.web_ui.clone(),
-            StaticWebData::new(&secrets, Some(attestation.clone())),
-            web_contract_receiver,
-        )
-        .await?;
-        let _web_server = tracking::spawn_checked("web server", web_server);
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
