@@ -19,6 +19,7 @@ use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
     VMContext,
 };
+use std::collections::HashSet;
 use std::time::Duration;
 
 const SECOND: Duration = Duration::from_secs(1);
@@ -436,4 +437,147 @@ fn latest_image_never_expires_if_its_not_superseded() {
 
     assert_eq!(allowed_image_hashes.len(), 1);
     assert_eq!(*allowed_image_hashes[0], only_image_code_hash);
+}
+
+/// **Test for nodes starting with old but valid image hashes during grace period**
+///
+/// This test simulates the scenario where new nodes join the network running
+/// older Docker image versions that are still within their grace period.
+/// It verifies that:
+/// 1. Multiple image versions can coexist during their grace periods
+/// 2. New nodes can successfully submit attestations with older but valid hashes
+/// 3. Nodes running older images remain valid until their specific grace period expires
+/// 4. The contract accepts attestations from nodes with any currently allowed hash
+///
+/// This validates the scenario where nodes may start up with slightly
+/// older images after new ones have been voted in, as long as they're still
+/// within the tee_upgrade_deadline_duration.
+#[test]
+fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
+    const INITIAL_TIME_NANOS: u64 = NANOS_IN_SECOND;
+    const GRACE_PERIOD_SECONDS: u64 = 15;
+    const GRACE_PERIOD_NANOS: u64 = GRACE_PERIOD_SECONDS * NANOS_IN_SECOND;
+    const HASH_DEPLOYMENT_INTERVAL_NANOS: u64 = 3 * NANOS_IN_SECOND; // 3s between deployments
+
+    let init_config = InitConfig {
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
+        ..Default::default()
+    };
+    let mut test_setup = TestSetup::new(3, 2, Some(init_config));
+
+    let hash_v1 = [1; 32]; // Original version
+    let hash_v2 = [2; 32]; // Updated version
+    let hash_v3 = [3; 32]; // Latest version
+
+    // Deploy three hash versions at 3-second intervals (T=1s, T=4s, T=7s)
+    let hashes = [hash_v1, hash_v2, hash_v3];
+    let mut deployment_times = Vec::new();
+    let mut deployment_time = INITIAL_TIME_NANOS;
+
+    for &hash in hashes.iter() {
+        test_setup.vote_with_all_participants(hash, deployment_time);
+        deployment_times.push(deployment_time);
+        deployment_time += HASH_DEPLOYMENT_INTERVAL_NANOS;
+    }
+
+    // At T=10s: All three versions should be allowed (within grace periods)
+    let test_time_1 = deployment_times[2] + 3 * NANOS_IN_SECOND;
+    set_system_time(test_time_1);
+
+    let allowed_set: HashSet<_> = test_setup
+        .contract
+        .allowed_code_hashes()
+        .iter()
+        .map(|h| **h)
+        .collect();
+    let expected_set: HashSet<_> = hashes.into_iter().collect();
+
+    assert_eq!(allowed_set, expected_set);
+
+    // Simulate new nodes joining with different image versions at T=10s
+    let hashes_and_versions = [(hash_v1, "v1"), (hash_v2, "v2"), (hash_v3, "v3")];
+    let node_ids: Vec<NodeId> = hashes_and_versions
+        .iter()
+        .map(|(_, version)| NodeId {
+            account_id: format!("node-{}.near", version).parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+        })
+        .collect();
+
+    // Test that nodes can submit attestations with their respective image hashes
+    // All attestations should succeed during grace period
+    for (node, (hash, _)) in node_ids.iter().zip(hashes_and_versions.iter()) {
+        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(*hash),
+            launcher_docker_compose_hash: None,
+            expiry_time_stamp_seconds: None,
+        });
+        test_setup.submit_attestation_for_node(node, attestation);
+    }
+
+    // Advance to T=19s: hash_v1 should expire (v2 deployed at T=4s + 15s grace = T=19s)
+    // Note: v1 expires when its successor's (v2) grace period ends, not when v1's own grace period ends
+    let v1_expiry_time = deployment_times[1] + GRACE_PERIOD_NANOS;
+    set_system_time(v1_expiry_time + NANOS_IN_SECOND); // T=20s
+
+    // Verify hash_v1 has expired - only v2 and v3 should remain
+    let allowed_after_v1_expiry = test_setup.contract.allowed_code_hashes();
+    let allowed_set_after_v1_expiry: HashSet<_> =
+        allowed_after_v1_expiry.iter().map(|h| **h).collect();
+    let expected_set_after_v1_expiry: HashSet<_> = [hash_v2, hash_v3].into_iter().collect();
+
+    assert_eq!(
+        allowed_set_after_v1_expiry, expected_set_after_v1_expiry,
+        "hash_v1 should have expired"
+    );
+
+    // Test late-joining nodes at current time T=20s (after hash_v1 expired)
+    // Only hash_v2 and hash_v3 should be valid for new nodes
+    for (hash, version) in hashes_and_versions.iter().skip(1) {
+        let late_joining_node = NodeId {
+            account_id: format!("late-node-{}.near", version).parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+        };
+
+        let late_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(*hash),
+            launcher_docker_compose_hash: None,
+            expiry_time_stamp_seconds: None,
+        });
+
+        test_setup.submit_attestation_for_node(&late_joining_node, late_attestation);
+    }
+
+    // Verify that only non-expired hashes remain valid at T=20s
+    // hash_v1 should have already expired, so only hash_v2 and hash_v3 should be allowed
+    let final_allowed_hashes = test_setup.contract.allowed_code_hashes();
+    let final_allowed_set: HashSet<_> = final_allowed_hashes.iter().map(|h| **h).collect();
+    let expected_final_set: HashSet<_> = [hash_v2, hash_v3].into_iter().collect();
+
+    // TODO something is off here
+    assert_eq!(
+        final_allowed_set, expected_final_set,
+        "Only hash_v2 and hash_v3 should remain valid at T=20s (hash_v1 expired)"
+    );
+
+    // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
+    let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
+    set_system_time(v2_expiry_time + NANOS_IN_SECOND); // T=23s
+
+    let final_allowed_hashes = test_setup.contract.allowed_code_hashes();
+    assert_eq!(final_allowed_hashes.len(), 1, "Only hash_v3 should remain");
+    assert_eq!(*final_allowed_hashes[0], hash_v3);
+
+    // Verify that only the latest hash is now accepted
+    let final_node = NodeId {
+        account_id: "final-node.near".parse().unwrap(),
+        tls_public_key: bogus_ed25519_near_public_key(),
+    };
+    let final_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: Some(hash_v3),
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: None,
+    });
+    // This should succeed since hash_v3 is the only remaining valid hash
+    test_setup.submit_attestation_for_node(&final_node, final_attestation);
 }
