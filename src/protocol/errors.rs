@@ -25,6 +25,9 @@ pub enum ProtocolError {
     #[error("encountered the identity element (identity point)")]
     IdentityElement,
 
+    #[error("cannot rerandomize presignature with incompatible inputs")]
+    IncompatibleRerandomizationInputs,
+
     #[error("the sent commitment_hash does not equal the hash of the commitment")]
     InvalidCommitmentHash,
 

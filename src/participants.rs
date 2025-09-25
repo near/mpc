@@ -111,6 +111,17 @@ impl ParticipantList {
     pub fn participants(&self) -> &[Participant] {
         self.participants.as_slice()
     }
+
+    #[cfg(test)]
+    pub fn shuffle(&self, mut rng: impl rand_core::CryptoRngCore) -> Option<ParticipantList> {
+        let mut participants = self.participants().to_vec();
+        let len = self.participants.len();
+        for i in (1..len).rev() {
+            let j = rng.next_u64() % ((i + 1) as u64);
+            participants.swap(i, j as usize);
+        }
+        ParticipantList::new(&participants)
+    }
 }
 
 impl From<ParticipantList> for Vec<Participant> {
