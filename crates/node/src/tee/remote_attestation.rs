@@ -50,10 +50,10 @@ pub async fn submit_remote_attestation(
             match attestation_submission_response {
                 TransactionStatus::Executed => Ok(()),
                 TransactionStatus::NotExecuted => {
-                    anyhow::bail!("Attestation submission was not executed.")
+                    anyhow::bail!("attestation submission was not executed")
                 }
                 TransactionStatus::Unknown => {
-                    anyhow::bail!("Attestation submission has unknown response.")
+                    anyhow::bail!("attestation submission has unknown response")
                 }
             }
         }
@@ -73,10 +73,10 @@ pub async fn submit_remote_attestation(
             tracing::error!(
                 cause = ?error,
                 backoff_duration = ?duration,
-                "failed to submit attestation."
+                "failed to submit attestation"
             );
         })
         .timeout(MAX_RETRY_DURATION)
         .await
-        .context("Failed to submit attestation. Stop trying.")?
+        .context("failed to submit attestation after multiple retry attempts")?
 }
