@@ -44,6 +44,7 @@ use near_workspaces::{
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
@@ -693,6 +694,25 @@ pub async fn submit_participant_info(
         .transact()
         .await?;
     Ok(result.is_success())
+}
+
+pub async fn get_participant_attestation(
+    contract: &Contract,
+    tls_key: &PublicKey,
+) -> anyhow::Result<Option<Attestation>> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
+    let result = contract
+        .as_account()
+        .call(contract.id(), "get_attestation")
+        .args_json(json!({
+            "tls_public_key": dto_tls_key_bytes
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    Ok(result.json()?)
 }
 
 pub async fn assert_running_return_participants(
