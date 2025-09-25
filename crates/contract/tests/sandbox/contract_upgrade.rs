@@ -1,9 +1,17 @@
-use crate::sandbox::common::{current_contract, gen_accounts, PARTICIPANT_LEN};
+use crate::sandbox::common::{
+    call_contract_key_generation, current_contract, gen_accounts, PARTICIPANT_LEN,
+};
 use mpc_contract::{
     config::InitConfig,
-    primitives::thresholds::{Threshold, ThresholdParameters},
+    primitives::{
+        domain::{DomainConfig, SignatureScheme},
+        participants::Participants,
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    state::ProtocolContractState,
 };
-use near_workspaces::{network::Sandbox, Contract, Worker};
+use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use rstest::rstest;
 
 enum Network {
     Testnet,
@@ -17,12 +25,15 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
-async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::Result<()> {
-    let (_, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
+async fn init_contract(
+    worker: Worker<Sandbox>,
+    contract: &Contract,
+) -> anyhow::Result<(Vec<Account>, Participants)> {
+    let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = Threshold::new(threshold);
-    let threshold_parameters = ThresholdParameters::new(participants, threshold).unwrap();
+    let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
     contract
         .call("init")
@@ -33,7 +44,7 @@ async fn init_contract(worker: Worker<Sandbox>, contract: &Contract) -> anyhow::
         .transact()
         .await?
         .into_result()?;
-    Ok(())
+    Ok((accounts, participants))
 }
 
 async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
@@ -73,7 +84,11 @@ async fn migrate(contract: &Contract) -> anyhow::Result<()> {
 ///
 /// These checks use the previous contract version (the one that introduced breaking changes)
 /// as a baseline. If step 2 fails, you will be prompted to update the baseline contract.
-async fn back_compatibility(network: Network) -> anyhow::Result<()> {
+#[rstest]
+#[tokio::test]
+async fn back_compatibility_without_state(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
 
     let contract = deploy_old(&worker, network).await?;
@@ -106,12 +121,59 @@ async fn back_compatibility(network: Network) -> anyhow::Result<()> {
     )
 }
 
+/// Verifies that upgrading the contract does not alter its state.
+///
+/// Steps:
+/// 1. Deploy an old version of the contract.
+/// 2. Initialize it with participants and multiple domains.
+/// 3. Capture the pre-upgrade state.
+/// 4. Upgrade to the new version and run migration.
+/// 5. Assert that the state, which contains participants, domains, etc., is unchanged.
+#[rstest]
 #[tokio::test]
-async fn test_back_compatiblity_mainnet() {
-    back_compatibility(Network::Mainnet).await.unwrap();
-}
+async fn upgrade_keeps_participants_and_domains_intact(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    const EPOCH_ID: u64 = 0;
 
-#[tokio::test]
-async fn test_back_compatiblity_testnet() {
-    back_compatibility(Network::Testnet).await.unwrap();
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, _participants) = init_contract(worker, &contract).await.unwrap();
+
+    let domains_to_add = vec![
+        DomainConfig {
+            id: 0.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+        DomainConfig {
+            id: 1.into(),
+            scheme: SignatureScheme::Secp256k1,
+        },
+        DomainConfig {
+            id: 2.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+    ];
+
+    // Add the domains above to the contract so we have additional state on the contract
+    // that should be persisted after the upgrade
+    call_contract_key_generation(domains_to_add, &accounts, &contract, EPOCH_ID).await;
+
+    let state_pre_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    assert!(healthcheck(&contract).await.unwrap());
+
+    let contract = upgrade_to_new(contract).await.unwrap();
+    migrate(&contract)
+        .await
+        .expect("❌ Back compatibility check failed: migration() failed");
+
+    let state_post_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    assert_eq!(
+        state_pre_upgrade, state_post_upgrade,
+        "State of the contract should remain the same post upgrade."
+    )
 }

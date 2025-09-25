@@ -44,6 +44,7 @@ use near_workspaces::{
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sha2::Sha256;
 use signature::DigestSigner;
 use std::{
@@ -724,4 +725,96 @@ pub async fn submit_tee_attestations(
         assert!(result);
     }
     Ok(())
+}
+
+pub async fn call_contract_key_generation(
+    domains_to_add: Vec<DomainConfig>,
+    accounts: &[Account],
+    contract: &Contract,
+    expected_epoch_id: u64,
+) {
+    for (domain_attempt, domain) in domains_to_add.into_iter().enumerate() {
+        for account in accounts {
+            check_call_success(
+                account
+                    .call(contract.id(), "vote_add_domains")
+                    .args_json(json! ({
+                        "domains": vec![domain.clone()],
+                    }))
+                    .transact()
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+        match state {
+            ProtocolContractState::Initializing(state) => {
+                assert_eq!(state.domains.domains().len(), domain_attempt + 1);
+            }
+            _ => panic!("should be in initializing state"),
+        };
+
+        check_call_success(
+            accounts[0]
+                .call(contract.id(), "start_keygen_instance")
+                .args_json(json!({
+                    "key_event_id": {
+                        "epoch_id": expected_epoch_id,
+                        "domain_id": domain_attempt,
+                        "attempt_id": 0,
+                    },
+                }))
+                .transact()
+                .await
+                .unwrap(),
+        );
+
+        println!("start_keygen_instance completed");
+
+        let public_key = match domain.scheme {
+            SignatureScheme::Secp256k1 => {
+                let dummy_bytes = [*domain.id as u8; 64];
+                near_sdk::PublicKey::from_parts(
+                    near_sdk::CurveType::SECP256K1,
+                    dummy_bytes.to_vec(),
+                )
+                .unwrap()
+            }
+            SignatureScheme::Ed25519 => bogus_ed25519_near_public_key(),
+            SignatureScheme::CkdSecp256k1 => {
+                unimplemented!("Old contract does not support CKD.")
+            }
+        };
+
+        let vote_pk_args = json!( {
+            "key_event_id": {
+                "epoch_id": expected_epoch_id,
+                "domain_id": domain.id,
+                "attempt_id": 0,
+            },
+            "public_key": public_key,
+        });
+
+        for account in accounts {
+            println!("Voting for domain {:?}", domain.id);
+            check_call_success(
+                account
+                    .call(contract.id(), "vote_pk")
+                    .args_json(vote_pk_args.clone())
+                    .transact()
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+        match state {
+            ProtocolContractState::Running(state) => {
+                assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);
+                assert_eq!(state.domains.domains().len(), domain_attempt + 1);
+            }
+            state => panic!("should be in running state. Actual state: {state:#?}"),
+        };
+    }
 }
