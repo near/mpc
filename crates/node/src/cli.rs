@@ -1,5 +1,4 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
-use crate::indexer::participants::ContractState;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
 use crate::web::{DebugRequest, StaticWebData};
@@ -30,7 +29,6 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::sync::OnceLock;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},

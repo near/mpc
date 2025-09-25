@@ -231,7 +231,9 @@ pub async fn monitor_contract_state(
 
             let result = ContractState::from_contract_state(&protocol_state, height, port_override);
 
-            protocol_state_sender.send(protocol_state);
+            if protocol_state_sender.send(protocol_state).is_err() {
+                tracing::error!(target: "mpc", "Web server closed channel for receiving protocol_state.");
+            };
 
             let state = match result {
                 Ok(state) => state,
