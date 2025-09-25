@@ -252,7 +252,7 @@ impl StartCmd {
             .build()?;
 
         let (protocol_state_sender, protocol_state_receiver) =
-            tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
+            watch::channel(ProtocolContractState::NotInitialized);
 
         let web_server = root_runtime
             .block_on(start_web_server(

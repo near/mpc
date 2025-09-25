@@ -4,6 +4,7 @@ use anyhow::Context;
 use attestation::attestation::Attestation;
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
+use tokio_util::time::FutureExt;
 
 use crate::{
     indexer::{
@@ -13,8 +14,10 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 
-const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(5);
+const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
+const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
+const BACKOFF_FACTOR: f32 = 1.5;
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until success.
 ///
@@ -59,6 +62,7 @@ pub async fn submit_remote_attestation(
     let exponential_backoff = ExponentialBuilder::default()
         .with_min_delay(MIN_BACKOFF_DURATION)
         .with_max_delay(MAX_BACKOFF_DURATION)
+        .with_factor(BACKOFF_FACTOR)
         .without_max_times()
         .build();
 
@@ -72,6 +76,7 @@ pub async fn submit_remote_attestation(
                 "Failed to submit attestation."
             );
         })
+        .timeout(MAX_RETRY_DURATION)
         .await
-        .context("Failed to submit attestation. Stop trying.")
+        .context("Failed to submit attestation. Stop trying.")?
 }
