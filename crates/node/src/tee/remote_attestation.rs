@@ -30,14 +30,14 @@ pub async fn submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
-    let propose_join_args = SubmitParticipantInfoArgs {
+    let submit_participant_info_args = SubmitParticipantInfoArgs {
         proposed_participant_attestation: attestation.into_dto_type(),
         tls_public_key: tls_public_key.into_dto_type(),
     };
 
     let set_attestation = move || {
         let tx_sender = tx_sender.clone();
-        let propose_join_args_clone = propose_join_args.clone();
+        let propose_join_args_clone = submit_participant_info_args.clone();
         let chain_args =
             ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(propose_join_args_clone));
 
