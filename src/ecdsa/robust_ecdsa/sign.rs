@@ -5,8 +5,8 @@ use subtle::ConditionallySelectable;
 
 use super::PresignOutput;
 use crate::{
-    ecdsa::{AffinePoint, Polynomial, Scalar, Secp256K1Sha256, Signature},
-    participants::{ParticipantCounter, ParticipantList, ParticipantMap},
+    ecdsa::{AffinePoint, Scalar, Secp256K1Sha256, Signature},
+    participants::{ParticipantCounter, ParticipantList},
     protocol::{
         errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms, SharedChannel},
@@ -59,14 +59,14 @@ async fn do_sign(
     msg_hash: Scalar,
 ) -> Result<Signature, ProtocolError> {
     let s_me = msg_hash * presignature.alpha_i + presignature.beta_i;
-    let s_me = SerializableScalar(s_me);
+    let linearized_s_me = s_me * participants.lagrange::<C>(me)?;
+    let ser_linearized_s_me = SerializableScalar::<C>(linearized_s_me);
 
     let wait_round = chan.next_waitpoint();
-    chan.send_many(wait_round, &s_me)?;
+    chan.send_many(wait_round, &ser_linearized_s_me)?;
 
     let mut seen = ParticipantCounter::new(&participants);
-    let mut s_map = ParticipantMap::new(&participants);
-    s_map.put(me, s_me);
+    let mut s = linearized_s_me;
 
     seen.put(me);
     while !seen.full() {
@@ -74,21 +74,10 @@ async fn do_sign(
         if !seen.put(from) {
             continue;
         }
-        s_map.put(from, s_i);
+        // Sum the linearized shares
+        s += s_i.0;
     }
 
-    let identifiers: Vec<Scalar> = s_map
-        .participants()
-        .iter()
-        .map(|p| p.scalar::<C>())
-        .collect();
-
-    let sshares = s_map
-        .into_vec_or_none()
-        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
-
-    // interpolate s
-    let mut s = Polynomial::eval_interpolation(&identifiers, &sshares, None)?.0;
     // raise error if s is zero
     if s.is_zero().into() {
         return Err(ProtocolError::AssertionFailed(
@@ -119,7 +108,8 @@ mod test {
 
     use super::*;
     use crate::ecdsa::{
-        robust_ecdsa::test::run_sign, x_coordinate, Field, ProjectivePoint, Secp256K1ScalarField,
+        robust_ecdsa::test::run_sign, x_coordinate, Field, Polynomial, ProjectivePoint,
+        Secp256K1ScalarField,
     };
     use crate::test::generate_participants;
 
