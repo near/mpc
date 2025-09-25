@@ -172,6 +172,8 @@ pub struct SignatureComputationProgress {
     /// The computed response, if any. This is used to prevent unnecessary recomputation,
     /// if all that's needed is to submit the response to chain.
     pub computed_response: Option<ChainRespondArgs>,
+    /// The leader selected during computation
+    pub selected_leader: Option<ParticipantId>,
     /// The time and when the last response was submitted to chain.
     /// This is used to delay the next retry as well as debugging.
     pub last_response_submission: Option<near_time::Instant>,
@@ -230,7 +232,10 @@ impl QueuedSignatureRequest {
     }
 
     /// Selects the leader given the current state of the network.
-    fn current_leader(&self, eligible_leaders: &HashSet<ParticipantId>) -> Option<ParticipantId> {
+    pub fn current_leader(
+        &self,
+        eligible_leaders: &HashSet<ParticipantId>,
+    ) -> Option<ParticipantId> {
         for candidate_leader in &self.leader_selection_order {
             if eligible_leaders.contains(candidate_leader) {
                 return Some(*candidate_leader);
@@ -397,9 +402,10 @@ impl PendingSignatureRequests {
                 | CheckBlockResult::Unknown => {
                     if let Some(leader) = request.current_leader(&eligible_leaders) {
                         tracing::debug!(target: "signing", "Leader for signature request {:?} from block {} is {}", request.request.id, request.block_height, leader);
+                        let mut progress = request.computation_progress.lock().unwrap();
+                        progress.selected_leader = Some(leader);
                         if leader == self.my_participant_id {
                             {
-                                let mut progress = request.computation_progress.lock().unwrap();
                                 if progress.attempts >= MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER {
                                     tracing::debug!(target: "signing", "Discarding signature request {:?} from block {} because it has been attempted too many ({}) times", request.request.id, request.block_height, MAX_ATTEMPTS_PER_SIGNATURE_AS_LEADER);
                                     signatures_to_remove.push(*id);
