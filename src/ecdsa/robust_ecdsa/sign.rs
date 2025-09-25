@@ -6,7 +6,7 @@ use subtle::ConditionallySelectable;
 use crate::{
     ecdsa::{
         robust_ecdsa::RerandomizedPresignOutput, x_coordinate, AffinePoint, Scalar,
-        Secp256K1Sha256, Signature,
+        Secp256K1Sha256, Signature, SignatureOption,
     },
     participants::{ParticipantCounter, ParticipantList},
     protocol::{
@@ -17,13 +17,16 @@ use crate::{
 };
 type C = Secp256K1Sha256;
 
+/// Depending on whether the current participant is a coordinator or not,
+/// runs the signature protocol as either a participant or a coordinator.
 pub fn sign(
     participants: &[Participant],
+    coordinator: Participant,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
     msg_hash: Scalar,
-) -> Result<impl Protocol<Output = Signature>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -40,10 +43,19 @@ pub fn sign(
         });
     };
 
+    // ensure the coordinator is a participant
+    if !participants.contains(coordinator) {
+        return Err(InitializationError::MissingParticipant {
+            role: "coordinator",
+            participant: coordinator,
+        });
+    };
+
     let ctx = Comms::new();
-    let fut = do_sign(
+    let fut = fut_wrapper(
         ctx.shared_channel(),
         participants,
+        coordinator,
         me,
         public_key,
         presignature,
@@ -52,29 +64,35 @@ pub fn sign(
     Ok(make_protocol(ctx, fut))
 }
 
-async fn do_sign(
+/// Performs signing from any participant's perspective (except the coordinator)
+async fn do_sign_participant(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    presignature: RerandomizedPresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    let s_me = compute_signature_share(&presignature, msg_hash, &participants, me)?;
+    let wait_round = chan.next_waitpoint();
+    chan.send_private(wait_round, coordinator, &s_me)?;
+
+    Ok(None)
+}
+
+/// Performs signing from only the coordinator's perspective
+async fn do_sign_coordinator(
     mut chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
     msg_hash: Scalar,
-) -> Result<Signature, ProtocolError> {
-    // beta_i * Rx + ei
-    let big_r = presignature.big_r;
-    let big_r_x_coordinate = x_coordinate(&big_r);
-    let beta = presignature.beta * big_r_x_coordinate + presignature.e;
-    // msghash * alpha_i + beta_i
-    let s_me = msg_hash * presignature.alpha + beta;
-    // lambda_i * s_i
-    let linearized_s_me = s_me * participants.lagrange::<C>(me)?;
-    let ser_linearized_s_me = SerializableScalar::<C>(linearized_s_me);
-
+) -> Result<SignatureOption, ProtocolError> {
+    let mut s = compute_signature_share(&presignature, msg_hash, &participants, me)?.0;
     let wait_round = chan.next_waitpoint();
-    chan.send_many(wait_round, &ser_linearized_s_me)?;
 
     let mut seen = ParticipantCounter::new(&participants);
-    let mut s = linearized_s_me;
 
     seen.put(me);
     while !seen.full() {
@@ -95,7 +113,10 @@ async fn do_sign(
     // Normalize s
     s.conditional_assign(&(-s), s.is_high());
 
-    let sig = Signature { big_r, s };
+    let sig = Signature {
+        big_r: presignature.big_r,
+        s,
+    };
 
     if !sig.verify(&public_key, &msg_hash) {
         return Err(ProtocolError::AssertionFailed(
@@ -103,7 +124,43 @@ async fn do_sign(
         ));
     };
 
-    Ok(sig)
+    Ok(Some(sig))
+}
+
+/// A common computation done by both the coordinator and the other participants
+fn compute_signature_share(
+    presignature: &RerandomizedPresignOutput,
+    msg_hash: Scalar,
+    participants: &ParticipantList,
+    me: Participant,
+) -> Result<SerializableScalar<C>, ProtocolError> {
+    // (beta_i + tweak * k_i) * delta^{-1}
+    let big_r = presignature.big_r;
+    let big_r_x_coordinate = x_coordinate(&big_r);
+    // beta * Rx + e
+    let beta = presignature.beta * big_r_x_coordinate + presignature.e;
+
+    let s_me = msg_hash * presignature.alpha + beta;
+    // lambda_i * s_i
+    let linearized_s_me = s_me * participants.lagrange::<C>(me)?;
+    Ok(SerializableScalar::<C>(linearized_s_me))
+}
+
+/// Wraps the coordinator and the participant into a single functions to be called
+async fn fut_wrapper(
+    chan: SharedChannel,
+    participants: ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    public_key: AffinePoint,
+    presignature: RerandomizedPresignOutput,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
+    } else {
+        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash).await
+    }
 }
 
 #[cfg(test)]
@@ -189,7 +246,7 @@ mod test {
         }
 
         let result = run_sign_without_rerandomization(participants_presign, public_key, msg)?;
-        let sig = result[0].1.clone();
+        let sig = result.1.clone();
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
 
         // verify the correctness of the generated signature
@@ -231,9 +288,8 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (tweak, result) =
+        let (tweak, _, sig) =
             run_sign_with_rerandomization(participants_presign, public_key.to_element(), msg)?;
-        let sig = result[0].1.clone();
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
         // derive the public key
         let public_key = tweak.derive_verifying_key(&public_key).to_element();

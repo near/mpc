@@ -1,5 +1,5 @@
 use crate::crypto::hash::HashOutput;
-use crate::eddsa::{sign::sign, KeygenOutput, Signature};
+use crate::eddsa::{sign::sign, KeygenOutput, SignatureOption};
 use crate::participants::ParticipantList;
 use crate::protocol::{run_protocol, Participant, Protocol};
 use crate::test::MockCryptoRng;
@@ -62,8 +62,8 @@ pub(crate) fn test_run_signature_protocols(
     coordinators: &[Participant],
     threshold: usize,
     msg_hash: HashOutput,
-) -> Result<Vec<(Participant, Signature)>, Box<dyn Error>> {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Signature>>)> =
+) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
+    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> =
         Vec::with_capacity(participants.len());
 
     let participants_list = participants

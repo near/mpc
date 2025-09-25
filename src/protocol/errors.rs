@@ -52,6 +52,10 @@ pub enum ProtocolError {
     #[error("the constructed signing key is null")]
     MalformedSigningKey,
 
+    #[cfg(test)]
+    #[error("Expected exactly one output that belongs only to the coordinator")]
+    MismatchCoordinatorOutput,
+
     #[error("the group element could not be serialized")]
     PointSerialization,
 

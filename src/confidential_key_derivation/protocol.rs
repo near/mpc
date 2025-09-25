@@ -200,9 +200,9 @@ mod test {
     use super::*;
     use crate::crypto::polynomials::Polynomial;
     use crate::protocol::run_protocol;
-    use std::error::Error;
-
+    use crate::test::one_coordinator_output;
     use rand_core::{OsRng, RngCore};
+    use std::error::Error;
 
     #[test]
     fn test_hash2curve() -> Result<(), Box<dyn Error>> {
@@ -268,16 +268,7 @@ mod test {
         let result = run_protocol(protocols)?;
 
         // test one single some for the coordinator
-        let mut some_iter = result.into_iter().filter(|(_, ckd)| ckd.is_some());
-
-        let ckd = some_iter
-            .next()
-            .map(|(_, c)| c.unwrap())
-            .expect("Expected exactly one Some(CKDCoordinatorOutput)");
-        assert!(
-            some_iter.next().is_none(),
-            "More than one Some(CKDCoordinatorOutput)"
-        );
+        let ckd = one_coordinator_output(result, coordinator)?;
 
         // compute msk . H(app_id)
         let confidential_key = ckd.unmask(app_sk);

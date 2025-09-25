@@ -72,6 +72,9 @@ impl Signature {
     }
 }
 
+/// None for participants and Some for coordinator
+pub type SignatureOption = Option<Signature>;
+
 /// The arguments used to derive randomness used for presignature rerandomization.
 /// Presignature rerandomization has been thoroughly described in
 /// [GS21] https://eprint.iacr.org/2021/1330.pdf

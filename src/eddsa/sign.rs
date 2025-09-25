@@ -1,6 +1,6 @@
 //! This module wraps a signature generation functionality from `Frost` library
 //!  into `cait-sith::Protocol` representation.
-use super::{KeygenOutput, Signature};
+use super::{KeygenOutput, SignatureOption};
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::errors::{InitializationError, ProtocolError};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
@@ -49,7 +49,7 @@ async fn do_sign_coordinator(
     keygen_output: KeygenOutput,
     message: Vec<u8>,
     rng: &mut impl CryptoRngCore,
-) -> Result<Signature, ProtocolError> {
+) -> Result<SignatureOption, ProtocolError> {
     let mut seen = ParticipantCounter::new(&participants);
 
     // --- Round 1.
@@ -138,7 +138,7 @@ async fn do_sign_participant(
     keygen_output: KeygenOutput,
     message: Vec<u8>,
     rng: &mut impl CryptoRngCore,
-) -> Result<Signature, ProtocolError> {
+) -> Result<SignatureOption, ProtocolError> {
     if coordinator == me {
         return Err(ProtocolError::AssertionFailed(
             "the do_sign_participant function cannot be called
@@ -209,7 +209,7 @@ pub fn sign(
     keygen_output: KeygenOutput,
     message: Vec<u8>,
     rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = Signature>, InitializationError> {
+) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -259,7 +259,7 @@ async fn fut_wrapper(
     keygen_output: KeygenOutput,
     message: Vec<u8>,
     mut rng: impl CryptoRngCore,
-) -> Result<Signature, ProtocolError> {
+) -> Result<SignatureOption, ProtocolError> {
     if me == coordinator {
         do_sign_coordinator(
             chan,
@@ -299,7 +299,7 @@ mod test {
     use std::error::Error;
 
     fn assert_single_coordinator_result(
-        data: Vec<(Participant, super::Signature)>,
+        data: Vec<(Participant, super::SignatureOption)>,
     ) -> frost_ed25519::Signature {
         let mut signature = None;
         let count = data
