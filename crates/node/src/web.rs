@@ -53,7 +53,7 @@ struct WebServerState {
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
-    protocol_state_receiver: Arc<OnceLock<watch::Receiver<ProtocolContractState>>>,
+    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     static_web_data: StaticWebData,
 }
 
@@ -114,17 +114,13 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
-    let protocol_state = state.protocol_state_receiver.get().map(|watch_receiver| {
-        watch_receiver
-            .borrow()
-            // Clone to avoid holding a lock
-            .clone()
-    });
+    let protocol_state = state
+        .protocol_state_receiver
+        .borrow()
+        // Clone to avoid holding a lock
+        .clone();
 
-    match protocol_state {
-        Some(protocol_state) => protocol_state_to_string(&protocol_state),
-        None => "Protocol state is not synced yet.".to_string(),
-    }
+    protocol_state_to_string(&protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -195,7 +191,7 @@ pub async fn start_web_server(
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,
-    contract_state_receiver: Arc<OnceLock<watch::Receiver<ProtocolContractState>>>,
+    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -218,7 +214,7 @@ pub async fn start_web_server(
         .with_state(WebServerState {
             root_task_handle,
             debug_request_sender,
-            protocol_state_receiver: contract_state_receiver,
+            protocol_state_receiver,
             static_web_data,
         });
 

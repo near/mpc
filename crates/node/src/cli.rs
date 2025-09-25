@@ -26,6 +26,7 @@ use attestation::attestation::Attestation;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
+use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -252,7 +253,8 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
-        let protocol_state_receiver = Arc::new(OnceLock::new());
+        let (protocol_state_sender, protocol_state_receiver) =
+            tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
         let web_server = root_runtime
             .block_on(start_web_server(
@@ -260,7 +262,7 @@ impl StartCmd {
                 debug_request_sender.clone(),
                 config.web_ui.clone(),
                 StaticWebData::new(&secrets, Some(attestation.clone())),
-                protocol_state_receiver.clone(),
+                protocol_state_receiver,
             ))
             .context("Failed to create web server.")?;
 
@@ -275,9 +277,8 @@ impl StartCmd {
             persistent_secrets.near_signer_key.clone(),
             respond_config,
             indexer_exit_sender,
+            protocol_state_sender,
         );
-
-        protocol_state_receiver.set(indexer_api.contract_state_receiver);
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();

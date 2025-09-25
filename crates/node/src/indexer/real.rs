@@ -9,6 +9,7 @@ use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::SigningKey;
+use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,6 +49,7 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
+    protocol_state_sender: watch::Sender<ProtocolContractState>,
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
 
@@ -119,8 +121,12 @@ pub fn spawn_real_indexer(
             ));
 
             // Returns once the contract state is available.
-            let contract_state_receiver =
-                monitor_contract_state(indexer_state.clone(), indexer_config.port_override).await;
+            let contract_state_receiver = monitor_contract_state(
+                indexer_state.clone(),
+                indexer_config.port_override,
+                protocol_state_sender,
+            )
+            .await;
 
             if contract_state_sender_oneshot
                 .send(contract_state_receiver)

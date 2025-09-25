@@ -198,6 +198,7 @@ impl ContractState {
 pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
     port_override: Option<u16>,
+    protocol_state_sender: watch::Sender<ProtocolContractState>,
 ) -> watch::Receiver<ContractState> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
@@ -229,6 +230,8 @@ pub async fn monitor_contract_state(
             };
 
             let result = ContractState::from_contract_state(&protocol_state, height, port_override);
+
+            protocol_state_sender.send(protocol_state);
 
             let state = match result {
                 Ok(state) => state,
