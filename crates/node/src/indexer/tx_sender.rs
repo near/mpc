@@ -64,6 +64,7 @@ impl TransactionProcessorHandle {
         tokio::spawn(async move {
             while let Some(transaction_submission) = transaction_receiver.recv().await {
                 let tx_request = transaction_submission.transaction;
+                let tx_response_channel = transaction_submission.response_sender;
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
@@ -73,8 +74,17 @@ impl TransactionProcessorHandle {
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    ensure_send_transaction(tx_signer.clone(), indexer_state, tx_request, txn_json)
-                        .await;
+                    let transaction_status = ensure_send_transaction(
+                        tx_signer.clone(),
+                        indexer_state,
+                        tx_request,
+                        txn_json,
+                    )
+                    .await;
+
+                    if let Some(tx_response_channel) = tx_response_channel {
+                        let _ = tx_response_channel.send(transaction_status);
+                    }
                 });
             }
         });
@@ -119,7 +129,6 @@ impl TransactionSender for TransactionProcessorHandle {
 
 struct TransactionSenderSubmission {
     transaction: ChainSendTransactionRequest,
-    #[allow(dead_code)]
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
@@ -329,7 +338,7 @@ async fn ensure_send_transaction(
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-) {
+) -> TransactionStatus {
     if let Err(err) = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
@@ -339,20 +348,20 @@ async fn ensure_send_transaction(
     )
     .await
     {
-        // If the transaction fails to send immediately, wait a short period and try again
         metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
             .with_label_values(&[request.method(), "local_error"])
             .inc();
         tracing::error!(%err, "Failed to forward transaction {:?}", request);
-        time::sleep(Duration::from_secs(1)).await;
-        return;
+        return TransactionStatus::NotExecuted;
     };
 
     // Allow time for the transaction to be included
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    match observe_tx_result(indexer_state.clone(), &request).await {
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+
+    match &transaction_status {
         Ok(TransactionStatus::Executed) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[request.method(), "succeeded"])
@@ -375,4 +384,6 @@ async fn ensure_send_transaction(
             tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
         }
     }
+
+    transaction_status.unwrap_or(TransactionStatus::Unknown)
 }
