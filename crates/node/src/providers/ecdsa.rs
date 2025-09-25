@@ -12,7 +12,9 @@ pub mod triple;
 
 pub use triple::TripleStorage;
 
-use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::config::{
+    ConfigFile, MpcConfig, ParticipantsConfig, PresignatureConfig, SignatureConfig, TripleConfig,
+};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
@@ -31,7 +33,11 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-
+pub struct EcdsaSignatureProviderConfig {
+    pub triple: TripleConfig,
+    pub presignature: PresignatureConfig,
+    pub signature: SignatureConfig,
+}
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,

@@ -10,7 +10,7 @@ use crate::indexer::{tx_sender, IndexerAPI};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
-use crate::keyshare::{KeyshareData, KeyshareStorage};
+use crate::keyshare::{Keyshare, KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{
@@ -30,6 +30,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use mpc_contract::primitives::key_state::{EpochId, Keyset};
+use near_sdk::AccountId;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -473,7 +474,7 @@ where
 
             tracking::spawn_checked("key_resharing", async move {
                 Self::run_key_resharing(
-                    &config_file,
+                    config_file.my_near_account_id,
                     keyshare_storage.clone(),
                     running_state.clone(),
                     &mpc_config,
@@ -554,46 +555,7 @@ where
             run_network_client(sender.clone(), Box::new(receiver));
         let p2p_public_key = p2p_key.verifying_key();
 
-        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
-            "running mpc job",
-            Self::execute_running_protocol(
-                config_file.clone(),
-                running_participants,
-                p2p_public_key,
-                running_state.keyset.clone(),
-                secret_db.clone(),
-                clock.clone(),
-                keyshare_storage.clone(),
-                sender.clone(),
-                network_client.clone(),
-                chain_txn_sender.clone(),
-                debug_request_receiver,
-                channel_receiver,
-                block_update_receiver,
-            ),
-        );
-        running_handle.await??;
 
-        Ok(MpcJobResult::Done)
-    }
-
-    async fn execute_running_protocol(
-        config_file: ConfigFile,
-        running_participants: ParticipantsConfig,
-        p2p_public_key: ed25519_dalek::VerifyingKey,
-        keyset: Keyset,
-        secret_db: Arc<SecretDB>,
-        clock: Clock,
-        keyshare_storage: Arc<KeyshareStorage>,
-        sender: Arc<impl MeshNetworkTransportSender>,
-        network_client: Arc<MeshNetworkClient>,
-        chain_txn_sender: TransactionSender,
-        debug_request_receiver: broadcast::Receiver<DebugRequest>,
-        running_network_receiver: tokio::sync::mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        block_update_receiver: tokio::sync::OwnedMutexGuard<
-            mpsc::UnboundedReceiver<ChainBlockUpdate>,
-        >,
-    ) -> anyhow::Result<MpcJobResult> {
         let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
             running_participants.clone(),
             &config_file.my_near_account_id,
@@ -603,7 +565,7 @@ where
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
 
-        let keyshares = match keyshare_storage.load_keyset(&keyset).await {
+        let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
             Ok(keyshares) => keyshares,
             Err(e) => {
                 tracing::error!(
@@ -621,8 +583,81 @@ where
 
         tracking::set_progress(&format!(
             "Running epoch {:?} as participant {}",
-            keyset.epoch_id, running_mpc_config.my_participant_id
+            running_state.keyset.epoch_id, running_mpc_config.my_participant_id
         ));
+        let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
+            "running mpc job",
+            Self::execute_running_protocol(
+                keyshares,
+                running_mpc_config,
+                config_file.clone(),
+                //running_participants,
+                //p2p_public_key,
+                //running_state.keyset.clone(),
+                secret_db.clone(),
+                clock.clone(),
+                //keyshare_storage.clone(),
+                sender.clone(),
+                network_client.clone(),
+                chain_txn_sender.clone(),
+                debug_request_receiver,
+                channel_receiver,
+                block_update_receiver,
+            ),
+        );
+        running_handle.await??;
+
+        Ok(MpcJobResult::Done)
+    }
+
+    async fn execute_running_protocol(
+        keyshares: Vec<Keyshare>,
+        running_mpc_config: MpcConfig,
+        config_file: ConfigFile,
+        //running_participants: ParticipantsConfig,
+        //p2p_public_key: ed25519_dalek::VerifyingKey,
+        //keyset: Keyset,
+        secret_db: Arc<SecretDB>,
+        clock: Clock,
+       // keyshare_storage: Arc<KeyshareStorage>,
+        sender: Arc<impl MeshNetworkTransportSender>,
+        network_client: Arc<MeshNetworkClient>,
+        chain_txn_sender: TransactionSender,
+        debug_request_receiver: broadcast::Receiver<DebugRequest>,
+        running_network_receiver: tokio::sync::mpsc::UnboundedReceiver<NetworkTaskChannel>,
+        block_update_receiver: tokio::sync::OwnedMutexGuard<
+            mpsc::UnboundedReceiver<ChainBlockUpdate>,
+        >,
+    ) -> anyhow::Result<MpcJobResult> {
+        //let Some(running_mpc_config) = MpcConfig::from_participants_with_near_account_id(
+        //    running_participants.clone(),
+        //    &config_file.my_near_account_id,
+        //    &p2p_public_key,
+        //) else {
+        //    tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
+        //    return Ok(MpcJobResult::HaltUntilInterrupted);
+        //};
+
+        //let keyshares = match keyshare_storage.load_keyset(&keyset).await {
+        //    Ok(keyshares) => keyshares,
+        //    Err(e) => {
+        //        tracing::error!(
+        //            "Failed to load keyshares: {:?}; doing nothing until contract state changes.",
+        //            e
+        //        );
+        //        return Ok(MpcJobResult::HaltUntilInterrupted);
+        //    }
+        //};
+
+        //if keyshares.is_empty() {
+        //    tracing::info!("We have no keyshares. Waiting for Initialization.");
+        //    return Ok(MpcJobResult::HaltUntilInterrupted);
+        //}
+        //
+        //tracking::set_progress(&format!(
+        //    "Running epoch {:?} as participant {}",
+        //    keyset.epoch_id, running_mpc_config.my_participant_id
+        //));
 
         tracing::info!("wait for ready.");
         let running_participant_ids = running_mpc_config
@@ -717,7 +752,8 @@ where
     /// Entry point to handle the Resharing state of the contract.
     #[allow(clippy::too_many_arguments)]
     async fn run_key_resharing(
-        config_file: &ConfigFile,
+        my_near_account_id: AccountId,
+        //config_file: &ConfigFile,
         keyshare_storage: Arc<KeyshareStorage>,
         current_running_state: ContractRunningState,
         mpc_config: &MpcConfig,
@@ -733,7 +769,7 @@ where
             .participants
             .participants
             .iter()
-            .any(|p| p.near_account_id == config_file.my_near_account_id);
+            .any(|p| p.near_account_id == my_near_account_id);
         let existing_keyshares = if was_participant_last_epoch {
             let keyshares = match keyshare_storage.load_keyset(&previous_keyset).await {
                 Ok(x) => x,

@@ -556,6 +556,7 @@ impl Cli {
     }
 }
 
+// todo: do we still need these?
 impl ImportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
         let runtime = tokio::runtime::Runtime::new()?;
@@ -603,6 +604,7 @@ impl ImportKeyshareCmd {
     }
 }
 
+// todo: do we still need these?
 impl ExportKeyshareCmd {
     pub async fn run(&self) -> anyhow::Result<()> {
         let runtime = tokio::runtime::Runtime::new()?;
