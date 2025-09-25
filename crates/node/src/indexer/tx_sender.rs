@@ -281,7 +281,7 @@ async fn observe_tx_result(
             .unwrap()
             .into_bytes();
 
-            let Ok(Ok(query_response)) = indexer_state
+            let query_response = indexer_state
                 .view_client
                 .send(
                     Query {
@@ -294,11 +294,18 @@ async fn observe_tx_result(
                     }
                     .with_span_context(),
                 )
-                .await
-            else {
-                return Ok(TransactionStatus::Unknown);
-            };
+                .await;
 
+            let query_response = match query_response {
+                Ok(Ok(query_response)) => query_response,
+                error => {
+                    tracing::error!(
+                        ?error,
+                        "failed to query for TEE attestation submission result"
+                    );
+                    return Ok(TransactionStatus::Unknown);
+                }
+            };
             let attestation_stored_on_contract: Option<dtos_contract::Attestation> =
                 match query_response.kind {
                     QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
