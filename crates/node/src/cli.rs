@@ -29,6 +29,7 @@ use hex::FromHex;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::sync::OnceLock;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -251,14 +252,15 @@ impl StartCmd {
             .worker_threads(1)
             .build()?;
 
-        let contract_state_on_web_server = Arc::new(Mutex::new(None));
+        let protocol_state_receiver = Arc::new(OnceLock::new());
+
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle_receiver,
                 debug_request_sender.clone(),
                 config.web_ui.clone(),
                 StaticWebData::new(&secrets, Some(attestation.clone())),
-                contract_state_on_web_server.clone(),
+                protocol_state_receiver.clone(),
             ))
             .context("Failed to create web server.")?;
 
@@ -275,10 +277,7 @@ impl StartCmd {
             indexer_exit_sender,
         );
 
-        root_runtime.spawn(Self::continuously_update_web_server_contract_state(
-            indexer_api.contract_state_receiver.clone(),
-            contract_state_on_web_server,
-        ));
+        protocol_state_receiver.set(indexer_api.contract_state_receiver);
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
@@ -392,18 +391,6 @@ impl StartCmd {
             debug_request_sender,
         };
         coordinator.run().await
-    }
-
-    async fn continuously_update_web_server_contract_state(
-        mut contract_state_from_indexer: watch::Receiver<ContractState>,
-        contract_state_on_web_server: Arc<Mutex<Option<ContractState>>>,
-    ) {
-        contract_state_from_indexer.mark_changed();
-
-        while let Ok(()) = contract_state_from_indexer.changed().await {
-            let contract_state = contract_state_from_indexer.borrow_and_update().clone();
-            *contract_state_on_web_server.lock().unwrap() = Some(contract_state);
-        }
     }
 }
 
