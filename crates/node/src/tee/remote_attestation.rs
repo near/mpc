@@ -45,7 +45,7 @@ pub async fn submit_remote_attestation(
             let attestation_submission_response = tx_sender
                 .send_and_wait(chain_args)
                 .await
-                .context("Failed to submit transaction")?;
+                .context("failed to submit transaction")?;
 
             match attestation_submission_response {
                 TransactionStatus::Executed => Ok(()),
@@ -73,7 +73,7 @@ pub async fn submit_remote_attestation(
             tracing::error!(
                 cause = ?error,
                 backoff_duration = ?duration,
-                "Failed to submit attestation."
+                "failed to submit attestation."
             );
         })
         .timeout(MAX_RETRY_DURATION)
