@@ -1,5 +1,3 @@
-use std::u64;
-
 use crate::sandbox::common::{
     assert_running_return_participants, check_call_success, gen_accounts,
     get_participant_attestation, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
@@ -506,7 +504,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     assert!(validation_success, "Submitting attestation failed.");
 
     let validation_success = submit_participant_info(
-        &participant_account_2,
+        participant_account_2,
         &contract,
         &participant_2_attestation,
         &tls_key_2,
