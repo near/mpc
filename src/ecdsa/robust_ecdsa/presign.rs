@@ -6,7 +6,7 @@ use subtle::ConstantTimeEq;
 use super::{PresignArguments, PresignOutput};
 use crate::{
     ecdsa::{
-        x_coordinate, CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
+        CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256,
     },
     participants::{ParticipantCounter, ParticipantList, ParticipantMap},
@@ -275,19 +275,20 @@ async fn do_presign(
     }
 
     // w is non-zero due to previous check and so I can unwrap safely
-    let h_me = w.0.invert().unwrap() * shares.a();
+    let c_me = w.0.invert().unwrap() * shares.a();
 
     // Some extra computation is pushed in this offline phase
-    let alpha_me = h_me + shares.d();
+    let alpha_me = c_me + shares.d();
 
-    let big_r_x_coordinate = x_coordinate(&big_r.value().to_affine());
     let x_me = args.keygen_out.private_share.to_scalar();
-    let beta_me = h_me * big_r_x_coordinate * x_me + shares.e();
+    let beta_me = c_me * x_me;
 
     Ok(PresignOutput {
         big_r: big_r.value().to_affine(),
-        alpha_i: alpha_me,
-        beta_i: beta_me,
+        alpha: alpha_me,
+        beta: beta_me,
+        c: c_me,
+        e: shares.e(),
     })
 }
 

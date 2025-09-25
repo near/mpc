@@ -3,7 +3,10 @@ pub mod sign;
 #[cfg(test)]
 mod test;
 
-use crate::ecdsa::{AffinePoint, KeygenOutput, Scalar};
+use crate::{
+    ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar, Tweak},
+    protocol::errors::ProtocolError,
+};
 use serde::{Deserialize, Serialize};
 
 /// The necessary inputs for the creation of a presignature.
@@ -24,6 +27,69 @@ pub struct PresignOutput {
     pub big_r: AffinePoint,
 
     /// Our secret shares of the nonces.
-    pub alpha_i: Scalar,
-    pub beta_i: Scalar,
+    pub c: Scalar,
+    pub e: Scalar,
+    pub alpha: Scalar,
+    pub beta: Scalar,
+}
+
+/// The output of the presigning protocol.
+/// Contains the signature precomputed elements
+/// independently of the message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerandomizedPresignOutput {
+    /// The rerandomized public nonce commitment.
+    big_r: AffinePoint,
+
+    /// Our rerandomized secret shares of the nonces.
+    e: Scalar,
+    alpha: Scalar,
+    beta: Scalar,
+}
+
+impl RerandomizedPresignOutput {
+    pub fn rerandomize_presign(
+        presignature: &PresignOutput,
+        tweak: &Tweak,
+        args: &RerandomizationArguments,
+    ) -> Result<Self, ProtocolError> {
+        if presignature.big_r != args.big_r {
+            return Err(ProtocolError::IncompatibleRerandomizationInputs);
+        }
+        let delta = args.derive_randomness();
+        if delta.is_zero().into() {
+            return Err(ProtocolError::ZeroScalar);
+        }
+
+        // cannot be zero due to the previous check
+        let inv_delta = delta.invert().unwrap();
+
+        // delta * R
+        let rerandomized_big_r = presignature.big_r * delta;
+
+        // alpha * delta^{-1}
+        let rerandomized_alpha = presignature.alpha * inv_delta;
+
+        // (beta + c*tweak) * delta^{-1}
+        let rerandomized_beta = (presignature.beta + presignature.c * tweak.value()) * inv_delta;
+
+        Ok(RerandomizedPresignOutput {
+            big_r: rerandomized_big_r.into(),
+            alpha: rerandomized_alpha,
+            beta: rerandomized_beta,
+            e: presignature.e,
+        })
+    }
+
+    #[cfg(test)]
+    /// Outputs the same elements as in the PresignatureOutput
+    /// Used for testing the core schemes without rerandomization
+    pub fn new_without_rerandomization(presignature: PresignOutput) -> Self {
+        RerandomizedPresignOutput {
+            big_r: presignature.big_r,
+            alpha: presignature.alpha,
+            beta: presignature.beta,
+            e: presignature.e,
+        }
+    }
 }

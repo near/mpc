@@ -1,19 +1,24 @@
 use std::error::Error;
 
-use rand_core::OsRng;
-
 use super::{presign::presign, sign::sign, PresignArguments, PresignOutput};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
-use crate::ecdsa::{Element, KeygenOutput, Secp256K1Sha256, Signature};
+use crate::ecdsa::robust_ecdsa::RerandomizedPresignOutput;
+use crate::ecdsa::{
+    Element, KeygenOutput, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
+    Tweak,
+};
 use crate::protocol::{run_protocol, Participant, Protocol};
 use crate::test::{
     assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
     run_keygen, run_refresh, run_reshare,
 };
 
+use rand_core::{OsRng, RngCore};
+
 /// Runs signing by calling the generic run_sign function from crate::test
-pub fn run_sign(
+/// This signing does not rerandomize the presignatures and tests only the core protocol
+pub fn run_sign_without_rerandomization(
     participants_presign: Vec<(Participant, PresignOutput)>,
     public_key: Element,
     msg: &[u8],
@@ -27,10 +32,66 @@ pub fn run_sign(
         msg_hash,
         |participants, me, pk, presignature, msg_hash| {
             let pk = pk.to_affine();
-            sign(participants, me, pk, presignature, msg_hash)
+            let rerand_presig =
+                RerandomizedPresignOutput::new_without_rerandomization(presignature);
+            sign(participants, me, pk, rerand_presig, msg_hash)
                 .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = Signature>>)
         },
     )
+}
+
+type SigWithRerand = (Tweak, Vec<(Participant, Signature)>);
+/// Runs signing by calling the generic run_sign function from crate::test
+/// This signing mimics what should happen in real world, i.e.,
+/// rerandomizing the presignatures
+pub fn run_sign_with_rerandomization(
+    participants_presign: Vec<(Participant, PresignOutput)>,
+    public_key: Element,
+    msg: &[u8],
+) -> Result<SigWithRerand, Box<dyn Error>> {
+    // hash the message into secp256k1 field
+    let msg_hash = scalar_hash_secp256k1(msg);
+
+    // generate a random tweak
+    let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
+    // generate a random public entropy
+    let mut entropy: [u8; 32] = [0u8; 32];
+    OsRng.fill_bytes(&mut entropy);
+
+    let pk = public_key.to_affine();
+    let big_r = participants_presign[0].1.big_r;
+    let participants = ParticipantList::new(
+        &participants_presign
+            .iter()
+            .map(|(p, _)| *p)
+            .collect::<Vec<Participant>>(),
+    )
+    .unwrap();
+    let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
+    let rerand_args =
+        RerandomizationArguments::new(pk, msg_hash_bytes, big_r, participants, entropy);
+    let public_key = frost_core::VerifyingKey::new(public_key);
+    let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
+
+    let rerand_participants_presign = participants_presign
+        .iter()
+        .map(|(p, presig)| {
+            RerandomizedPresignOutput::rerandomize_presign(presig, &tweak, &rerand_args)
+                .map(|out| (*p, out))
+        })
+        .collect::<Result<_, _>>()?;
+    // run sign instanciation with the necessary arguments
+    let vec = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
+        rerand_participants_presign,
+        derived_pk,
+        msg_hash,
+        |participants, me, pk, presignature, msg_hash| {
+            let pk = pk.to_affine();
+            sign(participants, me, pk, presignature, msg_hash)
+                .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = Signature>>)
+        },
+    )?;
+    Ok((tweak, vec))
 }
 
 pub fn run_presign(
@@ -74,7 +135,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     let presign_result = run_presign(key_packages, max_malicious)?;
 
     let msg = b"hello world";
-    run_sign(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
 
     Ok(())
 }
@@ -114,8 +175,7 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let presign_result = run_presign(key_packages, max_malicious)?;
 
     let msg = b"hello world";
-
-    run_sign(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -150,8 +210,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let presign_result = run_presign(key_packages, max_malicious)?;
 
     let msg = b"hello world";
-
-    run_sign(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -167,8 +226,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     let presign_result = run_presign(keygen_result, max_malicious)?;
 
     let msg = b"hello world";
-
-    run_sign(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -186,6 +244,24 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let presign_result = run_presign(keygen_result, max_malicious)?;
 
     let msg = b"hello world";
-    run_sign(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    Ok(())
+}
+
+#[test]
+fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Error>> {
+    let participants_count = 7;
+    let participants = generate_participants_with_random_ids(participants_count, &mut OsRng);
+    let max_malicious = 3;
+
+    let keygen_result = run_keygen(&participants.clone(), max_malicious + 1)?;
+    assert_public_key_invariant(&keygen_result);
+
+    let public_key = keygen_result[0].1.public_key;
+    assert_public_key_invariant(&keygen_result);
+    let presign_result = run_presign(keygen_result, max_malicious)?;
+
+    let msg = b"hello world";
+    run_sign_with_rerandomization(presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
