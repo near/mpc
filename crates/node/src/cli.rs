@@ -29,6 +29,7 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::sync::OnceLock;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -244,7 +245,7 @@ impl StartCmd {
 
         // Create communication channels and runtime
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-        let (root_task_handle_sender, root_task_handle_receiver) = watch::channel(None);
+        let root_task_handle = OnceLock::new();
 
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -256,7 +257,7 @@ impl StartCmd {
 
         let web_server = root_runtime
             .block_on(start_web_server(
-                root_task_handle_receiver,
+                root_task_handle.clone(),
                 debug_request_sender.clone(),
                 config.web_ui.clone(),
                 StaticWebData::new(&secrets, Some(attestation.clone())),
@@ -309,7 +310,7 @@ impl StartCmd {
             indexer_api,
             attestation,
             debug_request_sender,
-            root_task_handle_sender,
+            root_task_handle,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -347,12 +348,13 @@ impl StartCmd {
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
         attestation: Attestation,
         debug_request_sender: broadcast::Sender<DebugRequest>,
-        root_task_handle_sender: watch::Sender<Option<Arc<tracking::TaskHandle>>>,
+        root_task_handle_once_lock: OnceLock<Arc<tracking::TaskHandle>>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
-        root_task_handle_sender
-            .send(Some(root_task_handle))
-            .context("Web server is not alive")?;
+
+        root_task_handle_once_lock
+            .set(root_task_handle.clone())
+            .map_err(|_| anyhow!("Root task handle was already set"))?;
 
         let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
 

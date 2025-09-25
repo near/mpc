@@ -12,7 +12,7 @@ use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -49,7 +49,7 @@ pub(crate) async fn metrics() -> String {
 #[derive(Clone)]
 struct WebServerState {
     /// Root task handle for the whole program.
-    root_task_handle: watch::Receiver<Option<Arc<crate::tracking::TaskHandle>>>,
+    root_task_handle: OnceLock<Arc<TaskHandle>>,
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
@@ -58,7 +58,7 @@ struct WebServerState {
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
-    match state.root_task_handle.borrow().clone() {
+    match state.root_task_handle.get() {
         Some(root_task_handle) => format!("{:?}", root_task_handle.report()),
         None => "No root task has started yet.".to_string(),
     }
@@ -187,7 +187,7 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
 pub async fn start_web_server(
-    root_task_handle: watch::Receiver<Option<Arc<TaskHandle>>>,
+    root_task_handle: OnceLock<Arc<TaskHandle>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,
