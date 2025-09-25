@@ -5,6 +5,7 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
+use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::{tx_sender, IndexerAPI};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
@@ -92,10 +93,21 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
+struct Common<TransactionSender: tx_sender::TransactionSender + 'static> {
+    secrets: SecretsConfig,
+    config_file: ConfigFile,
+    keyshare_storage: Arc<KeyshareStorage>,
+    chain_txn_sender: TransactionSender,
+}
+
 impl<TransactionSender> Coordinator<TransactionSender>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
 {
+    pub fn common(&self) -> Common<TransactionSender> {
+        Common<TransactionSender> {
+        }
+    }
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
@@ -345,6 +357,11 @@ where
         Ok(())
     }
 
+    //
+    //secrets: SecretsConfig,
+    //config_file: ConfigFile,
+    //keyshare_storage: Arc<KeyshareStorage>,
+    //chain_txn_sender: TransactionSender,
     /// Entry point to handle the Resharing state of the contract.
     /// In this state, we reshare, but we also run a running_state in parallel.
     #[allow(clippy::too_many_arguments)]
