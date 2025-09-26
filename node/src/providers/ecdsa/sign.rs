@@ -28,15 +28,16 @@ impl EcdsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let participants = presignature.participants.clone();
         let channel = self.client.new_channel_for_task(
             EcdsaTaskId::Signature {
                 id,
                 presignature_id,
             },
-            presignature.participants,
+            participants.clone(),
         )?;
 
-        let (signature, public_key) = SignComputation {
+        let sign_computation = SignComputation {
             keygen_out: domain_data.keyshare,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
@@ -45,12 +46,25 @@ impl EcdsaSignatureProvider {
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
-        }
-        .perform_leader_centric_computation(
-            channel,
-            Duration::from_secs(self.config.signature.timeout_sec),
-        )
-        .await?;
+        };
+        let res = sign_computation
+            .perform_leader_centric_computation(
+                channel,
+                Duration::from_secs(self.config.signature.timeout_sec),
+            )
+            .await;
+
+        let (signature, public_key) = match res {
+            Ok(res) => res,
+            e => {
+                participants.iter().for_each(|id| {
+                    metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION
+                        .with_label_values(&[&id.raw().to_string()])
+                        .inc();
+                });
+                return e;
+            }
+        };
 
         Ok((signature, public_key))
     }

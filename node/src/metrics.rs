@@ -237,3 +237,13 @@ lazy_static! {
         )
         .unwrap();
 }
+
+lazy_static! {
+    pub static ref PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION: prometheus::IntCounterVec =
+        prometheus::register_int_counter_vec!(
+            "participant_total_times_seen_in_failed_computation",
+            "Number of times each participant id was seen in a failed computation that was led by us",
+            &["participant_id"],
+        )
+        .unwrap();
+}
