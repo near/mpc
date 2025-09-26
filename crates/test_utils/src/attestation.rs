@@ -51,6 +51,11 @@ pub fn p2p_tls_key() -> PublicKey {
     key_file.parse().expect("File contains a valid public key")
 }
 
+pub fn account_key() -> PublicKey {
+    let key_file = include_str!("../assets/near_account_public_key.pub");
+    key_file.parse().expect("File contains a valid public key")
+}
+
 pub fn mock_dstack_attestation() -> Attestation {
     let quote = quote();
     let collateral_json_string = include_str!("../assets/collateral.json");

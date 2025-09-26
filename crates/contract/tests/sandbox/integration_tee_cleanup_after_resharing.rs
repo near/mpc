@@ -65,6 +65,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let new_uid = NodeId {
         account_id: env_accounts[0].id().clone(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
     submit_participant_info(

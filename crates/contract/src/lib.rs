@@ -440,6 +440,7 @@ impl MpcContract {
         let signer = env::signer_account_id();
         log!("respond: signer={}, request={:?}", &signer, &request);
 
+        self.tee_state.assert_caller_is_attested_node();
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
@@ -519,6 +520,8 @@ impl MpcContract {
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
         let signer = env::signer_account_id();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
+        
+        self.tee_state.assert_caller_is_attested_node();
 
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -570,10 +573,11 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        // Verify the TEE quote and Docker image for the proposed participant
+        // Verify the TEE quote (including TLS and account keys) and Docker image for the proposed participant
         let status = self.tee_state.verify_proposed_participant_attestation(
             &proposed_participant_attestation,
             tls_public_key.clone(),
+            account_key.clone(),
             tee_upgrade_deadline_duration,
         );
 
@@ -587,6 +591,7 @@ impl MpcContract {
             NodeId {
                 account_id: account_id.clone(),
                 tls_public_key,
+                account_public_key: Some(account_key),
             },
             proposed_participant_attestation,
         );
@@ -701,6 +706,9 @@ impl MpcContract {
     #[handle_result]
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
+        
+        self.tee_state.assert_caller_is_attested_node();
+
         self.protocol_state
             .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
@@ -732,6 +740,8 @@ impl MpcContract {
             key_event_id,
             public_key,
         );
+        
+        self.tee_state.assert_caller_is_attested_node();
 
         let extended_key =
             public_key
@@ -755,6 +765,8 @@ impl MpcContract {
             "start_reshare_instance: signer={}",
             env::signer_account_id()
         );
+        
+        self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
@@ -779,7 +791,8 @@ impl MpcContract {
             env::signer_account_id(),
             key_event_id,
         );
-
+        
+        self.tee_state.assert_caller_is_attested_node();
         let resharing_concluded =
             if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
                 // Resharing has concluded, transition to running state
@@ -856,7 +869,8 @@ impl MpcContract {
             "vote_abort_key_event_instance: signer={}",
             env::signer_account_id()
         );
-
+        
+        self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .vote_abort_key_event_instance(key_event_id)
     }
@@ -1004,6 +1018,8 @@ impl MpcContract {
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
+        //caller must be a participant (node or operator)
+        let voter = self.voter_or_panic();
         let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
@@ -1391,8 +1407,8 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
-        let signer_pk = env::signer_account_pk();
+        let account_id: AccountId = env::signer_account_id();
+        let signer_pk: PublicKey = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
             account_id,
@@ -1433,6 +1449,7 @@ impl MpcContract {
         // ensure that this node has a valid TEE quote
         let node_id = NodeId {
             account_id: account_id.clone(),
+            account_public_key: Some(expected_destination_node.signer_account_pk.clone()),
             tls_public_key: expected_destination_node
                 .destination_node_info
                 .sign_pk
@@ -2377,6 +2394,7 @@ mod tests {
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone(),
+                    account_public_key: Some(self.signer_account_pk.clone()),
                 },
                 valid_participant_attestation,
             );

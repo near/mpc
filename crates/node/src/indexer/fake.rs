@@ -256,6 +256,7 @@ pub fn participant_info_from_config(info: &config::ParticipantInfo) -> Participa
     ParticipantInfo {
         sign_pk: info.p2p_public_key.to_near_sdk_public_key().unwrap(),
         url: format!("http://{}:{}", info.address, info.port),
+        
     }
 }
 
