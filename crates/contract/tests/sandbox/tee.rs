@@ -140,10 +140,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     assert!(allowed_hashes.contains(&first_hash));
     assert!(allowed_hashes.contains(&second_hash));
     // Latest should still be the second hash
-    assert_eq!(
-        get_latest_code_hash(&contract).await?,
-        Some(second_hash.clone())
-    );
+    assert_eq!(get_latest_code_hash(&contract).await?, Some(second_hash));
 
     Ok(())
 }

@@ -19,7 +19,7 @@ use near_sdk::{
     test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
     VMContext,
 };
-use std::{collections::HashSet, time::Duration};
+use std::time::Duration;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -65,7 +65,6 @@ impl TestSetup {
             .unwrap();
     }
 
-    /// Try to submit attestation and return Result for testing failures
     fn try_submit_attestation_for_node(
         &mut self,
         node_id: &NodeId,
@@ -94,7 +93,6 @@ impl TestSetup {
         }
     }
 
-    /// Get NodeIds created from the existing participants
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
@@ -105,8 +103,7 @@ impl TestSetup {
             .collect()
     }
 
-    /// Helper to create attestation with hash constraints
-    fn create_hash_attestation(hash: [u8; 32]) -> Attestation {
+    fn create_attestation_with_hash_constraint(hash: [u8; 32]) -> Attestation {
         Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: Some(hash),
             launcher_docker_compose_hash: None,
@@ -535,15 +532,14 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     let test_time_1 = deployment_times[2] + 3 * NANOS_IN_SECOND;
     set_system_time(test_time_1);
 
-    let allowed_set: HashSet<_> = test_setup
+    let allowed_hashes: [_; 3] = test_setup
         .contract
         .allowed_code_hashes()
-        .iter()
-        .map(|h| **h)
-        .collect();
-    let expected_set: HashSet<_> = hashes.into_iter().collect();
+        .try_into()
+        .unwrap();
+    let expected_hashes = [hash_v1.into(), hash_v2.into(), hash_v3.into()];
 
-    assert_eq!(allowed_set, expected_set);
+    assert_eq!(allowed_hashes, expected_hashes);
 
     // Use existing participant nodes for testing different hash versions
     let node_ids = test_setup.get_participant_node_ids();
@@ -551,7 +547,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // Test that nodes can submit attestations with all hash versions at T=10s
     // All attestations should succeed during grace period (current time: T=10s)
     for (node, &hash) in node_ids.iter().zip(hashes.iter()) {
-        let attestation = TestSetup::create_hash_attestation(hash);
+        let attestation = TestSetup::create_attestation_with_hash_constraint(hash);
         test_setup.submit_attestation_for_node(node, attestation);
     }
 
@@ -563,20 +559,21 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // but at T=20s it has expired and should be filtered out by allowed_code_hashes()
     set_system_time(v1_expiry_time + NANOS_IN_SECOND); // T=20s
 
-    // Verify that only non-expired hashes remain valid at T=20s
-    // hash_v1 should have already expired, so only hash_v2 and hash_v3 should be allowed
-    let allowed_after_v1_expiry = test_setup.contract.allowed_code_hashes();
-    let allowed_set_after_v1_expiry: HashSet<_> =
-        allowed_after_v1_expiry.iter().map(|h| **h).collect();
-    let expected_set_after_v1_expiry: HashSet<_> = [hash_v2, hash_v3].into_iter().collect();
+    // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
+    let allowed_after_v1_expiry: [_; 2] = test_setup
+        .contract
+        .allowed_code_hashes()
+        .try_into()
+        .unwrap();
+    let expected_after_v1_expiry = [hash_v2.into(), hash_v3.into()];
 
     assert_eq!(
-        allowed_set_after_v1_expiry, expected_set_after_v1_expiry,
+        allowed_after_v1_expiry, expected_after_v1_expiry,
         "Only hash_v2 and hash_v3 should remain valid at T=20s (hash_v1 expired)"
     );
 
     // Verify that submitting attestation with expired hash_v1 now fails
-    let expired_attestation = TestSetup::create_hash_attestation(hash_v1);
+    let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
     let result = test_setup.try_submit_attestation_for_node(&node_ids[0], expired_attestation);
     assert!(
         result.is_err(),
@@ -586,11 +583,8 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // Test late-joining nodes at current time T=20s (after hash_v1 expired)
     // Only hash_v2 and hash_v3 should be valid for new nodes
     // Reuse existing node_ids (nodes 2 and 3 since hash_v1 expired)
-    for (node, &hash) in node_ids[1..]
-        .iter()
-        .zip(expected_set_after_v1_expiry.iter())
-    {
-        let late_attestation = TestSetup::create_hash_attestation(hash);
+    for (node, hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
+        let late_attestation = TestSetup::create_attestation_with_hash_constraint(**hash);
         test_setup.submit_attestation_for_node(node, late_attestation);
     }
 
@@ -604,7 +598,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
-    let final_attestation = TestSetup::create_hash_attestation(hash_v3);
+    let final_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v3);
     // This should succeed since hash_v3 is the only remaining valid hash
     test_setup.submit_attestation_for_node(&node_ids[2], final_attestation);
 }
