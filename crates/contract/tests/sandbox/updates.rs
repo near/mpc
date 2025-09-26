@@ -278,9 +278,14 @@ async fn only_one_vote_from_participant() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     dbg!(contract.id());
 
+    let current_contract_proposal = || ProposeUpdateArgs {
+        code: Some(current_contract().clone()),
+        config: None,
+    };
+
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
+        .args_borsh(current_contract_proposal())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
@@ -292,7 +297,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
+        .args_borsh(current_contract_proposal())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
