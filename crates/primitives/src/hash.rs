@@ -10,7 +10,6 @@ use derive_more::{AsRef, Deref, Into};
 )]
 #[derive(
     Debug,
-    Copy,
     Clone,
     PartialEq,
     Eq,
@@ -59,11 +58,9 @@ impl<T> Hash32<T> {
 )]
 #[derive(
     Debug,
-    Copy,
     Clone,
     PartialEq,
     Eq,
-    Hash,
     serde::Serialize,
     serde::Deserialize,
     BorshSerialize,
@@ -77,11 +74,9 @@ pub struct Image;
 )]
 #[derive(
     Debug,
-    Copy,
     Clone,
     PartialEq,
     Eq,
-    Hash,
     serde::Serialize,
     serde::Deserialize,
     BorshSerialize,

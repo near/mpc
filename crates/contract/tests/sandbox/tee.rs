@@ -53,11 +53,11 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     // Second vote - should reach threshold
     vote_for_hash(&accounts[1], &contract, &allowed_mpc_image_digest).await?;
     let allowed_hashes = get_allowed_hashes(&contract).await?;
-    assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest]);
+    assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
     // latest_code_hash should return the same hash as the one in allowed_code_hashes
     assert_eq!(
         get_latest_code_hash(&contract).await?,
-        Some(allowed_mpc_image_digest)
+        Some(allowed_mpc_image_digest.clone())
     );
 
     // Additional votes - should not change the allowed hashes
@@ -66,11 +66,11 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         vote_for_hash(&accounts[2], &contract, &allowed_mpc_image_digest).await?;
         // Should still have exactly one hash
         let allowed_hashes = get_allowed_hashes(&contract).await?;
-        assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest]);
+        assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
         // latest_code_hash should still return the same hash
         assert_eq!(
             get_latest_code_hash(&contract).await?,
-            Some(allowed_mpc_image_digest)
+            Some(allowed_mpc_image_digest.clone())
         );
     }
 
@@ -98,8 +98,11 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 
     // Verify first hash is allowed
     let allowed_hashes = get_allowed_hashes(&contract).await?;
-    assert_eq!(allowed_hashes, vec![first_hash]);
-    assert_eq!(get_latest_code_hash(&contract).await?, Some(first_hash));
+    assert_eq!(allowed_hashes, vec![first_hash.clone()]);
+    assert_eq!(
+        get_latest_code_hash(&contract).await?,
+        Some(first_hash.clone())
+    );
 
     // Participant 0 changes vote to second hash
     vote_for_hash(&accounts[0], &contract, &second_hash).await?;
@@ -107,8 +110,11 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     // First hash should still be allowed (participant 1 still votes for it)
     // Second hash should not be allowed yet (only 1 vote)
     let allowed_hashes = get_allowed_hashes(&contract).await?;
-    assert_eq!(allowed_hashes, vec![first_hash]);
-    assert_eq!(get_latest_code_hash(&contract).await?, Some(first_hash));
+    assert_eq!(allowed_hashes, vec![first_hash.clone()]);
+    assert_eq!(
+        get_latest_code_hash(&contract).await?,
+        Some(first_hash.clone())
+    );
 
     // Participant 2 votes for second hash - should reach threshold
     vote_for_hash(&accounts[2], &contract, &second_hash).await?;
@@ -119,7 +125,10 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     assert!(allowed_hashes.contains(&first_hash));
     assert!(allowed_hashes.contains(&second_hash));
     // Latest should be the second hash (most recently added)
-    assert_eq!(get_latest_code_hash(&contract).await?, Some(second_hash));
+    assert_eq!(
+        get_latest_code_hash(&contract).await?,
+        Some(second_hash.clone())
+    );
 
     // Participant 1 also changes vote to second hash
     vote_for_hash(&accounts[1], &contract, &second_hash).await?;

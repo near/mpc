@@ -24,7 +24,7 @@ impl CodeHashesVotes {
     ) -> u64 {
         if self
             .proposal_by_account
-            .insert(participant.clone(), proposal)
+            .insert(participant.clone(), proposal.clone())
             .is_some()
         {
             log!("removed old vote for signer");
@@ -119,7 +119,7 @@ impl AllowedDockerImageHashes {
             self.allowed_tee_proposals.remove(pos);
         }
 
-        let docker_compose_hash = Self::get_docker_compose_hash(code_hash);
+        let docker_compose_hash = Self::get_docker_compose_hash(code_hash.clone());
 
         let new_entry = AllowedMpcDockerImage {
             image_hash: code_hash,

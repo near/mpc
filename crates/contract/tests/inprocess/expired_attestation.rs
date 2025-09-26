@@ -583,8 +583,8 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // Test late-joining nodes at current time T=20s (after hash_v1 expired)
     // Only hash_v2 and hash_v3 should be valid for new nodes
     // Reuse existing node_ids (nodes 2 and 3 since hash_v1 expired)
-    for (node, &hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
-        let late_attestation = TestSetup::create_attestation_with_hash_constraint(*hash);
+    for (node, hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
+        let late_attestation = TestSetup::create_attestation_with_hash_constraint(**hash);
         test_setup.submit_attestation_for_node(node, late_attestation);
     }
 

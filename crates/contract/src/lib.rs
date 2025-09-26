@@ -950,7 +950,7 @@ impl MpcContract {
         };
 
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
-        let votes = self.tee_state.vote(code_hash, &participant);
+        let votes = self.tee_state.vote(code_hash.clone(), &participant);
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -981,11 +981,11 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        *self
-            .tee_state
+        self.tee_state
             .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
             .last()
             .expect("there must be at least one allowed code hash")
+            .clone()
     }
 
     /// Returns all accounts that have TEE attestations stored in the contract.

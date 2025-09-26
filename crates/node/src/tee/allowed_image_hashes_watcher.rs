@@ -219,7 +219,7 @@ mod tests {
     async fn test_latest_allowed_image_hash_is_written(
         #[case] allowed_images: Vec<MpcDockerImageHash>,
     ) {
-        let latest_allowed_image = allowed_images[0];
+        let latest_allowed_image = allowed_images[0].clone();
         let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
@@ -244,7 +244,7 @@ mod tests {
 
         let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token.child_token(),
-            current_image,
+            current_image.clone(),
             receiver,
             storage_mock,
             sender_shutdown,
@@ -306,7 +306,7 @@ mod tests {
         let allowed_image = image_hash_2();
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(vec![allowed_image]);
+        let (_sender, receiver) = watch::channel(vec![allowed_image.clone()]);
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         let write_is_called = Arc::new(Notify::new());
