@@ -24,7 +24,7 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
-        test_utils::{bogus_ed25519_near_public_key, bogus_secp256k1_near_public_key},
+        test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
@@ -38,6 +38,7 @@ use mpc_contract::{
 use near_sdk::{log, CurveType, Gas, PublicKey};
 use near_workspaces::{
     network::Sandbox,
+    operations::TransactionStatus,
     result::ExecutionFinalResult,
     types::{AccountId, NearToken},
     Account, Contract, Worker,
@@ -275,6 +276,7 @@ pub async fn init_with_candidates(
     (worker, contract, accounts)
 }
 
+#[derive(Debug)]
 pub enum SharedSecretKey {
     Secp256k1(k256::elliptic_curve::SecretKey<k256::Secp256k1>),
     Ed25519(KeygenOutput),
@@ -386,19 +388,25 @@ pub fn derive_secret_key_ed25519(secret_key: &KeygenOutput, tweak: &Tweak) -> Ke
     }
 }
 
-pub async fn create_response(
+pub async fn create_message_payload_and_response(
+    domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
     sk: &SharedSecretKey,
 ) -> (Payload, SignatureRequest, SignatureResponse) {
     match sk {
-        SharedSecretKey::Secp256k1(sk) => create_response_secp256k1(predecessor_id, msg, path, sk),
-        SharedSecretKey::Ed25519(sk) => create_response_ed25519(predecessor_id, msg, path, sk),
+        SharedSecretKey::Secp256k1(sk) => {
+            create_response_secp256k1(domain_id, predecessor_id, msg, path, sk)
+        }
+        SharedSecretKey::Ed25519(sk) => {
+            create_response_ed25519(domain_id, predecessor_id, msg, path, sk)
+        }
     }
 }
 
 pub fn create_response_secp256k1(
+    domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
@@ -420,7 +428,7 @@ pub fn create_response_secp256k1(
 
     let s = signature.s();
     let (r_bytes, _s_bytes) = signature.split_bytes();
-    let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
+    let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
     let big_r =
         AffinePoint::decompress(&r_bytes, k256::elliptic_curve::subtle::Choice::from(0)).unwrap();
     let s: k256::Scalar = *s.as_ref();
@@ -447,6 +455,7 @@ pub fn create_response_secp256k1(
 }
 
 pub fn create_response_ed25519(
+    domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
@@ -475,7 +484,7 @@ pub fn create_response_ed25519(
     let bytes = Bytes::new(payload.into()).unwrap();
     let payload = Payload::Eddsa(bytes);
 
-    let respond_req = SignatureRequest::new(DomainId(0), payload.clone(), predecessor_id, path);
+    let respond_req = SignatureRequest::new(domain_id, payload.clone(), predecessor_id, path);
 
     let signature_response = SignatureResponse::Ed25519 {
         signature: ed25519_types::Signature::new(signature),
@@ -484,11 +493,10 @@ pub fn create_response_ed25519(
     (payload, respond_req, signature_response)
 }
 
-pub async fn sign_and_validate(
+pub async fn submit_sign_request(
     request: &SignRequestArgs,
-    respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<TransactionStatus> {
     let status = contract
         .call("sign")
         .args_json(serde_json::json!({
@@ -500,20 +508,40 @@ pub async fn sign_and_validate(
         .await?;
     dbg!(&status);
 
+    Ok(status)
+}
+
+pub async fn respond_to_sign_request(
+    respond_req: &SignatureRequest,
+    respond_resp: &SignatureResponse,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    // Call `respond` as if we are the MPC network itself.
+    let respond = contract
+        .call("respond")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    dbg!(&respond);
+
+    Ok(())
+}
+
+pub async fn sign_and_validate(
+    request: &SignRequestArgs,
+    respond: Option<(&SignatureRequest, &SignatureResponse)>,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    let status = submit_sign_request(request, contract).await?;
+
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        // Call `respond` as if we are the MPC network itself.
-        let respond = contract
-            .call("respond")
-            .args_json(serde_json::json!({
-                "request": respond_req,
-                "response": respond_resp
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        dbg!(&respond);
+        respond_to_sign_request(respond_req, respond_resp, contract).await?;
     }
 
     let execution = status.await?;
@@ -522,13 +550,13 @@ pub async fn sign_and_validate(
 
     // Finally wait the result:
     let returned_resp: SignatureResponse = execution.json()?;
-    if let Some((_, respond_resp)) = respond {
+
+    if let Some((_respond_req, respond_resp)) = respond {
         assert_eq!(
             &returned_resp, respond_resp,
             "Returned signature request does not match"
         );
     }
-
     Ok(())
 }
 
@@ -728,13 +756,15 @@ pub async fn submit_tee_attestations(
 }
 
 /// This function assumes that the accounts are sorted by participant id.
-pub async fn call_contract_key_generation(
-    domains_to_add: &[DomainConfig],
+/// Returns the corresponding shared_secret_key in the same order as
+pub async fn call_contract_key_generation<const N: usize>(
+    domains_to_add: &[DomainConfig; N],
     accounts: &[Account],
     contract: &Contract,
     expected_epoch_id: u64,
-) {
+) -> [SharedSecretKey; N] {
     let account_with_lowest_participant_id = &accounts[0];
+    let mut private_key_shares = vec![];
 
     for (domain_attempt, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
@@ -775,13 +805,25 @@ pub async fn call_contract_key_generation(
 
         println!("start_keygen_instance completed");
 
-        let public_key = match domain.scheme {
-            SignatureScheme::Secp256k1 => bogus_secp256k1_near_public_key(),
-            SignatureScheme::Ed25519 => bogus_ed25519_near_public_key(),
+        let (shared_secret_key, public_key) = match domain.scheme {
+            SignatureScheme::Secp256k1 => {
+                let (public_key, private_key) = new_secp256k1();
+                let shared_secret_key = SharedSecretKey::Secp256k1(private_key);
+
+                (shared_secret_key, public_key)
+            }
+            SignatureScheme::Ed25519 => {
+                let (public_key, private_key) = new_ed25519();
+                let shared_secret_key = SharedSecretKey::Ed25519(private_key);
+
+                (shared_secret_key, public_key)
+            }
             SignatureScheme::CkdSecp256k1 => {
                 unimplemented!("Old contract does not support CKD.")
             }
         };
+
+        private_key_shares.push(shared_secret_key);
 
         let vote_pk_args = json!( {
             "key_event_id": {
@@ -813,4 +855,6 @@ pub async fn call_contract_key_generation(
             state => panic!("should be in running state. Actual state: {state:#?}"),
         };
     }
+
+    private_key_shares.try_into().unwrap()
 }
