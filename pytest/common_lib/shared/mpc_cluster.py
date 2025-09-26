@@ -471,7 +471,7 @@ class MpcCluster:
             ContractMethod.PROPOSE_UPDATE,
             args,
             # TODO: #771 https://github.com/near/mpc/issues/771
-            deposit=11178590000000000000000000,
+            deposit=11179820000000000000000000,
         )
         res = participant.send_txn_and_check_success(tx, timeout=30)
         return int(

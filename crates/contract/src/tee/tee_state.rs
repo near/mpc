@@ -179,7 +179,7 @@ impl TeeState {
         code_hash: MpcDockerImageHash,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
-        self.votes.vote(code_hash.clone(), participant)
+        self.votes.vote(code_hash, participant)
     }
 
     pub fn get_allowed_mpc_docker_image_hashes(
@@ -207,7 +207,7 @@ impl TeeState {
     ) {
         self.votes.clear_votes();
         self.allowed_launcher_compose_hashes.push(
-            AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
+            AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal),
         );
         self.allowed_docker_image_hashes
             .insert(tee_proposal, tee_upgrade_deadline_duration);
