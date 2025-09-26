@@ -100,6 +100,7 @@ impl TestSetup {
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: participant_info.sign_pk.clone(),
+                account_public_key: None,
             })
             .collect()
     }
@@ -165,6 +166,7 @@ fn test_participant_kickout_after_expiration() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -182,6 +184,7 @@ fn test_participant_kickout_after_expiration() {
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),   
     };
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);
@@ -264,6 +267,7 @@ fn test_clean_tee_status_removes_non_participants() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -276,6 +280,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);

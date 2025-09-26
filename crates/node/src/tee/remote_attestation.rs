@@ -89,10 +89,12 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
+    account_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = *tls_public_key.into_dto_type().as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key);
+    let tls_sdk_public_key = tls_public_key.to_bytes();
+    let account_sdk_public_key = account_public_key.to_bytes();
+    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     loop {
@@ -121,6 +123,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
+    account_public_key: VerifyingKey,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
@@ -130,6 +133,13 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             tls_public_key.to_bytes().to_vec(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
+        account_public_key: Some(
+            near_sdk::PublicKey::from_parts(
+                near_sdk::CurveType::ED25519,
+                account_public_key.to_bytes().to_vec(),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e))?
+        ),
     };
 
     let initially_available =
@@ -142,8 +152,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let tls_sdk_public_key = *tls_public_key.as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key);
+    let tls_sdk_public_key = tls_public_key.to_bytes();
+    let account_sdk_public_key = account_public_key.to_bytes();
+    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     while tee_accounts_receiver.changed().await.is_ok() {
@@ -287,15 +298,20 @@ mod tests {
                 vec![0u8; 32],
             )
             .unwrap(),
+            account_public_key: Some(
+                near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, vec![0u8; 32])
+                    .unwrap(),
+            ),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let key = SigningKey::generate(&mut rng).verifying_key();
-
+        let tls_key = SigningKey::generate(&mut rng).verifying_key();
+        let account_key = SigningKey::generate(&mut rng).verifying_key();
         let handle = tokio::spawn(periodic_attestation_submission(
             tee_authority,
             sender.clone(),
-            key,
+            tls_key,
+            account_key,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
@@ -309,6 +325,7 @@ mod tests {
         let node_account_id: AccountId = "test_node.near".parse().unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key = SigningKey::generate(&mut rng).verifying_key();
+        let account_public_key = SigningKey::generate(&mut rng).verifying_key();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
@@ -318,6 +335,13 @@ mod tests {
                 tls_public_key.to_bytes().to_vec(),
             )
             .unwrap(),
+            account_public_key: Some(
+                near_sdk::PublicKey::from_parts(
+                    near_sdk::CurveType::ED25519,
+                    account_public_key.to_bytes().to_vec(),
+                )
+                .unwrap(),
+            ),
         };
 
         // Create initial TEE accounts list including our node
@@ -332,6 +356,7 @@ mod tests {
             tee_authority,
             mock_sender.clone(),
             tls_public_key,
+            account_public_key,
             receiver,
         ));
 
