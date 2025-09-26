@@ -104,6 +104,7 @@ impl TestContract {
         fn build_ckd_calls(
             target_contract: &AccountId,
             domain_map: &BTreeMap<u64, u64>,
+            seed: u64,
         ) -> Vec<Promise> {
             domain_map
                 .iter()
@@ -112,7 +113,7 @@ impl TestContract {
                         let args = CKDArgs {
                             request: CKDRequestArgs {
                                 domain_id: *domain_id,
-                                app_public_key: generate_app_public_key(i as u128 + 2),
+                                app_public_key: generate_app_public_key((seed + i + 2) as u128),
                             },
                         };
 
@@ -140,7 +141,11 @@ impl TestContract {
             seed + 1_000_000, // tweak seed offset to avoid collision if needed
             &|hex| Payload::Eddsa(hex),
         ));
-        promises.extend(build_ckd_calls(&target_contract, &ckd_calls_by_domain));
+        promises.extend(build_ckd_calls(
+            &target_contract,
+            &ckd_calls_by_domain,
+            seed,
+        ));
 
         // Combine the calls using promise::and
         promises.reverse();
