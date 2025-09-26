@@ -1,3 +1,4 @@
+use crate::sandbox::common::propose_and_vote_contract_update_to_current_binary;
 use crate::sandbox::common::{
     call_contract_key_generation, create_message_payload_and_response, current_contract,
     gen_accounts, respond_to_sign_request, submit_sign_request, PARTICIPANT_LEN,
@@ -141,21 +142,36 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// Verifies that upgrading the contract preserves all state and functionality.
-///
-/// Steps:
-/// 1. Deploy an old version of the contract.
-/// 2. Initialize it with participants.
-/// 3. Submit a parameter update proposal.
-/// 4. Register multiple domains with both `Ed25519` and `Secp256k1` schemes.
-/// 5. Submit pending signature requests across those domains.
-/// 6. Capture the pre-upgrade state.
-/// 7. Upgrade to the new version and run `migrate()`.
-/// 8. Assert that the state (participants, domains, proposals, signature requests, etc.) is unchanged.
-/// 9. Verify that pending signature requests created before the upgrade can still be responded to afterward
+/// Ensures that contracts deployed with the production binary (Mainnet or Testnet)
+/// can be upgraded to the [`current_contract`] binary using the proposal-and-vote flow.
 #[rstest]
 #[tokio::test]
-async fn upgrade_keeps_participants_and_domains_intact(
+async fn propose_upgrade_from_production_to_current_binary(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, _participants) = init_contract(worker, &contract).await.unwrap();
+
+    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await
+}
+
+//// Verifies that upgrading the contract preserves state and functionality.
+///
+/// This test:
+/// 1. Deploys an older version of the contract.
+/// 2. Initializes it with participants and submits a parameter update proposal.
+/// 3. Adds multiple domains with both `Ed25519` and `Secp256k1` schemes.
+/// 4. Submits pending signature requests across those domains.
+/// 5. Captures the full pre-upgrade state.
+/// 6. Upgrades the contract to the new version and runs `migrate()`.
+/// 7. Asserts that the state (participants, domains, proposals, signature requests, etc.)
+///    is identical post-upgrade.
+/// 8. Confirms that pending signature requests created before the upgrade
+///    can still be responded to afterward.
+#[rstest]
+#[tokio::test]
+async fn upgrade_preserves_state_and_requests(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
     const EPOCH_ID: u64 = 0;

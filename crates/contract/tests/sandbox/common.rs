@@ -29,7 +29,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
     tee::tee_state::NodeId,
-    update::UpdateId,
+    update::{ProposeUpdateArgs, UpdateId},
 };
 use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
@@ -76,6 +76,13 @@ pub const PARTICIPANT_LEN: usize = 3;
 /// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
 /// unexpectedly in the future.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
+
+/// This is the current deposit required for a contract deploy. This is subject to change but make
+/// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
+/// not be getting that big.
+///
+/// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13333);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -648,6 +655,61 @@ pub async fn derive_confidential_key_and_validate(
     }
 
     Ok(())
+}
+
+/// Upgrades the given contract to the [`current_contract`] binary.
+///
+/// This function:
+/// 1. Submits a proposal to upgrade the contract.
+/// 2. Casts votes until the proposal is executed.
+/// 3. Verifies the contract was upgraded by checking the code hash.
+///
+/// Panics if:
+/// - The proposal transaction fails,
+/// - The state call is not deserializable,
+/// - Or the post-upgrade code hash does not match the expected binary.
+pub async fn propose_and_vote_contract_update_to_current_binary(
+    accounts: &[Account],
+    contract: &Contract,
+) {
+    let new_contract_binary = current_contract();
+    let propose_update_execution = accounts[0]
+        .call(contract.id(), "propose_update")
+        .args_borsh(ProposeUpdateArgs {
+            code: Some(new_contract_binary.to_vec()),
+            config: None,
+        })
+        .max_gas()
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await
+        .expect("propose update call succeeds");
+
+    assert!(
+        propose_update_execution.is_success(),
+        "propose update call failed"
+    );
+
+    let proposal_id: UpdateId = propose_update_execution.json().unwrap();
+
+    // Try calling into state and see if it works.
+    let state_request_execution = accounts[0]
+        .call(contract.id(), "state")
+        .transact()
+        .await
+        .expect("state request succeeds");
+
+    let _state: ProtocolContractState = state_request_execution
+        .json()
+        .expect("state is deserializable.");
+
+    vote_update_till_completion(contract, accounts, &proposal_id).await;
+
+    let code_hash_post_upgrade = contract.view_code().await.unwrap();
+    assert_eq!(
+        *new_contract_binary, code_hash_post_upgrade,
+        "Code hash post upgrade is not matching the proposed binary."
+    );
 }
 
 pub async fn vote_update_till_completion(

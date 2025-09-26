@@ -1,4 +1,7 @@
-use crate::sandbox::common::{init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH};
+use crate::sandbox::common::{
+    current_contract, init_env_secp256k1, propose_and_vote_contract_update_to_current_binary,
+    vote_update_till_completion, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+};
 use mpc_contract::config::Config;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -11,14 +14,6 @@ pub fn dummy_contract() -> ProposeUpdateArgs {
     }
 }
 
-pub fn current_contract() -> ProposeUpdateArgs {
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    ProposeUpdateArgs {
-        code: Some(new_wasm),
-        config: None,
-    }
-}
-
 pub fn invalid_contract() -> ProposeUpdateArgs {
     let new_wasm = b"invalid wasm".to_vec();
     ProposeUpdateArgs {
@@ -26,13 +21,6 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
         config: None,
     }
 }
-
-/// This is the current deposit required for a contract deploy. This is subject to change but make
-/// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
-/// not be getting that big.
-///
-/// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13333);
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -142,32 +130,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    dbg!(contract.id());
-
-    let execution = accounts[0]
-        .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(&contract, &accounts, &proposal_id).await;
-
-    // Try calling into state and see if it works.
-    let execution = accounts[0]
-        .call(contract.id(), "state")
-        .transact()
-        .await
-        .unwrap();
-
-    dbg!(&execution);
-
-    let state: ProtocolContractState = execution.json().unwrap();
-    dbg!(state);
+    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
 }
 
 #[tokio::test]
@@ -298,30 +261,7 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
 
     for _ in 0..3 {
-        let execution = accounts[0]
-            .call(contract.id(), "propose_update")
-            .args_borsh((current_contract(),))
-            .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-            .transact()
-            .await
-            .unwrap();
-        dbg!(&execution);
-        assert!(execution.is_success());
-        let proposal_id: UpdateId = execution.json().unwrap();
-        vote_update_till_completion(&contract, &accounts, &proposal_id).await;
-
-        // Try calling into state and see if it works.
-        let execution = accounts[0]
-            .call(contract.id(), "state")
-            .transact()
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        let state: ProtocolContractState = execution.json().unwrap();
-        dbg!(state);
+        propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
     }
 }
 
