@@ -86,8 +86,15 @@ async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
     Ok(new_contract)
 }
 
-async fn migrate(contract: &Contract) -> anyhow::Result<()> {
+/// Migrates the contract to a current contract build
+/// and sanity checks that the upgraded code matches compiled contract bytes.
+async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
     contract.call("migrate").transact().await?.into_result()?;
+    let code_hash_post_upgrade = contract.view_code().await.unwrap();
+    let current_code_hash = current_contract();
+
+    assert_eq!(*current_code_hash, code_hash_post_upgrade);
+
     Ok(())
 }
 
@@ -120,7 +127,7 @@ async fn back_compatibility_without_state(
     println!("🟨 Found breaking changes in the contract state.");
     println!("⚙️ Testing migration() call...");
 
-    migrate(&contract)
+    migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ Back compatibility check failed: migration() failed");
 
@@ -239,7 +246,7 @@ async fn upgrade_keeps_participants_and_domains_intact(
     assert!(healthcheck(&contract).await.unwrap());
 
     let contract = upgrade_to_new(contract).await.unwrap();
-    migrate(&contract)
+    migrate_and_assert_contract_code(&contract)
         .await
         .expect("❌ Back compatibility check failed: migration() failed");
 
