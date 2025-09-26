@@ -89,11 +89,11 @@ fund any necessary accounts using as many Testnet faucets as needed.
 ## Creating an MPC Network
 
 First, create an MPC network. Pick a name; here I'll use
-"JOB_NAME=yourusername-test", but **ensure that your name is globally unique
+"MPC_NETWORK_NAME=yourusername-test", but **ensure that your name is globally unique
 within the team**, so include your username in there.
 
 ```shell
-export JOB_NAME=yourusername-test
+export MPC_NETWORK_NAME=yourusername-test
 mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
