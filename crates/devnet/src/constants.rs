@@ -10,6 +10,6 @@ pub const PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL: u128 = 70;
 pub const DEFAULT_MPC_DOCKER_IMAGE: &str = "nearone/mpc-node-gcp:testnet-release";
 /// The default parallel signing contract path to test with.
 pub const DEFAULT_PARALLEL_SIGN_CONTRACT_PATH: &str =
-    "../pytest/tests/test_contracts/parallel/res/contract.wasm";
+    "../../target/wasm32-unknown-unknown/release-contract/test_parallel_contract.wasm";
 /// Address of the mpc contract on testnet
 pub const TESTNET_CONTRACT_ACCOUNT_ID: &str = "v1.signer-prod.testnet";
