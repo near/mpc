@@ -24,7 +24,7 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
-        test_utils::bogus_ed25519_near_public_key,
+        test_utils::{bogus_ed25519_near_public_key, bogus_secp256k1_near_public_key},
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
@@ -727,13 +727,16 @@ pub async fn submit_tee_attestations(
     Ok(())
 }
 
+/// This function assumes that the accounts are sorted by participant id.
 pub async fn call_contract_key_generation(
-    domains_to_add: Vec<DomainConfig>,
+    domains_to_add: &[DomainConfig],
     accounts: &[Account],
     contract: &Contract,
     expected_epoch_id: u64,
 ) {
-    for (domain_attempt, domain) in domains_to_add.into_iter().enumerate() {
+    let account_with_lowest_participant_id = &accounts[0];
+
+    for (domain_attempt, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
             check_call_success(
                 account
@@ -756,7 +759,7 @@ pub async fn call_contract_key_generation(
         };
 
         check_call_success(
-            accounts[0]
+            account_with_lowest_participant_id
                 .call(contract.id(), "start_keygen_instance")
                 .args_json(json!({
                     "key_event_id": {
@@ -773,14 +776,7 @@ pub async fn call_contract_key_generation(
         println!("start_keygen_instance completed");
 
         let public_key = match domain.scheme {
-            SignatureScheme::Secp256k1 => {
-                let dummy_bytes = [*domain.id as u8; 64];
-                near_sdk::PublicKey::from_parts(
-                    near_sdk::CurveType::SECP256K1,
-                    dummy_bytes.to_vec(),
-                )
-                .unwrap()
-            }
+            SignatureScheme::Secp256k1 => bogus_secp256k1_near_public_key(),
             SignatureScheme::Ed25519 => bogus_ed25519_near_public_key(),
             SignatureScheme::CkdSecp256k1 => {
                 unimplemented!("Old contract does not support CKD.")

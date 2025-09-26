@@ -157,7 +157,7 @@ async fn upgrade_keeps_participants_and_domains_intact(
 
     // Add the domains above to the contract so we have additional state on the contract
     // that should be persisted after the upgrade
-    call_contract_key_generation(domains_to_add, &accounts, &contract, EPOCH_ID).await;
+    call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
