@@ -8,6 +8,7 @@ license = "MIT"
 
 [dependencies]
 auto_ops = "0.3.0"
+blstrs = "0.7.1"
 borsh = "1.5.7"
 byteorder = "1.5.0"
 digest = "0.10.7"
@@ -16,7 +17,6 @@ elliptic-curve = { version = "0.13.5", features = ["serde"] }
 frost-core = { version = "2.1.0", default-features = false, features = [
   "serialization",
   "std",
-  "internals",
 ] }
 frost-ed25519 = { version = "2.1.0", default-features = false, features = [
   "serialization",
