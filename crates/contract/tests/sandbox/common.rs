@@ -835,7 +835,6 @@ pub async fn call_contract_key_generation<const N: usize>(
         });
 
         for account in accounts {
-            println!("Voting for domain {:?}", domain.id);
             check_call_success(
                 account
                     .call(contract.id(), "vote_pk")

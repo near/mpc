@@ -15,6 +15,7 @@ use mpc_contract::{
 };
 use near_workspaces::{network::Sandbox, operations::TransactionStatus, Account, Contract, Worker};
 use rstest::rstest;
+use serde_json::json;
 
 enum Network {
     Testnet,
@@ -133,15 +134,18 @@ async fn back_compatibility_without_state(
     )
 }
 
-/// Verifies that upgrading the contract does not alter its state.
+/// Verifies that upgrading the contract preserves all state and functionality.
 ///
 /// Steps:
 /// 1. Deploy an old version of the contract.
-/// 2. Initialize it with participants and multiple domains.
-/// 3. Add pending signature requests.
-/// 4. Capture the pre-upgrade state.
-/// 5. Upgrade to the new version and run migration.
-/// 6. Assert that the state, which contains participants, domains, signature requests, etc., is unchanged.
+/// 2. Initialize it with participants.
+/// 3. Submit a parameter update proposal.
+/// 4. Register multiple domains with both `Ed25519` and `Secp256k1` schemes.
+/// 5. Submit pending signature requests across those domains.
+/// 6. Capture the pre-upgrade state.
+/// 7. Upgrade to the new version and run `migrate()`.
+/// 8. Assert that the state (participants, domains, proposals, signature requests, etc.) is unchanged.
+/// 9. Verify that pending signature requests created before the upgrade can still be responded to afterward
 #[rstest]
 #[tokio::test]
 async fn upgrade_keeps_participants_and_domains_intact(
@@ -151,7 +155,7 @@ async fn upgrade_keeps_participants_and_domains_intact(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, _participants) = init_contract(worker, &contract).await.unwrap();
+    let (accounts, participants) = init_contract(worker, &contract).await.unwrap();
 
     let domains_to_add = [
         DomainConfig {
@@ -168,13 +172,30 @@ async fn upgrade_keeps_participants_and_domains_intact(
         },
     ];
 
+    // Create a proposal to increase threshold to 3.
+    let dummy_threshold_parameters =
+        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+    let arbitrary_participant_account = &accounts[0];
+    let dummy_proposal = json!({
+        "prospective_epoch_id": 1,
+        "proposal": dummy_threshold_parameters,
+    });
+
+    arbitrary_participant_account
+        .call(contract.id(), "vote_new_parameters")
+        .args_json(dummy_proposal)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .unwrap();
+
     // Add the domains above to the contract so we have additional state on the contract
     // that should be persisted after the upgrade
     let shared_secret_keys =
         call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
 
     let signature_request_payloads = ["hello world", "hello world!!!!"];
-
     let mut pending_sign_requests = vec![];
     let predecessor_id = contract.id();
     let path = "test";
@@ -229,6 +250,8 @@ async fn upgrade_keeps_participants_and_domains_intact(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
+
+    println!("✅ Protocol state was preserved post upgrade. 👍");
 
     // Check that pending signature requests added pre upgrade can be responded to post upgrade.
     for pending_sign_request in pending_sign_requests {
