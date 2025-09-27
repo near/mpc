@@ -608,12 +608,6 @@ pub fn example_secp256k1_point() -> PublicKey {
     "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
 }
 
-pub fn example_edd25519_point() -> PublicKey {
-    "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
-        .parse()
-        .unwrap()
-}
-
 // based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
 fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
     const DOMAIN: &[u8] = b"NEAR CURVE_XOF:SHAKE-256_SSWU_RO_";
