@@ -5,22 +5,7 @@ use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{store::IterableMap, AccountId};
 use std::collections::{HashMap, HashSet};
 
-#[derive(
-    Copy,
-    Clone,
-    Default,
-    Debug,
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-)]
-pub struct UpdateId(pub(crate) u64);
+use crate::update::UpdateId;
 
 /// Dynamic value is used to store any kind of value in the contract state. These values
 /// can be deserialized on the fly to get the actual configurations, but the contract will

@@ -5,8 +5,9 @@ use crate::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use anyhow::Context;
 use near_sdk::{AccountId, CurveType, PublicKey};
-use rand::{distributions::Uniform, Rng};
+use rand::{distributions::Uniform, rngs::OsRng, Rng};
 use std::collections::BTreeMap;
 
 pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
@@ -27,6 +28,16 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
 
 pub fn bogus_ed25519_near_public_key() -> PublicKey {
     bogus_ed25519_public_key_extended().into()
+}
+
+pub fn bogus_secp256k1_near_public_key() -> PublicKey {
+    let private_key = k256::ecdsa::SigningKey::random(&mut OsRng);
+    let public_key = private_key.verifying_key();
+    let public_key_bytes = public_key.to_encoded_point(false).to_bytes();
+
+    near_sdk::PublicKey::from_parts(CurveType::SECP256K1, public_key_bytes[1..65].to_vec())
+        .context("Failed to convert public key to near crypto type")
+        .unwrap()
 }
 
 #[test]

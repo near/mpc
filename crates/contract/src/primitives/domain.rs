@@ -1,5 +1,6 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
+use derive_more::{Deref, From};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -7,7 +8,7 @@ use std::fmt::Display;
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, From, Deref)]
 pub struct DomainId(pub u64);
 
 impl Default for DomainId {
@@ -96,7 +97,10 @@ impl DomainRegistry {
         for domain in domains {
             let new_domain_id = new_registry.add_domain(domain.scheme);
             if new_domain_id != domain.id {
-                return Err(DomainError::NewDomainIdsNotContiguous.into());
+                return Err(DomainError::NewDomainIdsNotContiguous {
+                    expected_id: new_domain_id,
+                }
+                .into());
             }
         }
         Ok(new_registry)
