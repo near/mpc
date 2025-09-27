@@ -371,6 +371,8 @@ async fn only_one_vote_from_participant() {
 /// the migration contract, [`migration_contract`].
 #[tokio::test]
 async fn update_from_current_contract_to_migration_contract() {
+    // We don't add any initial domains on init, since we will domains
+    // in add_dummy_state_and_pending_sign_requests call below.
     let (_worker, contract, accounts) = init_with_candidates(vec![]).await;
 
     let ProtocolContractState::Running(running_state): ProtocolContractState =
