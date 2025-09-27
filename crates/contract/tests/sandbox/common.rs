@@ -518,7 +518,7 @@ pub async fn submit_sign_request(
     Ok(status)
 }
 
-pub async fn respond_to_sign_request(
+pub async fn submit_signature_response(
     respond_req: &SignatureRequest,
     respond_resp: &SignatureResponse,
     contract: &Contract,
@@ -548,7 +548,7 @@ pub async fn sign_and_validate(
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        respond_to_sign_request(respond_req, respond_resp, contract).await?;
+        submit_signature_response(respond_req, respond_resp, contract).await?;
     }
 
     let execution = status.await?;

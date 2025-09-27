@@ -1,7 +1,7 @@
 use crate::sandbox::common::propose_and_vote_contract_update_to_current_binary;
 use crate::sandbox::common::{
     call_contract_key_generation, create_message_payload_and_response, current_contract,
-    gen_accounts, respond_to_sign_request, submit_sign_request, PARTICIPANT_LEN,
+    gen_accounts, submit_sign_request, submit_signature_response, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     crypto_shared::SignatureResponse,
@@ -275,7 +275,7 @@ async fn upgrade_preserves_state_and_requests(
     for pending_sign_request in pending_sign_requests {
         let signature_response_sent_to_contract = &pending_sign_request.signature_response;
 
-        respond_to_sign_request(
+        submit_signature_response(
             &pending_sign_request.signature_request,
             signature_response_sent_to_contract,
             &contract,
