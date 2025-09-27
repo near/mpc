@@ -49,7 +49,7 @@ pub(crate) async fn metrics() -> String {
 #[derive(Clone)]
 struct WebServerState {
     /// Root task handle for the whole program.
-    root_task_handle: OnceLock<Arc<TaskHandle>>,
+    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
@@ -187,7 +187,7 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
 pub async fn start_web_server(
-    root_task_handle: OnceLock<Arc<TaskHandle>>,
+    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,

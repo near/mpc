@@ -256,7 +256,7 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let web_server = start_web_server(
-                    root_task,
+                    root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
                     StaticWebData::new(&self.secrets, None),

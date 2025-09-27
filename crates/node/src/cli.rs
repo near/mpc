@@ -245,7 +245,7 @@ impl StartCmd {
 
         // Create communication channels and runtime
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-        let root_task_handle = OnceLock::new();
+        let root_task_handle = Arc::new(OnceLock::new());
 
         let root_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -348,7 +348,9 @@ impl StartCmd {
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
         attestation: Attestation,
         debug_request_sender: broadcast::Sender<DebugRequest>,
-        root_task_handle_once_lock: OnceLock<Arc<tracking::TaskHandle>>,
+        // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
+        // Otherwise we would not write to the same cell/lock.
+        root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
