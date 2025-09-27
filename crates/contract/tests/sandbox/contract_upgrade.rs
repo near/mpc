@@ -4,7 +4,6 @@ use crate::sandbox::common::{
     gen_accounts, respond_to_sign_request, submit_sign_request, PARTICIPANT_LEN,
 };
 use mpc_contract::{
-    config::InitConfig,
     crypto_shared::SignatureResponse,
     primitives::{
         domain::{DomainConfig, SignatureScheme},
@@ -50,10 +49,6 @@ async fn init_contract(
         .call("init")
         .args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "init_config": Some(InitConfig {
-                key_event_timeout_blocks: Some(10_000),
-                ..Default::default()
-            }),
         }))
         .transact()
         .await?
