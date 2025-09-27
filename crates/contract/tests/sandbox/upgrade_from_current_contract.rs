@@ -7,14 +7,14 @@ use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
 
-pub fn dummy_contract() -> ProposeUpdateArgs {
+pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
         code: Some(vec![1, 2, 3]),
         config: None,
     }
 }
 
-pub fn invalid_contract() -> ProposeUpdateArgs {
+pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
     let new_wasm = b"invalid wasm".to_vec();
     ProposeUpdateArgs {
         code: Some(new_wasm),
@@ -61,7 +61,7 @@ async fn test_propose_update_config() {
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
-        .args_borsh((dummy_contract(),))
+        .args_borsh((dummy_contract_proposal(),))
         .transact()
         .await
         .unwrap();
@@ -150,7 +150,7 @@ async fn test_invalid_contract_deploy() {
     // Let's propose a contract update instead now.
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((invalid_contract(),))
+        .args_borsh((invalid_contract_proposal(),))
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()
@@ -238,7 +238,7 @@ async fn test_propose_incorrect_updates() {
     // Can not propose update both to code and config
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((dummy_contract(), dummy_config))
+        .args_borsh((dummy_contract_proposal(), dummy_config))
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
