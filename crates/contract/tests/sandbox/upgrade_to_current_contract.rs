@@ -35,7 +35,7 @@ struct PendingSignRequest {
     signature_response: SignatureResponse,
 }
 
-async fn init_contract(
+async fn init_old_contract(
     worker: Worker<Sandbox>,
     contract: &Contract,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
@@ -109,7 +109,7 @@ async fn back_compatibility_without_state(
 
     let contract = deploy_old(&worker, network).await?;
 
-    init_contract(worker, &contract).await?;
+    init_old_contract(worker, &contract).await?;
 
     assert!(healthcheck(&contract).await?);
 
@@ -146,7 +146,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 ) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, _participants) = init_contract(worker, &contract).await.unwrap();
+    let (accounts, _participants) = init_old_contract(worker, &contract).await.unwrap();
 
     propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await
 }
@@ -173,7 +173,7 @@ async fn upgrade_preserves_state_and_requests(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_contract(worker, &contract).await.unwrap();
+    let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
     let domains_to_add = [
         DomainConfig {
