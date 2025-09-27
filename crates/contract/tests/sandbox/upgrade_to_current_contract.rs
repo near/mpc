@@ -94,6 +94,95 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
     Ok(())
 }
 
+struct InjectedContractState {
+    pending_sign_requests: Vec<PendingSignRequest>,
+}
+
+/// Adds dummy state to a contract (threshold proposal, domains, sign requests)
+/// so that migration paths are exercised in upgrade tests.
+///
+/// The pending signature requests can be responded to.
+async fn add_dummy_state_and_pending_sign_requests(
+    accounts: &[Account],
+    participants: Participants,
+    contract: &Contract,
+) -> InjectedContractState {
+    const EPOCH_ID: u64 = 0;
+
+    // 1. Submit a threshold proposal (raise threshold to 3).
+    let dummy_threshold_parameters =
+        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+    let dummy_proposal = json!({
+        "prospective_epoch_id": 1,
+        "proposal": dummy_threshold_parameters,
+    });
+    accounts[0]
+        .call(contract.id(), "vote_new_parameters")
+        .args_json(dummy_proposal)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .unwrap();
+
+    // 2. Add multiple domains.
+    let domains_to_add = [
+        DomainConfig {
+            id: 0.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+        DomainConfig {
+            id: 1.into(),
+            scheme: SignatureScheme::Secp256k1,
+        },
+        DomainConfig {
+            id: 2.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+    ];
+    let shared_secret_keys =
+        call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
+
+    // 3. Submit pending sign requests.
+    let mut pending_sign_requests = vec![];
+    let path = "test";
+    let predecessor_id = contract.id();
+    let signature_request_payloads = ["hello world", "hello world!!!!"];
+
+    for (domain, shared_secret_key) in domains_to_add.iter().zip(shared_secret_keys.iter()) {
+        for message in signature_request_payloads {
+            let (payload, signature_request, signature_response) =
+                create_message_payload_and_response(
+                    domain.id,
+                    predecessor_id,
+                    message,
+                    path,
+                    shared_secret_key,
+                )
+                .await;
+
+            let request = SignRequestArgs {
+                payload_v2: Some(payload),
+                path: path.into(),
+                domain_id: Some(domain.id),
+                ..Default::default()
+            };
+
+            let transaction = submit_sign_request(&request, contract).await.unwrap();
+
+            pending_sign_requests.push(PendingSignRequest {
+                transaction,
+                signature_request,
+                signature_response,
+            });
+        }
+    }
+
+    InjectedContractState {
+        pending_sign_requests,
+    }
+}
+
 /// Checks the contract in the following order:
 /// 1. Are there any state-breaking changes?
 /// 2. If so, does `migrate()` still work correctly?
@@ -146,9 +235,23 @@ async fn propose_upgrade_from_production_to_current_binary(
 ) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, _participants) = init_old_contract(worker, &contract).await.unwrap();
+    let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
-    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await
+    // Add state so migration logic is exercised
+    add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+
+    let state_pre_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
+
+    let state_post_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    assert_eq!(
+        state_pre_upgrade, state_post_upgrade,
+        "State of the contract should remain the same post upgrade."
+    );
 }
 
 //// Verifies that upgrading the contract preserves state and functionality.
@@ -169,97 +272,21 @@ async fn propose_upgrade_from_production_to_current_binary(
 async fn upgrade_preserves_state_and_requests(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
-    const EPOCH_ID: u64 = 0;
-
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
-    let domains_to_add = [
-        DomainConfig {
-            id: 0.into(),
-            scheme: SignatureScheme::Ed25519,
-        },
-        DomainConfig {
-            id: 1.into(),
-            scheme: SignatureScheme::Secp256k1,
-        },
-        DomainConfig {
-            id: 2.into(),
-            scheme: SignatureScheme::Ed25519,
-        },
-    ];
-
-    // Create a proposal to increase threshold to 3.
-    let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
-    let arbitrary_participant_account = &accounts[0];
-    let dummy_proposal = json!({
-        "prospective_epoch_id": 1,
-        "proposal": dummy_threshold_parameters,
-    });
-
-    arbitrary_participant_account
-        .call(contract.id(), "vote_new_parameters")
-        .args_json(dummy_proposal)
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .unwrap();
-
-    // Add the domains above to the contract so we have additional state on the contract
-    // that should be persisted after the upgrade
-    let shared_secret_keys =
-        call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
-
-    let signature_request_payloads = ["hello world", "hello world!!!!"];
-    let mut pending_sign_requests = vec![];
-    let predecessor_id = contract.id();
-    let path = "test";
-
-    for (domain, shared_secret_key) in domains_to_add.iter().zip(shared_secret_keys.iter()) {
-        let domain_id = domain.id;
-
-        for message in signature_request_payloads {
-            let (payload, signature_request, signature_response) =
-                create_message_payload_and_response(
-                    domain_id,
-                    predecessor_id,
-                    message,
-                    path,
-                    shared_secret_key,
-                )
-                .await;
-
-            let request = SignRequestArgs {
-                payload_v2: Some(payload),
-                path: path.into(),
-                domain_id: Some(domain_id),
-                ..Default::default()
-            };
-
-            let transaction = submit_sign_request(&request, &contract).await.unwrap();
-
-            let pending_sign_request = PendingSignRequest {
-                transaction,
-                signature_request,
-                signature_response,
-            };
-
-            pending_sign_requests.push(pending_sign_request);
-        }
-    }
+    let injected_contract_state =
+        add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
     assert!(healthcheck(&contract).await.unwrap());
-
     let contract = upgrade_to_new(contract).await.unwrap();
     migrate_and_assert_contract_code(&contract)
         .await
-        .expect("❌ Back compatibility check failed: migration() failed");
+        .expect("❌ migration() failed");
 
     let state_post_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -269,30 +296,21 @@ async fn upgrade_preserves_state_and_requests(
         "State of the contract should remain the same post upgrade."
     );
 
-    println!("✅ Protocol state was preserved post upgrade. 👍");
-
-    // Check that pending signature requests added pre upgrade can be responded to post upgrade.
-    for pending_sign_request in pending_sign_requests {
-        let signature_response_sent_to_contract = &pending_sign_request.signature_response;
-
+    for pending in injected_contract_state.pending_sign_requests {
         submit_signature_response(
-            &pending_sign_request.signature_request,
-            signature_response_sent_to_contract,
+            &pending.signature_request,
+            &pending.signature_response,
             &contract,
         )
         .await
         .unwrap();
 
-        let execution = pending_sign_request.transaction.await.unwrap();
-        dbg!(&execution);
-        let execution = execution.into_result().unwrap();
-        let signature_response_returned_by_contract: SignatureResponse = execution.json().unwrap();
+        let execution = pending.transaction.await.unwrap().into_result().unwrap();
+        let returned: SignatureResponse = execution.json().unwrap();
 
         assert_eq!(
-            &signature_response_returned_by_contract, signature_response_sent_to_contract,
-            "Returned signature response does not match response that was sent to the contract."
+            returned, pending.signature_response,
+            "Returned signature response does not match"
         );
     }
-
-    println!("✅ Pending requests are preserved and can be responded to post upgrade. 👍");
 }
