@@ -4,7 +4,7 @@ venv
 .vscode
 
 # Lock file generated in contract integration tests
-*.contract.itest.build.lock
+*.itest.build.lock
 
 **/res/
 **/target/

@@ -31,7 +31,7 @@ use crate::{
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
@@ -40,7 +40,7 @@ pub struct ResharingContractState {
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -56,7 +56,7 @@ pub struct RunningContractState {
 }
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),

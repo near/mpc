@@ -1,25 +1,21 @@
-use crate::sandbox::common::{init_env_secp256k1, vote_update_till_completion, CONTRACT_FILE_PATH};
+use crate::sandbox::common::{
+    add_dummy_state_and_pending_sign_requests, current_contract, init_env_secp256k1,
+    init_with_candidates, migration_contract, propose_and_vote_contract_binary,
+    vote_update_till_completion, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+};
 use mpc_contract::config::Config;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
 
-pub fn dummy_contract() -> ProposeUpdateArgs {
+pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
         code: Some(vec![1, 2, 3]),
         config: None,
     }
 }
 
-pub fn current_contract() -> ProposeUpdateArgs {
-    let new_wasm = std::fs::read(CONTRACT_FILE_PATH).unwrap();
-    ProposeUpdateArgs {
-        code: Some(new_wasm),
-        config: None,
-    }
-}
-
-pub fn invalid_contract() -> ProposeUpdateArgs {
+pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
     let new_wasm = b"invalid wasm".to_vec();
     ProposeUpdateArgs {
         code: Some(new_wasm),
@@ -27,12 +23,12 @@ pub fn invalid_contract() -> ProposeUpdateArgs {
     }
 }
 
-/// This is the current deposit required for a contract deploy. This is subject to change but make
-/// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
-/// not be getting that big.
-///
-/// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13333);
+fn current_contract_proposal() -> ProposeUpdateArgs {
+    ProposeUpdateArgs {
+        code: Some(current_contract().to_vec()),
+        config: None,
+    }
+}
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
@@ -66,7 +62,7 @@ async fn test_propose_update_config() {
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
     let execution = contract
         .call("propose_update")
-        .args_borsh((dummy_contract(),))
+        .args_borsh((dummy_contract_proposal(),))
         .transact()
         .await
         .unwrap();
@@ -142,32 +138,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    dbg!(contract.id());
-
-    let execution = accounts[0]
-        .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
-        .max_gas()
-        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .transact()
-        .await
-        .unwrap();
-    dbg!(&execution);
-    assert!(execution.is_success());
-    let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(&contract, &accounts, &proposal_id).await;
-
-    // Try calling into state and see if it works.
-    let execution = accounts[0]
-        .call(contract.id(), "state")
-        .transact()
-        .await
-        .unwrap();
-
-    dbg!(&execution);
-
-    let state: ProtocolContractState = execution.json().unwrap();
-    dbg!(state);
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -180,7 +151,7 @@ async fn test_invalid_contract_deploy() {
     // Let's propose a contract update instead now.
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((invalid_contract(),))
+        .args_borsh((invalid_contract_proposal(),))
         .max_gas()
         .deposit(CONTRACT_DEPLOY)
         .transact()
@@ -218,7 +189,7 @@ async fn test_propose_update_contract_many() {
     for i in 0..PROPOSAL_COUNT {
         let execution = accounts[i % accounts.len()]
             .call(contract.id(), "propose_update")
-            .args_borsh((current_contract(),))
+            .args_borsh(current_contract_proposal())
             .max_gas()
             .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
             .transact()
@@ -268,7 +239,7 @@ async fn test_propose_incorrect_updates() {
     // Can not propose update both to code and config
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((dummy_contract(), dummy_config))
+        .args_borsh((dummy_contract_proposal(), dummy_config))
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
@@ -298,30 +269,7 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
 
     for _ in 0..3 {
-        let execution = accounts[0]
-            .call(contract.id(), "propose_update")
-            .args_borsh((current_contract(),))
-            .max_gas()
-            .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-            .transact()
-            .await
-            .unwrap();
-        dbg!(&execution);
-        assert!(execution.is_success());
-        let proposal_id: UpdateId = execution.json().unwrap();
-        vote_update_till_completion(&contract, &accounts, &proposal_id).await;
-
-        // Try calling into state and see if it works.
-        let execution = accounts[0]
-            .call(contract.id(), "state")
-            .transact()
-            .await
-            .unwrap();
-
-        dbg!(&execution);
-
-        let state: ProtocolContractState = execution.json().unwrap();
-        dbg!(state);
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -340,7 +288,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
+        .args_borsh(current_contract_proposal())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
@@ -352,7 +300,7 @@ async fn only_one_vote_from_participant() {
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
-        .args_borsh((current_contract(),))
+        .args_borsh(current_contract_proposal())
         .max_gas()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .transact()
@@ -417,4 +365,23 @@ async fn only_one_vote_from_participant() {
     assert!(execution.is_success());
     let update_occurred: bool = execution.json().unwrap();
     assert!(update_occurred);
+}
+
+/// Tests that we can upgrade the current contract to a new binary. The new contract binary used is
+/// the migration contract, [`migration_contract`].
+#[tokio::test]
+async fn update_from_current_contract_to_migration_contract() {
+    // We don't add any initial domains on init, since we will domains
+    // in add_dummy_state_and_pending_sign_requests call below.
+    let (_worker, contract, accounts) = init_with_candidates(vec![]).await;
+
+    let ProtocolContractState::Running(running_state): ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap()
+    else {
+        panic!("Contract must be in running state");
+    };
+    let participants = running_state.parameters.participants().clone();
+
+    add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }
