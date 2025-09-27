@@ -311,29 +311,28 @@ pub async fn init_env_secp256k1(
     Vec<Account>,
     Vec<SharedSecretKey>,
 ) {
-    let (public_keys, secret_keys) =
-        make_key_for_domains(vec![SignatureScheme::Secp256k1; num_domains]);
+    let (public_keys, secret_keys) = (0..num_domains)
+        .map(|_| make_key_for_domain(SignatureScheme::Secp256k1))
+        .collect();
+
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)
 }
 
-pub fn make_key_for_domains(
-    protocols: Vec<SignatureScheme>,
-) -> (Vec<near_sdk::PublicKey>, Vec<SharedSecretKey>) {
-    protocols
-        .into_iter()
-        .map(|protocol| match protocol {
-            SignatureScheme::Secp256k1 | SignatureScheme::CkdSecp256k1 => {
-                let (pk, sk) = new_secp256k1();
-                (pk, SharedSecretKey::Secp256k1(sk))
-            }
-            SignatureScheme::Ed25519 => {
-                let (pk, sk) = new_ed25519();
-                (pk, SharedSecretKey::Ed25519(sk))
-            }
-        })
-        .unzip()
+pub fn make_key_for_domain(
+    domain_scheme: SignatureScheme,
+) -> (near_sdk::PublicKey, SharedSecretKey) {
+    match domain_scheme {
+        SignatureScheme::Secp256k1 | SignatureScheme::CkdSecp256k1 => {
+            let (pk, sk) = new_secp256k1();
+            (pk, SharedSecretKey::Secp256k1(sk))
+        }
+        SignatureScheme::Ed25519 => {
+            let (pk, sk) = new_ed25519();
+            (pk, SharedSecretKey::Ed25519(sk))
+        }
+    }
 }
 
 pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
@@ -361,8 +360,10 @@ pub async fn init_env_ed25519(
     Vec<Account>,
     Vec<SharedSecretKey>,
 ) {
-    let (public_keys, secret_keys) =
-        make_key_for_domains(vec![SignatureScheme::Ed25519; num_domains]);
+    let (public_keys, secret_keys) = (0..num_domains)
+        .map(|_| make_key_for_domain(SignatureScheme::Ed25519))
+        .collect();
+
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
 
     (worker, contract, accounts, secret_keys)
@@ -868,23 +869,7 @@ pub async fn call_contract_key_generation<const N: usize>(
 
         println!("start_keygen_instance completed");
 
-        let (shared_secret_key, public_key) = match domain.scheme {
-            SignatureScheme::Secp256k1 => {
-                let (public_key, private_key) = new_secp256k1();
-                let shared_secret_key = SharedSecretKey::Secp256k1(private_key);
-
-                (shared_secret_key, public_key)
-            }
-            SignatureScheme::Ed25519 => {
-                let (public_key, private_key) = new_ed25519();
-                let shared_secret_key = SharedSecretKey::Ed25519(private_key);
-
-                (shared_secret_key, public_key)
-            }
-            SignatureScheme::CkdSecp256k1 => {
-                unimplemented!("Old contract does not support CKD.")
-            }
-        };
+        let (public_key, shared_secret_key) = make_key_for_domain(domain.scheme);
 
         private_key_shares.push(shared_secret_key);
 
