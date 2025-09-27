@@ -61,12 +61,20 @@ impl TestSetup {
     }
 
     fn submit_attestation_for_node(&mut self, node_id: &NodeId, attestation: Attestation) {
+        self.try_submit_attestation_for_node(node_id, attestation)
+            .unwrap();
+    }
+
+    fn try_submit_attestation_for_node(
+        &mut self,
+        node_id: &NodeId,
+        attestation: Attestation,
+    ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
         let tls_key_bytes: [u8; 32] = node_id.tls_public_key.as_bytes()[1..].try_into().unwrap();
         self.contract
             .submit_participant_info(attestation, Ed25519PublicKey::from(tls_key_bytes))
-            .unwrap();
     }
 
     /// Switches testing context to a given participant at a specific timestamp
@@ -84,11 +92,30 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
+
+    fn get_participant_node_ids(&self) -> Vec<NodeId> {
+        self.participants_list
+            .iter()
+            .map(|(account_id, _, participant_info)| NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: participant_info.sign_pk.clone(),
+            })
+            .collect()
+    }
+
+    fn create_attestation_with_hash_constraint(hash: [u8; 32]) -> Attestation {
+        Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: Some(hash),
+            launcher_docker_compose_hash: None,
+            expiry_time_stamp_seconds: None,
+        })
+    }
 }
 
 fn create_context_for_participant(account_id: &AccountId) -> VMContext {
     VMContextBuilder::new()
         .signer_account_id(account_id.clone())
+        .block_timestamp(near_sdk::env::block_timestamp())
         .build()
 }
 
@@ -436,4 +463,142 @@ fn latest_image_never_expires_if_its_not_superseded() {
 
     assert_eq!(allowed_image_hashes.len(), 1);
     assert_eq!(*allowed_image_hashes[0], only_image_code_hash);
+}
+
+/// **Test for nodes starting with old but valid image hashes during grace period**
+///
+/// This test simulates the scenario where new nodes join the network running
+/// older Docker image versions that are still within their grace period.
+/// It verifies that:
+/// 1. Multiple image versions can coexist during their grace periods
+/// 2. New nodes can successfully submit attestations with older but valid hashes
+/// 3. Nodes running older images remain valid until their specific grace period expires
+/// 4. The contract accepts attestations from nodes with any currently allowed hash
+///
+/// This validates the scenario where nodes may start up with slightly
+/// older images after new ones have been voted in, as long as they're still
+/// within the tee_upgrade_deadline_duration.
+///
+/// **Timeline Visualization (Grace Period = 15s):**
+/// ```
+/// Time:     T=1s   T=4s   T=7s          T=10s         T=19s   T=20s         T=22s   T=23s
+///           │      │      │             │             │       │             │       │
+/// v1 hash:  ●─────────────────────────────────────────────────X (expires)
+/// v2 hash:         ●────────────────────────────────────────────────────────────────X (expires)
+/// v3 hash:                ●────────────────────────────────────────────────────────────→ (never expires)
+///           │      │      │             │             │       │             │       │
+/// Events:   │      │      │             │             │       │             │       │
+///          v1     v2     v3          Test all      v1 exp   Check v1      v2 exp   Check v2
+///         vote   vote   vote         3 versions    @ T=19s   expired      @ T=22s   expired
+///                                    still valid             only v2,v3             only v3
+///
+/// Grace Period Rules:
+/// - v1 expires at: T=4s + 15s + 1s = T=20s
+/// - v2 expires at: T=7s + 15s + 1s = T=23s  
+/// - v3 never expires (no successor hash)
+///
+/// Note: The +1s ensures we test *after* the grace period deadline has passed.
+/// Without it, the hash would still be valid exactly at the deadline timestamp.
+/// ```
+#[test]
+fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
+    const INITIAL_TIME_NANOS: u64 = NANOS_IN_SECOND;
+    const GRACE_PERIOD_SECONDS: u64 = 15;
+    const GRACE_PERIOD_NANOS: u64 = GRACE_PERIOD_SECONDS * NANOS_IN_SECOND;
+    const HASH_DEPLOYMENT_INTERVAL_NANOS: u64 = 3 * NANOS_IN_SECOND;
+
+    let init_config = InitConfig {
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
+        ..Default::default()
+    };
+    let mut test_setup = TestSetup::new(3, 2, Some(init_config));
+
+    let hash_v1 = [1; 32]; // Original version
+    let hash_v2 = [2; 32]; // Updated version
+    let hash_v3 = [3; 32]; // Latest version
+
+    // Deploy three hash versions at 3-second intervals (T=1s, T=4s, T=7s)
+    let hashes = [hash_v1, hash_v2, hash_v3];
+    let mut deployment_times = Vec::new();
+    let mut deployment_time = INITIAL_TIME_NANOS;
+
+    for &hash in hashes.iter() {
+        test_setup.vote_with_all_participants(hash, deployment_time);
+        deployment_times.push(deployment_time);
+        deployment_time += HASH_DEPLOYMENT_INTERVAL_NANOS;
+    }
+
+    // At T=10s: All three versions should be allowed (within grace periods)
+    let test_time_1 = deployment_times[2] + 3 * NANOS_IN_SECOND;
+    set_system_time(test_time_1);
+
+    let allowed_hashes: [_; 3] = test_setup
+        .contract
+        .allowed_code_hashes()
+        .try_into()
+        .unwrap();
+    let expected_hashes = [hash_v1.into(), hash_v2.into(), hash_v3.into()];
+
+    assert_eq!(allowed_hashes, expected_hashes);
+
+    // Use existing participant nodes for testing different hash versions
+    let node_ids = test_setup.get_participant_node_ids();
+
+    // Test that nodes can submit attestations with all hash versions at T=10s
+    // All attestations should succeed during grace period (current time: T=10s)
+    for (node, &hash) in node_ids.iter().zip(hashes.iter()) {
+        let attestation = TestSetup::create_attestation_with_hash_constraint(hash);
+        test_setup.submit_attestation_for_node(node, attestation);
+    }
+
+    // Advance to T=19s: hash_v1 should expire (v2 deployed at T=4s + 15s grace = T=19s)
+    // Note: v1 expires when its successor's (v2) grace period ends, not when v1's own grace period ends
+    let v1_expiry_time = deployment_times[1] + GRACE_PERIOD_NANOS;
+
+    // +1s ensures we're testing *after* expiration occurs - at T=19s the hash is still valid,
+    // but at T=20s it has expired and should be filtered out by allowed_code_hashes()
+    set_system_time(v1_expiry_time + NANOS_IN_SECOND); // T=20s
+
+    // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
+    let allowed_after_v1_expiry: [_; 2] = test_setup
+        .contract
+        .allowed_code_hashes()
+        .try_into()
+        .unwrap();
+    let expected_after_v1_expiry = [hash_v2.into(), hash_v3.into()];
+
+    assert_eq!(
+        allowed_after_v1_expiry, expected_after_v1_expiry,
+        "Only hash_v2 and hash_v3 should remain valid at T=20s (hash_v1 expired)"
+    );
+
+    // Verify that submitting attestation with expired hash_v1 now fails
+    let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
+    let result = test_setup.try_submit_attestation_for_node(&node_ids[0], expired_attestation);
+    assert!(
+        result.is_err(),
+        "Attestation with expired hash_v1 should fail"
+    );
+
+    // Test late-joining nodes at current time T=20s (after hash_v1 expired)
+    // Only hash_v2 and hash_v3 should be valid for new nodes
+    // Reuse existing node_ids (nodes 2 and 3 since hash_v1 expired)
+    for (node, hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
+        let late_attestation = TestSetup::create_attestation_with_hash_constraint(**hash);
+        test_setup.submit_attestation_for_node(node, late_attestation);
+    }
+
+    // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
+    let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
+    set_system_time(v2_expiry_time + NANOS_IN_SECOND); // T=23s
+
+    let final_allowed_hashes = test_setup.contract.allowed_code_hashes();
+    assert_eq!(final_allowed_hashes.len(), 1, "Only hash_v3 should remain");
+    assert_eq!(*final_allowed_hashes[0], hash_v3);
+
+    // Verify that only the latest hash is now accepted
+    // Reuse the third node (index 2) for final validation
+    let final_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v3);
+    // This should succeed since hash_v3 is the only remaining valid hash
+    test_setup.submit_attestation_for_node(&node_ids[2], final_attestation);
 }
