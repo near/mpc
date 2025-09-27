@@ -905,3 +905,98 @@ pub async fn call_contract_key_generation<const N: usize>(
 
     private_key_shares.try_into().unwrap()
 }
+
+pub struct PendingSignRequest {
+    pub transaction: TransactionStatus,
+    pub signature_request: SignatureRequest,
+    pub signature_response: SignatureResponse,
+}
+
+pub struct InjectedContractState {
+    pub pending_sign_requests: Vec<PendingSignRequest>,
+}
+
+/// Adds dummy state to a contract (threshold proposal, domains, sign requests)
+/// so that migration paths are exercised in upgrade tests.
+///
+/// The pending signature requests can be responded to.
+pub async fn add_dummy_state_and_pending_sign_requests(
+    accounts: &[Account],
+    participants: Participants,
+    contract: &Contract,
+) -> InjectedContractState {
+    const EPOCH_ID: u64 = 0;
+
+    // 1. Submit a threshold proposal (raise threshold to 3).
+    let dummy_threshold_parameters =
+        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+    let dummy_proposal = json!({
+        "prospective_epoch_id": 1,
+        "proposal": dummy_threshold_parameters,
+    });
+    accounts[0]
+        .call(contract.id(), "vote_new_parameters")
+        .args_json(dummy_proposal)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .unwrap();
+
+    // 2. Add multiple domains.
+    let domains_to_add = [
+        DomainConfig {
+            id: 0.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+        DomainConfig {
+            id: 1.into(),
+            scheme: SignatureScheme::Secp256k1,
+        },
+        DomainConfig {
+            id: 2.into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+    ];
+    let shared_secret_keys =
+        call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
+
+    // 3. Submit pending sign requests.
+    let mut pending_sign_requests = vec![];
+    let path = "test";
+    let predecessor_id = contract.id();
+    let signature_request_payloads = ["hello world", "hello world!!!!"];
+
+    for (domain, shared_secret_key) in domains_to_add.iter().zip(shared_secret_keys.iter()) {
+        for message in signature_request_payloads {
+            let (payload, signature_request, signature_response) =
+                create_message_payload_and_response(
+                    domain.id,
+                    predecessor_id,
+                    message,
+                    path,
+                    shared_secret_key,
+                )
+                .await;
+
+            let request = SignRequestArgs {
+                payload_v2: Some(payload),
+                path: path.into(),
+                domain_id: Some(domain.id),
+                ..Default::default()
+            };
+
+            let transaction = submit_sign_request(&request, contract).await.unwrap();
+
+            pending_sign_requests.push(PendingSignRequest {
+                transaction,
+                signature_request,
+                signature_response,
+            });
+        }
+    }
+
+    InjectedContractState {
+        pending_sign_requests,
+    }
+}

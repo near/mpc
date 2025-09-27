@@ -1,21 +1,17 @@
-use crate::sandbox::common::propose_and_vote_contract_update_to_current_binary;
 use crate::sandbox::common::{
-    call_contract_key_generation, create_message_payload_and_response, current_contract,
-    gen_accounts, submit_sign_request, submit_signature_response, PARTICIPANT_LEN,
+    add_dummy_state_and_pending_sign_requests, current_contract, gen_accounts,
+    propose_and_vote_contract_update_to_current_binary, submit_signature_response, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     crypto_shared::SignatureResponse,
     primitives::{
-        domain::{DomainConfig, SignatureScheme},
         participants::Participants,
-        signature::{SignRequestArgs, SignatureRequest},
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
 };
-use near_workspaces::{network::Sandbox, operations::TransactionStatus, Account, Contract, Worker};
+use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
-use serde_json::json;
 
 enum Network {
     Testnet,
@@ -27,12 +23,6 @@ fn contract_code(network: Network) -> &'static [u8] {
         Network::Mainnet => contract_history::current_mainnet(),
         Network::Testnet => contract_history::current_testnet(),
     }
-}
-
-struct PendingSignRequest {
-    transaction: TransactionStatus,
-    signature_request: SignatureRequest,
-    signature_response: SignatureResponse,
 }
 
 async fn init_old_contract(
@@ -92,95 +82,6 @@ async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result
     assert_eq!(*current_code_hash, code_hash_post_upgrade);
 
     Ok(())
-}
-
-struct InjectedContractState {
-    pending_sign_requests: Vec<PendingSignRequest>,
-}
-
-/// Adds dummy state to a contract (threshold proposal, domains, sign requests)
-/// so that migration paths are exercised in upgrade tests.
-///
-/// The pending signature requests can be responded to.
-async fn add_dummy_state_and_pending_sign_requests(
-    accounts: &[Account],
-    participants: Participants,
-    contract: &Contract,
-) -> InjectedContractState {
-    const EPOCH_ID: u64 = 0;
-
-    // 1. Submit a threshold proposal (raise threshold to 3).
-    let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
-    let dummy_proposal = json!({
-        "prospective_epoch_id": 1,
-        "proposal": dummy_threshold_parameters,
-    });
-    accounts[0]
-        .call(contract.id(), "vote_new_parameters")
-        .args_json(dummy_proposal)
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .unwrap();
-
-    // 2. Add multiple domains.
-    let domains_to_add = [
-        DomainConfig {
-            id: 0.into(),
-            scheme: SignatureScheme::Ed25519,
-        },
-        DomainConfig {
-            id: 1.into(),
-            scheme: SignatureScheme::Secp256k1,
-        },
-        DomainConfig {
-            id: 2.into(),
-            scheme: SignatureScheme::Ed25519,
-        },
-    ];
-    let shared_secret_keys =
-        call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
-
-    // 3. Submit pending sign requests.
-    let mut pending_sign_requests = vec![];
-    let path = "test";
-    let predecessor_id = contract.id();
-    let signature_request_payloads = ["hello world", "hello world!!!!"];
-
-    for (domain, shared_secret_key) in domains_to_add.iter().zip(shared_secret_keys.iter()) {
-        for message in signature_request_payloads {
-            let (payload, signature_request, signature_response) =
-                create_message_payload_and_response(
-                    domain.id,
-                    predecessor_id,
-                    message,
-                    path,
-                    shared_secret_key,
-                )
-                .await;
-
-            let request = SignRequestArgs {
-                payload_v2: Some(payload),
-                path: path.into(),
-                domain_id: Some(domain.id),
-                ..Default::default()
-            };
-
-            let transaction = submit_sign_request(&request, contract).await.unwrap();
-
-            pending_sign_requests.push(PendingSignRequest {
-                transaction,
-                signature_request,
-                signature_response,
-            });
-        }
-    }
-
-    InjectedContractState {
-        pending_sign_requests,
-    }
 }
 
 /// Checks the contract in the following order:
