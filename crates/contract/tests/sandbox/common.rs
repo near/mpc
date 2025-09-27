@@ -705,9 +705,9 @@ pub async fn propose_and_vote_contract_update_to_current_binary(
 
     vote_update_till_completion(contract, accounts, &proposal_id).await;
 
-    let code_hash_post_upgrade = contract.view_code().await.unwrap();
+    let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
-        *new_contract_binary, code_hash_post_upgrade,
+        *new_contract_binary, contract_binary_post_upgrade,
         "Code hash post upgrade is not matching the proposed binary."
     );
 }
