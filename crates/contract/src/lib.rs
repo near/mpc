@@ -19,7 +19,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::types::CKDResponse,
-    dto_mapping::IntoContractType,
+    dto_mapping::{IntoContractType, IntoDtoType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
@@ -35,7 +35,6 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos_contract::Ed25519PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -545,7 +544,7 @@ impl MpcContract {
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos_contract::Attestation,
-        tls_public_key: Ed25519PublicKey,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
             .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
@@ -615,6 +614,22 @@ impl MpcContract {
         }
 
         Ok(())
+    }
+
+    #[handle_result]
+    pub fn get_attestation(
+        &self,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
+    ) -> Result<Option<dtos_contract::Attestation>, Error> {
+        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
+            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
+
+        Ok(self
+            .tee_state
+            .participants_attestations
+            .iter()
+            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key)
+            .map(|(_, attestation)| attestation.clone().into_dto_type()))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -1767,7 +1782,7 @@ mod tests {
 
         let tls_public_key = participant_info.sign_pk.clone();
         let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
-        let dto_public_key = Ed25519PublicKey::from(public_key_bytes);
+        let dto_public_key = dtos_contract::Ed25519PublicKey::from(public_key_bytes);
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())

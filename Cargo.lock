@@ -5047,6 +5047,7 @@ dependencies = [
  "derive_more 2.0.1",
  "dstack-sdk",
  "dstack-sdk-types",
+ "dtos-contract",
  "ed25519-dalek",
  "flume",
  "futures",
