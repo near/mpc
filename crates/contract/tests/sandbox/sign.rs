@@ -15,6 +15,11 @@ use mpc_contract::{
 };
 use near_workspaces::types::NearToken;
 
+// TODO: #1194
+// Domain id 0 is always present if we have at least one domain on the contract.
+// In all tests below we initialize at least one domain to test sign requests against.
+const DOMAIN_ID_ZERO: DomainId = DomainId(0);
+
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
     let (_, contract, _, sks) = init_env_secp256k1(1).await;
@@ -31,18 +36,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-            DomainId::legacy_ecdsa_id(),
-            predecessor_id,
-            msg,
-            path,
-            &sks[0],
-        )
-        .await;
+        let (payload, respond_req, respond_resp) =
+            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
+                .await;
         let request = SignRequestArgs {
             payload_v2: Some(payload),
             path: path.into(),
-            domain_id: Some(DomainId::legacy_ecdsa_id()),
+            domain_id: Some(DOMAIN_ID_ZERO),
             ..Default::default()
         };
 
@@ -52,7 +52,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-        DomainId::legacy_ecdsa_id(),
+        DOMAIN_ID_ZERO,
         predecessor_id,
         duplicate_msg,
         path,
@@ -62,7 +62,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
-        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
     sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
@@ -89,18 +89,12 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-        DomainId::legacy_ecdsa_id(),
-        alice.id(),
-        msg,
-        path,
-        &sks[0],
-    )
-    .await;
+    let (payload, respond_req, respond_resp) =
+        create_message_payload_and_response(DOMAIN_ID_ZERO, alice.id(), msg, path, &sks[0]).await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
-        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
 
@@ -171,18 +165,12 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload, _, _) = create_message_payload_and_response(
-        DomainId::legacy_ecdsa_id(),
-        alice.id(),
-        msg,
-        path,
-        &sks[0],
-    )
-    .await;
+    let (payload, _, _) =
+        create_message_payload_and_response(DOMAIN_ID_ZERO, alice.id(), msg, path, &sks[0]).await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
-        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
 
@@ -239,18 +227,13 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
     // Try to sign with no deposit, should fail.
     let msg = "without-deposit";
-    let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-        DomainId::legacy_ecdsa_id(),
-        predecessor_id,
-        msg,
-        path,
-        &sks[0],
-    )
-    .await;
+    let (payload, respond_req, respond_resp) =
+        create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
+            .await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
-        domain_id: Some(DomainId::legacy_ecdsa_id()),
+        domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
 
@@ -309,14 +292,9 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-            DomainId::legacy_ecdsa_id(),
-            predecessor_id,
-            msg,
-            path,
-            &sks[0],
-        )
-        .await;
+        let (payload, respond_req, respond_resp) =
+            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
+                .await;
         let status = contract
             .call("sign")
             .args_json(serde_json::json!({
@@ -429,14 +407,9 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-            DomainId::legacy_ecdsa_id(),
-            predecessor_id,
-            msg,
-            path,
-            &sks[0],
-        )
-        .await;
+        let (payload, respond_req, respond_resp) =
+            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
+                .await;
 
         let request = SignRequestArgs {
             payload_v2: Some(payload),
@@ -451,7 +424,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let (payload, respond_req, respond_resp) = create_message_payload_and_response(
-        DomainId::legacy_ecdsa_id(),
+        DOMAIN_ID_ZERO,
         predecessor_id,
         duplicate_msg,
         path,
