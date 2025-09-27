@@ -9,9 +9,10 @@ use attestation::{
     attestation::Attestation,
     report_data::{ReportData, ReportDataV1},
 };
+use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone, Hash)]
@@ -43,8 +44,7 @@ pub enum TeeValidationResult {
     },
 }
 
-#[near(serializers=[borsh])]
-#[derive(Debug)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
@@ -73,13 +73,13 @@ impl TeeState {
         &mut self,
         attestation: &Attestation,
         tls_public_key: PublicKey,
-        tee_upgrade_deadline_duration_blocks: u64,
+        tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let is_valid = attestation.verify(
             expected_report_data,
             Self::current_time_seconds(),
-            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks),
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.allowed_launcher_compose_hashes,
         );
 
@@ -94,10 +94,10 @@ impl TeeState {
     pub(crate) fn verify_tee_participant(
         &mut self,
         node_id: &NodeId,
-        tee_upgrade_deadline_duration_blocks: u64,
+        tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes =
-            self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks);
+            self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
         let participant_attestation = self.participants_attestations.get(node_id);
@@ -127,10 +127,10 @@ impl TeeState {
     pub fn validate_tee(
         &mut self,
         participants: &Participants,
-        tee_upgrade_deadline_duration_blocks: u64,
+        tee_upgrade_deadline_duration: Duration,
     ) -> TeeValidationResult {
         self.allowed_docker_image_hashes
-            .cleanup_expired_hashes(env::block_height(), tee_upgrade_deadline_duration_blocks);
+            .cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
         let participants_with_valid_attestation: Vec<_> = participants
             .participants()
@@ -143,7 +143,7 @@ impl TeeState {
                         account_id: account_id.clone(),
                         tls_public_key,
                     },
-                    tee_upgrade_deadline_duration_blocks,
+                    tee_upgrade_deadline_duration,
                 );
 
                 matches!(tee_status, TeeQuoteStatus::Valid)
@@ -188,36 +188,33 @@ impl TeeState {
 
     pub fn get_allowed_mpc_docker_image_hashes(
         &self,
-        tee_upgrade_deadline_duration_blocks: u64,
+        tee_upgrade_deadline_duration: Duration,
     ) -> Vec<MpcDockerImageHash> {
-        self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration_blocks)
-            .iter()
-            .map(|entry| entry.image_hash.clone())
+        self.get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
+            .into_iter()
+            .map(|entry| entry.image_hash)
             .collect()
     }
 
     pub fn get_allowed_mpc_docker_images(
         &self,
-        tee_upgrade_deadline_duration_blocks: u64,
-    ) -> Vec<&AllowedMpcDockerImage> {
+        tee_upgrade_deadline_duration: Duration,
+    ) -> Vec<AllowedMpcDockerImage> {
         self.allowed_docker_image_hashes
-            .get(env::block_height(), tee_upgrade_deadline_duration_blocks)
+            .get(tee_upgrade_deadline_duration)
     }
 
     pub fn whitelist_tee_proposal(
         &mut self,
         tee_proposal: MpcDockerImageHash,
-        tee_upgrade_deadline_duration_blocks: u64,
+        tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear_votes();
         self.allowed_launcher_compose_hashes.push(
             AllowedDockerImageHashes::get_docker_compose_hash(tee_proposal.clone()),
         );
-        self.allowed_docker_image_hashes.insert(
-            tee_proposal,
-            env::block_height(),
-            tee_upgrade_deadline_duration_blocks,
-        );
+        self.allowed_docker_image_hashes
+            .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
     /// Removes TEE information for accounts that are not in the provided participants list.

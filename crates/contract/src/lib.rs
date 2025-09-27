@@ -15,21 +15,18 @@ pub mod v0_state;
 
 mod dto_mapping;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::types::CKDResponse,
-    dto_mapping::IntoContractType,
+    dto_mapping::{IntoContractType, IntoDtoType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{
-        proposal::AllowedMpcDockerImage,
-        tee_state::{TeeQuoteStatus, TeeState},
-    },
+    tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
-use attestation::attestation::{Attestation, MockAttestation};
+use borsh::{BorshDeserialize, BorshSerialize};
 use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -37,14 +34,13 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos_contract::Ed25519PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
 use near_sdk::{
     env::{self, ed25519_verify},
-    log, near, near_bindgen,
+    log, near_bindgen,
     store::LookupMap,
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
@@ -106,8 +102,7 @@ impl Default for MpcContract {
 }
 
 #[near_bindgen]
-#[near(serializers=[borsh])]
-#[derive(Debug)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -548,7 +543,7 @@ impl MpcContract {
     pub fn submit_participant_info(
         &mut self,
         proposed_participant_attestation: dtos_contract::Attestation,
-        tls_public_key: Ed25519PublicKey,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
             .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
@@ -570,11 +565,14 @@ impl MpcContract {
         // used
         let initial_storage = env::storage_usage();
 
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
         // Verify the TEE quote and Docker image for the proposed participant
         let status = self.tee_state.verify_proposed_participant_attestation(
             &proposed_participant_attestation,
             tls_public_key.clone(),
-            self.config.tee_upgrade_deadline_duration_blocks,
+            tee_upgrade_deadline_duration,
         );
 
         if status == TeeQuoteStatus::Invalid {
@@ -617,6 +615,22 @@ impl MpcContract {
         Ok(())
     }
 
+    #[handle_result]
+    pub fn get_attestation(
+        &self,
+        tls_public_key: dtos_contract::Ed25519PublicKey,
+    ) -> Result<Option<dtos_contract::Attestation>, Error> {
+        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
+            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
+
+        Ok(self
+            .tee_state
+            .participants_attestations
+            .iter()
+            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key)
+            .map(|(_, attestation)| attestation.clone().into_dto_type()))
+    }
+
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
     /// If a threshold number of votes are reached on the exact same proposal, this will transition
     /// the contract into the Resharing state.
@@ -636,10 +650,12 @@ impl MpcContract {
             proposal,
         );
 
-        let validation_result = self.tee_state.validate_tee(
-            proposal.participants(),
-            self.config.tee_upgrade_deadline_duration_blocks,
-        );
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        let validation_result = self
+            .tee_state
+            .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
 
         let proposed_participants = proposal.participants();
 
@@ -950,13 +966,14 @@ impl MpcContract {
         let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
         let votes = self.tee_state.vote(code_hash.clone(), &participant);
 
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
         // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
         // update the state
         if votes >= self.threshold()?.value() {
-            self.tee_state.whitelist_tee_proposal(
-                code_hash,
-                self.config.tee_upgrade_deadline_duration_blocks,
-            );
+            self.tee_state
+                .whitelist_tee_proposal(code_hash, tee_upgrade_deadline_duration);
         }
 
         Ok(())
@@ -964,16 +981,22 @@ impl MpcContract {
 
     pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
-        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
+
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
         self.tee_state
-            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
     }
 
     pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         log!("latest_code_hash: signer={}", env::signer_account_id());
 
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
         self.tee_state
-            .get_allowed_mpc_docker_image_hashes(self.config.tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
             .last()
             .expect("there must be at least one allowed code hash")
             .clone()
@@ -1000,12 +1023,13 @@ impl MpcContract {
         };
         let current_params = running_state.parameters.clone();
 
-        let tee_upgrade_deadline_duration_blocks = self.config.tee_upgrade_deadline_duration_blocks;
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        match self.tee_state.validate_tee(
-            current_params.participants(),
-            tee_upgrade_deadline_duration_blocks,
-        ) {
+        match self
+            .tee_state
+            .validate_tee(current_params.participants(), tee_upgrade_deadline_duration)
+        {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1098,7 +1122,12 @@ impl MpcContract {
                     tls_public_key: participant_info.sign_pk.clone(),
                 };
 
-                tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+                tee_state.add_participant(
+                    node_id,
+                    attestation::attestation::Attestation::Mock(
+                        attestation::attestation::MockAttestation::Valid,
+                    ),
+                );
             },
         );
 
@@ -1189,11 +1218,14 @@ impl MpcContract {
         &self.protocol_state
     }
 
-    pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedMpcDockerImage> {
+    pub fn allowed_docker_image_hashes(&self) -> Vec<MpcDockerImageHash> {
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
         self.tee_state
-            .get_allowed_mpc_docker_images(self.config.tee_upgrade_deadline_duration_blocks)
+            .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
-            .cloned()
+            .map(|allowed_image_hash| allowed_image_hash.image_hash)
             .collect()
     }
 
@@ -1443,8 +1475,10 @@ impl MpcContract {
         };
 
         if !(matches!(
-            self.tee_state
-                .verify_tee_participant(&node_id, self.config.tee_upgrade_deadline_duration_blocks),
+            self.tee_state.verify_tee_participant(
+                &node_id,
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds)
+            ),
             TeeQuoteStatus::Valid
         )) {
             return Err(errors::InvalidParameters::InvalidTeeRemoteAttestation.into());
@@ -1768,7 +1802,7 @@ mod tests {
 
         let tls_public_key = participant_info.sign_pk.clone();
         let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
-        let dto_public_key = Ed25519PublicKey::from(public_key_bytes);
+        let dto_public_key = dtos_contract::Ed25519PublicKey::from(public_key_bytes);
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())

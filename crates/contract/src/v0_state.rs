@@ -7,8 +7,10 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 use attestation::attestation::{Attestation, MockAttestation};
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_account_id::AccountId;
 use near_sdk::store::IterableMap;
+use near_sdk::BlockHeight;
 use near_sdk::{env, near, store::LookupMap};
 use std::collections::HashSet;
 
@@ -31,7 +33,7 @@ use crate::{
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
@@ -40,7 +42,7 @@ pub struct ResharingContractState {
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -56,7 +58,7 @@ pub struct RunningContractState {
 }
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
@@ -91,19 +93,41 @@ pub struct ProposedUpdates {
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct TeeState {
-    allowed_tee_proposals: crate::tee::proposal::AllowedDockerImageHashes,
+    allowed_tee_proposals: AllowedDockerImageHashes,
     historical_tee_proposals: Vec<crate::tee::proposal::LauncherDockerComposeHash>,
     votes: crate::tee::proposal::CodeHashesVotes,
+}
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AllowedMpcDockerImage {
+    pub image_hash: MpcDockerImageHash,
+    pub docker_compose_hash: LauncherDockerComposeHash,
+    pub added: BlockHeight,
+}
+#[near(serializers=[borsh, json])]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+struct AllowedDockerImageHashes {
+    allowed_tee_proposals: Vec<AllowedMpcDockerImage>,
 }
 
 impl From<TeeState> for crate::TeeState {
     fn from(value: TeeState) -> Self {
         Self {
-            allowed_docker_image_hashes: value.allowed_tee_proposals,
+            allowed_docker_image_hashes: value.allowed_tee_proposals.into(),
             allowed_launcher_compose_hashes: value.historical_tee_proposals,
             votes: value.votes,
             participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
+    }
+}
+
+impl From<AllowedDockerImageHashes> for crate::tee::proposal::AllowedDockerImageHashes {
+    fn from(_value: AllowedDockerImageHashes) -> Self {
+        // There are no allowed docker image hashes in production.
+        // Thus this conversion ignores all allowed image hashes,
+        // and creates a default value.
+        crate::tee::proposal::AllowedDockerImageHashes::default()
     }
 }
 

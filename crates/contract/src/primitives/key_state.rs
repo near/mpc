@@ -143,7 +143,7 @@ impl Keyset {
 }
 /// This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`,
 /// but is only constructible given a set of participants that includes the signer, thus acting as
-/// a typesystem-based enforcement mechanism (albeit a best-effort one) for authenticating the
+/// a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the
 /// signer.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

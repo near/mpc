@@ -1,6 +1,7 @@
 use actix::Addr;
 use anyhow::bail;
-use mpc_contract::{state::ProtocolContractState, tee::proposal::AllowedMpcDockerImage};
+use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_client::ClientActor;
 use near_client::Status;
 use near_indexer_primitives::types;
@@ -78,7 +79,7 @@ pub(crate) async fn get_mpc_contract_state(
 pub(crate) async fn get_mpc_allowed_image_hashes(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
-) -> anyhow::Result<(u64, Vec<AllowedMpcDockerImage>)> {
+) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
     get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
 }
 

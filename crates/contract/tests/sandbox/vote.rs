@@ -160,7 +160,7 @@ async fn test_resharing() -> anyhow::Result<()> {
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
     submit_participant_info(
-        &new_account,
+        new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
         &new_p.2.sign_pk,
@@ -258,7 +258,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
     submit_participant_info(
-        &new_account,
+        new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
         &new_p.2.sign_pk,
