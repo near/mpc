@@ -218,7 +218,8 @@ async fn upgrade_preserves_state_and_requests(
 }
 
 #[tokio::test]
-async fn test_all_participants_have_valid_attestation_for_soft_launch() -> anyhow::Result<()> {
+async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -> anyhow::Result<()>
+{
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
