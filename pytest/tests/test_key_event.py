@@ -59,6 +59,13 @@ def test_single_domain():
         wait_for_running=False,
     )
 
+    # TODO: Resharing will fail and panic if all participants don't have an attestation.
+    #
+    # Each time we complete a resharing, the contract wipes out the TEE attestation
+    # of all the other nodes. That means we need some mechanism on the node to detect that it needs
+    # to re-submit a new attestation AND we need a mechanism in pytests to wait for attestations to be observed
+    # before we start the resharing.
+
     assert cluster.wait_for_state(ProtocolState.RUNNING), "failed to start running"
     cluster.update_participant_status()
     cluster.send_and_await_ckd_requests(1)
