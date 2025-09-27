@@ -818,7 +818,8 @@ pub async fn submit_tee_attestations(
 }
 
 /// This function assumes that the accounts are sorted by participant id.
-/// Returns the corresponding shared_secret_key in the same order as
+/// Returns the shared_secret_key in the same order as
+/// the corresponding domain configs supplied.
 pub async fn call_contract_key_generation<const N: usize>(
     domains_to_add: &[DomainConfig; N],
     accounts: &[Account],
