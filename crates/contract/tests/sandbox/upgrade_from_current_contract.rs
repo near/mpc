@@ -1,5 +1,6 @@
 use crate::sandbox::common::{
-    current_contract, init_env_secp256k1, propose_and_vote_contract_update_to_current_binary,
+    add_dummy_state_and_pending_sign_requests, current_contract, init_env_secp256k1,
+    init_with_candidates, migration_contract, propose_and_vote_contract_binary,
     vote_update_till_completion, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
 };
 use mpc_contract::config::Config;
@@ -24,7 +25,7 @@ pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
 
 fn current_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
-        code: Some(current_contract().clone()),
+        code: Some(current_contract().to_vec()),
         config: None,
     }
 }
@@ -137,7 +138,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
-    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -268,7 +269,7 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
 
     for _ in 0..3 {
-        propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -364,4 +365,21 @@ async fn only_one_vote_from_participant() {
     assert!(execution.is_success());
     let update_occurred: bool = execution.json().unwrap();
     assert!(update_occurred);
+}
+
+/// Tests that we can upgrade the current contract to a new binary. The new contract binary used is
+/// the migration contract, [`migration_contract`].
+#[tokio::test]
+async fn update_from_current_contract_to_migration_contract() {
+    let (_worker, contract, accounts) = init_with_candidates(vec![]).await;
+
+    let ProtocolContractState::Running(running_state): ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap()
+    else {
+        panic!("Contract must be in running state");
+    };
+    let participants = running_state.parameters.participants().clone();
+
+    add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }

@@ -70,6 +70,9 @@ pub const CONTRACT_FILE_PATH: &str =
     "../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
+const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
+const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
+
 /// Convenience constant used only in tests.  
 /// The contract itself does not require a specific gas attachment; in practice,  
 /// nodes usually attach the maximum available gas.  
@@ -119,8 +122,6 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
     (accounts, candidates)
 }
 
-static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
-
 #[derive(Debug, Serialize, Deserialize)]
 struct BuildLock {
     timestamp: u64,
@@ -136,7 +137,7 @@ impl BuildLock {
         }
     }
 
-    /// checks if self is younger than 3 seconds
+    /// checks if self is older than 4 seconds
     fn expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -146,74 +147,91 @@ impl BuildLock {
     }
 }
 
-pub fn current_contract() -> &'static Vec<u8> {
-    CONTRACT.get_or_init(|| {
-        // Points to `/crates`
-        let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        // pointing to repository root directory.
-        let project_dir = pkg_dir.join("../..");
-        let wasm_path =
-            project_dir.join("target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm");
+/// Generic contract builder
+fn load_contract(package_name: &str) -> Vec<u8> {
+    let lockfile_name = format!("{package_name}.itest.build.lock");
 
-        let lock_path = project_dir.join(".contract.itest.build.lock");
-        let mut lockfile = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-            .expect("Failed to open lockfile");
-        lockfile
-            .lock_exclusive()
-            .expect("Failed to lock build file");
+    // Points to `/crates`
+    let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // pointing to repository root directory.
+    let project_dir = pkg_dir.join("../..");
 
-        // check if we need to re-build
-        let do_build = match lockfile.metadata().unwrap().len() {
-            0 => true,
-            _ => {
-                let mut buf = String::new();
-                lockfile.read_to_string(&mut buf).unwrap();
-                match serde_json::from_str::<BuildLock>(&buf) {
-                    Ok(build_lock) => build_lock.expired(),
-                    _ => true,
-                }
+    let artifact_name = format!("{package_name}.wasm").replace('-', "_");
+    let wasm_path = project_dir.join(format!(
+        "target/wasm32-unknown-unknown/release-contract/{artifact_name}"
+    ));
+
+    let lock_path = project_dir.join(lockfile_name);
+    let mut lockfile = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("Failed to open lockfile");
+    lockfile
+        .lock_exclusive()
+        .expect("Failed to lock build file");
+
+    // check if we need to re-build
+    let do_build = match lockfile.metadata().unwrap().len() {
+        0 => true,
+        _ => {
+            let mut buf = String::new();
+            lockfile.read_to_string(&mut buf).unwrap();
+            match serde_json::from_str::<BuildLock>(&buf) {
+                Ok(build_lock) => build_lock.expired(),
+                _ => true,
             }
-        };
-
-        if do_build {
-            let status = Command::new("cargo")
-                .args([
-                    "build",
-                    "--package=mpc-contract",
-                    "--profile=release-contract",
-                    "--target=wasm32-unknown-unknown",
-                ])
-                .current_dir(&project_dir)
-                .status()
-                .expect("Failed to run cargo build");
-
-            assert!(status.success(), "cargo build failed");
-
-            let status = Command::new("wasm-opt")
-                .args([
-                    "--enable-bulk-memory",
-                    "-Oz",
-                    "-o",
-                    wasm_path.to_str().unwrap(),
-                    wasm_path.to_str().unwrap(),
-                ])
-                .current_dir(project_dir)
-                .status()
-                .expect("Failed to run wasm-opt");
-
-            assert!(status.success(), "wasm-opt failed");
-            lockfile.set_len(0).unwrap();
-            lockfile
-                .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
-                .expect("Failed to write timestamp to lockfile");
         }
-        std::fs::read(CONTRACT_FILE_PATH).unwrap()
-    })
+    };
+
+    if do_build {
+        let status = Command::new("cargo")
+            .args([
+                "build",
+                &format!("--package={package_name}"),
+                "--profile=release-contract",
+                "--target=wasm32-unknown-unknown",
+            ])
+            .current_dir(&project_dir)
+            .status()
+            .expect("Failed to run cargo build");
+
+        assert!(status.success(), "cargo build failed");
+
+        let status = Command::new("wasm-opt")
+            .args([
+                "--enable-bulk-memory",
+                "-Oz",
+                "-o",
+                wasm_path.to_str().unwrap(),
+                wasm_path.to_str().unwrap(),
+            ])
+            .current_dir(&project_dir)
+            .status()
+            .expect("Failed to run wasm-opt");
+
+        assert!(status.success(), "wasm-opt failed");
+
+        lockfile.set_len(0).unwrap();
+        lockfile
+            .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
+            .expect("Failed to write timestamp to lockfile");
+    }
+
+    std::fs::read(wasm_path).unwrap()
+}
+
+static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+
+pub fn current_contract() -> &'static [u8] {
+    CONTRACT.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME))
+}
+
+pub fn migration_contract() -> &'static [u8] {
+    MIGRATION_CONTRACT.get_or_init(|| load_contract(DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME))
 }
 
 pub async fn init() -> (Worker<Sandbox>, Contract) {
@@ -669,11 +687,11 @@ pub async fn derive_confidential_key_and_validate(
 /// - The proposal transaction fails,
 /// - The state call is not deserializable,
 /// - Or the post-upgrade code hash does not match the expected binary.
-pub async fn propose_and_vote_contract_update_to_current_binary(
+pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
+    new_contract_binary: &[u8],
 ) {
-    let new_contract_binary = current_contract();
     let propose_update_execution = accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(ProposeUpdateArgs {

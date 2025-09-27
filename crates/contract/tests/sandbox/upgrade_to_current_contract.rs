@@ -1,6 +1,6 @@
 use crate::sandbox::common::{
     add_dummy_state_and_pending_sign_requests, current_contract, gen_accounts,
-    propose_and_vote_contract_update_to_current_binary, submit_signature_response, PARTICIPANT_LEN,
+    propose_and_vote_contract_binary, submit_signature_response, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     crypto_shared::SignatureResponse,
@@ -144,7 +144,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
-    propose_and_vote_contract_update_to_current_binary(&accounts, &contract).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
