@@ -226,6 +226,7 @@ pub fn sign(
             participant: me,
         });
     };
+
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
         return Err(InitializationError::MissingParticipant {

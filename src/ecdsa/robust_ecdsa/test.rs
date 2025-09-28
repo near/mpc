@@ -31,7 +31,7 @@ pub fn run_sign_without_rerandomization(
     let coordinator = participants_presign[index as usize].0;
 
     // run sign instanciation with the necessary arguments
-    let result = crate::test::run_asymmetric_sign::<Secp256K1Sha256, _, _, _>(
+    let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
         participants_presign,
         coordinator,
         public_key,
@@ -50,7 +50,6 @@ pub fn run_sign_without_rerandomization(
     Ok((coordinator, signature))
 }
 
-type SigWithRerand = (Tweak, Participant, Signature);
 /// Runs signing by calling the generic run_sign function from crate::test
 /// This signing mimics what should happen in real world, i.e.,
 /// rerandomizing the presignatures
@@ -58,7 +57,7 @@ pub fn run_sign_with_rerandomization(
     participants_presign: Vec<(Participant, PresignOutput)>,
     public_key: Element,
     msg: &[u8],
-) -> Result<SigWithRerand, Box<dyn Error>> {
+) -> Result<(Tweak, Participant, Signature), Box<dyn Error>> {
     // hash the message into secp256k1 field
     let msg_hash = scalar_hash_secp256k1(msg);
 
@@ -96,7 +95,7 @@ pub fn run_sign_with_rerandomization(
     let coordinator = participants_presign[index as usize].0;
 
     // run sign instanciation with the necessary arguments
-    let result = crate::test::run_asymmetric_sign::<Secp256K1Sha256, _, _, _>(
+    let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
         rerand_participants_presign,
         coordinator,
         derived_pk,

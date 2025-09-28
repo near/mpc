@@ -26,14 +26,14 @@ pub type SigningShare = crate::SigningShare<BLS12381SHA256>;
 
 /// The output of the confidential key derivation protocol when run by the coordinator
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CKDCoordinatorOutput {
+pub struct CKDOutput {
     big_y: ElementG1,
     big_c: ElementG1,
 }
 
-impl CKDCoordinatorOutput {
+impl CKDOutput {
     pub fn new(big_y: ElementG1, big_c: ElementG1) -> Self {
-        CKDCoordinatorOutput { big_y, big_c }
+        CKDOutput { big_y, big_c }
     }
 
     /// Outputs big_y
@@ -54,7 +54,7 @@ impl CKDCoordinatorOutput {
 }
 
 /// None for participants and Some for coordinator
-pub type CKDOutput = Option<CKDCoordinatorOutput>;
+pub type CKDOutputOption = Option<CKDOutput>;
 pub type VerifyingKey = crate::VerifyingKey<BLS12381SHA256>;
 pub type PublicKey = ElementG1;
 pub type Signature = ElementG1;

@@ -36,6 +36,7 @@ pub fn sign(
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
+    // ensure my presence in the participant list
     if !participants.contains(me) {
         return Err(InitializationError::MissingParticipant {
             role: "self",
@@ -245,8 +246,7 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let result = run_sign_without_rerandomization(participants_presign, public_key, msg)?;
-        let sig = result.1.clone();
+        let (_, sig) = run_sign_without_rerandomization(participants_presign, public_key, msg)?;
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
 
         // verify the correctness of the generated signature

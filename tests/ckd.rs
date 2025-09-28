@@ -5,7 +5,7 @@ use threshold_signatures::{
     confidential_key_derivation::{
         ciphersuite::{verify_signature, BLS12381Scalar, Field, G1Projective, Group},
         protocol::ckd,
-        AppId, CKDOutput, KeygenOutput,
+        AppId, CKDOutputOption, KeygenOutput,
     },
     keygen,
     protocol::{run_protocol, Participant, Protocol},
@@ -57,7 +57,7 @@ fn test_ckd() -> Result<(), Box<dyn Error>> {
     let index = OsRng.next_u32() % participants.len() as u32;
     let coordinator = participants[index as usize];
 
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutput>>)> =
+    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
         Vec::with_capacity(participants.len());
 
     for p in &participants {

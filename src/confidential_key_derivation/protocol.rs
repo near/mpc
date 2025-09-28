@@ -1,6 +1,6 @@
 use crate::confidential_key_derivation::ciphersuite::{hash2curve, BLS12381SHA256};
 use crate::confidential_key_derivation::{
-    AppId, CKDCoordinatorOutput, CKDOutput, ElementG1, PublicKey, Scalar, SigningShare,
+    AppId, CKDOutput, CKDOutputOption, ElementG1, PublicKey, Scalar, SigningShare,
 };
 use crate::participants::{ParticipantCounter, ParticipantList};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
@@ -44,7 +44,7 @@ async fn do_ckd_participant(
     app_id: &AppId,
     app_pk: PublicKey,
     rng: &mut impl CryptoRngCore,
-) -> Result<CKDOutput, ProtocolError> {
+) -> Result<CKDOutputOption, ProtocolError> {
     let (norm_big_y, norm_big_c) =
         ckd_helper(&participants, me, private_share, app_id, app_pk, rng)?;
     let waitpoint = chan.next_waitpoint();
@@ -61,7 +61,7 @@ async fn do_ckd_coordinator(
     app_id: &AppId,
     app_pk: PublicKey,
     rng: &mut impl CryptoRngCore,
-) -> Result<CKDOutput, ProtocolError> {
+) -> Result<CKDOutputOption, ProtocolError> {
     let (mut norm_big_y, mut norm_big_c) =
         ckd_helper(&participants, me, private_share, app_id, app_pk, rng)?;
 
@@ -78,7 +78,7 @@ async fn do_ckd_coordinator(
         norm_big_y += big_y;
         norm_big_c += big_c;
     }
-    let ckd_output = CKDCoordinatorOutput::new(norm_big_y, norm_big_c);
+    let ckd_output = CKDOutput::new(norm_big_y, norm_big_c);
     Ok(Some(ckd_output))
 }
 
@@ -95,7 +95,7 @@ pub fn ckd(
     app_id: impl Into<AppId>,
     app_pk: PublicKey,
     rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = CKDOutput>, InitializationError> {
+) -> Result<impl Protocol<Output = CKDOutputOption>, InitializationError> {
     // not enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -115,6 +115,7 @@ pub fn ckd(
             participant: me,
         });
     };
+
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
         return Err(InitializationError::MissingParticipant {
@@ -151,7 +152,7 @@ async fn run_ckd_protocol(
     app_id: AppId,
     app_pk: PublicKey,
     mut rng: impl CryptoRngCore,
-) -> Result<CKDOutput, ProtocolError> {
+) -> Result<CKDOutputOption, ProtocolError> {
     if me == coordinator {
         do_ckd_coordinator(
             chan,
@@ -219,7 +220,7 @@ mod test {
         let index = OsRng.next_u32() % participants.len() as u32;
         let coordinator = participants[index as usize];
 
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutput>>)> =
+        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
             Vec::with_capacity(participants.len());
 
         let mut private_shares = Vec::new();
