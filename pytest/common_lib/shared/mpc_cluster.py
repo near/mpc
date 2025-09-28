@@ -301,6 +301,10 @@ class MpcCluster:
         prospective_epoch_id: int,
         wait_for_running=True,
     ):
+        assert self.wait_for_participants_to_have_attestation(new_participants), (
+            "all participants must have a valid TEE attestation for a resharing proposal to pass"
+        )
+
         self.define_candidate_set(new_participants)
         print(
             f"\033[91m(Vote Resharing) Voting to reshare with new threshold: \033[93m{new_threshold}\033[0m"
@@ -342,6 +346,55 @@ class MpcCluster:
         res = base64.b64decode(res)
         res = json.loads(res)
         return res
+
+    def get_tee_approved_accounts(self) -> List[str]:
+        contract_node = self.contract_node
+        get_tee_accounts_transaction = contract_node.sign_tx(
+            self.mpc_contract_account(), "get_tee_accounts", {}
+        )
+        transaction_response = contract_node.send_txn_and_check_success(
+            get_tee_accounts_transaction
+        )
+        assert "error" not in transaction_response, transaction_response
+
+        node_ids = transaction_response["result"]["status"]["SuccessValue"]
+        node_ids = base64.b64decode(node_ids)
+        node_ids = json.loads(node_ids)
+
+        tls_public_keys = [node_id["tls_public_key"] for node_id in node_ids]
+
+        return tls_public_keys
+
+    def wait_for_participants_to_have_attestation(
+        self, participants: List[MpcNode]
+    ) -> bool:
+        n_attempts = 120
+        n = 0
+
+        participant_tls_keys = [
+            participant.p2p_public_key for participant in participants
+        ]
+
+        participant_tls_keys = set(participant_tls_keys)
+
+        while n <= n_attempts:
+            tls_keys_with_attestation = set(self.get_tee_approved_accounts())
+            all_participants_have_attestation_submitted = (
+                tls_keys_with_attestation.issuperset(participant_tls_keys)
+            )
+
+            if all_participants_have_attestation_submitted:
+                return True
+
+            time.sleep(0.1)
+            n += 1
+            if n % 10 == 0:
+                print(
+                    f"TLS keys with attestation: {tls_keys_with_attestation}. TLS keys missing attestation: {participant_tls_keys - tls_keys_with_attestation}"
+                )
+                self.contract_state().print()
+
+        return False
 
     def contract_state(self):
         return ContractState(self.get_contract_state())
