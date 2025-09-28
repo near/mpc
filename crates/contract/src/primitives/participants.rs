@@ -3,9 +3,6 @@ use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use near_sdk::{near, AccountId, PublicKey};
 use std::{collections::BTreeSet, fmt::Display};
 
-#[cfg(any(test, feature = "test-utils"))]
-use crate::tee::tee_state::NodeId;
-
 pub mod hpke {
     pub type PublicKey = [u8; 32];
 }
@@ -204,13 +201,10 @@ impl Participants {
         }
     }
 
-    pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
+    pub fn get_public_keys(&self) -> BTreeSet<PublicKey> {
         self.participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: p_info.sign_pk.clone(),
-            })
+            .map(|(_, _, p_info)| p_info.sign_pk.clone())
             .collect()
     }
 }
