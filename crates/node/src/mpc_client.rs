@@ -18,7 +18,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
-use attestation::attestation::Attestation;
+use attestation::report_data::ReportData;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
@@ -27,6 +27,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tee_authority::tee_authority::TeeAuthority;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 
@@ -78,6 +79,7 @@ impl MpcClient {
 
     /// Main entry point for the MPC node. Runs all the business logic for doing
     /// multiparty computation.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run(
         self: &Arc<Self>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
@@ -86,7 +88,8 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-        attestation: Attestation,
+        tee_authority: TeeAuthority,
+        tls_public_key: near_sdk::PublicKey,
         account_public_key: VerifyingKey,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
@@ -138,20 +141,35 @@ impl MpcClient {
 
         let attestation_submission_handle = {
             let chain_txn_sender = chain_txn_sender.clone();
-            let attestation = attestation.clone();
+            let tee_authority = tee_authority.clone();
+            let tls_public_key = tls_public_key.clone();
             tracking::spawn("attestation_submission", async move {
+                let mut interval = tokio::time::interval(ATTESTATION_SUBMISSION_INTERVAL_DURATION);
                 loop {
-                    sleep(ATTESTATION_SUBMISSION_INTERVAL_DURATION).await;
-                    if let Err(e) = submit_remote_attestation(
-                        chain_txn_sender.clone(),
-                        attestation.clone(),
-                        account_public_key,
-                    )
-                    .await
-                    {
-                        tracing::error!("Failed to submit remote attestation: {:?}", e);
-                    } else {
-                        tracing::info!("Successfully submitted remote attestation");
+                    interval.tick().await;
+
+                    // Generate fresh attestation for each submission
+                    let report_data = ReportData::new(tls_public_key.clone());
+                    match tee_authority.generate_attestation(report_data).await {
+                        Ok(fresh_attestation) => {
+                            if let Err(e) = submit_remote_attestation(
+                                chain_txn_sender.clone(),
+                                fresh_attestation,
+                                account_public_key,
+                            )
+                            .await
+                            {
+                                tracing::error!(
+                                    "Failed to submit fresh remote attestation: {:?}",
+                                    e
+                                );
+                            } else {
+                                tracing::info!("Successfully submitted fresh remote attestation");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to generate fresh attestation: {:?}", e);
+                        }
                     }
                 }
             })

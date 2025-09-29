@@ -26,7 +26,6 @@ use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self};
 use crate::web::DebugRequest;
-use attestation::attestation::Attestation;
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -36,6 +35,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use tee_authority::tee_authority::TeeAuthority;
 use threshold_signatures::{ecdsa, eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -67,8 +67,11 @@ pub struct Coordinator<TransactionSender> {
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
 
-    /// Attestation for periodic submission.
-    pub attestation: Attestation,
+    /// TEE Authority for generating fresh attestations.
+    pub tee_authority: TeeAuthority,
+
+    /// TLS public key for attestation generation.
+    pub tls_public_key: near_sdk::PublicKey,
 
     /// Account public key for attestation submission.
     pub account_public_key: VerifyingKey,
@@ -185,7 +188,8 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
-                                self.attestation.clone(),
+                                self.tee_authority.clone(),
+                                self.tls_public_key.clone(),
                                 self.account_public_key,
                             ),
                         )?,
@@ -335,7 +339,8 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
-        attestation: Attestation,
+        tee_authority: TeeAuthority,
+        tls_public_key: near_sdk::PublicKey,
         account_public_key: VerifyingKey,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
@@ -463,7 +468,8 @@ where
         });
         let p2p_public_key = p2p_key.verifying_key();
 
-        let attestation = attestation.clone();
+        let tee_authority = tee_authority.clone();
+        let tls_public_key = tls_public_key.clone();
         let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
             "running mpc job",
             async move {
@@ -581,7 +587,8 @@ where
                         block_update_receiver,
                         chain_txn_sender,
                         debug_request_receiver,
-                        attestation.clone(),
+                        tee_authority.clone(),
+                        tls_public_key.clone(),
                         account_public_key,
                     )
                     .await?;

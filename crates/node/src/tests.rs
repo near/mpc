@@ -26,7 +26,6 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
 use assert_matches::assert_matches;
-use attestation::attestation::{Attestation, MockAttestation};
 use ed25519_dalek::SigningKey;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
@@ -38,6 +37,7 @@ use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::{ecdsa, eddsa, keygen};
@@ -268,10 +268,15 @@ impl OneNodeTestConfig {
                 let key_storage_config =
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
 
-                // Create test attestation and account key
-                let test_attestation = Attestation::Mock(MockAttestation::Valid);
                 let test_signing_key = SigningKey::generate(&mut OsRng);
                 let test_account_public_key = test_signing_key.verifying_key();
+
+                // Create mock TeeAuthority and TLS public key for testing
+                let test_tee_authority = TeeAuthority::Local(LocalTeeAuthorityConfig::default());
+                let test_tls_public_key = near_sdk::PublicKey::from_str(
+                    "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw9X4N1BpG9iBLRd",
+                )
+                .unwrap();
 
                 let coordinator = Coordinator {
                     clock: self.clock,
@@ -282,8 +287,9 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
-                    attestation: test_attestation,
                     account_public_key: test_account_public_key,
+                    tee_authority: test_tee_authority,
+                    tls_public_key: test_tls_public_key,
                 };
                 coordinator.run().await
             };

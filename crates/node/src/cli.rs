@@ -331,7 +331,7 @@ impl StartCmd {
             .verifying_key()
             .to_near_sdk_public_key()?;
 
-        let report_data = ReportData::new(tls_public_key);
+        let report_data = ReportData::new(tls_public_key.clone());
         let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let attestation = tee_authority.generate_attestation(report_data).await?;
         let web_server = start_web_server(
@@ -384,7 +384,8 @@ impl StartCmd {
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,
-            attestation,
+            tee_authority,
+            tls_public_key,
             account_public_key,
         };
         coordinator.run().await
