@@ -802,6 +802,25 @@ pub async fn submit_participant_info(
     Ok(result.is_success())
 }
 
+pub async fn get_participant_attestation(
+    contract: &Contract,
+    tls_key: &PublicKey,
+) -> anyhow::Result<Option<Attestation>> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
+    let result = contract
+        .as_account()
+        .call(contract.id(), "get_attestation")
+        .args_json(json!({
+            "tls_public_key": dto_tls_key_bytes
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+
+    Ok(result.json()?)
+}
+
 pub async fn assert_running_return_participants(
     contract: &Contract,
 ) -> anyhow::Result<Participants> {

@@ -1,5 +1,5 @@
 use super::handler::listen_blocks;
-use super::participants::{monitor_contract_state, ContractState};
+use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
@@ -48,11 +48,11 @@ pub fn spawn_real_indexer(
     my_near_account_id: AccountId,
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
+    protocol_state_sender: watch::Sender<ProtocolContractState>,
 ) -> IndexerAPI<impl TransactionSender> {
-    let (chain_config_sender, chain_config_receiver) =
-        tokio::sync::watch::channel::<ContractState>(ContractState::WaitingForSync);
+    let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
+
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
 
@@ -103,13 +103,6 @@ pub fn spawn_real_indexer(
                 process_blocks_receiver
             };
 
-            actix::spawn(monitor_contract_state(
-                indexer_state.clone(),
-                indexer_config.port_override,
-                chain_config_sender,
-                protocol_state_sender,
-            ));
-
             actix::spawn(indexer_logger(
                 Arc::clone(&indexer_state.stats),
                 indexer_state.view_client.clone(),
@@ -126,6 +119,23 @@ pub fn spawn_real_indexer(
                 allowed_docker_images_sender,
                 indexer_state.clone(),
             ));
+
+            // Returns once the contract state is available.
+            let contract_state_receiver = monitor_contract_state(
+                indexer_state.clone(),
+                indexer_config.port_override,
+                protocol_state_sender,
+            )
+            .await;
+
+            if contract_state_sender_oneshot
+                .send(contract_state_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send contract state receiver back to main driver."
+                )
+            };
 
             // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
@@ -159,8 +169,12 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("txn_sender is returned from the `block_on` expression above.");
 
+    let contract_state_receiver = contract_state_receiver_oneshot
+        .blocking_recv()
+        .expect("Contract state receiver must be returned by indexer.");
+
     IndexerAPI {
-        contract_state_receiver: chain_config_receiver,
+        contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
