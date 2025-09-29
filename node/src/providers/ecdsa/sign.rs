@@ -56,13 +56,13 @@ impl EcdsaSignatureProvider {
 
         let (signature, public_key) = match res {
             Ok(res) => res,
-            e => {
+            err => {
                 participants.iter().for_each(|id| {
-                    metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION
+                    metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_LEADER
                         .with_label_values(&[&id.raw().to_string()])
                         .inc();
                 });
-                return e;
+                return err;
             }
         };
 
@@ -85,7 +85,7 @@ impl EcdsaSignatureProvider {
 
         let domain_data = self.domain_data(sign_request.domain)?;
 
-        FollowerSignComputation {
+        let sign_computation = FollowerSignComputation {
             keygen_out: domain_data.keyshare,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
@@ -95,13 +95,26 @@ impl EcdsaSignatureProvider {
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
-        }
-        .perform_leader_centric_computation(
-            channel,
-            Duration::from_secs(self.config.signature.timeout_sec),
-        )
-        .await?;
+        };
+        let participants = channel.participants().to_vec();
+        let res = sign_computation
+            .perform_leader_centric_computation(
+                channel,
+                Duration::from_secs(self.config.signature.timeout_sec),
+            )
+            .await;
 
+        match res {
+            Ok(res) => res,
+            err => {
+                participants.iter().for_each(|id| {
+                    metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_FOLLOWER
+                        .with_label_values(&[&id.raw().to_string()])
+                        .inc();
+                });
+                return err;
+            }
+        };
         Ok(())
     }
 }
