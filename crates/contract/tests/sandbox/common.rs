@@ -65,9 +65,6 @@ use threshold_signatures::{
     frost_ed25519,
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
 };
-
-pub const CONTRACT_FILE_PATH: &str =
-    "../../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm";
 pub const PARTICIPANT_LEN: usize = 3;
 
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
@@ -681,12 +678,12 @@ pub async fn derive_confidential_key_and_validate(
 /// This function:
 /// 1. Submits a proposal to upgrade the contract.
 /// 2. Casts votes until the proposal is executed.
-/// 3. Verifies the contract was upgraded by checking the code hash.
+/// 3. Verifies the contract was upgraded by checking the contract's binary.
 ///
 /// Panics if:
 /// - The proposal transaction fails,
 /// - The state call is not deserializable,
-/// - Or the post-upgrade code hash does not match the expected binary.
+/// - Or the post-upgrade code does not match the expected binary.
 pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
@@ -957,7 +954,7 @@ pub struct InjectedContractState {
 /// so that migration paths are exercised in upgrade tests.
 ///
 /// The pending signature requests can be responded to.
-pub async fn add_dummy_state_and_pending_sign_requests(
+pub async fn execute_key_generation_and_add_random_state(
     accounts: &[Account],
     participants: Participants,
     contract: &Contract,

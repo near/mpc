@@ -152,16 +152,6 @@ def compile_parallel_contract(request):
     )
 
 
-@pytest.fixture(scope="session")
-def compile_migration_contract(request):
-    """
-    This function compiles the test migration contract.
-    """
-    compile_contract_common(
-        contracts.MIGRATION_CONTRACT_PACKAGE_NAME,
-    )
-
-
 def git_root() -> Path:
     git_repo = git.Repo(".", search_parent_directories=True)
     return Path(git_repo.git.rev_parse("--show-toplevel"))
