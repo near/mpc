@@ -110,7 +110,7 @@ impl KeyshareStorage {
         let epoch_id = key_id_to_generate.epoch_id;
         let num_permanent_keys_same_epoch = if let Some(permanent) = permanent {
             if permanent.epoch_id == epoch_id {
-                self.verify_existing_keyshares_are_prefix_of_keyset(
+                Self::verify_existing_keyshares_are_prefix_of_keyset(
                     &permanent.keyshares,
                     epoch_id,
                     already_generated_keys,
@@ -187,7 +187,7 @@ impl KeyshareStorage {
         } else {
             Vec::new()
         };
-        self.verify_existing_keyshares_are_prefix_of_keyset(
+        Self::verify_existing_keyshares_are_prefix_of_keyset(
             &existing_keyshares,
             keyset.epoch_id,
             &keyset.domains,
@@ -222,7 +222,6 @@ impl KeyshareStorage {
     /// of the expected keyset, i.e. there are no extra keyshares, and each keyshare matches the
     /// keyset entry at the same index.
     fn verify_existing_keyshares_are_prefix_of_keyset(
-        &self,
         existing_keyshares: &[Keyshare],
         epoch_id: EpochId,
         expected_keys: &[KeyForDomain],
@@ -266,6 +265,98 @@ impl KeyshareStorage {
             .check_consistency(epoch_id, key)
             .with_context(|| format!("Keyshare loaded from temporary storage for {:?}", key_id))?;
         Ok(keyshare)
+    }
+
+    // todo:
+    // - unittests
+    // - delete the corresponding test helper function and use this one instead.
+    // - make this &mut, s.t. we are sure we don't use this concurrently with another function.
+    // - refactor between this and `get_keyshares` or whatever that name is
+    // - function description with all the error messages.
+    // - refactor `Vec<Keyshares>` maybe and Keyset to have some type guarantee that the order is
+    // correct
+    pub async fn import_keyshares(
+        &self,
+        keyshares_to_import: Vec<Keyshare>,
+        contract_keyset: Keyset,
+    ) -> anyhow::Result<()> {
+        // todo: lots of duplicate logic with `get_keyshares` --> see if we can refactor and re-use
+        // some blocks of it
+        Self::verify_existing_keyshares_are_prefix_of_keyset(
+            &keyshares_to_import,
+            contract_keyset.epoch_id,
+            &contract_keyset.domains,
+        )?;
+
+        if keyshares_to_import.len() != contract_keyset.domains.len() {
+            anyhow::bail!("inconsistent keyset")
+        }
+
+        let permanent = self.permanent.load().await?;
+        let existing_keyshares = if let Some(permanent) = permanent {
+            if permanent.epoch_id == contract_keyset.epoch_id {
+                permanent.keyshares
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        Self::verify_existing_keyshares_are_prefix_of_keyset(
+            &existing_keyshares,
+            contract_keyset.epoch_id,
+            &contract_keyset.domains,
+        )?;
+
+        let mut new_keyshares = existing_keyshares;
+        for domain in contract_keyset.domains.iter().skip(new_keyshares.len()) {
+            let key_id =
+                KeyEventId::new(contract_keyset.epoch_id, domain.domain_id, domain.attempt);
+            let keyshare: Keyshare = self
+                .temporary
+                .load_keyshare(key_id)
+                .await?
+                .or_else(|| {
+                    keyshares_to_import
+                        .iter()
+                        .find(|share| share.key_id == key_id)
+                        .cloned()
+                })
+                .ok_or_else(|| anyhow::anyhow!("Missing keyshare {:?}", key_id))?;
+
+            new_keyshares.push(keyshare);
+        }
+
+        // now, do a final verification that everything is in order
+        Self::verify_existing_keyshares_are_prefix_of_keyset(
+            &new_keyshares,
+            contract_keyset.epoch_id,
+            &contract_keyset.domains,
+        )?;
+
+        // sanity check
+        if new_keyshares.len() != keyshares_to_import.len() {
+            anyhow::bail!("inconsistent keyset.");
+        }
+
+        let consistent_keyset = new_keyshares
+            .iter()
+            .zip(&keyshares_to_import)
+            .all(|(left, right)| left == right);
+        if !consistent_keyset {
+            anyhow::bail!("inconsistent keyset. this should never happen");
+        }
+
+        let new_permanent_keyshare = PermanentKeyshareData {
+            epoch_id: contract_keyset.epoch_id,
+            keyshares: new_keyshares.clone(),
+        };
+        self.permanent.store(&new_permanent_keyshare).await?;
+        self.temporary
+            .delete_keyshares_prior_to_epoch_id(contract_keyset.epoch_id)
+            .await?;
+        Ok(())
     }
 }
 

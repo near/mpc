@@ -1,6 +1,6 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
@@ -63,13 +63,8 @@ impl MpcConfig {
         my_near_account_id: &AccountId,
         my_p2p_public_key: &ed25519_dalek::VerifyingKey,
     ) -> Option<Self> {
-        let my_participant_id = participants
-            .participants
-            .iter()
-            .find(|p| {
-                &p.near_account_id == my_near_account_id && &p.p2p_public_key == my_p2p_public_key
-            })?
-            .id;
+        let my_participant_id =
+            participants.get_participant_id_by_node_id(my_near_account_id, my_p2p_public_key)?;
         Some(Self {
             my_participant_id,
             participants,
@@ -176,19 +171,56 @@ pub struct ParticipantsConfig {
     pub participants: Vec<ParticipantInfo>,
 }
 
+pub enum NodeStatus {
+    Active,
+    Inactive,
+    Onboarding,
+}
+
 impl ParticipantsConfig {
+    pub fn get_node_status(
+        &self,
+        account_id: &AccountId,
+        p2p_public_key: &VerifyingKey,
+    ) -> NodeStatus {
+        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
+            if &participant_info.p2p_public_key == p2p_public_key {
+                NodeStatus::Active
+            } else {
+                NodeStatus::Onboarding
+            }
+        } else {
+            NodeStatus::Inactive
+        }
+    }
+    pub fn get_info_by_account_id(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
+        self.participants
+            .iter()
+            .find(|participant_info| participant_info.near_account_id == *account_id)
+    }
+
     pub fn get_info(&self, id: ParticipantId) -> Option<&ParticipantInfo> {
-        self.participants.iter().find(|p| p.id == id)
+        self.participants
+            .iter()
+            .find(|participant_info| participant_info.id == id)
     }
 
     pub fn get_participant_id(&self, account_id: &AccountId) -> Option<ParticipantId> {
-        self.participants.iter().find_map(|participant_info| {
-            if participant_info.near_account_id == *account_id {
-                Some(participant_info.id)
-            } else {
-                None
+        self.get_info_by_account_id(account_id)
+            .map(|participant_info| participant_info.id)
+    }
+
+    pub fn get_participant_id_by_node_id(
+        &self,
+        account_id: &AccountId,
+        p2p_public_key: &VerifyingKey,
+    ) -> Option<ParticipantId> {
+        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
+            if &participant_info.p2p_public_key == p2p_public_key {
+                return Some(participant_info.id);
             }
-        })
+        };
+        None
     }
 }
 
