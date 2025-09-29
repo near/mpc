@@ -468,8 +468,6 @@ where
         });
         let p2p_public_key = p2p_key.verifying_key();
 
-        let tee_authority = tee_authority.clone();
-        let tls_public_key = tls_public_key.clone();
         let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
             "running mpc job",
             async move {

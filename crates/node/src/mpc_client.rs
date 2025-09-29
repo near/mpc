@@ -141,8 +141,6 @@ impl MpcClient {
 
         let attestation_submission_handle = {
             let chain_txn_sender = chain_txn_sender.clone();
-            let tee_authority = tee_authority.clone();
-            let tls_public_key = tls_public_key.clone();
             tracking::spawn("attestation_submission", async move {
                 let mut interval = tokio::time::interval(ATTESTATION_SUBMISSION_INTERVAL_DURATION);
                 loop {
