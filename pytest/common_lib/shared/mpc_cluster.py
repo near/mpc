@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json
 import pathlib
 import sys
