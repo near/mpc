@@ -26,6 +26,8 @@ use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self};
 use crate::web::DebugRequest;
+use attestation::attestation::Attestation;
+use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -64,6 +66,12 @@ pub struct Coordinator<TransactionSender> {
 
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
+
+    /// Attestation for periodic submission.
+    pub attestation: Attestation,
+
+    /// Account public key for attestation submission.
+    pub account_public_key: VerifyingKey,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -177,6 +185,8 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
+                                self.attestation.clone(),
+                                self.account_public_key,
                             ),
                         )?,
                         stop_fn,
@@ -325,6 +335,8 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
+        attestation: Attestation,
+        account_public_key: VerifyingKey,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -451,6 +463,7 @@ where
         });
         let p2p_public_key = p2p_key.verifying_key();
 
+        let attestation = attestation.clone();
         let running_handle = tracking::spawn::<_, anyhow::Result<MpcJobResult>>(
             "running mpc job",
             async move {
@@ -568,6 +581,8 @@ where
                         block_update_receiver,
                         chain_txn_sender,
                         debug_request_receiver,
+                        attestation.clone(),
+                        account_public_key,
                     )
                     .await?;
 

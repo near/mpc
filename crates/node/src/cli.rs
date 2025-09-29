@@ -365,12 +365,11 @@ impl StartCmd {
         };
 
         // submit remote attestation
+        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
         {
-            let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
-
             submit_remote_attestation(
                 indexer_api.txn_sender.clone(),
-                attestation,
+                attestation.clone(),
                 account_public_key,
             )
             .await?;
@@ -385,6 +384,8 @@ impl StartCmd {
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,
+            attestation,
+            account_public_key,
         };
         coordinator.run().await
     }

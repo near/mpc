@@ -26,6 +26,8 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
 use assert_matches::assert_matches;
+use attestation::attestation::{Attestation, MockAttestation};
+use ed25519_dalek::SigningKey;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
@@ -266,6 +268,11 @@ impl OneNodeTestConfig {
                 let key_storage_config =
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
 
+                // Create test attestation and account key
+                let test_attestation = Attestation::Mock(MockAttestation::Valid);
+                let test_signing_key = SigningKey::generate(&mut OsRng);
+                let test_account_public_key = test_signing_key.verifying_key();
+
                 let coordinator = Coordinator {
                     clock: self.clock,
                     config_file: self.config,
@@ -275,6 +282,8 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
+                    attestation: test_attestation,
+                    account_public_key: test_account_public_key,
                 };
                 coordinator.run().await
             };

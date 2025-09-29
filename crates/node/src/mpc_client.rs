@@ -13,10 +13,13 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::tee::remote_attestation::submit_remote_attestation;
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
+use attestation::attestation::Attestation;
+use ed25519_dalek::VerifyingKey;
 use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -35,6 +38,7 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
+const ATTESTATION_SUBMISSION_INTERVAL_DURATION: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -82,6 +86,8 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
+        attestation: Attestation,
+        account_public_key: VerifyingKey,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -130,6 +136,27 @@ impl MpcClient {
             })
         };
 
+        let attestation_submission_handle = {
+            let chain_txn_sender = chain_txn_sender.clone();
+            let attestation = attestation.clone();
+            tracking::spawn("attestation_submission", async move {
+                loop {
+                    sleep(ATTESTATION_SUBMISSION_INTERVAL_DURATION).await;
+                    if let Err(e) = submit_remote_attestation(
+                        chain_txn_sender.clone(),
+                        attestation.clone(),
+                        account_public_key,
+                    )
+                    .await
+                    {
+                        tracing::error!("Failed to submit remote attestation: {:?}", e);
+                    } else {
+                        tracing::info!("Successfully submitted remote attestation");
+                    }
+                }
+            })
+        };
+
         let ecdsa_background_tasks = tracking::spawn(
             "ecdsa_background_tasks",
             self.ecdsa_signature_provider
@@ -156,6 +183,7 @@ impl MpcClient {
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;
         tee_verification_handle.await?;
+        attestation_submission_handle.await?;
 
         Ok(())
     }
