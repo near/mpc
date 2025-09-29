@@ -486,13 +486,8 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, abort.key_event_id);
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
-                    ChainSendTransactionRequest::SubmitParticipantInfo(participant_info) => {
-                        let mut contract = contract.lock().await;
-                        let participant_info = ParticipantInfo {
-                            sign_pk: participant_info.sign_pk.clone(),
-                            url: format!("http://test-{}.localhost:3030", account_id),
-                        };
-                        contract.update_participant_info(account_id, participant_info);
+                    ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
+                        // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
                 }
             }
