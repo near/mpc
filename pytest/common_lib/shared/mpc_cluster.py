@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json
 import pathlib
 import sys
@@ -516,49 +515,6 @@ class MpcCluster:
         self.request_node.send_await_check_txs_parallel(
             "ckd request", txs, ckd_verification
         )
-
-    def propose_update(self, args):
-        participant = self.mpc_nodes[0]
-        tx = participant.sign_tx(
-            self.mpc_contract_account(),
-            ContractMethod.PROPOSE_UPDATE,
-            args,
-            # TODO: #771 https://github.com/near/mpc/issues/771
-            deposit=11264920000000000000000000,
-        )
-        res = participant.send_txn_and_check_success(tx, timeout=30)
-        return int(
-            base64.b64decode(res["result"]["status"]["SuccessValue"])
-            .decode("utf-8")
-            .strip("")
-        )
-
-    def get_deployed_contract_hash(self, finality="optimistic"):
-        account_id = self.mpc_contract_account()
-        query = {
-            "request_type": "view_code",
-            "account_id": account_id,
-            "finality": finality,
-        }
-        response = self.contract_node.near_node.json_rpc("query", query)
-        assert "error" not in response, (
-            f"Error fetching contract code: {response['error']}"
-        )
-        code_b64 = response.get("result", {}).get("code_base64", "")
-        contract_code = base64.b64decode(code_b64)
-        sha256_hash = hashlib.sha256(contract_code).hexdigest()
-        return sha256_hash
-
-    def vote_update(self, nodes: List[MpcNode], update_id: int):
-        vote_update_args = {"id": update_id}
-        self.parallel_contract_calls(
-            method=ContractMethod.VOTE_UPDATE, nodes=nodes, args=vote_update_args
-        )
-
-    def assert_is_deployed(self, contract):
-        hash_expected = hashlib.sha256(contract).hexdigest()
-        hash_deployed = self.get_deployed_contract_hash()
-        assert hash_expected == hash_deployed, "invalid contract deployed"
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]

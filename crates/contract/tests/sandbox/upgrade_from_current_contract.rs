@@ -1,7 +1,8 @@
 use crate::sandbox::common::{
-    add_dummy_state_and_pending_sign_requests, current_contract, init_env_secp256k1,
-    init_with_candidates, migration_contract, propose_and_vote_contract_binary,
-    vote_update_till_completion, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    assert_running_return_participants, current_contract,
+    execute_key_generation_and_add_random_state, init_env_secp256k1, init_with_candidates,
+    migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
+    CURRENT_CONTRACT_DEPLOY_DEPOSIT,
 };
 use mpc_contract::config::Config;
 use mpc_contract::state::ProtocolContractState;
@@ -375,13 +376,10 @@ async fn update_from_current_contract_to_migration_contract() {
     // in add_dummy_state_and_pending_sign_requests call below.
     let (_worker, contract, accounts) = init_with_candidates(vec![]).await;
 
-    let ProtocolContractState::Running(running_state): ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap()
-    else {
-        panic!("Contract must be in running state");
-    };
-    let participants = running_state.parameters.participants().clone();
+    let participants = assert_running_return_participants(&contract)
+        .await
+        .expect("Contract must be in running state.");
 
-    add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+    execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
     propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }
