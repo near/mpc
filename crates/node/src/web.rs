@@ -122,27 +122,22 @@ async fn third_party_licenses() -> Html<&'static str> {
 
 #[derive(Clone, Serialize)]
 pub struct StaticWebData {
-    pub near_signer_public_key: VerifyingKey,
-    pub near_p2p_public_key: VerifyingKey,
+    pub node_public_key: VerifyingKey,
     pub near_responder_public_keys: Vec<VerifyingKey>,
     pub tee_participant_info: Option<Attestation>,
 }
 
 struct PublicKeys {
-    near_signer_public_key: VerifyingKey,
-    near_p2p_public_key: VerifyingKey,
+    node_public_key: VerifyingKey,
     near_responder_public_keys: Vec<VerifyingKey>,
 }
 
 fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
-    let near_signer_public_key = secrets_config
+    let node_verifying_key = secrets_config
         .persistent_secrets
-        .near_signer_key
+        .node_signing_key
         .verifying_key();
-    let near_p2p_public_key = secrets_config
-        .persistent_secrets
-        .p2p_private_key
-        .verifying_key();
+
     let near_responder_public_keys = secrets_config
         .persistent_secrets
         .near_responder_keys
@@ -151,8 +146,7 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
         .collect();
 
     PublicKeys {
-        near_signer_public_key,
-        near_p2p_public_key,
+        node_public_key: node_verifying_key,
         near_responder_public_keys,
     }
 }
@@ -161,8 +155,7 @@ impl StaticWebData {
     pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
         let public_keys = get_public_keys(value);
         Self {
-            near_signer_public_key: public_keys.near_signer_public_key,
-            near_p2p_public_key: public_keys.near_p2p_public_key,
+            node_public_key: public_keys.node_public_key,
             near_responder_public_keys: public_keys.near_responder_public_keys,
             tee_participant_info,
         }

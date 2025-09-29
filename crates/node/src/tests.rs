@@ -351,7 +351,7 @@ impl IntegrationTestSetup {
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {
-                    p2p_private_key: p2p_key,
+                    node_signing_key: p2p_key,
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },

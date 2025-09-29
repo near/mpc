@@ -240,8 +240,7 @@ impl SecretsConfig {
 /// from outside.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistentSecrets {
-    pub p2p_private_key: SigningKey,
-    pub near_signer_key: SigningKey,
+    pub node_signing_key: SigningKey,
     pub near_responder_keys: Vec<SigningKey>,
 }
 
@@ -270,15 +269,13 @@ impl PersistentSecrets {
 
         let mut os_rng = rand::rngs::OsRng;
         let p2p_secret = SigningKey::generate(&mut os_rng);
-        let near_signer_key = SigningKey::generate(&mut os_rng);
 
         let near_responder_keys = (0..number_of_responder_keys)
             .map(|_| SigningKey::generate(&mut os_rng))
             .collect::<Vec<_>>();
 
         let secrets = PersistentSecrets {
-            p2p_private_key: p2p_secret,
-            near_signer_key,
+            node_signing_key: p2p_secret,
             near_responder_keys,
         };
 
@@ -374,8 +371,8 @@ mod tests {
         let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
 
         assert_eq!(
-            actual_secrets.p2p_private_key,
-            expected_secrets.p2p_private_key
+            actual_secrets.node_signing_key,
+            expected_secrets.node_signing_key
         );
         assert_eq!(
             actual_secrets.near_signer_key,

@@ -39,7 +39,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
-    let expected_node_ids = initial_participants.get_node_ids();
+    let expected_node_ids = initial_participants.get_public_keys();
 
     // submit attestations
     submit_tee_attestations(&contract, &mut env_accounts, &expected_node_ids).await?;
@@ -51,7 +51,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Add two prospective Participants
     // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
     let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
-    let non_participant_uids = non_participants.get_node_ids();
+    let non_participant_uids = non_participants.get_public_keys();
     submit_tee_attestations(
         &contract,
         &mut env_non_participant_accounts,
@@ -95,7 +95,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
             .expect("Failed to insert participant");
     }
 
-    let expected_tee_post_resharing = new_participants.get_node_ids();
+    let expected_tee_post_resharing = new_participants.get_public_keys();
     let new_threshold_parameters =
         ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
 
@@ -116,7 +116,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         .expect("Expected contract to be in Running state after resharing.");
 
     // Get current participants to compare
-    let final_participants_node_ids = final_participants.get_node_ids();
+    let final_participants_node_ids = final_participants.get_public_keys();
     // Verify only the new participants remain
     assert_eq!(final_participants_node_ids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up

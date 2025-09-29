@@ -23,7 +23,10 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::{
+        quote::TeeQuoteStatus,
+        tee_state::{AttestationRecord, TeeState},
+    },
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 
@@ -55,10 +58,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use state::{running::RunningContractState, ProtocolContractState};
-use tee::{
-    proposal::MpcDockerImageHash,
-    tee_state::{NodeId, TeeValidationResult},
-};
+use tee::{proposal::MpcDockerImageHash, tee_state::TeeValidationResult};
 
 /// Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
@@ -584,11 +584,11 @@ impl MpcContract {
 
         // Add the participant information to the contract state
         let is_new_attestation = self.tee_state.add_participant(
-            NodeId {
+            tls_public_key,
+            AttestationRecord {
                 account_id: account_id.clone(),
-                tls_public_key,
+                attestation: proposed_participant_attestation,
             },
-            proposed_participant_attestation,
         );
 
         // Both participants and non-participants can propose. Non-participants must pay for the
@@ -991,7 +991,7 @@ impl MpcContract {
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
-    pub fn get_tee_accounts(&self) -> Vec<NodeId> {
+    pub fn get_tee_accounts(&self) -> Vec<PublicKey> {
         log!("get_tee_accounts: signer={}", env::signer_account_id());
         self.tee_state.get_tee_accounts()
     }
@@ -1430,18 +1430,12 @@ impl MpcContract {
                 )),
             );
         }
-        // ensure that this node has a valid TEE quote
-        let node_id = NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: expected_destination_node
-                .destination_node_info
-                .sign_pk
-                .clone(),
-        };
+        // ensure that the node has a valid TEE quote
+        let public_key = &expected_destination_node.signer_account_pk;
 
         if !(matches!(
             self.tee_state.verify_tee_participant(
-                &node_id,
+                public_key,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds)
             ),
             TeeQuoteStatus::Valid

@@ -46,7 +46,7 @@ pub fn spawn_real_indexer(
     home_dir: PathBuf,
     indexer_config: IndexerConfig,
     my_near_account_id: AccountId,
-    account_secret_key: SigningKey,
+    node_signing_key: SigningKey,
     respond_config: RespondConfig,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
@@ -81,7 +81,7 @@ pub fn spawn_real_indexer(
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
-                account_secret_key.clone(),
+                node_signing_key.clone(),
                 respond_config_clone,
                 Arc::clone(&indexer_state),
             );

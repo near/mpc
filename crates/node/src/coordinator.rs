@@ -268,7 +268,7 @@ where
         chain_txn_sender: TransactionSender,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     ) -> anyhow::Result<MpcJobResult> {
-        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
+        let p2p_key = &secrets.persistent_secrets.node_signing_key;
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             participants,
             &config_file.my_near_account_id,
@@ -359,7 +359,7 @@ where
             .participants
             .retain(|p| participants_config.participants.contains(p));
 
-        let p2p_key = &secrets.persistent_secrets.p2p_private_key;
+        let p2p_key = &secrets.persistent_secrets.node_signing_key;
         let Some(mpc_config) = MpcConfig::from_participants_with_near_account_id(
             participants_config,
             &config_file.my_near_account_id,
