@@ -66,3 +66,28 @@ harness = false
 inherits = "release"
 overflow-checks = true
 debug = true
+
+[lints.clippy]
+# We might revisit these exceptions in the future
+missing-const-for-fn = "allow"
+trait-duplication-in-bounds = "allow"
+missing-errors-doc = "allow"
+similar-names = "allow"
+many-single-char-names = "allow"
+must-use-candidate = "allow"
+
+# TODO: remove this one https://github.com/near/threshold-signatures/issues/119
+cast-possible-truncation = "allow"
+# TODO: this detected some function which might panic https://github.com/near/threshold-signatures/issues/120
+missing-panics-doc = "allow"
+# TODO: this also hit too many cases https://github.com/near/threshold-signatures/issues/122
+indexing-slicing = "allow"
+
+# Part of clippy restriction
+panic = "deny"
+# TODO: enable this one
+# panic-in-result-fn = "warn"
+
+# Lint groups used
+nursery = {level = "warn", priority = -1}
+pedantic = {level = "warn", priority = -1}

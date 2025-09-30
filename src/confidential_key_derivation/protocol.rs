@@ -35,9 +35,9 @@ fn ckd_helper(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn do_ckd_participant(
+fn do_ckd_participant(
     mut chan: SharedChannel,
-    participants: ParticipantList,
+    participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
     private_share: SigningShare,
@@ -46,7 +46,7 @@ async fn do_ckd_participant(
     rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     let (norm_big_y, norm_big_c) =
-        ckd_helper(&participants, me, private_share, app_id, app_pk, rng)?;
+        ckd_helper(participants, me, private_share, app_id, app_pk, rng)?;
     let waitpoint = chan.next_waitpoint();
     chan.send_private(waitpoint, coordinator, &(norm_big_y, norm_big_c))?;
 
@@ -82,9 +82,10 @@ async fn do_ckd_coordinator(
     Ok(Some(ckd_output))
 }
 
-/// Runs the confidential key derivation protocol
+/// Runs the confidential key derivation protocol.
 /// This exact same function is called for both
 /// a coordinator and a normal participant.
+///
 /// Depending on whether the current participant is a coordinator or not,
 /// runs the signature protocol as either a participant or a coordinator.
 pub fn ckd(
@@ -101,7 +102,7 @@ pub fn ckd(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
 
     // kick out duplicates
     let Some(participants) = ParticipantList::new(participants) else {
@@ -114,7 +115,7 @@ pub fn ckd(
             role: "self",
             participant: me,
         });
-    };
+    }
 
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
@@ -122,7 +123,7 @@ pub fn ckd(
             role: "coordinator",
             participant: coordinator,
         });
-    };
+    }
 
     let comms = Comms::new();
     let chan = comms.shared_channel();
@@ -167,7 +168,7 @@ async fn run_ckd_protocol(
     } else {
         do_ckd_participant(
             chan,
-            participants,
+            &participants,
             coordinator,
             me,
             private_share,
@@ -175,7 +176,6 @@ async fn run_ckd_protocol(
             app_pk,
             &mut rng,
         )
-        .await
     }
 }
 
@@ -188,17 +188,16 @@ mod test {
     use std::error::Error;
 
     #[test]
-    fn test_hash2curve() -> Result<(), Box<dyn Error>> {
+    fn test_hash2curve() {
         let app_id = b"Hello Near";
         let app_id_same = b"Hello Near";
         let pt1 = hash2curve(&AppId::from(app_id));
         let pt2 = hash2curve(&AppId::from(app_id_same));
-        assert!(pt1 == pt2);
+        assert_eq!(pt1, pt2);
 
         let app_id = b"Hello Near!";
         let pt2 = hash2curve(&AppId::from(app_id));
-        assert!(pt1 != pt2);
-        Ok(())
+        assert_ne!(pt1, pt2);
     }
 
     #[test]

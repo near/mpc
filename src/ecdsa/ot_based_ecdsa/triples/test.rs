@@ -55,7 +55,7 @@ pub fn deal(
 }
 
 /// Run the batch random OT protocol between two parties.
-pub(crate) fn run_batch_random_ot(
+pub fn run_batch_random_ot(
 ) -> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);

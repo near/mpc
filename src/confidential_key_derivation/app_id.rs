@@ -21,7 +21,7 @@ impl<'de> Deserialize<'de> for AppId {
         D: serde::Deserializer<'de>,
     {
         let v: Vec<u8> = serde_bytes::Deserialize::deserialize(deserializer)?;
-        Ok(AppId(Arc::from(v)))
+        Ok(Self(Arc::from(v)))
     }
 }
 
@@ -87,7 +87,8 @@ impl BorshSerialize for AppId {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         // serialize as Vec<u8>
         let bytes: &[u8] = &self.0;
-        borsh::BorshSerialize::serialize(&(bytes.len() as u32), writer)?;
+        let bytes_len = u32::try_from(bytes.len()).map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        borsh::BorshSerialize::serialize(&bytes_len, writer)?;
         writer.write_all(bytes)
     }
 }
@@ -97,7 +98,7 @@ impl BorshDeserialize for AppId {
         let len = u32::deserialize_reader(reader)? as usize;
         let mut buf = vec![0u8; len];
         reader.read_exact(&mut buf)?;
-        Ok(AppId::from(buf))
+        Ok(Self::from(buf))
     }
 }
 
@@ -107,6 +108,8 @@ mod tests {
     use bincode::config;
     use bincode::serde::{decode_from_slice, encode_to_vec};
     use rand_core::{OsRng, RngCore};
+    use std::borrow::Borrow;
+    use std::collections::HashMap;
 
     #[test]
     fn test_app_id_display() {
@@ -200,12 +203,10 @@ mod tests {
         assert_eq!(app_id.len(), 3); // accessing slice method through Deref
 
         // Test Borrow
-        use std::borrow::Borrow;
         let borrowed: &[u8] = app_id.borrow();
         assert_eq!(borrowed, bytes.as_slice());
 
         // Test in a hash map context
-        use std::collections::HashMap;
         let mut map = HashMap::new();
         map.insert(app_id.clone(), "value");
 

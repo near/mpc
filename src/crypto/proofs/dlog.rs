@@ -30,7 +30,7 @@ pub struct Statement<'a, C: Ciphersuite> {
 
 impl<C: Ciphersuite> Statement<'_, C> {
     /// Encode into Vec<u8>: some sort of serialization
-    fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
+    fn encode(self) -> Result<Vec<u8>, ProtocolError> {
         let mut enc = Vec::new();
         enc.extend_from_slice(ENCODE_LABEL_STATEMENT);
 
@@ -40,7 +40,7 @@ impl<C: Ciphersuite> Statement<'_, C> {
                 enc.extend_from_slice(ser.as_ref());
             }
             _ => return Err(ProtocolError::PointSerialization),
-        };
+        }
         Ok(enc)
     }
 }

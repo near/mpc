@@ -235,8 +235,7 @@ impl MessageBuffer {
     /// We also need the header for the message, and the participant who sent it.
     fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
         let mut messages_lock = self.messages.lock().unwrap();
-        let messages = messages_lock.entry(header).or_default();
-        messages.send(from, message);
+        messages_lock.entry(header).or_default().send(from, message);
     }
 
     /// Pop a message for a particular header.
@@ -246,8 +245,7 @@ impl MessageBuffer {
     async fn pop(&self, header: MessageHeader) -> (Participant, MessageData) {
         let receiver = {
             let mut messages_lock = self.messages.lock().unwrap();
-            let messages = messages_lock.entry(header).or_default();
-            messages.receiver.clone()
+            messages_lock.entry(header).or_default().receiver.clone()
         };
         let mut receiver_lock = receiver.lock().await;
         receiver_lock
@@ -290,12 +288,11 @@ impl Comms {
             return;
         }
 
-        let header = match MessageHeader::from_bytes(&message) {
-            Some(h) => h,
-            _ => return,
+        let Some(header) = MessageHeader::from_bytes(&message) else {
+            return;
         };
 
-        self.incoming.push(header, from, message)
+        self.incoming.push(header, from, message);
     }
 
     fn send_raw(&self, data: Message) {
@@ -333,7 +330,8 @@ impl Comms {
     ) -> Result<(Participant, T), ProtocolError> {
         let (from, data) = self.incoming.pop(header).await;
         let decoded: Result<T, Box<dyn error::Error + Send + Sync>> =
-            rmp_serde::decode::from_slice(&data[MessageHeader::LEN..]).map_err(|e| e.into());
+            rmp_serde::decode::from_slice(&data[MessageHeader::LEN..])
+                .map_err(std::convert::Into::into);
         Ok((from, decoded?))
     }
 

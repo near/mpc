@@ -37,7 +37,7 @@ pub fn presign(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
 
     if args.threshold > participants.len() {
         return Err(InitializationError::BadParameters(
@@ -71,7 +71,7 @@ pub fn presign(
             role: "self",
             participant: me,
         });
-    };
+    }
 
     let ctx = Comms::new();
     let fut = do_presign(ctx.shared_channel(), participants, me, args, rng);
@@ -80,6 +80,7 @@ pub fn presign(
 
 /// /!\ Warning: the threshold in this scheme is the exactly the
 ///              same as the max number of malicious parties.
+#[allow(clippy::too_many_lines)]
 async fn do_presign(
     mut chan: SharedChannel,
     participants: ParticipantList,
@@ -116,7 +117,7 @@ async fn do_presign(
     }
 
     // Evaluate my secret shares for my polynomials
-    let mut shares = Shares::new(polynomials, me)?;
+    let mut shares = Shares::new(&polynomials, me)?;
 
     // Round 1
     // Receive evaluations from all participants
@@ -160,7 +161,7 @@ async fn do_presign(
     let identifiers: Vec<Scalar> = signingshares_map
         .participants()
         .iter()
-        .map(|p| p.scalar::<C>())
+        .map(crate::protocol::Participant::scalar::<C>)
         .collect();
 
     let signingshares = signingshares_map
@@ -180,8 +181,8 @@ async fn do_presign(
             let p = &identifiers[i];
             // exponent interpolation for (R0, .., Rt; i)
             let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
-                &identifiers[..threshold + 1],
-                &verifying_shares[..threshold + 1],
+                &identifiers[..=threshold],
+                &verifying_shares[..=threshold],
                 Some(p),
             )?;
 
@@ -197,8 +198,8 @@ async fn do_presign(
     // we know that identifiers.len()>threshold+1
     // evaluate the exponent interpolation on zero
     let big_r = PolynomialCommitment::eval_exponent_interpolation(
-        &identifiers[..threshold + 1],
-        &verifying_shares[..threshold + 1],
+        &identifiers[..=threshold],
+        &verifying_shares[..=threshold],
         None,
     )?;
 
@@ -244,8 +245,8 @@ async fn do_presign(
             let p = &identifiers[i];
             // exponent interpolation for (W0, .., Wt; i)
             let big_w_i = PolynomialCommitment::eval_exponent_interpolation(
-                &identifiers[..threshold + 1],
-                &wshares[..threshold + 1],
+                &identifiers[..=threshold],
+                &wshares[..=threshold],
                 Some(p),
             )?;
             // check the interpolated W values match the received ones
@@ -257,8 +258,8 @@ async fn do_presign(
         }
         // compute W as exponent interpolation for (W0, .., Wt; 0)
         let big_w = PolynomialCommitment::eval_exponent_interpolation(
-            &identifiers[..threshold + 1],
-            &wshares[..threshold + 1],
+            &identifiers[..=threshold],
+            &wshares[..=threshold],
             None,
         )?;
 
@@ -308,7 +309,10 @@ struct Shares([SerializableScalar<C>; 5]);
 
 impl Shares {
     /// Constructs a new Shares out of five polynomials
-    pub(crate) fn new(polynomials: [Polynomial; 5], p: Participant) -> Result<Self, ProtocolError> {
+    pub(crate) fn new(
+        polynomials: &[Polynomial; 5],
+        p: Participant,
+    ) -> Result<Self, ProtocolError> {
         // iterate over the polynomials and map them
         let shares = polynomials
             .iter()
@@ -316,7 +320,7 @@ impl Shares {
             .collect::<Result<Vec<_>, _>>()?
             .try_into()
             .map_err(|_| ProtocolError::Other("Unable to build Shares".to_string()))?;
-        Ok(Shares(shares))
+        Ok(Self(shares))
     }
 
     /// Returns k element

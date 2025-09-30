@@ -114,10 +114,9 @@ impl frost_core::Field for BLS12381ScalarField {
     }
 
     fn deserialize(buf: &Self::Serialization) -> Result<Self::Scalar, frost_core::FieldError> {
-        match blstrs::Scalar::from_bytes_le(buf).into() {
-            Some(s) => Ok(s),
-            None => Err(frost_core::FieldError::MalformedScalar),
-        }
+        blstrs::Scalar::from_bytes_le(buf)
+            .into_option()
+            .ok_or(frost_core::FieldError::MalformedScalar)
     }
 
     fn little_endian_serialize(scalar: &Self::Scalar) -> Self::Serialization {
@@ -156,16 +155,16 @@ impl frost_core::Group for BLS12381G2Group {
     }
 
     fn deserialize(buf: &Self::Serialization) -> Result<Self::Element, frost_core::GroupError> {
-        match Self::Element::from_compressed(buf).into_option() {
-            Some(point) => {
+        Self::Element::from_compressed(buf).into_option().map_or(
+            Err(frost_core::GroupError::MalformedElement),
+            |point| {
                 if point.is_identity().into() {
                     Err(frost_core::GroupError::InvalidIdentityElement)
                 } else {
                     Ok(point)
                 }
-            }
-            None => Err(frost_core::GroupError::MalformedElement),
-        }
+            },
+        )
     }
 }
 
@@ -200,16 +199,16 @@ impl frost_core::Group for BLS12381G1Group {
     }
 
     fn deserialize(buf: &Self::Serialization) -> Result<Self::Element, frost_core::GroupError> {
-        match Self::Element::from_compressed(buf).into_option() {
-            Some(point) => {
+        Self::Element::from_compressed(buf).into_option().map_or(
+            Err(frost_core::GroupError::MalformedElement),
+            |point| {
                 if point.is_identity().into() {
                     Err(frost_core::GroupError::InvalidIdentityElement)
                 } else {
                     Ok(point)
                 }
-            }
-            None => Err(frost_core::GroupError::MalformedElement),
-        }
+            },
+        )
     }
 }
 
@@ -270,7 +269,7 @@ impl FromOkm for ScalarWrapper {
         d1[8..].copy_from_slice(&data[24..]);
         let d1 = blstrs::Scalar::from_bytes_be(&d1.into()).unwrap();
 
-        ScalarWrapper(d0 * F_2_192 + d1)
+        Self(d0 * F_2_192 + d1)
     }
 }
 
@@ -293,7 +292,7 @@ mod tests {
 
     #[test]
     fn check_bls12381_g2_sha256_common_traits() {
-        check_common_traits_for_type(BLS12381SHA256);
+        check_common_traits_for_type(&BLS12381SHA256);
     }
 
     #[test]

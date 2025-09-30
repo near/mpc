@@ -15,7 +15,7 @@ use rand_core::{OsRng, RngCore};
 use std::error::Error;
 
 /// this is a centralized key generation
-pub(crate) fn build_key_packages_with_dealer(
+pub fn build_key_packages_with_dealer(
     max_signers: usize,
     min_signers: usize,
 ) -> Vec<(Participant, KeygenOutput)> {
@@ -24,7 +24,7 @@ pub(crate) fn build_key_packages_with_dealer(
     let mut identifiers = Vec::with_capacity(max_signers);
     for _ in 0..max_signers {
         // from 1 to avoid assigning 0 to a ParticipantId
-        identifiers.push(Participant::from(OsRng.next_u32()))
+        identifiers.push(Participant::from(OsRng.next_u32()));
     }
 
     let from_frost_identifiers = identifiers
@@ -32,7 +32,7 @@ pub(crate) fn build_key_packages_with_dealer(
         .map(|&x| (x.to_identifier(), x))
         .collect::<BTreeMap<_, _>>();
 
-    let identifiers_list = from_frost_identifiers.keys().cloned().collect::<Vec<_>>();
+    let identifiers_list = from_frost_identifiers.keys().copied().collect::<Vec<_>>();
 
     let (shares, pubkey_package) = frost_ed25519::keys::generate_with_dealer(
         max_signers as u16,
@@ -56,7 +56,7 @@ pub(crate) fn build_key_packages_with_dealer(
         .collect::<Vec<_>>()
 }
 
-pub(crate) fn test_run_signature_protocols(
+pub fn test_run_signature_protocols(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinators: &[Participant],
@@ -101,7 +101,7 @@ pub(crate) fn test_run_signature_protocols(
             )?;
             Box::new(protocol)
         };
-        protocols.push((*participant, protocol))
+        protocols.push((*participant, protocol));
     }
 
     Ok(run_protocol(protocols)?)

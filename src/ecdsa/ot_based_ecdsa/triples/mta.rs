@@ -26,14 +26,14 @@ impl MTAScalars {
     }
 }
 
-pub(crate) fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore) -> Vec<Scalar> {
+pub fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore) -> Vec<Scalar> {
     (0..size)
         .map(|_| <<Secp256 as frost_core::Ciphersuite>::Group as Group>::Field::random(rng))
         .collect()
 }
 
 /// The sender for multiplicative to additive conversion.
-pub(crate) async fn mta_sender(
+pub async fn mta_sender(
     mut chan: PrivateChannel,
     v: Vec<(Scalar, Scalar)>,
     a: Scalar,
@@ -74,14 +74,14 @@ pub(crate) async fn mta_sender(
     Ok(-alpha)
 }
 
-pub(crate) fn mta_receiver_random_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+pub fn mta_receiver_random_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
     let mut seed = [0u8; 32];
     rng.fill_bytes(&mut seed);
     seed
 }
 
 /// The receiver for multiplicative to additive conversion.
-pub(crate) async fn mta_receiver(
+pub async fn mta_receiver(
     mut chan: PrivateChannel,
     tv: Vec<(Choice, Scalar)>,
     b: Scalar,

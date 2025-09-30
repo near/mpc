@@ -69,8 +69,8 @@ impl ParticipantList {
     /// Return the index of a given participant.
     ///
     /// Basically, the order they appear in a sorted list
-    pub fn index(&self, participant: &Participant) -> usize {
-        self.indices[participant]
+    pub fn index(&self, participant: Participant) -> usize {
+        self.indices[&participant]
     }
 
     // Return a participant of a given index from the order they
@@ -90,13 +90,13 @@ impl ParticipantList {
         let identifiers: Vec<Scalar<C>> = self
             .participants()
             .iter()
-            .map(|p| p.scalar::<C>())
+            .map(super::protocol::Participant::scalar::<C>)
             .collect();
         Ok(compute_lagrange_coefficient::<C>(&identifiers, &p, None)?.0)
     }
 
     /// Return the intersection of this list with another list.
-    pub fn intersection(&self, others: &ParticipantList) -> Self {
+    pub fn intersection(&self, others: &Self) -> Self {
         let mut out = Vec::new();
         for &p in &self.participants {
             if others.contains(p) {
@@ -113,14 +113,14 @@ impl ParticipantList {
     }
 
     #[cfg(test)]
-    pub fn shuffle(&self, mut rng: impl rand_core::CryptoRngCore) -> Option<ParticipantList> {
+    pub fn shuffle(&self, mut rng: impl rand_core::CryptoRngCore) -> Option<Self> {
         let mut participants = self.participants().to_vec();
         let len = self.participants.len();
         for i in (1..len).rev() {
             let j = rng.next_u64() % ((i + 1) as u64);
             participants.swap(i, j as usize);
         }
-        ParticipantList::new(&participants)
+        Self::new(&participants)
     }
 }
 
@@ -209,7 +209,7 @@ impl<T> Index<Participant> for ParticipantMap<'_, T> {
     type Output = T;
 
     fn index(&self, index: Participant) -> &Self::Output {
-        self.data[self.participants.index(&index)].as_ref().unwrap()
+        self.data[self.participants.index(index)].as_ref().unwrap()
     }
 }
 
@@ -262,7 +262,7 @@ impl<'a> ParticipantCounter<'a> {
     /// Clear the contents of this counter.
     pub fn clear(&mut self) {
         for x in &mut self.seen {
-            *x = false
+            *x = false;
         }
         self.counter = self.participants.len();
     }

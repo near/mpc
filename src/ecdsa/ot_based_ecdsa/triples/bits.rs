@@ -34,7 +34,6 @@ impl BitVector {
     }
 
     /// Get a specific bit from the vector.
-    #[inline(always)]
     pub fn bit(&self, j: usize) -> u64 {
         (self.0[j / 64] >> (j % 64)) & 1
     }
@@ -53,7 +52,7 @@ impl BitVector {
     pub fn bytes(&self) -> [u8; SEC_PARAM_8] {
         let mut out = [0u8; SEC_PARAM_8];
         for (i, x_i) in self.0.iter().enumerate() {
-            out[8 * i..8 * (i + 1)].copy_from_slice(&x_i.to_le_bytes())
+            out[8 * i..8 * (i + 1)].copy_from_slice(&x_i.to_le_bytes());
         }
         out
     }
@@ -149,7 +148,7 @@ impl_op_ex!(&|u: &BitVector, v: &BitVector| -> BitVector { u.and(v) });
 impl_op_ex!(&= |u: &mut BitVector, v: &BitVector| { u.and_mut(v) });
 impl_op_ex!(!|u: &BitVector| -> BitVector { u.not() });
 
-/// A BitVector of double the size.
+/// A `BitVector` of double the size.
 ///
 /// This is useful because it's quicker to avoid reducing the result of GF multiplication.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -358,7 +357,7 @@ impl ChoiceVector {
 
     /// Iterate over the bits in this vector.
     pub fn bits(&self) -> impl Iterator<Item = Choice> + '_ {
-        self.0.iter().flat_map(|v| v.bits())
+        self.0.iter().flat_map(BitVector::bits)
     }
 
     /// Iterate over bitvector chunks from this vector.

@@ -7,7 +7,7 @@ pub const MERLIN_PROTOCOL_LABEL: &[u8] = b"Mini-Merlin";
 fn encode_usize_as_u32(x: usize) -> [u8; 4] {
     use byteorder::{ByteOrder, LittleEndian};
 
-    assert!(x <= (u32::MAX as usize));
+    assert!(u32::try_from(x).is_ok());
 
     let mut buf = [0; 4];
     LittleEndian::write_u32(&mut buf, x as u32);
@@ -30,8 +30,8 @@ impl Transcript {
     /// **not by the proof implementation**.  See the [Passing
     /// Transcripts](https://merlin.cool/use/passing.html) section of
     /// the Merlin website for more details on why.
-    pub fn new(label: &'static [u8]) -> Transcript {
-        let mut transcript = Transcript {
+    pub fn new(label: &'static [u8]) -> Self {
+        let mut transcript = Self {
             strobe: Strobe128::new(MERLIN_PROTOCOL_LABEL),
         };
         transcript.message(b"dom-sep", label);
@@ -104,7 +104,7 @@ pub struct TranscriptRng {
 }
 
 impl TranscriptRng {
-    pub fn new(seed: &[u8; 32]) -> TranscriptRng {
+    pub fn new(seed: &[u8; 32]) -> Self {
         let mut t = Transcript::new(b"direct RNG from seed");
         t.build_rng(seed)
     }

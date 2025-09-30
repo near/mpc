@@ -7,7 +7,7 @@ use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
 use crate::protocol::{Participant, Protocol};
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
-use frost_ed25519::*;
+use frost_ed25519::{aggregate, rand_core, round1, round2, VerifyingKey};
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
 
@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 /// and construct a public key package used for frost signing
 fn construct_key_package(
     threshold: usize,
-    me: &Participant,
+    me: Participant,
     signing_share: &SigningShare,
     verifying_key: &VerifyingKey,
 ) -> KeyPackage {
@@ -90,7 +90,7 @@ async fn do_sign_coordinator(
     chan.send_many(r2_wait_point, &signing_package)?;
 
     let vk_package = keygen_output.public_key;
-    let key_package = construct_key_package(threshold, &me, &signing_share, &vk_package);
+    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package);
 
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
@@ -181,7 +181,7 @@ async fn do_sign_participant(
     }
 
     let vk_package = keygen_output.public_key;
-    let key_package = construct_key_package(threshold, &me, &signing_share, &vk_package);
+    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package);
 
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
@@ -214,7 +214,7 @@ pub fn sign(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
     let Some(participants) = ParticipantList::new(participants) else {
         return Err(InitializationError::DuplicateParticipants);
     };
@@ -225,7 +225,7 @@ pub fn sign(
             role: "self",
             participant: me,
         });
-    };
+    }
 
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
@@ -233,7 +233,7 @@ pub fn sign(
             role: "coordinator",
             participant: coordinator,
         });
-    };
+    }
 
     let comms = Comms::new();
     let chan = comms.shared_channel();
@@ -300,17 +300,16 @@ mod test {
     use std::error::Error;
 
     fn assert_single_coordinator_result(
-        data: Vec<(Participant, super::SignatureOption)>,
+        data: &[(Participant, super::SignatureOption)],
     ) -> frost_ed25519::Signature {
         let mut signature = None;
         let count = data
             .iter()
-            .filter(|(_, output)| match output {
-                Some(s) => {
-                    signature = Some(*s);
+            .filter(|(_, output)| {
+                output.is_some_and(|s| {
+                    signature = Some(s);
                     true
-                }
-                None => false,
+                })
             })
             .count();
         assert_eq!(count, 1);
@@ -335,7 +334,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        assert_single_coordinator_result(data);
+        assert_single_coordinator_result(&data);
     }
 
     #[test]
@@ -356,7 +355,7 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                assert_single_coordinator_result(data);
+                assert_single_coordinator_result(&data);
             }
         }
     }
@@ -385,7 +384,7 @@ mod test {
             threshold,
             msg_hash,
         )?;
-        let signature = assert_single_coordinator_result(data);
+        let signature = assert_single_coordinator_result(&data);
 
         assert!(key_packages[0]
             .1
@@ -394,7 +393,7 @@ mod test {
             .is_ok());
 
         // // test refresh
-        let key_packages1 = run_refresh(&participants, key_packages, threshold)?;
+        let key_packages1 = run_refresh(&participants, &key_packages, threshold)?;
         assert_public_key_invariant(&key_packages1);
         let msg = "hello_near_2";
         let msg_hash = hash(&msg)?;
@@ -405,7 +404,7 @@ mod test {
             threshold,
             msg_hash,
         )?;
-        let signature = assert_single_coordinator_result(data);
+        let signature = assert_single_coordinator_result(&data);
         let pub_key = key_packages1[2].1.public_key;
         assert!(key_packages1[0]
             .1
@@ -420,10 +419,10 @@ mod test {
         let key_packages2 = run_reshare(
             &participants,
             &pub_key,
-            key_packages1,
+            &key_packages1,
             threshold,
             new_threshold,
-            new_participant,
+            &new_participant,
         )?;
         assert_public_key_invariant(&key_packages2);
         let msg = "hello_near_3";
@@ -436,7 +435,7 @@ mod test {
             new_threshold,
             msg_hash,
         )?;
-        let signature = assert_single_coordinator_result(data);
+        let signature = assert_single_coordinator_result(&data);
         assert!(key_packages2[0]
             .1
             .public_key
@@ -464,10 +463,10 @@ mod test {
         let key_packages = run_reshare(
             &participants,
             &pub_key,
-            result0,
+            &result0,
             threshold,
             new_threshold,
-            new_participant,
+            &new_participant,
         )?;
         assert_public_key_invariant(&key_packages);
 
@@ -503,7 +502,7 @@ mod test {
             new_threshold,
             msg_hash,
         )?;
-        let signature = assert_single_coordinator_result(data);
+        let signature = assert_single_coordinator_result(&data);
         assert!(key_packages[0]
             .1
             .public_key
@@ -529,10 +528,10 @@ mod test {
         let key_packages = run_reshare(
             &participants,
             &pub_key,
-            result0,
+            &result0,
             threshold,
             new_threshold,
-            new_participant,
+            &new_participant,
         )?;
         assert_public_key_invariant(&key_packages);
 
@@ -566,7 +565,7 @@ mod test {
             new_threshold,
             msg_hash,
         )?;
-        let signature = assert_single_coordinator_result(data);
+        let signature = assert_single_coordinator_result(&data);
         assert!(key_packages[0]
             .1
             .public_key

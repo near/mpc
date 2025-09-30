@@ -49,7 +49,7 @@ fn element_into<C: Ciphersuite>(
         // and thus the points are well defined, or it is received
         // from someone and thus it is serializable.
         _ => return Err(ProtocolError::PointSerialization),
-    };
+    }
     Ok(enc)
 }
 

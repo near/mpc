@@ -261,7 +261,7 @@ mod test {
                     b_i,
                 ),
             );
-            protocols.push((*p, Box::new(prot)))
+            protocols.push((*p, Box::new(prot)));
         }
 
         let result = run_protocol(protocols)?;
@@ -330,7 +330,7 @@ mod test {
                     b_iv,
                 ),
             );
-            protocols.push((*p, Box::new(prot)))
+            protocols.push((*p, Box::new(prot)));
         }
 
         let result = run_protocol(protocols)?;

@@ -20,7 +20,7 @@ pub struct PresignArguments {
     /// Ditto, for the second triple.
     pub triple1: (TripleShare, TriplePub),
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
-    /// This is of type KeygenOutput<Secp256K1Sha256> from Frost implementation
+    /// This is of type `KeygenOutput`<Secp256K1Sha256> from Frost implementation
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
     pub threshold: usize,
@@ -79,7 +79,7 @@ impl RerandomizedPresignOutput {
         // k * delta^{-1}
         let rerandomized_k = presignature.k * inv_delta;
 
-        Ok(RerandomizedPresignOutput {
+        Ok(Self {
             big_r: rerandomized_big_r.into(),
             k: rerandomized_k,
             sigma: rerandomized_sigma,
@@ -87,10 +87,10 @@ impl RerandomizedPresignOutput {
     }
 
     #[cfg(test)]
-    /// Outputs the same elements as in the PresignatureOutput
+    /// Outputs the same elements as in the `PresignatureOutput`
     /// Used for testing the core schemes without rerandomization
     pub fn new_without_rerandomization(presignature: &PresignOutput) -> Self {
-        RerandomizedPresignOutput {
+        Self {
             big_r: presignature.big_r,
             k: presignature.k,
             sigma: presignature.sigma,

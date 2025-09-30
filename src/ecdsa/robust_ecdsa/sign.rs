@@ -31,7 +31,7 @@ pub fn sign(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
 
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
@@ -42,7 +42,7 @@ pub fn sign(
             role: "self",
             participant: me,
         });
-    };
+    }
 
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
@@ -50,7 +50,7 @@ pub fn sign(
             role: "coordinator",
             participant: coordinator,
         });
-    };
+    }
 
     let ctx = Comms::new();
     let fut = fut_wrapper(
@@ -66,15 +66,15 @@ pub fn sign(
 }
 
 /// Performs signing from any participant's perspective (except the coordinator)
-async fn do_sign_participant(
+fn do_sign_participant(
     mut chan: SharedChannel,
-    participants: ParticipantList,
+    participants: &ParticipantList,
     coordinator: Participant,
     me: Participant,
-    presignature: RerandomizedPresignOutput,
+    presignature: &RerandomizedPresignOutput,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    let s_me = compute_signature_share(&presignature, msg_hash, &participants, me)?;
+    let s_me = compute_signature_share(presignature, msg_hash, participants, me)?;
     let wait_round = chan.next_waitpoint();
     chan.send_private(wait_round, coordinator, &s_me)?;
 
@@ -123,7 +123,7 @@ async fn do_sign_coordinator(
         return Err(ProtocolError::AssertionFailed(
             "signature failed to verify".to_string(),
         ));
-    };
+    }
 
     Ok(Some(sig))
 }
@@ -160,7 +160,14 @@ async fn fut_wrapper(
     if me == coordinator {
         do_sign_coordinator(chan, participants, me, public_key, presignature, msg_hash).await
     } else {
-        do_sign_participant(chan, participants, coordinator, me, presignature, msg_hash).await
+        do_sign_participant(
+            chan,
+            &participants,
+            coordinator,
+            me,
+            &presignature,
+            msg_hash,
+        )
     }
 }
 
@@ -289,7 +296,7 @@ mod test {
         }
 
         let (tweak, _, sig) =
-            run_sign_with_rerandomization(participants_presign, public_key.to_element(), msg)?;
+            run_sign_with_rerandomization(&participants_presign, public_key.to_element(), msg)?;
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
         // derive the public key
         let public_key = tweak.derive_verifying_key(&public_key).to_element();
@@ -301,7 +308,7 @@ mod test {
     }
 
     #[test]
-    fn test_sign_fails_if_s_is_zero() -> Result<(), Box<dyn Error>> {
+    fn test_sign_fails_if_s_is_zero() {
         use crate::ecdsa::{ProjectivePoint, Secp256K1ScalarField};
         use crate::test::generate_participants;
 
@@ -339,11 +346,9 @@ mod test {
                 let text = err.to_string();
                 assert!(
                     text.contains("signature part s cannot be zero"),
-                    "unexpected error type: {}",
-                    text
+                    "unexpected error type: {text}"
                 );
             }
         }
-        Ok(())
     }
 }

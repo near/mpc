@@ -42,12 +42,12 @@ pub(crate) fn x_coordinate(point: &AffinePoint) -> Scalar {
 /// Represents a signature that supports different variants of ECDSA.
 ///
 /// An ECDSA signature is usually two scalars.
-/// The first is derived from using the x-coordinate of an elliptic curve point (big_r),
+/// The first is derived from using the x-coordinate of an elliptic curve point (`big_r`),
 /// and the second is computed using the typical ecdsa signing equation.
-/// Deriving the x-coordination implies losing information about big_r, some variants
+/// Deriving the x-coordination implies losing information about `big_r`, some variants
 /// may thus include an extra information to recover this point.
 ///
-/// This signature supports all variants by containing big_r entirely
+/// This signature supports all variants by containing `big_r` entirely
 #[derive(Clone)]
 pub struct Signature {
     /// This is the entire first point.
@@ -57,7 +57,6 @@ pub struct Signature {
 }
 
 impl Signature {
-    #[must_use]
     // This verification tests the signature including whether s has been normalized
     pub fn verify(&self, public_key: &AffinePoint, msg_hash: &Scalar) -> bool {
         let r: Scalar = x_coordinate(&self.big_r);
@@ -77,10 +76,10 @@ pub type SignatureOption = Option<Signature>;
 
 /// The arguments used to derive randomness used for presignature rerandomization.
 /// Presignature rerandomization has been thoroughly described in
-/// [GS21] https://eprint.iacr.org/2021/1330.pdf
+/// [GS21] <https://eprint.iacr.org/2021/1330.pdf>
 ///
 /// *** Warning ***
-/// Following [GS21] https://eprint.iacr.org/2021/1330.pdf, the entropy should
+/// Following [GS21] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
 /// be public, freshly generated, and unpredictable.
 pub struct RerandomizationArguments {
     pub pk: AffinePoint,
@@ -96,7 +95,7 @@ impl RerandomizationArguments {
     /// "NEAR 6.4478$ 7:20pm CEST 2024-11-24"
     /// Based on [Krawczyk10] paper:
     /// ``[...] in most applications the extractor key (or salt) can be used
-    /// repeatedly with many (independent) samples from the same source [...]''
+    /// repeatedly with many (independent) samples from the same source [...]``
     const SALT: [u8; 32] = [
         0x32, 0x8a, 0x47, 0xc2, 0xb8, 0x79, 0x44, 0x45, 0x25, 0x5c, 0x16, 0x47, 0x60, 0x8d, 0xf5,
         0xdb, 0x85, 0xc6, 0x8b, 0xb0, 0xe7, 0x17, 0x0a, 0xbe, 0xc5, 0x34, 0xdf, 0x27, 0x64, 0xa4,
@@ -109,8 +108,8 @@ impl RerandomizationArguments {
         big_r: AffinePoint,
         participants: ParticipantList,
         entropy: [u8; 32],
-    ) -> RerandomizationArguments {
-        RerandomizationArguments {
+    ) -> Self {
+        Self {
             pk,
             msg_hash,
             big_r,
@@ -148,8 +147,8 @@ impl RerandomizationArguments {
         // If the randomness created is 0 then we want to generate a new randomness
         while bool::from(delta.is_zero()) {
             // Generate randomization out of HKDF(entropy, pk, msg_hash, big_r, participants, nonce)
-            // where entropy is a public but unpredictable random string
-            // the nonce is a succession of appended ones of growing length depending on the number of times
+            // where entropy is a public but unpredictable random string.
+            // The nonce is a succession of appended ones of growing length depending on the number of times
             // we enter into this loop
             let mut okm = [0u8; 32];
 
@@ -225,7 +224,7 @@ mod test_verify {
 
         let is_verified = full_sig.verify(&pk.to_affine(), &z);
         // Should always be ok as signature contains Uint i.e. normalized elements
-        assert!(is_verified)
+        assert!(is_verified);
     }
 
     #[test]

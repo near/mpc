@@ -76,7 +76,7 @@ mod test {
         let comms_r = Comms::new();
 
         let sid_s = sid.clone();
-        let sid_r = sid.clone();
+        let sid_r = sid;
         run_two_party_protocol(
             s,
             r,

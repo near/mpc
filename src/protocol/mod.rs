@@ -36,7 +36,7 @@ impl Participant {
     /// Return the scalar associated with this participant.
     pub fn scalar<C: Ciphersuite>(&self) -> Scalar<C> {
         let mut bytes = [0u8; 32];
-        let id = (self.0 as u64) + 1;
+        let id = u64::from(self.0) + 1;
 
         match C::bytes_order() {
             BytesOrder::BigEndian => bytes[24..].copy_from_slice(&id.to_be_bytes()),
@@ -66,7 +66,7 @@ impl From<Participant> for u32 {
 
 impl From<u32> for Participant {
     fn from(x: u32) -> Self {
-        Participant(x)
+        Self(x)
     }
 }
 
@@ -176,7 +176,7 @@ pub mod test {
 
     use crate::protocol::{errors::ProtocolError, Action, Participant, Protocol};
 
-    /// Like [run_protocol()], except for just two parties.
+    /// Like [`run_protocol()`], except for just two parties.
     ///
     /// This is more useful for testing two party protocols with assymetric results,
     /// since the return types for the two protocols can be different.
@@ -202,7 +202,7 @@ pub mod test {
                     }
                     Action::Return(out) => out0 = Some(out),
                     // Ignore other actions, which means sending private messages to other people.
-                    _ => {}
+                    Action::SendPrivate(..) => {}
                 }
             } else {
                 let action = prot1.poke()?;
@@ -214,7 +214,7 @@ pub mod test {
                     }
                     Action::Return(out) => out1 = Some(out),
                     // Ignore other actions, which means sending private messages to other people.
-                    _ => {}
+                    Action::SendPrivate(..) => {}
                 }
             }
         }

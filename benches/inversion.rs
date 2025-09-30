@@ -24,11 +24,11 @@ fn bench_inversion(c: &mut Criterion) {
                         .unwrap()
                 })
                 .collect::<Vec<_>>())
-        })
+        });
     });
 
     group.bench_function("batch inversion", |b| {
-        b.iter(|| black_box(batch_invert::<Secp256K1Sha256>(&values).unwrap()))
+        b.iter(|| black_box(batch_invert::<Secp256K1Sha256>(&values).unwrap()));
     });
 }
 

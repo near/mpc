@@ -75,7 +75,7 @@ pub enum ProtocolError {
 
 impl From<Box<dyn error::Error + Send + Sync>> for ProtocolError {
     fn from(err: Box<dyn error::Error + Send + Sync>) -> Self {
-        ProtocolError::Other(err.to_string())
+        Self::Other(err.to_string())
     }
 }
 

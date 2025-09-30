@@ -19,7 +19,7 @@
 //!
 //! The other way is to run a protocol generating a secret shared triple without any party
 //! learning the secret values. This is better because no party learns the value of the
-//! triple, which needs to be kept secret. This method is supported by the [generate_triple]
+//! triple, which needs to be kept secret. This method is supported by the [`generate_triple`]
 //! protocol.
 //!
 //! This protocol requires a setup protocol to be done once beforehand.

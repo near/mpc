@@ -11,4 +11,4 @@ pub trait ScalarSerializationFormat {
 }
 pub trait Ciphersuite: frost_core::Ciphersuite + ScalarSerializationFormat {}
 
-pub(crate) type Element<C> = <<C as frost_core::Ciphersuite>::Group as Group>::Element;
+pub type Element<C> = <<C as frost_core::Ciphersuite>::Group as Group>::Element;

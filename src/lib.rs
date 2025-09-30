@@ -24,7 +24,7 @@ use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use std::marker::Send;
 
-use crate::generic_dkg::*;
+use crate::generic_dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
 use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::{errors::InitializationError, Participant, Protocol};
 
@@ -47,7 +47,7 @@ pub struct Tweak<C: Ciphersuite>(SerializableScalar<C>);
 
 impl<C: Ciphersuite> Tweak<C> {
     pub fn new(tweak: Scalar<C>) -> Self {
-        Tweak(SerializableScalar(tweak))
+        Self(SerializableScalar(tweak))
     }
 
     /// Outputs the inner value of the tweak

@@ -21,14 +21,14 @@ pub struct Commitment([u8; COMMIT_LEN]);
 
 impl Commitment {
     /// Computes the commitment using a randomizer as follows
-    /// SHA256(COMMIT_LABEL || randomness || START_LABEL || msgpack(value))
+    /// `SHA256(COMMIT_LABEL` || randomness || `START_LABEL` || msgpack(value))
     fn compute<T: Serialize>(val: &T, r: &Randomness) -> Result<Self, ProtocolError> {
         let mut hasher = Sha256::new();
         hasher.update(COMMIT_LABEL);
         hasher.update(r.as_ref());
         hasher.update(START_LABEL);
         rmp_serde::encode::write(&mut hasher, val).map_err(|_| ProtocolError::ErrorEncoding)?;
-        Ok(Commitment(hasher.finalize().into()))
+        Ok(Self(hasher.finalize().into()))
     }
 
     /// Check that a value and a randomizer match this commitment.

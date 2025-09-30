@@ -25,7 +25,7 @@ pub fn presign(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
     // Spec 1.1
     if args.threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
@@ -53,7 +53,7 @@ pub fn presign(
             role: "self",
             participant: me,
         });
-    };
+    }
 
     let ctx = Comms::new();
     let fut = do_presign(ctx.shared_channel(), participants, me, args);

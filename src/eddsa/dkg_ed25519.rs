@@ -55,7 +55,7 @@ mod test {
 
         let pub_key = result0[2].1.public_key.to_element();
 
-        let result1 = run_refresh(&participants, result0, threshold)?;
+        let result1 = run_refresh(&participants, &result0, threshold)?;
         assert_public_key_invariant(&result1);
 
         let participants = vec![result1[0].0, result1[1].0, result1[2].0];
@@ -88,10 +88,10 @@ mod test {
         let result1 = run_reshare(
             &participants,
             &pub_key,
-            result0,
+            &result0,
             threshold0,
             threshold1,
-            new_participant,
+            &new_participant,
         )?;
         assert_public_key_invariant(&result1);
 

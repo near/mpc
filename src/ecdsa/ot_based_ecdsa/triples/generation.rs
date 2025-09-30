@@ -54,6 +54,7 @@ type C = Secp256K1Sha256;
 
 const LABEL: &[u8] = b"Near threshold signatures triple generation";
 const NAME: &[u8] = b"Secp256K1Sha256";
+#[allow(clippy::too_many_lines)]
 async fn do_generation(
     comms: Comms,
     participants: ParticipantList,
@@ -118,6 +119,7 @@ async fn do_generation(
         )
     };
 
+    #[allow(clippy::items_after_statements)]
     struct ParallelToMultiplicationTaskOutput<'a> {
         seen: ParticipantCounter<'a>,
         big_e: PolynomialCommitment,
@@ -499,6 +501,7 @@ async fn do_generation(
     ))
 }
 
+#[allow(clippy::too_many_lines)]
 async fn do_generation_many<const N: usize>(
     comms: Comms,
     participants: ParticipantList,
@@ -607,6 +610,7 @@ async fn do_generation_many<const N: usize>(
         )
     };
 
+    #[allow(clippy::items_after_statements)]
     struct ParallelToMultiplicationTaskOutput<'a> {
         seen: ParticipantCounter<'a>,
         big_e_v: Vec<PolynomialCommitment>,
@@ -925,7 +929,7 @@ async fn do_generation_many<const N: usize>(
         }
         let big_l_v = big_l_v
             .iter()
-            .map(|big_l| big_l.extend_with_identity())
+            .map(crate::crypto::polynomials::PolynomialCommitment::extend_with_identity)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ParallelToMultiplicationTaskOutput {
             seen,
@@ -994,13 +998,13 @@ async fn do_generation_many<const N: usize>(
     let mut c_i_v = vec![];
     for p in participants.others(me) {
         let mut c_i_j_v = Vec::new();
-        for l in l_v.iter_mut() {
+        for l in &mut l_v {
             let c_i_j = l.eval_at_participant(p)?.0;
             c_i_j_v.push(c_i_j);
         }
         chan.send_private(wait6, p, &c_i_j_v)?;
     }
-    for l in l_v.iter_mut() {
+    for l in &mut l_v {
         let c_i = l.eval_at_participant(me)?;
         c_i_v.push(c_i.0);
     }
@@ -1105,7 +1109,7 @@ async fn do_generation_many<const N: usize>(
                 participants: participants.clone().into(),
                 threshold,
             },
-        ))
+        ));
     }
 
     Ok(ret)
@@ -1128,7 +1132,7 @@ pub fn generate_triple(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
     // Spec 1.1
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
@@ -1156,7 +1160,7 @@ pub fn generate_triple_many<const N: usize>(
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
-    };
+    }
     // Spec 1.1
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {

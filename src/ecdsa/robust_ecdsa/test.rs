@@ -16,7 +16,7 @@ use crate::test::{
 
 use rand_core::{OsRng, RngCore};
 
-/// Runs signing by calling the generic run_sign function from crate::test
+/// Runs signing by calling the generic `run_sign` function from `crate::test`
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
     participants_presign: Vec<(Participant, PresignOutput)>,
@@ -39,7 +39,7 @@ pub fn run_sign_without_rerandomization(
         |participants, coordinator, me, pk, presignature, msg_hash| {
             let pk = pk.to_affine();
             let rerand_presig =
-                RerandomizedPresignOutput::new_without_rerandomization(presignature);
+                RerandomizedPresignOutput::new_without_rerandomization(&presignature);
             sign(participants, coordinator, me, pk, rerand_presig, msg_hash)
                 .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
         },
@@ -50,11 +50,11 @@ pub fn run_sign_without_rerandomization(
     Ok((coordinator, signature))
 }
 
-/// Runs signing by calling the generic run_sign function from crate::test
+/// Runs signing by calling the generic `run_sign` function from `crate::test`
 /// This signing mimics what should happen in real world, i.e.,
 /// rerandomizing the presignatures
 pub fn run_sign_with_rerandomization(
-    participants_presign: Vec<(Participant, PresignOutput)>,
+    participants_presign: &[(Participant, PresignOutput)],
     public_key: Element,
     msg: &[u8],
 ) -> Result<(Tweak, Participant, Signature), Box<dyn Error>> {
@@ -120,7 +120,7 @@ pub fn run_presign(
 
     let participant_list: Vec<Participant> = participants.iter().map(|(p, _)| *p).collect();
 
-    for (p, keygen_out) in participants.into_iter() {
+    for (p, keygen_out) in participants {
         let protocol = presign(
             &participant_list,
             p,
@@ -146,7 +146,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     let keys = run_keygen(&participants, threshold)?;
     assert_public_key_invariant(&keys);
     // run refresh on these
-    let key_packages = run_refresh(&participants, keys, threshold)?;
+    let key_packages = run_refresh(&participants, &keys, threshold)?;
     let public_key = key_packages[0].1.public_key;
     assert_public_key_invariant(&key_packages);
     let presign_result = run_presign(key_packages, max_malicious)?;
@@ -180,10 +180,10 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let key_packages = run_reshare(
         &participants,
         &pub_key,
-        result0,
+        &result0,
         threshold,
         new_threshold,
-        new_participant.clone(),
+        &new_participant,
     )?;
     assert_public_key_invariant(&key_packages);
 
@@ -216,10 +216,10 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let key_packages = run_reshare(
         &participants,
         &pub_key,
-        result0,
+        &result0,
         threshold,
         new_threshold,
-        new_participant.clone(),
+        &new_participant,
     )?;
     assert_public_key_invariant(&key_packages);
     let public_key = key_packages[0].1.public_key;
@@ -236,7 +236,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     let participants = generate_participants(8);
     let max_malicious = 3;
 
-    let keygen_result = run_keygen(&participants.clone(), max_malicious + 1)?;
+    let keygen_result = run_keygen(&participants, max_malicious + 1)?;
 
     let public_key = keygen_result[0].1.public_key;
     assert_public_key_invariant(&keygen_result);
@@ -253,7 +253,7 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
     let participants = generate_participants_with_random_ids(participants_count, &mut OsRng);
     let max_malicious = 3;
 
-    let keygen_result = run_keygen(&participants.clone(), max_malicious + 1)?;
+    let keygen_result = run_keygen(&participants, max_malicious + 1)?;
     assert_public_key_invariant(&keygen_result);
 
     let public_key = keygen_result[0].1.public_key;
@@ -271,7 +271,7 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
     let participants = generate_participants_with_random_ids(participants_count, &mut OsRng);
     let max_malicious = 3;
 
-    let keygen_result = run_keygen(&participants.clone(), max_malicious + 1)?;
+    let keygen_result = run_keygen(&participants, max_malicious + 1)?;
     assert_public_key_invariant(&keygen_result);
 
     let public_key = keygen_result[0].1.public_key;
@@ -279,6 +279,6 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
     let presign_result = run_presign(keygen_result, max_malicious)?;
 
     let msg = b"hello world";
-    run_sign_with_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_with_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }

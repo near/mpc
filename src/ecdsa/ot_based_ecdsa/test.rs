@@ -20,10 +20,10 @@ use crate::{
 use rand_core::{OsRng, RngCore};
 use std::error::Error;
 
-/// Runs signing by calling the generic run_sign function from crate::test
+/// Runs signing by calling the generic `run_sign` function from `crate::test`
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
-    participants_presign: Vec<(Participant, PresignOutput)>,
+    participants_presign: &[(Participant, PresignOutput)],
     public_key: Element,
     msg: &[u8],
 ) -> Result<(Participant, Signature), Box<dyn Error>> {
@@ -60,11 +60,11 @@ pub fn run_sign_without_rerandomization(
     Ok((coordinator, signature))
 }
 
-/// Runs signing by calling the generic run_sign function from crate::test
+/// Runs signing by calling the generic `run_sign` function from `crate::test`
 /// This signing mimics what should happen in real world, i.e.,
 /// rerandomizing the presignatures
 pub fn run_sign_with_rerandomization(
-    participants_presign: Vec<(Participant, PresignOutput)>,
+    participants_presign: &[(Participant, PresignOutput)],
     public_key: Element,
     msg: &[u8],
 ) -> Result<(Tweak, Participant, Signature), Box<dyn Error>> {
@@ -169,7 +169,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     let keys = run_keygen(&participants, threshold)?;
     assert_public_key_invariant(&keys);
     // run refresh on these
-    let key_packages = run_refresh(&participants, keys, threshold)?;
+    let key_packages = run_refresh(&participants, &keys, threshold)?;
     let public_key = key_packages[0].1.public_key;
     assert_public_key_invariant(&key_packages);
     let (pub0, shares0) = deal(&mut OsRng, &participants, threshold)?;
@@ -180,7 +180,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -202,10 +202,10 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let key_packages = run_reshare(
         &participants,
         &pub_key,
-        result0,
+        &result0,
         threshold,
         new_threshold,
-        new_participant.clone(),
+        &new_participant,
     )?;
     assert_public_key_invariant(&key_packages);
 
@@ -219,7 +219,7 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -240,10 +240,10 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let key_packages = run_reshare(
         &participants,
         &pub_key,
-        result0,
+        &result0,
         threshold,
         new_threshold,
-        new_participant.clone(),
+        &new_participant,
     )?;
     assert_public_key_invariant(&key_packages);
 
@@ -256,7 +256,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -278,7 +278,7 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -301,7 +301,7 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }
 
@@ -324,6 +324,6 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_with_rerandomization(presign_result, public_key.to_element(), msg)?;
+    run_sign_with_rerandomization(&presign_result, public_key.to_element(), msg)?;
     Ok(())
 }

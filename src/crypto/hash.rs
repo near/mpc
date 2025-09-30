@@ -23,7 +23,7 @@ impl ConstantTimeEq for HashOutput {
 }
 
 /// Hash some value to produce a short digest as follows
-/// SHA256(HASH_LABEL || msgpack(value))
+/// `SHA256(HASH_LABEL` || msgpack(value))
 pub fn hash<T: Serialize>(val: &T) -> Result<HashOutput, ProtocolError> {
     let mut hasher = Sha256::new();
     hasher.update(HASH_LABEL);
@@ -32,7 +32,7 @@ pub fn hash<T: Serialize>(val: &T) -> Result<HashOutput, ProtocolError> {
 }
 
 /// Hashes using a domain separator as follows:
-/// SHA256(HASH_LABEL || msgpack([domain_separator, data])
+/// `SHA256(HASH_LABEL` || msgpack([`domain_separator`, data])
 /// This function DOES NOT internally increment the domain separator
 pub fn domain_separate_hash<T: Serialize>(
     domain_separator: u32,
@@ -106,7 +106,7 @@ pub mod test {
     }
 
     /// Hashes a message string into an arbitrary scalar
-    pub(crate) fn scalar_hash_secp256k1(msg: &[u8]) -> <Secp256k1 as CurveArithmetic>::Scalar {
+    pub fn scalar_hash_secp256k1(msg: &[u8]) -> <Secp256k1 as CurveArithmetic>::Scalar {
         // follows  https://datatracker.ietf.org/doc/html/rfc9591#name-cryptographic-hash-function
         let digest = <Secp256k1 as DigestPrimitive>::Digest::new_with_prefix(msg);
         let m_bytes: FieldBytes = digest.finalize_fixed();
