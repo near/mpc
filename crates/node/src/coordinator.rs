@@ -112,14 +112,6 @@ where
         loop {
             let state = self.indexer.contract_state_receiver.borrow().clone();
             let mut job: MpcJob = match state {
-                ContractState::WaitingForSync => {
-                    // This is the initial state. We stop this state for any state changes.
-                    MpcJob {
-                        name: "WaitingForSync",
-                        fut: futures::future::ready(Ok(MpcJobResult::HaltUntilInterrupted)).boxed(),
-                        stop_fn: Box::new(|_| true),
-                    }
-                }
                 ContractState::Invalid => {
                     // Invalid state. Similar to initial state; we do nothing until the state changes.
                     MpcJob {

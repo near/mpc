@@ -12,7 +12,7 @@ use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -49,16 +49,19 @@ pub(crate) async fn metrics() -> String {
 #[derive(Clone)]
 struct WebServerState {
     /// Root task handle for the whole program.
-    root_task_handle: Arc<TaskHandle>,
+    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     /// Sender for debug requests that need the MPC client to respond.
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     static_web_data: StaticWebData,
 }
 
 async fn debug_tasks(State(state): State<WebServerState>) -> String {
-    format!("{:?}", state.root_task_handle.report())
+    match state.root_task_handle.get() {
+        Some(root_task_handle) => format!("{:?}", root_task_handle.report()),
+        None => "No root task has started yet.".to_string(),
+    }
 }
 
 #[derive(Clone)]
@@ -110,10 +113,14 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn contract_state(mut state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    Ok(protocol_state_to_string(
-        &state.contract_state_receiver.borrow_and_update(),
-    ))
+async fn contract_state(state: State<WebServerState>) -> String {
+    let protocol_state = state
+        .protocol_state_receiver
+        .borrow()
+        // Clone to avoid holding a lock
+        .clone();
+
+    protocol_state_to_string(&protocol_state)
 }
 
 async fn third_party_licenses() -> Html<&'static str> {
@@ -180,11 +187,11 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 /// long-running, and is typically not expected to return. However, dropping
 /// the returned future will stop the web server.
 pub async fn start_web_server(
-    root_task_handle: Arc<crate::tracking::TaskHandle>,
+    root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     config: WebUIConfig,
     static_web_data: StaticWebData,
-    contract_state_receiver: watch::Receiver<ProtocolContractState>,
+    protocol_state_receiver: watch::Receiver<ProtocolContractState>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -207,7 +214,7 @@ pub async fn start_web_server(
         .with_state(WebServerState {
             root_task_handle,
             debug_request_sender,
-            contract_state_receiver,
+            protocol_state_receiver,
             static_web_data,
         });
 
