@@ -70,11 +70,8 @@ pub struct Coordinator<TransactionSender> {
     /// TEE Authority for generating fresh attestations.
     pub tee_authority: TeeAuthority,
 
-    /// TLS public key for attestation generation.
-    pub tls_public_key: near_sdk::PublicKey,
-
-    /// Account public key for attestation submission.
-    pub account_public_key: VerifyingKey,
+    /// P2P/TLS public key for attestation submission.
+    pub tls_public_key: VerifyingKey,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -181,8 +178,7 @@ where
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
                                 self.tee_authority.clone(),
-                                self.tls_public_key.clone(),
-                                self.account_public_key,
+                                self.tls_public_key,
                             ),
                         )?,
                         stop_fn,
@@ -332,8 +328,7 @@ where
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
         tee_authority: TeeAuthority,
-        tls_public_key: near_sdk::PublicKey,
-        account_public_key: VerifyingKey,
+        tls_public_key: VerifyingKey,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -578,8 +573,7 @@ where
                         chain_txn_sender,
                         debug_request_receiver,
                         tee_authority.clone(),
-                        tls_public_key.clone(),
-                        account_public_key,
+                        tls_public_key,
                     )
                     .await?;
 

@@ -352,12 +352,13 @@ impl StartCmd {
         // Otherwise we would not write to the same cell/lock.
         root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
     ) -> anyhow::Result<()> {
-        let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
         let root_task_handle = tracking::current_task();
 
         root_task_handle_once_lock
             .set(root_task_handle.clone())
             .map_err(|_| anyhow!("Root task handle was already set"))?;
+
+        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
@@ -379,8 +380,6 @@ impl StartCmd {
             },
         };
 
-        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-
         submit_remote_attestation(
             indexer_api.txn_sender.clone(),
             attestation.clone(),
@@ -388,7 +387,6 @@ impl StartCmd {
         )
         .await?;
 
-        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
         let coordinator = Coordinator {
             clock: Clock::real(),
             config_file: config,
@@ -398,9 +396,8 @@ impl StartCmd {
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,
-            tee_authority,
-            tls_public_key: tls_public_key.to_near_sdk_public_key()?,
-            account_public_key,
+            tee_authority: TeeAuthority::try_from(self.tee_authority)?,
+            tls_public_key,
         };
         coordinator.run().await
     }

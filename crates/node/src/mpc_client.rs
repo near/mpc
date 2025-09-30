@@ -9,7 +9,7 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
+use crate::providers::{EcdsaSignatureProvider, PublicKeyConversion, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
@@ -89,8 +89,7 @@ impl MpcClient {
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
         tee_authority: TeeAuthority,
-        tls_public_key: near_sdk::PublicKey,
-        account_public_key: VerifyingKey,
+        tls_public_key: VerifyingKey,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -139,6 +138,7 @@ impl MpcClient {
             })
         };
 
+        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
         let attestation_submission_handle = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn("attestation_submission", async move {
@@ -147,13 +147,13 @@ impl MpcClient {
                     interval.tick().await;
 
                     // Generate fresh attestation for each submission
-                    let report_data = ReportData::new(tls_public_key.clone());
+                    let report_data = ReportData::new(tls_sdk_public_key.clone());
                     match tee_authority.generate_attestation(report_data).await {
                         Ok(fresh_attestation) => {
                             if let Err(e) = submit_remote_attestation(
                                 chain_txn_sender.clone(),
                                 fresh_attestation,
-                                account_public_key,
+                                tls_public_key,
                             )
                             .await
                             {

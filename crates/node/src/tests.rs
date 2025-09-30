@@ -272,7 +272,7 @@ impl OneNodeTestConfig {
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
 
                 let test_signing_key = SigningKey::generate(&mut OsRng);
-                let test_account_public_key = test_signing_key.verifying_key();
+                let test_p2p_public_key = test_signing_key.verifying_key();
 
                 // Create mock TeeAuthority and TLS public key for testing
                 let test_tee_authority = TeeAuthority::Local(LocalTeeAuthorityConfig::default());
@@ -290,9 +290,9 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
-                    account_public_key: test_account_public_key,
                     tee_authority: test_tee_authority,
                     tls_public_key: test_tls_public_key,
+                    tls_public_key: test_p2p_public_key,
                 };
                 coordinator.run().await
             };
