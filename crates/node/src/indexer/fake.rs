@@ -1,6 +1,8 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::participants::ContractState;
-use super::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
+use super::types::{
+    ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
+};
 use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::CKDRequestFromChain;
@@ -14,6 +16,7 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
 use mpc_contract::config::Config;
+use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -38,6 +41,8 @@ pub struct FakeMpcContractState {
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
+    // todo: testing will be difficult. Need to somehow pass a new handle?
+    pub migration_service: NodeMigrations,
 }
 
 impl FakeMpcContractState {
@@ -54,6 +59,7 @@ impl FakeMpcContractState {
             env,
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
+            migration_service: NodeMigrations::default(),
         }
     }
 
@@ -218,6 +224,7 @@ impl FakeMpcContractState {
         }
     }
 
+    // todo: return error if not in running state.
     pub fn update_participant_info(
         &mut self,
         account_id: AccountId,
@@ -249,6 +256,25 @@ impl FakeMpcContractState {
                 );
             }
         }
+    }
+
+    pub fn conclude_node_migration(
+        &mut self,
+        account_id: AccountId,
+        args: ConcludeNodeMigrationArgs,
+    ) {
+        // get participant info from state
+        let (account_id, _, node) = self.migration_service.get_for_account(&account_id);
+        // todo: you probably don't need panics here.
+        let node_info = node.expect("expected node info");
+        let ProtocolContractState::Running(running_state) = &self.state else {
+            panic!("only allow calling this in `running_state`");
+        };
+        if running_state.keyset != args.keyset {
+            panic!("keyset mismatch");
+        }
+        self.migration_service.remove_migration(&account_id);
+        self.update_participant_info(account_id, node_info.destination_node_info);
     }
 }
 
@@ -490,6 +516,10 @@ impl FakeIndexerCore {
                         unimplemented!(
                             "Submitting participant info is not implemented for tests yet."
                         )
+                    }
+                    ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
+                        let mut contract = contract.lock().await;
+                        contract.conclude_node_migration(account_id, conclude_migration_args);
                     }
                 }
             }
