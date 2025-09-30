@@ -17,6 +17,7 @@ use k256::{AffinePoint, ProjectivePoint};
 
 use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 use crate::participants::ParticipantList;
+use crate::protocol::errors::ProtocolError;
 
 pub type KeygenOutput = crate::KeygenOutput<Secp256K1Sha256>;
 pub type Tweak = crate::Tweak<Secp256K1Sha256>;
@@ -122,7 +123,7 @@ impl RerandomizationArguments {
     /// set of participants and the entropy.
     ///
     /// Outputs a random string computed as HKDF(entropy, pk, hash, R, participants)
-    pub fn derive_randomness(&self) -> Scalar {
+    pub fn derive_randomness(&self) -> Result<Scalar, ProtocolError> {
         // create a string containing (pk, msg_hash, big_r, sorted(participants))
         let pk_encoded_point = self.pk.to_encoded_point(true);
         let encoded_pk: &[u8] = pk_encoded_point.as_bytes();
@@ -152,7 +153,8 @@ impl RerandomizationArguments {
             // we enter into this loop
             let mut okm = [0u8; 32];
 
-            hk.expand(&concatenation, &mut okm).unwrap();
+            hk.expand(&concatenation, &mut okm)
+                .map_err(|_| ProtocolError::HashingError)?;
 
             // derive the randomness delta
             delta = Scalar::from_repr(okm.into()).unwrap_or(
@@ -160,16 +162,15 @@ impl RerandomizationArguments {
                 // probability is negligible: in the order of 1/2^224
                 Scalar::ZERO,
             );
-            // append an extra 0 at the end of the concatenation everytime delta is zero
+            // append an extra 0 at the end of the concatenation every time delta is zero
             concatenation.extend_from_slice(&[0u8, 1]);
         }
-        delta
+        Ok(delta)
     }
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
-mod test_verify {
+mod test {
     use crate::test::MockCryptoRng;
 
     use super::*;
@@ -228,6 +229,7 @@ mod test_verify {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn keygen_output__should_be_serializable() {
         // Given
         let mut rng = MockCryptoRng::new([1; 8]);
@@ -249,7 +251,7 @@ mod test_verify {
         );
     }
 
-    // Outputs pk, R,  hash, participants, entropy, randomness
+    // Outputs pk, R, hash, participants, entropy, randomness
     fn compute_random_outputs(
         rng: &mut impl CryptoRngCore,
         num_participants: usize,
@@ -266,7 +268,7 @@ mod test_verify {
         let participants = ParticipantList::new(&participants).unwrap();
 
         let args = RerandomizationArguments::new(pk, msg_hash, big_r, participants, entropy);
-        let delta = args.derive_randomness();
+        let delta = args.derive_randomness().unwrap();
         (args, delta)
     }
 
@@ -278,8 +280,8 @@ mod test_verify {
         // different pk
         let (_, pk) = <C>::generate_nonce(&mut rng);
         args.pk = pk.to_affine();
-        let delta_prime = args.derive_randomness();
-        assert!(delta != delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
     }
 
     #[test]
@@ -289,8 +291,8 @@ mod test_verify {
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different msg_hash
         args.msg_hash = random_32_bytes(&mut rng);
-        let delta_prime = args.derive_randomness();
-        assert!(delta != delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
     }
 
     #[test]
@@ -301,8 +303,8 @@ mod test_verify {
         // different big_r
         let (_, big_r) = <C>::generate_nonce(&mut OsRng);
         args.big_r = big_r.to_affine();
-        let delta_prime = args.derive_randomness();
-        assert!(delta != delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
     }
 
     #[test]
@@ -313,8 +315,8 @@ mod test_verify {
         // different participants set
         let participants = generate_participants_with_random_ids(num_participants, &mut rng);
         args.participants = ParticipantList::new(&participants).unwrap();
-        let delta_prime = args.derive_randomness();
-        assert!(delta != delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
     }
 
     #[test]
@@ -325,8 +327,8 @@ mod test_verify {
 
         // different entropy
         OsRng.fill_bytes(&mut args.entropy);
-        let delta_prime = args.derive_randomness();
-        assert!(delta != delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
     }
 
     // Test that with different order of participants, the randomness is the same.
@@ -338,7 +340,7 @@ mod test_verify {
 
         // reshuffle
         args.participants = args.participants.shuffle(rng).unwrap();
-        let delta_prime = args.derive_randomness();
-        assert!(delta == delta_prime);
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_eq!(delta, delta_prime);
     }
 }

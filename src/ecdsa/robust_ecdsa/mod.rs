@@ -56,7 +56,7 @@ impl RerandomizedPresignOutput {
         if presignature.big_r != args.big_r {
             return Err(ProtocolError::IncompatibleRerandomizationInputs);
         }
-        let delta = args.derive_randomness();
+        let delta = args.derive_randomness()?;
         if delta.is_zero().into() {
             return Err(ProtocolError::ZeroScalar);
         }

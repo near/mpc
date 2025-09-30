@@ -166,10 +166,10 @@ where
         match vote.clone() {
             // Receive send vote then echo to everybody
             MessageType::Send(data) => {
-                // if the sender is not the one identified by the session id (sid)
+                // If the sender is not the one identified by the session id (sid)
                 // or if the sender have already delivered a MessageType::Send message
-                // then skip
-                // the second condition prevents a malicious party starting the protocol
+                // then skip.
+                // The second condition prevents a malicious party starting the protocol
                 // on behalf on somebody else
                 if finish_send[sid] || sid != participants.index(from) {
                     continue;
@@ -195,8 +195,10 @@ where
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver Ready.
-                // Would not panic as I just put the item in the previous line
-                if data_echo[sid].get(&data).unwrap() > echo_t {
+                if data_echo[sid].get(&data).ok_or_else(|| {
+                    ProtocolError::Other("Missing element in CounterList".to_string())
+                })? > echo_t
+                {
                     vote = MessageType::Ready(data);
                     chan.send_many(wait, &(&sid, &vote))?;
                     // state that the echo phase for session id (sid) is done
@@ -249,8 +251,11 @@ where
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                // Would not panic as I just put the item in the previous line
-                if data_ready[sid].get(&data).unwrap() > ready_t && !finish_amplification[sid] {
+                if data_ready[sid].get(&data).ok_or_else(|| {
+                    ProtocolError::Other("Missing element in CounterList".to_string())
+                })? > ready_t
+                    && !finish_amplification[sid]
+                {
                     vote = MessageType::Ready(data.clone());
                     chan.send_many(wait, &(&sid, &vote))?;
                     finish_amplification[sid] = true;
@@ -259,16 +264,19 @@ where
                     is_simulated_vote = true;
                     from = me;
                 }
-                // Would not panic as I just put the item in the previous line
-                if data_ready[sid].get(&data).unwrap() > 2 * ready_t {
+                if data_ready[sid].get(&data).ok_or_else(|| {
+                    ProtocolError::Other("Missing element in CounterList".to_string())
+                })? > 2 * ready_t
+                {
                     // skip all types of messages sent for session sid from now on
                     finish_send[sid] = true;
                     finish_echo[sid] = true;
                     finish_ready[sid] = true;
 
                     // return a map of participant data
-                    // the unwrap will not fail as the index is in the range of participants
-                    let p = participants.get_participant(sid).unwrap();
+                    let p = participants
+                        .get_participant(sid)
+                        .ok_or_else(|| ProtocolError::Other("Missing participant".to_string()))?;
                     // make a list of data and return them
                     vote_output.put(p, data.clone());
 

@@ -34,6 +34,8 @@ impl Participant {
     }
 
     /// Return the scalar associated with this participant.
+    // Allowing as there is no panic here
+    #[allow(clippy::missing_panics_doc)]
     pub fn scalar<C: Ciphersuite>(&self) -> Scalar<C> {
         let mut bytes = [0u8; 32];
         let id = u64::from(self.0) + 1;
@@ -50,6 +52,7 @@ impl Participant {
     }
 
     /// Returns a Frost identifier used in the frost library
+    #[allow(clippy::missing_panics_doc)]
     pub fn to_identifier<C: Ciphersuite>(&self) -> Identifier<C> {
         let id = self.scalar::<C>();
         // creating an identifier as required by the syntax of frost_core
@@ -219,6 +222,9 @@ pub mod test {
             }
         }
 
-        Ok((out0.unwrap(), out1.unwrap()))
+        Ok((
+            out0.ok_or_else(|| ProtocolError::Other("out0 is None".to_string()))?,
+            out1.ok_or_else(|| ProtocolError::Other("out1 is None".to_string()))?,
+        ))
     }
 }
