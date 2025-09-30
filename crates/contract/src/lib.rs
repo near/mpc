@@ -23,10 +23,9 @@ use crate::{
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
-    tee::{quote::TeeQuoteStatus, tee_state::TeeState},
+    tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::{Config, InitConfig};
 use crypto_shared::{
@@ -1111,6 +1110,12 @@ impl MpcContract {
 
         parameters.validate().unwrap();
 
+        // TODO: https://github.com/near/mpc/issues/1087
+        // Every participant must have a valid attestation, otherwise we risk
+        // participants being immediately kicked out once contract transitions into running.
+        let initial_participants = parameters.participants();
+        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 DomainRegistry::default(),
@@ -1121,7 +1126,7 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
             config: Config::from(init_config),
-            tee_state: TeeState::default(),
+            tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
         })
@@ -1848,9 +1853,9 @@ mod tests {
         );
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds when all participants
+    /// Test that [`MpcContract::vote_new_parameters`] succeeds when all participants
     /// submit valid TEE attestations. This tests the scenario where all participants successfully
-    /// submit valid attestations through [`VersionedMpcContract::submit_participant_info`],
+    /// submit valid attestations through [`MpcContract::submit_participant_info`],
     /// resulting in [`TeeQuoteStatus::Valid`] TEE status for all participants.
     #[test]
     fn test_vote_new_parameters_succeeds_when_all_participants_have_valid_tee() {
@@ -1873,41 +1878,11 @@ mod tests {
         );
     }
 
-    /// Test that [`VersionedMpcContract::vote_new_parameters`] succeeds with mixed TEE statuses:
-    /// some [`TeeQuoteStatus::Valid`], some [`TeeQuoteStatus::None`]. This tests a realistic
-    /// scenario where some participants have submitted valid attestations (resulting in
-    /// [`TeeQuoteStatus::Valid`] TEE status) while others haven't submitted any attestation
-    /// info (resulting in [`TeeQuoteStatus::None`] TEE status). Both statuses are acceptable
-    /// for TEE validation.
-    #[test]
-    fn test_vote_new_parameters_succeeds_with_mixed_valid_and_none_tee_status() {
-        let (mut contract, participants, first_participant_id) = setup_tee_test_contract(4, 3);
-        let threshold = Threshold::new(3);
-
-        // Submit valid attestations for first 3 participants, leave the 4th without attestation
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-
-        // This should succeed because:
-        // - 3 participants have Valid TEE status (from successful attestations)
-        // - 1 participant has None TEE status (no attestation submitted)
-        // - Both Valid and None are allowed by the TEE validation
-        let result = setup_voting_context_and_vote(
-            &mut contract,
-            &first_participant_id,
-            participants,
-            threshold,
-        );
-        assert!(
-            result.is_ok(),
-            "Should succeed when participants have Valid or None TEE status"
-        );
-    }
-
     /// Test that attempts to submit invalid attestations are rejected by
-    /// [`VersionedMpcContract::submit_participant_info`]. This test demonstrates that
+    /// [`MpcContract::submit_participant_info`]. This test demonstrates that
     /// participants cannot have Invalid TEE status because the contract proactively rejects
     /// invalid attestations at submission time. The 4th participant tries to submit an invalid
-    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::None`] status, which
+    /// attestation but is rejected, leaving them with [`TeeQuoteStatus::Invalid`] status, which
     /// combined with valid participants still allows successful voting.
     #[test]
     fn test_vote_new_parameters_succeeds_after_invalid_attestation_rejected() {

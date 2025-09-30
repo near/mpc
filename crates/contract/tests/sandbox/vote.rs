@@ -1,5 +1,6 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, GAS_FOR_VOTE_RESHARED,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
+    GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
 use mpc_contract::{
@@ -153,6 +154,20 @@ async fn test_resharing() -> anyhow::Result<()> {
     let mut new_participants = existing_params.participants().clone();
     let (acc, p) = gen_accounts(&worker, 1).await;
     let new_p = p.participants().first().unwrap().clone();
+
+    let new_account = &acc[0];
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_p.2.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
+
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     accounts.push(acc[0].clone());
     let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
@@ -237,9 +252,23 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     let mut new_participants = existing_params.participants().clone();
     let (acc, p) = gen_accounts(&worker, 1).await;
     let new_p = p.participants().first().unwrap().clone();
+
+    let new_account = &acc[0];
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_p.2.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
+
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
-    accounts.push(acc[0].clone());
+    accounts.push(new_account.clone());
     for account in &accounts {
         check_call_success(
             account
@@ -322,6 +351,17 @@ async fn setup_resharing_state() -> ResharingTestContext {
         let new_account = new_accounts.pop().unwrap();
         (new_account, new_account_id, new_participant_info)
     };
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        &new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_participant_info.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
 
     new_participants
         .insert(new_account_id.clone(), new_participant_info)

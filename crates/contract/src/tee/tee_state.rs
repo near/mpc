@@ -1,15 +1,12 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
-    tee::{
-        proposal::{
-            AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
-        },
-        quote::TeeQuoteStatus,
+    tee::proposal::{
+        AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
 };
 use attestation::{
-    attestation::Attestation,
+    attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -24,6 +21,18 @@ pub struct NodeId {
     pub account_id: AccountId,
     /// TLS public key
     pub tls_public_key: PublicKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TeeQuoteStatus {
+    /// TEE quote and Docker image verification both passed successfully.
+    /// The participant is considered to have a valid, verified TEE status.
+    Valid,
+
+    /// TEE verification failed - either the quote verification failed,
+    /// the Docker image verification failed, or both validations failed.
+    /// The participant should not be trusted for TEE-dependent operations.
+    Invalid,
 }
 
 pub enum TeeValidationResult {
@@ -55,6 +64,29 @@ impl Default for TeeState {
 }
 
 impl TeeState {
+    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
+        let mut participants_attestations = IterableMap::new(StorageKey::TeeParticipantAttestation);
+
+        participants
+            .participants()
+            .iter()
+            .for_each(|(account_id, _, participant_info)| {
+                let node_id = NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: participant_info.sign_pk.clone(),
+                };
+
+                participants_attestations
+                    .insert(node_id, Attestation::Mock(MockAttestation::Valid));
+            });
+
+        Self {
+            participants_attestations,
+            ..Default::default()
+        }
+    }
+
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
@@ -93,7 +125,7 @@ impl TeeState {
 
         let participant_attestation = self.participants_attestations.get(node_id);
         let Some(participant_attestation) = participant_attestation else {
-            return TeeQuoteStatus::None;
+            return TeeQuoteStatus::Invalid;
         };
 
         let expected_report_data =
@@ -115,10 +147,6 @@ impl TeeState {
     }
 
     /// Performs TEE validation on the given participants.
-    ///
-    /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
-    /// valid. The returned [`Participants`] preserves participant data and
-    /// [`Participants::next_id()`].
     pub fn validate_tee(
         &mut self,
         participants: &Participants,
@@ -133,16 +161,15 @@ impl TeeState {
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
 
-                matches!(
-                    self.verify_tee_participant(
-                        &NodeId {
-                            account_id: account_id.clone(),
-                            tls_public_key
-                        },
-                        tee_upgrade_deadline_duration
-                    ),
-                    TeeQuoteStatus::Valid | TeeQuoteStatus::None
-                )
+                let tee_status = self.verify_tee_participant(
+                    &NodeId {
+                        account_id: account_id.clone(),
+                        tls_public_key,
+                    },
+                    tee_upgrade_deadline_duration,
+                );
+
+                matches!(tee_status, TeeQuoteStatus::Valid)
             })
             .cloned()
             .collect();
