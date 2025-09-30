@@ -144,6 +144,8 @@ impl MpcClient {
             tracking::spawn("attestation_submission", async move {
                 let mut interval = tokio::time::interval(ATTESTATION_SUBMISSION_INTERVAL_DURATION);
                 loop {
+                    interval.tick().await;
+
                     // Generate fresh attestation for each submission
                     let report_data = ReportData::new(tls_sdk_public_key.clone());
                     match tee_authority.generate_attestation(report_data).await {
@@ -167,8 +169,6 @@ impl MpcClient {
                             tracing::error!("Failed to generate fresh attestation: {:?}", e);
                         }
                     }
-
-                    interval.tick().await;
                 }
             })
         };

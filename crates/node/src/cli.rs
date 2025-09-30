@@ -21,6 +21,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::Attestation;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -42,7 +43,10 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use {
-    crate::tee::{monitor_allowed_image_hashes, AllowedImageHashesFile},
+    crate::tee::{
+        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        AllowedImageHashesFile,
+    },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
@@ -304,6 +308,7 @@ impl StartCmd {
             config.clone(),
             secrets.clone(),
             indexer_api,
+            attestation,
             debug_request_sender,
             root_task_handle,
         );
@@ -341,6 +346,7 @@ impl StartCmd {
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
+        attestation: Attestation,
         debug_request_sender: broadcast::Sender<DebugRequest>,
         // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
         // Otherwise we would not write to the same cell/lock.
@@ -373,6 +379,13 @@ impl StartCmd {
                 None
             },
         };
+
+        submit_remote_attestation(
+            indexer_api.txn_sender.clone(),
+            attestation.clone(),
+            tls_public_key,
+        )
+        .await?;
 
         let coordinator = Coordinator {
             clock: Clock::real(),
