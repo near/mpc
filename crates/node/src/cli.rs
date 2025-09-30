@@ -380,12 +380,8 @@ impl StartCmd {
             },
         };
 
-        submit_remote_attestation(
-            indexer_api.txn_sender.clone(),
-            attestation.clone(),
-            tls_public_key,
-        )
-        .await?;
+        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
+            .await?;
 
         let coordinator = Coordinator {
             clock: Clock::real(),
