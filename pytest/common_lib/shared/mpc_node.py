@@ -131,6 +131,10 @@ class MpcNode(NearAccount):
         self.near_node.kill(gentle=gentle)
         self.is_running = False
 
+    def restart(self, gentle=True):
+        self.kill(gentle=gentle)
+        self.run()
+
     def assert_num_live_connections(self, expected_count: int, timeout: int):
         started = time.time()
         last_print = -1.5
