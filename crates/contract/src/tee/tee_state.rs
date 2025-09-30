@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use attestation::{
-    attestation::Attestation,
+    attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -64,6 +64,29 @@ impl Default for TeeState {
 }
 
 impl TeeState {
+    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
+        let mut participants_attestations = IterableMap::new(StorageKey::TeeParticipantAttestation);
+
+        participants
+            .participants()
+            .iter()
+            .for_each(|(account_id, _, participant_info)| {
+                let node_id = NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: participant_info.sign_pk.clone(),
+                };
+
+                participants_attestations
+                    .insert(node_id, Attestation::Mock(MockAttestation::Valid));
+            });
+
+        Self {
+            participants_attestations,
+            ..Default::default()
+        }
+    }
+
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000

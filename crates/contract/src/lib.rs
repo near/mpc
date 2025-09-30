@@ -1110,26 +1110,11 @@ impl MpcContract {
 
         parameters.validate().unwrap();
 
-        let mut tee_state = TeeState::default();
-
         // TODO: https://github.com/near/mpc/issues/1087
         // Every participant must have a valid attestation, otherwise we risk
         // participants being immediately kicked out once contract transitions into running.
-        parameters.participants().participants().iter().for_each(
-            |(account_id, _, participant_info)| {
-                let node_id = NodeId {
-                    account_id: account_id.clone(),
-                    tls_public_key: participant_info.sign_pk.clone(),
-                };
-
-                tee_state.add_participant(
-                    node_id,
-                    attestation::attestation::Attestation::Mock(
-                        attestation::attestation::MockAttestation::Valid,
-                    ),
-                );
-            },
-        );
+        let initial_participants = parameters.participants();
+        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         Ok(Self {
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
