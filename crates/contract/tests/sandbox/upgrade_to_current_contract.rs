@@ -1,5 +1,5 @@
 use crate::sandbox::common::{
-    add_dummy_state_and_pending_sign_requests, current_contract, gen_accounts, get_participants,
+    current_contract, execute_key_generation_and_add_random_state, gen_accounts, get_participants,
     get_tee_accounts, propose_and_vote_contract_binary, submit_signature_response, PARTICIPANT_LEN,
 };
 use mpc_contract::{
@@ -140,7 +140,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
     // Add state so migration logic is exercised
-    add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+    execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -179,7 +179,7 @@ async fn upgrade_preserves_state_and_requests(
     let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
     let injected_contract_state =
-        add_dummy_state_and_pending_sign_requests(&accounts, participants, &contract).await;
+        execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
