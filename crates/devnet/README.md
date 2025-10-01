@@ -88,15 +88,17 @@ fund any necessary accounts using as many Testnet faucets as needed.
 
 ## Creating an MPC Network
 
-First, create an MPC network. Pick a name; here I'll use "my-test", but
-**ensure that your name is globally unique within the team**, so include
-your username in there.
+First, create an MPC network. Pick a name; here I'll use
+"MPC_NETWORK_NAME=yourusername-test", but **ensure that your name is globally unique
+within the team**, so include your username in there.
 
 ```shell
-mpc-devnet mpc my-test new \
+export MPC_NETWORK_NAME=yourusername-test
+mpc-devnet mpc $MPC_NETWORK_NAME new \
   --num-participants 2 \
   --num-responding-access-keys 8 \
-  --near-per-responding-account 1
+  --near-per-responding-account 1 
+  [--ssd] # use only if you don't plan to run this for a long period, as it is more expensive
 ```
 
 Increasing the number of responding access keys can be very helpful in
@@ -106,7 +108,7 @@ independent nonce.
 Then, deploy the contract.
 
 ```shell
-mpc-devnet mpc my-test deploy-contract 
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-contract 
 ```
 
 The path of the contract binary can be overridden via `--path`.
@@ -114,21 +116,27 @@ The path of the contract binary can be overridden via `--path`.
 We can now deploy the infra with Terraform:
 
 ```shell
-mpc-devnet mpc my-test deploy-infra
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-infra
 ```
 
-This will output the address of the **Nomad UI**. Go there and wait until
-the Nomad server UI shows up, we can then deploy the MPC nodes:
+This will output the address of the **Nomad UI**. Go there and wait until the
+Nomad server UI shows up. Accessing the UI will require a password, which can be
+found in the "Nomad MPC UI" entry in the company's password manager. We can then
+deploy the MPC nodes:
 
-In addition, You can find the VMs created in GCP under [this link](https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc).
+In addition, You can find the VMs created in GCP under [this link](https://console.cloud.google.com/compute/instances?referrer=search&inv=1&invt=Ab256A&project=nearone-mpc&pli=1&pageState=(%22instances%22:(%22s%22:%5B(%22i%22:%22creationTimestamp%22,%22s%22:%220%22),(%22i%22:%22name%22,%22s%22:%220%22)%5D,%22r%22:50))).
 
 ```shell
-mpc-devnet mpc my-test deploy-nomad
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad
 ```
 
-The docker image to be deployed can be change with the `--docker-image` flag.
-By default, devnet assumes that a legacy docker image is deployed (with node version strictly older than 2.2.0).
-For newer versions, one must pass the `--not-legacy` flag, because they require different terraform variables (TODO: remove the flag [(#710)](https://github.com/near/mpc/issues/710)).
+The docker image to be deployed can be change with the `--docker-image` flag. By
+default, devnet assumes that a legacy docker image is deployed (with node
+version strictly older than 2.2.0). For newer versions, one must pass the
+`--not-legacy` flag, because they require different terraform variables (TODO:
+remove the flag [(#710)](https://github.com/near/mpc/issues/710)). A recent
+docker image can be found in our
+[dockerhub](https://hub.docker.com/r/nearone/mpc-node/tags)
 
 Both the `deploy-infra` and `deploy-nomad` commands can be repeated as needed.
 
@@ -137,17 +145,23 @@ the workspace name is the same as the MPC network name. The Terraform
 state is stored in S3, which is why this workspace name needs to be
 unique in the team.
 
-Now, wait for the nodes to spin-up and start syncing. Once the `public_data` endpoint is accessible, run
+Now, wait for the nodes to spin-up and start syncing. The node public addresses
+can be obtained by:
 
 ```shell
-mpc-devnet mpc my-test add-keys
+mpc-devnet mpc $MPC_NETWORK_NAME describe
+```
+
+Once the `public_data` endpoint is accessible in <http://node_address:80/public_data>, run
+
+```shell
+mpc-devnet mpc $MPC_NETWORK_NAME add-keys
 ```
 
 Finally, initialize the contract
 
 ```shell
-mpc-devnet mpc my-test init-contract \
-  --init-participants 2 --threshold 2
+mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2
 ```
 
 (TODO: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
@@ -165,11 +179,14 @@ each signature scheme. You can specify duplicate schemes here as well if you wis
 to add multiple keys for each scheme.
 
 ```shell
-mpc-devnet mpc my-test vote-add-domains --schemes Secp256k1,Ed25519
+mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,CkdSecp256k1
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
 contract will transition into the Running state, ready for signatures.
+
+**NOTE**: This step will only take place when the nodes have already synced, which can
+take from around 1 hour (if using SSD) to a few of hours.
 
 ### TEE: Setting allowed image hash
 
@@ -179,7 +196,7 @@ running in TEE to be authenticated.
 You can add approved image hashes with the following command:
 
 ```shell
-mpc-devnet mpc my-test vote-code-hash --mpc-docker-image-hash <<IMAGE_DIGEST>>   
+mpc-devnet mpc $MPC_NETWORK_NAME vote-code-hash --mpc-docker-image-hash <IMAGE_DIGEST>   
 ```
 
 ### Checking the Network State
@@ -187,7 +204,7 @@ mpc-devnet mpc my-test vote-code-hash --mpc-docker-image-hash <<IMAGE_DIGEST>>
 You can use the following command to print out the network state:
 
 ```shell
-mpc-devnet mpc my-test describe
+mpc-devnet mpc $MPC_NETWORK_NAME describe
 ```
 
 This will print out the state of the contract as well as some debugging links from
@@ -218,7 +235,7 @@ Nomad client #2: zone us-west1-b, instance type n2d-standard-8, debug: http://34
 
 ### Sending Signatures
 
-See the section below on loadtesting.
+See the section below on [loadtesting](#creating-a-loadtest-setup)
 
 ### Modifying the Network
 
@@ -228,7 +245,7 @@ Any parameter specified via `new` can be overridden here, and the command
 will expand the current setup to add any new resources, for example:
 
 ```shell
-mpc-devnet mpc my-test update --num-participants 3
+mpc-devnet mpc $MPC_NETWORK_NAME update --num-participants 3
 ```
 
 Note that it is recommended to create all the participants that we're
@@ -243,7 +260,7 @@ That means nodes [0, 1, 2, 3] are currently participating in the network. Suppos
 want node 4 and 5 to join, node 1 to leave, and to adjust the threshold to 4. We can do this:
 
 ```shell
-mpc-devnet mpc my-test vote-new-parameters --add 4 --add 5 --remove 1 --set-threshold 4
+mpc-devnet mpc $MPC_NETWORK_NAME vote-new-parameters --add 4 --add 5 --remove 1 --set-threshold 4
 ```
 
 This will kick off a resharing operation to reshare all keys.
@@ -254,41 +271,41 @@ To upgrade the contract, first propose the upgrade (suppose we wish to use the n
 contract code for the upgrade):
 
 ```shell
-mpc-devnet mpc my-test propose-update-contract --path ../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
+mpc-devnet mpc $MPC_NETWORK_NAME propose-update-contract --path ../target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 ```
 
 This will print out a command to run for voting for the upgrade:
 
 ```shell
-mpc-devnet mpc my-test vote-update --update-id=0
+mpc-devnet mpc $MPC_NETWORK_NAME vote-update --update-id=0
 ```
 
 That will trigger a migration to use the new contract.
 
 #### Using a different MPC node binary
 
-If we wish to change the MPC node binary, deploy a new docker image and then redeploy
+If we wish to change the MPC node binary, publish a new docker image and then redeploy
 with the docker image tag, e.g.
 
 ```shell
-mpc-devnet mpc my-test deploy-nomad --docker-image nearone/mpc-node-gcp:my-test-1234567
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad --docker-image nearone/mpc-node:branch-1234567
 ```
 
-Available docker images are available in [dockerhub](https://hub.docker.com/r/nearone/mpc-node-gcp/tags).
+Our docker images are available in [dockerhub](https://hub.docker.com/r/nearone/mpc-node/tags).
 
 ### Cleaning up the Infra
 
 After you're done with testing the cluster, please bring down the machines to save resources:
 
 ```shell
-mpc-devnet mpc my-test destroy-infra
+mpc-devnet mpc $MPC_NETWORK_NAME destroy-infra
 ```
 
 Also, you need to clear the deployed contract from local state, because the infra contains
 locally stored keyshares, and once we clear that, the contract state is effectively useless.
 
 ```shell
-mpc-devnet mpc my-test remove-contract
+mpc-devnet mpc $MPC_NETWORK_NAME remove-contract
 ```
 
 You may resume testing next time by using `deploy-contract` and then `deploy-infra` again.
@@ -299,13 +316,13 @@ At times, it may be useful to restart the contract from the initial state. We fi
 remove and redeploy the contract like above, but also we need to reset the data for the nodes:
 
 ```shell
-mpc-devnet mpc my-test deploy-nomad --shutdown-and-reset
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad --shutdown-and-reset
 ```
 
 Check the Nomad pages for the reset jobs to complete, and then
 
 ```shell
-mpc-devnet mpc my-test deploy-nomad
+mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad
 ```
 
 This will clear all the local data on the nodes except the near blockchain data. That way,
@@ -345,11 +362,14 @@ mpc-devnet loadtest my-test deploy-parallel-sign-contract
 
 We can point the loadtest setup against the MPC setup:
 
+**Note**: These tests might fail initially when the node is generating triples
+and pre-signatures.
+
 ```shell
 mpc-devnet loadtest my-test run \
-  --mpc-network my-test \
+  --mpc-network $MPC_NETWORK_NAME \
   --qps 5 \
-  --domain-id 0
+  --domain-id 0 \
   --duration 10
 ```
 
