@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PermanentKeyshareData {
+    // todo: we should make a constructor to check consistency among `Keyshares`
     pub epoch_id: EpochId,
     /// These keyshares are in the exact same order as the domains in the Keyset.
     pub keyshares: Vec<Keyshare>,
@@ -48,7 +49,9 @@ impl PermanentKeyStorage {
         let existing_data = ret.backend.load().await?;
         if let Some(data) = existing_data {
             if serde_json::from_slice::<PermanentKeyshareData>(&data).is_err() {
-                tracing::info!("Existing permanent keyshare data is not in the expected format, attempting to migrate...");
+                tracing::info!(
+                    "Existing permanent keyshare data is not in the expected format, attempting to migrate..."
+                );
                 let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
                 let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
                 ret.store_unchecked(&new_data).await?;
@@ -62,25 +65,90 @@ impl PermanentKeyStorage {
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
+    /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
+    /// replacing existing data only if the new keyset is considered valid.
+    ///
+    /// Validation is performed against the latest stored keyset to prevent
+    /// accidental downgrades or mismatches.
+    ///
+    /// # Validation rules
+    /// The new keyset is **rejected** for any of the following reasons:
+    /// - It has a **lower epoch id** than the existing keyset.
+    /// - It does not contain keshares for existing domains and public keys.
+    /// - If has the **same epoch id** as the existing keyset, but **does not** extend the keyset.
+    ///
+    /// Only if all checks succeed will the new keyset be stored via [`store_unchecked`].
+    ///
+    /// # Errors
+    /// Returns an [`anyhow::Error`] if validation fails or if persistence fails.
+    ///
+    /// # Returns
+    /// * `Ok(())` if the keyset was successfully stored.
+    /// * `Err(anyhow::Error)` otherwise.
     pub async fn store(&self, keyshare_data: &PermanentKeyshareData) -> anyhow::Result<()> {
         let existing = self.load().await.context("Checking existing keyshare")?;
         if let Some(existing) = existing {
-            if existing.epoch_id.get() > keyshare_data.epoch_id.get() {
-                return Err(anyhow::anyhow!(
-                    "Refusing to overwrite existing permanent keyshare of epoch {} with new permanent keyshare of older epoch {}",
+            let existing_keyset_is_more_recent =
+                existing.epoch_id.get() > keyshare_data.epoch_id.get();
+            if existing_keyset_is_more_recent {
+                anyhow::bail!(
+                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of older epoch {}",
                     existing.epoch_id.get(),
                     keyshare_data.epoch_id.get(),
-                ));
-            } else if existing.epoch_id.get() == keyshare_data.epoch_id.get()
-                && existing.keyshares.len() >= keyshare_data.keyshares.len()
-            {
-                return Err(anyhow::anyhow!(
-                    "Refusing to overwrite existing permanent keyshare of epoch {} with new permanent keyshare of same epoch but equal or fewer domains",
+                );
+            }
+            let existing_keset_has_more_domains =
+                existing.keyshares.len() > keyshare_data.keyshares.len();
+            if existing_keset_has_more_domains {
+                anyhow::bail!(
+                    "Refusing to overwrite existing permanent keyshares for {} domains with new permanent keyshares for fewer domains {}",
+                    existing.keyshares.len(),
+                    keyshare_data.keyshares.len()
+                );
+            }
+            let is_same_epoch_id = existing.epoch_id.get() == keyshare_data.epoch_id.get();
+            let same_number_of_domains = existing.keyshares.len() >= keyshare_data.keyshares.len();
+            if is_same_epoch_id && same_number_of_domains {
+                anyhow::bail!(
+                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal or fewer domains",
                     existing.epoch_id.get(),
-                ));
+                );
+            }
+            for (existing_keyshare, new_keyshare) in
+                existing.keyshares.iter().zip(&keyshare_data.keyshares)
+            {
+                let domain_ids_match =
+                    existing_keyshare.key_id.domain_id == new_keyshare.key_id.domain_id;
+                if !domain_ids_match {
+                    anyhow::bail!(
+                        "Refusing to overwrite existing permanent keyshare for domain id {:?} with new permanent keyshare for different domain id {:?}",
+                        existing_keyshare.key_id,
+                        new_keyshare.key_id
+                    );
+                }
+
+                let key_ids_match = existing_keyshare.key_id == new_keyshare.key_id;
+                if is_same_epoch_id & !key_ids_match {
+                    anyhow::bail!(
+                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of different key id {:?} for the same epoch.",
+                        existing_keyshare.key_id,
+                        new_keyshare.key_id
+                    );
+                }
+
+                let public_keys_match =
+                    existing_keyshare.public_key()? == new_keyshare.public_key()?;
+                if !public_keys_match {
+                    anyhow::bail!(
+                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of same key id but different public key.\
+                            Existing public key: {:?}, new public key: {:?}",
+                        existing_keyshare.key_id,
+                        existing_keyshare.public_key(),
+                        new_keyshare.public_key()
+                    );
+                }
             }
         }
-
         self.store_unchecked(keyshare_data).await
     }
 

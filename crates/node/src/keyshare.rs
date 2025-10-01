@@ -168,6 +168,26 @@ impl KeyshareStorage {
             .await
     }
 
+    /// Loads
+    async fn _load_prefix_from_permanent(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
+        let permanent = self.permanent.load().await?;
+        let existing_keyshares = if let Some(permanent) = permanent {
+            if permanent.epoch_id == keyset.epoch_id {
+                permanent.keyshares
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        Self::verify_existing_keyshares_are_prefix_of_keyset(
+            &existing_keyshares,
+            keyset.epoch_id,
+            &keyset.domains,
+        )?;
+        Ok(existing_keyshares)
+    }
+
     /// Ensures that the given keyset is in permanent key storage, and then returns them. The order
     /// the keys are given and returned are both in increasing order of DomainId.
     ///
