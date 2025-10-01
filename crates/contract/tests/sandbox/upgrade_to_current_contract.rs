@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::sandbox::common::{
     current_contract, execute_key_generation_and_add_random_state, gen_accounts, get_participants,
     get_tee_accounts, propose_and_vote_contract_binary, submit_signature_response, PARTICIPANT_LEN,
@@ -238,14 +240,15 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
         .await
         .expect("❌ Back compatibility check failed: migration() failed");
 
-    let accounts_with_tee_attestation_post_upgrade: Vec<AccountId> = get_tee_accounts(&contract)
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|node_id| node_id.account_id)
-        .collect();
+    let accounts_with_tee_attestation_post_upgrade: HashSet<AccountId> =
+        get_tee_accounts(&contract)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|node_id| node_id.account_id)
+            .collect();
 
-    let participant_set: Vec<AccountId> = initial_participants
+    let participant_set: HashSet<AccountId> = initial_participants
         .participants()
         .iter()
         .map(|(account_id, _, _)| account_id)
