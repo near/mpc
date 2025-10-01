@@ -151,7 +151,7 @@ impl MpcClient {
                         match tee_authority.generate_attestation(report_data).await {
                             Ok(attestation) => attestation,
                             Err(e) => {
-                                tracing::error!("Failed to generate fresh attestation: {:?}", e);
+                                tracing::error!("failed to generate fresh attestation: {:?}", e);
                                 continue;
                             }
                         };
@@ -163,7 +163,7 @@ impl MpcClient {
                     )
                     .await
                     {
-                        Ok(_) => tracing::info!("Successfully submitted fresh remote attestation"),
+                        Ok(_) => tracing::info!("successfully submitted fresh remote attestation"),
                         Err(e) => {
                             tracing::error!(error = ?e,"failed to submit fresh remote attestation");
                         }
