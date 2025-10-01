@@ -5,6 +5,30 @@ use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use threshold_signatures::ecdsa::KeygenOutput;
 
+/// returns two shares for the same key
+pub fn generate_dummy_keyshares(
+    epoch_id: u64,
+    domain_id: u64,
+    attempt_id: u64,
+) -> (Keyshare, Keyshare) {
+    let keyshares = TestGenerators::new(2, 2).make_ecdsa_keygens();
+    let mut iter = keyshares.into_iter().map(|share| {
+        let key = share.1;
+
+        Keyshare {
+            key_id: KeyEventId::new(
+                EpochId::new(epoch_id),
+                DomainId(domain_id),
+                serde_json::from_str(&format!("{}", attempt_id)).unwrap(),
+            ),
+            data: KeyshareData::Secp256k1(KeygenOutput {
+                private_share: key.private_share,
+                public_key: key.public_key,
+            }),
+        }
+    });
+    (iter.next().unwrap(), iter.next().unwrap())
+}
 pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -> Keyshare {
     let key = TestGenerators::new(2, 2)
         .make_ecdsa_keygens()
