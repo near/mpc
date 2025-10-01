@@ -113,7 +113,7 @@ impl TestContract {
                         let args = CKDArgs {
                             request: CKDRequestArgs {
                                 domain_id: *domain_id,
-                                app_public_key: generate_app_public_key((seed + i + 2) as u128),
+                                app_public_key: generate_app_public_key(u128::from(seed + i + 2)),
                             },
                         };
 
