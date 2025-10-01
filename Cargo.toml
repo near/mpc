@@ -1,20 +1,56 @@
 [workspace]
-members = ["node", "devnet", "crates/attestation", "crates/primitives", "crates/tee_authority", "crates/test_utils", "crates/tls", "crates/contract_history"]
 resolver = "2"
-exclude = ["libs", "pytest"]
-
-
+exclude = ["libs/nearcore"]
+members = [
+    "crates/attestation",
+    "crates/contract",
+    "crates/contract_history",
+    "crates/devnet",
+    "crates/dtos_contract",
+    "crates/node",
+    "crates/primitives",
+    "crates/tee_authority",
+    "crates/test_migration_contract",
+    "crates/test_parallel_contract",
+    "crates/test_utils",
+    "crates/tls",
+]
 
 [profile.dev-release]
 inherits = "release"
 debug = true
 
+[profile.release-contract]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+# Optimize for binary size.
+# See https://doc.rust-lang.org/rustc/codegen-options/index.html#opt-level
+opt-level = "s"
+
+
+[profile.reproducible]
+inherits = "release"
+debug = false
+panic = "abort"
+codegen-units = 1
+overflow-checks = true
+
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-mpc-primitives = { path = "crates/primitives", features = ["abi"]}
+dtos-contract = { path = "crates/dtos_contract" }
+mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
+contract_history = { path = "crates/contract_history" }
+mpc-contract = { path = "crates/contract", features = [
+    "dev-utils",
+] }
+mpc-tls = { path = "crates/tls" }
+
 
 actix = "0.13.0"
 aes-gcm = "0.10.3"
@@ -24,10 +60,13 @@ async-trait = "0.1.83"
 axum = "0.7.9"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 base64 = "0.22.1"
-borsh = { version = "1.5.1", features = ["derive", "unstable__schema"] }
+borsh = "1.5.1"
 bs58 = { version = "0.5.1" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
-curve25519-dalek = "4.1.3"
+curve25519-dalek = { version = "4.1.3", features = [
+    "group",
+    "serde",
+], default-features = false }
 dcap-qvl = { version = "0.3.2", default-features = false, features=["contract", "borsh", "std"] }
 # Pinned to resolve compilation errors with conflicting implementations of PartialOrd trait
 # See error E0283 with multiple implementations satisfying `u128: std::cmp::PartialOrd<_>`
@@ -39,16 +78,20 @@ derive_more = { version = "2.0.1", features = [
     "as_ref",
     "constructor",
 ] }
-dstack-sdk = { version = "0.1.0" }
+digest = "0.10.7"
+dstack-sdk = { version = "0.1.1" }
 dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
+ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 flume = "0.11.1"
+fs2 = "0.4"
 futures = "0.3.31"
 futures-util = "0.3.31"
 gcloud-sdk = { version = "0.26.2", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
+getrandom = "0.2.12"
 hex = { version = "0.4.3", features = ["serde"] }
 hex-literal = "0.4.1"
 hkdf = "0.12.4"
@@ -59,7 +102,8 @@ k256 = "0.13.4"
 lazy_static = "1.5.0"
 lru = "0.12.5"
 mockall = "0.13.1"
-mpc-tls = { path = "crates/tls" }
+near-account-id = "1.1.1"
+near-gas = { version = "0.2.5", features = ["serde", "borsh", "schemars"] }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -68,26 +112,29 @@ near-sdk = { version = "5.15.1", features = [
     "unit-testing",
     "unstable",
 ] }
+near-workspaces = "0.21.0"
 prometheus = {version = "0.13.4", default-features = false }
 rand = "0.8.5"
 rand_xorshift = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
-rustls = { version = "0.23.31", default-features = false , features=["std"] }
+rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rstest = "0.25.0"
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
-serde = { version = "1.0.214", features = ["derive"] }
+serde = { version = "1.0.225", features = ["derive"] }
+serde_bytes = "0.11.19"
 serde_json = "1.0.132"
-serde_with = "3.14.0"
+serde_with = { version = "3.14.0", features = ["hex"] }
 serde_yaml = "0.9.34"
 serial_test = "3.2.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
-tempfile = "=3.14.0"
+signature = "2.2.0"
+tempfile = "3.22.0"
 thiserror = "2.0.12"
-# Current HEAD of main branch as of 28-08-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "b4fbf84ad3244d54f4db54d3b283989861cd5f53"}
+# Current HEAD of main branch as of 18-09-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "583e0544fc1316a2b53416058841a5b9b386501b"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }
@@ -103,19 +150,12 @@ tracing-subscriber = { version = "0.3.20", features = [
 url = "2"
 x509-parser = "0.16.0"
 
-mpc-node = { path = "node" }
-# MPC Contract
-mpc-contract = { path = "libs/chain-signatures/contract/", features = [
-    "dev-utils",
-] }
-# TODO: update once 1.1.0 is published (though the API did not change)
-legacy-mpc-contract = { package = "mpc-contract", git = "https://github.com/near/mpc/", rev = "1d4954dff28e8eb988fb7762eff414a602a2b124" }
 
 # NEAR CORE DEPENDENCIES:
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.7.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.8.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.8.0" }

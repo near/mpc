@@ -8,7 +8,6 @@ import atexit
 import subprocess
 import git
 import sys
-import shutil
 from pathlib import Path
 import os
 import tempfile
@@ -69,63 +68,54 @@ def current_contracts():
         }
 
 
-# This function compiles a contract using cargo build
-def compile_contract_common(
-    contract_crate_path: Path, contract_name: str, contract_output_path: Path
-):
-    print(f"compiling contract {contract_name}")
+def compile_contract_common(contract_package_name: str):
+    """
+    This function compiles a contract using cargo build and wasm-opt for optimization.
+    """
+    repository_root_path = git_root()
+    print(f"compiling contract {contract_package_name}")
 
     subprocess.run(
         [
             "cargo",
             "build",
             "-p",
-            contract_name,
+            contract_package_name,
             "--target=wasm32-unknown-unknown",
-            "--release",
+            "--profile=release-contract",
         ],
-        cwd=contract_crate_path,
         check=True,
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
 
-    contract_bin_name = f"{contract_name.replace('-', '_')}.wasm"
+    contract_compiled_file_name = contracts.contract_compiled_file_name(
+        contract_package_name
+    )
 
     subprocess.run(
         [
             "wasm-opt",
             "-Oz",
-            f"target/wasm32-unknown-unknown/release/{contract_bin_name}",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_compiled_file_name}",
             "-o",
-            f"target/wasm32-unknown-unknown/release/{contract_bin_name}",
-            "--enable-bulk-memory",
+            f"target/wasm32-unknown-unknown/release-contract/{contract_compiled_file_name}",
         ],
-        cwd=contract_crate_path,
+        cwd=repository_root_path,
         check=True,
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
 
-    compiled_contract = (
-        contract_crate_path
-        / "target"
-        / "wasm32-unknown-unknown"
-        / "release"
-        / f"{contract_bin_name}"
-    )
-    os.makedirs(os.path.dirname(contract_output_path), exist_ok=True)
-    shutil.copy(compiled_contract, contract_output_path)
-
 
 @pytest.fixture(scope="session", autouse=True)
 def compile_mpc_contract(request):
     """
-    This function navigates to the chain-signatures directory, compiles the mpc-contract and moves it in the res folder.
-    This ensures that the pytests will always use the source code inside chain-signatures/contract.
+    This function compiles the mpc-contract and moves it to the `COMPILED_CONTRACT_DIRECTORY` directory.
+    This ensures that the pytests will always use the current source code of the mpc-contract.
     """
 
-    chain_signatures = git_root() / "libs" / "chain-signatures"
+    git_root_directory = git_root()
     non_reproducible = request.config.getoption("--non-reproducible")
 
     if not non_reproducible:
@@ -137,55 +127,28 @@ def compile_mpc_contract(request):
                 "build",
                 "reproducible-wasm",
                 "--manifest-path",
-                Path("contract") / "Cargo.toml",
+                contracts.MPC_CONTRACT_MANIFEST_PATH,
                 "--out-dir",
-                Path("target") / "wasm32-unknown-unknown" / "release-reproducible",
+                contracts.COMPILED_CONTRACT_DIRECTORY,
             ],
-            cwd=chain_signatures,
+            cwd=git_root_directory,
             check=True,
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
 
-        os.makedirs(os.path.dirname(contracts.COMPILED_CONTRACT_PATH), exist_ok=True)
-        shutil.copy(
-            chain_signatures
-            / "target"
-            / "wasm32-unknown-unknown"
-            / "release-reproducible"
-            / "mpc_contract.wasm",
-            contracts.COMPILED_CONTRACT_PATH,
-        )
     else:
-        compile_contract_common(
-            chain_signatures, "mpc-contract", contracts.COMPILED_CONTRACT_PATH
-        )
+        compile_contract_common(contracts.MPC_CONTRACT_PACKAGE_NAME)
 
 
 @pytest.fixture(scope="session")
 def compile_parallel_contract(request):
     """
-    This function navigates to the tests/tests_contracts/parallel directory,
-    compiles the contract and moves it in the res folder.
+    This function compiles the test parallel contract.
     """
 
     compile_contract_common(
-        git_root() / "pytest" / "tests" / "test_contracts" / "parallel",
-        "parallel-contract",
-        contracts.PARALLEL_CONTRACT_PATH,
-    )
-
-
-@pytest.fixture(scope="session")
-def compile_migration_contract(request):
-    """
-    This function navigates to the tests/tests_contracts/migration directory,
-    compiles the contract and moves it in the res folder.
-    """
-    compile_contract_common(
-        git_root() / "pytest" / "tests" / "test_contracts" / "migration",
-        "migration-contract",
-        contracts.MIGRATE_CURRENT_CONTRACT_PATH,
+        contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
     )
 
 

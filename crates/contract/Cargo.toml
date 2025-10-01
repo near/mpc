@@ -1,0 +1,102 @@
+[package]
+name = "mpc-contract"
+version = "2.2.0-rc.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/near/mpc"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+# fields to configure build with WASM reproducibility, according to specs
+# in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
+[package.metadata.near.reproducible_build]
+# docker image, descriptor of build environment
+image = "sourcescan/cargo-near:0.17.0-rust-1.86.0"
+# tag after colon above serves only descriptive purpose; image is identified by digest
+image_digest = "sha256:1784ca6310f3496f0048356ce420921c8f5fdf71ee8124d43a2e1ceb1f70db8a"
+# list of environment variables names, whose values, if set, will be used as external build parameters
+# in a reproducible manner
+# supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
+passed_env = []
+# build command inside of docker container
+# if docker image from default gallery is used https://hub.docker.com/r/sourcescan/cargo-near/tags,
+# the command may be any combination of flags of `cargo-near`,
+# supported by respective version of binary inside the container besides `--no-locked` flag
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    # this is counter intuitive, but it correctly follows the docs,
+    # the non-reproducible build inside a reproducible environment becomes reproducible
+    "non-reproducible-wasm",
+    "--locked",
+    "--profile=release-contract",
+    "--features",
+    "abi",
+    "--no-embed-abi",
+]
+
+[dependencies]
+anyhow = { workspace = true }
+curve25519-dalek = { workspace = true }
+borsh = { workspace = true }
+ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
+derive_more = { workspace = true, features = ["from"] }
+near-sdk = { workspace = true }
+rand = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+k256 = { workspace = true, features = [
+    "sha256",
+    "ecdsa",
+    "serde",
+    "arithmetic",
+    "expose-field",
+] }
+mpc-primitives = { workspace = true }
+dtos-contract = { workspace = true }
+attestation = { workspace = true }
+near-gas = { workspace = true }
+near-account-id = { workspace = true }
+thiserror = { workspace = true }
+sha3 = { workspace = true }
+hex = { workspace = true, features = [] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["custom"] }
+
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+sha2 = { workspace = true }
+test_utils = { workspace = true }
+contract_history = { workspace = true }
+mpc-contract = { workspace = true, features = ["test-utils"] }
+
+# crypto dependencies
+ed25519-dalek = { workspace = true }
+ecdsa = { workspace = true }
+signature = { workspace = true }
+digest = { workspace = true }
+near-workspaces = { workspace = true }
+threshold-signatures = { workspace = true }
+fs2 = { workspace = true }
+rstest = { workspace = true }
+
+[features]
+test-utils = ["rand"]
+dev-utils = ["rand"]
+abi = [
+    "borsh/unstable__schema",
+    "mpc-primitives/abi",
+    "dtos-contract/abi",
+]
+# This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
+# But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
+# if it appears under wasm32 target, it will break compilation too.
+__abi-generate = ["near-sdk/__abi-generate"]
