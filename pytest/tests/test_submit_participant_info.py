@@ -54,36 +54,27 @@ def test_submit_participant_info_endpoint():
     print(tee_accounts_result)
     print("===============================")
 
-    if "result" in tee_accounts_result:
-        success_value = tee_accounts_result["result"]["status"].get("SuccessValue")
-        if success_value:
-            decoded_result = base64.b64decode(success_value).decode("utf-8")
-            print(f"Decoded result: {decoded_result}")
-            tee_accounts = json.loads(decoded_result)
-            tee_account_count = (
-                len(tee_accounts) if isinstance(tee_accounts, list) else 0
-            )
+    # Assert valid contract response format
+    assert "result" in tee_accounts_result, (
+        "Invalid contract response format - missing 'result' field"
+    )
 
-            print(f"   📊 Contract shows {tee_account_count} registered TEE accounts")
+    # Assert successful transaction
+    success_value = tee_accounts_result["result"]["status"].get("SuccessValue")
+    assert success_value, "No SuccessValue found in contract response"
 
-            if tee_account_count > 0:
-                print(
-                    "   ✅ TEE accounts found - submit_participant_info calls succeeded!"
-                )
-                success = True
-            else:
-                print(
-                    "   ❌ No TEE accounts registered - submit_participant_info calls failed"
-                )
-                success = False
-        else:
-            print("   ❌ No SuccessValue found in contract response")
-            success = False
-    else:
-        print("   ❌ Invalid contract response format")
-        success = False
+    # Decode and parse the result
+    decoded_result = base64.b64decode(success_value).decode("utf-8")
+    print(f"Decoded result: {decoded_result}")
+    tee_accounts = json.loads(decoded_result)
+    tee_account_count = len(tee_accounts) if isinstance(tee_accounts, list) else 0
+
+    print(f"   📊 Contract shows {tee_account_count} registered TEE accounts")
 
     # Assert that submit_participant_info calls succeeded
-    assert success, (
-        "Expected successful submit_participant_info calls with registered TEE accounts, but found none. "
+    assert tee_account_count > 0, (
+        f"Expected successful submit_participant_info calls with registered TEE accounts, "
+        f"but found {tee_account_count}. This indicates the submit_participant_info calls failed."
     )
+
+    print("   ✅ TEE accounts found - submit_participant_info calls succeeded!")
