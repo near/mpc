@@ -1,7 +1,7 @@
 use crate::sandbox::common::{
-    assert_running_return_participants, check_call_success, gen_accounts,
-    get_participant_attestation, get_tee_accounts, init_env_ed25519, init_env_secp256k1,
-    submit_participant_info, submit_tee_attestations,
+    assert_running_return_participants, gen_accounts, get_participant_attestation,
+    get_tee_accounts, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
+    vote_for_hash,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -14,26 +14,6 @@ use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
-
-/// Tests the basic TEE verification functionality when no TEE accounts are present.
-/// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
-/// and ensures the participant count remains unchanged during verification.
-#[tokio::test]
-async fn test_tee_verify_no_tee() -> Result<()> {
-    let (_, contract, _, _) = init_env_ed25519(1).await;
-    let n_participants_start = get_participants(&contract).await?;
-
-    let verified_tee: bool = contract
-        .call("verify_tee")
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?
-        .json()?;
-    assert!(verified_tee);
-    assert_eq!(n_participants_start, get_participants(&contract).await?);
-    Ok(())
-}
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -191,22 +171,7 @@ async fn get_latest_code_hash(contract: &Contract) -> Result<Option<MpcDockerIma
         .json::<Option<MpcDockerImageHash>>()?)
 }
 
-async fn vote_for_hash(
-    account: &Account,
-    contract: &Contract,
-    image_hash: &[u8; 32],
-) -> Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": image_hash}))
-            .transact()
-            .await?,
-    );
-    Ok(())
-}
-
-async fn get_participants(contract: &Contract) -> Result<usize> {
+pub async fn get_participants(contract: &Contract) -> Result<usize> {
     let state = contract
         .call("state")
         .args_json(serde_json::json!(""))
@@ -334,9 +299,6 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
     let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
-
-    // Initially should have no TEE participants
-    assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
 
     let participant_uids = assert_running_return_participants(&contract)
         .await?

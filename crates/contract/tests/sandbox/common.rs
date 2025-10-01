@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use digest::{Digest, FixedOutput};
 use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
@@ -246,7 +247,7 @@ pub async fn init_with_candidates(
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
     let threshold_parameters = {
         let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-        ThresholdParameters::new(participants, threshold).unwrap()
+        ThresholdParameters::new(participants.clone(), threshold).unwrap()
     };
 
     let call_builder = if !pks.is_empty() {
@@ -294,6 +295,23 @@ pub async fn init_with_candidates(
         .unwrap()
         .into_result()
         .unwrap();
+
+    // Give each participant a valid attestation initially
+    for ((_, _, participant), account) in participants.participants().iter().zip(&accounts) {
+        let tee_submission_result = submit_participant_info(
+            account,
+            &contract,
+            &Attestation::Mock(MockAttestation::Valid),
+            &participant.sign_pk,
+        )
+        .await;
+
+        assert_matches!(
+            tee_submission_result,
+            Ok(true),
+            "`submit_participant_info` must succeed for mock attestations"
+        );
+    }
     dbg!(init);
     (worker, contract, accounts)
 }
@@ -852,6 +870,21 @@ pub async fn submit_tee_attestations(
     Ok(())
 }
 
+pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
+    let state = contract
+        .call("state")
+        .args_json(serde_json::json!(""))
+        .max_gas()
+        .transact()
+        .await?;
+    let value: ProtocolContractState = state.json()?;
+    let ProtocolContractState::Running(running) = value else {
+        panic!("Expected running state")
+    };
+
+    Ok(running.parameters.participants().clone())
+}
+
 /// This function assumes that the accounts are sorted by participant id.
 /// Returns the shared_secret_key in the same order as
 /// the corresponding domain configs supplied.
@@ -1033,4 +1066,19 @@ pub async fn execute_key_generation_and_add_random_state(
     InjectedContractState {
         pending_sign_requests,
     }
+}
+
+pub async fn vote_for_hash(
+    account: &Account,
+    contract: &Contract,
+    image_hash: &[u8; 32],
+) -> anyhow::Result<()> {
+    check_call_success(
+        account
+            .call(contract.id(), "vote_code_hash")
+            .args_json(serde_json::json!({"code_hash": image_hash}))
+            .transact()
+            .await?,
+    );
+    Ok(())
 }

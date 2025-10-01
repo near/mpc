@@ -10,3 +10,6 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 near-sdk = { workspace = true }
 borsh = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["borsh"]

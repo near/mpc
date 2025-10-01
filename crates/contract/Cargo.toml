@@ -41,7 +41,6 @@ container_build_command = [
 anyhow = { workspace = true }
 curve25519-dalek = { workspace = true }
 borsh = { workspace = true }
-ed25519-dalek = { version = "2.2.0", features = ["serde", "digest"] }
 derive_more = { workspace = true, features = ["from"] }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
@@ -59,7 +58,6 @@ k256 = { workspace = true, features = [
 mpc-primitives = { workspace = true }
 dtos-contract = { workspace = true }
 attestation = { workspace = true }
-near-gas = { workspace = true }
 near-account-id = { workspace = true }
 thiserror = { workspace = true }
 sha3 = { workspace = true }
@@ -77,9 +75,6 @@ sha2 = { workspace = true }
 test_utils = { workspace = true }
 contract_history = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
-
-# crypto dependencies
-ed25519-dalek = { workspace = true }
 ecdsa = { workspace = true }
 signature = { workspace = true }
 digest = { workspace = true }
@@ -100,3 +95,6 @@ abi = [
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.
 __abi-generate = ["near-sdk/__abi-generate"]
+
+[package.metadata.cargo-shear]
+ignored = ["schemars"]
