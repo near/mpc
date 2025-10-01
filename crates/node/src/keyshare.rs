@@ -203,7 +203,6 @@ impl KeyshareStorage {
             .await?;
         Ok(())
     }
-
     /// Ensures that the given keyset is in permanent key storage, and then returns them. The order
     /// the keys are given and returned are both in increasing order of DomainId.
     ///
@@ -289,16 +288,30 @@ impl KeyshareStorage {
 
     /// Imports keyshares from the provided backup into permanent storages.
     ///
+    /// The following validation is performed:
+    /// - the provided backup shares [`Keyshare`] must be an exact match for the provided conrtact_keyset [`Keyset`]
+    /// - if the **permanent** KeyshareStorage contains keyshares of the same epoch, then they must be a prefix of the provided backup shares.
+    /// - if the **temporary** KeyshareStorage contains any keyshares of matching [`KeyEventId`],
+    ///   then they must be an exact match for the keyshares provided in the backup.
+    ///
+    /// Any keyshares present missing in the temporary or local Keyshare storage are drawn from the
+    /// provided backup.
+    ///
+    /// If the validation passes, then the constructed keyset is stored to permanent
+    /// KeyshareStorage and any temporary keyshares of younger epoch ids are permanently deleted.
+    ///
     /// # Errors
     /// Returns an error if:
     /// - The backup does not match the contract keyset’s epoch or domains,
-    /// - The permanent keyshare storage is not empty.
+    /// - A required keyshare is missing in both temporary storage and backup,
+    /// - The reconstructed keyshares differ from the backup (indicating corruption),
+    /// - Or storing to permanent storage fails.
     ///
     /// # Returns
     /// * `Ok(())` if the backup was successfully imported and stored permanently.
     /// * `Err(anyhow::Error)` if any validation or storage step fails.
-    #[allow(dead_code)] // todo: remove after integration with onboarding function
     pub async fn import_backup(
+        // while technically not required to be mut, we must not call read functions in parallel
         &mut self,
         backup: Vec<Keyshare>,
         contract_keyset: &Keyset,
@@ -313,15 +326,47 @@ impl KeyshareStorage {
             anyhow::bail!("backup keyshares is not an exact match for the contract keyset")
         }
 
-        // Ensure we import into an empty Keystore
-        let permanent = self.permanent.load().await?;
-        if permanent.is_some() {
-            anyhow::bail!("permanent keyshare storage isn't empty");
+        // We load all keys we have stored in permanent or temporary storage and only draw from
+        // backup in case we are missing shares.
+        let existing_keyshares = self._load_prefix_from_permanent(contract_keyset).await?;
+        let mut new_keyshares = existing_keyshares;
+        for domain in contract_keyset.domains.iter().skip(new_keyshares.len()) {
+            let key_id =
+                KeyEventId::new(contract_keyset.epoch_id, domain.domain_id, domain.attempt);
+
+            // if we don't have the keyshare in temporary storage, we load it from the backup
+            let keyshare: Keyshare = self
+                .temporary
+                .load_keyshare(key_id)
+                .await?
+                .or_else(|| backup.iter().find(|share| share.key_id == key_id).cloned())
+                .ok_or_else(|| anyhow::anyhow!("Missing keyshare {:?}", key_id))?;
+            new_keyshares.push(keyshare);
+        }
+
+        // finally, we check that the constructed keyset matches the backup
+        let consistent_keyset = new_keyshares
+            .iter()
+            .zip(&backup)
+            .all(|(constructed_share, backup_share)| constructed_share == backup_share);
+        if !consistent_keyset {
+            let inconsistent_shares: Vec<KeyEventId> = new_keyshares
+                .iter()
+                .zip(&backup)
+                .filter_map(|(constructed_share, backup_share)| {
+                    if constructed_share != backup_share {
+                        Some(constructed_share.key_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            anyhow::bail!("Corrupted backup or corrupted keystore. Found a mismatch between secret shares for key_ids: {:?}.", inconsistent_shares);
         }
 
         self._store_new_permanent_keyset_data_delete_temporary(
             contract_keyset.epoch_id,
-            backup.clone(),
+            new_keyshares.clone(),
         )
         .await?;
 
@@ -610,28 +655,308 @@ pub mod tests {
         assert_eq!(&loaded, &keyset.keyshares());
     }
 
-    /// Fail to import keyshares into a populated KeyshareStorage.
+    /// Import keyshares into KeyshareStorage with an existing, matching share in permanent storage.
+    /// Ensure we import the missing share from backup.
     #[tokio::test]
-    async fn test_import_backup_failure_populated() {
+    async fn test_import_backup_success_existing_shares_permanent() {
         let epoch_id = 1;
+        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
-        let existing_key = generate_dummy_keyshare(epoch_id, 2, 3);
-        let mut existing_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
-        populate_permanent_keystore(existing_key, &mut existing_keyset, &storage).await;
+        {
+            // populate the permanent keystore with the first key, but not the second
+            let mut partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
+            populate_permanent_keystore(key_1, &mut partial_keyset, &storage).await;
+        }
+        let res = storage
+            .import_backup(full_keyset.keyshares().to_vec(), &full_keyset.keyset())
+            .await;
+        assert!(res.is_ok());
 
+        let loaded = storage.load_keyset(&full_keyset.keyset()).await.unwrap();
+        assert_eq!(&loaded, &full_keyset.keyshares());
+    }
+
+    /// Import keyshares into KeyshareStorage with an existing share in permanent storage.
+    /// Ensure import fails if the existing keyshare is different from the backup keyshare.
+    /// Ensure we don't change the KeyshareStorage
+    #[tokio::test]
+    async fn test_import_backup_failure_existing_shares_permanent() {
+        let epoch_id = 1;
+        let (keyshare, alternate_keyshare) = generate_dummy_keyshares(epoch_id, 1, 0);
+        // ensure that the keyshares are different
+        assert!(alternate_keyshare.data != keyshare.data);
+        // ensure that the keyshares are for the same public key
+        assert_eq!(
+            alternate_keyshare.public_key().unwrap(),
+            keyshare.public_key().unwrap()
+        );
+        let keyset = KeysetBuilder::from_keyshares(epoch_id, &[keyshare.clone()]);
+
+        // populate the key storage with the alternate keyshare
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        let mut expected = KeysetBuilder::from_keyshares(epoch_id, &[]);
+        populate_permanent_keystore(alternate_keyshare, &mut expected, &storage).await;
+
+        let res = storage
+            .import_backup(keyset.keyshares().to_vec(), &keyset.keyset())
+            .await;
+        assert!(res.is_err());
+
+        let loaded = storage.load_keyset(&expected.keyset()).await.unwrap();
+        assert_eq!(&loaded, &expected.keyshares());
+    }
+
+    /// Import keyshares into KeyshareStorage with an existing, matching share in temporary storage.
+    /// Ensure we import the missing share from backup.
+    #[tokio::test]
+    async fn test_import_backup_success_existing_shares_temporary() {
+        let epoch_id = 1;
         let key_1 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1]);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+
+        let expected = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_2]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        storage
+            .start_generating_key(&[], key_1.key_id)
+            .await
+            .unwrap()
+            .commit_keyshare(key_1.clone())
+            .await
+            .unwrap();
 
         assert!(storage
-            .import_backup(keyset.keyshares().to_vec(), &keyset.keyset())
+            .import_backup(expected.keyshares().to_vec(), &expected.keyset())
+            .await
+            .is_ok());
+
+        let loaded = storage.load_keyset(&expected.keyset()).await.unwrap();
+        assert_eq!(&loaded, &expected.keyshares());
+    }
+
+    /// Import keyshares into KeyshareStorage with an existing share in temporary storage.
+    /// Ensure import fails if the existing keyshare is different from the backup keyshare.
+    /// Ensure we don't change the KeyshareStorage.
+    #[tokio::test]
+    async fn test_import_backup_failure_existing_shares_temporary() {
+        let epoch_id = 1;
+        let (key_1, key_1_alternate) = generate_dummy_keyshares(epoch_id, 1, 0);
+        // ensure that the keyshares are different
+        assert!(key_1_alternate.data != key_1.data);
+        // ensure that the keyshares are for the same public key
+        assert_eq!(
+            key_1_alternate.public_key().unwrap(),
+            key_1.public_key().unwrap()
+        );
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let keyset_1 = KeysetBuilder::from_keyshares(epoch_id, &[key_1, key_2]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        storage
+            .start_generating_key(&[], key_1_alternate.key_id)
+            .await
+            .unwrap()
+            .commit_keyshare(key_1_alternate.clone())
+            .await
+            .unwrap();
+        let expected_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_alternate]);
+
+        assert!(storage
+            .import_backup(keyset_1.keyshares().to_vec(), &keyset_1.keyset())
             .await
             .is_err());
 
+        assert!(storage.load_keyset(&keyset_1.keyset()).await.is_err());
+
         let loaded = storage
-            .load_keyset(&existing_keyset.keyset())
+            .load_keyset(&expected_keyset.keyset())
             .await
             .unwrap();
-        assert_eq!(&loaded, &existing_keyset.keyshares());
+        assert_eq!(&loaded, &expected_keyset.keyshares());
+    }
+
+    /// Import keyshares into KeyshareStorage that has an existing share from a previous epoch.
+    #[tokio::test]
+    async fn test_import_backup_success_basic_previous_epoch() {
+        let previous_epoch = 0;
+        let epoch_id = 1;
+        let (current_key_1, previous_key_1) = generate_dummy_keyshares(epoch_id, 1, 0);
+        // ensure that the keyshares are different
+        assert!(previous_key_1.data != current_key_1.data);
+        // ensure that the keyshares are for the same public key
+        assert_eq!(
+            previous_key_1.public_key().unwrap(),
+            current_key_1.public_key().unwrap()
+        );
+
+        let previous_key_1 = Keyshare {
+            key_id: KeyEventId::new(
+                EpochId::new(previous_epoch),
+                DomainId(1),
+                AttemptId::new().next(),
+            ),
+            data: previous_key_1.data,
+        };
+
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let current_keyset = KeysetBuilder::from_keyshares(epoch_id, &[current_key_1, key_2]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+
+        // Populate a valid keyshare for previous epoch in permanent storage.
+        let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
+        populate_permanent_keystore(previous_key_1, &mut previous_keyset, &storage).await;
+
+        assert!(storage
+            .import_backup(
+                current_keyset.keyshares().to_vec(),
+                &current_keyset.keyset()
+            )
+            .await
+            .is_ok());
+
+        let loaded = storage.load_keyset(&current_keyset.keyset()).await.unwrap();
+        assert_eq!(&loaded, &current_keyset.keyshares());
+    }
+
+    /// Import keyshares into KeyshareStorage that has an existing share from a previous epoch.
+    /// Ensure import fails if the public key of the previous epoch is different.
+    #[tokio::test]
+    async fn test_import_backup_failure_basic_previous_epoch() {
+        let previous_epoch = 0;
+
+        // Populate share for a different public key for the previous epoch in permanent storage.
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
+        let prevous_key = generate_dummy_keyshare(previous_epoch, 1, 8);
+        populate_permanent_keystore(prevous_key, &mut previous_keyset, &storage).await;
+
+        let epoch_id = 1;
+        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let dummy_keyset = KeysetBuilder::from_keyshares(epoch_id, &[dummy_key.clone()]);
+
+        assert!(storage
+            .import_backup(dummy_keyset.keyshares().to_vec(), &dummy_keyset.keyset())
+            .await
+            .is_err());
+
+        assert!(storage.load_keyset(&dummy_keyset.keyset()).await.is_err());
+        let loaded = storage
+            .load_keyset(&previous_keyset.keyset())
+            .await
+            .unwrap();
+        assert_eq!(&loaded, &previous_keyset.keyshares());
+    }
+
+    async fn assert_no_keyshares_for_epoch(epoch_id: u64, keyshare_storage: &KeyshareStorage) {
+        let empty_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
+        let loaded = keyshare_storage
+            .load_keyset(&empty_keyset.keyset())
+            .await
+            .unwrap();
+        assert_eq!(&loaded, &empty_keyset.keyshares());
+    }
+
+    /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
+    /// case: same key id, different public keys
+    #[tokio::test]
+    async fn test_import_backup_failure_inconsistent_backup_public_keys() {
+        let epoch_id = 1;
+        let key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
+
+        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let dummy_keyset = KeysetBuilder::from_keyshares(epoch_id, &[dummy_key]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        assert!(storage
+            .import_backup(keyset.keyshares().to_vec(), &dummy_keyset.keyset())
+            .await
+            .is_err());
+        assert!(storage.load_keyset(&keyset.keyset()).await.is_err());
+
+        assert_no_keyshares_for_epoch(epoch_id, &storage).await;
+    }
+
+    /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
+    /// case: backup is missing a keyshare
+    #[tokio::test]
+    async fn test_import_backup_failure_inconsistent_backup_missing_keyshare() {
+        let epoch_id = 1;
+        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
+
+        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+
+        assert!(storage
+            .import_backup(partial_keyset.keyshares().to_vec(), &full_keyset.keyset())
+            .await
+            .is_err());
+
+        assert!(storage.load_keyset(&partial_keyset.keyset()).await.is_err());
+
+        assert_no_keyshares_for_epoch(epoch_id, &storage).await;
+    }
+
+    /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
+    /// case: backup has an extra keyshare
+    #[tokio::test]
+    async fn test_import_backup_failure_inconsistent_backup_extra_keyshare() {
+        let epoch_id = 1;
+
+        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
+
+        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
+
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        assert!(storage
+            .import_backup(full_keyset.keyshares().to_vec(), &partial_keyset.keyset())
+            .await
+            .is_err());
+
+        assert!(storage.load_keyset(&partial_keyset.keyset()).await.is_err());
+        assert_no_keyshares_for_epoch(epoch_id, &storage).await;
+    }
+
+    /// Ensure import fails if it has less keys than wat is stored in the KeyshareStorage.
+    #[tokio::test]
+    async fn test_import_backup_failure_inconsistent_backup_missing_shares() {
+        let epoch_id = 1;
+
+        let mut expected_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
+        let (mut storage_2, _tempdir) = generate_key_storage().await;
+
+        let key = generate_dummy_keyshare(epoch_id, 1, 0);
+        populate_permanent_keystore(key.clone(), &mut expected_keyset, &storage_2).await;
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        populate_permanent_keystore(key_2, &mut expected_keyset, &storage_2).await;
+
+        let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
+
+        assert!(storage_2
+            .import_backup(
+                partial_keyset.keyshares().to_vec(),
+                &expected_keyset.keyset()
+            )
+            .await
+            .is_err());
+
+        assert!(storage_2
+            .load_keyset(&partial_keyset.keyset())
+            .await
+            .is_err());
+        let loaded = storage_2
+            .load_keyset(&expected_keyset.keyset())
+            .await
+            .unwrap();
+        assert_eq!(&loaded, &expected_keyset.keyshares());
     }
 }
