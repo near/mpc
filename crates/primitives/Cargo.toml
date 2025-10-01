@@ -17,3 +17,6 @@ schemars = { workspace = true, optional = true }
 [dev-dependencies]
 serde_json = { workspace = true }
 rand = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["schemars"]
