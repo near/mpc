@@ -5,24 +5,10 @@ Tests that MPC nodes successfully call the submit_participant_info endpoint.
 
 import sys
 import pathlib
-import time
-import json
-import base64
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
-
-
-def get_tee_accounts(cluster):
-    """
-    Call the get_tee_accounts method on the MPC contract to retrieve registered TEE accounts.
-    Returns the TEE accounts data.
-    """
-    tx = cluster.contract_node.sign_tx(
-        cluster.mpc_contract_account(), "get_tee_accounts", {}
-    )
-    return cluster.contract_node.send_txn_and_check_success(tx)
 
 
 def test_submit_participant_info_endpoint():
@@ -64,33 +50,23 @@ def test_submit_participant_info_endpoint():
         )
         node.run()
 
-    startup_time = 30  # seconds
     print(
-        f"⏳ Waiting {startup_time} seconds for additional nodes to submit attestations..."
-    )
-    time.sleep(startup_time)
-
-    # Get the current TEE accounts from contract
-    tee_accounts_result = get_tee_accounts(cluster)
-
-    print("=== Raw contract response ===")
-    print(tee_accounts_result)
-    print("===============================")
-
-    # Assert valid contract response format
-    assert "result" in tee_accounts_result, (
-        "Invalid contract response format - missing 'result' field"
+        f"⏳ Waiting for {len(additional_nodes)} additional nodes to submit attestations..."
     )
 
-    # Assert successful transaction
-    success_value = tee_accounts_result["result"]["status"].get("SuccessValue")
-    assert success_value, "No SuccessValue found in contract response"
+    # Use the existing wait function to wait for additional nodes to submit attestations
+    attestations_submitted = cluster.wait_for_nodes_to_have_attestation(
+        additional_nodes
+    )
 
-    # Decode and parse the result
-    decoded_result = base64.b64decode(success_value).decode("utf-8")
-    print(f"Decoded result: {decoded_result}")
-    tee_accounts = json.loads(decoded_result)
-    tee_account_count = len(tee_accounts) if isinstance(tee_accounts, list) else 0
+    assert attestations_submitted, (
+        f"Timeout: Not all {len(additional_nodes)} additional nodes submitted attestations within the timeout period. "
+        f"Check the debug output above for which nodes failed to submit."
+    )
+
+    # Get final count for verification
+    tee_accounts = cluster.get_tee_approved_accounts()
+    tee_account_count = len(tee_accounts)
 
     print(f"   📊 Contract shows {tee_account_count} registered TEE accounts")
 
