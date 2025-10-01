@@ -146,27 +146,26 @@ impl MpcClient {
                 loop {
                     interval.tick().await;
 
-                    // Generate fresh attestation for each submission
                     let report_data = ReportData::new(tls_sdk_public_key.clone());
-                    match tee_authority.generate_attestation(report_data).await {
-                        Ok(fresh_attestation) => {
-                            if let Err(e) = submit_remote_attestation(
-                                chain_txn_sender.clone(),
-                                fresh_attestation,
-                                tls_public_key,
-                            )
-                            .await
-                            {
-                                tracing::error!(
-                                    "Failed to submit fresh remote attestation: {:?}",
-                                    e
-                                );
-                            } else {
-                                tracing::info!("Successfully submitted fresh remote attestation");
+                    let fresh_attestation =
+                        match tee_authority.generate_attestation(report_data).await {
+                            Ok(attestation) => attestation,
+                            Err(e) => {
+                                tracing::error!("Failed to generate fresh attestation: {:?}", e);
+                                continue;
                             }
-                        }
+                        };
+
+                    match submit_remote_attestation(
+                        chain_txn_sender.clone(),
+                        fresh_attestation,
+                        tls_public_key,
+                    )
+                    .await
+                    {
+                        Ok(_) => tracing::info!("Successfully submitted fresh remote attestation"),
                         Err(e) => {
-                            tracing::error!("Failed to generate fresh attestation: {:?}", e);
+                            tracing::error!("Failed to submit fresh remote attestation: {:?}", e)
                         }
                     }
                 }
