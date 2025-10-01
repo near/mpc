@@ -854,10 +854,8 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     Ok(())
 }
 
-#[rstest]
 #[tokio::test]
-async fn vote_new_parameters_errors_if_new_participant_has_invalid_tee_status() -> anyhow::Result<()>
-{
+async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
     let (worker, contract, mut current_participant_accounts, _) = init_env_secp256k1(1).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -913,6 +911,4 @@ async fn vote_new_parameters_errors_if_new_participant_has_invalid_tee_status() 
         ProtocolContractState::Running(_),
         "Protocol state should not transition when new participant has invalid TEE status."
     );
-
-    Ok(())
 }
