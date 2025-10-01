@@ -165,7 +165,7 @@ impl MpcClient {
                     {
                         Ok(_) => tracing::info!("Successfully submitted fresh remote attestation"),
                         Err(e) => {
-                            tracing::error!("Failed to submit fresh remote attestation: {:?}", e)
+                            tracing::error!(error = ?e,"failed to submit fresh remote attestation");
                         }
                     }
                 }
