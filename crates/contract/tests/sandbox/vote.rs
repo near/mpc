@@ -867,7 +867,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
 
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
     let existing_params = initial_running_state.parameters.clone();
-    let mut new_participants = existing_params.participants().clone();
+    let mut participants = existing_params.participants().clone();
 
     // Add a new participant
     let (new_account, new_account_id, new_participant_info) = {
@@ -878,12 +878,12 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         (new_account, new_account_id, new_participant_info)
     };
 
-    new_participants
+    // Add the new participant to the participant set, and propose this to the contract.
+    participants
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
 
-    let threshold_parameters =
-        ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
+    let threshold_parameters = ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
 
     current_participant_accounts.push(new_account.clone());
 
