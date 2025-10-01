@@ -343,8 +343,8 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 }
 
 #[tokio::test]
-async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
--> Result<()> {
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
+) -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let hash_1 = [1; 32];

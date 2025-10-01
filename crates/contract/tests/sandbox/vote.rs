@@ -1,14 +1,14 @@
 use crate::sandbox::common::{
-    GAS_FOR_VOTE_RESHARED, check_call_success, gen_accounts, init_env_secp256k1,
-    submit_participant_info,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
+    GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
 use mpc_contract::{
     primitives::thresholds::{Threshold, ThresholdParameters},
-    state::{ProtocolContractState, running::RunningContractState},
+    state::{running::RunningContractState, ProtocolContractState},
 };
 use near_sdk::PublicKey;
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;

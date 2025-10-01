@@ -4,20 +4,20 @@ use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
 use fs2::FileExt;
 use k256::{
-    AffinePoint, FieldBytes, ProjectivePoint, Scalar, Secp256k1,
     elliptic_curve::{
-        PrimeField,
         hash2curve::{ExpandMsgXof, GroupDigest},
         point::DecompressPoint as _,
         scalar::FromUintUnchecked,
         sec1::ToEncodedPoint,
+        PrimeField,
     },
+    AffinePoint, FieldBytes, ProjectivePoint, Scalar, Secp256k1,
 };
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        CKDResponse, SerializableScalar, SignatureResponse, derive_key_secp256k1, derive_tweak,
-        ed25519_types, k256_types, kdf::check_ec_signature, near_public_key_to_affine_point,
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
+        near_public_key_to_affine_point, CKDResponse, SerializableScalar, SignatureResponse,
     },
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
@@ -36,13 +36,13 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_sdk::{CurveType, Gas, PublicKey, log};
+use near_sdk::{log, CurveType, Gas, PublicKey};
 use near_workspaces::{
-    Account, Contract, Worker,
     network::Sandbox,
     operations::TransactionStatus,
     result::ExecutionFinalResult,
     types::{AccountId, NearToken},
+    Account, Contract, Worker,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -64,7 +64,7 @@ use threshold_signatures::{
 };
 use threshold_signatures::{
     frost_ed25519,
-    frost_ed25519::{Ed25519Group, Group, VerifyingKey, keys::SigningShare},
+    frost_ed25519::{keys::SigningShare, Ed25519Group, Group, VerifyingKey},
 };
 pub const PARTICIPANT_LEN: usize = 3;
 
