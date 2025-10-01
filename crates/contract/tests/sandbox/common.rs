@@ -1067,3 +1067,18 @@ pub async fn execute_key_generation_and_add_random_state(
         pending_sign_requests,
     }
 }
+
+pub async fn vote_for_hash(
+    account: &Account,
+    contract: &Contract,
+    image_hash: &[u8; 32],
+) -> anyhow::Result<()> {
+    check_call_success(
+        account
+            .call(contract.id(), "vote_code_hash")
+            .args_json(serde_json::json!({"code_hash": image_hash}))
+            .transact()
+            .await?,
+    );
+    Ok(())
+}

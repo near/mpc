@@ -682,7 +682,7 @@ impl MpcContract {
 
                 Err(
                     InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                        "The following participants have invalid TEE status: {:#?}",
+                        "The following participants have invalid TEE status: {:?}",
                         invalid_participants
                     )),
                 )

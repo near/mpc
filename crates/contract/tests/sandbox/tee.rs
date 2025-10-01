@@ -1,7 +1,7 @@
 use crate::sandbox::common::{
-    assert_running_return_participants, check_call_success, gen_accounts,
-    get_participant_attestation, get_tee_accounts, init_env_secp256k1, submit_participant_info,
-    submit_tee_attestations,
+    assert_running_return_participants, gen_accounts, get_participant_attestation,
+    get_tee_accounts, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
+    vote_for_hash,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -169,21 +169,6 @@ async fn get_latest_code_hash(contract: &Contract) -> Result<Option<MpcDockerIma
         .transact()
         .await?
         .json::<Option<MpcDockerImageHash>>()?)
-}
-
-async fn vote_for_hash(
-    account: &Account,
-    contract: &Contract,
-    image_hash: &[u8; 32],
-) -> Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": image_hash}))
-            .transact()
-            .await?,
-    );
-    Ok(())
 }
 
 pub async fn get_participants(contract: &Contract) -> Result<usize> {
