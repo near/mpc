@@ -26,8 +26,13 @@ def test_submit_participant_info_endpoint():
     initial_participants = 2
     total_nodes = 4
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, total_nodes, 1, load_mpc_contract()
+        2, total_nodes, 1, load_mpc_contract(), start_mpc_nodes=False
     )
+
+    # Start only the initial participant nodes first
+    for i, node in enumerate(mpc_nodes[:initial_participants]):
+        print(f"   Starting initial participant node {i + 1}: {node.p2p_public_key}")
+        node.run()
 
     # Initialize the cluster with only the first 2 nodes - these get mock attestations
     cluster.deploy_contract(load_mpc_contract())
