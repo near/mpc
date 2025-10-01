@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use attestation::attestation::Attestation;
+use attestation::{attestation::Attestation, report_data::ReportData};
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
+use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
 use crate::{
@@ -79,4 +80,45 @@ pub async fn submit_remote_attestation(
         .timeout(MAX_RETRY_DURATION)
         .await
         .context("failed to submit attestation after multiple retry attempts")?
+}
+
+/// Periodically generates and submits fresh attestations at regular intervals.
+///
+/// This function runs indefinitely, generating a fresh attestation every 10 minutes
+/// and submitting it to the blockchain. It's designed to be spawned as a background task.
+pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
+    tee_authority: TeeAuthority,
+    tx_sender: T,
+    tls_sdk_public_key: near_sdk::PublicKey,
+    tls_public_key: VerifyingKey,
+) -> anyhow::Result<()> {
+    const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
+    let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
+
+    loop {
+        interval.tick().await;
+
+        let report_data = ReportData::new(tls_sdk_public_key.clone());
+        let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
+            Ok(attestation) => attestation,
+            Err(e) => {
+                tracing::error!(
+                    error = ?e,
+                    "failed to generate fresh attestation, skipping this cycle"
+                );
+                continue;
+            }
+        };
+
+        match submit_remote_attestation(tx_sender.clone(), fresh_attestation, tls_public_key).await
+        {
+            Ok(()) => tracing::info!("successfully submitted fresh remote attestation"),
+            Err(e) => {
+                tracing::error!(
+                    error = ?e,
+                    "failed to submit fresh remote attestation"
+                );
+            }
+        }
+    }
 }

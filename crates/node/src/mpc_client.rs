@@ -9,17 +9,15 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
-use crate::providers::{EcdsaSignatureProvider, PublicKeyConversion, SignatureProvider};
+use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
-use crate::tee::remote_attestation::submit_remote_attestation;
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
-use attestation::report_data::ReportData;
-use ed25519_dalek::VerifyingKey;
+
 use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -27,7 +25,6 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tee_authority::tee_authority::TeeAuthority;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 
@@ -39,7 +36,6 @@ use tokio::time::{sleep, timeout};
 const INITIAL_STARTUP_PROCESSING_DELAY: Duration = Duration::from_secs(2);
 const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
-const ATTESTATION_SUBMISSION_INTERVAL_DURATION: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Clone)]
 pub struct MpcClient {
@@ -88,8 +84,6 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-        tee_authority: TeeAuthority,
-        tls_public_key: VerifyingKey,
     ) -> anyhow::Result<()> {
         let client = self.client.clone();
         let metrics_emitter = tracking::spawn("periodically emits metrics", async move {
@@ -138,40 +132,6 @@ impl MpcClient {
             })
         };
 
-        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
-        let attestation_submission_handle = {
-            let chain_txn_sender = chain_txn_sender.clone();
-            tracking::spawn("attestation_submission", async move {
-                let mut interval = tokio::time::interval(ATTESTATION_SUBMISSION_INTERVAL_DURATION);
-                loop {
-                    interval.tick().await;
-
-                    let report_data = ReportData::new(tls_sdk_public_key.clone());
-                    let fresh_attestation =
-                        match tee_authority.generate_attestation(report_data).await {
-                            Ok(attestation) => attestation,
-                            Err(e) => {
-                                tracing::error!("failed to generate fresh attestation: {:?}", e);
-                                continue;
-                            }
-                        };
-
-                    match submit_remote_attestation(
-                        chain_txn_sender.clone(),
-                        fresh_attestation,
-                        tls_public_key,
-                    )
-                    .await
-                    {
-                        Ok(_) => tracing::info!("successfully submitted fresh remote attestation"),
-                        Err(e) => {
-                            tracing::error!(error = ?e,"failed to submit fresh remote attestation");
-                        }
-                    }
-                }
-            })
-        };
-
         let ecdsa_background_tasks = tracking::spawn(
             "ecdsa_background_tasks",
             self.ecdsa_signature_provider
@@ -198,7 +158,6 @@ impl MpcClient {
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;
         tee_verification_handle.await?;
-        attestation_submission_handle.await?;
 
         Ok(())
     }

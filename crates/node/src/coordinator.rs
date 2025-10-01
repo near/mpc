@@ -26,7 +26,6 @@ use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self};
 use crate::web::DebugRequest;
-use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -35,7 +34,6 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use tee_authority::tee_authority::TeeAuthority;
 use threshold_signatures::{ecdsa, eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
@@ -66,12 +64,6 @@ pub struct Coordinator<TransactionSender> {
 
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
-
-    /// TEE Authority for generating fresh attestations.
-    pub tee_authority: TeeAuthority,
-
-    /// P2P/TLS public key for attestation submission.
-    pub tls_public_key: VerifyingKey,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -177,8 +169,6 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
-                                self.tee_authority.clone(),
-                                self.tls_public_key,
                             ),
                         )?,
                         stop_fn,
@@ -327,8 +317,6 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
-        tee_authority: TeeAuthority,
-        tls_public_key: VerifyingKey,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -572,8 +560,6 @@ where
                         block_update_receiver,
                         chain_txn_sender,
                         debug_request_receiver,
-                        tee_authority.clone(),
-                        tls_public_key,
                     )
                     .await?;
 
