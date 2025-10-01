@@ -30,24 +30,47 @@ def test_submit_participant_info_endpoint():
     Test that MPC nodes successfully call submit_participant_info endpoint during startup.
 
     This test:
-    1. Starts a cluster with MPC nodes
-    2. Lets nodes call submit_participant_info during their initialization
-    3. Uses get_tee_accounts to verify the calls succeeded
+    1. Starts a cluster with initial participants and additional nodes
+    2. Initializes only the initial participants (they get mock attestations)
+    3. Starts additional nodes that must submit their own attestations
+    4. Verifies the additional nodes successfully submitted attestations
     """
-    # Start cluster with 2 validators and 2 MPC nodes
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 2, 1, load_mpc_contract())
+    # Start cluster with 2 validators and 4 MPC nodes total
+    # We'll only initialize 2 nodes, leaving 2 additional nodes to test attestation submission
+    initial_participants = 2
+    total_nodes = 4
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2, total_nodes, 1, load_mpc_contract()
+    )
 
-    # Initialize the cluster - this triggers node startup process
+    # Initialize the cluster with only the first 2 nodes - these get mock attestations
     cluster.deploy_contract(load_mpc_contract())
-    cluster.init_cluster(mpc_nodes, 2)
+    cluster.init_cluster(mpc_nodes[:initial_participants], 2)
+
+    print(
+        f"✅ Initialized cluster with {initial_participants} participants (they have mock attestations)"
+    )
+
+    # Start the additional nodes that are NOT part of initial participants
+    # These nodes will need to submit their own attestations to be registered
+    additional_nodes = mpc_nodes[initial_participants:]
+    print(
+        f"🚀 Starting {len(additional_nodes)} additional nodes that must submit attestations..."
+    )
+
+    for i, node in enumerate(additional_nodes):
+        print(
+            f"   Starting additional node {i + 1}/{len(additional_nodes)}: {node.p2p_public_key}"
+        )
+        node.run()
 
     startup_time = 30  # seconds
     print(
-        f"Waiting {startup_time} seconds for nodes to complete startup and submit participant info..."
+        f"⏳ Waiting {startup_time} seconds for additional nodes to submit attestations..."
     )
     time.sleep(startup_time)
 
-    # Check if submit_participant_info calls succeeded by querying get_tee_accounts
+    # Get the current TEE accounts from contract
     tee_accounts_result = get_tee_accounts(cluster)
 
     print("=== Raw contract response ===")
@@ -71,10 +94,20 @@ def test_submit_participant_info_endpoint():
 
     print(f"   📊 Contract shows {tee_account_count} registered TEE accounts")
 
-    # Assert that submit_participant_info calls succeeded
-    assert tee_account_count > 0, (
-        f"Expected successful submit_participant_info calls with registered TEE accounts, "
-        f"but found {tee_account_count}. This indicates the submit_participant_info calls failed."
+    # Expected count: initial participants + additional nodes that submitted attestations
+    expected_tee_account_count = initial_participants + len(additional_nodes)
+
+    print(
+        f"   🎯 Expected: {initial_participants} initial + {len(additional_nodes)} additional = {expected_tee_account_count} total"
     )
 
-    print("   ✅ TEE accounts found - submit_participant_info calls succeeded!")
+    # Assert that additional nodes successfully submitted attestations
+    assert tee_account_count == expected_tee_account_count, (
+        f"Expected exactly {expected_tee_account_count} TEE accounts "
+        f"({initial_participants} initial + {len(additional_nodes)} additional nodes), "
+        f"but found {tee_account_count}. This indicates a mismatch in attestation submissions."
+    )
+
+    print(
+        f"   ✅ Success! All {len(additional_nodes)} additional nodes submitted attestations!"
+    )
