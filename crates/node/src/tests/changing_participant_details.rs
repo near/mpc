@@ -95,6 +95,7 @@ async fn test_changing_participant_set() {
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
             .await
             .unwrap();
+        // todo: replace this with the production one.
         put_keyshares(home_dir_last, keyshares, local_encryption_key_last)
             .await
             .unwrap();

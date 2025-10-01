@@ -389,13 +389,13 @@ impl StartCmd {
 
         // todo: keyshare sender logic
         let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
-        let keystore: Arc<KeyshareStorage> = key_storage_config.create().await?.into();
+        let mut keystore: KeyshareStorage = key_storage_config.create().await?.into();
         onboard(
             &config.my_near_account_id,
             indexer_api.contract_state_receiver.clone(),
             indexer_api.txn_sender.clone(),
             tls_public_key,
-            keystore,
+            &mut keystore,
             keyshare_receiver,
         )
         .await?;
@@ -405,7 +405,8 @@ impl StartCmd {
             config_file: config,
             secrets,
             secret_db,
-            key_storage_config,
+            key_storage_config, // todo: replace this with
+            // keystore
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,

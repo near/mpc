@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use ed25519_dalek::VerifyingKey;
 use near_sdk::AccountId;
@@ -52,7 +52,7 @@ pub async fn onboard(
     mut contract_state_receiver: watch::Receiver<ContractState>,
     tx_sender: impl TransactionSender,
     tls_public_key: VerifyingKey,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: &mut KeyshareStorage,
     mut keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
 ) -> anyhow::Result<()> {
     // we loop until we are onboarded or a participant.
@@ -99,7 +99,7 @@ pub async fn onboard(
                     let received_keyshares = keyshare_receiver.borrow_and_update().clone();
                     tracing::info!(target: "Onboarding", "Received keyshares.");
                     match keyshare_storage
-                        .import_keyshares(received_keyshares, contract_keyset.clone())
+                        .import_backup(received_keyshares, contract_keyset)
                         .await
                     {
                         Ok(_) => {

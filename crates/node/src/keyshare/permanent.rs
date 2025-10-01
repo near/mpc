@@ -1,14 +1,13 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::primitives::key_state::EpochId;
+use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
 use serde::{Deserialize, Serialize};
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PermanentKeyshareData {
-    // todo: we should make a constructor to check consistency among `Keyshares`
     pub epoch_id: EpochId,
     /// These keyshares are in the exact same order as the domains in the Keyset.
     pub keyshares: Vec<Keyshare>,
@@ -20,6 +19,31 @@ impl PermanentKeyshareData {
             epoch_id: EpochId::new(legacy.epoch),
             keyshares: vec![Keyshare::from_legacy(legacy)],
         }
+    }
+    // todo: move this to a separate crate, s.t. we are forced to use the constructor
+    pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
+        let is_consistent = keyshares.windows(2).all(|w| {
+            w[0].key_id.epoch_id == w[1].key_id.epoch_id
+                && w[0].key_id.domain_id < w[1].key_id.domain_id
+        });
+        if !is_consistent {
+            let key_ids: Vec<KeyEventId> = keyshares.iter().map(|share| share.key_id).collect();
+            anyhow::bail!("Inconsistent key ids: {:?}", key_ids);
+        }
+        let Some(first) = keyshares.first() else {
+            anyhow::bail!("Keyshares must not be empty");
+        };
+        if first.key_id.epoch_id != epoch_id {
+            anyhow::bail!(
+                "Inconsistent epoch id. Keyshares are of epoch id {}, but epoch id is  {}",
+                first.key_id.epoch_id,
+                epoch_id
+            );
+        }
+        Ok(PermanentKeyshareData {
+            epoch_id,
+            keyshares,
+        })
     }
 }
 
@@ -110,7 +134,7 @@ impl PermanentKeyStorage {
             let same_number_of_domains = existing.keyshares.len() >= keyshare_data.keyshares.len();
             if is_same_epoch_id && same_number_of_domains {
                 anyhow::bail!(
-                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal or fewer domains",
+                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal number of domains",
                     existing.epoch_id.get(),
                 );
             }
@@ -128,7 +152,7 @@ impl PermanentKeyStorage {
                 }
 
                 let key_ids_match = existing_keyshare.key_id == new_keyshare.key_id;
-                if is_same_epoch_id & !key_ids_match {
+                if is_same_epoch_id && !key_ids_match {
                     anyhow::bail!(
                         "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of different key id {:?} for the same epoch.",
                         existing_keyshare.key_id,
@@ -140,9 +164,10 @@ impl PermanentKeyStorage {
                     existing_keyshare.public_key()? == new_keyshare.public_key()?;
                 if !public_keys_match {
                     anyhow::bail!(
-                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of same key id but different public key.\
+                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of same domin id  {:?} but different public key.\
                             Existing public key: {:?}, new public key: {:?}",
                         existing_keyshare.key_id,
+                        new_keyshare.key_id,
                         existing_keyshare.public_key(),
                         new_keyshare.public_key()
                     );

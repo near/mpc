@@ -48,6 +48,7 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
     Keyset::new(permanent.epoch_id, keys)
 }
 
+#[derive(Clone)]
 pub struct KeysetBuilder {
     epoch_id: u64,
     keys: Vec<Keyshare>,
