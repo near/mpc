@@ -143,9 +143,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
         .transact()
         .await?;
     let Err(err) = res.into_result() else {
-        panic!(
-            "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
-        );
+        panic!("vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list");
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
