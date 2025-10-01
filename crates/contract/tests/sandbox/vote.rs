@@ -3,7 +3,9 @@ use crate::sandbox::common::{
     GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
+use core::panic;
 use mpc_contract::{
+    errors::InvalidParameters,
     primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
@@ -896,12 +898,13 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             }))
             .transact()
             .await
-            .unwrap();
+            .unwrap()
+            .into_result()
+            .expect_err("calling `vote_new_parameters` must fail when one participant has invalid TEE status.");
 
-        assert!(
-            call_result.is_failure(),
-            "Calling `vote_new_parameters` must fail when one participant has invalid TEE status."
-        );
+        let error_message = call_result.to_string();
+        let expected_error_message = InvalidParameters::InvalidTeeRemoteAttestation.to_string();
+        assert!(error_message.contains(&expected_error_message));
     }
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
