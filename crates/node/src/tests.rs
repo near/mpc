@@ -27,7 +27,6 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, StaticWebData};
 use assert_matches::assert_matches;
-use ed25519_dalek::SigningKey;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
@@ -38,7 +37,6 @@ use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
-use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::{ecdsa, eddsa, keygen};
@@ -271,10 +269,6 @@ impl OneNodeTestConfig {
                 let key_storage_config =
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
 
-                let test_signing_key = SigningKey::from_bytes(&[42u8; 32]);
-                let test_p2p_public_key = test_signing_key.verifying_key();
-                let test_tee_authority = TeeAuthority::Local(LocalTeeAuthorityConfig::default());
-
                 let coordinator = Coordinator {
                     clock: self.clock,
                     config_file: self.config,
@@ -284,8 +278,6 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
-                    tee_authority: test_tee_authority,
-                    tls_public_key: test_p2p_public_key,
                 };
                 coordinator.run().await
             };
