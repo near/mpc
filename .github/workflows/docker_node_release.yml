@@ -1,0 +1,44 @@
+name: Docker Build and Publish MPC Node Image
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      build-ref:
+        default: 'main'
+        description: "The branch, tag or SHA to build node docker image from. Default to latest commit on main branch."
+        type: string
+    
+
+jobs:
+  docker-image-build:
+    name: "Build and push node docker image"
+    runs-on: warp-ubuntu-2204-x64-8x
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.build-ref }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install repro-env
+        run: |
+          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
+          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
+          sudo install -m755 repro-env -t /usr/bin
+
+      - name: Build and publish images
+        shell: bash
+        run: |
+          ./deployment/build-images.sh --node --push
