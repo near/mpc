@@ -68,8 +68,10 @@ def current_contracts():
         }
 
 
-# This function compiles a contract using cargo build
 def compile_contract_common(contract_package_name: str):
+    """
+    This function compiles a contract using cargo build and wasm-opt for optimization.
+    """
     repository_root_path = git_root()
     print(f"compiling contract {contract_package_name}")
 
@@ -109,8 +111,8 @@ def compile_contract_common(contract_package_name: str):
 @pytest.fixture(scope="session", autouse=True)
 def compile_mpc_contract(request):
     """
-    This function navigates to the chain-signatures directory, compiles the mpc-contract and moves it in the res folder.
-    This ensures that the pytests will always use the source code inside chain-signatures/contract.
+    This function compiles the mpc-contract and moves it to the `COMPILED_CONTRACT_DIRECTORY` directory.
+    This ensures that the pytests will always use the current source code of the mpc-contract.
     """
 
     git_root_directory = git_root()
@@ -142,23 +144,11 @@ def compile_mpc_contract(request):
 @pytest.fixture(scope="session")
 def compile_parallel_contract(request):
     """
-    This function navigates to the tests/tests_contracts/parallel directory,
-    compiles the contract and moves it in the res folder.
+    This function compiles the test parallel contract.
     """
 
     compile_contract_common(
         contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
-    )
-
-
-@pytest.fixture(scope="session")
-def compile_migration_contract(request):
-    """
-    This function navigates to the tests/tests_contracts/migration directory,
-    compiles the contract and moves it in the res folder.
-    """
-    compile_contract_common(
-        contracts.MIGRATION_CONTRACT_PACKAGE_NAME,
     )
 
 

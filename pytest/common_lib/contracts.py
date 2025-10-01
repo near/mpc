@@ -5,13 +5,10 @@ from enum import Enum
 from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
-MIGRATION_CONTRACT_PACKAGE_NAME = "test-migration-contract"
 PARALLEL_CONTRACT_PACKAGE_NAME = "test-parallel-contract"
 MPC_CONTRACT_PACKAGE_NAME = "mpc-contract"
 
-MPC_CONTRACT_MANIFEST_PATH = (
-    MPC_REPO_DIR / "libs" / "chain-signatures" / "contract" / "Cargo.toml"
-)
+MPC_CONTRACT_MANIFEST_PATH = MPC_REPO_DIR / "crates" / "contract" / "Cargo.toml"
 
 
 def contract_compiled_file_name(contract_package_name: str) -> str:
@@ -22,10 +19,6 @@ COMPILED_CONTRACT_DIRECTORY = (
     MPC_REPO_DIR / "target" / "wasm32-unknown-unknown" / "release-contract"
 )
 
-MIGRATION_CONTRACT_BINARY_PATH = (
-    COMPILED_CONTRACT_DIRECTORY
-    / contract_compiled_file_name(MIGRATION_CONTRACT_PACKAGE_NAME)
-)
 
 PARALLEL_CONTRACT_BINARY_PATH = (
     COMPILED_CONTRACT_DIRECTORY

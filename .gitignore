@@ -4,8 +4,9 @@ venv
 .vscode
 
 # Lock file generated in contract integration tests
-*.contract.itest.build.lock
+*.itest.build.lock
 
+**/res/
 **/target/
 **/__pycache__/
 /pytest/output.log
@@ -13,10 +14,10 @@ venv
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
-/devnet/generate_keys/target/
-/libs/chain-signatures/res/
-/libs/chain-signatures/target/
-/node/presignature_network_report_best_case.json
-/node/signature_network_report_best_case.json
-/node/triple_network_report_best_case.json
-/node/triple_network_report_worst_case.json
+**/presignature_network_report_best_case.json
+**/signature_network_report_best_case.json
+**/triple_network_report_best_case.json
+**/triple_network_report_worst_case.json
+
+# Generated on MacOs' file explorer - https://en.wikipedia.org/wiki/.DS_Store
+*.DS_Store

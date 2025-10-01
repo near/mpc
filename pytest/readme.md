@@ -57,7 +57,7 @@ Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`)
     pytest --non-reproducible
     ```
 
-Run individual tests with e.g. `pytest tests/test_contract_update.py::test_code_update`
+Run individual tests with e.g. `pytest tests/test_requests.py::test_request_lifecycle`
 
 ### Code Style
 
