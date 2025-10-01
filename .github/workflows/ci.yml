@@ -274,7 +274,7 @@ jobs:
 
   detect-unused-dependencies:
     name: "Detect unused dependencies"
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2204-x64-2x
     timeout-minutes: 60
 
     permissions:
@@ -283,5 +283,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Machete
-        uses: bnjbvr/cargo-machete@main
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install cargo-shear
+        run: cargo binstall --no-confirm cargo-shear
+
+      - run: cargo shear
