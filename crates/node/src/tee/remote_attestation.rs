@@ -16,17 +16,6 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 
-/// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.
-pub trait Tick {
-    async fn tick(&mut self);
-}
-
-impl Tick for tokio::time::Interval {
-    async fn tick(&mut self) {
-        self.tick().await;
-    }
-}
-
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -108,15 +97,12 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
         tee_authority,
         tx_sender,
         tls_public_key,
-        TokioIntervalTicker::new(ATTESTATION_RESUBMISSION_INTERVAL),
+        tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
     )
     .await
 }
 
-async fn periodic_attestation_submission_with_interval<
-    T: TransactionSender + Clone,
-    I: IntervalTicker,
->(
+async fn periodic_attestation_submission_with_interval<T: TransactionSender + Clone, I: Tick>(
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
@@ -148,6 +134,17 @@ async fn periodic_attestation_submission_with_interval<
     }
 }
 
+/// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.
+pub trait Tick {
+    async fn tick(&mut self);
+}
+
+impl Tick for tokio::time::Interval {
+    async fn tick(&mut self) {
+        self.tick().await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,7 +166,7 @@ mod tests {
         }
     }
 
-    impl IntervalTicker for MockTicker {
+    impl Tick for MockTicker {
         async fn tick(&mut self) {
             if self.count > 0 {
                 self.count -= 1;
