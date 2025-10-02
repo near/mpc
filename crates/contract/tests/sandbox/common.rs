@@ -357,13 +357,16 @@ pub fn make_key_for_domain(
     domain_scheme: SignatureScheme,
 ) -> (near_sdk::PublicKey, SharedSecretKey) {
     match domain_scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::CkdSecp256k1 => {
+        SignatureScheme::Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
         SignatureScheme::Ed25519 => {
             let (pk, sk) = new_ed25519();
             (pk, SharedSecretKey::Ed25519(sk))
+        }
+        SignatureScheme::Bls12381 => {
+            todo!()
         }
     }
 }

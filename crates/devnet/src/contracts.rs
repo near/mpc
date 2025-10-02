@@ -56,7 +56,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                     SignatureScheme::Ed25519 => {
                         eddsa_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
-                    SignatureScheme::CkdSecp256k1 => {
+                    SignatureScheme::Bls12381 => {
                         ckd_calls_by_domain.insert(domain.id.0, prot_calls);
                     }
                 }
@@ -171,8 +171,8 @@ fn make_payload(scheme: SignatureScheme) -> Payload {
             rand::rng().fill_bytes(&mut payload);
             Payload::Eddsa(Bytes::new(payload).unwrap())
         }
-        SignatureScheme::CkdSecp256k1 => {
-            unreachable!("make_payload should not be called with `CkdSecp256k1` scheme")
+        SignatureScheme::Bls12381 => {
+            unreachable!("make_payload should not be called with `Bls12381` scheme")
         }
     }
 }

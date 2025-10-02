@@ -56,14 +56,14 @@ impl ChainSignatureRequest {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
-    pub app_public_key: near_sdk::PublicKey,
+    pub app_public_key: threshold_signatures::confidential_key_derivation::PublicKey,
     pub app_id: AccountId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
-        app_public_key: near_sdk::PublicKey,
+        app_public_key: threshold_signatures::confidential_key_derivation::PublicKey,
         app_id: AccountId,
         domain_id: DomainId,
     ) -> Self {
@@ -296,7 +296,7 @@ impl ChainCKDRespondArgs {
     pub fn new_ckd(request: &CKDRequest, response: &CKDResponse) -> anyhow::Result<Self> {
         Ok(ChainCKDRespondArgs {
             request: ChainCKDRequest::new(
-                request.app_public_key.clone(),
+                request.app_public_key,
                 request.app_id.clone(),
                 request.domain_id,
             ),

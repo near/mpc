@@ -8,17 +8,20 @@ pub mod test_utils;
 
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
+use mpc_contract::crypto_shared::types::PublicKeyExtended;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
+use threshold_signatures::frost_core::VerifyingKey;
+use threshold_signatures::Ciphersuite;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::eddsa::KeygenOutput),
-    CkdSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
+    Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -33,7 +36,7 @@ impl Keyshare {
         match &self.data {
             KeyshareData::Secp256k1(data) => data.public_key.to_near_sdk_public_key(),
             KeyshareData::Ed25519(data) => data.public_key.to_near_sdk_public_key(),
-            KeyshareData::CkdSecp256k1(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::Bls12381(data) => todo!(), //data.public_key.to_near_sdk_public_key(),
         }
     }
 

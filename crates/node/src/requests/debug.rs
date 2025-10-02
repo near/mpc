@@ -234,12 +234,14 @@ mod tests {
         indexer::types::{ChainCKDRespondArgs, ChainSignatureRespondArgs},
         types::{CKDRequest, SignatureRequest},
     };
+    use elliptic_curve::Group;
     use mpc_contract::primitives::{
         domain::DomainId,
         signature::{Payload, Tweak},
     };
     use near_indexer_primitives::CryptoHash;
-    use rand::seq::SliceRandom;
+    use rand::{rngs::OsRng, seq::SliceRandom};
+    use threshold_signatures::confidential_key_derivation::ElementG1;
 
     #[test]
     fn test_completed_ckd_requests() {
@@ -251,7 +253,7 @@ mod tests {
                 request: CKDRequest {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
-                    app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
+                    app_public_key: ElementG1::random(OsRng),
                     app_id: "test.near".parse().unwrap(),
                     entropy: [0; 32],
                     timestamp_nanosec: 0,

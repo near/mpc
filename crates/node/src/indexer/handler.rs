@@ -14,9 +14,9 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
-use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use threshold_signatures::confidential_key_derivation::PublicKey;
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -352,7 +352,7 @@ fn try_get_ckd_args(
     Some((
         next_receipt_id,
         CKDArgs {
-            app_public_key: ckd_request.app_public_key,
+            app_public_key: todo!(), // ckd_request.app_public_key,
             app_id: ckd_request.app_id,
             domain_id: ckd_request.domain_id,
         },

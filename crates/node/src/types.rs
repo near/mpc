@@ -5,8 +5,10 @@ use mpc_contract::primitives::{
     signature::{Payload, Tweak},
 };
 use near_indexer_primitives::CryptoHash;
-use near_sdk::{AccountId, PublicKey};
+use near_sdk::AccountId;
 use serde::{Deserialize, Serialize};
+
+use threshold_signatures::confidential_key_derivation::PublicKey;
 
 pub enum RequestType {
     Signature,

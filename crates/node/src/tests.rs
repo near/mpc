@@ -1,9 +1,12 @@
+use elliptic_curve::Group;
 use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::HashMap;
+use threshold_signatures::blstrs::G1Projective;
+use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
@@ -11,7 +14,7 @@ use threshold_signatures::ecdsa::{RerandomizationArguments, Signature};
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
-use threshold_signatures::{ecdsa, eddsa, keygen, ParticipantList};
+use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa, keygen, ParticipantList};
 
 use tokio::sync::watch;
 
@@ -114,6 +117,28 @@ impl TestGenerators {
                 *participant,
                 Box::new(
                     keygen::<Ed25519Sha512>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_ckd_keygens(
+        &self,
+    ) -> HashMap<Participant, confidential_key_derivation::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<confidential_key_derivation::KeygenOutput>> =
+            Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    keygen::<BLS12381SHA256>(
                         &self.participants,
                         *participant,
                         self.threshold,
@@ -430,7 +455,7 @@ pub async fn request_signature_and_await_response(
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Eddsa(Bytes::new(payload.to_vec()).unwrap())
         }
-        SignatureScheme::CkdSecp256k1 => unreachable!(),
+        SignatureScheme::Bls12381 => todo!(),
     };
     let request = SignatureRequestFromChain {
         entropy: rand::random(),
@@ -499,7 +524,7 @@ pub async fn request_ckd_and_await_response(
 ) -> Option<std::time::Duration> {
     assert_matches!(
         domain.scheme,
-        SignatureScheme::CkdSecp256k1,
+        SignatureScheme::Bls12381,
         "`request_ckd_and_await_response` must be called with a compatible domain",
     );
     let request = CKDRequestFromChain {
@@ -509,7 +534,7 @@ pub async fn request_ckd_and_await_response(
         entropy: rand::random(),
         timestamp_nanosec: rand::random(),
         request: CKDArgs {
-            app_public_key: example_secp256k1_point(),
+            app_public_key: G1Projective::random(OsRng),
             domain_id: domain.id,
             app_id: user.parse().unwrap(),
         },
@@ -568,10 +593,6 @@ pub async fn request_ckd_and_await_response(
             }
         }
     }
-}
-
-pub fn example_secp256k1_point() -> PublicKey {
-    "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
 }
 
 #[test]

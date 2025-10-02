@@ -351,7 +351,7 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::CkdSecp256k1) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::Bls12381) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
@@ -412,12 +412,12 @@ impl MpcClient {
                                 let response =
                                     match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
                                     {
-                                        Some(SignatureScheme::CkdSecp256k1) => {
+                                        Some(SignatureScheme::Bls12381) => {
                                             let response = timeout(
                                                 Duration::from_secs(this.config.ckd.timeout_sec),
                                                 this.ckd_provider
                                                     .clone()
-                                                    .make_ckd(ckd_attempt.request.id),
+                                                    .make_signature(ckd_attempt.request.id),
                                             )
                                             .await??;
 
@@ -425,10 +425,10 @@ impl MpcClient {
                                                 &ckd_attempt.request,
                                                 &CKDResponse {
                                                     big_y: SerializableAffinePoint {
-                                                        affine_point: response.0,
+                                                        affine_point: todo!(),
                                                     },
                                                     big_c: SerializableAffinePoint {
-                                                        affine_point: response.1,
+                                                        affine_point: todo!(),
                                                     },
                                                 },
                                             )?;

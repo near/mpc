@@ -548,13 +548,15 @@ mod tests {
     use crate::tests::TestGenerators;
     use crate::tracing::init_logging;
     use crate::types::{CKDRequest, SignatureRequest};
+    use elliptic_curve::Group;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::signature::{Payload, Tweak};
     use near_indexer_primitives::CryptoHash;
     use near_time::{Duration, FakeClock};
+    use rand::rngs::OsRng;
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
-
+    use threshold_signatures::confidential_key_derivation::ElementG1;
     /// Generates a ckd request for testing, brute-forcing the ckd ID until the leader
     /// selection order starts with the given.
     fn test_ckd_request(
@@ -567,13 +569,13 @@ mod tests {
             .collect::<Vec<_>>();
         loop {
             let request = CKDRequest {
-                    id: CryptoHash(rand::random()),
-                    receipt_id: CryptoHash(rand::random()),
-                    app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
-                    app_id: "test.near".parse().unwrap(),
-                    entropy: [0; 32],
-                    timestamp_nanosec: 0,
-                    domain_id: DomainId::legacy_ecdsa_id(),
+                id: CryptoHash(rand::random()),
+                receipt_id: CryptoHash(rand::random()),
+                app_public_key: ElementG1::random(OsRng),
+                app_id: "test.near".parse().unwrap(),
+                entropy: [0; 32],
+                timestamp_nanosec: 0,
+                domain_id: DomainId::legacy_ecdsa_id(),
             };
             let leader_selection_order =
                 QueuedRequest::<CKDRequest, ChainCKDRespondArgs>::leader_selection_order(

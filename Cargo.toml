@@ -79,6 +79,7 @@ dstack-sdk = { version = "0.1.1" }
 dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
+elliptic-curve = "0.13.8"
 flume = "0.11.1"
 fs2 = "0.4"
 futures = "0.3.31"
@@ -123,7 +124,7 @@ signature = "2.2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
 # Current HEAD of main branch as of 25-09-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5c905e4bf9aeba218e7fe06b36aee3577a768413"}
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "d9c72316b8c632d07dbd8090086bff55ddc712fc"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }
