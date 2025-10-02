@@ -1,4 +1,3 @@
-# conftest.py
 """
 Fixtures for pytest
 """

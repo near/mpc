@@ -1041,7 +1041,9 @@ impl MpcContract {
                 let threshold = current_params.threshold().value() as usize;
                 let remaining = participants_with_valid_attestation.len();
                 if threshold > remaining {
-                    log!("Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.");
+                    log!(
+                        "Less than `threshold` participants are left with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution."
+                    );
                     self.accept_requests = false;
                     return Ok(false);
                 }
@@ -1919,7 +1921,10 @@ mod tests {
             participants,
             threshold,
         );
-        assert!(result.is_ok(), "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)");
+        assert!(
+            result.is_ok(),
+            "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
+        );
     }
 
     impl MpcContract {
