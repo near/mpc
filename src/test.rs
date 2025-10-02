@@ -14,8 +14,8 @@ use crate::{keygen, refresh, reshare, Ciphersuite, KeygenOutput, VerifyingKey};
 /// Generates a vector of `number` participants, sorted by the participant id.
 /// The participants ids range from 0 to `number`-1
 pub fn generate_participants(number: usize) -> Vec<Participant> {
-    (0..number)
-        .map(|i| Participant::from(i as u32))
+    (0..u32::try_from(number).unwrap())
+        .map(Participant::from)
         .collect::<Vec<_>>()
 }
 

@@ -34,8 +34,9 @@ impl BitVector {
     }
 
     /// Get a specific bit from the vector.
-    pub fn bit(&self, j: usize) -> u64 {
-        (self.0[j / 64] >> (j % 64)) & 1
+    pub fn bit(&self, j: usize) -> u8 {
+        // This is safe to do, result is 0 or 1
+        ((self.0[j / 64] >> (j % 64)) & 1) as u8
     }
 
     pub fn from_bytes(bytes: &[u8; SEC_PARAM_8]) -> Self {
@@ -240,7 +241,7 @@ impl BitMatrix {
         self.0.chunks_exact(SECURITY_PARAMETER).map(move |chunk| {
             let mut out = BitVector::zero();
             for (i, c_i) in chunk.iter().enumerate() {
-                out.0[i / 64] |= c_i.bit(j) << (i % 64);
+                out.0[i / 64] |= u64::from(c_i.bit(j)) << (i % 64);
             }
             out
         })

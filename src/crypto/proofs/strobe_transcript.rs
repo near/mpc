@@ -4,13 +4,14 @@ use super::strobe::Strobe128;
 
 pub const MERLIN_PROTOCOL_LABEL: &[u8] = b"Mini-Merlin";
 
-fn encode_usize_as_u32(x: usize) -> [u8; 4] {
+fn encode_array_len_as_u32(array: &[u8]) -> [u8; 4] {
     use byteorder::{ByteOrder, LittleEndian};
 
-    assert!(u32::try_from(x).is_ok());
+    // This should never panic
+    let x = u32::try_from(array.len()).unwrap();
 
     let mut buf = [0; 4];
-    LittleEndian::write_u32(&mut buf, x as u32);
+    LittleEndian::write_u32(&mut buf, x);
     buf
 }
 
@@ -46,7 +47,7 @@ impl Transcript {
     /// Protocols](https://merlin.cool/use/protocol.html) section of
     /// the Merlin website for details on labels.
     pub fn message(&mut self, label: &'static [u8], message: &[u8]) {
-        let data_len = encode_usize_as_u32(message.len());
+        let data_len = encode_array_len_as_u32(message);
         self.strobe.meta_ad(label, false);
         self.strobe.meta_ad(&data_len, true);
         self.strobe.ad(message, false);
@@ -59,7 +60,7 @@ impl Transcript {
     /// Protocols](https://merlin.cool/use/protocol.html) section of
     /// the Merlin website for details on labels.
     pub fn challenge(&mut self, label: &'static [u8], dest: &mut [u8]) {
-        let data_len = encode_usize_as_u32(dest.len());
+        let data_len = encode_array_len_as_u32(dest);
         self.strobe.meta_ad(label, false);
         self.strobe.meta_ad(&data_len, true);
         self.strobe.prf(dest, false);
@@ -120,7 +121,7 @@ impl rand_core::RngCore for TranscriptRng {
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        let dest_len = encode_usize_as_u32(dest.len());
+        let dest_len = encode_array_len_as_u32(dest);
         self.strobe.meta_ad(&dest_len, false);
         self.strobe.prf(dest, false);
     }

@@ -487,17 +487,16 @@ where
     let mut kronecker_index = CtOption::new(0u32, Choice::from(0u8)); // Initialize as CtOption::none() effectively
 
     for (i, p) in points_set.iter().enumerate() {
+        let i = u32::try_from(i).map_err(|_| ProtocolError::InvalidInterpolationArguments)?;
         let is_equal = p.ct_eq(x);
         // If is_equal is true, select 'i', otherwise keep the current k_index_val
-        kronecker_index = CtOption::conditional_select(
-            &kronecker_index,
-            &CtOption::new(i as u32, is_equal),
-            is_equal,
-        );
+        kronecker_index =
+            CtOption::conditional_select(&kronecker_index, &CtOption::new(i, is_equal), is_equal);
     }
 
-    if kronecker_index.is_some().into() {
-        let kronecker_index_value = kronecker_index.unwrap() as usize;
+    if let Some(kronecker_index_value) = kronecker_index.into_option() {
+        let kronecker_index_value = usize::try_from(kronecker_index_value)
+            .map_err(|_| ProtocolError::InvalidInterpolationArguments)?;
         let mut coeffs = vec![SerializableScalar(<C::Group as Group>::Field::zero()); n];
         coeffs[kronecker_index_value] = SerializableScalar(<C::Group as Group>::Field::one());
         return Ok(coeffs);

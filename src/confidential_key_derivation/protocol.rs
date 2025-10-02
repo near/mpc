@@ -184,7 +184,7 @@ mod test {
     use super::*;
     use crate::test::one_coordinator_output;
     use crate::{confidential_key_derivation::ciphersuite::hash_to_curve, protocol::run_protocol};
-    use rand_core::{OsRng, RngCore};
+    use rand::Rng;
     use std::error::Error;
 
     #[test]
@@ -202,7 +202,7 @@ mod test {
 
     #[test]
     fn test_ckd() -> Result<(), Box<dyn Error>> {
-        let mut rng = OsRng;
+        let mut rng = rand::rngs::OsRng;
 
         // Create the app necessary items
         let app_id = AppId::from(b"Near App");
@@ -216,7 +216,7 @@ mod test {
         ];
 
         // choose a coordinator at random
-        let index = OsRng.next_u32() % participants.len() as u32;
+        let index = rng.gen_range(0..participants.len());
         let coordinator = participants[index as usize];
 
         let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
@@ -234,7 +234,7 @@ mod test {
                 private_share,
                 app_id.clone(),
                 app_pk,
-                OsRng,
+                rng,
             )?;
 
             protocols.push((*p, Box::new(protocol)));

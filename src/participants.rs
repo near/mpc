@@ -118,7 +118,7 @@ impl ParticipantList {
         let len = self.participants.len();
         for i in (1..len).rev() {
             let j = rng.next_u64() % ((i + 1) as u64);
-            participants.swap(i, j as usize);
+            participants.swap(i, usize::try_from(j).unwrap());
         }
         Self::new(&participants)
     }

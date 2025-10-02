@@ -101,7 +101,7 @@ pub async fn random_ot_extension_sender(
     }
 
     for (j, small_t_j) in small_t.iter().enumerate() {
-        let delta_j = Choice::from(delta.bit(j) as u8);
+        let delta_j = Choice::from(delta.bit(j));
 
         let mut small_q_j = DoubleBitVector::zero();
         for (q_i, chi_i) in q.column_chunks(j).zip(chi.iter()) {

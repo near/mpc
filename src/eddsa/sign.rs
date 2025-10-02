@@ -18,18 +18,20 @@ fn construct_key_package(
     me: Participant,
     signing_share: &SigningShare,
     verifying_key: &VerifyingKey,
-) -> KeyPackage {
+) -> Result<KeyPackage, ProtocolError> {
     let identifier = me.to_identifier();
     let signing_share = *signing_share;
     let verifying_share = signing_share.into();
 
-    KeyPackage::new(
+    Ok(KeyPackage::new(
         identifier,
         signing_share,
         verifying_share,
         *verifying_key,
-        threshold as u16,
-    )
+        u16::try_from(threshold).map_err(|_| {
+            ProtocolError::Other("threshold cannot be converted to u16".to_string())
+        })?,
+    ))
 }
 
 /// Returns a future that executes signature protocol for *the Coordinator*.
@@ -90,7 +92,7 @@ async fn do_sign_coordinator(
     chan.send_many(r2_wait_point, &signing_package)?;
 
     let vk_package = keygen_output.public_key;
-    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package);
+    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package)?;
 
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
@@ -181,7 +183,7 @@ async fn do_sign_participant(
     }
 
     let vk_package = keygen_output.public_key;
-    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package);
+    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package)?;
 
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
@@ -330,7 +332,7 @@ mod test {
             &key_packages,
             actual_signers,
             &coordinators,
-            threshold,
+            threshold.into(),
             msg_hash,
         )
         .unwrap();
@@ -349,9 +351,9 @@ mod test {
                 let coordinators = vec![key_packages[0].0];
                 let data = test_run_signature_protocols(
                     &key_packages,
-                    actual_signers,
+                    actual_signers.into(),
                     &coordinators,
-                    min_signers,
+                    min_signers.into(),
                     msg_hash,
                 )
                 .unwrap();

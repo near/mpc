@@ -17,7 +17,9 @@ use crate::{
     crypto::hash::test::scalar_hash_secp256k1, ecdsa::ot_based_ecdsa::RerandomizedPresignOutput,
 };
 
-use rand_core::{OsRng, RngCore};
+use rand::rngs::OsRng;
+use rand::Rng;
+use rand_core::RngCore;
 use std::error::Error;
 
 /// Runs signing by calling the generic `run_sign` function from `crate::test`
@@ -38,10 +40,9 @@ pub fn run_sign_without_rerandomization(
             )
         })
         .collect::<Vec<_>>();
-
     // choose a coordinator at random
-    let index = OsRng.next_u32() % participants_presign.len() as u32;
-    let coordinator = participants_presign[index as usize].0;
+    let index = OsRng.gen_range(0..participants_presign.len());
+    let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
     let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
@@ -100,8 +101,8 @@ pub fn run_sign_with_rerandomization(
         .collect::<Result<_, _>>()?;
 
     // choose a coordinator at random
-    let index = OsRng.next_u32() % participants_presign.len() as u32;
-    let coordinator = participants_presign[index as usize].0;
+    let index = OsRng.gen_range(0..participants_presign.len());
+    let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
     let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(

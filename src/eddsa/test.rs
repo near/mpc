@@ -16,12 +16,12 @@ use std::error::Error;
 
 /// this is a centralized key generation
 pub fn build_key_packages_with_dealer(
-    max_signers: usize,
-    min_signers: usize,
+    max_signers: u16,
+    min_signers: u16,
 ) -> Vec<(Participant, KeygenOutput)> {
     use std::collections::BTreeMap;
 
-    let mut identifiers = Vec::with_capacity(max_signers);
+    let mut identifiers = Vec::with_capacity(max_signers.into());
     for _ in 0..max_signers {
         // from 1 to avoid assigning 0 to a ParticipantId
         identifiers.push(Participant::from(OsRng.next_u32()));
@@ -35,8 +35,8 @@ pub fn build_key_packages_with_dealer(
     let identifiers_list = from_frost_identifiers.keys().copied().collect::<Vec<_>>();
 
     let (shares, pubkey_package) = frost_ed25519::keys::generate_with_dealer(
-        max_signers as u16,
-        min_signers as u16,
+        max_signers,
+        min_signers,
         frost_ed25519::keys::IdentifierList::Custom(identifiers_list.as_slice()),
         OsRng,
     )
