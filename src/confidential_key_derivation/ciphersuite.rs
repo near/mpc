@@ -217,7 +217,7 @@ pub fn verify_signature(
     msg: &[u8],
     signature: &Signature,
 ) -> Result<(), frost_core::Error<BLS12381SHA256>> {
-    let base1 = hash2curve(msg).into();
+    let base1 = hash_to_curve(msg).into();
     let element1 = verifying_key.to_element().into();
     let base2 =
         <<BLS12381SHA256 as frost_core::Ciphersuite>::Group as frost_core::Group>::generator()
@@ -232,7 +232,7 @@ pub fn verify_signature(
 
 const DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
-pub fn hash2curve(bytes: &[u8]) -> ElementG1 {
+pub fn hash_to_curve(bytes: &[u8]) -> ElementG1 {
     G1Projective::hash_to_curve(bytes, DOMAIN, &[])
 }
 
@@ -246,45 +246,62 @@ fn hash_to_scalar(domain: &[&[u8]], msg: &[u8]) -> blstrs::Scalar {
     u[0].0
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 struct ScalarWrapper(blstrs::Scalar);
-// WARNING: this is just a PoC, not a correct implementation
-// TODO: https://github.com/near/threshold-signatures/issues/105
+
+impl ScalarWrapper {
+    // Based on https://github.com/arkworks-rs/algebra/blob/c6f9284c17df00c50d954a5fe1c72dd4a5698103/ff/src/fields/prime.rs#L72
+    // Converts `bytes` into a `Scalar` by interpreting the input as
+    // an integer in big-endian and then converting the result to Scalar
+    // which implicitly does modular reduction
+    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
+        let mut res = blstrs::Scalar::ZERO;
+
+        let mut count = 0;
+        let mut remainder = 0;
+        for byte in bytes {
+            remainder = (remainder << 8) + u64::from(*byte);
+            count += 1;
+            if count == 8 {
+                res = res.shl(64) + blstrs::Scalar::from(remainder);
+                remainder = 0;
+                count = 0;
+            }
+        }
+        if count > 0 {
+            res = res * res.shl(count * 8) + blstrs::Scalar::from(remainder);
+        }
+        Self(res)
+    }
+}
+
+// Follows https://github.com/zkcrypto/bls12_381/blob/6bb96951d5c2035caf4989b6e4a018435379590f/src/hash_to_curve/map_scalar.rs
 impl FromOkm for ScalarWrapper {
+    // ceil(log2(p)) = 255, m = 1, k = 128.
     type Length = U48;
 
-    fn from_okm(data: &GenericArray<u8, Self::Length>) -> Self {
-        #[allow(non_snake_case)]
-        let F_2_192 = blstrs::Scalar::from_bytes_be(&[
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0,
-        ])
-        .unwrap();
-
-        let mut d0 = GenericArray::default();
-        d0[8..].copy_from_slice(&data[0..24]);
-        let d0 = blstrs::Scalar::from_bytes_be(&d0.into()).unwrap();
-
-        let mut d1 = GenericArray::default();
-        d1[8..].copy_from_slice(&data[24..]);
-        let d1 = blstrs::Scalar::from_bytes_be(&d1.into()).unwrap();
-
-        Self(d0 * F_2_192 + d1)
+    fn from_okm(okm: &GenericArray<u8, Self::Length>) -> Self {
+        Self::from_be_bytes_mod_order(okm)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use blstrs::Scalar;
+    use digest::generic_array::GenericArray;
+    use elliptic_curve::hash2curve::FromOkm;
     use elliptic_curve::Field;
     use elliptic_curve::Group;
+    use rand::Rng;
+    use rand::RngCore;
     use rand_core::OsRng;
 
     use crate::confidential_key_derivation::ciphersuite::verify_signature;
+    use crate::confidential_key_derivation::ciphersuite::ScalarWrapper;
     use crate::confidential_key_derivation::VerifyingKey;
     use crate::{
         confidential_key_derivation::{
-            ciphersuite::{hash2curve, BLS12381SHA256},
+            ciphersuite::{hash_to_curve, BLS12381SHA256},
             ElementG2,
         },
         test::check_common_traits_for_type,
@@ -295,14 +312,67 @@ mod tests {
         check_common_traits_for_type(&BLS12381SHA256);
     }
 
+    // Taken from bls12_381 implementation https://github.com/zkcrypto/bls12_381/blob/6bb96951d5c2035caf4989b6e4a018435379590f/src/hash_to_curve/map_scalar.rs#L26
+    #[test]
+    fn test_hash_to_scalar() {
+        let tests: &[(&[u8], &str)] = &[
+            (
+                &[0u8; 48],
+                "ScalarWrapper(Scalar(0x0000000000000000000000000000000000000000000000000000000000000000))",
+            ),
+            (
+                b"aaaaaabbbbbbccccccddddddeeeeeeffffffgggggghhhhhh",
+                "ScalarWrapper(Scalar(0x2228450bf55d8fe62395161bd3677ff6fc28e45b89bc87e02a818eda11a8c5da))",
+            ),
+            (
+                b"111111222222333333444444555555666666777777888888",
+                "ScalarWrapper(Scalar(0x4aa543cbd2f0c8f37f8a375ce2e383eb343e7e3405f61e438b0a15fb8899d1ae))",
+            ),
+        ];
+        for (input, expected) in tests {
+            let output = format!(
+                "{:?}",
+                <ScalarWrapper as FromOkm>::from_okm(GenericArray::from_slice(input))
+            );
+            assert_eq!(&output, expected);
+        }
+    }
+
     #[test]
     fn test_verify_signature() {
         let x = Scalar::random(OsRng);
         let g2 = ElementG2::generator();
         let g2x = g2 * x;
-        let hm = hash2curve(b"hello world");
+        let hm = hash_to_curve(b"hello world");
         let sigma = hm * x;
 
         assert!(verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).is_ok());
+    }
+
+    #[test]
+    // This test only makes sense if `overflow-checks` are enabled
+    // This is guaranteed by the `test_verify_overflow_failure` below
+    fn test_stress_test_scalarwrapper_from_le_bytes_mod_order() {
+        // empty case
+        ScalarWrapper::from_be_bytes_mod_order(&[]);
+        let mut rng = rand::rngs::OsRng;
+        for _ in 0..1000 {
+            let len = rng.gen_range(1..10000);
+            let mut bytes = vec![0; len];
+            rng.fill_bytes(&mut bytes);
+            ScalarWrapper::from_be_bytes_mod_order(&bytes);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "attempt to add with overflow")]
+    // This test guarantees that `overflow-checks` are enabled
+    fn test_verify_overflow_failure() {
+        let mut a = u64::MAX - 123;
+        let mut rng = rand::rngs::OsRng;
+        // Required to avoid clippy detecting the overflow
+        let b = rng.gen_range(124..10000);
+        a += b;
+        assert!(a > 0);
     }
 }

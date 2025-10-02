@@ -57,6 +57,7 @@ actively_secure_robust_ecdsa = []
 [dev-dependencies]
 criterion = "0.7.0"
 bincode = { version = "2.0.1", features = ["serde"] }
+rand = "0.8.5"
 
 [[bench]]
 name = "main"

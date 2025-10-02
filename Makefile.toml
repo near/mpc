@@ -8,7 +8,7 @@ args = ["check"]
 
 [tasks.clippy]
 command = "cargo"
-args = ["clippy", "--all-features", "--all-targets", "--locked"]
+args = ["clippy", "--all-features", "--all-targets", "--locked", "--", "-D", "warnings"]
 
 [tasks.fmt]
 command = "cargo"
