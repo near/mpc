@@ -7,6 +7,7 @@ use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
@@ -51,11 +52,7 @@ impl IndexerState {
         &self,
     ) -> anyhow::Result<(
         u64,
-        (
-            AccountId,
-            Option<BackupServiceInfo>,
-            Option<DestinationNodeInfo>,
-        ),
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
     )> {
         get_mpc_my_migration_info(self.mpc_contract_id.clone(), &self.view_client).await
     }

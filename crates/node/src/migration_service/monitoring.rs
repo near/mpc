@@ -25,24 +25,69 @@ async fn fetch_migrations_once(
 
         tracing::debug!(target: "migration", "querying migration state");
         match indexer_state.get_mpc_my_migration_info().await {
-            Ok((_, (_, backup_service_info, destination_node_info))) => {
-                let active_migration = destination_node_info.is_some_and(|info| {
-                    ed25519_dalek::VerifyingKey::from_near_sdk_public_key(
-                        &info.destination_node_info.sign_pk,
-                    )
-                    .with_context(|| {
-                        format!(
-                            "Invalid public key length for peer: {:?}",
-                            info.destination_node_info.url
-                        )
-                    })
-                    .is_ok_and(|key| key == *my_p2p_tls_key)
-                });
+            Ok((_, my_map)) => {
+                for (_, (_, destination_node)) in my_map.iter() {
+                    if let Some(destination_node_info) = destination_node {
+                        let info = destination_node_info.destination_node_info.clone();
 
+                        if let Ok(key) =
+                            ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&info.sign_pk)
+                                .with_context(|| {
+                                    format!("Invalid public key length for peer: {:?}", info.url)
+                                })
+                        {
+                            if key == *my_p2p_tls_key {
+                                // this is wrong, obviously.
+                                return MigrationInfo {
+                                    backup_service_info: None,
+                                    active_migration: true,
+                                };
+                            }
+                        } else {
+                            tracing::error!("invalid key");
+                        };
+                    }
+                }
                 return MigrationInfo {
-                    backup_service_info,
-                    active_migration,
+                    backup_service_info: None,
+                    active_migration: false,
                 };
+                // let active_migration =
+                //     my_map
+                //         .iter()
+                //         .map(|(account_id, (backup_service_info, migration_info))| {
+                //             migration_info.is_some_and(|info| {
+                //                 let destination_node_info = info.destination_node_info;
+
+                //                 ed25519_dalek::VerifyingKey::from_near_sdk_public_key(
+                //                     &info.destination_node_info.sign_pk,
+                //                 )
+                //                 .with_context(|| {
+                //                     format!(
+                //                         "Invalid public key length for peer: {:?}",
+                //                         info.destination_node_info.url
+                //                     )
+                //                 })
+                //                 .is_ok_and(|key| key == *my_p2p_tls_key)
+                //             })
+                //         });
+                //let active_migration = destination_node_info.is_some_and(|info| {
+                //    ed25519_dalek::VerifyingKey::from_near_sdk_public_key(
+                //        &info.destination_node_info.sign_pk,
+                //    )
+                //    .with_context(|| {
+                //        format!(
+                //            "Invalid public key length for peer: {:?}",
+                //            info.destination_node_info.url
+                //        )
+                //    })
+                //    .is_ok_and(|key| key == *my_p2p_tls_key)
+                //});
+
+                // return MigrationInfo {
+                //     backup_service_info: None,
+                //     active_migration,
+                // };
             }
             Err(e) => {
                 tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
