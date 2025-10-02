@@ -179,7 +179,8 @@ impl TestGenerators {
         public_key: AffinePoint,
         msg_hash: Scalar,
     ) -> Signature {
-        let mut protocols: Vec<ParticipantAndProtocol<Signature>> = Vec::new();
+        let mut protocols: Vec<ParticipantAndProtocol<Option<Signature>>> = Vec::new();
+        let leader = self.participants[0];
         for participant in &self.participants {
             let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
             let presign_out = presignatures[participant].clone();
@@ -210,6 +211,7 @@ impl TestGenerators {
                 Box::new(
                     ecdsa::ot_based_ecdsa::sign::sign(
                         &self.participants,
+                        leader,
                         *participant,
                         public_key,
                         rerandomized_presignature,
@@ -221,10 +223,12 @@ impl TestGenerators {
         }
         run_protocol(protocols)
             .unwrap()
-            .into_iter()
-            .next()
+            .iter()
+            .find_map(|(p, sig)| if *p == leader { Some(sig) } else { None })
             .unwrap()
-            .1
+            .as_ref()
+            .unwrap()
+            .clone()
     }
 }
 

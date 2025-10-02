@@ -298,6 +298,7 @@ fn signature_network_research_best_case() {
     let participants = (0..NUM_PARTICIPANTS)
         .map(|i| Participant::from(i as u32))
         .collect::<Vec<_>>();
+    let leader = participants[0];
     for i in 0..NUM_PARTICIPANTS {
         let msg_hash = Scalar::from_u128(100000);
 
@@ -327,6 +328,7 @@ fn signature_network_research_best_case() {
         protocols.push(
             threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
                 &participants,
+                leader,
                 participants[i],
                 public_key,
                 rerandomized_presignature,

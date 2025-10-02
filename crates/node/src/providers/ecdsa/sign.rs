@@ -116,7 +116,6 @@ impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation 
             .copied()
             .map(Participant::from)
             .collect::<Vec<_>>();
-        let me = channel.my_participant_id();
 
         let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
             .into_option()
@@ -145,13 +144,16 @@ impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation 
 
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
-            me.into(),
+            channel.sender().get_leader().into(),
+            channel.my_participant_id().into(),
             public_key,
             rerandomized_presignature,
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature = run_protocol("sign", channel, protocol).await?;
+        let signature = run_protocol("sign", channel, protocol)
+            .await?
+            .context("Leader should obtain a signature")?;
         Ok((signature, VerifyingKey::new(public_key.into())))
     }
 

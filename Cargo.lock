@@ -9856,7 +9856,7 @@ dependencies = [
 [[package]]
 name = "threshold-signatures"
 version = "0.1.0"
-source = "git+https://github.com/near/threshold-signatures?rev=7b61305c3af99f20508c8b5705e86751c11bc7a9#7b61305c3af99f20508c8b5705e86751c11bc7a9"
+source = "git+https://github.com/near/threshold-signatures?rev=5c905e4bf9aeba218e7fe06b36aee3577a768413#5c905e4bf9aeba218e7fe06b36aee3577a768413"
 dependencies = [
  "auto_ops",
  "borsh",

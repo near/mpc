@@ -123,7 +123,7 @@ signature = "2.2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
 # Current HEAD of main branch as of 25-09-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "7b61305c3af99f20508c8b5705e86751c11bc7a9"}
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "5c905e4bf9aeba218e7fe06b36aee3577a768413"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }
