@@ -8,7 +8,7 @@ use crate::protocol::{
     errors::{InitializationError, ProtocolError},
     run_protocol, Participant, Protocol,
 };
-use crate::{keygen, refresh, reshare, Ciphersuite, KeygenOutput, VerifyingKey};
+use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
 
 // +++++++++++++++++ Participants Utilities +++++++++++++++++ //
 /// Generates a vector of `number` participants, sorted by the participant id.
@@ -40,8 +40,8 @@ type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C
 /// If the protocol succeeds, returns a sorted vector based on participants id
 pub fn run_keygen<C: Ciphersuite>(participants: &[Participant], threshold: usize) -> GenOutput<C>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     let mut protocols: GenProtocol<C> = Vec::with_capacity(participants.len());
 
@@ -63,8 +63,8 @@ pub fn run_refresh<C: Ciphersuite>(
     threshold: usize,
 ) -> GenOutput<C>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     let mut protocols: GenProtocol<C> = Vec::with_capacity(participants.len());
 
@@ -96,8 +96,8 @@ pub fn run_reshare<C: Ciphersuite>(
     new_participants: &[Participant],
 ) -> GenOutput<C>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     assert!(!new_participants.is_empty());
     let mut setup = vec![];
@@ -158,8 +158,8 @@ pub fn assert_public_key_invariant<C: Ciphersuite>(
 pub fn run_sign<C: Ciphersuite, PresignOutput, Signature: Clone, F>(
     participants_presign: Vec<(Participant, PresignOutput)>,
     coordinator: Participant,
-    public_key: frost_core::Element<C>,
-    msg_hash: frost_core::Scalar<C>,
+    public_key: Element<C>,
+    msg_hash: Scalar<C>,
     sign: F,
 ) -> Result<Vec<(Participant, Signature)>, Box<dyn Error>>
 where
@@ -167,9 +167,9 @@ where
         &[Participant],
         Participant,
         Participant,
-        frost_core::Element<C>,
+        Element<C>,
         PresignOutput,
-        frost_core::Scalar<C>,
+        Scalar<C>,
     ) -> Result<Box<dyn Protocol<Output = Signature>>, InitializationError>,
 {
     let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Signature>>)> =

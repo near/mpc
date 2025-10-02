@@ -1,38 +1,21 @@
-use std::{collections::HashMap, error::Error};
+mod common;
 
-use rand::Rng;
 use rand_core::OsRng;
+
+use common::{choose_coordinator_at_random, generate_participants, run_keygen};
 use threshold_signatures::{
     confidential_key_derivation::{
-        ciphersuite::{verify_signature, BLS12381Scalar, Field, G1Projective, Group},
+        ciphersuite::{verify_signature, Field, G1Projective, Group},
         protocol::ckd,
-        AppId, CKDOutputOption, KeygenOutput,
+        AppId, CKDOutputOption,
     },
-    keygen,
     protocol::{run_protocol, Participant, Protocol},
 };
-
-type C = threshold_signatures::confidential_key_derivation::ciphersuite::BLS12381SHA256;
-type Scalar = BLS12381Scalar;
-
-type ParticipantAndProtocol<T> = (Participant, Box<dyn Protocol<Output = T>>);
-
-fn make_keygen(
-    participants: &[Participant],
-    threshold: usize,
-) -> HashMap<Participant, KeygenOutput> {
-    let mut protocols: Vec<ParticipantAndProtocol<KeygenOutput>> = Vec::new();
-    for participant in participants {
-        protocols.push((
-            *participant,
-            Box::new(keygen::<C>(participants, *participant, threshold, OsRng).unwrap()),
-        ));
-    }
-    run_protocol(protocols).unwrap().into_iter().collect()
-}
+type C = threshold_signatures::confidential_key_derivation::BLS12381SHA256;
+type Scalar = threshold_signatures::Scalar<C>;
 
 #[test]
-fn test_ckd() -> Result<(), Box<dyn Error>> {
+fn test_ckd() {
     let mut rng = OsRng;
 
     // Create the app necessary items
@@ -41,22 +24,16 @@ fn test_ckd() -> Result<(), Box<dyn Error>> {
     let app_pk = G1Projective::generator() * app_sk;
 
     // create participants
-    let threshold = 3;
-    let participants = vec![
-        Participant::from(0u32),
-        Participant::from(1u32),
-        Participant::from(2u32),
-    ];
+    let threshold = 2;
+    let participants = generate_participants(3);
 
-    let result = make_keygen(&participants, threshold);
+    let result = run_keygen(&participants, threshold);
 
     assert!(result.len() == participants.len());
 
     let public_key = result.get(&participants[0]).unwrap().public_key;
 
-    // choose a coordinator at random
-    let index = OsRng.gen_range(0..participants.len());
-    let coordinator = participants[index as usize];
+    let coordinator = choose_coordinator_at_random(&participants);
 
     let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
         Vec::with_capacity(participants.len());
@@ -72,12 +49,13 @@ fn test_ckd() -> Result<(), Box<dyn Error>> {
             app_id.clone(),
             app_pk,
             OsRng,
-        )?;
+        )
+        .unwrap();
 
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let result = run_protocol(protocols)?;
+    let result = run_protocol(protocols).unwrap();
 
     // test one single some for the coordinator
     let mut some_iter = result.into_iter().filter(|(_, ckd)| ckd.is_some());
@@ -94,6 +72,4 @@ fn test_ckd() -> Result<(), Box<dyn Error>> {
     // compute msk . H(app_id)
     let confidential_key = ckd.unmask(app_sk);
     assert!(verify_signature(&public_key, &app_id, &confidential_key).is_ok());
-
-    Ok(())
 }

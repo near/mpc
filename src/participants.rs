@@ -6,11 +6,11 @@
 
 use std::{collections::HashMap, mem};
 
-use frost_core::Scalar;
 use serde::Serialize;
 
 use crate::crypto::{ciphersuite::Ciphersuite, polynomials::compute_lagrange_coefficient};
 use crate::protocol::{errors::ProtocolError, Participant};
+use crate::Scalar;
 
 /// Represents a sorted list of participants.
 ///
@@ -56,6 +56,10 @@ impl ParticipantList {
         self.participants.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.participants.is_empty()
+    }
+
     /// Check if this list has a given participant.
     pub fn contains(&self, participant: Participant) -> bool {
         self.indices.contains_key(&participant)
@@ -99,6 +103,7 @@ impl ParticipantList {
     }
 
     /// Return the intersection of this list with another list.
+    #[allow(clippy::missing_panics_doc)]
     pub fn intersection(&self, others: &Self) -> Self {
         let mut out = Vec::new();
         for &p in &self.participants {
@@ -116,12 +121,13 @@ impl ParticipantList {
     }
 
     #[cfg(test)]
+    #[allow(clippy::missing_panics_doc)]
     pub fn shuffle(&self, mut rng: impl rand_core::CryptoRngCore) -> Option<Self> {
         let mut participants = self.participants().to_vec();
         let len = self.participants.len();
         for i in (1..len).rev() {
-            let j = rng.next_u64() % ((i + 1) as u64);
-            participants.swap(i, usize::try_from(j).unwrap());
+            let j = usize::try_from(rng.next_u32()).unwrap() % (i + 1);
+            participants.swap(i, j);
         }
         Self::new(&participants)
     }

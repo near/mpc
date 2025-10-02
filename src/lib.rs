@@ -9,16 +9,21 @@ pub mod protocol;
 #[cfg(test)]
 mod test;
 
+// TODO: We should probably no expose the full modules, but only the types
+// that make sense for our library
+pub use blstrs;
 pub use frost_core;
-use frost_core::serialization::SerializableScalar;
 pub use frost_ed25519;
 pub use frost_secp256k1;
+
+pub use crypto::ciphersuite::Ciphersuite;
+pub use participants::ParticipantList;
 // For benchmark
 pub use crypto::polynomials::{
     batch_compute_lagrange_coefficients, batch_invert, compute_lagrange_coefficient,
 };
 
-use crypto::ciphersuite::Ciphersuite;
+use frost_core::serialization::SerializableScalar;
 use frost_core::{keys::SigningShare, Group, VerifyingKey};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -28,7 +33,8 @@ use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assert
 use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::{errors::InitializationError, Participant, Protocol};
 
-type Scalar<C> = frost_core::Scalar<C>;
+pub type Scalar<C> = frost_core::Scalar<C>;
+pub type Element<C> = frost_core::Element<C>;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(bound = "C: Ciphersuite")]
@@ -76,8 +82,8 @@ pub fn keygen<C: Ciphersuite>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     let comms = Comms::new();
     let participants = assert_keygen_invariants(participants, me, threshold)?;
@@ -98,8 +104,8 @@ pub fn reshare<C: Ciphersuite>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     let comms = Comms::new();
     let threshold = new_threshold;
@@ -134,8 +140,8 @@ pub fn refresh<C: Ciphersuite>(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
-    frost_core::Element<C>: Send,
-    frost_core::Scalar<C>: Send,
+    Element<C>: Send,
+    Scalar<C>: Send,
 {
     if old_signing_key.is_none() {
         return Err(InitializationError::BadParameters(format!(

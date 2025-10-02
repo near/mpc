@@ -1,12 +1,9 @@
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
 
-use crate::{
-    crypto::ciphersuite::{Ciphersuite, Element},
-    protocol::errors::ProtocolError,
-};
+use crate::{protocol::errors::ProtocolError, Ciphersuite, Element, Scalar};
 
-use frost_core::{serialization::SerializableScalar, Group, Scalar};
+use frost_core::{serialization::SerializableScalar, Group};
 
 use super::strobe_transcript::Transcript;
 

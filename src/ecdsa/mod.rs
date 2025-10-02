@@ -12,13 +12,14 @@ use elliptic_curve::{
     PrimeField,
 };
 
-use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
+use frost_secp256k1::{Field, Group, Secp256K1Group, Secp256K1ScalarField};
 use k256::{AffinePoint, ProjectivePoint};
 
 use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
 use crate::participants::ParticipantList;
 use crate::protocol::errors::ProtocolError;
 
+pub use frost_secp256k1::Secp256K1Sha256;
 pub type KeygenOutput = crate::KeygenOutput<Secp256K1Sha256>;
 pub type Tweak = crate::Tweak<Secp256K1Sha256>;
 pub type Scalar = <Secp256K1ScalarField as Field>::Scalar;

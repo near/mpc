@@ -1,11 +1,8 @@
 use crate::{
-    crypto::{
-        ciphersuite::{Ciphersuite, Element},
-        proofs::strobe_transcript::TranscriptRng,
-    },
-    protocol::errors::ProtocolError,
+    crypto::proofs::strobe_transcript::TranscriptRng, protocol::errors::ProtocolError, Ciphersuite,
+    Element, Scalar,
 };
-use frost_core::{serialization::SerializableScalar, Group, Scalar};
+use frost_core::{serialization::SerializableScalar, Group};
 
 use super::strobe_transcript::Transcript;
 use rand_core::CryptoRngCore;

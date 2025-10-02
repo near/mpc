@@ -4,7 +4,7 @@ pub mod sign;
 mod test;
 
 use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
-use frost_ed25519::Ed25519Sha512;
+pub use frost_ed25519::Ed25519Sha512;
 
 pub type KeygenOutput = crate::KeygenOutput<Ed25519Sha512>;
 
