@@ -1,3 +1,5 @@
+use crate::migration_service::monitoring::MigrationInfo;
+
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
 use lib::{get_mpc_my_migration_info, wait_for_full_sync};
@@ -94,4 +96,7 @@ pub struct IndexerAPI<TransactionSender> {
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
+
+    /// Why does this need to be part of the API? Because the alternative is even more akward.
+    pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 }

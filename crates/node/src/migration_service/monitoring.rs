@@ -58,8 +58,7 @@ async fn fetch_migrations_once(
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_migrations(
-    indexer_state: IndexerAPI<impl TransactionSender + 'static>,
-    //indexer_state: Arc<IndexerState>,
+    indexer_state: Arc<IndexerState>,
     my_p2p_tls_key: &VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
     let init_response = fetch_migrations_once(indexer_state.clone(), &my_p2p_tls_key).await;
