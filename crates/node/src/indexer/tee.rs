@@ -56,7 +56,7 @@ pub async fn monitor_allowed_docker_images(
     };
 
     tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-    wait_for_full_sync(&indexer_state.client).await;
+    indexer_state.wait_for_full_sync().await;
 
     loop {
         tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
