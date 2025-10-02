@@ -312,6 +312,7 @@ impl StartCmd {
             attestation,
             debug_request_sender,
             root_task_handle,
+            tee_authority,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -352,6 +353,7 @@ impl StartCmd {
         // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
         // Otherwise we would not write to the same cell/lock.
         root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
+        tee_authority: TeeAuthority,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
@@ -385,17 +387,11 @@ impl StartCmd {
             .await?;
 
         // Spawn periodic attestation submission task
-        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
-        let tee_authority_clone = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tx_sender_clone = indexer_api.txn_sender.clone();
         tokio::spawn(async move {
-            if let Err(e) = periodic_attestation_submission(
-                tee_authority_clone,
-                tx_sender_clone,
-                tls_sdk_public_key,
-                tls_public_key,
-            )
-            .await
+            if let Err(e) =
+                periodic_attestation_submission(tee_authority, tx_sender_clone, tls_public_key)
+                    .await
             {
                 tracing::error!(
                     error = ?e,

@@ -12,9 +12,11 @@ use crate::{
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     },
+    providers::PublicKeyConversion,
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 
+const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
@@ -89,21 +91,20 @@ pub async fn submit_remote_attestation(
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
     tee_authority: TeeAuthority,
     tx_sender: T,
-    tls_sdk_public_key: near_sdk::PublicKey,
     tls_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
-    const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
 
     loop {
         interval.tick().await;
 
+        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
         let report_data = ReportData::new(tls_sdk_public_key.clone());
         let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
             Ok(attestation) => attestation,
-            Err(e) => {
+            Err(error) => {
                 tracing::error!(
-                    error = ?e,
+                    ?error,
                     "failed to generate fresh attestation, skipping this cycle"
                 );
                 continue;
@@ -113,11 +114,8 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
         match submit_remote_attestation(tx_sender.clone(), fresh_attestation, tls_public_key).await
         {
             Ok(()) => tracing::info!("successfully submitted fresh remote attestation"),
-            Err(e) => {
-                tracing::error!(
-                    error = ?e,
-                    "failed to submit fresh remote attestation"
-                );
+            Err(error) => {
+                tracing::error!(?error, "failed to submit fresh remote attestation");
             }
         }
     }
