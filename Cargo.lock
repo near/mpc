@@ -5025,7 +5025,6 @@ dependencies = [
  "borsh",
  "built",
  "clap",
- "curve25519-dalek",
  "derive_more 2.0.1",
  "dtos-contract",
  "ed25519-dalek",

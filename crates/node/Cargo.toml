@@ -15,7 +15,6 @@ backon = { workspace = true }
 borsh = { workspace = true }
 threshold-signatures = { workspace = true }
 clap = { workspace = true }
-curve25519-dalek = { workspace = true }
 derive_more = { workspace = true }
 dtos-contract = { workspace = true }
 ed25519-dalek = { workspace = true }
