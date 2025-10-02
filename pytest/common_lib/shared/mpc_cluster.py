@@ -11,6 +11,11 @@ from common_lib import ckd
 from common_lib.constants import TGAS
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.contracts import ContractMethod
+from common_lib.migration_state import (
+    BackupServiceInfo,
+    MigrationState,
+    parse_migration_state,
+)
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
@@ -338,7 +343,7 @@ class MpcCluster:
 
     def get_contract_state(self):
         cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), "state", {})
+        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.STATE, {})
         res = cn.send_txn_and_check_success(txn)
         assert "error" not in res, res
         res = res["result"]["status"]["SuccessValue"]
@@ -346,10 +351,20 @@ class MpcCluster:
         res = json.loads(res)
         return res
 
+    def get_migrations(self) -> MigrationState:
+        cn = self.contract_node
+        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.MIGRATION_INFO, {})
+        res = cn.send_txn_and_check_success(txn)
+        assert "error" not in res, res
+        res = res["result"]["status"]["SuccessValue"]
+        res = base64.b64decode(res)
+        res = json.loads(res)
+        return parse_migration_state(res)
+
     def get_tee_approved_accounts(self) -> List[str]:
         contract_node = self.contract_node
         get_tee_accounts_transaction = contract_node.sign_tx(
-            self.mpc_contract_account(), "get_tee_accounts", {}
+            self.mpc_contract_account(), ContractMethod.GET_TEE_ACCOUNTS, {}
         )
         transaction_response = contract_node.send_txn_and_check_success(
             get_tee_accounts_transaction
@@ -517,6 +532,24 @@ class MpcCluster:
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(), "config", {})
+        res = node.send_txn_and_check_success(tx)
+        return json.dumps(
+            json.loads(
+                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
+                    "utf-8"
+                )
+            )
+        )
+
+    def register_backup_service_info(
+        self, node_id, backup_service_info: BackupServiceInfo
+    ):
+        node = self.mpc_nodes[node_id]
+        tx = node.sign_tx(
+            self.mpc_contract_account(),
+            "register_backup_service_info",
+            {"backup_service_info": backup_service_info},
+        )
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
             json.loads(

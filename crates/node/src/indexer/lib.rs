@@ -14,9 +14,12 @@ use serde::Deserialize;
 use std::time::Duration;
 use tokio::time;
 
+use super::migrations::ContractMigrationInfo;
+
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
 const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
+pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
@@ -90,6 +93,13 @@ pub(crate) async fn get_mpc_tee_accounts(
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, Vec<NodeId>)> {
     get_mpc_state(mpc_contract_id, client, TEE_ACCOUNTS_ENDPOINT).await
+}
+
+pub(crate) async fn get_mpc_migration_info(
+    mpc_contract_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(u64, ContractMigrationInfo)> {
+    get_mpc_state(mpc_contract_id, client, MIGRATION_INFO_ENDPOINT).await
 }
 
 pub(crate) async fn get_account_balance(

@@ -3,7 +3,7 @@ use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
@@ -273,12 +273,15 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
+                // todo: use it for testing [(#1249)](https://github.com/near/mpc/issues/1249)
+                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
                     static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
+                    dummy_migration_state_receiver,
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
