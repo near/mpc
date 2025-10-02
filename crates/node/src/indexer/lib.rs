@@ -1,5 +1,7 @@
 use actix::Addr;
 use anyhow::bail;
+use mpc_contract::node_migrations::BackupServiceInfo;
+use mpc_contract::node_migrations::DestinationNodeInfo;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_client::ClientActor;
@@ -15,6 +17,7 @@ use tokio::time;
 
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
+const MY_MIGRATION_INFO_ENDPOINT: &str = "my_migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
@@ -81,6 +84,20 @@ pub(crate) async fn get_mpc_allowed_image_hashes(
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
     get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
+}
+
+pub(crate) async fn get_mpc_my_migration_info(
+    mpc_contract_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(
+    u64,
+    (
+        AccountId,
+        Option<BackupServiceInfo>,
+        Option<DestinationNodeInfo>,
+    ),
+)> {
+    get_mpc_state(mpc_contract_id, client, MY_MIGRATION_INFO_ENDPOINT).await
 }
 
 pub(crate) async fn get_account_balance(

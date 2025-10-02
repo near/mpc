@@ -1,5 +1,7 @@
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
+use lib::{get_mpc_my_migration_info, wait_for_full_sync};
+use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
@@ -39,6 +41,23 @@ pub(crate) struct IndexerState {
 }
 
 impl IndexerState {
+    pub async fn wait_for_full_sync(&self) {
+        wait_for_full_sync(&self.client).await;
+    }
+
+    pub async fn get_mpc_my_migration_info(
+        &self,
+    ) -> anyhow::Result<(
+        u64,
+        (
+            AccountId,
+            Option<BackupServiceInfo>,
+            Option<DestinationNodeInfo>,
+        ),
+    )> {
+        get_mpc_my_migration_info(self.mpc_contract_id.clone(), &self.view_client).await
+    }
+
     pub fn new(
         view_client: actix::Addr<near_client::ViewClientActor>,
         client: actix::Addr<near_client::ClientActor>,

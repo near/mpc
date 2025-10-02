@@ -122,6 +122,7 @@ pub struct Keyset {
 }
 
 impl Keyset {
+    // todo: add validation
     pub fn new(epoch_id: EpochId, domains: Vec<KeyForDomain>) -> Self {
         Keyset { epoch_id, domains }
     }
