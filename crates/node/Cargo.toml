@@ -17,28 +17,22 @@ threshold-signatures = { workspace = true }
 clap = { workspace = true }
 curve25519-dalek = { workspace = true }
 derive_more = { workspace = true }
-dstack-sdk = { workspace = true }
-dstack-sdk-types = { workspace = true }
+dtos-contract = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
-futures-util = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 hkdf = { workspace = true }
-http = { workspace = true }
 humantime = { workspace = true }
 k256 = { workspace = true }
 lru = { workspace = true }
 near-sdk = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
-rand_xorshift = { workspace = true }
-rcgen = { workspace = true }
 rocksdb = { workspace = true }
 rustls = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -54,7 +48,6 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
-x509-parser = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-client = { workspace = true }
@@ -64,13 +57,11 @@ near-o11y = { workspace = true }
 near-time = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
-deranged = { workspace = true }
 itertools = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
 serial_test = { workspace = true }
-reqwest = { workspace = true }
 itertools = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 mockall = { workspace = true }

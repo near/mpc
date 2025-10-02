@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use backon::{BackoffBuilder, ExponentialBuilder};
-use mpc_contract::tee::proposal::AllowedMpcDockerImage;
+use mpc_contract::tee::proposal::MpcDockerImageHash;
 use tokio::sync::watch;
 
 use crate::indexer::{
@@ -19,7 +19,7 @@ const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 /// allowed [`AllowedDockerImageHash`]es when a change is detected
 /// on the MPC smart contract.
 pub async fn monitor_allowed_docker_images(
-    sender: watch::Sender<Vec<AllowedMpcDockerImage>>,
+    sender: watch::Sender<Vec<MpcDockerImageHash>>,
     indexer_state: Arc<IndexerState>,
 ) {
     let fetch_allowed_image_hashes = {
@@ -60,10 +60,10 @@ pub async fn monitor_allowed_docker_images(
 
     loop {
         tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
-        let new_tee_state = fetch_allowed_image_hashes().await;
-        sender.send_if_modified(|previous_state| {
-            if *previous_state != new_tee_state {
-                *previous_state = new_tee_state;
+        let allowed_image_hashes = fetch_allowed_image_hashes().await;
+        sender.send_if_modified(|previous_allowed_image_hashes| {
+            if *previous_allowed_image_hashes != allowed_image_hashes {
+                *previous_allowed_image_hashes = allowed_image_hashes;
                 true
             } else {
                 false

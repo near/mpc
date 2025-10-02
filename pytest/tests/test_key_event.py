@@ -46,14 +46,19 @@ def test_single_domain():
     cluster.send_and_await_signature_requests(1)
     cluster.send_and_await_ckd_requests(1)
 
+    kicked_out_node = mpc_nodes[0]
+    new_participants = mpc_nodes[1:]
     cluster.do_resharing(
-        new_participants=mpc_nodes[1:4], new_threshold=3, prospective_epoch_id=2
+        new_participants=new_participants, new_threshold=3, prospective_epoch_id=2
     )
-
     cluster.update_participant_status()
     cluster.send_and_await_signature_requests(1)
+
+    # restart node so it re-submits a TEE attestation
+    kicked_out_node.restart()
+
     cluster.do_resharing(
-        new_participants=mpc_nodes[0:4],
+        new_participants=mpc_nodes,
         new_threshold=3,
         prospective_epoch_id=3,
         wait_for_running=False,
@@ -69,7 +74,7 @@ def test_single_domain():
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 0)
     mpc_nodes[0].reserve_key_event_attempt(4, 0, 1)
     cluster.do_resharing(
-        new_participants=mpc_nodes[0:4], new_threshold=4, prospective_epoch_id=4
+        new_participants=mpc_nodes, new_threshold=4, prospective_epoch_id=4
     )
     cluster.update_participant_status()
     assert cluster.contract_state().keyset().keyset[0].attempt_id == 2

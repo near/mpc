@@ -3,7 +3,7 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::types::ChainGetPendingCKDRequestArgs;
+use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetAttestationArgs};
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
@@ -23,13 +23,14 @@ use tokio::time;
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
 
+const GET_TEE_ATTESTATION_METHOD_NAME: &str = "get_attestation";
+
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
         &self,
         transaction: ChainSendTransactionRequest,
     ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
 
-    #[allow(dead_code)]
     fn send_and_wait(
         &self,
         transaction: ChainSendTransactionRequest,
@@ -63,6 +64,7 @@ impl TransactionProcessorHandle {
         tokio::spawn(async move {
             while let Some(transaction_submission) = transaction_receiver.recv().await {
                 let tx_request = transaction_submission.transaction;
+                let tx_response_channel = transaction_submission.response_sender;
 
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
@@ -72,8 +74,17 @@ impl TransactionProcessorHandle {
                         return;
                     };
                     tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
-                    ensure_send_transaction(tx_signer.clone(), indexer_state, tx_request, txn_json)
-                        .await;
+                    let transaction_status = ensure_send_transaction(
+                        tx_signer.clone(),
+                        indexer_state,
+                        tx_request,
+                        txn_json,
+                    )
+                    .await;
+
+                    if let Some(tx_response_channel) = tx_response_channel {
+                        let _ = tx_response_channel.send(transaction_status);
+                    }
                 });
             }
         });
@@ -118,10 +129,10 @@ impl TransactionSender for TransactionProcessorHandle {
 
 struct TransactionSenderSubmission {
     transaction: ChainSendTransactionRequest,
-    #[allow(dead_code)]
     response_sender: Option<oneshot::Sender<TransactionStatus>>,
 }
 
+#[derive(Debug)]
 pub enum TransactionStatus {
     Executed,
     NotExecuted,
@@ -263,6 +274,59 @@ async fn observe_tx_result(
                 }
             }
         }
+        SubmitParticipantInfo(submit_participant_info_args) => {
+            let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
+                tls_public_key: submit_participant_info_args.tls_public_key.clone(),
+            })
+            .unwrap()
+            .into_bytes();
+
+            let query_response = indexer_state
+                .view_client
+                .send(
+                    Query {
+                        block_reference: BlockReference::Finality(Finality::Final),
+                        request: QueryRequest::CallFunction {
+                            account_id: indexer_state.mpc_contract_id.clone(),
+                            method_name: GET_TEE_ATTESTATION_METHOD_NAME.to_string(),
+                            args: get_attestation_args.into(),
+                        },
+                    }
+                    .with_span_context(),
+                )
+                .await;
+
+            let query_response = match query_response {
+                Ok(Ok(query_response)) => query_response,
+                error => {
+                    tracing::error!(
+                        ?error,
+                        "failed to query for TEE attestation submission result"
+                    );
+                    return Ok(TransactionStatus::Unknown);
+                }
+            };
+            let attestation_stored_on_contract: Option<dtos_contract::Attestation> =
+                match query_response.kind {
+                    QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
+                        .context("Failed to deserialize get_tee_accounts response")?,
+                    _ => {
+                        anyhow::bail!("got unexpected response querying mpc contract state")
+                    }
+                };
+
+            let submitted_attestation_is_on_chain =
+                attestation_stored_on_contract.is_some_and(|stored_attestation| {
+                    stored_attestation
+                        == submit_participant_info_args.proposed_participant_attestation
+                });
+
+            if submitted_attestation_is_on_chain {
+                Ok(TransactionStatus::Executed)
+            } else {
+                Ok(TransactionStatus::NotExecuted)
+            }
+        }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
@@ -270,7 +334,6 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee() => Ok(TransactionStatus::Unknown),
-        SubmitParticipantInfo(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
@@ -282,7 +345,7 @@ async fn ensure_send_transaction(
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
     params_ser: String,
-) {
+) -> TransactionStatus {
     if let Err(err) = submit_tx(
         tx_signer.clone(),
         indexer_state.clone(),
@@ -292,20 +355,20 @@ async fn ensure_send_transaction(
     )
     .await
     {
-        // If the transaction fails to send immediately, wait a short period and try again
         metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
             .with_label_values(&[request.method(), "local_error"])
             .inc();
         tracing::error!(%err, "Failed to forward transaction {:?}", request);
-        time::sleep(Duration::from_secs(1)).await;
-        return;
+        return TransactionStatus::NotExecuted;
     };
 
     // Allow time for the transaction to be included
     time::sleep(TRANSACTION_TIMEOUT).await;
 
     // Then try to check whether it had the intended effect
-    match observe_tx_result(indexer_state.clone(), &request).await {
+    let transaction_status = observe_tx_result(indexer_state.clone(), &request).await;
+
+    match &transaction_status {
         Ok(TransactionStatus::Executed) => {
             metrics::MPC_OUTGOING_TRANSACTION_OUTCOMES
                 .with_label_values(&[request.method(), "succeeded"])
@@ -328,4 +391,6 @@ async fn ensure_send_transaction(
             tracing::warn!(target:"mpc", %err, "encountered error trying to confirm result of transaction {:?}", request);
         }
     }
+
+    transaction_status.unwrap_or(TransactionStatus::Unknown)
 }
