@@ -1,3 +1,4 @@
+use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, Scalar};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
@@ -5,9 +6,13 @@ use rand::rngs::OsRng;
 use std::collections::HashMap;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
+use threshold_signatures::ecdsa::{RerandomizationArguments, Signature};
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
-use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
+use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
+use threshold_signatures::{ecdsa, eddsa, keygen, ParticipantList};
+
 use tokio::sync::watch;
 
 use crate::config::{
@@ -37,9 +42,6 @@ use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
-use threshold_signatures::ecdsa::Signature;
-use threshold_signatures::{ecdsa, eddsa, keygen};
 use tokio::time::timeout;
 
 pub mod common;
@@ -179,6 +181,30 @@ impl TestGenerators {
     ) -> Signature {
         let mut protocols: Vec<ParticipantAndProtocol<Signature>> = Vec::new();
         for participant in &self.participants {
+            let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
+            let presign_out = presignatures[participant].clone();
+            let entropy = [0u8; 32];
+
+            let tweak = [1u8; 32];
+            let tweak = Scalar::from_repr(tweak.into()).unwrap();
+            let tweak = threshold_signatures::Tweak::new(tweak);
+
+            let public_key = tweak
+                .derive_verifying_key(&VerifyingKey::new(public_key.into()))
+                .to_element()
+                .to_affine();
+
+            let rerand_args = RerandomizationArguments::new(
+                public_key,
+                msg_hash_bytes,
+                presign_out.big_r,
+                ParticipantList::new(&self.participants).unwrap(),
+                entropy,
+            );
+
+            let rerandomized_presignature =
+                RerandomizedPresignOutput::new(&presign_out, &tweak, &rerand_args).unwrap();
+
             protocols.push((
                 *participant,
                 Box::new(
@@ -186,7 +212,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         public_key,
-                        presignatures[participant].clone(),
+                        rerandomized_presignature,
                         msg_hash,
                     )
                     .unwrap(),
