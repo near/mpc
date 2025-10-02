@@ -4,7 +4,7 @@
 //! or getting the field values corresponding to each participant, etc.
 //! This module tries to provide useful data structures for doing that.
 
-use std::{collections::HashMap, mem, ops::Index};
+use std::{collections::HashMap, mem};
 
 use frost_core::Scalar;
 use serde::Serialize;
@@ -69,8 +69,11 @@ impl ParticipantList {
     /// Return the index of a given participant.
     ///
     /// Basically, the order they appear in a sorted list
-    pub fn index(&self, participant: Participant) -> usize {
-        self.indices[&participant]
+    pub fn index(&self, participant: Participant) -> Result<usize, ProtocolError> {
+        self.indices
+            .get(&participant)
+            .copied()
+            .ok_or(ProtocolError::InvalidIndex)
     }
 
     // Return a participant of a given index from the order they
@@ -203,13 +206,14 @@ impl<'a, T> ParticipantMap<'a, T> {
     pub fn participants(&self) -> &[Participant] {
         self.participants.participants()
     }
-}
 
-impl<T> Index<Participant> for ParticipantMap<'_, T> {
-    type Output = T;
-
-    fn index(&self, index: Participant) -> &Self::Output {
-        self.data[self.participants.index(index)].as_ref().unwrap()
+    pub fn index(&self, index: Participant) -> Result<&T, ProtocolError> {
+        let index = self.participants.index(index)?;
+        self.data
+            .get(index)
+            .ok_or(ProtocolError::InvalidIndex)?
+            .as_ref()
+            .ok_or_else(|| ProtocolError::Other("No data found".to_string()))
     }
 }
 
@@ -270,5 +274,29 @@ impl<'a> ParticipantCounter<'a> {
     /// Check if this counter contains all participants
     pub fn full(&self) -> bool {
         self.counter == 0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test::generate_participants;
+
+    #[test]
+    fn test_get_index_participant_error() {
+        let participants = generate_participants(5);
+        let participants = ParticipantList::new(&participants).unwrap();
+        assert!(participants.index(Participant::from(1234_u32)).is_err());
+    }
+
+    #[test]
+    fn test_get_index_data_error() {
+        let participants = generate_participants(5);
+        let participants = ParticipantList::new(&participants).unwrap();
+        let map: ParticipantMap<'_, u32> = ParticipantMap::new(&participants);
+        // no participant test
+        assert!(map.index(Participant::from(1233_u32)).is_err());
+        // no data test
+        assert!(map.index(Participant::from(1_u32)).is_err());
     }
 }

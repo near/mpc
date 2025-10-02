@@ -245,7 +245,8 @@ async fn do_generation(
                 )));
             }
 
-            if !all_commitments[from]
+            if !all_commitments
+                .index(from)?
                 .check(
                     &(&their_big_e, &their_big_f, &their_big_l),
                     &their_randomizer,
@@ -348,7 +349,7 @@ async fn do_generation(
             let big_c_j = big_c_j.value();
 
             let statement = dlogeq::Statement::<C> {
-                public0: &big_e_j_zero[from].value(),
+                public0: &big_e_j_zero.index(from)?.value(),
                 generator1: &big_f.eval_at_zero()?.value(),
                 public1: &big_c_j,
             };
@@ -777,7 +778,8 @@ async fn do_generation_many<const N: usize>(
                     )));
                 }
 
-                if !all_commitments[from]
+                if !all_commitments
+                    .index(from)?
                     .check(
                         &(&their_big_e, &their_big_f, &their_big_l),
                         their_randomizer,
@@ -910,7 +912,7 @@ async fn do_generation_many<const N: usize>(
                 let their_phi_proof = &their_phi_proofs[i];
 
                 let statement = dlogeq::Statement::<C> {
-                    public0: &big_e_j_zero[from].value(),
+                    public0: &big_e_j_zero.index(from)?.value(),
                     generator1: &big_f.eval_at_zero()?.value(),
                     public1: &big_c_j,
                 };

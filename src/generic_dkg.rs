@@ -20,7 +20,6 @@ use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
-use std::ops::Index;
 
 /// This function prevents calling keyshare function with inproper inputs
 fn assert_keyshare_inputs<C: Ciphersuite>(
@@ -217,7 +216,7 @@ fn verify_commitment_hash<C: Ciphersuite>(
     commitment: &VerifiableSecretSharingCommitment<C>,
     all_hash_commitments: &ParticipantMap<'_, HashOutput>,
 ) -> Result<(), ProtocolError> {
-    let actual_commitment_hash = all_hash_commitments.index(participant);
+    let actual_commitment_hash = all_hash_commitments.index(participant)?;
     let commitment_hash =
         domain_separate_hash(domain_separator, &(&participant, &commitment, &session_id))?;
     if *actual_commitment_hash != commitment_hash {
@@ -415,7 +414,7 @@ async fn do_keyshare<C: Ciphersuite>(
     // Start Round 3
     let wait_round_3 = chan.next_waitpoint();
     for p in participants.others(me) {
-        let (commitment_i, proof_i) = commitments_and_proofs_map.index(p);
+        let (commitment_i, proof_i) = commitments_and_proofs_map.index(p)?;
 
         // verify the proof of knowledge
         // if proof is none then make sure the participant is new
@@ -488,7 +487,7 @@ async fn do_keyshare<C: Ciphersuite>(
         // Verify the share
         // this deviates from the original FROST DKG paper
         // however it matches the FROST implementation of ZCash
-        let full_commitment_from = all_full_commitments.index(from);
+        let full_commitment_from = all_full_commitments.index(from)?;
         validate_received_share::<C>(me, from, &signing_share_from, full_commitment_from)?;
 
         // Compute the sum of all the owned secret shares
