@@ -8,7 +8,8 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use ed25519_dalek::SigningKey;
+use crate::migration_service::monitoring::monitor_migrations;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
 use std::path::PathBuf;
@@ -50,8 +51,10 @@ pub fn spawn_real_indexer(
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
+    tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
+    let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -137,6 +140,19 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            // This feels akward. Like, really akward.
+            let my_migration_info_receiver =
+                monitor_migrations(indexer_state.clone(), &tls_public_key).await;
+
+            if migration_info_sender_oneshot
+                .send(my_migration_info_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send migration info receiver back to main driver."
+                )
+            };
+
             // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
@@ -173,10 +189,15 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Contract state receiver must be returned by indexer.");
 
+    let my_migration_info_receiver = migration_info_receiver_oneshot
+        .blocking_recv()
+        .expect("Migraration info receiver must be returned by indexer.");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
+        my_migration_info_receiver,
     }
 }

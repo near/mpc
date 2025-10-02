@@ -1,7 +1,7 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::keyshare::KeyshareStorage;
-use crate::migration_service::{self, onboard};
+use crate::migration_service::onboard;
 use crate::providers::PublicKeyConversion;
 use crate::web::{static_web_data, DebugRequest};
 use crate::{
@@ -280,6 +280,7 @@ impl StartCmd {
             respond_config,
             indexer_exit_sender,
             protocol_state_sender,
+            tls_public_key.clone(),
         );
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
@@ -404,15 +405,13 @@ impl StartCmd {
             }
         });
         // todo: keyshare sender logic
-        let migration_info =
-            migration_service::monitoring::monitor_migrations(indexer_api, &tls_public_key);
         let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
         let mut keystore: KeyshareStorage = key_storage_config.create().await?.into();
         onboard(
             &config.my_near_account_id,
             tls_public_key,
             indexer_api.contract_state_receiver.clone(),
-            migration_info,
+            indexer_api.my_migration_info_receiver.clone(),
             indexer_api.txn_sender.clone(),
             &mut keystore,
             keyshare_receiver,
