@@ -1,7 +1,7 @@
 use super::{
     presign::presign,
     sign::sign,
-    triples::{test::deal, TriplePub, TripleShare},
+    triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
     PresignArguments, PresignOutput,
 };
 use crate::ecdsa::{
@@ -326,5 +326,85 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_with_rerandomization(&presign_result, public_key.to_element(), msg)?;
+    Ok(())
+}
+
+fn split_even_odd<T: Clone>(v: Vec<T>) -> (Vec<T>, Vec<T>) {
+    let mut even = Vec::with_capacity(v.len() / 2 + 1);
+    let mut odd = Vec::with_capacity(v.len() / 2);
+    for (i, x) in v.into_iter().enumerate() {
+        if i % 2 == 0 {
+            even.push(x);
+        } else {
+            odd.push(x);
+        }
+    }
+    (even, odd)
+}
+
+#[test]
+fn test_robustness_without_rerandomization() {
+    // Without robustness, the signature verification would fail
+    test_robustness(run_sign_without_rerandomization).expect("robustness test should succeed");
+}
+
+#[test]
+fn test_robustness_with_rerandomization() {
+    // Without robustness, the signature verification would fail
+    test_robustness(run_sign_with_rerandomization).expect("robustness test should succeed");
+}
+
+fn test_robustness<T, F>(run_sign: F) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&[(Participant, PresignOutput)], Element, &[u8]) -> Result<T, Box<dyn Error>>,
+{
+    let participants_count = 7;
+    let mut rng = OsRng;
+    let mut participants = generate_participants_with_random_ids(participants_count, &mut rng);
+    let threshold = 4;
+
+    let mut key_packages = run_keygen::<Secp256K1Sha256>(&participants.clone(), threshold)?;
+    assert_public_key_invariant(&key_packages);
+
+    let public_key = key_packages[0].1.public_key.to_element();
+    // Now remove a participant
+    // You can remove the same index because both participants and key_packages are sorted in the same way
+    participants.remove(0);
+    key_packages.remove(0);
+
+    let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
+        Vec::with_capacity(participants.len());
+    // Generate triples with 6 participants
+    for &p in &participants {
+        let protocol = generate_triple_many::<2>(&participants, p, threshold, rng);
+        let protocol = protocol.unwrap();
+        protocols.push((p, Box::new(protocol)));
+    }
+
+    let mut two_triples = run_protocol(protocols)?;
+    two_triples.sort_by_key(|(p, _)| *p);
+    let (shares, pubs): (Vec<_>, Vec<_>) = two_triples.into_iter().flat_map(|(_, vec)| vec).unzip();
+    // split shares into shares0 and shares 1 and pubs into pubs0 and pubs1
+    let (mut shares0, mut shares1) = split_even_odd(shares);
+    // split shares into shares0 and shares 1 and pubs into pubs0 and pubs1
+    let (pub0, pub1) = split_even_odd(pubs);
+
+    // Test robustness for presig with less triples than originally generated
+    key_packages.remove(0);
+    shares0.remove(0);
+    shares1.remove(0);
+    let mut presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0[0],
+        &pub1[0],
+        threshold,
+    )?;
+
+    let msg = b"hello world";
+    // Use less presignatures to sign
+    presign_result.remove(0);
+    run_sign(&presign_result, public_key, msg)?;
     Ok(())
 }

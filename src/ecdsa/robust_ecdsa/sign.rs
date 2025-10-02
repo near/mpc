@@ -253,7 +253,7 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (_, sig) = run_sign_without_rerandomization(participants_presign, public_key, msg)?;
+        let (_, sig) = run_sign_without_rerandomization(&participants_presign, public_key, msg)?;
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
 
         // verify the correctness of the generated signature
@@ -335,7 +335,7 @@ mod test {
         let msg = [0u8; 32]; // arbitrary zero message
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
-            presignatures,
+            &presignatures,
             public_key,
             &msg,
         );
