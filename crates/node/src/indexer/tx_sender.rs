@@ -327,6 +327,10 @@ async fn observe_tx_result(
                 Ok(TransactionStatus::NotExecuted)
             }
         }
+        ConcludeNodeMigration(_args) => {
+            // todo
+            Ok(TransactionStatus::Unknown)
+        }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
