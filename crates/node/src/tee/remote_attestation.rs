@@ -21,22 +21,9 @@ pub trait Tick {
     async fn tick(&mut self);
 }
 
-/// Production implementation using tokio::time::Interval
-pub struct TokioIntervalTicker {
-    interval: tokio::time::Interval,
-}
-
-impl TokioIntervalTicker {
-    pub fn new(duration: Duration) -> Self {
-        Self {
-            interval: tokio::time::interval(duration),
-        }
-    }
-}
-
-impl IntervalTicker for TokioIntervalTicker {
+impl Tick for tokio::time::Interval {
     async fn tick(&mut self) {
-        self.interval.tick().await;
+        self.tick().await;
     }
 }
 
