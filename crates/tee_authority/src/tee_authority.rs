@@ -24,7 +24,7 @@ pub const DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL: &str =
 /// Default path for dstack Unix socket endpoint.
 pub const DEFAULT_DSTACK_ENDPOINT: &str = "/var/run/dstack.sock";
 
-#[derive(Constructor)]
+#[derive(Constructor, Clone)]
 pub struct LocalTeeAuthorityConfig {
     generate_valid_attestations: bool,
 }
@@ -37,7 +37,7 @@ impl Default for LocalTeeAuthorityConfig {
     }
 }
 
-#[derive(Constructor)]
+#[derive(Constructor, Clone)]
 pub struct DstackTeeAuthorityConfig {
     /// Endpoint to contact dstack service. Defaults to [`DEFAULT_DSTACK_ENDPOINT`]
     dstack_endpoint: String,
@@ -58,7 +58,7 @@ impl Default for DstackTeeAuthorityConfig {
 
 /// TeeAuthority is an abstraction over different TEE attestation generator implementations. It
 /// generates [`Attestation`] instances - either mocked or real ones.
-#[derive(From)]
+#[derive(From, Clone)]
 pub enum TeeAuthority {
     Dstack(DstackTeeAuthorityConfig),
     Local(LocalTeeAuthorityConfig),

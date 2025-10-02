@@ -44,7 +44,8 @@ use url::Url;
 
 use {
     crate::tee::{
-        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        monitor_allowed_image_hashes,
+        remote_attestation::{periodic_attestation_submission, submit_remote_attestation},
         AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
@@ -311,6 +312,7 @@ impl StartCmd {
             attestation,
             debug_request_sender,
             root_task_handle,
+            tee_authority,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -351,6 +353,7 @@ impl StartCmd {
         // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
         // Otherwise we would not write to the same cell/lock.
         root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
+        tee_authority: TeeAuthority,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
@@ -382,6 +385,20 @@ impl StartCmd {
 
         submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
             .await?;
+
+        // Spawn periodic attestation submission task
+        let tx_sender_clone = indexer_api.txn_sender.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                periodic_attestation_submission(tee_authority, tx_sender_clone, tls_public_key)
+                    .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    "periodic attestation submission task failed"
+                );
+            }
+        });
 
         let coordinator = Coordinator {
             clock: Clock::real(),

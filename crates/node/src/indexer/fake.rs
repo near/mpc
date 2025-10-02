@@ -487,9 +487,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
-                        unimplemented!(
-                            "Submitting participant info is not implemented for tests yet."
-                        )
+                        // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
                 }
             }
