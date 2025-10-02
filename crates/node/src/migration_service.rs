@@ -111,7 +111,8 @@ pub async fn onboard(
         )
         .await?
         {
-            tracing::info!("We are already a participant, skipping onboarding.")
+            tracing::info!("We are already a participant, skipping onboarding.");
+            return Ok(());
         }
         // we wait for the contract to greenlight our onboarding
         tokio::select! {
