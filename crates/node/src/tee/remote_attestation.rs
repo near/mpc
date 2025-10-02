@@ -16,8 +16,8 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 
-/// Trait for interval abstraction to enable testing
-pub trait IntervalTicker {
+/// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.
+pub trait Tick {
     async fn tick(&mut self);
 }
 
