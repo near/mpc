@@ -85,7 +85,7 @@ pub async fn submit_remote_attestation(
 /// Periodically generates and submits fresh attestations at regular intervals.
 ///
 /// This future runs indefinitely, generating a fresh attestation every 10 minutes
-/// and submitting it to the blockchain. It's designed to be spawned as a background task.
+/// and submitting it to the blockchain.
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
     tee_authority: TeeAuthority,
     tx_sender: T,
