@@ -14,7 +14,7 @@ use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};
-use threshold_signatures::ecdsa::{RerandomizationArguments, Signature};
+use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::protocol::Participant;
 use threshold_signatures::ParticipantList;
@@ -52,7 +52,10 @@ impl EcdsaSignatureProvider {
         )
         .await?;
 
-        Ok((signature, public_key))
+        Ok((
+            signature.context("Leader should obtain a signature")?,
+            public_key,
+        ))
     }
 
     pub(super) async fn make_signature_follower(
@@ -105,11 +108,11 @@ pub struct SignComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation {
+impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(Signature, VerifyingKey)> {
+    ) -> anyhow::Result<(SignatureOption, VerifyingKey)> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -151,9 +154,7 @@ impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation 
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature = run_protocol("sign", channel, protocol)
-            .await?
-            .context("Leader should obtain a signature")?;
+        let signature = run_protocol("sign", channel, protocol).await?;
         Ok((signature, VerifyingKey::new(public_key.into())))
     }
 
