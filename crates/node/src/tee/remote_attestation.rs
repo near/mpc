@@ -229,7 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_periodic_attestation_submission() {
-        let tee_authority = TeeAuthority::try_from(LocalTeeAuthorityConfig::default()).unwrap();
+        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
         let sender = MockSender::new();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let key = SigningKey::generate(&mut rng).verifying_key();
