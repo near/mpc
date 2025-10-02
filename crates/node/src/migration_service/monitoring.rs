@@ -5,10 +5,7 @@ use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::BackupServiceInfo;
 use tokio::sync::watch;
 
-use crate::{
-    indexer::{IndexerAPI, IndexerState},
-    providers::PublicKeyConversion,
-};
+use crate::{indexer::IndexerState, providers::PublicKeyConversion};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct MigrationInfo {
@@ -54,6 +51,8 @@ async fn fetch_migrations_once(
         }
     }
 }
+
+// todo: move this to indexer?
 
 /// Continuously monitors the contract state. Every time the state changes,
 /// sends the new state via the provided sender. This is a long-running task.

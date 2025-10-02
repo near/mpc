@@ -1,17 +1,15 @@
 use super::IndexerState;
-use crate::config::{NodeStatus, ParticipantInfo, ParticipantsConfig};
-use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
+use crate::config::{ParticipantInfo, ParticipantsConfig};
+use crate::indexer::lib::get_mpc_contract_state;
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
-use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
     key_state::{KeyEventId, KeyForDomain, Keyset},
     thresholds::ThresholdParameters,
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
-use near_sdk::AccountId;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -133,39 +131,6 @@ pub enum ContractState {
 }
 
 impl ContractState {
-    pub fn get_keyset_if_running(&self) -> Option<&Keyset> {
-        match self {
-            ContractState::Invalid => None,
-            ContractState::Initializing(_) => None,
-            ContractState::Running(running_state) => {
-                if running_state.resharing_state.is_some() {
-                    None
-                } else {
-                    Some(&running_state.keyset)
-                }
-            }
-        }
-    }
-    pub fn node_status(&self, account_id: &AccountId, p2p_public_key: &VerifyingKey) -> NodeStatus {
-        match self {
-            ContractState::Invalid => NodeStatus::Inactive,
-            ContractState::Initializing(initializing) => initializing
-                .participants
-                .get_node_status(account_id, p2p_public_key),
-            ContractState::Running(running) => {
-                if let Some(resharing) = &running.resharing_state {
-                    resharing
-                        .new_participants
-                        .get_node_status(account_id, p2p_public_key)
-                } else {
-                    running
-                        .participants
-                        .get_node_status(account_id, p2p_public_key)
-                }
-            }
-        }
-    }
-
     pub fn from_contract_state(
         state: &ProtocolContractState,
         height: u64,
