@@ -407,6 +407,7 @@ impl StartCmd {
         // todo: keyshare sender logic
         let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
         let mut keystore: KeyshareStorage = key_storage_config.create().await?.into();
+        tracing::info!("onboarding now");
         onboard(
             &config.my_near_account_id,
             tls_public_key,
@@ -417,6 +418,7 @@ impl StartCmd {
             keyshare_receiver,
         )
         .await?;
+        tracing::info!("done onboarding now");
 
         let coordinator = Coordinator {
             clock: Clock::real(),

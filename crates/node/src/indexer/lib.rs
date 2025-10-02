@@ -43,6 +43,8 @@ pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
     }
 }
 
+// this is not view, coz it has signer_pk().!
+// so, instead, fetch the entire migration state.
 pub(crate) async fn get_mpc_state<State>(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
