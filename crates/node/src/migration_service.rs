@@ -1,5 +1,4 @@
 pub mod monitoring;
-use std::time::Duration;
 
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
@@ -18,6 +17,7 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareStorage},
 };
+
 async fn wait_for_onboarding(
     mut migration_info: watch::Receiver<MigrationInfo>,
 ) -> anyhow::Result<()> {
@@ -26,7 +26,7 @@ async fn wait_for_onboarding(
         if res.active_migration {
             return Ok(());
         }
-        migration_info.changed().await;
+        migration_info.changed().await?;
     }
 }
 
@@ -43,6 +43,30 @@ async fn cancel_on_change(
     res.context("channel closed")
 }
 
+fn node_status(
+    contract_state: &ContractState,
+    account_id: &AccountId,
+    p2p_public_key: &VerifyingKey,
+) -> NodeStatus {
+    match contract_state {
+        ContractState::Invalid => NodeStatus::Inactive,
+        ContractState::Initializing(initializing) => initializing
+            .participants
+            .get_node_status(account_id, p2p_public_key),
+        ContractState::Running(running) => {
+            if let Some(resharing) = &running.resharing_state {
+                resharing
+                    .new_participants
+                    .get_node_status(account_id, p2p_public_key)
+            } else {
+                running
+                    .participants
+                    .get_node_status(account_id, p2p_public_key)
+            }
+        }
+    }
+}
+
 /// returns true if we need to onbard. Returns false if we are a participant.
 /// Idles if we are neither.
 pub async fn need_to_onboard(
@@ -52,7 +76,7 @@ pub async fn need_to_onboard(
 ) -> anyhow::Result<bool> {
     loop {
         let contract = contract_state_receiver.borrow_and_update().clone();
-        match contract.node_status(my_near_account_id, &tls_public_key) {
+        match node_status(&contract, my_near_account_id, &tls_public_key) {
             NodeStatus::Active => {
                 return Ok(false);
             }
@@ -127,19 +151,6 @@ pub async fn onboard(
     }
 }
 
-async fn wait_for_state_change(
-    contract_state_receiver: &mut watch::Receiver<ContractState>,
-) -> anyhow::Result<()> {
-    loop {
-        tokio::select! {
-            res = contract_state_receiver.changed() => {return res.context("channel closed waiting for state change");},
-            _ = tokio::time::sleep(Duration::from_secs(60)) => {
-                tracing::info!(target: "Onboarding", "Waiting for state change");
-            },
-        };
-    }
-}
-
 /// Waits for keyshares and retries import until success.
 /// Returns `Ok(())` once import succeeds.
 /// Returns `Err` only if the channel closed.
@@ -189,29 +200,6 @@ async fn indef_wait_for_running_keyset(
             ContractState::Running(running_state) => {
                 if running_state.resharing_state.is_none() {
                     return Ok(running_state.keyset);
-                }
-            }
-        }
-        contract_state_receiver.changed().await?;
-    }
-}
-
-// returns Ok(()) if it detects a change in keyset.
-// returns Err if the channel closed.
-async fn indef_wait_for_keyset_mismatch(
-    mut contract_state_receiver: watch::Receiver<ContractState>,
-    importing_keyset: Keyset,
-) -> anyhow::Result<()> {
-    loop {
-        let contract = contract_state_receiver.borrow_and_update().clone();
-        match contract {
-            ContractState::Invalid => {}
-            ContractState::Initializing(_) => {}
-            ContractState::Running(running_state) => {
-                if running_state.resharing_state.is_none() {
-                    if importing_keyset != running_state.keyset {
-                        return Ok(());
-                    }
                 }
             }
         }
@@ -357,3 +345,37 @@ pub async fn onboard_inner(
     monitoring_handle.abort();
     result
 }
+//async fn wait_for_state_change(
+//    contract_state_receiver: &mut watch::Receiver<ContractState>,
+//) -> anyhow::Result<()> {
+//    loop {
+//        tokio::select! {
+//            res = contract_state_receiver.changed() => {return res.context("channel closed waiting for state change");},
+//            _ = tokio::time::sleep(Duration::from_secs(60)) => {
+//                tracing::info!(target: "Onboarding", "Waiting for state change");
+//            },
+//        };
+//    }
+//}
+//// returns Ok(()) if it detects a change in keyset.
+//// returns Err if the channel closed.
+//async fn indef_wait_for_keyset_mismatch(
+//    mut contract_state_receiver: watch::Receiver<ContractState>,
+//    importing_keyset: Keyset,
+//) -> anyhow::Result<()> {
+//    loop {
+//        let contract = contract_state_receiver.borrow_and_update().clone();
+//        match contract {
+//            ContractState::Invalid => {}
+//            ContractState::Initializing(_) => {}
+//            ContractState::Running(running_state) => {
+//                if running_state.resharing_state.is_none() {
+//                    if importing_keyset != running_state.keyset {
+//                        return Ok(());
+//                    }
+//                }
+//            }
+//        }
+//        contract_state_receiver.changed().await?;
+//    }
+//}

@@ -4,10 +4,7 @@ use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use tokio::sync::watch;
 
-use crate::indexer::{
-    lib::{get_mpc_allowed_image_hashes, wait_for_full_sync},
-    IndexerState,
-};
+use crate::indexer::{lib::get_mpc_allowed_image_hashes, IndexerState};
 
 const ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(1);
