@@ -12,12 +12,13 @@ use near_indexer_primitives::views::QueryRequest;
 use near_indexer_primitives::views::QueryResponseKind::{CallResult, ViewAccount};
 use near_o11y::WithSpanContextExt;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::time;
 
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
-const MY_MIGRATION_INFO_ENDPOINT: &str = "my_migration_info";
+const MY_MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
@@ -93,11 +94,7 @@ pub(crate) async fn get_mpc_my_migration_info(
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(
     u64,
-    (
-        AccountId,
-        Option<BackupServiceInfo>,
-        Option<DestinationNodeInfo>,
-    ),
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
 )> {
     get_mpc_state(mpc_contract_id, client, MY_MIGRATION_INFO_ENDPOINT).await
 }
