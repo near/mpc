@@ -1,6 +1,9 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
+use super::migrations::MigrationInfo;
 use super::participants::ContractState;
-use super::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
+use super::types::{
+    ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
+};
 use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::CKDRequestFromChain;
@@ -15,6 +18,7 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
 use mpc_contract::config::Config;
+use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -39,6 +43,8 @@ pub struct FakeMpcContractState {
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
+    // todo: testing will be difficult. Need to somehow pass a new handle?
+    pub migration_service: NodeMigrations,
 }
 
 impl FakeMpcContractState {
@@ -55,6 +61,7 @@ impl FakeMpcContractState {
             env,
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
+            migration_service: NodeMigrations::default(),
         }
     }
 
@@ -224,6 +231,7 @@ impl FakeMpcContractState {
         }
     }
 
+    // todo: return error if not in running state.
     pub fn update_participant_info(
         &mut self,
         account_id: AccountId,
@@ -255,6 +263,25 @@ impl FakeMpcContractState {
                 );
             }
         }
+    }
+
+    pub fn conclude_node_migration(
+        &mut self,
+        account_id: AccountId,
+        args: ConcludeNodeMigrationArgs,
+    ) {
+        // get participant info from state
+        let (account_id, _, node) = self.migration_service.get_for_account(&account_id);
+        // todo: you probably don't need panics here.
+        let node_info = node.expect("expected node info");
+        let ProtocolContractState::Running(running_state) = &self.state else {
+            panic!("only allow calling this in `running_state`");
+        };
+        if running_state.keyset != args.keyset {
+            panic!("keyset mismatch");
+        }
+        self.migration_service.remove_migration(&account_id);
+        self.update_participant_info(account_id, node_info.destination_node_info);
     }
 }
 
@@ -499,6 +526,10 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
                         // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
+                    ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
+                        let mut contract = contract.lock().await;
+                        contract.conclude_node_migration(account_id, conclude_migration_args);
+                    }
                 }
             }
             self.block_update_sender.send(block_update).ok();
@@ -540,6 +571,9 @@ pub struct FakeIndexerManager {
     indexer_pauser: HashMap<TestNodeUid, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
+
+    /// Allows to set custom migrationInfo
+    migration_info_senders: HashMap<TestNodeUid, watch::Sender<MigrationInfo>>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -625,6 +659,7 @@ struct FakeIndexerOneNode {
     api_state_sender: watch::Sender<ContractState>,
     api_block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
     api_txn_receiver: mpsc::Receiver<ChainSendTransactionRequest>,
+    //api_my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 }
 
 impl FakeIndexerOneNode {
@@ -641,10 +676,11 @@ impl FakeIndexerOneNode {
             mut api_txn_receiver,
             ..
         } = self;
+        let shutdown_clone = shutdown.clone();
         let monitor_state_changes = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let state = core_state_change_receiver.recv().await.unwrap();
-                let state = if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                let state = if shutdown_clone.load(std::sync::atomic::Ordering::Relaxed) {
                     ContractState::Invalid
                 } else {
                     state
@@ -678,6 +714,7 @@ impl FakeIndexerOneNode {
                 core_txn_sender.send((txn, uid)).unwrap();
             }
         }));
+
         monitor_state_changes.await.unwrap();
         monitor_requests.await.unwrap();
         forward_txn_requests.await.unwrap();
@@ -722,6 +759,8 @@ impl FakeIndexerManager {
             ckd_request_sender,
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
+            // todo: use contract state instead of this hack.
+            migration_info_senders: HashMap::new(),
             contract,
             account_id_by_uid,
         }
@@ -765,6 +804,13 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
+        // todo
+        let (my_migration_info_sender, my_migration_info_receiver) =
+            watch::channel(MigrationInfo {
+                backup_service_info: None,
+                active_migration: false,
+            });
+
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
@@ -775,7 +821,9 @@ impl FakeIndexerManager {
             )),
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
+            my_migration_info_receiver,
         };
+
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {
             disable: Arc::new(AtomicBool::new(false)),
@@ -795,7 +843,10 @@ impl FakeIndexerManager {
             api_state_sender,
             api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
+            //api_my_migration_info_receiver,
         };
+        self.migration_info_senders
+            .insert(uid, my_migration_info_sender);
         self.node_disabler.insert(uid, disabler);
         self.indexer_pauser.insert(uid, indexer_pauser);
         self.account_id_by_uid

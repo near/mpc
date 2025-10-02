@@ -1,4 +1,5 @@
 use super::handler::listen_blocks;
+use super::migrations::monitor_migrations;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
@@ -8,9 +9,11 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -50,8 +53,14 @@ pub fn spawn_real_indexer(
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
     protocol_state_sender: watch::Sender<ProtocolContractState>,
+    migration_state_sender: watch::Sender<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
+    tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender> {
     let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
+    let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -120,6 +129,7 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
+            // note: for the below stufff, we are using tokio, not actix. I that ok?
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
                 indexer_state.clone(),
@@ -134,6 +144,25 @@ pub fn spawn_real_indexer(
             {
                 tracing::error!(
                     "Indexer thread could not send contract state receiver back to main driver."
+                )
+            };
+
+            // This feels akward. Like, really akward.
+            // We are just pinong on top of everything here.
+            let my_migration_info_receiver = monitor_migrations(
+                indexer_state.clone(),
+                migration_state_sender,
+                my_near_account_id,
+                tls_public_key,
+            )
+            .await;
+
+            if migration_info_sender_oneshot
+                .send(my_migration_info_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send migration info receiver back to main driver."
                 )
             };
 
@@ -173,10 +202,15 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("Contract state receiver must be returned by indexer.");
 
+    let my_migration_info_receiver = migration_info_receiver_oneshot
+        .blocking_recv()
+        .expect("Migraration info receiver must be returned by indexer.");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
+        my_migration_info_receiver,
     }
 }

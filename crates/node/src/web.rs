@@ -8,10 +8,13 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
+use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use near_sdk::AccountId;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -54,6 +57,10 @@ struct WebServerState {
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    migration_state_receiver: watch::Receiver<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
     static_web_data: StaticWebData,
 }
 
@@ -111,6 +118,12 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
 
 async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
+}
+
+async fn migrations(state: State<WebServerState>) -> String {
+    let migration_state = state.migration_state_receiver.borrow().clone();
+    let json = serde_json::to_string_pretty(&migration_state).expect("failed to serialize");
+    json
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
@@ -186,6 +199,10 @@ pub async fn start_web_server(
     config: WebUIConfig,
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    migration_state_receiver: watch::Receiver<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -202,6 +219,7 @@ pub async fn start_web_server(
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
+        .route("/debug/mgirations", axum::routing::get(migrations))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
@@ -209,6 +227,7 @@ pub async fn start_web_server(
             root_task_handle,
             debug_request_sender,
             protocol_state_receiver,
+            migration_state_receiver,
             static_web_data,
         });
 

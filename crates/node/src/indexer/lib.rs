@@ -1,5 +1,7 @@
 use actix::Addr;
 use anyhow::bail;
+use mpc_contract::node_migrations::BackupServiceInfo;
+use mpc_contract::node_migrations::DestinationNodeInfo;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_client::ClientActor;
@@ -10,11 +12,13 @@ use near_indexer_primitives::views::QueryRequest;
 use near_indexer_primitives::views::QueryResponseKind::{CallResult, ViewAccount};
 use near_o11y::WithSpanContextExt;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::time;
 
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
+pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
 
 pub(crate) async fn wait_for_full_sync(client: &Addr<ClientActor>) {
@@ -81,6 +85,16 @@ pub(crate) async fn get_mpc_allowed_image_hashes(
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
     get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
+}
+
+pub(crate) async fn get_mpc_migration_info(
+    mpc_contract_id: AccountId,
+    client: &actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(
+    u64,
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+)> {
+    get_mpc_state(mpc_contract_id, client, MIGRATION_INFO_ENDPOINT).await
 }
 
 pub(crate) async fn get_account_balance(

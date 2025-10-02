@@ -1,5 +1,7 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
+use crate::keyshare::KeyshareStorage;
+use crate::migration_service::onboarding::onboard;
 use crate::providers::PublicKeyConversion;
 use crate::web::{static_web_data, DebugRequest};
 use crate::{
@@ -29,6 +31,7 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::{
     path::PathBuf,
@@ -258,6 +261,8 @@ impl StartCmd {
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(ProtocolContractState::NotInitialized);
 
+        let (migration_state_sender, migration_state_receiver) =
+            watch::channel((0, BTreeMap::new()));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
@@ -265,6 +270,7 @@ impl StartCmd {
                 config.web_ui.clone(),
                 static_web_data(&secrets, Some(attestation.clone())),
                 protocol_state_receiver,
+                migration_state_receiver,
             ))
             .context("Failed to create web server.")?;
 
@@ -280,10 +286,14 @@ impl StartCmd {
             respond_config,
             indexer_exit_sender,
             protocol_state_sender,
+            migration_state_sender,
+            tls_public_key.clone(),
         );
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
+
+        // backup_service_watcher_handler
 
         let image_hash_watcher_handle = {
             let current_image_hash_bytes: [u8; 32] =
@@ -401,13 +411,29 @@ impl StartCmd {
                 );
             }
         });
+        // todo: keyshare sender logic
+        let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
+        let mut keystore: KeyshareStorage = key_storage_config.create().await?.into();
+        tracing::info!("onboarding now");
+        onboard(
+            &config.my_near_account_id,
+            tls_public_key,
+            indexer_api.contract_state_receiver.clone(),
+            indexer_api.my_migration_info_receiver.clone(),
+            indexer_api.txn_sender.clone(),
+            &mut keystore,
+            keyshare_receiver,
+        )
+        .await?;
+        tracing::info!("done onboarding now");
 
         let coordinator = Coordinator {
             clock: Clock::real(),
             config_file: config,
             secrets,
             secret_db,
-            key_storage_config,
+            key_storage_config, // todo: replace this with
+            // keystore
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,

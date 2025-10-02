@@ -1,3 +1,5 @@
+use crate::migration_service::types::MigrationInfo;
+
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
@@ -12,14 +14,14 @@ pub mod balances;
 pub mod configs;
 pub mod handler;
 pub mod lib;
+pub mod migrations;
 pub mod participants;
 pub mod real;
 pub mod stats;
+pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
-
-pub mod tee;
 
 #[cfg(test)]
 pub mod fake;
@@ -75,4 +77,7 @@ pub struct IndexerAPI<TransactionSender> {
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
+
+    /// Why does this need to be part of the API? Because the alternative is even more akward.
+    pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 }

@@ -215,6 +215,8 @@ pub async fn monitor_contract_state(
 
             tracing::debug!(target: "indexer", "querying contract state");
 
+            // note: we don't send the valu to the debug web-endpiont in case the parsing fails. Not
+            // good.
             let (height, protocol_state) = match get_mpc_contract_state(
                 indexer_state.mpc_contract_id.clone(),
                 &indexer_state.view_client,
