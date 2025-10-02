@@ -300,7 +300,7 @@ class MpcCluster:
         prospective_epoch_id: int,
         wait_for_running=True,
     ):
-        assert self.wait_for_participants_to_have_attestation(new_participants), (
+        assert self.wait_for_nodes_to_have_attestation(new_participants), (
             "all participants must have a valid TEE attestation for a resharing proposal to pass"
         )
 
@@ -364,9 +364,7 @@ class MpcCluster:
 
         return tls_public_keys
 
-    def wait_for_participants_to_have_attestation(
-        self, participants: List[MpcNode]
-    ) -> bool:
+    def wait_for_nodes_to_have_attestation(self, participants: List[MpcNode]) -> bool:
         n_attempts = 120
         n = 0
 
