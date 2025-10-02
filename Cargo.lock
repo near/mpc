@@ -1647,7 +1647,6 @@ dependencies = [
  "futures",
  "hex",
  "hkdf",
- "itertools 0.14.0",
  "k256",
  "keccak",
  "rand",

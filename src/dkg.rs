@@ -643,9 +643,15 @@ pub fn reshare_assertions<C: Ciphersuite>(
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
+
     use super::domain_separate_hash;
+    use crate::crypto::ciphersuite::Ciphersuite;
+    use crate::participants::ParticipantList;
+    use crate::protocol::Participant;
     use crate::test::generate_participants;
+    use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
+    use frost_core::{Field, Group};
 
     #[test]
     fn test_domain_separate_hash() {
@@ -657,5 +663,95 @@ mod test {
         assert!(hash_1 == hash_2);
         let hash_2 = domain_separate_hash(cnt + 1, &participants_2);
         assert!(hash_1 != hash_2);
+    }
+
+    pub fn test_keygen<C: Ciphersuite>(participants: &[Participant], threshold: usize)
+    where
+        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+    {
+        let result = run_keygen::<C>(participants, threshold).unwrap();
+        assert!(result.len() == participants.len());
+        assert_public_key_invariant(&result);
+
+        let pub_key = result[0].1.public_key.to_element();
+        let participants = result.iter().map(|p| p.0).collect::<Vec<_>>();
+        let shares = result
+            .iter()
+            .map(|r| r.1.private_share.to_scalar())
+            .collect::<Vec<_>>();
+
+        let p_list = ParticipantList::new(&participants).unwrap();
+        let mut x = <<C::Group as Group>::Field>::zero();
+        for i in 0..participants.len() {
+            x = x + p_list.lagrange::<C>(participants[i]).unwrap() * shares[i];
+        }
+        assert_eq!(<C::Group as Group>::generator() * x, pub_key);
+    }
+
+    pub fn test_refresh<C: Ciphersuite>(participants: &[Participant], threshold: usize)
+    where
+        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+    {
+        let result0 = run_keygen::<C>(participants, threshold).unwrap();
+        assert_public_key_invariant(&result0);
+
+        let pub_key = result0[0].1.public_key.to_element();
+
+        let result1 = run_refresh(participants, &result0, threshold).unwrap();
+        assert_public_key_invariant(&result1);
+
+        let participants = result1.iter().map(|p| p.0).collect::<Vec<_>>();
+        let shares = result1
+            .iter()
+            .map(|r| r.1.private_share.to_scalar())
+            .collect::<Vec<_>>();
+        let p_list = ParticipantList::new(&participants).unwrap();
+
+        let mut x = <C::Group as Group>::Field::zero();
+        for i in 0..participants.len() {
+            x = x + p_list.lagrange::<C>(participants[i]).unwrap() * shares[i];
+        }
+        assert_eq!(<C::Group as Group>::generator() * x, pub_key);
+    }
+
+    pub fn test_reshare<C: Ciphersuite>(
+        participants: &[Participant],
+        threshold0: usize,
+        threshold1: usize,
+    ) where
+        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+    {
+        let result0 = run_keygen::<C>(participants, threshold0).unwrap();
+        assert_public_key_invariant(&result0);
+
+        let pub_key = result0[0].1.public_key;
+
+        let mut new_participant = participants.to_vec();
+        new_participant.push(Participant::from(31u32));
+        let result1 = run_reshare::<C>(
+            participants,
+            &pub_key,
+            &result0,
+            threshold0,
+            threshold1,
+            &new_participant,
+        )
+        .unwrap();
+        assert_public_key_invariant(&result1);
+
+        let participants = result1.iter().map(|p| p.0).collect::<Vec<_>>();
+        let shares = result1
+            .iter()
+            .map(|r| r.1.private_share.to_scalar())
+            .collect::<Vec<_>>();
+        let p_list = ParticipantList::new(&participants).unwrap();
+        let mut x = <<C::Group as Group>::Field>::zero();
+        for i in 0..participants.len() {
+            x = x + p_list.lagrange::<C>(participants[i]).unwrap() * shares[i];
+        }
+        assert_eq!(<C::Group as Group>::generator() * x, pub_key.to_element());
     }
 }

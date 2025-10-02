@@ -10,8 +10,9 @@
 
 pub mod app_id;
 pub mod ciphersuite;
-mod dkg;
 pub mod protocol;
+#[cfg(test)]
+mod test;
 
 pub use app_id::AppId;
 use serde::{Deserialize, Serialize};

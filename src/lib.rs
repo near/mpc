@@ -1,5 +1,5 @@
 mod crypto;
-mod generic_dkg;
+mod dkg;
 mod participants;
 
 pub mod confidential_key_derivation;
@@ -24,7 +24,7 @@ use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use std::marker::Send;
 
-use crate::generic_dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
+use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
 use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::{errors::InitializationError, Participant, Protocol};
 

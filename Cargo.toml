@@ -29,7 +29,6 @@ frost-secp256k1 = { version = "2.1.0", default-features = false, features = [
 futures = "0.3.31"
 hex = "0.4.3"
 hkdf = "0.12.4"
-itertools = "0.14.0"
 k256 = { version = "0.13.1", features = [
   "sha256",
   "ecdsa",

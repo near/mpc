@@ -1,7 +1,7 @@
 //! This module serves as a wrapper for ECDSA scheme.
-pub mod dkg_ecdsa;
 pub mod ot_based_ecdsa;
 pub mod robust_ecdsa;
+
 use hkdf::Hkdf;
 
 use elliptic_curve::{
@@ -171,6 +171,7 @@ impl RerandomizationArguments {
 
 #[cfg(test)]
 mod test {
+    use crate::test::generate_participants;
     use crate::test::MockCryptoRng;
 
     use super::*;
@@ -342,5 +343,27 @@ mod test {
         args.participants = args.participants.shuffle(rng).unwrap();
         let delta_prime = args.derive_randomness().unwrap();
         assert_eq!(delta, delta_prime);
+    }
+
+    #[test]
+    fn test_keygen() {
+        let participants = generate_participants(3);
+        let threshold = 2;
+        crate::dkg::test::test_keygen::<C>(&participants, threshold);
+    }
+
+    #[test]
+    fn test_refresh() {
+        let participants = generate_participants(3);
+        let threshold = 2;
+        crate::dkg::test::test_refresh::<C>(&participants, threshold);
+    }
+
+    #[test]
+    fn test_reshare() {
+        let participants = generate_participants(3);
+        let threshold0 = 2;
+        let threshold1 = 3;
+        crate::dkg::test::test_reshare::<C>(&participants, threshold0, threshold1);
     }
 }
