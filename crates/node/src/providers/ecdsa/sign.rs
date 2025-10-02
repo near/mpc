@@ -126,7 +126,6 @@ impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation 
         let msg_hash = Scalar::from_repr(self.msg_hash.into())
             .into_option()
             .context("Couldn't construct k256 point")?;
-        let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
 
         let public_key = tweak
             .derive_verifying_key(&self.keygen_out.public_key)
@@ -136,7 +135,7 @@ impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation 
 
         let rerand_args = RerandomizationArguments::new(
             public_key,
-            msg_hash_bytes,
+            self.msg_hash,
             self.presign_out.big_r,
             participants,
             self.entropy,
