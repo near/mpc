@@ -9,31 +9,6 @@ use crate::protocol::{errors::InitializationError, errors::ProtocolError, Partic
 use elliptic_curve::{Field, Group};
 use rand_core::CryptoRngCore;
 
-fn ckd_helper(
-    participants: &ParticipantList,
-    me: Participant,
-    private_share: SigningShare,
-    app_id: &AppId,
-    app_pk: PublicKey,
-    rng: &mut impl CryptoRngCore,
-) -> Result<(ElementG1, ElementG1), ProtocolError> {
-    // y <- ZZq* , Y <- y * G
-    let y = Scalar::random(rng);
-    let big_y = ElementG1::generator() * y;
-    // H(app_id) when H is a random oracle
-    let hash_point = hash_to_curve(app_id);
-    // S <- x . H(app_id)
-    let big_s = hash_point * private_share.to_scalar();
-    // C <- S + y . A
-    let big_c = big_s + app_pk * y;
-    // Compute  λi := λi(0)
-    let lambda_i = participants.lagrange::<BLS12381SHA256>(me)?;
-    // Normalize Y and C into  (λi . Y , λi . C)
-    let norm_big_y = big_y * lambda_i;
-    let norm_big_c = big_c * lambda_i;
-    Ok((norm_big_y, norm_big_c))
-}
-
 #[allow(clippy::too_many_arguments)]
 fn do_ckd_participant(
     mut chan: SharedChannel,
@@ -46,7 +21,7 @@ fn do_ckd_participant(
     rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     let (norm_big_y, norm_big_c) =
-        ckd_helper(participants, me, private_share, app_id, app_pk, rng)?;
+        compute_signature_share(participants, me, private_share, app_id, app_pk, rng)?;
     let waitpoint = chan.next_waitpoint();
     chan.send_private(waitpoint, coordinator, &(norm_big_y, norm_big_c))?;
 
@@ -63,7 +38,7 @@ async fn do_ckd_coordinator(
     rng: &mut impl CryptoRngCore,
 ) -> Result<CKDOutputOption, ProtocolError> {
     let (mut norm_big_y, mut norm_big_c) =
-        ckd_helper(&participants, me, private_share, app_id, app_pk, rng)?;
+        compute_signature_share(&participants, me, private_share, app_id, app_pk, rng)?;
 
     // Receive everyone's inputs and add them together
     let mut seen = ParticipantCounter::new(&participants);
@@ -177,6 +152,31 @@ async fn run_ckd_protocol(
             &mut rng,
         )
     }
+}
+
+fn compute_signature_share(
+    participants: &ParticipantList,
+    me: Participant,
+    private_share: SigningShare,
+    app_id: &AppId,
+    app_pk: PublicKey,
+    rng: &mut impl CryptoRngCore,
+) -> Result<(ElementG1, ElementG1), ProtocolError> {
+    // y <- ZZq* , Y <- y * G
+    let y = Scalar::random(rng);
+    let big_y = ElementG1::generator() * y;
+    // H(app_id) when H is a random oracle
+    let hash_point = hash_to_curve(app_id);
+    // S <- x . H(app_id)
+    let big_s = hash_point * private_share.to_scalar();
+    // C <- S + y . A
+    let big_c = big_s + app_pk * y;
+    // Compute  λi := λi(0)
+    let lambda_i = participants.lagrange::<BLS12381SHA256>(me)?;
+    // Normalize Y and C into  (λi . Y , λi . C)
+    let norm_big_y = big_y * lambda_i;
+    let norm_big_c = big_c * lambda_i;
+    Ok((norm_big_y, norm_big_c))
 }
 
 #[cfg(test)]

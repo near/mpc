@@ -92,8 +92,8 @@ required.
   of the
   [Lagrange polynomial](https://en.wikipedia.org/wiki/Lagrange_polynomial). Let
   $`\texttt{pk} \in \mathbb{G_2}`$ the corresponding public key.
-- $`s`$: the key obtained by *app* as a result of the CKD, which will correspond
-  to a [BLS signature](https://en.wikipedia.org/wiki/BLS_digital_signature) over
+- $`s`$: the key obtained by *app* as a result of the CKD, will depend
+  on the [BLS signature](https://en.wikipedia.org/wiki/BLS_digital_signature) over
   the hash of $`\texttt{app\_id}`$
 
 ## Requirements
@@ -168,7 +168,9 @@ contract.
     \texttt{msk} \cdot H(\texttt{app\_id}) + a \cdot Y`$
     - $`\texttt{es} \gets (Y, C) `$
   - Coordinator sends $`\texttt{es}`$ to *app* on-chain
-- *app* obtains $`\texttt{es} = (Y, C)`$ and computes the BLS signature $`s \gets C + (- a) \cdot  Y`$
-  and checks its correctness with respect to the MPC network public key $`\texttt{pk}`$. If correct,
-  the app can use the computed $`s = \texttt{msk} \cdot H(\texttt{app\_id})`$ as a root deterministic key,
-  to generate other keys as needed
+- *app* obtains $`\texttt{es} = (Y, C)`$ and computes the BLS signature
+  $`\texttt{sig} \gets C + (- a) \cdot  Y`$ and checks its correctness with
+  respect to the MPC network public key $`\texttt{pk}`$. If correct, the app can
+  use the computed $`\texttt{sig} = \texttt{msk} \cdot H(\texttt{app\_id})`$ to
+  compute the key $`s = \texttt{HKDF}(\texttt{sig})`$, using a
+  [HKDF](https://en.wikipedia.org/wiki/HKDF) function.
