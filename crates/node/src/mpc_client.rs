@@ -75,7 +75,6 @@ impl MpcClient {
 
     /// Main entry point for the MPC node. Runs all the business logic for doing
     /// multiparty computation.
-    #[allow(clippy::too_many_arguments)]
     pub async fn run(
         self: &Arc<Self>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
