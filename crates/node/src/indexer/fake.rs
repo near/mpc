@@ -9,6 +9,7 @@ use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
+use crate::trait_extensions::convert_to_contract_dto::{IntoContractType, IntoDtoType};
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -25,7 +26,7 @@ use mpc_contract::state::{
     initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
-use near_sdk::{AccountId, PublicKey};
+use near_sdk::AccountId;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -117,8 +118,13 @@ impl FakeMpcContractState {
         });
     }
 
-    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, near_sdk_pk: PublicKey) {
-        let contract_extended_pk = near_sdk_pk.try_into().unwrap();
+    pub fn vote_pk(
+        &mut self,
+        account_id: AccountId,
+        key_id: KeyEventId,
+        dto_pk: dtos_contract::PublicKey,
+    ) {
+        let contract_extended_pk = dto_pk.into_contract_type().try_into().unwrap();
 
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
@@ -437,7 +443,11 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
+                        contract.vote_pk(
+                            account_id,
+                            vote_pk.key_event_id,
+                            vote_pk.public_key.into_dto_type(),
+                        );
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;

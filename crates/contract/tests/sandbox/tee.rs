@@ -5,13 +5,12 @@ use crate::sandbox::common::{
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
-use dtos_contract::{Attestation, MockAttestation};
+use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
-    errors::InvalidState, primitives::test_utils::bogus_ed25519_near_public_key,
+    errors::InvalidState, primitives::test_utils::bogus_ed25519_public_key,
     state::ProtocolContractState,
 };
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
 
@@ -196,7 +195,7 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, PublicKey)> {
+async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dto_dstack_attestation();
     let tls_key = p2p_tls_key();
@@ -251,10 +250,10 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     setup_approved_mpc_hash(&contract, &accounts).await?;
 
     // Create invalid TLS key by flipping the last bit
-    let mut invalid_tls_key_bytes = tls_key.as_bytes().to_vec();
+    let mut invalid_tls_key_bytes = *tls_key.as_bytes();
     let last_byte_idx = invalid_tls_key_bytes.len() - 1;
     invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-    let invalid_tls_key = PublicKey::try_from(invalid_tls_key_bytes)?;
+    let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
 
     let success =
         submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
@@ -397,9 +396,9 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let participant_account_1 = &accounts[0];
-    let tls_key_1 = bogus_ed25519_near_public_key();
+    let tls_key_1 = bogus_ed25519_public_key();
 
-    let tls_key_2 = bogus_ed25519_near_public_key();
+    let tls_key_2 = bogus_ed25519_public_key();
 
     let validation_success = submit_participant_info(
         participant_account_1,
@@ -425,9 +424,9 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let participant_account_1 = &accounts[0];
-    let tls_key_1 = bogus_ed25519_near_public_key();
+    let tls_key_1 = bogus_ed25519_public_key();
 
-    let tls_key_2 = bogus_ed25519_near_public_key();
+    let tls_key_2 = bogus_ed25519_public_key();
     let participant_account_2 = &accounts[1];
 
     assert_ne!(
@@ -485,7 +484,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
 
     let participant_account = &accounts[0];
-    let tls_key = bogus_ed25519_near_public_key();
+    let tls_key = bogus_ed25519_public_key();
 
     let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,

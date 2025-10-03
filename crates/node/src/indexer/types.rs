@@ -11,7 +11,6 @@ use mpc_contract::{
 };
 use near_indexer_primitives::types::Gas;
 use near_sdk::AccountId;
-use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -141,7 +140,7 @@ pub struct GetAttestationArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
-    pub public_key: PublicKey,
+    pub public_key: near_sdk::PublicKey,
 }
 
 #[derive(Serialize, Debug)]

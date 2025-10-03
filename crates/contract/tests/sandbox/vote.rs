@@ -1,5 +1,5 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info, IntoDtoType,
     GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
@@ -165,7 +165,7 @@ async fn test_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_p.2.sign_pk,
+        &new_p.2.sign_pk.into_dto_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -263,7 +263,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_p.2.sign_pk,
+        &new_p.2.sign_pk.into_dto_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -360,7 +360,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
         &new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_participant_info.sign_pk,
+        &new_participant_info.sign_pk.into_dto_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
