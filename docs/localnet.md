@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-neard, near CLI, cargo, ripgrep, envsubst, python3-keyring
+neard, near CLI, cargo, ripgrep, envsubst, python3-keyring, python3-base58
 
 ### Note about `neard`.
 
@@ -69,8 +69,10 @@ linkdrop_account_id = "test.near"
 Now, create an account for the contract with the following command.
 
 ```shell
-near account create-account fund-myself mpc-contract.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
+
+TODO: ADD STORAGE DEPOSIT
 
 We can verify that the account exists and has 10 NEAR with this command.
 
@@ -79,17 +81,17 @@ near account view-account-summary mpc-contract.test.near network-config mpc-loca
 ```
 
 Now it's time to deploy the contract.
-First build the contract from the `./crates/contract` folder with:
+First build the contract from the repository root directory with:
 
 ```shell
-cargo near build reproducible-wasm
+cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml --out-dir target/wasm32-unknown-unknown/release-contract
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
 Let's add an env variable for it. From the workspace root, run the following:
 
 ```shell
-export MPC_CONTRACT_PATH=$(pwd)/target/near/mpc_contract/mpc_contract.wasm
+export MPC_CONTRACT_PATH=$(pwd)/target/wasm32-unknown-unknown/release-contract/mpc_contract.wasm
 ```
 
 Now we can deploy the contract with this command.
@@ -109,11 +111,11 @@ Now when the contract has been deployed, the next step is to initialize it.
 ## 3. Create accounts for Alice and Bob
 
 ```shell
-near account create-account fund-myself alice.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself alice.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 ```shell
-near account create-account fund-myself bob.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself bob.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 ## 4. Start Alice and Bob's MPC nodes
@@ -127,6 +129,7 @@ export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" |
 ### Initialize Alice's node
 
 TODO: Use 24567 boot node address here.
+
 ```shell
 mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 ```
@@ -181,6 +184,8 @@ indexer:
   concurrency: 1
   mpc_contract_id: mpc-contract.test.near
   finality: optimistic
+ckd:
+  timeout_sec: 60
 cores: 4
 EOF
 ```
@@ -241,6 +246,8 @@ indexer:
   concurrency: 1
   mpc_contract_id: mpc-contract.test.near
   finality: optimistic
+ckd:
+  timeout_sec: 60
 cores: 4
 EOF
 ```
@@ -250,12 +257,14 @@ EOF
 In two separate shells run the MPC binary for alice and bob. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-bob/ 11111111111111111111111111111111
+mpc-node start --home-dir ~/.near/mpc-bob/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-alice/ 11111111111111111111111111111111
+mpc-node start --home-dir ~/.near/mpc-alice/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
+
+Note: `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the alice and bob MPC indexers connect to it.
 
@@ -315,6 +324,12 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 ## Appendix: Further useful command
 
+### Add a domain/key to the contract.
+
+```shell
+docs/vote_add_domain.sh <<DOMAIN_ID>>
+```
+
 ### Send a sign request
 
 ```shell
@@ -336,12 +351,6 @@ near contract \
 
 ```shell
 docs/vote_cancel_key_generation.sh <<NEXT_DOMAIN_ID>>
-```
-
-### Add a domain/key to the contract.
-
-```shell
-docs/vote_add_domain.sh <<DOMAIN_ID>>
 ```
 
 ### Check allowed image hashes:

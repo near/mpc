@@ -1,4 +1,5 @@
 use crate::config::{SecretsConfig, WebUIConfig};
+use crate::providers::PublicKeyConversion;
 use crate::tracking::TaskHandle;
 use attestation::attestation::Attestation;
 use axum::body::Body;
@@ -176,8 +177,34 @@ impl StaticWebData {
     }
 }
 
-async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
-    state.static_web_data.clone().into()
+#[derive(Clone, Serialize)]
+pub struct StaticWebDataNearSdk {
+    pub near_signer_public_key: near_sdk::PublicKey,
+    pub near_p2p_public_key: near_sdk::PublicKey,
+    pub near_responder_public_keys: Vec<near_sdk::PublicKey>,
+    pub tee_participant_info: Option<Attestation>,
+}
+
+async fn public_data(state: State<WebServerState>) -> Json<StaticWebDataNearSdk> {
+    let static_web_data = state.static_web_data.clone();
+
+    StaticWebDataNearSdk {
+        near_signer_public_key: static_web_data
+            .near_signer_public_key
+            .to_near_sdk_public_key()
+            .unwrap(),
+        near_p2p_public_key: static_web_data
+            .near_p2p_public_key
+            .to_near_sdk_public_key()
+            .unwrap(),
+        near_responder_public_keys: static_web_data
+            .near_responder_public_keys
+            .into_iter()
+            .map(|key| key.to_near_sdk_public_key().unwrap())
+            .collect(),
+        tee_participant_info: static_web_data.tee_participant_info,
+    }
+    .into()
 }
 
 /// Starts the web server. This is an async function that returns a future.
