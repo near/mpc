@@ -2,7 +2,6 @@ use borsh::BorshDeserialize;
 use borsh::BorshSerialize;
 use derive_more::{Deref, From};
 use serde::{Deserialize, Serialize};
-use serde_with::Bytes;
 use serde_with::serde_as;
 
 #[derive(
@@ -45,7 +44,7 @@ pub enum PublicKey {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Ed25519PublicKey(pub [u8; 32]);
 
@@ -65,11 +64,34 @@ pub struct Ed25519PublicKey(pub [u8; 32]);
     BorshSerialize,
     BorshDeserialize,
 )]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct Secp256k1PublicKey(#[serde_as(as = "Bytes")] pub [u8; 64]);
+pub struct Secp256k1PublicKey(#[serde_as(as = "[_; 64]")] pub [u8; 64]);
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+use schemars::{
+    JsonSchema,
+    schema::{ArrayValidation, InstanceType, Schema, SchemaObject},
+};
+
+// This should be done better
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl JsonSchema for Secp256k1PublicKey {
+    fn schema_name() -> String {
+        "Secp256k1PublicKey".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> Schema {
+        SchemaObject {
+            instance_type: Some(InstanceType::Array.into()),
+            array: Some(Box::new(ArrayValidation {
+                unique_items: Some(true),
+                items: Some(generator.subschema_for::<u8>().into()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+}
 
 impl Ed25519PublicKey {
     pub fn as_bytes(&self) -> &[u8; 32] {
