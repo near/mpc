@@ -17,6 +17,7 @@ use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
+
 use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -74,6 +75,7 @@ impl MpcClient {
 
     /// Main entry point for the MPC node. Runs all the business logic for doing
     /// multiparty computation.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run(
         self: &Arc<Self>,
         channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,

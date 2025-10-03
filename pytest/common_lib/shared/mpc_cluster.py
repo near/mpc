@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json
 import pathlib
 import sys
@@ -301,6 +300,10 @@ class MpcCluster:
         prospective_epoch_id: int,
         wait_for_running=True,
     ):
+        assert self.wait_for_nodes_to_have_attestation(new_participants), (
+            "all participants must have a valid TEE attestation for a resharing proposal to pass"
+        )
+
         self.define_candidate_set(new_participants)
         print(
             f"\033[91m(Vote Resharing) Voting to reshare with new threshold: \033[93m{new_threshold}\033[0m"
@@ -342,6 +345,53 @@ class MpcCluster:
         res = base64.b64decode(res)
         res = json.loads(res)
         return res
+
+    def get_tee_approved_accounts(self) -> List[str]:
+        contract_node = self.contract_node
+        get_tee_accounts_transaction = contract_node.sign_tx(
+            self.mpc_contract_account(), "get_tee_accounts", {}
+        )
+        transaction_response = contract_node.send_txn_and_check_success(
+            get_tee_accounts_transaction
+        )
+        assert "error" not in transaction_response, transaction_response
+
+        node_ids = transaction_response["result"]["status"]["SuccessValue"]
+        node_ids = base64.b64decode(node_ids)
+        node_ids = json.loads(node_ids)
+
+        tls_public_keys = [node_id["tls_public_key"] for node_id in node_ids]
+
+        return tls_public_keys
+
+    def wait_for_nodes_to_have_attestation(self, participants: List[MpcNode]) -> bool:
+        n_attempts = 120
+        n = 0
+
+        participant_tls_keys = [
+            participant.p2p_public_key for participant in participants
+        ]
+
+        participant_tls_keys = set(participant_tls_keys)
+
+        while n <= n_attempts:
+            tls_keys_with_attestation = set(self.get_tee_approved_accounts())
+            all_participants_have_attestation_submitted = (
+                tls_keys_with_attestation.issuperset(participant_tls_keys)
+            )
+
+            if all_participants_have_attestation_submitted:
+                return True
+
+            time.sleep(0.1)
+            n += 1
+            if n % 10 == 0:
+                print(
+                    f"TLS keys with attestation: {tls_keys_with_attestation}. TLS keys missing attestation: {participant_tls_keys - tls_keys_with_attestation}"
+                )
+                self.contract_state().print()
+
+        return False
 
     def contract_state(self):
         return ContractState(self.get_contract_state())
@@ -463,49 +513,6 @@ class MpcCluster:
         self.request_node.send_await_check_txs_parallel(
             "ckd request", txs, ckd_verification
         )
-
-    def propose_update(self, args):
-        participant = self.mpc_nodes[0]
-        tx = participant.sign_tx(
-            self.mpc_contract_account(),
-            ContractMethod.PROPOSE_UPDATE,
-            args,
-            # TODO: #771 https://github.com/near/mpc/issues/771
-            deposit=11170910000000000000000000,
-        )
-        res = participant.send_txn_and_check_success(tx, timeout=30)
-        return int(
-            base64.b64decode(res["result"]["status"]["SuccessValue"])
-            .decode("utf-8")
-            .strip("")
-        )
-
-    def get_deployed_contract_hash(self, finality="optimistic"):
-        account_id = self.mpc_contract_account()
-        query = {
-            "request_type": "view_code",
-            "account_id": account_id,
-            "finality": finality,
-        }
-        response = self.contract_node.near_node.json_rpc("query", query)
-        assert "error" not in response, (
-            f"Error fetching contract code: {response['error']}"
-        )
-        code_b64 = response.get("result", {}).get("code_base64", "")
-        contract_code = base64.b64decode(code_b64)
-        sha256_hash = hashlib.sha256(contract_code).hexdigest()
-        return sha256_hash
-
-    def vote_update(self, nodes: List[MpcNode], update_id: int):
-        vote_update_args = {"id": update_id}
-        self.parallel_contract_calls(
-            method=ContractMethod.VOTE_UPDATE, nodes=nodes, args=vote_update_args
-        )
-
-    def assert_is_deployed(self, contract):
-        hash_expected = hashlib.sha256(contract).hexdigest()
-        hash_deployed = self.get_deployed_contract_hash()
-        assert hash_expected == hash_deployed, "invalid contract deployed"
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]

@@ -24,7 +24,7 @@ use near_sdk::{near, AccountId};
 ///  - We use the previous running state's DomainRegistry.
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,

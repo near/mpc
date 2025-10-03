@@ -15,6 +15,35 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_sdk::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::process::Command;
+
+// Get the sha256 hash of a docker image by pulling and inspecting it.
+fn get_docker_image_hash(image: &str) -> anyhow::Result<String> {
+    // Ensure the image is pulled first
+    let pull = Command::new("docker").args(["pull", image]).output()?;
+    if !pull.status.success() {
+        anyhow::bail!(
+            "Failed to pull docker image {}: {}",
+            image,
+            String::from_utf8_lossy(&pull.stderr)
+        );
+    }
+
+    // Then inspect it
+    let inspect = Command::new("docker")
+        .args(["inspect", "--format", "{{.Id}}", image])
+        .output()?;
+    if !inspect.status.success() {
+        anyhow::bail!(
+            "Failed to inspect docker image {}: {}",
+            image,
+            String::from_utf8_lossy(&inspect.stderr)
+        );
+    }
+
+    let id = String::from_utf8(inspect.stdout)?.trim().to_string();
+    Ok(id.strip_prefix("sha256:").unwrap_or(&id).to_string())
+}
 
 async fn export_terraform_infra_vars(name: &str, mpc_setup: &MpcNetworkSetup) -> PathBuf {
     let contract = mpc_setup
@@ -44,6 +73,7 @@ async fn export_terraform_vars(
     accounts: &OperatingAccounts,
     mpc_setup: &MpcNetworkSetup,
     not_legacy: bool,
+    docker_image: Option<String>,
 ) -> PathBuf {
     let contract = mpc_setup
         .contract
@@ -103,11 +133,18 @@ async fn export_terraform_vars(
                 near_responder_account_id: responding_account_id,
             });
         }
+        let docker_image = docker_image.as_deref().unwrap_or(DEFAULT_MPC_DOCKER_IMAGE);
+
+        let image_hash =
+            get_docker_image_hash(docker_image).expect("Failed to get docker image hash");
+
         let terraform_file = TerraformFile {
             cluster_prefix: name.to_string(),
             mpc_nodes,
             mpc_contract_signer: contract,
             ssd: mpc_setup.ssd,
+            image_hash,
+            latest_allowed_hash_file: "/mnt/shared/image-digest.bin".to_string(), // should match value in launcher.py
         };
         serde_json::to_string_pretty(&terraform_file).unwrap()
     };
@@ -156,6 +193,8 @@ struct TerraformFile {
     mpc_nodes: Vec<TerraformMpcNode>,
     mpc_contract_signer: AccountId,
     ssd: bool,
+    image_hash: String,
+    latest_allowed_hash_file: String,
 }
 
 #[derive(Serialize)]
@@ -255,8 +294,14 @@ impl MpcTerraformDeployNomadCmd {
             .mpc_setups
             .get(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file =
-            export_terraform_vars(name, &setup.accounts, mpc_setup, self.not_legacy).await;
+        let terraform_vars_file = export_terraform_vars(
+            name,
+            &setup.accounts,
+            mpc_setup,
+            self.not_legacy,
+            self.docker_image.clone(),
+        )
+        .await;
         let nomad_server_url = mpc_setup
             .nomad_server_url
             .clone()

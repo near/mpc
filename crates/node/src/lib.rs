@@ -44,6 +44,8 @@ mod tracking;
 pub mod types;
 pub mod web;
 
+pub(crate) mod trait_extensions;
+
 mod tee;
 #[cfg(test)]
 mod tests;

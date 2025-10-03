@@ -8,6 +8,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
+use tokio::sync::watch;
 
 use crate::config::{
     CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
@@ -35,7 +36,7 @@ use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::{ecdsa, eddsa, keygen};
@@ -248,16 +249,18 @@ impl OneNodeTestConfig {
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
+                let root_task = OnceLock::new();
+                let _ = root_task.set(root_task_handle);
                 let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
-                let (_, web_contract_receiver) =
-                    tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
 
+                let (_, dummy_protocol_state_receiver) =
+                    watch::channel(ProtocolContractState::NotInitialized);
                 let web_server = start_web_server(
-                    root_task_handle,
+                    root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
                     StaticWebData::new(&self.secrets, None),
-                    web_contract_receiver.clone(),
+                    dummy_protocol_state_receiver,
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

@@ -1,8 +1,11 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, GAS_FOR_VOTE_RESHARED,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
+    GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
+use core::panic;
 use mpc_contract::{
+    errors::InvalidParameters,
     primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
@@ -153,6 +156,20 @@ async fn test_resharing() -> anyhow::Result<()> {
     let mut new_participants = existing_params.participants().clone();
     let (acc, p) = gen_accounts(&worker, 1).await;
     let new_p = p.participants().first().unwrap().clone();
+
+    let new_account = &acc[0];
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_p.2.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
+
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     accounts.push(acc[0].clone());
     let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
@@ -237,9 +254,23 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     let mut new_participants = existing_params.participants().clone();
     let (acc, p) = gen_accounts(&worker, 1).await;
     let new_p = p.participants().first().unwrap().clone();
+
+    let new_account = &acc[0];
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_p.2.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
+
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     let proposal = ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
-    accounts.push(acc[0].clone());
+    accounts.push(new_account.clone());
     for account in &accounts {
         check_call_success(
             account
@@ -322,6 +353,17 @@ async fn setup_resharing_state() -> ResharingTestContext {
         let new_account = new_accounts.pop().unwrap();
         (new_account, new_account_id, new_participant_info)
     };
+
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        &new_account,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &new_participant_info.sign_pk,
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
 
     new_participants
         .insert(new_account_id.clone(), new_participant_info)
@@ -812,4 +854,64 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
+    let (worker, contract, mut current_participant_accounts, _) = init_env_secp256k1(1).await;
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let ProtocolContractState::Running(initial_running_state) = state else {
+        panic!("State is not running: {:#?}", state)
+    };
+
+    let initial_epoch_id = initial_running_state.keyset.epoch_id;
+    let existing_params = initial_running_state.parameters.clone();
+    let mut participants = existing_params.participants().clone();
+
+    // Add a new participant
+    let (new_account, new_account_id, new_participant_info) = {
+        let (mut new_accounts, participants) = gen_accounts(&worker, 1).await;
+        let (new_account_id, _, new_participant_info) =
+            participants.participants().first().unwrap().clone();
+        let new_account = new_accounts.pop().unwrap();
+        (new_account, new_account_id, new_participant_info)
+    };
+
+    // Add the new participant to the participant set, and propose this to the contract.
+    participants
+        .insert(new_account_id.clone(), new_participant_info)
+        .unwrap();
+
+    let threshold_parameters = ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+
+    current_participant_accounts.push(new_account.clone());
+
+    // Vote to transition to resharing state
+    for account in &current_participant_accounts {
+        let call_result = account
+            .call(contract.id(), "vote_new_parameters")
+            .max_gas()
+            .args_json(json!({
+                "prospective_epoch_id": initial_epoch_id.next(),
+                "proposal": threshold_parameters,
+            }))
+            .transact()
+            .await
+            .unwrap()
+            .into_result()
+            .expect_err("calling `vote_new_parameters` must fail when one participant has invalid TEE status.");
+
+        let error_message = call_result.to_string();
+        let expected_error_message = InvalidParameters::InvalidTeeRemoteAttestation.to_string();
+        assert!(error_message.contains(&expected_error_message));
+    }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+
+    assert_matches!(
+        state,
+        ProtocolContractState::Running(_),
+        "Protocol state should not transition when new participant has invalid TEE status."
+    );
 }

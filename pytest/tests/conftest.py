@@ -1,4 +1,3 @@
-# conftest.py
 """
 Fixtures for pytest
 """
@@ -149,16 +148,6 @@ def compile_parallel_contract(request):
 
     compile_contract_common(
         contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
-    )
-
-
-@pytest.fixture(scope="session")
-def compile_migration_contract(request):
-    """
-    This function compiles the test migration contract.
-    """
-    compile_contract_common(
-        contracts.MIGRATION_CONTRACT_PACKAGE_NAME,
     )
 
 

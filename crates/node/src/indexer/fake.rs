@@ -487,9 +487,7 @@ impl FakeIndexerCore {
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
-                        unimplemented!(
-                            "Submitting participant info is not implemented for tests yet."
-                        )
+                        // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
                 }
             }
@@ -634,7 +632,6 @@ impl FakeIndexerOneNode {
             ..
         } = self;
         let monitor_state_changes = AutoAbortTask::from(tokio::spawn(async move {
-            let mut last_state = ContractState::WaitingForSync;
             loop {
                 let state = core_state_change_receiver.recv().await.unwrap();
                 let state = if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
@@ -642,11 +639,18 @@ impl FakeIndexerOneNode {
                 } else {
                     state
                 };
-                if state != last_state {
-                    tracing::info!("State changed: {:?}", state);
-                    api_state_sender.send(state.clone()).unwrap();
-                    last_state = state;
-                }
+
+                api_state_sender.send_if_modified(|watched_state| {
+                    let state_changed = *watched_state != state;
+
+                    if state_changed {
+                        tracing::info!("State changed: {:?}", state);
+                        *watched_state = state;
+                        true
+                    } else {
+                        false
+                    }
+                });
             }
         }));
         let monitor_requests = AutoAbortTask::from(tokio::spawn(async move {
@@ -744,7 +748,7 @@ impl FakeIndexerManager {
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
-        let (api_state_sender, api_state_receiver) = watch::channel(ContractState::WaitingForSync);
+        let (api_state_sender, api_state_receiver) = watch::channel(ContractState::Invalid);
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
