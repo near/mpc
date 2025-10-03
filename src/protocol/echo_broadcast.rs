@@ -73,7 +73,7 @@ fn echo_ready_thresholds(n: usize) -> (usize, usize) {
     }
     // we should always have n >= 3*threshold + 1
     let broadcast_threshold = (n - 1) / 3;
-    let echo_threshold = (n + broadcast_threshold) / 2;
+    let echo_threshold = usize::midpoint(n, broadcast_threshold);
     (echo_threshold, broadcast_threshold)
 }
 
