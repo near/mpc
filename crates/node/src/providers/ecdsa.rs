@@ -6,7 +6,6 @@ use mpc_contract::primitives::key_state::KeyEventId;
 use near_sdk::CurveType;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
-mod kdf;
 pub mod key_resharing;
 pub mod triple;
 

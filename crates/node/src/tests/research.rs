@@ -4,8 +4,10 @@ use k256::Scalar;
 use rand::rngs::OsRng;
 use serde::Serialize;
 use std::collections::VecDeque;
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignArguments;
+use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
+use threshold_signatures::ecdsa::RerandomizationArguments;
 use threshold_signatures::protocol::{Participant, Protocol};
+use threshold_signatures::ParticipantList;
 
 #[derive(Debug, Serialize)]
 pub struct NetworkResearchReport {
@@ -296,17 +298,41 @@ fn signature_network_research_best_case() {
     let participants = (0..NUM_PARTICIPANTS)
         .map(|i| Participant::from(i as u32))
         .collect::<Vec<_>>();
+    let leader = participants[0];
     for i in 0..NUM_PARTICIPANTS {
+        let msg_hash = Scalar::from_u128(100000);
+
+        let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
+        let presign_out = presignatures[&participants[i]].clone();
+        let entropy = [0u8; 32];
+
+        let tweak = [1u8; 32];
+        let tweak = Scalar::from_repr(tweak.into()).unwrap();
+        let tweak = threshold_signatures::Tweak::new(tweak);
+
+        let public_key = tweak
+            .derive_verifying_key(&keygens[&participants[i]].public_key)
+            .to_element()
+            .to_affine();
+
+        let rerand_args = RerandomizationArguments::new(
+            public_key,
+            msg_hash_bytes,
+            presign_out.big_r,
+            ParticipantList::new(&participants).unwrap(),
+            entropy,
+        );
+        let rerandomized_presignature =
+            RerandomizedPresignOutput::new(&presign_out, &tweak, &rerand_args).unwrap();
+
         protocols.push(
             threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
                 &participants,
+                leader,
                 participants[i],
-                keygens[&participants[i]]
-                    .public_key
-                    .to_element()
-                    .to_affine(),
-                presignatures[&participants[i]].clone(),
-                Scalar::from_u128(100000),
+                public_key,
+                rerandomized_presignature,
+                msg_hash,
             )
             .unwrap(),
         );

@@ -15,7 +15,6 @@ backon = { workspace = true }
 borsh = { workspace = true }
 threshold-signatures = { workspace = true }
 clap = { workspace = true }
-curve25519-dalek = { workspace = true }
 derive_more = { workspace = true }
 dtos-contract = { workspace = true }
 ed25519-dalek = { workspace = true }
@@ -23,8 +22,6 @@ flume = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
-hex-literal = { workspace = true }
-hkdf = { workspace = true }
 humantime = { workspace = true }
 k256 = { workspace = true }
 lru = { workspace = true }
