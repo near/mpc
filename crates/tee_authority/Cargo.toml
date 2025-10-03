@@ -25,4 +25,3 @@ tokio = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 test_utils = { workspace = true }
-dtos-contract = {workspace = true}

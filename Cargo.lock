@@ -4995,7 +4995,6 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "clap",
- "dtos-contract",
  "ed25519-dalek",
  "flume",
  "futures",
@@ -9725,7 +9724,6 @@ dependencies = [
  "backon",
  "derive_more 2.0.1",
  "dstack-sdk",
- "dtos-contract",
  "hex",
  "http 1.3.1",
  "reqwest 0.12.23",
@@ -9795,7 +9793,6 @@ dependencies = [
  "dtos-contract",
  "hex",
  "mpc-primitives",
- "near-sdk",
  "serde_json",
  "sha2",
 ]

@@ -24,7 +24,6 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 near-sdk = { workspace = true }
-dtos-contract = {workspace = true}
 
 # TODO: #657 use workspace versions.
 # https://github.com/near/mpc/issues/657 
