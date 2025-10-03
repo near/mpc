@@ -406,17 +406,18 @@ impl StartCmd {
             }
         });
 
-        // Spawn attestation removal monitoring task
+        // Spawn TEE attestation monitoring task
         let tx_sender_clone = indexer_api.txn_sender.clone();
-        let contract_state_receiver = indexer_api.contract_state_receiver.clone();
+        let tee_accounts_receiver = indexer_api.tee_accounts_receiver.clone();
         let account_id_clone = config.my_near_account_id.clone();
+
         tokio::spawn(async move {
             if let Err(e) = monitor_attestation_removal(
                 account_id_clone,
                 tee_authority,
                 tx_sender_clone,
                 tls_public_key,
-                contract_state_receiver,
+                tee_accounts_receiver,
             )
             .await
             {

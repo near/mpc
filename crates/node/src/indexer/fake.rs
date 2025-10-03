@@ -765,6 +765,7 @@ impl FakeIndexerManager {
             )),
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
+            tee_accounts_receiver: watch::channel(vec![]).1,
         };
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {
