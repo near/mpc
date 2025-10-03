@@ -4,14 +4,16 @@ use crate::{
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
+    IntoDtoType,
 };
 use attestation::{
     attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
+use dtos_contract::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
+use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::{collections::HashSet, time::Duration};
 
 #[near(serializers=[borsh, json])]
@@ -20,7 +22,7 @@ pub struct NodeId {
     /// Operator account
     pub account_id: AccountId,
     /// TLS public key
-    pub tls_public_key: PublicKey,
+    pub tls_public_key: near_sdk::PublicKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +97,7 @@ impl TeeState {
     pub(crate) fn verify_proposed_participant_attestation(
         &mut self,
         attestation: &Attestation,
-        tls_public_key: PublicKey,
+        tls_public_key: Ed25519PublicKey,
         tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
         let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
@@ -128,8 +130,9 @@ impl TeeState {
             return TeeQuoteStatus::Invalid;
         };
 
-        let expected_report_data =
-            ReportData::V1(ReportDataV1::new(node_id.tls_public_key.clone()));
+        let expected_report_data = ReportData::V1(ReportDataV1::new(
+            node_id.tls_public_key.clone().into_dto_type(),
+        ));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(

@@ -1,6 +1,6 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
+use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
 use crate::web::{DebugRequest, StaticWebData};
 use crate::{
     config::{
@@ -241,7 +241,7 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?);
+        let report_data = ReportData::new(tls_public_key.into_dto_type());
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime

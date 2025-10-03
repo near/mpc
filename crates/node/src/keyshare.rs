@@ -6,7 +6,7 @@ mod temporary;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::providers::PublicKeyConversion;
+use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
 use anyhow::Context;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
@@ -29,11 +29,11 @@ pub struct Keyshare {
 }
 
 impl Keyshare {
-    pub fn public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
+    pub fn public_key(&self) -> anyhow::Result<dtos_contract::PublicKey> {
         match &self.data {
-            KeyshareData::Secp256k1(data) => data.public_key.to_near_sdk_public_key(),
-            KeyshareData::Ed25519(data) => data.public_key.to_near_sdk_public_key(),
-            KeyshareData::CkdSecp256k1(data) => data.public_key.to_near_sdk_public_key(),
+            KeyshareData::Secp256k1(data) => Ok(data.public_key.into_dto_type()),
+            KeyshareData::Ed25519(data) => Ok(data.public_key.into_dto_type()),
+            KeyshareData::CkdSecp256k1(data) => Ok(data.public_key.into_dto_type()),
         }
     }
 
@@ -46,7 +46,8 @@ impl Keyshare {
                 key_id
             );
         }
-        if self.public_key()? != key.key.clone().into() {
+        let near_sdk_public_key: near_sdk::PublicKey = key.key.clone().into();
+        if self.public_key()? != near_sdk_public_key.into_dto_type() {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
                 self.public_key()?,

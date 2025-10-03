@@ -18,7 +18,7 @@ mod dto_mapping;
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
-    crypto_shared::types::CKDResponse,
+    crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
     dto_mapping::{IntoContractType, IntoDtoType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
@@ -31,19 +31,19 @@ use config::{Config, InitConfig};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
-    near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
-use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::PrimeField;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
-    PromiseOrValue, PublicKey,
+    PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -259,7 +259,7 @@ impl MpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
-    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<PublicKey, Error> {
+    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<near_sdk::PublicKey, Error> {
         let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         self.public_key_extended(domain_id).map(Into::into)
     }
@@ -275,7 +275,7 @@ impl MpcContract {
         path: String,
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
-    ) -> Result<PublicKey, Error> {
+    ) -> Result<near_sdk::PublicKey, Error> {
         let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
@@ -290,7 +290,7 @@ impl MpcContract {
 
                 let encoded_point = derived_public_key.to_encoded_point(false);
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
-                PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
+                near_sdk::PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
@@ -299,7 +299,7 @@ impl MpcContract {
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
 
-                PublicKey::from_parts(CurveType::ED25519, encoded_point.into())
+                near_sdk::PublicKey::from_parts(CurveType::ED25519, encoded_point.into())
             }
         };
 
@@ -545,9 +545,6 @@ impl MpcContract {
         proposed_participant_attestation: dtos_contract::Attestation,
         tls_public_key: dtos_contract::Ed25519PublicKey,
     ) -> Result<(), Error> {
-        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
-            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
-
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
 
@@ -584,7 +581,7 @@ impl MpcContract {
         let is_new_attestation = self.tee_state.add_participant(
             NodeId {
                 account_id: account_id.clone(),
-                tls_public_key,
+                tls_public_key: tls_public_key.into_contract_type(),
             },
             proposed_participant_attestation,
         );
@@ -620,14 +617,11 @@ impl MpcContract {
         &self,
         tls_public_key: dtos_contract::Ed25519PublicKey,
     ) -> Result<Option<dtos_contract::Attestation>, Error> {
-        let tls_public_key = PublicKey::from_parts(CurveType::ED25519, tls_public_key.to_vec())
-            .map_err(|_| InvalidParameters::InvalidTlsPublicKey)?;
-
         Ok(self
             .tee_state
             .participants_attestations
             .iter()
-            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key)
+            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key.into_contract_type())
             .map(|(_, attestation)| attestation.clone().into_dto_type()))
     }
 
@@ -738,7 +732,7 @@ impl MpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: PublicKey,
+        public_key: near_sdk::PublicKey,
     ) -> Result<(), Error> {
         log!(
             "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
@@ -1517,7 +1511,7 @@ mod tests {
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, gen_account_id, gen_participant,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
     };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -1529,7 +1523,7 @@ mod tests {
     use crate::state::key_event::tests::Environment;
     use crate::state::resharing::tests::gen_resharing_state;
     use crate::state::running::running_tests::gen_running_state;
-    use dtos_contract::{Attestation, MockAttestation};
+    use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1562,7 +1556,8 @@ mod tests {
         }];
         let epoch_id = EpochId::new(0);
         let near_public_key =
-            PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data).unwrap();
+            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, public_key_data)
+                .unwrap();
 
         let key_for_domain = KeyForDomain {
             domain_id,
@@ -1787,9 +1782,7 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let tls_public_key = participant_info.sign_pk.clone();
-        let public_key_bytes: [u8; 32] = tls_public_key.as_bytes()[1..].try_into().unwrap();
-        let dto_public_key = dtos_contract::Ed25519PublicKey::from(public_key_bytes);
+        let dto_public_key = participant_info.sign_pk.clone().into_dto_type();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -2033,7 +2026,7 @@ mod tests {
         // sanity check
         assert!(contract.migration_info().is_empty());
         let backup_service_info = BackupServiceInfo {
-            public_key: bogus_ed25519_near_public_key(),
+            public_key: bogus_ed25519_public_key(),
         };
 
         let non_participant = gen_account_id();
@@ -2082,7 +2075,7 @@ mod tests {
                 (account_id.clone(), None, None)
             );
             let backup_service_info = BackupServiceInfo {
-                public_key: bogus_ed25519_near_public_key(),
+                public_key: bogus_ed25519_public_key(),
             };
             let res = contract.register_backup_service(backup_service_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
@@ -2141,7 +2134,11 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .sign_pk
+                    .clone()
+                    .into_dto_type(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: None,
@@ -2168,39 +2165,11 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: bogus_ed25519_near_public_key(),
+                attestation_tls_key: bogus_ed25519_public_key(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::InvalidParameters(
                     InvalidParameters::InvalidTeeRemoteAttestation,
-                )),
-                expected_post_call_info: Some((
-                    expected_participant_id.clone(),
-                    expected_participant_info.clone(),
-                )),
-            };
-            setup.run(&mut contract, &keyset);
-        }
-    }
-
-    #[test]
-    fn test_conclude_node_migration_public_key_mismatch() {
-        let running_state = gen_running_state(2);
-        let keyset = running_state.keyset.clone();
-        let participants = running_state.parameters.participants().clone();
-        let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
-        for (account_id, expected_participant_id, expected_participant_info) in
-            participants.participants()
-        {
-            let destination_node_info = gen_random_destination_info();
-            let setup = ConcludeNodeMigrationTestSetup {
-                destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
-                signer_account_id: account_id.clone(),
-                signer_account_pk: bogus_ed25519_near_public_key(),
-                expected_error_kind: Some(ErrorKind::NodeMigrationError(
-                    NodeMigrationError::AccountPublicKeyMismatch,
                 )),
                 expected_post_call_info: Some((
                     expected_participant_id.clone(),
@@ -2224,9 +2193,13 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: None,
-                attestation_tls_key: destination_node_info.signer_account_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .sign_pk
+                    .clone()
+                    .into_dto_type(),
                 signer_account_id: account_id.clone(),
-                signer_account_pk: destination_node_info.destination_node_info.sign_pk.clone(),
+                signer_account_pk: destination_node_info.signer_account_pk.clone(),
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
                     NodeMigrationError::MigrationNotFound,
                 )),
@@ -2253,7 +2226,11 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .sign_pk
+                    .clone()
+                    .into_dto_type(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
@@ -2278,7 +2255,11 @@ mod tests {
         let destination_node_info = gen_random_destination_info();
         let setup = ConcludeNodeMigrationTestSetup {
             destination_node_info: Some(destination_node_info.clone()),
-            attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+            attestation_tls_key: destination_node_info
+                .destination_node_info
+                .sign_pk
+                .clone()
+                .into_dto_type(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
             expected_error_kind: Some(ErrorKind::InvalidState(InvalidState::NotParticipant)),
@@ -2298,7 +2279,11 @@ mod tests {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
                 destination_node_info: Some(destination_node_info.clone()),
-                attestation_tls_key: destination_node_info.destination_node_info.sign_pk.clone(),
+                attestation_tls_key: destination_node_info
+                    .destination_node_info
+                    .sign_pk
+                    .clone()
+                    .into_dto_type(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::InvalidState(
@@ -2350,9 +2335,9 @@ mod tests {
         // a destination node info to store in the migration state
         destination_node_info: Option<DestinationNodeInfo>,
         // the tls key to store for the attestation
-        attestation_tls_key: PublicKey,
+        attestation_tls_key: Ed25519PublicKey,
         signer_account_id: AccountId,
-        signer_account_pk: PublicKey,
+        signer_account_pk: near_sdk::PublicKey,
         expected_error_kind: Option<ErrorKind>,
         expected_post_call_info: Option<(ParticipantId, ParticipantInfo)>,
     }
@@ -2371,7 +2356,7 @@ mod tests {
             contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
-                    tls_public_key: self.attestation_tls_key.clone(),
+                    tls_public_key: self.attestation_tls_key.clone().into_contract_type(),
                 },
                 valid_participant_attestation,
             );
@@ -2430,7 +2415,7 @@ mod tests {
                 .node_migrations
                 .set_destination_node_info(account_id.clone(), destination_node_info.clone());
             let backup_service_info = BackupServiceInfo {
-                public_key: bogus_ed25519_near_public_key(),
+                public_key: bogus_ed25519_public_key(),
             };
             contract
                 .node_migrations
@@ -2448,7 +2433,7 @@ mod tests {
             destination_node_info.clone(),
         );
         let backup_service_info = BackupServiceInfo {
-            public_key: bogus_ed25519_near_public_key(),
+            public_key: bogus_ed25519_public_key(),
         };
         contract
             .node_migrations

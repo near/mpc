@@ -1216,6 +1216,7 @@ dependencies = [
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
+ "dtos-contract",
  "hex",
  "k256",
  "mpc-primitives",
@@ -2884,10 +2885,13 @@ dependencies = [
 name = "dtos-contract"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "borsh",
+ "bs58 0.5.1",
  "derive_more 2.0.1",
  "schemars 0.8.22",
  "serde",
+ "serde_with",
 ]
 
 [[package]]
@@ -9789,7 +9793,6 @@ dependencies = [
  "dtos-contract",
  "hex",
  "mpc-primitives",
- "near-sdk",
  "serde_json",
  "sha2",
 ]

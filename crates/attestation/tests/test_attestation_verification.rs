@@ -3,7 +3,6 @@ use attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_sdk::PublicKey;
 use rstest::rstest;
 use test_utils::attestation::{
     image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
@@ -32,7 +31,7 @@ fn test_mock_attestation_verify(
 #[test]
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
-    let tls_key: PublicKey = p2p_tls_key();
+    let tls_key = p2p_tls_key();
 
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let timestamp_s = 1755186041_u64;

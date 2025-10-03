@@ -9,6 +9,13 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
+use curve25519_dalek::edwards::CompressedEdwardsY;
+use k256::{
+    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
+    EncodedPoint,
+};
+
+use crate::crypto_shared::k256_types;
 
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
@@ -276,5 +283,49 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
             event,
             event_payload,
         }
+    }
+}
+
+impl IntoDtoType<dtos_contract::Secp256k1PublicKey> for &k256_types::PublicKey {
+    fn into_dto_type(self) -> dtos_contract::Secp256k1PublicKey {
+        let mut bytes = [0u8; 64];
+        bytes.copy_from_slice(&self.to_encoded_point(false).to_bytes()[1..]);
+        dtos_contract::Secp256k1PublicKey::from(bytes)
+    }
+}
+
+impl IntoContractType<k256_types::PublicKey> for dtos_contract::Secp256k1PublicKey {
+    // This is not handling errors just to keep the status quo, might be worth doing it
+    fn into_contract_type(self) -> k256_types::PublicKey {
+        let mut bytes = [0u8; 65];
+        bytes[1..].copy_from_slice(&self.0);
+        bytes[0] = 0x4;
+        let point = EncodedPoint::from_bytes(bytes).unwrap();
+        k256_types::PublicKey::from_encoded_point(&point).unwrap()
+    }
+}
+
+impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &CompressedEdwardsY {
+    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
+        dtos_contract::Ed25519PublicKey::from(self.to_bytes())
+    }
+}
+
+// These are temporary conversions to avoid breaking the contract API
+
+impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &near_sdk::PublicKey {
+    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
+        // This function should not be called with any other type
+        assert!(self.curve_type() == near_sdk::CurveType::ED25519);
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&self.as_bytes()[1..]);
+        dtos_contract::Ed25519PublicKey::from(bytes)
+    }
+}
+
+impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Ed25519PublicKey {
+    fn into_contract_type(self) -> near_sdk::PublicKey {
+        // If the original data is correct, this will never panic
+        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
     }
 }
