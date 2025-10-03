@@ -11,7 +11,7 @@ use std::fmt::Display;
 /// Locally on each node, each keyshare is uniquely identified by the tuple
 /// (EpochId, DomainId, AttemptId).
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
 pub struct EpochId(u64);
 
 impl EpochId {
@@ -33,7 +33,7 @@ impl Display for EpochId {
 }
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
 pub struct AttemptId(u64);
 
 impl AttemptId {
@@ -70,7 +70,7 @@ impl Display for AttemptId {
 ///               yielded partially valid results. This is incremented for each attempt within the
 ///               same epoch and domain.
 #[near(serializers=[borsh, json])]
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash, PartialOrd, Ord)]
 pub struct KeyEventId {
     pub epoch_id: EpochId,
     pub domain_id: DomainId,
