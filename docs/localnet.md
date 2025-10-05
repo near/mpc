@@ -4,13 +4,31 @@
 
 neard, near CLI, cargo, ripgrep, envsubst, python3-keyring
 
+## Install neard and MPC node binary
+
 ### Note about `neard`.
 
-Make sure that your `neard` version is compatible with the `near` version with the `near-indexer` version
+If you skip the installation below, make sure that your `neard` version is compatible with the `near` version with the `near-indexer` version
 that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml`.
 
 ```shell
 neard --version
+```
+
+You should install `neard` from the git submodule:
+
+```shell
+git submodule foreach --recursive git reset --hard
+git submodule foreach --recursive git clean -fdx
+git submodule update --init --recursive --force
+```
+
+```shell
+cargo install --path libs/nearcore/neard
+```
+
+```shell
+cargo install --path crates/node
 ```
 
 ## 1. Run a local NEAR network
