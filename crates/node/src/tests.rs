@@ -30,7 +30,7 @@ use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::{start_web_server, StaticWebData};
+use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
@@ -289,7 +289,7 @@ impl OneNodeTestConfig {
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
-                    StaticWebData::new(&self.secrets, None),
+                    static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
                 )
                 .await?;

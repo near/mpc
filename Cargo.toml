@@ -44,6 +44,7 @@ overflow-checks = true
 attestation = { path = "crates/attestation" }
 dtos-contract = { path = "crates/dtos_contract" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
+node-types = { path = "crates/node-types" }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
 contract_history = { path = "crates/contract_history" }
