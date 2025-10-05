@@ -324,6 +324,12 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 ## Appendix: Further useful command
 
+### Add a domain/key to the contract.
+
+```shell
+docs/vote_add_domain.sh <<DOMAIN_ID>>
+```
+
 ### Send a sign request
 
 ```shell
@@ -345,12 +351,6 @@ near contract \
 
 ```shell
 docs/vote_cancel_key_generation.sh <<NEXT_DOMAIN_ID>>
-```
-
-### Add a domain/key to the contract.
-
-```shell
-docs/vote_add_domain.sh <<DOMAIN_ID>>
 ```
 
 ### Check allowed image hashes:
