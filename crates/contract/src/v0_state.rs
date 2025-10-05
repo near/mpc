@@ -31,7 +31,7 @@ use crate::{
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
@@ -40,7 +40,7 @@ pub struct ResharingContractState {
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
     pub domains: DomainRegistry,
@@ -56,7 +56,7 @@ pub struct RunningContractState {
 }
 #[near(serializers=[borsh, json])]
 #[derive(Debug)]
-#[cfg_attr(feature = "dev-utils", derive(Clone))]
+#[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
@@ -183,9 +183,20 @@ impl From<Config> for crate::config::Config {
 impl From<MpcContractV1> for MpcContract {
     fn from(value: MpcContractV1) -> Self {
         let config = value.config.into();
-        let tee_state = crate::TeeState::default();
+
+        let protocol_state = value.protocol_state.into();
+
+        let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
+        // For the soft release we give every participant a mocked attestation.
+        // For more context see: https://github.com/near/mpc/issues/1052
+        let threshold_parameters = &running_state.parameters.participants();
+        let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
+
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state,
             pending_signature_requests: value.pending_requests,
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: value.proposed_updates,

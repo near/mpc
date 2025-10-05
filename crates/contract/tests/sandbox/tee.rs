@@ -1,35 +1,19 @@
 use crate::sandbox::common::{
-    assert_running_return_participants, check_call_success, gen_accounts, get_tee_accounts,
-    init_env_ed25519, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
+    assert_running_return_participants, gen_accounts, get_participant_attestation,
+    get_tee_accounts, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
+    vote_for_hash,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
 use dtos_contract::{Attestation, MockAttestation};
-use mpc_contract::{errors::InvalidState, state::ProtocolContractState};
+use mpc_contract::{
+    errors::InvalidState, primitives::test_utils::bogus_ed25519_near_public_key,
+    state::ProtocolContractState,
+};
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::PublicKey;
 use near_workspaces::{Account, Contract};
 use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
-
-/// Tests the basic TEE verification functionality when no TEE accounts are present.
-/// Verifies that the contract returns true for TEE verification even without any TEE accounts submitted,
-/// and ensures the participant count remains unchanged during verification.
-#[tokio::test]
-async fn test_tee_verify_no_tee() -> Result<()> {
-    let (_, contract, _, _) = init_env_ed25519(1).await;
-    let n_participants_start = get_participants(&contract).await?;
-
-    let verified_tee: bool = contract
-        .call("verify_tee")
-        .args_json(serde_json::json!(""))
-        .max_gas()
-        .transact()
-        .await?
-        .json()?;
-    assert!(verified_tee);
-    assert_eq!(n_participants_start, get_participants(&contract).await?);
-    Ok(())
-}
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -187,22 +171,7 @@ async fn get_latest_code_hash(contract: &Contract) -> Result<Option<MpcDockerIma
         .json::<Option<MpcDockerImageHash>>()?)
 }
 
-async fn vote_for_hash(
-    account: &Account,
-    contract: &Contract,
-    image_hash: &[u8; 32],
-) -> Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": image_hash}))
-            .transact()
-            .await?,
-    );
-    Ok(())
-}
-
-async fn get_participants(contract: &Contract) -> Result<usize> {
+pub async fn get_participants(contract: &Contract) -> Result<usize> {
     let state = contract
         .call("state")
         .args_json(serde_json::json!(""))
@@ -331,9 +300,6 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
     let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
 
-    // Initially should have no TEE participants
-    assert_eq!(get_tee_accounts(&contract).await?.len(), 0);
-
     let participant_uids = assert_running_return_participants(&contract)
         .await?
         .get_node_ids();
@@ -424,4 +390,147 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_attestation() {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let participant_account_1 = &accounts[0];
+    let tls_key_1 = bogus_ed25519_near_public_key();
+
+    let tls_key_2 = bogus_ed25519_near_public_key();
+
+    let validation_success = submit_participant_info(
+        participant_account_1,
+        &contract,
+        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &tls_key_1,
+    )
+    .await
+    .unwrap();
+
+    assert!(validation_success);
+
+    let attestation_for_tls_key_2: Option<Attestation> =
+        get_participant_attestation(&contract, &tls_key_2)
+            .await
+            .unwrap();
+
+    assert_eq!(attestation_for_tls_key_2, None);
+}
+
+#[tokio::test]
+async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestation() {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let participant_account_1 = &accounts[0];
+    let tls_key_1 = bogus_ed25519_near_public_key();
+
+    let tls_key_2 = bogus_ed25519_near_public_key();
+    let participant_account_2 = &accounts[1];
+
+    assert_ne!(
+        tls_key_1, tls_key_2,
+        "Sanity check failed. Participant tls keys can not be equal for this test."
+    );
+
+    let participant_1_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: Some(u64::MAX),
+    });
+
+    let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: Some(u64::MAX - 1),
+    });
+
+    assert_ne!(
+        participant_1_attestation, participant_2_attestation,
+        "Sanity check failed. Participants can not be equal for this test."
+    );
+
+    let validation_success = submit_participant_info(
+        participant_account_1,
+        &contract,
+        &participant_1_attestation,
+        &tls_key_1,
+    )
+    .await
+    .unwrap();
+    assert!(validation_success, "Submitting attestation failed.");
+
+    let validation_success = submit_participant_info(
+        participant_account_2,
+        &contract,
+        &participant_2_attestation,
+        &tls_key_2,
+    )
+    .await
+    .unwrap();
+    assert!(validation_success, "Submitting attestation failed.");
+
+    let attestation_for_tls_key_2: Option<Attestation> =
+        get_participant_attestation(&contract, &tls_key_2)
+            .await
+            .unwrap();
+
+    assert_eq!(attestation_for_tls_key_2, Some(participant_2_attestation));
+}
+
+#[tokio::test]
+async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
+    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+
+    let participant_account = &accounts[0];
+    let tls_key = bogus_ed25519_near_public_key();
+
+    let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: Some(u64::MAX),
+    });
+
+    let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: Some(u64::MAX - 1),
+    });
+
+    assert_ne!(
+        first_attestation, second_attestation,
+        "Sanity check failed: attestations must differ for overwrite test"
+    );
+
+    // Submit the first attestation
+    let validation_success =
+        submit_participant_info(participant_account, &contract, &first_attestation, &tls_key)
+            .await
+            .unwrap();
+    assert!(validation_success, "First attestation submission failed");
+
+    // Submit the second attestation with the same TLS key (overwrites the first)
+    let validation_success = submit_participant_info(
+        participant_account,
+        &contract,
+        &second_attestation,
+        &tls_key,
+    )
+    .await
+    .unwrap();
+    assert!(validation_success, "Second attestation submission failed");
+
+    // Now the latest attestation should be returned
+    let attestation_for_tls_key: Option<Attestation> =
+        get_participant_attestation(&contract, &tls_key)
+            .await
+            .unwrap();
+
+    assert_eq!(
+        attestation_for_tls_key,
+        Some(second_attestation),
+        "Expected the second attestation to overwrite the first for the same TLS key"
+    );
 }

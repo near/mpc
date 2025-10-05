@@ -1,7 +1,7 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
-use crate::web::StaticWebData;
+use crate::web::{DebugRequest, StaticWebData};
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -21,6 +21,7 @@ use crate::{
     web::start_web_server,
 };
 use anyhow::{anyhow, Context};
+use attestation::attestation::Attestation;
 use attestation::report_data::ReportData;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
@@ -28,6 +29,7 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::sync::OnceLock;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -36,13 +38,14 @@ use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
     DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use {
     crate::tee::{
-        monitor_allowed_image_hashes, remote_attestation::submit_remote_attestation,
+        monitor_allowed_image_hashes,
+        remote_attestation::{periodic_attestation_submission, submit_remote_attestation},
         AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
@@ -149,7 +152,7 @@ pub struct StartCmd {
     pub image_hash_config: MpcImageHashConfig,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum TeeAuthorityConfig {
     Local,
     Dstack {
@@ -222,8 +225,8 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        // Load configuration and initialize persistent secrets
         let home_dir = PathBuf::from(self.home_dir.clone());
-
         let config = load_config_file(&home_dir)?;
         let persistent_secrets = PersistentSecrets::generate_or_get_existing(
             &home_dir,
@@ -231,9 +234,45 @@ impl StartCmd {
         )?;
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
-        let (web_contract_sender, web_contract_receiver) =
-            tokio::sync::watch::channel(ProtocolContractState::NotInitialized);
+        // Load secrets from configuration and persistent storage
+        let secrets =
+            SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets.clone())?;
 
+                 
+        // Generate attestation
+        let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
+        let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
+        let account_public_key =  &secrets.persistent_secrets.near_signer_key.verifying_key();
+          
+        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?,
+         Some(account_public_key.clone().to_near_sdk_public_key()?));
+        let attestation = tee_authority.generate_attestation(report_data).await?;
+
+        // Create communication channels and runtime
+        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        let root_task_handle = Arc::new(OnceLock::new());
+
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
+        let (protocol_state_sender, protocol_state_receiver) =
+            watch::channel(ProtocolContractState::NotInitialized);
+
+        let web_server = root_runtime
+            .block_on(start_web_server(
+                root_task_handle.clone(),
+                debug_request_sender.clone(),
+                config.web_ui.clone(),
+                StaticWebData::new(&secrets, Some(attestation.clone())),
+                protocol_state_receiver,
+            ))
+            .context("Failed to create web server.")?;
+
+        let _web_server_join_handle = root_runtime.spawn(web_server);
+
+        // Create Indexer and wait for indexer to be synced.
         let (indexer_exit_sender, indexer_exit_receiver) = oneshot::channel();
         let indexer_api = spawn_real_indexer(
             home_dir.clone(),
@@ -241,19 +280,10 @@ impl StartCmd {
             config.my_near_account_id.clone(),
             persistent_secrets.near_signer_key.clone(),
             respond_config,
-            web_contract_sender,
             indexer_exit_sender,
+            protocol_state_sender,
         );
 
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
-        let _tokio_enter_guard = root_runtime.enter();
-
-        // Currently, we only trigger graceful shutdowns from TEE logic,
-        // hence we need to disable the `unused_variables` lint when TEE is disabled.
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
 
@@ -269,7 +299,7 @@ impl StartCmd {
                 self.image_hash_config.latest_allowed_hash_file.clone(),
             );
 
-            tokio::spawn(monitor_allowed_image_hashes(
+            root_runtime.spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
@@ -278,13 +308,15 @@ impl StartCmd {
             ))
         };
 
-        let secrets = SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets)?;
         let root_future = self.create_root_future(
             home_dir.clone(),
             config.clone(),
             secrets.clone(),
             indexer_api,
-            web_contract_receiver,
+            attestation,
+            debug_request_sender,
+            root_task_handle,
+            tee_authority,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -313,40 +345,28 @@ impl StartCmd {
         exit_reason
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_root_future(
         self,
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
-        web_contract_receiver: tokio::sync::watch::Receiver<ProtocolContractState>,
+        attestation: Attestation,
+        debug_request_sender: broadcast::Sender<DebugRequest>,
+        // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
+        // Otherwise we would not write to the same cell/lock.
+        root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
+        tee_authority: TeeAuthority,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
-        let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
+        root_task_handle_once_lock
+            .set(root_task_handle.clone())
+            .map_err(|_| anyhow!("Root task handle was already set"))?;
 
-        let tls_public_key = secrets
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key()
-            .to_near_sdk_public_key()?;
-        let account_public_key = secrets
-            .persistent_secrets
-            .near_signer_key
-            .verifying_key()
-            .to_near_sdk_public_key()?;
-        let report_data = ReportData::new(tls_public_key, Some(account_public_key));
-        let tee_authority = TeeAuthority::try_from(self.tee_authority)?;
-        let attestation = tee_authority.generate_attestation(report_data).await?;
-        let web_server = start_web_server(
-            root_task_handle,
-            debug_request_sender.clone(),
-            config.web_ui.clone(),
-            StaticWebData::new(&secrets, Some(attestation.clone())),
-            web_contract_receiver,
-        )
-        .await?;
-        let _web_server = tracking::spawn_checked("web server", web_server);
+        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
+        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
@@ -368,17 +388,22 @@ impl StartCmd {
             },
         };
 
-        // submit remote attestation
-        {
-            let account_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-
-            submit_remote_attestation(
-                indexer_api.txn_sender.clone(),
-                attestation,
-                account_public_key,
-            )
+        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
             .await?;
-        }
+
+        // Spawn periodic attestation submission task
+        let tx_sender_clone = indexer_api.txn_sender.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                periodic_attestation_submission(tee_authority, tx_sender_clone, tls_public_key,account_public_key)
+                    .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    "periodic attestation submission task failed"
+                );
+            }
+        });
 
         let coordinator = Coordinator {
             clock: Clock::real(),

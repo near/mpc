@@ -3,7 +3,6 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::kdf::{derive_public_key, derive_randomness};
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
@@ -14,10 +13,11 @@ use k256::Scalar;
 use mpc_contract::primitives::signature::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
-use threshold_signatures::ecdsa::Signature;
+use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};
+use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::protocol::Participant;
+use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
@@ -52,7 +52,10 @@ impl EcdsaSignatureProvider {
         )
         .await?;
 
-        Ok((signature, public_key))
+        Ok((
+            signature.context("Leader should obtain a signature")?,
+            public_key,
+        ))
     }
 
     pub(super) async fn make_signature_follower(
@@ -105,58 +108,51 @@ pub struct SignComputation {
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<(Signature, VerifyingKey)> for SignComputation {
+impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<(Signature, VerifyingKey)> {
+    ) -> anyhow::Result<(SignatureOption, VerifyingKey)> {
         let cs_participants = channel
             .participants()
             .iter()
             .copied()
             .map(Participant::from)
             .collect::<Vec<_>>();
-        let me = channel.my_participant_id();
 
         let tweak = Scalar::from_repr(self.tweak.as_bytes().into())
             .into_option()
             .context("Couldn't construct k256 point")?;
+        let tweak = threshold_signatures::Tweak::new(tweak);
+
         let msg_hash = Scalar::from_repr(self.msg_hash.into())
             .into_option()
             .context("Couldn't construct k256 point")?;
 
-        let public_key =
-            derive_public_key(self.keygen_out.public_key.to_element().to_affine(), tweak);
+        let public_key = tweak
+            .derive_verifying_key(&self.keygen_out.public_key)
+            .to_element()
+            .to_affine();
+        let participants = ParticipantList::new(&cs_participants).unwrap();
 
-        // rerandomize the presignature: a variant of [GS21]
-        let PresignOutput { big_r, k, sigma } = self.presign_out;
-        let delta = derive_randomness(
+        let rerand_args = RerandomizationArguments::new(
             public_key,
-            msg_hash,
-            big_r,
-            channel.participants().to_vec(),
+            self.msg_hash,
+            self.presign_out.big_r,
+            participants,
             self.entropy,
         );
-        // we use the default inversion: it is absolutely fine to use a
-        // variable time inversion since delta is a public value
-        let inverted_delta = delta.invert().unwrap();
-        let presign_out = PresignOutput {
-            // R' = [delta] R
-            big_r: (big_r * delta).to_affine(),
-            // k' = k/delta
-            k: k * inverted_delta,
-            // sigma = sigma/delta + k tweak/delta
-            sigma: (sigma + tweak * k) * inverted_delta,
-        };
+        let rerandomized_presignature =
+            RerandomizedPresignOutput::new(&self.presign_out, &tweak, &rerand_args)?;
 
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
-            me.into(),
+            channel.sender().get_leader().into(),
+            channel.my_participant_id().into(),
             public_key,
-            presign_out,
+            rerandomized_presignature,
             msg_hash,
         )?;
-        // TODO: this is unused https://github.com/near/mpc/issues/975
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature = run_protocol("sign", channel, protocol).await?;
         Ok((signature, VerifyingKey::new(public_key.into())))

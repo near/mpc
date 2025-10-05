@@ -110,7 +110,7 @@ pub enum ReportData {
 impl ReportData {
    pub fn new(tls_public_key: PublicKey, account_public_key: Option<PublicKey>) -> Self {
         let account_pk = account_public_key.unwrap_or_else(|| {
-            // Construct a "zero" public key. will not be used in practice, only for backward compatibility. remove this code once that network enforces real attestation  
+            //TODO (#823) Construct a "zero" public key. will not be used in practice, only for backward compatibility. remove this code once that network enforces real attestation  
             PublicKey::from_parts(near_sdk::CurveType::ED25519, vec![0u8; 32]).expect("valid zero PublicKey")
         });
 

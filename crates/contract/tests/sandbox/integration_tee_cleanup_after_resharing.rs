@@ -31,18 +31,11 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, mut env_accounts, _) = init_env_secp256k1(1).await;
-
-    // sanity check: assert we don't have any tee information to begin with
-    let initial_tee_participants = get_tee_accounts(&contract).await.unwrap();
-    assert!(initial_tee_participants.is_empty());
+    let (worker, contract, env_accounts, _) = init_env_secp256k1(1).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
     let expected_node_ids = initial_participants.get_node_ids();
-
-    // submit attestations
-    submit_tee_attestations(&contract, &mut env_accounts, &expected_node_ids).await?;
 
     // Verify TEE info for initial participants was added
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();

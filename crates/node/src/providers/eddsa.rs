@@ -1,4 +1,3 @@
-mod kdf;
 mod key_generation;
 mod key_resharing;
 mod sign;

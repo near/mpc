@@ -180,8 +180,8 @@ pub enum ConversionError {
 pub enum DomainError {
     #[error("No such domain.")]
     NoSuchDomain,
-    #[error("Newly proposed domain IDs are not contiguous.")]
-    NewDomainIdsNotContiguous,
+    #[error("Newly proposed domain IDs are not contiguous. Expected id: {expected_id}")]
+    NewDomainIdsNotContiguous { expected_id: DomainId },
     #[error("vote_add_domains must add at least one domain")]
     AddDomainsMustAddAtLeastOneDomain,
     #[error("Invalid list of domains provided")]

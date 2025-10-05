@@ -1212,7 +1212,6 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "attestation"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "borsh",
  "dcap-qvl",
  "derive_more 2.0.1",
@@ -2639,12 +2638,6 @@ dependencies = [
 
 [[package]]
 name = "deranged"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9e6a11ca8224451684bc0d7d5a7adbf8f2fd6887261a1cfc3c0432f9d4068e"
-
-[[package]]
-name = "deranged"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d630bccd429a5bb5a64b5e94f693bfc48c9f8566418fda4c494cc94f911f87cc"
@@ -2895,8 +2888,6 @@ dependencies = [
  "derive_more 2.0.1",
  "schemars 0.8.22",
  "serde",
- "serde_bytes",
- "serde_with",
 ]
 
 [[package]]
@@ -3769,12 +3760,6 @@ checksum = "5313b072ce3c597065a808dbf612c4c8e8590bdbf8b579508bf7a762c5eae6cd"
 dependencies = [
  "arrayvec",
 ]
-
-[[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hickory-proto"
@@ -4973,7 +4958,6 @@ dependencies = [
  "digest 0.10.7",
  "dtos-contract",
  "ecdsa",
- "ed25519-dalek",
  "fs2",
  "getrandom 0.2.16",
  "hex",
@@ -4981,7 +4965,6 @@ dependencies = [
  "mpc-contract",
  "mpc-primitives",
  "near-account-id",
- "near-gas 0.2.5",
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
@@ -5042,20 +5025,13 @@ dependencies = [
  "borsh",
  "built",
  "clap",
- "curve25519-dalek",
- "deranged 0.4.0",
  "derive_more 2.0.1",
- "dstack-sdk",
- "dstack-sdk-types",
+ "dtos-contract",
  "ed25519-dalek",
  "flume",
  "futures",
- "futures-util",
  "gcloud-sdk",
  "hex",
- "hex-literal",
- "hkdf",
- "http 1.3.1",
  "humantime",
  "itertools 0.12.1",
  "k256",
@@ -5073,9 +5049,6 @@ dependencies = [
  "near-time 2.8.0",
  "prometheus",
  "rand 0.8.5",
- "rand_xorshift 0.3.0",
- "rcgen",
- "reqwest 0.12.23",
  "rocksdb",
  "rstest",
  "rustls",
@@ -5096,7 +5069,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "x509-parser",
 ]
 
 [[package]]
@@ -5692,17 +5664,6 @@ version = "2.8.0"
 source = "git+https://github.com/near/nearcore?tag=2.8.0#b2e47a2f22303cbfa77368b19e003bf74bc23e3a"
 dependencies = [
  "near-primitives-core 2.8.0",
-]
-
-[[package]]
-name = "near-gas"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14e75c875026229902d065e4435804497337b631ec69ba746b102954273e9ad1"
-dependencies = [
- "borsh",
- "schemars 0.8.22",
- "serde",
 ]
 
 [[package]]
@@ -6354,7 +6315,7 @@ dependencies = [
  "near-abi",
  "near-account-id",
  "near-crypto 0.31.1",
- "near-gas 0.3.2",
+ "near-gas",
  "near-parameters 0.31.1",
  "near-primitives 0.31.1",
  "near-primitives-core 0.31.1",
@@ -6707,7 +6668,7 @@ dependencies = [
  "near-abi-client",
  "near-account-id",
  "near-crypto 0.31.1",
- "near-gas 0.3.2",
+ "near-gas",
  "near-jsonrpc-client 0.18.0",
  "near-jsonrpc-primitives 0.31.1",
  "near-primitives 0.31.1",
@@ -7770,7 +7731,7 @@ dependencies = [
  "num-traits",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
- "rand_xorshift 0.4.0",
+ "rand_xorshift",
  "regex-syntax",
  "rusty-fork",
  "tempfile",
@@ -8124,15 +8085,6 @@ name = "rand_hc"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b363d4f6370f88d62bf586c80405657bde0f0e1b8945d47d2ad59b906cb4f54"
-dependencies = [
- "rand_core 0.6.4",
-]
-
-[[package]]
-name = "rand_xorshift"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
  "rand_core 0.6.4",
 ]
@@ -9768,7 +9720,6 @@ dependencies = [
  "backon",
  "derive_more 2.0.1",
  "dstack-sdk",
- "dstack-sdk-types",
  "hex",
  "http 1.3.1",
  "reqwest 0.12.23",
@@ -9904,7 +9855,7 @@ dependencies = [
 [[package]]
 name = "threshold-signatures"
 version = "0.1.0"
-source = "git+https://github.com/near/threshold-signatures?rev=583e0544fc1316a2b53416058841a5b9b386501b#583e0544fc1316a2b53416058841a5b9b386501b"
+source = "git+https://github.com/near/threshold-signatures?tag=ot_based_ecdsa-API-changes#5c905e4bf9aeba218e7fe06b36aee3577a768413"
 dependencies = [
  "auto_ops",
  "borsh",
@@ -9917,6 +9868,7 @@ dependencies = [
  "frost-secp256k1",
  "futures",
  "hex",
+ "hkdf",
  "itertools 0.14.0",
  "k256",
  "keccak",
@@ -9949,7 +9901,7 @@ version = "0.3.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83bde6f1ec10e72d583d91623c939f623002284ef622b87de38cfd546cbf2031"
 dependencies = [
- "deranged 0.5.3",
+ "deranged",
  "num-conv",
  "powerfmt",
  "serde",

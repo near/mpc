@@ -1,23 +1,19 @@
-
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
-    tee::{
-        proposal::{
-            AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
-        },
-        quote::TeeQuoteStatus,
+    tee::proposal::{
+        AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
 };
 use attestation::{
-    attestation::Attestation,
+    attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId, PublicKey};
-use std::{collections::HashSet, time::Duration};
 use std::hash::{Hash, Hasher};
+use std::{collections::HashSet, time::Duration};
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Ord, PartialOrd, Clone)]
@@ -27,14 +23,13 @@ pub struct NodeId {
     /// TLS public key
     pub tls_public_key: PublicKey,
     /// Account signing public key (optional for backward compatibility)
-    pub account_public_key: Option<PublicKey>,
+    pub account_public_key: Option<PublicKey>, // TODO(#823): make mandatory
 }
 
 // Implement Eq + Hash ignoring account_public_key
 impl PartialEq for NodeId {
     fn eq(&self, other: &Self) -> bool {
-        self.account_id == other.account_id
-            && self.tls_public_key == other.tls_public_key
+        self.account_id == other.account_id && self.tls_public_key == other.tls_public_key
     }
 }
 
@@ -46,6 +41,18 @@ impl Hash for NodeId {
         self.tls_public_key.hash(state);
         // intentionally ignoring account_public_key
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TeeQuoteStatus {
+    /// TEE quote and Docker image verification both passed successfully.
+    /// The participant is considered to have a valid, verified TEE status.
+    Valid,
+
+    /// TEE verification failed - either the quote verification failed,
+    /// the Docker image verification failed, or both validations failed.
+    /// The participant should not be trusted for TEE-dependent operations.
+    Invalid,
 }
 
 pub enum TeeValidationResult {
@@ -77,6 +84,31 @@ impl Default for TeeState {
 }
 
 impl TeeState {
+    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    /// // TODO(#823): remove after transition to mandatory TE
+    pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
+        let mut participants_attestations = IterableMap::new(StorageKey::TeeParticipantAttestation);
+
+        participants
+            .participants()
+            .iter()
+            .for_each(|(account_id, _, participant_info)| {
+                let node_id = NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: participant_info.sign_pk.clone(),
+                    account_public_key: None, 
+                };
+
+                participants_attestations
+                    .insert(node_id, Attestation::Mock(MockAttestation::Valid));
+            });
+
+        Self {
+            participants_attestations,
+            ..Default::default()
+        }
+    }
+
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
@@ -119,10 +151,10 @@ impl TeeState {
 
         let participant_attestation = self.participants_attestations.get(node_id);
         let Some(participant_attestation) = participant_attestation else {
-            return TeeQuoteStatus::None;
+            return TeeQuoteStatus::Invalid;
         };
 
-        let expected_report_data = ReportData ::new(
+        let expected_report_data = ReportData::new(
             node_id.tls_public_key.clone(),
             node_id.account_public_key.clone(),
         );
@@ -144,10 +176,6 @@ impl TeeState {
     }
 
     /// Performs TEE validation on the given participants.
-    ///
-    /// Participants with [`TeeQuoteStatus::Valid`] or [`TeeQuoteStatus::None`] are considered
-    /// valid. The returned [`Participants`] preserves participant data and
-    /// [`Participants::next_id()`].
     pub fn validate_tee(
         &mut self,
         participants: &Participants,
@@ -161,19 +189,23 @@ impl TeeState {
             .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
-               
 
-                matches!(
-                    self.verify_tee_participant(
-                        &NodeId {
-                            account_id: account_id.clone(),
-                            tls_public_key : tls_public_key,
-                            account_public_key: None,
-                        },
-                        tee_upgrade_deadline_duration
-                    ),
-                    TeeQuoteStatus::Valid | TeeQuoteStatus::None
-                )
+                // Try to find the existing NodeId for this participant (if attestation was recorded)
+                let maybe_node = self.find_node_id_by_tls_key(&tls_public_key);
+
+                let node_id = NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: tls_public_key.clone(),
+                    // If we’re still in transition (mock attestation), allow None.
+                    // TODO(#823): remove this fallback once all MPC nodes are required
+                    // to run inside a TEE and provide a valid account_public_key.
+                    account_public_key: maybe_node.and_then(|n| n.account_public_key.clone()),
+                };
+
+                let tee_status =
+                    self.verify_tee_participant(&node_id, tee_upgrade_deadline_duration);
+
+                matches!(tee_status, TeeQuoteStatus::Valid)
             })
             .cloned()
             .collect();
@@ -277,14 +309,14 @@ impl TeeState {
         self.participants_attestations.keys().cloned().collect()
     }
 
-     /// Find a NodeId by its TLS public key.
+    /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &PublicKey) -> Option<NodeId> {
         self.participants_attestations
             .keys()
             .find(|node_id| &node_id.tls_public_key == tls_public_key)
             .cloned()
     }
-     /// Returns true if the caller belongs to an attested node.
+    /// Returns true if the caller belongs to an attested node.
     ///
     /// Transition phase (non-TEE → TEE):
     /// - If `account_public_key` is `Some`, we validate against the signer public key.
@@ -300,8 +332,8 @@ impl TeeState {
         self.participants_attestations
             .keys()
             .any(|node_id| match &node_id.account_public_key {
-                Some(pk) => pk == &signer_pk,             
-                None => node_id.account_id == signer_id,  // TODO  legacy mock node (temporary) - remove after transition 
+                Some(pk) => pk == &signer_pk,
+                None => node_id.account_id == signer_id, // TODO (#823)  legacy mock node (temporary) - remove after transition
             })
     }
 
@@ -337,7 +369,7 @@ mod tests {
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
-                account_public_key:  Some(bogus_ed25519_near_public_key()),//TODO check if this is ok.
+                account_public_key: Some(bogus_ed25519_near_public_key()), //TODO check if this is ok.
             })
             .collect();
 
@@ -346,7 +378,7 @@ mod tests {
 
         let non_participant_uid = NodeId {
             account_id: non_participant.clone(),
-            account_public_key: Some(bogus_ed25519_near_public_key()), 
+            account_public_key: Some(bogus_ed25519_near_public_key()),
             tls_public_key: bogus_ed25519_near_public_key(),
         };
         for node_id in &participant_nodes {
