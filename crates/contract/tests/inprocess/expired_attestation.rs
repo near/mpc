@@ -92,7 +92,9 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-
+    // Returns the list of NodeIds for all participants
+    // Note that the account_public_key field in NodeId is None.
+    // This is because NodeId is used in contexts where account_public_key is not needed.
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
@@ -183,7 +185,7 @@ fn test_participant_kickout_after_expiration() {
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
-        account_public_key: Some(bogus_ed25519_near_public_key()),   
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);

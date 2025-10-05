@@ -117,7 +117,10 @@ async fn periodic_attestation_submission_with_interval<T: TransactionSender + Cl
         let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
         let account_sdk_public_key = account_public_key.to_near_sdk_public_key()?;
 
-        let report_data = ReportData::new(tls_sdk_public_key.clone(),Some(account_sdk_public_key.clone()));
+        let report_data = ReportData::new(
+            tls_sdk_public_key.clone(),
+            Some(account_sdk_public_key.clone()),
+        );
         let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
             Ok(attestation) => attestation,
             Err(error) => {
@@ -223,10 +226,13 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let key = SigningKey::generate(&mut rng).verifying_key();
 
+        let account_key = SigningKey::generate(&mut rng).verifying_key();
+
         let handle = tokio::spawn(periodic_attestation_submission_with_interval(
             tee_authority,
             sender.clone(),
             key,
+            account_key,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 

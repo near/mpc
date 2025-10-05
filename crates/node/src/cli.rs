@@ -238,14 +238,15 @@ impl StartCmd {
         let secrets =
             SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets.clone())?;
 
-                 
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let account_public_key =  &secrets.persistent_secrets.near_signer_key.verifying_key();
-          
-        let report_data = ReportData::new(tls_public_key.clone().to_near_sdk_public_key()?,
-         Some(account_public_key.clone().to_near_sdk_public_key()?));
+        let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
+
+        let report_data = ReportData::new(
+            tls_public_key.clone().to_near_sdk_public_key()?,
+            Some(account_public_key.clone().to_near_sdk_public_key()?),
+        );
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime
@@ -394,9 +395,13 @@ impl StartCmd {
         // Spawn periodic attestation submission task
         let tx_sender_clone = indexer_api.txn_sender.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                periodic_attestation_submission(tee_authority, tx_sender_clone, tls_public_key,account_public_key)
-                    .await
+            if let Err(e) = periodic_attestation_submission(
+                tee_authority,
+                tx_sender_clone,
+                tls_public_key,
+                account_public_key,
+            )
+            .await
             {
                 tracing::error!(
                     error = ?e,

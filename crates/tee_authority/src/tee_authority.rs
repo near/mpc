@@ -282,11 +282,10 @@ mod tests {
             .parse()
             .unwrap();
 
-       
         let account_key = "ed25519:5v8Y8ZLoxZzCVtYpjh1cYdFrRh1p9EXAMPLEaQJ5sP4o"
             .parse()
             .unwrap();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key,account_key));
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));
