@@ -81,7 +81,7 @@ pub mod verifying_key_bs58 {
             base58_encoded_keys
                 .iter()
                 .map(|base58_encoded_key| {
-                    decode_key(&base58_encoded_key).map_err(serde::de::Error::custom)
+                    decode_key(base58_encoded_key).map_err(serde::de::Error::custom)
                 })
                 .collect()
         }
@@ -111,8 +111,8 @@ mod tests {
         ];
 
         let data = StaticWebData {
-            near_signer_public_key: near_signer_public_key.clone(),
-            near_p2p_public_key: near_p2p_public_key.clone(),
+            near_signer_public_key,
+            near_p2p_public_key,
             near_responder_public_keys: near_responder_public_keys.clone(),
             tee_participant_info: None,
         };
@@ -138,8 +138,8 @@ mod tests {
         let near_responder_public_keys = vec![gen_verifying_key(30)];
 
         let data = StaticWebData {
-            near_signer_public_key: near_signer_public_key.clone(),
-            near_p2p_public_key: near_p2p_public_key.clone(),
+            near_signer_public_key,
+            near_p2p_public_key,
             near_responder_public_keys: near_responder_public_keys.clone(),
             tee_participant_info: None,
         };
@@ -161,7 +161,7 @@ mod tests {
         let responder_str = parsed["near_responder_public_keys"]
             .as_array()
             .expect("Is vector of keys")
-            .get(0)
+            .first()
             .unwrap()
             .as_str()
             .expect("responder key should be string");
