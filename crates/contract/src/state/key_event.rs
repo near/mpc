@@ -105,7 +105,7 @@ impl KeyEvent {
             .as_mut()
             .unwrap()
             .vote_success(candidate, public_key)?
-        {   
+        {
             VoteSuccessResult::Voted(count) => {
                 if count == self.parameters.participants().len() {
                     Ok(true)

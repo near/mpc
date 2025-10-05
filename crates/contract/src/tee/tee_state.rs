@@ -295,7 +295,7 @@ impl TeeState {
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
-                account_public_key: None,
+                account_public_key: None, //mapping to NodeId without account_public_key.
             })
             .collect();
 

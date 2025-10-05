@@ -436,6 +436,7 @@ impl MpcContract {
         response: SignatureResponse,
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
+
         log!("respond: signer={}, request={:?}", &signer, &request);
 
         self.tee_state.assert_caller_is_attested_node();
@@ -518,7 +519,7 @@ impl MpcContract {
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
         let signer = env::signer_account_id();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
-        
+
         self.tee_state.assert_caller_is_attested_node();
 
         if !self.protocol_state.is_running_or_resharing() {
@@ -715,7 +716,7 @@ impl MpcContract {
     #[handle_result]
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
-        
+
         self.tee_state.assert_caller_is_attested_node();
 
         self.protocol_state
@@ -749,7 +750,7 @@ impl MpcContract {
             key_event_id,
             public_key,
         );
-        
+
         self.tee_state.assert_caller_is_attested_node();
 
         let extended_key =
@@ -774,7 +775,7 @@ impl MpcContract {
             "start_reshare_instance: signer={}",
             env::signer_account_id()
         );
-        
+
         self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
@@ -800,7 +801,7 @@ impl MpcContract {
             env::signer_account_id(),
             key_event_id,
         );
-        
+
         self.tee_state.assert_caller_is_attested_node();
         let resharing_concluded =
             if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
@@ -878,7 +879,7 @@ impl MpcContract {
             "vote_abort_key_event_instance: signer={}",
             env::signer_account_id()
         );
-        
+
         self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .vote_abort_key_event_instance(key_event_id)
