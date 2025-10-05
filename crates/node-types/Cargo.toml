@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 attestation = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
