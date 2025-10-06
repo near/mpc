@@ -440,5 +440,19 @@ mod tests {
             1,
             "Expected submission count to remain stable after stopping monitoring service"
         );
+
+        // Remove the node from TEE accounts again to verify monitoring service is truly stopped
+        let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
+        let _ = tee_accounts_sender.send(removed_tee_accounts);
+
+        // Wait to ensure no resubmission occurs when monitoring is stopped
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Verify no resubmission occurred (monitoring service is stopped)
+        assert_eq!(
+            mock_sender.count(),
+            1,
+            "Expected no resubmission when monitoring service is stopped"
+        );
     }
 }
