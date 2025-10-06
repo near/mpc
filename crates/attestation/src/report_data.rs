@@ -86,7 +86,8 @@ impl ReportDataV1 {
     /// Generates SHA3-384 hash of TLS public key only.
     fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
         let mut hasher = Sha3_384::new();
-        let key_data = self.tls_public_key.as_bytes();
+        // Skip first byte as it is used for identifier for the curve type.
+        let key_data = &self.tls_public_key.as_bytes()[1..];
         hasher.update(key_data);
         hasher.finalize().into()
     }
@@ -213,7 +214,8 @@ mod tests {
         assert_ne!(hash_bytes, &[0u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE]);
 
         let mut hasher = Sha3_384::new();
-        let key_data = &tls_key.as_bytes();
+        // Skip first byte as it is used for identifier for the curve type.
+        let key_data = &tls_key.as_bytes()[1..];
         hasher.update(key_data);
         let expected: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
