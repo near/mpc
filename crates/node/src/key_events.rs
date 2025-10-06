@@ -247,8 +247,13 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::CkdSecp256k1(res)
         }
-        // Note that once we add the BLS type to dtos_contract::PublicKey this might not be needed
-        _ => unreachable!(),
+        (public_key, scheme) => {
+            return Err(anyhow::anyhow!(
+                "Unexpected pair of ({:?}, {:?})",
+                public_key,
+                scheme
+            ));
+        }
     };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);
     keyshare_handle

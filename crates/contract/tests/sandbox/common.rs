@@ -1087,7 +1087,9 @@ pub async fn vote_for_hash(
     Ok(())
 }
 
-// These are temporary conversions to avoid breaking the contract API
+// These are temporary conversions to avoid breaking the contract API.
+// Once we complete the migration from near_sdk::PublicKey they should not be
+// needed anymore
 
 pub(crate) trait IntoDtoType<DtoType> {
     fn into_dto_type(self) -> DtoType;

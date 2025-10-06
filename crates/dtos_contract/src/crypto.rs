@@ -25,6 +25,7 @@ use serde_with::serde_as;
 pub enum PublicKey {
     Secp256k1(Secp256k1PublicKey),
     Ed25519(Ed25519PublicKey),
+    // TODO(#1212): Add BLS types
 }
 
 #[derive(

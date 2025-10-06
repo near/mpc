@@ -316,7 +316,9 @@ impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &CompressedEdwardsY {
     }
 }
 
-// These are temporary conversions to avoid breaking the contract API
+// These are temporary conversions to avoid breaking the contract API.
+// Once we complete the migration from near_sdk::PublicKey they should not be
+// needed anymore
 
 impl IntoDtoType<Result<dtos_contract::Ed25519PublicKey>> for &near_sdk::PublicKey {
     fn into_dto_type(self) -> Result<dtos_contract::Ed25519PublicKey> {
