@@ -89,6 +89,7 @@ pub mod verifying_key_bs58 {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
     use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -101,7 +102,8 @@ mod tests {
     }
 
     #[test]
-    fn static_web_data_serialize_deserialize_round_trip() {
+    fn static_web_data__should_not_change_after_serialization_roundtrip() {
+        // Given
         let near_signer_public_key = gen_verifying_key(1);
         let near_p2p_public_key = gen_verifying_key(2);
         let near_responder_public_keys = vec![
@@ -117,12 +119,13 @@ mod tests {
             tee_participant_info: None,
         };
 
+        // When
         let json = serde_json::to_string_pretty(&data).expect("serialize should work");
         println!("Serialized JSON:\n{json}");
 
         let decoded: StaticWebData = serde_json::from_str(&json).expect("deserialize should work");
 
-        // Ensure everything matches
+        // Then
         assert_eq!(decoded.near_signer_public_key, near_signer_public_key);
         assert_eq!(decoded.near_p2p_public_key, near_p2p_public_key);
         assert_eq!(
@@ -132,7 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn test_serialized_keys_have_ed25519_prefix_and_valid_base58() {
+    fn serialized_keys__should_have_ed25519_prefix_and_valid_base58() {
+        // Given
         let near_signer_public_key = gen_verifying_key(10);
         let near_p2p_public_key = gen_verifying_key(20);
         let near_responder_public_keys = vec![gen_verifying_key(30)];
@@ -144,12 +148,12 @@ mod tests {
             tee_participant_info: None,
         };
 
+        // When
         let json = serde_json::to_string(&data).expect("serialize should work");
 
         let parsed: serde_json::Value =
             serde_json::from_str(&json).expect("json parse should work");
 
-        // Assert that keys are string encoded
         let signer_str = parsed["near_signer_public_key"]
             .as_str()
             .expect("signer key should be string");
@@ -166,6 +170,7 @@ mod tests {
             .as_str()
             .expect("responder key should be string");
 
+        // Then
         for (label, encoded) in [
             ("signer", signer_str),
             ("p2p", p2p_str),
