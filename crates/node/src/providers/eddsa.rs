@@ -7,13 +7,11 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::storage::SignRequestStorage;
-
 use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
-use near_sdk::CurveType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::eddsa::KeygenOutput;
@@ -126,13 +124,15 @@ impl SignatureProvider for EddsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
+    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
             .try_into()
             .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
 
-        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
+        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
+            .context("Infallible.")
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
@@ -148,9 +148,11 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
+    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data: [u8; 32] = self.to_bytes();
-        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
+        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
+            .context("Infallible.")
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {

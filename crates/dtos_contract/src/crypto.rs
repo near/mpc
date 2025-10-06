@@ -117,6 +117,9 @@ impl AsRef<[u8]> for Secp256k1PublicKey {
     }
 }
 
+// These conversions are only used in tests
+
+#[cfg(feature = "test-utils")]
 impl std::str::FromStr for PublicKey {
     type Err = anyhow::Error;
 
@@ -134,6 +137,7 @@ impl std::str::FromStr for PublicKey {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl std::str::FromStr for Secp256k1PublicKey {
     type Err = anyhow::Error;
 
@@ -156,6 +160,7 @@ impl std::str::FromStr for Secp256k1PublicKey {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl std::str::FromStr for Ed25519PublicKey {
     type Err = anyhow::Error;
 

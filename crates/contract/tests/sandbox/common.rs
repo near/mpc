@@ -384,7 +384,7 @@ pub fn new_ed25519() -> (dtos_contract::PublicKey, KeygenOutput) {
     let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&compressed_key);
-    let pk = dtos_contract::PublicKey::Ed25519(dtos_contract::Ed25519PublicKey(bytes));
+    let pk = dtos_contract::PublicKey::Ed25519(dtos_contract::Ed25519PublicKey::from(bytes));
 
     (pk, keygen_output)
 }
@@ -1109,7 +1109,6 @@ impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &near_sdk::PublicKey {
 
 impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Ed25519PublicKey {
     fn into_contract_type(self) -> near_sdk::PublicKey {
-        // If the original data is correct, this will never panic
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
     }
 }
@@ -1132,6 +1131,5 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
                 .unwrap()
             }
         }
-        // If the original data is correct, this will never panic
     }
 }

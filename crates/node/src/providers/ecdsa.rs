@@ -23,6 +23,7 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use k256::elliptic_curve::sec1::FromEncodedPoint;
+#[cfg(test)]
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
@@ -256,6 +257,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
+    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let bytes = self.to_element().to_encoded_point(false).to_bytes();
         anyhow::ensure!(bytes[0] == 0x04);

@@ -298,7 +298,6 @@ impl IntoDtoType<dtos_contract::Secp256k1PublicKey> for &k256_types::PublicKey {
 
 // This is not yet used, but will be necessary once we complete the migration from near_sdk::PublicKey
 impl IntoContractType<Result<k256_types::PublicKey>> for dtos_contract::Secp256k1PublicKey {
-    // This is not handling errors just to keep the status quo, might be worth doing it
     fn into_contract_type(self) -> Result<k256_types::PublicKey> {
         let mut bytes = [0u8; 65];
         bytes[1..].copy_from_slice(&self.0);
