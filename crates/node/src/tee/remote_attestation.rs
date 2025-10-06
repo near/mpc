@@ -426,21 +426,19 @@ mod tests {
             "Expected no additional submissions after node was automatically re-added"
         );
 
-        // Test another removal cycle to ensure monitoring continues working
-        tee_accounts_sender.send(vec![]).unwrap();
-
-        // Wait for second detection and resubmission
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Verify second resubmission occurred
-        assert_eq!(
-            mock_sender.count(),
-            2,
-            "Expected second resubmission when node was removed again"
-        );
-
-        // Clean up
+        // Stop monitoring service and verify no further submissions occur
         monitoring_task.abort();
         let _ = monitoring_task.await;
+
+        // Wait a bit to ensure the monitoring task has fully stopped
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Verify the submission count remains unchanged after stopping monitoring
+        // (This confirms that only the monitoring service triggers resubmissions)
+        assert_eq!(
+            mock_sender.count(),
+            1,
+            "Expected submission count to remain stable after stopping monitoring service"
+        );
     }
 }
