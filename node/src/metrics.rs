@@ -239,9 +239,9 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_LEADER: prometheus::IntCounterVec =
+    pub static ref PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER: prometheus::IntCounterVec =
         prometheus::register_int_counter_vec!(
-            "participant_total_times_seen_in_failed_computation_leader",
+            "participant_total_times_seen_in_failed_signature_computation_leader",
             "Number of times each participant id was seen in a failed computation that was led by us",
             &["participant_id"],
         )
@@ -249,9 +249,9 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub static ref PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_FOLLOWER: prometheus::IntCounterVec =
+    pub static ref PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER: prometheus::IntCounterVec =
         prometheus::register_int_counter_vec!(
-            "participant_total_times_seen_in_failed_computation_follower",
+            "participant_total_times_seen_in_failed_signature_computation_follower",
             "Number of times each participant id was seen in a failed computation that was followed by us",
             &["participant_id"],
         )

@@ -64,7 +64,7 @@ impl EddsaSignatureProvider {
         .await
         .inspect_err(|_| {
             participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_LEADER
+                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER
                     .with_label_values(&[&id.raw().to_string()])
                     .inc();
             })
@@ -114,7 +114,7 @@ impl EddsaSignatureProvider {
         .await
         .inspect_err(|_| {
             participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_COMPUTATION_FOLLOWER
+                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
                     .with_label_values(&[&id.raw().to_string()])
                     .inc();
             })
