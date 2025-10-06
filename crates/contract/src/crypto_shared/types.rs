@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
+use crate::{IntoContractType, IntoDtoType};
+
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(::near_sdk::schemars::JsonSchema)
@@ -29,8 +31,8 @@ pub enum SignatureResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
 pub struct CKDResponse {
-    pub big_y: k256_types::SerializableAffinePoint,
-    pub big_c: k256_types::SerializableAffinePoint,
+    pub big_y: dtos_contract::Bls12381G1PublicKey,
+    pub big_c: dtos_contract::Bls12381G1PublicKey,
 }
 
 #[cfg_attr(
@@ -49,6 +51,9 @@ pub enum PublicKeyExtended {
         near_public_key_compressed: near_sdk::PublicKey,
         /// Decompressed Edwards point used for curve arithmetic operations.
         edwards_point: SerializableEdwardsPoint,
+    },
+    Bls12381 {
+        public_key: dtos_contract::PublicKey,
     },
 }
 
@@ -79,6 +84,20 @@ impl From<PublicKeyExtended> for near_sdk::PublicKey {
                 near_public_key_compressed,
                 ..
             } => near_public_key_compressed,
+            PublicKeyExtended::Bls12381 { public_key: _ } => unreachable!(),
+        }
+    }
+}
+
+impl From<PublicKeyExtended> for dtos_contract::PublicKey {
+    fn from(public_key_extended: PublicKeyExtended) -> Self {
+        match public_key_extended {
+            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key.into_dto_type(),
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => near_public_key_compressed.into_dto_type(),
+            PublicKeyExtended::Bls12381 { public_key } => public_key,
         }
     }
 }
@@ -111,15 +130,38 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
     }
 }
 
-impl AsRef<near_sdk::PublicKey> for PublicKeyExtended {
-    fn as_ref(&self) -> &near_sdk::PublicKey {
-        match self {
-            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key,
-            PublicKeyExtended::Ed25519 {
-                near_public_key_compressed,
-                ..
-            } => near_public_key_compressed,
-        }
+impl TryFrom<dtos_contract::PublicKey> for PublicKeyExtended {
+    type Error = PublicKeyExtendedConversionError;
+    fn try_from(public_key: dtos_contract::PublicKey) -> Result<Self, Self::Error> {
+        let extended_key = match public_key {
+            dtos_contract::PublicKey::Ed25519(inner_public_key) => {
+                let near_public_key = inner_public_key.into_contract_type();
+                let public_key_bytes: &[u8; 32] = near_public_key
+                    .as_bytes()
+                    .get(1..)
+                    .map(TryInto::try_into)
+                    .ok_or(PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?
+                    .map_err(|_| PublicKeyExtendedConversionError::PublicKeyLengthMalformed)?;
+
+                let edwards_point = SerializableEdwardsPoint::from_bytes(public_key_bytes)
+                    .into_option()
+                    .ok_or(PublicKeyExtendedConversionError::FailedDecompressingToEdwardsPoint)?;
+
+                Self::Ed25519 {
+                    near_public_key_compressed: near_public_key,
+                    edwards_point,
+                }
+            }
+            dtos_contract::PublicKey::Secp256k1(inner_public_key) => {
+                let near_public_key = inner_public_key.into_contract_type();
+                Self::Secp256k1 { near_public_key }
+            }
+            dtos_contract::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {
+                public_key: dtos_contract::PublicKey::from(inner_public_key),
+            },
+        };
+
+        Ok(extended_key)
     }
 }
 

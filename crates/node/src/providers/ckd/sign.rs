@@ -1,17 +1,16 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use k256::AffinePoint;
-use near_sdk::{AccountId, PublicKey};
+use dtos_contract::Bls12381G1PublicKey;
+use near_sdk::AccountId;
 use rand::rngs::OsRng;
 use threshold_signatures::{
-    confidential_key_derivation::protocol::ckd, ecdsa::KeygenOutput, frost_secp256k1::VerifyingKey,
+    confidential_key_derivation::{protocol::ckd, ElementG1, KeygenOutput, VerifyingKey},
     protocol::Participant,
 };
 use tokio::time::timeout;
 
-use crate::metrics;
-use crate::providers::PublicKeyConversion;
+use crate::{metrics, trait_extensions::convert_to_contract_dto::TryIntoNodeType};
 use crate::{
     network::{computation::MpcLeaderCentricComputation, NetworkTaskChannel},
     protocol::run_protocol,
@@ -23,7 +22,7 @@ impl CKDProvider {
     pub(super) async fn make_ckd_leader(
         self: Arc<Self>,
         id: CKDId,
-    ) -> anyhow::Result<(AffinePoint, AffinePoint)> {
+    ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
 
         let threshold = self.mpc_config.participants.threshold as usize;
@@ -48,6 +47,8 @@ impl CKDProvider {
             anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
         };
 
+        let public_key = keygen_output.public_key;
+
         let result = CKDComputation {
             keygen_output,
             app_public_key: ckd_request.app_public_key,
@@ -63,7 +64,7 @@ impl CKDProvider {
             anyhow::bail!("ckd result doesn't contain value for the leader!");
         };
 
-        Ok((big_y, big_c))
+        Ok(((big_y, big_c), public_key))
     }
 
     pub(super) async fn make_ckd_follower(
@@ -103,16 +104,16 @@ impl CKDProvider {
 /// The tweak allows key derivation
 pub struct CKDComputation {
     pub keygen_output: KeygenOutput,
-    pub app_public_key: PublicKey,
+    pub app_public_key: Bls12381G1PublicKey,
     pub app_id: AccountId,
 }
 
 #[async_trait::async_trait]
-impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComputation {
+impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputation {
     async fn compute(
         self,
         channel: &mut NetworkTaskChannel,
-    ) -> anyhow::Result<Option<(AffinePoint, AffinePoint)>> {
+    ) -> anyhow::Result<Option<(ElementG1, ElementG1)>> {
         let cs_participants = channel
             .participants()
             .iter()
@@ -126,7 +127,7 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
             channel.my_participant_id().into(),
             self.keygen_output.private_share,
             self.app_id.as_bytes(),
-            VerifyingKey::from_near_sdk_public_key(&self.app_public_key)?,
+            self.app_public_key.try_into_node_type()?,
             OsRng,
         )?;
 
@@ -134,7 +135,7 @@ impl MpcLeaderCentricComputation<Option<(AffinePoint, AffinePoint)>> for CKDComp
         let _timer = metrics::MPC_CKD_TIME_ELAPSED.start_timer();
         let result = run_protocol("ckd", channel, protocol).await?;
 
-        Ok(result.map(|f| (f.big_y().value().to_affine(), f.big_c().value().to_affine())))
+        Ok(result.map(|f| (f.big_y(), f.big_c())))
     }
 
     fn leader_waits_for_success(&self) -> bool {

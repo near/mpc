@@ -81,6 +81,7 @@ dstack-sdk = { version = "0.1.1" }
 dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
+elliptic-curve = "0.13.8"
 flume = "0.11.1"
 fs2 = "0.4"
 futures = "0.3.31"
@@ -125,8 +126,8 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
-# A tag is temporarily used to avoid including the BLS changes here, while including all API changes in ot_based_ecdsa
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", tag = "ot_based_ecdsa-API-changes"}
+# Last commit on main branch as of 06-10-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "657a2e4992ed9759ed5cd248e3004ff823a78783"}
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-util = { version = "0.7.12", features = ["time"] }

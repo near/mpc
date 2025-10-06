@@ -1,7 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
 use crate::tests::TestGenerators;
-use crate::trait_extensions::convert_to_contract_dto::IntoContractType;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use threshold_signatures::ecdsa::KeygenOutput;
@@ -78,10 +77,10 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
         .keyshares
         .iter()
         .map(|keyshare| {
-            let near_sdk_public_key = keyshare.public_key().unwrap().into_contract_type();
+            let public_key = keyshare.public_key().unwrap();
             KeyForDomain {
                 domain_id: keyshare.key_id.domain_id,
-                key: near_sdk_public_key.try_into().unwrap(),
+                key: public_key.try_into().unwrap(),
                 attempt: keyshare.key_id.attempt_id,
             }
         })

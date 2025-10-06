@@ -36,7 +36,7 @@ async fn test_basic_cluster() {
 
     let ckd_domain = DomainConfig {
         id: DomainId(1),
-        scheme: SignatureScheme::CkdSecp256k1,
+        scheme: SignatureScheme::Bls12381,
     };
 
     {

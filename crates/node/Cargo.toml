@@ -18,6 +18,7 @@ clap = { workspace = true }
 derive_more = { workspace = true }
 dtos-contract = { workspace = true }
 ed25519-dalek = { workspace = true }
+elliptic-curve = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }

@@ -14,11 +14,11 @@ use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
+use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};
 
-use mpc_contract::crypto_shared::k256_types::SerializableAffinePoint;
 use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
@@ -352,7 +352,7 @@ impl MpcClient {
 
                                         Ok(response)
                                     }
-                                    Some(SignatureScheme::CkdSecp256k1) => Err(anyhow::anyhow!(
+                                    Some(SignatureScheme::Bls12381) => Err(anyhow::anyhow!(
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
@@ -413,24 +413,20 @@ impl MpcClient {
                                 let response =
                                     match this.domain_to_scheme.get(&ckd_attempt.request.domain_id)
                                     {
-                                        Some(SignatureScheme::CkdSecp256k1) => {
+                                        Some(SignatureScheme::Bls12381) => {
                                             let response = timeout(
                                                 Duration::from_secs(this.config.ckd.timeout_sec),
                                                 this.ckd_provider
                                                     .clone()
-                                                    .make_ckd(ckd_attempt.request.id),
+                                                    .make_signature(ckd_attempt.request.id),
                                             )
                                             .await??;
 
                                             let response = ChainCKDRespondArgs::new_ckd(
                                                 &ckd_attempt.request,
                                                 &CKDResponse {
-                                                    big_y: SerializableAffinePoint {
-                                                        affine_point: response.0,
-                                                    },
-                                                    big_c: SerializableAffinePoint {
-                                                        affine_point: response.1,
-                                                    },
+                                                    big_y: response.0 .0.into_dto_type(),
+                                                    big_c: response.0 .1.into_dto_type(),
                                                 },
                                             )?;
 

@@ -9,17 +9,20 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
-use curve25519_dalek::edwards::CompressedEdwardsY;
+
 use k256::{
-    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
+    elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
     EncodedPoint,
 };
 
-use crate::{
-    crypto_shared::k256_types,
-    errors::{ConversionError, Error},
-};
+use curve25519_dalek::edwards::CompressedEdwardsY;
 
+#[cfg(any(test, feature = "test-utils"))]
+use threshold_signatures::confidential_key_derivation as ckd;
+
+use crate::crypto_shared::k256_types;
+
+use crate::errors::{ConversionError, Error};
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
@@ -335,10 +338,16 @@ impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &CompressedEdwardsY {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+impl IntoDtoType<dtos_contract::Bls12381G1PublicKey> for &ckd::ElementG1 {
+    fn into_dto_type(self) -> dtos_contract::Bls12381G1PublicKey {
+        dtos_contract::Bls12381G1PublicKey::from(self.to_compressed())
+    }
+}
+
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
-
 impl TryIntoDtoType<dtos_contract::Ed25519PublicKey> for &near_sdk::PublicKey {
     type Error = Error;
     fn try_into_dto_type(self) -> Result<dtos_contract::Ed25519PublicKey, Error> {
@@ -360,5 +369,32 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Ed25519PublicKey 
     fn into_contract_type(self) -> near_sdk::PublicKey {
         // This will never panic, as type Ed25519PublicKey enforces the correct key size
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
+    }
+}
+
+impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Secp256k1PublicKey {
+    fn into_contract_type(self) -> near_sdk::PublicKey {
+        // This will never panic, as type Secp256k1PublicKey enforces the correct key size
+        near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, self.0.into()).unwrap()
+    }
+}
+
+impl IntoDtoType<dtos_contract::PublicKey> for &near_sdk::PublicKey {
+    // This will never panic, because the key sizes match
+    fn into_dto_type(self) -> dtos_contract::PublicKey {
+        match self.curve_type() {
+            near_sdk::CurveType::SECP256K1 => {
+                let mut bytes = [0u8; 64];
+                // The first byte is the curve type
+                bytes.copy_from_slice(&self.as_bytes()[1..]);
+                dtos_contract::PublicKey::from(dtos_contract::Secp256k1PublicKey::from(bytes))
+            }
+            near_sdk::CurveType::ED25519 => {
+                let mut bytes = [0u8; 32];
+                // The first byte is the curve type
+                bytes.copy_from_slice(&self.as_bytes()[1..]);
+                dtos_contract::PublicKey::from(dtos_contract::Ed25519PublicKey::from(bytes))
+            }
+        }
     }
 }
