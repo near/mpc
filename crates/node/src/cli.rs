@@ -225,6 +225,13 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
+        let _tokio_enter_guard = root_runtime.enter();
+
         // Load configuration and initialize persistent secrets
         let home_dir = PathBuf::from(self.home_dir.clone());
         let config = load_config_file(&home_dir)?;
@@ -247,11 +254,6 @@ impl StartCmd {
         // Create communication channels and runtime
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
         let root_task_handle = Arc::new(OnceLock::new());
-
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
 
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(ProtocolContractState::NotInitialized);
