@@ -151,6 +151,8 @@ async fn resubmit_attestation<T: TransactionSender + Clone>(
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     for attempt in 1..=MAX_RETRIES {
+        let is_final_attempt = attempt == MAX_RETRIES;
+
         match submit_remote_attestation(
             tx_sender.clone(),
             fresh_attestation.clone(),
@@ -162,20 +164,19 @@ async fn resubmit_attestation<T: TransactionSender + Clone>(
                 tracing::info!(%node_account_id, attempt, "successfully resubmitted attestation");
                 return Ok(());
             }
-            Err(error) if attempt == MAX_RETRIES => {
-                tracing::error!(%node_account_id, %error, "attestation resubmission failed after {MAX_RETRIES} attempts");
-                return Err(error);
-            }
             Err(error) => {
-                tracing::warn!(%node_account_id, attempt, %error, "attestation resubmission failed, retrying");
-                if attempt < MAX_RETRIES {
+                if is_final_attempt {
+                    tracing::error!(%node_account_id, %error, "attestation resubmission failed after {MAX_RETRIES} attempts");
+                    return Err(error);
+                } else {
+                    tracing::warn!(%node_account_id, attempt, %error, "attestation resubmission failed, retrying");
                     retry_interval.tick().await;
                 }
             }
         }
     }
 
-    unreachable!()
+    Ok(()) // This line is unreachable but satisfies the compiler
 }
 
 /// Checks if TEE attestation is available for the given node in the TEE accounts list.
