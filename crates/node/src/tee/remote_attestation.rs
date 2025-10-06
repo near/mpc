@@ -19,12 +19,12 @@ use mpc_contract::tee::tee_state::NodeId;
 use near_sdk::AccountId;
 use tokio::sync::watch;
 
+const ATTESTATION_RESUBMISSION_RETRY_DELAY: Duration = Duration::from_secs(2);
 const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
 const BACKOFF_FACTOR: f32 = 1.5;
-const RESUBMISSION_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Submits a remote attestation transaction to the MPC contract, retrying with backoff until success.
 ///
@@ -145,14 +145,18 @@ async fn resubmit_attestation<T: TransactionSender + Clone>(
     tls_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
     const MAX_RETRIES: usize = 3;
-    let mut retry_interval = tokio::time::interval(RESUBMISSION_RETRY_DELAY);
+    let mut retry_interval = tokio::time::interval(ATTESTATION_RESUBMISSION_RETRY_DELAY);
+    let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
+    let report_data = ReportData::new(tls_sdk_public_key.clone());
+    let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     for attempt in 1..=MAX_RETRIES {
-        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
-        let report_data = ReportData::new(tls_sdk_public_key.clone());
-        let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
-
-        match submit_remote_attestation(tx_sender.clone(), fresh_attestation, tls_public_key).await
+        match submit_remote_attestation(
+            tx_sender.clone(),
+            fresh_attestation.clone(),
+            tls_public_key,
+        )
+        .await
         {
             Ok(_) => {
                 tracing::info!(%node_account_id, attempt, "successfully resubmitted attestation");
@@ -175,20 +179,18 @@ async fn resubmit_attestation<T: TransactionSender + Clone>(
 }
 
 /// Checks if TEE attestation is available for the given node in the TEE accounts list.
-fn is_tee_attestation_available(tee_accounts: &[NodeId], node_id: &NodeId) -> bool {
-    tee_accounts.iter().any(|tee_node_id| {
-        tee_node_id.account_id == node_id.account_id
-            && tee_node_id.tls_public_key == node_id.tls_public_key
-    })
+fn is_node_in_contract_tee_accounts(
+    tee_accounts_receiver: &mut watch::Receiver<Vec<NodeId>>,
+    node_id: &NodeId,
+) -> bool {
+    let tee_accounts = tee_accounts_receiver.borrow_and_update();
+    tee_accounts.contains(node_id)
 }
 
 /// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
-/// the node's TEE attestation is no longer available. This covers all removal scenarios:
-/// - Attestation timeout/expiration
-/// - Node removal during resharing
-/// - TEE validation failures
+/// the node's TEE attestation is no longer available.
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     tee_authority: TeeAuthority,
@@ -202,28 +204,22 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             near_sdk::CurveType::ED25519,
             tls_public_key.to_bytes().to_vec(),
         )
-        .expect("Failed to create PublicKey from TLS public key"),
+        .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
     };
 
-    tracing::info!(
-        %node_account_id,
-        "starting TEE attestation removal monitoring"
-    );
-
-    let initial_tee_accounts = tee_accounts_receiver.borrow().clone();
-    let initially_available = is_tee_attestation_available(&initial_tee_accounts, &node_id);
+    let initially_available =
+        is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
     tracing::info!(
         %node_account_id,
         initially_available,
-        "initial TEE attestation status"
+        "starting TEE attestation removal monitoring; initial TEE attestation status"
     );
 
     let mut was_available = initially_available;
 
     while tee_accounts_receiver.changed().await.is_ok() {
-        let tee_accounts = tee_accounts_receiver.borrow().clone();
-        let is_available = is_tee_attestation_available(&tee_accounts, &node_id);
+        let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
 
         tracing::debug!(
             %node_account_id,
@@ -358,14 +354,13 @@ mod tests {
                 near_sdk::CurveType::ED25519,
                 tls_public_key.to_bytes().to_vec(),
             )
-            .expect("Failed to create PublicKey from TLS public key"),
+            .unwrap(),
         };
 
         // Create initial TEE accounts list including our node
         let initial_tee_accounts = vec![node_id.clone()];
         let (sender, receiver) = watch::channel(initial_tee_accounts);
 
-        // Start monitoring task
         let monitoring_task = tokio::spawn(monitor_attestation_removal(
             node_account_id.clone(),
             tee_authority,
