@@ -4,7 +4,7 @@ use crate::{
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
-    IntoContractType, IntoDtoType,
+    IntoContractType, TryIntoDtoType,
 };
 use attestation::{
     attestation::{Attestation, MockAttestation},
@@ -131,7 +131,7 @@ impl TeeState {
             return TeeQuoteStatus::Invalid;
         };
 
-        let tls_public_key = match node_id.tls_public_key.clone().into_dto_type() {
+        let tls_public_key = match node_id.tls_public_key.clone().try_into_dto_type() {
             Ok(value) => value,
             Err(_) => return TeeQuoteStatus::Invalid,
         };

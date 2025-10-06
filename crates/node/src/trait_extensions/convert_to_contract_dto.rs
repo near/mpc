@@ -22,8 +22,9 @@ pub(crate) trait IntoDtoType<DtoType> {
     fn into_dto_type(self) -> DtoType;
 }
 
-pub(crate) trait IntoNodeType<NodeType> {
-    fn into_node_type(self) -> NodeType;
+pub(crate) trait TryIntoNodeType<NodeType> {
+    type Error;
+    fn try_into_node_type(self) -> Result<NodeType, Self::Error>;
 }
 
 impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &ed25519_dalek::VerifyingKey {
@@ -182,10 +183,11 @@ impl IntoDtoType<dtos_contract::PublicKey>
     }
 }
 
-impl IntoNodeType<Result<threshold_signatures::frost_ed25519::VerifyingKey, ParsePublicKeyError>>
+impl TryIntoNodeType<threshold_signatures::frost_ed25519::VerifyingKey>
     for dtos_contract::Ed25519PublicKey
 {
-    fn into_node_type(
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(
         self,
     ) -> Result<threshold_signatures::frost_ed25519::VerifyingKey, ParsePublicKeyError> {
         threshold_signatures::frost_ed25519::VerifyingKey::deserialize(self.as_bytes())
@@ -193,10 +195,11 @@ impl IntoNodeType<Result<threshold_signatures::frost_ed25519::VerifyingKey, Pars
     }
 }
 
-impl IntoNodeType<Result<threshold_signatures::frost_secp256k1::VerifyingKey, ParsePublicKeyError>>
+impl TryIntoNodeType<threshold_signatures::frost_secp256k1::VerifyingKey>
     for dtos_contract::Secp256k1PublicKey
 {
-    fn into_node_type(
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(
         self,
     ) -> Result<threshold_signatures::frost_secp256k1::VerifyingKey, ParsePublicKeyError> {
         let mut bytes = [0u8; 65];
@@ -212,10 +215,9 @@ impl IntoNodeType<Result<threshold_signatures::frost_secp256k1::VerifyingKey, Pa
     }
 }
 
-impl IntoNodeType<Result<ed25519_dalek::VerifyingKey, ParsePublicKeyError>>
-    for dtos_contract::Ed25519PublicKey
-{
-    fn into_node_type(self) -> Result<ed25519_dalek::VerifyingKey, ParsePublicKeyError> {
+impl TryIntoNodeType<ed25519_dalek::VerifyingKey> for dtos_contract::Ed25519PublicKey {
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(self) -> Result<ed25519_dalek::VerifyingKey, ParsePublicKeyError> {
         ed25519_dalek::VerifyingKey::from_bytes(self.as_bytes()).map_err(|_| ParsePublicKeyError {})
     }
 }

@@ -19,7 +19,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{IntoContractType, IntoDtoType},
+    dto_mapping::{IntoContractType, IntoDtoType, TryIntoDtoType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
@@ -1782,7 +1782,11 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let dto_public_key = participant_info.sign_pk.clone().into_dto_type().unwrap();
+        let dto_public_key = participant_info
+            .sign_pk
+            .clone()
+            .try_into_dto_type()
+            .unwrap();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -2138,7 +2142,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type()
+                    .try_into_dto_type()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
@@ -2198,7 +2202,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type()
+                    .try_into_dto_type()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk.clone(),
@@ -2232,7 +2236,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type()
+                    .try_into_dto_type()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
@@ -2262,7 +2266,7 @@ mod tests {
                 .destination_node_info
                 .sign_pk
                 .clone()
-                .into_dto_type()
+                .try_into_dto_type()
                 .unwrap(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
@@ -2287,7 +2291,7 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type()
+                    .try_into_dto_type()
                     .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,

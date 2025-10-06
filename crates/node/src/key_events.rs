@@ -8,7 +8,7 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::trait_extensions::convert_to_contract_dto::{
-    IntoContractType, IntoDtoType, IntoNodeType,
+    IntoContractType, IntoDtoType, TryIntoNodeType,
 };
 use crate::{
     config::ParticipantsConfig,
@@ -192,7 +192,7 @@ async fn resharing_computation_inner(
 
     let keyshare_data = match (public_key, domain.scheme) {
         (dtos_contract::PublicKey::Secp256k1(inner_public_key), SignatureScheme::Secp256k1) => {
-            let public_key = inner_public_key.into_node_type()?;
+            let public_key = inner_public_key.try_into_node_type()?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::Secp256k1(data) => Ok(data.private_share),
@@ -211,7 +211,7 @@ async fn resharing_computation_inner(
         }
         (dtos_contract::PublicKey::Ed25519(inner_public_key), SignatureScheme::Ed25519) => {
             let public_key: Result<frost_ed25519::VerifyingKey, _> =
-                inner_public_key.into_node_type();
+                inner_public_key.try_into_node_type();
             let public_key = public_key?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
@@ -230,7 +230,7 @@ async fn resharing_computation_inner(
             KeyshareData::Ed25519(res)
         }
         (dtos_contract::PublicKey::Secp256k1(inner_public_key), SignatureScheme::CkdSecp256k1) => {
-            let public_key = inner_public_key.into_node_type()?;
+            let public_key = inner_public_key.try_into_node_type()?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
                     KeyshareData::CkdSecp256k1(data) => Ok(data.private_share),
