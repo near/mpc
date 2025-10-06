@@ -132,8 +132,8 @@ impl PermanentKeyStorage {
                 );
             }
             let is_same_epoch_id = existing.epoch_id.get() == keyshare_data.epoch_id.get();
-            let same_number_of_domains = existing.keyshares.len() >= keyshare_data.keyshares.len();
-            if is_same_epoch_id && same_number_of_domains {
+            let does_not_extend_keyset = existing.keyshares.len() >= keyshare_data.keyshares.len();
+            if is_same_epoch_id && does_not_extend_keyset {
                 anyhow::bail!(
                     "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal number of domains",
                     existing.epoch_id.get(),

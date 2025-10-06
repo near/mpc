@@ -307,13 +307,13 @@ impl KeyshareStorage {
             &contract_keyset.domains,
         )?;
         if backup.len() != contract_keyset.domains.len() {
-            anyhow::bail!("Require backup keyshares to be an exact match for the contract keyset.")
+            anyhow::bail!("backup keyshares is not an exact match for the contract keyset")
         }
 
         // Ensure we import into an empty Keystore
         let permanent = self.permanent.load().await?;
         if permanent.is_some() {
-            anyhow::bail!("Require permanent keyshare storage to be empty");
+            anyhow::bail!("permanent keyshare storage isn't empty");
         }
 
         self._store_new_permanent_keyset_data_delete_temporary(
