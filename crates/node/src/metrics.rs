@@ -7,6 +7,7 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
     )
     .unwrap()
 });
+
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
         near_o11y::metrics::try_create_histogram(
@@ -15,6 +16,7 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
         )
         .unwrap()
     });
+
 pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_pre_signature_time_elapsed",
@@ -22,6 +24,7 @@ pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = Laz
     )
     .unwrap()
 });
+
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     near_o11y::metrics::try_create_histogram(
         "near_mpc_signature_time_elapsed",
@@ -73,6 +76,7 @@ pub static MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE: LazyLock<prometheus::IntGauge>
         )
         .unwrap()
     });
+
 pub static MPC_OWNED_NUM_PRESIGNATURES_ONLINE: LazyLock<prometheus::IntGauge> =
     LazyLock::new(|| {
         prometheus::register_int_gauge!(
@@ -82,6 +86,7 @@ pub static MPC_OWNED_NUM_PRESIGNATURES_ONLINE: LazyLock<prometheus::IntGauge> =
         )
         .unwrap()
     });
+
 pub static MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::IntGauge> =
     LazyLock::new(|| {
         prometheus::register_int_gauge!(
@@ -91,6 +96,7 @@ pub static MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT: LazyLock<promet
         )
         .unwrap()
     });
+
 pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -197,6 +203,7 @@ pub static MPC_OUTGOING_TRANSACTION_OUTCOMES: LazyLock<prometheus::IntCounterVec
         )
         .unwrap()
     });
+
 pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_indexer_latest_block_height",
@@ -213,6 +220,7 @@ pub static MPC_ACCESS_KEY_NONCE: LazyLock<prometheus::IntGauge> = LazyLock::new(
     )
     .unwrap()
 });
+
 pub static MPC_CURRENT_JOB_STATE: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_current_job_state",
@@ -221,6 +229,7 @@ pub static MPC_CURRENT_JOB_STATE: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     )
     .unwrap()
 });
+
 pub static SIGN_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "sign_request_channel_failed",

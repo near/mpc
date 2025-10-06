@@ -1,14 +1,16 @@
+mod types;
+
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::key_state::Keyset;
 use near_sdk::AccountId;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
+use types::MigrationInfo;
 
 use crate::{
     config::NodeStatus,
     indexer::{
-        migrations::MigrationInfo,
         participants::ContractState,
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, ConcludeNodeMigrationArgs},
@@ -344,37 +346,3 @@ pub async fn onboard_inner(
     monitoring_handle.abort();
     result
 }
-//async fn wait_for_state_change(
-//    contract_state_receiver: &mut watch::Receiver<ContractState>,
-//) -> anyhow::Result<()> {
-//    loop {
-//        tokio::select! {
-//            res = contract_state_receiver.changed() => {return res.context("channel closed waiting for state change");},
-//            _ = tokio::time::sleep(Duration::from_secs(60)) => {
-//                tracing::info!(target: "Onboarding", "Waiting for state change");
-//            },
-//        };
-//    }
-//}
-//// returns Ok(()) if it detects a change in keyset.
-//// returns Err if the channel closed.
-//async fn indef_wait_for_keyset_mismatch(
-//    mut contract_state_receiver: watch::Receiver<ContractState>,
-//    importing_keyset: Keyset,
-//) -> anyhow::Result<()> {
-//    loop {
-//        let contract = contract_state_receiver.borrow_and_update().clone();
-//        match contract {
-//            ContractState::Invalid => {}
-//            ContractState::Initializing(_) => {}
-//            ContractState::Running(running_state) => {
-//                if running_state.resharing_state.is_none() {
-//                    if importing_keyset != running_state.keyset {
-//                        return Ok(());
-//                    }
-//                }
-//            }
-//        }
-//        contract_state_receiver.changed().await?;
-//    }
-//}
