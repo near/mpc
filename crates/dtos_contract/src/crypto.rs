@@ -67,23 +67,17 @@ pub struct Ed25519PublicKey(pub [u8; 32]);
 pub struct Secp256k1PublicKey(#[serde_as(as = "[_; 64]")] pub [u8; 64]);
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-use schemars::{
-    JsonSchema,
-    schema::{ArrayValidation, InstanceType, Schema, SchemaObject},
-};
-
-// This should be done better
-#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-impl JsonSchema for Secp256k1PublicKey {
+impl schemars::JsonSchema for Secp256k1PublicKey {
     fn schema_name() -> String {
         "Secp256k1PublicKey".into()
     }
 
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> Schema {
-        SchemaObject {
-            instance_type: Some(InstanceType::Array.into()),
-            array: Some(Box::new(ArrayValidation {
-                unique_items: Some(true),
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Array.into()),
+            array: Some(Box::new(schemars::schema::ArrayValidation {
+                min_items: Some(64),
+                max_items: Some(64),
                 items: Some(generator.subschema_for::<u8>().into()),
                 ..Default::default()
             })),
