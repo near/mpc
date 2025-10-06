@@ -286,15 +286,25 @@ mod tests {
         }
     }
 
+    /// Simulates contract behavior by automatically adding the node back to TEE accounts
+    /// when an attestation submission occurs, mimicking real contract response to successful submissions.
+    struct ContractSimulator {
+        sender: watch::Sender<Vec<NodeId>>,
+        node_id: NodeId,
+    }
+
+    /// Mock that tracks attestation submissions and simulates contract responses.
     #[derive(Clone)]
     struct MockSender {
         submissions: Arc<Mutex<usize>>,
+        contract_simulator: Arc<ContractSimulator>,
     }
 
     impl MockSender {
-        fn new() -> Self {
+        fn new(sender: watch::Sender<Vec<NodeId>>, node_id: NodeId) -> Self {
             Self {
                 submissions: Arc::new(Mutex::new(0)),
+                contract_simulator: Arc::new(ContractSimulator { sender, node_id }),
             }
         }
 
@@ -309,6 +319,11 @@ mod tests {
             _: ChainSendTransactionRequest,
         ) -> Result<(), TransactionProcessorError> {
             *self.submissions.lock().unwrap() += 1;
+
+            // Simulate contract adding the node back to TEE accounts after successful submission
+            let updated_tee_accounts = vec![self.contract_simulator.node_id.clone()];
+            let _ = self.contract_simulator.sender.send(updated_tee_accounts);
+
             Ok(())
         }
 
@@ -324,7 +339,17 @@ mod tests {
     #[tokio::test]
     async fn test_periodic_attestation_submission() {
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
-        let sender = MockSender::new();
+
+        let (dummy_sender, _) = watch::channel(vec![]);
+        let dummy_node_id = NodeId {
+            account_id: "dummy.near".parse().unwrap(),
+            tls_public_key: near_sdk::PublicKey::from_parts(
+                near_sdk::CurveType::ED25519,
+                vec![0u8; 32],
+            )
+            .unwrap(),
+        };
+        let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let key = SigningKey::generate(&mut rng).verifying_key();
 
@@ -346,7 +371,6 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key = SigningKey::generate(&mut rng).verifying_key();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
-        let mock_sender = MockSender::new();
 
         let node_id = NodeId {
             account_id: node_account_id.clone(),
@@ -359,7 +383,10 @@ mod tests {
 
         // Create initial TEE accounts list including our node
         let initial_tee_accounts = vec![node_id.clone()];
-        let (sender, receiver) = watch::channel(initial_tee_accounts);
+        let (tee_accounts_sender, receiver) = watch::channel(initial_tee_accounts);
+
+        // Create mock sender with contract simulator built-in
+        let mock_sender = MockSender::new(tee_accounts_sender.clone(), node_id.clone());
 
         let monitoring_task = tokio::spawn(monitor_attestation_removal(
             node_account_id.clone(),
@@ -377,23 +404,40 @@ mod tests {
 
         // Remove the node from TEE accounts (simulate attestation removal)
         let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
-        sender.send(removed_tee_accounts).unwrap();
+        tee_accounts_sender.send(removed_tee_accounts).unwrap();
 
-        // Wait for monitoring to detect the change
+        // Wait for monitoring to detect removal and resubmit
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Verify attestation resubmission occurred
-        assert_eq!(mock_sender.count(), 1);
+        // Verify attestation resubmission occurred (monitoring detected removal)
+        assert_eq!(
+            mock_sender.count(),
+            1,
+            "Expected exactly one resubmission when node was removed"
+        );
 
-        // Add the node back to TEE accounts
-        let restored_tee_accounts = vec![node_id];
-        sender.send(restored_tee_accounts).unwrap();
+        // Wait a bit more to ensure the monitoring service has processed the automatic re-addition
+        tokio::time::sleep(Duration::from_millis(20)).await;
 
-        // Wait for state update
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        // Verify no additional submissions occurred (node should be back in TEE accounts automatically)
+        assert_eq!(
+            mock_sender.count(),
+            1,
+            "Expected no additional submissions after node was automatically re-added"
+        );
 
-        // Verify no additional submission (node is back in TEE accounts)
-        assert_eq!(mock_sender.count(), 1);
+        // Test another removal cycle to ensure monitoring continues working
+        tee_accounts_sender.send(vec![]).unwrap();
+
+        // Wait for second detection and resubmission
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Verify second resubmission occurred
+        assert_eq!(
+            mock_sender.count(),
+            2,
+            "Expected second resubmission when node was removed again"
+        );
 
         // Clean up
         monitoring_task.abort();
