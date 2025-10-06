@@ -106,6 +106,8 @@ The inputs to this phase are:
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
 
+>  [click to see the Notation reference](../../network_layer.md#documentation-notation).
+
 # Differences with [[DJNPO20](https://eprint.iacr.org/2020/501)]
 
 Our specification introduces several modifications to the original paper, aimed at enhancing performance, security, and compatibility. The key changes are:

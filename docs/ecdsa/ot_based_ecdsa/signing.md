@@ -100,3 +100,5 @@ The inputs to this phase are:
 
 **Output:** the signature $(R, s)$.
 
+---
+>  [click to see the Notation reference](../../network_layer.md#documentation-notation).

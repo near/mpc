@@ -3,7 +3,7 @@ Note that while the other specifications and parts of the protocol are intended
 to be strictly followed, this specification is less opinionated about generating
 triples.
 
-As long as valid triples are generated according to proces, they
+As long as valid triples are generated according to the process, they
 can be used in the subsequent presigning phase.
 The presigning phase is agnostic as to how these triples have been generated.
 
@@ -380,3 +380,5 @@ $$
 8. Each $P_i$ sets $A \gets E(0)$, $B \gets F(0)$.
 9. $\square$ Each $P_i$ returns $((a_i, b_i, c_i), (A, B, C))$.
 
+---
+>  [click to see the Notation reference](../../network_layer.md#documentation-notation).
