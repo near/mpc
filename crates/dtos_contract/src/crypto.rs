@@ -4,6 +4,9 @@ use derive_more::{Deref, From};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
+const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;
+
 #[derive(
     Debug,
     Clone,
@@ -47,7 +50,7 @@ pub enum PublicKey {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Ed25519PublicKey(pub [u8; 32]);
+pub struct Ed25519PublicKey(pub [u8; ED25519_PUBLIC_KEY_SIZE]);
 
 #[serde_as]
 #[derive(
@@ -65,7 +68,7 @@ pub struct Ed25519PublicKey(pub [u8; 32]);
     BorshSerialize,
     BorshDeserialize,
 )]
-pub struct Secp256k1PublicKey(#[serde_as(as = "[_; 64]")] pub [u8; 64]);
+pub struct Secp256k1PublicKey(#[serde_as(as = "[_; 64]")] pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Secp256k1PublicKey {
@@ -77,8 +80,8 @@ impl schemars::JsonSchema for Secp256k1PublicKey {
         schemars::schema::SchemaObject {
             instance_type: Some(schemars::schema::InstanceType::Array.into()),
             array: Some(Box::new(schemars::schema::ArrayValidation {
-                min_items: Some(64),
-                max_items: Some(64),
+                min_items: Some(SECP256K1_PUBLIC_KEY_SIZE),
+                max_items: Some(SECP256K1_PUBLIC_KEY_SIZE),
                 items: Some(generator.subschema_for::<u8>().into()),
                 ..Default::default()
             })),
@@ -89,7 +92,7 @@ impl schemars::JsonSchema for Secp256k1PublicKey {
 }
 
 impl Ed25519PublicKey {
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
         &self.0
     }
 }
@@ -101,7 +104,7 @@ impl AsRef<[u8]> for Ed25519PublicKey {
 }
 
 impl Secp256k1PublicKey {
-    pub fn as_bytes(&self) -> &[u8; 64] {
+    pub fn as_bytes(&self) -> &[u8; SECP256K1_PUBLIC_KEY_SIZE] {
         &self.0
     }
 }
@@ -137,13 +140,13 @@ impl std::str::FromStr for Secp256k1PublicKey {
     type Err = anyhow::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; 64];
+        let mut bytes = [0u8; SECP256K1_PUBLIC_KEY_SIZE];
         if let Some(idx) = value.find(':') {
             let (prefix, key_data) = value.split_at(idx);
             match prefix {
                 "secp256k1" => {
                     let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == 64);
+                    anyhow::ensure!(data.len() == SECP256K1_PUBLIC_KEY_SIZE);
                     bytes.copy_from_slice(&data);
                     Ok(Self(bytes))
                 }
@@ -160,13 +163,13 @@ impl std::str::FromStr for Ed25519PublicKey {
     type Err = anyhow::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8; ED25519_PUBLIC_KEY_SIZE];
         if let Some(idx) = value.find(':') {
             let (prefix, key_data) = value.split_at(idx);
             match prefix {
                 "ed25519" => {
                     let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == 32);
+                    anyhow::ensure!(data.len() == ED25519_PUBLIC_KEY_SIZE);
                     bytes.copy_from_slice(&data);
                     Ok(Self(bytes))
                 }
@@ -174,6 +177,36 @@ impl std::str::FromStr for Ed25519PublicKey {
             }
         } else {
             anyhow::bail!("Separator not found")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::crypto::{ED25519_PUBLIC_KEY_SIZE, SECP256K1_PUBLIC_KEY_SIZE};
+
+    #[test]
+    fn test_assert_near_public_key_sizes() {
+        let near_public_keys = [
+            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
+            "secp256k1:3Abs6NwUMErNAftRfipRjWxxqcTPBJTSr2uoHi3bHcthzb4iXqNnNYi86ATKwf4XWHg1JDrX2m1sJgNMYq7ey6cG",
+            "secp256k1:21C8NARZw2tUuULi1tENKi5azgDKLp9cv4FT2U1N6iF5k1W33BbJvsLr6rCZsYZxxUjBtpuWCsKvmv9P5ARzyyyn",
+            "secp256k1:4YbU8ZLEQK7gww1f65ZhtFCYfSxrm67sV9eaQi8oRo1LvCAtznztsiryJrzHg2oz285xN3ADAsGPizmCNe4hn9WR",
+            "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+            "ed25519:4upBpJYUrjPBzqNYaY8pvJGQtep7YMT3j9zRsopYQqfG",
+            "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv",
+            "ed25519:Fru1RoC6dw1xY2J6C6ZSBUt5PEysxTLX2kDexxqoDN6k",
+        ];
+        for pk in near_public_keys {
+            let near_pk: near_sdk::PublicKey = pk.parse().unwrap();
+            match near_pk.curve_type() {
+                near_sdk::CurveType::ED25519 => {
+                    assert_eq!(near_pk.as_bytes().len(), ED25519_PUBLIC_KEY_SIZE + 1);
+                }
+                near_sdk::CurveType::SECP256K1 => {
+                    assert_eq!(near_pk.as_bytes().len(), SECP256K1_PUBLIC_KEY_SIZE + 1);
+                }
+            }
         }
     }
 }

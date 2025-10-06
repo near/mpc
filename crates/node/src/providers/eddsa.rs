@@ -167,7 +167,7 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use threshold_signatures::frost_ed25519::VerifyingKey;
 
     use crate::{

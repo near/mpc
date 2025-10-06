@@ -289,7 +289,7 @@ impl PublicKeyConversion for VerifyingKey {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use threshold_signatures::frost_secp256k1;
 
     use crate::{
