@@ -80,8 +80,8 @@ impl schemars::JsonSchema for Secp256k1PublicKey {
         schemars::schema::SchemaObject {
             instance_type: Some(schemars::schema::InstanceType::Array.into()),
             array: Some(Box::new(schemars::schema::ArrayValidation {
-                min_items: Some(SECP256K1_PUBLIC_KEY_SIZE),
-                max_items: Some(SECP256K1_PUBLIC_KEY_SIZE),
+                min_items: Some(SECP256K1_PUBLIC_KEY_SIZE as u32),
+                max_items: Some(SECP256K1_PUBLIC_KEY_SIZE as u32),
                 items: Some(generator.subschema_for::<u8>().into()),
                 ..Default::default()
             })),
