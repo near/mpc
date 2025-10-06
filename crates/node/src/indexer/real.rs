@@ -1,4 +1,5 @@
 use super::handler::listen_blocks;
+use super::migrations::monitor_migrations;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
@@ -8,7 +9,6 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
-use crate::migration_service::monitoring::monitor_migrations;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;

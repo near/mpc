@@ -5,7 +5,13 @@ use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::BackupServiceInfo;
 use tokio::sync::watch;
 
-use crate::{indexer::IndexerState, providers::PublicKeyConversion};
+use crate::{
+    indexer::{
+        lib::{get_mpc_migration_info, wait_for_full_sync},
+        IndexerState,
+    },
+    providers::PublicKeyConversion,
+};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct MigrationInfo {
@@ -21,10 +27,16 @@ async fn fetch_migrations_once(
 ) -> MigrationInfo {
     loop {
         tracing::debug!(target: "migration", "awaiting indexer full sync to read mpc contract state");
-        indexer_state.wait_for_full_sync().await;
+        wait_for_full_sync(&indexer_state.client).await;
 
         tracing::debug!(target: "migration", "querying migration state");
-        match indexer_state.get_mpc_my_migration_info().await {
+
+        match get_mpc_migration_info(
+            indexer_state.mpc_contract_id.clone(),
+            &indexer_state.view_client,
+        )
+        .await
+        {
             Ok((_, my_map)) => {
                 for (_, (_, destination_node)) in my_map.iter() {
                     if let Some(destination_node_info) = destination_node {

@@ -1,8 +1,5 @@
-pub mod monitoring;
-
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use monitoring::MigrationInfo;
 use mpc_contract::primitives::key_state::Keyset;
 use near_sdk::AccountId;
 use tokio::sync::watch;
@@ -11,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::NodeStatus,
     indexer::{
+        migrations::MigrationInfo,
         participants::ContractState,
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, ConcludeNodeMigrationArgs},

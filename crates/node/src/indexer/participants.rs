@@ -1,6 +1,6 @@
 use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantsConfig};
-use crate::indexer::lib::get_mpc_contract_state;
+use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
@@ -211,7 +211,7 @@ pub async fn monitor_contract_state(
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
             //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            indexer_state.wait_for_full_sync().await;
+            wait_for_full_sync(&indexer_state.client).await;
 
             tracing::debug!(target: "indexer", "querying contract state");
 

@@ -1,4 +1,5 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
+use super::migrations::MigrationInfo;
 use super::participants::ContractState;
 use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
@@ -7,7 +8,6 @@ use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
-use crate::migration_service::monitoring::MigrationInfo;
 use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
@@ -17,7 +17,7 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
 use mpc_contract::config::Config;
-use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
+use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -794,6 +794,7 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
+        // todo
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
                 backup_service_info: None,
