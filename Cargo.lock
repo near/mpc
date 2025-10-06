@@ -1216,7 +1216,6 @@ dependencies = [
  "dcap-qvl",
  "derive_more 2.0.1",
  "dstack-sdk-types",
- "dtos-contract",
  "hex",
  "k256",
  "mpc-primitives",
@@ -9793,6 +9792,7 @@ dependencies = [
  "dtos-contract",
  "hex",
  "mpc-primitives",
+ "near-sdk",
  "serde_json",
  "sha2",
 ]

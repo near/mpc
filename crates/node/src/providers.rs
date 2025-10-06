@@ -79,7 +79,6 @@ pub trait HasParticipants {
 
 /// Helper functions to convert back and forth public key types
 pub trait PublicKeyConversion: Sized {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;
 }

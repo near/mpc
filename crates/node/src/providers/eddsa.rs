@@ -124,7 +124,6 @@ impl SignatureProvider for EddsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
@@ -148,7 +147,6 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data: [u8; 32] = self.to_bytes();
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())

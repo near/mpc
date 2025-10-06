@@ -12,6 +12,7 @@ use crate::{
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     },
+    providers::PublicKeyConversion,
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 
@@ -110,7 +111,7 @@ async fn periodic_attestation_submission_with_interval<T: TransactionSender + Cl
     loop {
         interval_ticker.tick().await;
 
-        let tls_sdk_public_key = tls_public_key.into_dto_type();
+        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
         let report_data = ReportData::new(tls_sdk_public_key);
         let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
             Ok(attestation) => attestation,

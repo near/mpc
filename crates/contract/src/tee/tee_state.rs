@@ -4,7 +4,7 @@ use crate::{
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
-    IntoDtoType,
+    IntoContractType, IntoDtoType,
 };
 use attestation::{
     attestation::{Attestation, MockAttestation},
@@ -100,7 +100,8 @@ impl TeeState {
         tls_public_key: Ed25519PublicKey,
         tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
-        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
+        let expected_report_data =
+            ReportData::V1(ReportDataV1::new(tls_public_key.into_contract_type()));
         let is_valid = attestation.verify(
             expected_report_data,
             Self::current_time_seconds(),
@@ -135,7 +136,8 @@ impl TeeState {
             Err(_) => return TeeQuoteStatus::Invalid,
         };
 
-        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
+        let expected_report_data =
+            ReportData::V1(ReportDataV1::new(tls_public_key.into_contract_type()));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(
