@@ -300,3 +300,25 @@ pub fn init_build_info_metric() {
         .with_label_values(&[version, build_time, commit, rustc_version])
         .set(1);
 }
+
+pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER: LazyLock<
+    prometheus::IntCounterVec,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter_vec!(
+        "participant_total_times_seen_in_failed_signature_computation_leader",
+        "Number of times each participant id was seen in a failed signature computation that was led by us",
+        &["participant_id"],
+    )
+    .unwrap()
+});
+
+pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER: LazyLock<
+    prometheus::IntCounterVec,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter_vec!(
+            "participant_total_times_seen_in_failed_signature_computation_follower",
+            "Number of times each participant id was seen in a failed signature computation that was followed by us",
+            &["participant_id"],
+        )
+        .unwrap()
+});
