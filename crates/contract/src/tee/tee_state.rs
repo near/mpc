@@ -21,7 +21,7 @@ use std::{collections::HashSet, time::Duration};
 pub struct NodeId {
     /// Operator account
     pub account_id: AccountId,
-    /// TLS public key
+    /// TLS public key, MUST BE of type Ed25519
     pub tls_public_key: near_sdk::PublicKey,
 }
 
@@ -130,9 +130,12 @@ impl TeeState {
             return TeeQuoteStatus::Invalid;
         };
 
-        let expected_report_data = ReportData::V1(ReportDataV1::new(
-            node_id.tls_public_key.clone().into_dto_type(),
-        ));
+        let tls_public_key = match node_id.tls_public_key.clone().into_dto_type() {
+            Ok(value) => value,
+            Err(_) => return TeeQuoteStatus::Invalid,
+        };
+
+        let expected_report_data = ReportData::V1(ReportDataV1::new(tls_public_key));
         let time_stamp_seconds = Self::current_time_seconds();
 
         let quote_result = participant_attestation.verify(

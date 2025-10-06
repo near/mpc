@@ -1782,7 +1782,7 @@ mod tests {
             MockAttestation::Invalid
         };
 
-        let dto_public_key = participant_info.sign_pk.clone().into_dto_type();
+        let dto_public_key = participant_info.sign_pk.clone().into_dto_type().unwrap();
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
@@ -2138,7 +2138,8 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type(),
+                    .into_dto_type()
+                    .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: None,
@@ -2197,7 +2198,8 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type(),
+                    .into_dto_type()
+                    .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk.clone(),
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
@@ -2230,7 +2232,8 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type(),
+                    .into_dto_type()
+                    .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::NodeMigrationError(
@@ -2259,7 +2262,8 @@ mod tests {
                 .destination_node_info
                 .sign_pk
                 .clone()
-                .into_dto_type(),
+                .into_dto_type()
+                .unwrap(),
             signer_account_id: non_participant_account_id.clone(),
             signer_account_pk: destination_node_info.signer_account_pk,
             expected_error_kind: Some(ErrorKind::InvalidState(InvalidState::NotParticipant)),
@@ -2283,7 +2287,8 @@ mod tests {
                     .destination_node_info
                     .sign_pk
                     .clone()
-                    .into_dto_type(),
+                    .into_dto_type()
+                    .unwrap(),
                 signer_account_id: account_id.clone(),
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: Some(ErrorKind::InvalidState(

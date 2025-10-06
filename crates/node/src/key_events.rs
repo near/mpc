@@ -7,9 +7,9 @@ use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
-use crate::trait_extensions::convert_to_contract_dto::IntoContractType;
-use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
-use crate::trait_extensions::convert_to_contract_dto::IntoNodeType;
+use crate::trait_extensions::convert_to_contract_dto::{
+    IntoContractType, IntoDtoType, IntoNodeType,
+};
 use crate::{
     config::ParticipantsConfig,
     indexer::{

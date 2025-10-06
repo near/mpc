@@ -4,6 +4,7 @@
 //! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
+use anyhow::{anyhow, Result};
 use attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::{Collateral, QuoteCollateralV3},
@@ -289,19 +290,24 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
 impl IntoDtoType<dtos_contract::Secp256k1PublicKey> for &k256_types::PublicKey {
     fn into_dto_type(self) -> dtos_contract::Secp256k1PublicKey {
         let mut bytes = [0u8; 64];
+        // The first byte is the curve type
         bytes.copy_from_slice(&self.to_encoded_point(false).to_bytes()[1..]);
         dtos_contract::Secp256k1PublicKey::from(bytes)
     }
 }
 
-impl IntoContractType<k256_types::PublicKey> for dtos_contract::Secp256k1PublicKey {
+// This is not yet used, but will be necessary once we complete the migration from near_sdk::PublicKey
+impl IntoContractType<Result<k256_types::PublicKey>> for dtos_contract::Secp256k1PublicKey {
     // This is not handling errors just to keep the status quo, might be worth doing it
-    fn into_contract_type(self) -> k256_types::PublicKey {
+    fn into_contract_type(self) -> Result<k256_types::PublicKey> {
         let mut bytes = [0u8; 65];
         bytes[1..].copy_from_slice(&self.0);
+        // The first byte is the curve representation, in this case uncompressed
         bytes[0] = 0x4;
-        let point = EncodedPoint::from_bytes(bytes).unwrap();
-        k256_types::PublicKey::from_encoded_point(&point).unwrap()
+        let point = EncodedPoint::from_bytes(bytes)?;
+        k256_types::PublicKey::from_encoded_point(&point)
+            .into_option()
+            .ok_or(anyhow!("Error decoding point"))
     }
 }
 
@@ -313,19 +319,24 @@ impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &CompressedEdwardsY {
 
 // These are temporary conversions to avoid breaking the contract API
 
-impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &near_sdk::PublicKey {
-    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
-        // This function should not be called with any other type
-        assert!(self.curve_type() == near_sdk::CurveType::ED25519);
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&self.as_bytes()[1..]);
-        dtos_contract::Ed25519PublicKey::from(bytes)
+impl IntoDtoType<Result<dtos_contract::Ed25519PublicKey>> for &near_sdk::PublicKey {
+    fn into_dto_type(self) -> Result<dtos_contract::Ed25519PublicKey> {
+        // This function should not be called with any other curve type
+        match self.curve_type() {
+            near_sdk::CurveType::ED25519 => {
+                let mut bytes = [0u8; 32];
+                // The first byte is the curve type
+                bytes.copy_from_slice(&self.as_bytes()[1..]);
+                Ok(dtos_contract::Ed25519PublicKey::from(bytes))
+            }
+            _ => Err(anyhow!("Wrong key type used")),
+        }
     }
 }
 
 impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Ed25519PublicKey {
     fn into_contract_type(self) -> near_sdk::PublicKey {
-        // If the original data is correct, this will never panic
+        // This will never panic, as type Ed25519PublicKey enforces the correct key size
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
     }
 }
