@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use near_sdk::{near, store::IterableMap, AccountId, PublicKey};
+use dtos_contract::Ed25519PublicKey;
+use near_sdk::{near, store::IterableMap, AccountId};
 
 use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};
 
@@ -87,15 +88,15 @@ impl NodeMigrations {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 #[near(serializers=[borsh, json])]
 pub struct BackupServiceInfo {
-    pub public_key: PublicKey,
+    pub public_key: Ed25519PublicKey,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 #[near(serializers=[borsh, json])]
 pub struct DestinationNodeInfo {
-    /// the public key used by the node to sign transactions to the contrat
+    /// the public key used by the node to sign transactions to the contract
     /// this key is different from the TLS key called `sign_pk` and stored in `ParticipantInfo`.
-    pub signer_account_pk: PublicKey,
+    pub signer_account_pk: near_sdk::PublicKey,
     // the participant info for the node
     pub destination_node_info: ParticipantInfo,
 }
@@ -107,13 +108,16 @@ mod tests {
 
     use crate::{
         node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations},
-        primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id, gen_participant},
+        primitives::test_utils::{
+            bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id,
+            gen_participant,
+        },
     };
 
     #[test]
     fn test_set_backup_service_info() {
         let mut migrations = NodeMigrations::default();
-        let backup_service_pk = bogus_ed25519_near_public_key();
+        let backup_service_pk = bogus_ed25519_public_key();
 
         let account_id = gen_account_id();
         let info = BackupServiceInfo {
@@ -205,7 +209,7 @@ mod tests {
         let mut migrations = NodeMigrations::default();
         let (account_id, participant_info) = gen_participant(0);
         let signer_account_pk = bogus_ed25519_near_public_key();
-        let backup_service_pk = bogus_ed25519_near_public_key();
+        let backup_service_pk = bogus_ed25519_public_key();
 
         let info = BackupServiceInfo {
             public_key: backup_service_pk,

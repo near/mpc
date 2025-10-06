@@ -112,7 +112,7 @@ async fn periodic_attestation_submission_with_interval<T: TransactionSender + Cl
         interval_ticker.tick().await;
 
         let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
-        let report_data = ReportData::new(tls_sdk_public_key.clone());
+        let report_data = ReportData::new(tls_sdk_public_key);
         let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
             Ok(attestation) => attestation,
             Err(error) => {

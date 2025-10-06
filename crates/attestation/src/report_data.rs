@@ -1,6 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
-use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
@@ -35,7 +34,7 @@ impl ReportDataVersion {
 
 #[derive(Debug, Clone, Constructor)]
 pub struct ReportDataV1 {
-    tls_public_key: PublicKey,
+    tls_public_key: near_sdk::PublicKey,
 }
 
 /// report_data_v1: [u8; 64] =
@@ -100,7 +99,7 @@ pub enum ReportData {
 }
 
 impl ReportData {
-    pub fn new(tls_public_key: PublicKey) -> Self {
+    pub fn new(tls_public_key: near_sdk::PublicKey) -> Self {
         ReportData::V1(ReportDataV1::new(tls_public_key))
     }
 
@@ -124,8 +123,7 @@ mod tests {
     use crate::report_data::ReportData;
     use alloc::vec::Vec;
     use dcap_qvl::quote::Quote;
-    use near_sdk::PublicKey;
-    use test_utils::attestation::{p2p_tls_key, quote};
+    use test_utils::attestation::{near_p2p_tls_key, quote};
 
     #[test]
     fn test_from_str_valid() {
@@ -135,13 +133,13 @@ mod tests {
 
         let td_report = quote.report.as_td10().expect("Should be a TD 1.0 report");
 
-        let near_p2p_public_key: PublicKey = p2p_tls_key();
-        let report_data = ReportData::V1(ReportDataV1::new(near_p2p_public_key));
+        let p2p_public_key = near_p2p_tls_key();
+        let report_data = ReportData::V1(ReportDataV1::new(p2p_public_key));
         assert_eq!(report_data.to_bytes(), td_report.report_data,);
     }
 
-    fn create_test_key() -> PublicKey {
-        "secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj"
+    fn create_test_key() -> near_sdk::PublicKey {
+        "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
             .parse()
             .unwrap()
     }
