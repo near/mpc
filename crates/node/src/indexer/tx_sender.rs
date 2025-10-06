@@ -3,6 +3,7 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
+use crate::indexer::lib::MIGRATION_INFO_ENDPOINT;
 use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetAttestationArgs};
 use crate::metrics;
 use anyhow::Context;
@@ -327,17 +328,14 @@ async fn observe_tx_result(
                 Ok(TransactionStatus::NotExecuted)
             }
         }
-        ConcludeNodeMigration(_args) => {
-            // todo
-            Ok(TransactionStatus::Unknown)
-        }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
         | VotePk(_)
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
-        | VerifyTee() => Ok(TransactionStatus::Unknown),
+        | VerifyTee()
+        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
     }
 }
 
