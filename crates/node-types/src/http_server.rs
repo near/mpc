@@ -102,6 +102,28 @@ mod tests {
     }
 
     #[test]
+    fn verifying_key_bs58__should_serialize_to_exact_snapshot() {
+        // Given
+        #[derive(Serialize)]
+        #[serde(transparent)]
+        struct Bs58(#[serde(with = "verifying_key_bs58")] VerifyingKey);
+
+        let public_key = Bs58(gen_verifying_key(42));
+
+        // When
+        let serialized =
+            serde_json::to_value(&public_key).expect("should be able to serialize public key");
+
+        // Then
+        assert_eq!(
+            serialized
+                .as_str()
+                .expect("serialized value should be string"),
+            "ed25519:99466FdMtvpCZchWcPC9JZemHfm9Daw4ASc8eT6GRhkW"
+        );
+    }
+
+    #[test]
     fn static_web_data__should_not_change_after_serialization_roundtrip() {
         // Given
         let near_signer_public_key = gen_verifying_key(1);
