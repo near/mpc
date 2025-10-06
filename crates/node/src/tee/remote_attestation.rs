@@ -266,6 +266,8 @@ mod tests {
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
+    const TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
+    const TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
 
     struct MockTicker {
         count: usize,
@@ -299,6 +301,7 @@ mod tests {
     struct MockSender {
         submissions: Arc<Mutex<usize>>,
         contract_simulator: Arc<ContractSimulator>,
+        notify: Arc<tokio::sync::Notify>,
     }
 
     impl MockSender {
@@ -306,11 +309,16 @@ mod tests {
             Self {
                 submissions: Arc::new(Mutex::new(0)),
                 contract_simulator: Arc::new(ContractSimulator { sender, node_id }),
+                notify: Arc::new(tokio::sync::Notify::new()),
             }
         }
 
         fn count(&self) -> usize {
             *self.submissions.lock().unwrap()
+        }
+
+        async fn wait_for_submission(&self) {
+            self.notify.notified().await;
         }
     }
 
@@ -324,6 +332,9 @@ mod tests {
             // Simulate contract adding the node back to TEE accounts after successful submission
             let updated_tee_accounts = vec![self.contract_simulator.node_id.clone()];
             let _ = self.contract_simulator.sender.send(updated_tee_accounts);
+
+            // Notify that a submission occurred
+            self.notify.notify_one();
 
             Ok(())
         }
@@ -397,8 +408,9 @@ mod tests {
             receiver,
         ));
 
-        // Wait for initial setup
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        // Yield control to allow the monitoring task to start and process initial state.
+        // This is preferred over sleep() as it doesn't introduce arbitrary timing delays
+        tokio::task::yield_now().await;
 
         // Verify no submission occurred initially (node is in TEE accounts)
         assert_eq!(mock_sender.count(), 0);
@@ -407,35 +419,27 @@ mod tests {
         let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
         tee_accounts_sender.send(removed_tee_accounts).unwrap();
 
-        // Wait for monitoring to detect removal and resubmit
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Wait for the resubmission to occur (with timeout to avoid hanging)
+        tokio::time::timeout(
+            TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT,
+            mock_sender.wait_for_submission(),
+        )
+        .await
+        .expect("Expected resubmission to occur within timeout");
 
-        // Verify attestation resubmission occurred (monitoring detected removal)
+        // Verify attestation resubmission occurred and no additional submissions occurred
+        // (node should be back in TEE accounts automatically after resubmission)
         assert_eq!(
             mock_sender.count(),
             1,
             "Expected exactly one resubmission when node was removed"
         );
 
-        // Wait a bit more to ensure the monitoring service has processed the automatic re-addition
-        tokio::time::sleep(Duration::from_millis(20)).await;
-
-        // Verify no additional submissions occurred (node should be back in TEE accounts automatically)
-        assert_eq!(
-            mock_sender.count(),
-            1,
-            "Expected no additional submissions after node was automatically re-added"
-        );
-
         // Stop monitoring service and verify no further submissions occur
         monitoring_task.abort();
         let _ = monitoring_task.await;
 
-        // Wait a bit to ensure the monitoring task has fully stopped
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
         // Verify the submission count remains unchanged after stopping monitoring
-        // (This confirms that only the monitoring service triggers resubmissions)
         assert_eq!(
             mock_sender.count(),
             1,
@@ -446,8 +450,19 @@ mod tests {
         let removed_tee_accounts = vec![]; // Node is no longer in TEE accounts
         let _ = tee_accounts_sender.send(removed_tee_accounts);
 
-        // Wait to ensure no resubmission occurs when monitoring is stopped
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Give a brief moment to ensure no resubmission occurs when monitoring is stopped
+        // Since the monitoring task is stopped, we use a timeout to verify no submission happens
+        let timeout_result = tokio::time::timeout(
+            TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT,
+            mock_sender.wait_for_submission(),
+        )
+        .await;
+
+        // Verify the timeout occurred (no submission)
+        assert!(
+            timeout_result.is_err(),
+            "Expected no resubmission when monitoring service is stopped"
+        );
 
         // Verify no resubmission occurred (monitoring service is stopped)
         assert_eq!(
