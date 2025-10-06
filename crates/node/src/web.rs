@@ -10,8 +10,8 @@ use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
-use serde::Serialize;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -127,14 +127,6 @@ async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../../third-party-licenses/licenses.html"))
 }
 
-#[derive(Clone, Serialize)]
-pub struct StaticWebData {
-    pub near_signer_public_key: VerifyingKey,
-    pub near_p2p_public_key: VerifyingKey,
-    pub near_responder_public_keys: Vec<VerifyingKey>,
-    pub tee_participant_info: Option<Attestation>,
-}
-
 struct PublicKeys {
     near_signer_public_key: VerifyingKey,
     near_p2p_public_key: VerifyingKey,
@@ -164,15 +156,17 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     }
 }
 
-impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
-        let public_keys = get_public_keys(value);
-        Self {
-            near_signer_public_key: public_keys.near_signer_public_key,
-            near_p2p_public_key: public_keys.near_p2p_public_key,
-            near_responder_public_keys: public_keys.near_responder_public_keys,
-            tee_participant_info,
-        }
+pub fn static_web_data(
+    value: &SecretsConfig,
+    tee_participant_info: Option<Attestation>,
+) -> StaticWebData {
+    let public_keys = get_public_keys(value);
+
+    StaticWebData {
+        near_signer_public_key: public_keys.near_signer_public_key,
+        near_p2p_public_key: public_keys.near_p2p_public_key,
+        near_responder_public_keys: public_keys.near_responder_public_keys,
+        tee_participant_info,
     }
 }
 

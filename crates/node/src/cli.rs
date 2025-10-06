@@ -1,7 +1,7 @@
 use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::providers::PublicKeyConversion;
-use crate::web::{DebugRequest, StaticWebData};
+use crate::web::{static_web_data, DebugRequest};
 use crate::{
     config::{
         load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
@@ -263,7 +263,7 @@ impl StartCmd {
                 root_task_handle.clone(),
                 debug_request_sender.clone(),
                 config.web_ui.clone(),
-                StaticWebData::new(&secrets, Some(attestation.clone())),
+                static_web_data(&secrets, Some(attestation.clone())),
                 protocol_state_receiver,
             ))
             .context("Failed to create web server.")?;
