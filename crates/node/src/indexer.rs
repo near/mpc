@@ -76,6 +76,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
-    /// Watcher that keeps track of TEE accounts stored in the contract.
-    pub tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
+    /// Watcher that tracks node IDs that have TEE attestations in the contract.
+    pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 }

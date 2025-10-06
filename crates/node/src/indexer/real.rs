@@ -184,6 +184,6 @@ pub fn spawn_real_indexer(
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
-        tee_accounts_receiver,
+        attested_nodes_receiver: tee_accounts_receiver,
     }
 }

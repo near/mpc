@@ -408,7 +408,7 @@ impl StartCmd {
 
         // Spawn TEE attestation monitoring task
         let tx_sender_clone = indexer_api.txn_sender.clone();
-        let tee_accounts_receiver = indexer_api.tee_accounts_receiver.clone();
+        let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
         let account_id_clone = config.my_near_account_id.clone();
 
         tokio::spawn(async move {
