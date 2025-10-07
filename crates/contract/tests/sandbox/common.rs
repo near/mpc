@@ -817,7 +817,7 @@ pub async fn submit_participant_info(
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_json((attestation, tls_key.as_bytes()))
+        .args_json((attestation, tls_key))
         .max_gas()
         .transact()
         .await?;
@@ -832,7 +832,7 @@ pub async fn get_participant_attestation(
         .as_account()
         .call(contract.id(), "get_attestation")
         .args_json(json!({
-            "tls_public_key": tls_key.as_bytes()
+            "tls_public_key": tls_key
         }))
         .max_gas()
         .transact()
