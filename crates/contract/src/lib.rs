@@ -1679,7 +1679,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // This test cannot work anymore, as `basic_setup` only works for Secp256k1
+    #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_simple() {
         let (context, mut contract, _secret_key) = basic_setup();
         let app_public_key: dtos_contract::Bls12381G1PublicKey =
@@ -1714,7 +1714,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // This test cannot work anymore, as `basic_setup` only works for Secp256k1
+    #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_timeout() {
         let (context, mut contract, _secret_key) = basic_setup();
         let app_public_key: dtos_contract::Bls12381G1PublicKey =

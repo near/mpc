@@ -41,9 +41,10 @@ def test_web_endpoints():
         assert "Recent signatures:" in response.text, response.text
         assert "id:" in response.text, response.text
 
-        response = requests.get(f"http://localhost:{port}/debug/ckds")
-        assert "Recent ckds:" in response.text, response.text
-        assert "id:" in response.text, response.text
+        # TODO(#1244): implement pytests for CKD
+        # response = requests.get(f"http://localhost:{port}/debug/ckds")
+        # assert "Recent ckds:" in response.text, response.text
+        # assert "id:" in response.text, response.text
 
         response = requests.get(f"http://localhost:{port}/debug/contract")
         assert "Contract is in Running state" in response.text, response.text

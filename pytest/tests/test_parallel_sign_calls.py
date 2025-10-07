@@ -44,7 +44,7 @@ def test_parallel_sign_calls(compile_parallel_contract, num_parallel_requests):
 
     print("Making parallel request calls")
     # call `parallel_sign` and verify that it returns successfully
-    # TODO(create issue before merge): enable parallel contract CKD tests
+    # TODO(#1244): enable parallel contract CKD tests
     # res = cluster.make_function_call_on_secondary_contract(
     #     function_name="make_parallel_sign_calls",
     #     args={
