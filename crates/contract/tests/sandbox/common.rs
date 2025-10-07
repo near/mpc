@@ -259,6 +259,8 @@ pub async fn init_with_candidates(
                 let scheme = match pk {
                     dtos_contract::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
                     dtos_contract::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
+                    // TODO(#1212)
+                    dtos_contract::PublicKey::Bls12381(_) => todo!(),
                 };
                 let key = pk.into_contract_type().try_into().unwrap();
 
@@ -1132,6 +1134,8 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
                 )
                 .unwrap()
             }
+            // TODO(#1212)
+            dtos_contract::PublicKey::Bls12381(_) => todo!(),
         }
     }
 }
