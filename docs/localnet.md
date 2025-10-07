@@ -100,7 +100,7 @@ Now it's time to deploy the contract.
 First build the contract from the `./crates/contract` folder with:
 
 ```shell
-cargo near build reproducible-wasm
+cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
