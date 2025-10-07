@@ -1,15 +1,12 @@
-use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
-use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
-use crate::web::{static_web_data, DebugRequest};
 use crate::{
     config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
-        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        load_config_file, BlockArgs, CKDConfig, ConfigFile, IndexerConfig, KeygenConfig,
+        PersistentSecrets, PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig,
+        SyncMode, TripleConfig, WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{real::spawn_real_indexer, IndexerAPI},
+    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -17,22 +14,23 @@ use crate::{
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
+    providers::PublicKeyConversion,
     tracking::{self, start_root_task},
-    web::start_web_server,
+    web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use attestation::attestation::Attestation;
-use attestation::report_data::ReportData;
+use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::sync::OnceLock;
 use std::{
     path::PathBuf,
+    sync::OnceLock,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
@@ -53,6 +51,8 @@ use {
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
+
+pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -396,6 +396,7 @@ impl StartCmd {
                 tee_authority_clone,
                 tx_sender_clone,
                 tls_public_key,
+                tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
             )
             .await
             {
