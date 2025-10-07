@@ -1,11 +1,12 @@
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::proposal::MpcDockerImageHash;
+use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_state::NodeId};
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{
+    Mutex, {mpsc, watch},
+};
 use types::ChainSendTransactionRequest;
 
 pub mod balances;
@@ -75,4 +76,6 @@ pub struct IndexerAPI<TransactionSender> {
     pub txn_sender: TransactionSender,
     /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
+    /// Watcher that tracks node IDs that have TEE attestations in the contract.
+    pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 }
