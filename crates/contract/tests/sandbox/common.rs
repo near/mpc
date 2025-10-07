@@ -83,7 +83,7 @@ pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11179);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11206);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -259,6 +259,8 @@ pub async fn init_with_candidates(
                 let scheme = match pk {
                     dtos_contract::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
                     dtos_contract::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
+                    // TODO(#1212)
+                    dtos_contract::PublicKey::Bls12381(_) => todo!(),
                 };
                 let key = pk.into_contract_type().try_into().unwrap();
 
@@ -815,7 +817,7 @@ pub async fn submit_participant_info(
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_json((attestation, tls_key.as_bytes()))
+        .args_json((attestation, tls_key))
         .max_gas()
         .transact()
         .await?;
@@ -830,7 +832,7 @@ pub async fn get_participant_attestation(
         .as_account()
         .call(contract.id(), "get_attestation")
         .args_json(json!({
-            "tls_public_key": tls_key.as_bytes()
+            "tls_public_key": tls_key
         }))
         .max_gas()
         .transact()
@@ -1132,6 +1134,8 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
                 )
                 .unwrap()
             }
+            // TODO(#1212)
+            dtos_contract::PublicKey::Bls12381(_) => todo!(),
         }
     }
 }
