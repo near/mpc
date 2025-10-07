@@ -87,7 +87,7 @@ linkdrop_account_id = "test.near"
 Now, create an account for the contract with the following command.
 
 ```shell
-near account create-account fund-myself mpc-contract.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 We can verify that the account exists and has 10 NEAR with this command.
@@ -97,7 +97,7 @@ near account view-account-summary mpc-contract.test.near network-config mpc-loca
 ```
 
 Now it's time to deploy the contract.
-First build the contract from the `./crates/contract` folder with:
+First build the contract from the repository root with:
 
 ```shell
 cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
@@ -127,11 +127,11 @@ Now when the contract has been deployed, the next step is to initialize it.
 ## 3. Create accounts for Alice and Bob
 
 ```shell
-near account create-account fund-myself alice.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself alice.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 ```shell
-near account create-account fund-myself bob.test.near '10 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself bob.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 ## 4. Start Alice and Bob's MPC nodes
@@ -199,6 +199,8 @@ indexer:
   concurrency: 1
   mpc_contract_id: mpc-contract.test.near
   finality: optimistic
+ckd:
+  timeout_sec: 60
 cores: 4
 EOF
 ```
@@ -259,6 +261,8 @@ indexer:
   concurrency: 1
   mpc_contract_id: mpc-contract.test.near
   finality: optimistic
+ckd:
+  timeout_sec: 60
 cores: 4
 EOF
 ```
@@ -268,12 +272,13 @@ EOF
 In two separate shells run the MPC binary for alice and bob. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-bob/ 11111111111111111111111111111111
+mpc-node start --home-dir ~/.near/mpc-bob/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-alice/ 11111111111111111111111111111111
+mpc-node start --home-dir ~/.near/mpc-alice/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
+Note: `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the alice and bob MPC indexers connect to it.
 
