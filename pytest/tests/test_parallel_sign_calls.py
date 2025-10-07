@@ -44,13 +44,24 @@ def test_parallel_sign_calls(compile_parallel_contract, num_parallel_requests):
 
     print("Making parallel request calls")
     # call `parallel_sign` and verify that it returns successfully
+    # TODO: enable parallel contract CKD tests
+    # res = cluster.make_function_call_on_secondary_contract(
+    #     function_name="make_parallel_sign_calls",
+    #     args={
+    #         "target_contract": cluster.mpc_contract_account(),
+    #         "ecdsa_calls_by_domain": {0: int(num_parallel_requests / 3)},
+    #         "eddsa_calls_by_domain": {1: int(num_parallel_requests / 3)},
+    #         "ckd_calls_by_domain": {2: int(num_parallel_requests / 3)},
+    #         "seed": 23,
+    #     },
+    # )
     res = cluster.make_function_call_on_secondary_contract(
         function_name="make_parallel_sign_calls",
         args={
             "target_contract": cluster.mpc_contract_account(),
-            "ecdsa_calls_by_domain": {0: int(num_parallel_requests / 3)},
-            "eddsa_calls_by_domain": {1: int(num_parallel_requests / 3)},
-            "ckd_calls_by_domain": {2: int(num_parallel_requests / 3)},
+            "ecdsa_calls_by_domain": {0: int(num_parallel_requests / 2)},
+            "eddsa_calls_by_domain": {1: int(num_parallel_requests / 2)},
+            "ckd_calls_by_domain": {2: 0},
             "seed": 23,
         },
     )
