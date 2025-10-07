@@ -54,7 +54,7 @@ pub struct Ed25519PublicKey(pub [u8; ED25519_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Secp256k1PublicKey(pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
 
@@ -73,7 +73,7 @@ pub struct Secp256k1PublicKey(pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
 
@@ -92,70 +92,52 @@ pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(borsh::BorshSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Bls12381G1PublicKey(pub [u8; BLS12381G1_PUBLIC_KEY_SIZE]);
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Secp256k1PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
     fn schema_name() -> String {
-        "Secp256k1PublicKey".into()
+        "Secp256k1PublicKey".to_string()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
-        schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::Array.into()),
-            array: Some(Box::new(schemars::schema::ArrayValidation {
-                min_items: Some(SECP256K1_PUBLIC_KEY_SIZE as u32),
-                max_items: Some(SECP256K1_PUBLIC_KEY_SIZE as u32),
-                items: Some(generator.subschema_for::<u8>().into()),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }
-        .into()
+        String::json_schema(generator)
     }
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Bls12381G1PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
     fn schema_name() -> String {
-        "Bls12381G1PublicKey".into()
+        "Bls12381G1PublicKey".to_string()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
-        schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::Array.into()),
-            array: Some(Box::new(schemars::schema::ArrayValidation {
-                min_items: Some(BLS12381G1_PUBLIC_KEY_SIZE as u32),
-                max_items: Some(BLS12381G1_PUBLIC_KEY_SIZE as u32),
-                items: Some(generator.subschema_for::<u8>().into()),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }
-        .into()
+        String::json_schema(generator)
     }
 }
 
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Bls12381G2PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
     fn schema_name() -> String {
-        "Bls12381G2PublicKey".into()
+        "Bls12381G2PublicKey".to_string()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
-        schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::Array.into()),
-            array: Some(Box::new(schemars::schema::ArrayValidation {
-                min_items: Some(BLS12381G2_PUBLIC_KEY_SIZE as u32),
-                max_items: Some(BLS12381G2_PUBLIC_KEY_SIZE as u32),
-                items: Some(generator.subschema_for::<u8>().into()),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }
-        .into()
+        String::json_schema(generator)
     }
 }
 
