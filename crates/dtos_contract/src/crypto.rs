@@ -54,7 +54,7 @@ pub struct Ed25519PublicKey(pub [u8; ED25519_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub struct Secp256k1PublicKey(pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
 
@@ -73,7 +73,7 @@ pub struct Secp256k1PublicKey(pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
 
@@ -92,7 +92,7 @@ pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema, borsh::BorshSchema)
+    derive(borsh::BorshSchema)
 )]
 pub struct Bls12381G1PublicKey(pub [u8; BLS12381G1_PUBLIC_KEY_SIZE]);
 
