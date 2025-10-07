@@ -215,11 +215,12 @@ mod tests {
     use hex::ToHex;
     use rstest::rstest;
     use std::{
+        cell::RefCell,
+        rc::Rc,
         sync::{
             Arc,
             atomic::{AtomicI32, Ordering},
         },
-        {cell::RefCell, rc::Rc},
     };
 
     #[cfg(feature = "external-services-tests")]
@@ -367,11 +368,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_with_backoff_failure_exhausts_retries() {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicI32, Ordering},
-        };
-
         tokio::time::pause();
 
         const MAX_RETRIES: usize = 2;
