@@ -265,7 +265,7 @@ impl std::str::FromStr for Secp256k1PublicKey {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
-        let data = bs58::decode(&key_data[1..])
+        let data = bs58::decode(&key_data)
             .into_vec()
             .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
         let bytes = data
@@ -287,7 +287,7 @@ impl std::str::FromStr for Ed25519PublicKey {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
-        let data = bs58::decode(&key_data[1..])
+        let data = bs58::decode(&key_data)
             .into_vec()
             .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
         let bytes = data
@@ -309,7 +309,7 @@ impl std::str::FromStr for Bls12381G1PublicKey {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
-        let data = bs58::decode(&key_data[1..])
+        let data = bs58::decode(&key_data)
             .into_vec()
             .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
         let bytes = data
@@ -331,7 +331,7 @@ impl std::str::FromStr for Bls12381G2PublicKey {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
-        let data = bs58::decode(&key_data[1..])
+        let data = bs58::decode(&key_data)
             .into_vec()
             .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
         let bytes = data
