@@ -6,7 +6,7 @@ use super::{IndexerAPI, IndexerState};
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
-use crate::indexer::tee::monitor_allowed_docker_images;
+use crate::indexer::tee::{monitor_allowed_docker_images, monitor_tee_accounts};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::SigningKey;
 use mpc_contract::state::ProtocolContractState;
@@ -55,6 +55,7 @@ pub fn spawn_real_indexer(
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
+    let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
 
     let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
@@ -120,6 +121,11 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
+            actix::spawn(monitor_tee_accounts(
+                tee_accounts_sender,
+                indexer_state.clone(),
+            ));
+
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
                 indexer_state.clone(),
@@ -178,5 +184,6 @@ pub fn spawn_real_indexer(
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
         allowed_docker_images_receiver,
+        attested_nodes_receiver: tee_accounts_receiver,
     }
 }

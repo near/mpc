@@ -1,15 +1,12 @@
-use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
-use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
-use crate::web::{static_web_data, DebugRequest};
 use crate::{
     config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
-        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        load_config_file, BlockArgs, CKDConfig, ConfigFile, IndexerConfig, KeygenConfig,
+        PersistentSecrets, PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig,
+        SyncMode, TripleConfig, WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{real::spawn_real_indexer, IndexerAPI},
+    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -17,22 +14,23 @@ use crate::{
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
+    providers::PublicKeyConversion,
     tracking::{self, start_root_task},
-    web::start_web_server,
+    web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use attestation::attestation::Attestation;
-use attestation::report_data::ReportData;
+use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::sync::OnceLock;
 use std::{
     path::PathBuf,
+    sync::OnceLock,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
@@ -45,12 +43,16 @@ use url::Url;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
-        remote_attestation::{periodic_attestation_submission, submit_remote_attestation},
+        remote_attestation::{
+            monitor_attestation_removal, periodic_attestation_submission, submit_remote_attestation,
+        },
         AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
+
+pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -390,14 +392,41 @@ impl StartCmd {
 
         // Spawn periodic attestation submission task
         let tx_sender_clone = indexer_api.txn_sender.clone();
+        let tee_authority_clone = tee_authority.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                periodic_attestation_submission(tee_authority, tx_sender_clone, tls_public_key)
-                    .await
+            if let Err(e) = periodic_attestation_submission(
+                tee_authority_clone,
+                tx_sender_clone,
+                tls_public_key,
+                tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
+            )
+            .await
             {
                 tracing::error!(
                     error = ?e,
                     "periodic attestation submission task failed"
+                );
+            }
+        });
+
+        // Spawn TEE attestation monitoring task
+        let tx_sender_clone = indexer_api.txn_sender.clone();
+        let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
+        let account_id_clone = config.my_near_account_id.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = monitor_attestation_removal(
+                account_id_clone,
+                tee_authority,
+                tx_sender_clone,
+                tls_public_key,
+                tee_accounts_receiver,
+            )
+            .await
+            {
+                tracing::error!(
+                    error = ?e,
+                    "attestation removal monitoring task failed"
                 );
             }
         });
