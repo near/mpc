@@ -12,6 +12,19 @@ pub struct MigrationInfo {
     pub active_migration: bool,
 }
 
+impl MigrationInfo {
+    pub fn from_raw_contract(
+        my_account_id: &AccountId,
+        my_p2p_tls_key: &VerifyingKey,
+        contract_state: BTreeMap<
+            AccountId,
+            (Option<BackupServiceInfo>, Option<DestinationNodeInfo>),
+        >,
+    ) -> Self {
+        infer_migration_info(my_account_id, my_p2p_tls_key, contract_state)
+    }
+}
+
 fn infer_migration_status(
     my_p2p_tls_key: &VerifyingKey,
     destination_node_info: &Option<DestinationNodeInfo>,

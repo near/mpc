@@ -1,4 +1,4 @@
-mod types;
+pub mod types;
 
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;

@@ -197,9 +197,9 @@ impl ContractState {
 /// sends the new state via the provided sender. This is a long-running task.
 pub async fn monitor_contract_state(
     indexer_state: Arc<IndexerState>,
-    port_override: Option<u16>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
-) -> watch::Receiver<ContractState> {
+    //port_override: Option<u16>,
+    //protocol_state_sender: watch::Sender<ProtocolContractState>,
+) -> watch::Receiver<(u64, ProtocolContractState)> {
     const CONTRACT_STATE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
     let mut refresh_interval_tick = tokio::time::interval(CONTRACT_STATE_REFRESH_INTERVAL);
 
@@ -215,33 +215,36 @@ pub async fn monitor_contract_state(
 
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match get_mpc_contract_state(
+            match get_mpc_contract_state(
                 indexer_state.mpc_contract_id.clone(),
                 &indexer_state.view_client,
             )
             .await
             {
-                Ok(contract_state) => contract_state,
+                Ok(contract_state) => {
+                    break contract_state;
+                }
                 Err(e) => {
                     tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
                     tokio::time::sleep(CONTRACT_STATE_REFRESH_INTERVAL).await;
                     continue;
                 }
             };
+            // note: this sends it even if the value was not modified! That is kind of defeating
+            // the purpose of using a `watch` channel, no?
 
-            let result = ContractState::from_contract_state(&protocol_state, height, port_override);
+            //protocol_state_sender.send(protocol_state.clone()).unwrap();
+            //// todo: do this after
+            //let result = ContractState::from_contract_state(&protocol_state, height, port_override);
+            //let state = match result {
+            //    Ok(state) => state,
+            //    Err(e) => {
+            //        tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+            //        continue;
+            //    }
+            //};
 
-            protocol_state_sender.send(protocol_state).unwrap();
-
-            let state = match result {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
-                    continue;
-                }
-            };
-
-            break state;
+            //break (height, protocol_state);
         }
     };
 

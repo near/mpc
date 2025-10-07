@@ -1,5 +1,4 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
-use super::migrations::MigrationInfo;
 use super::participants::ContractState;
 use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
@@ -8,6 +7,7 @@ use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
+use crate::migration_service::types::MigrationInfo;
 use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;

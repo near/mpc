@@ -18,8 +18,10 @@ const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration
 /// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
 pub async fn monitor_migrations(
     indexer_state: Arc<IndexerState>,
-) -> watch::Receiver<BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>>
-{
+) -> watch::Receiver<(
+    u64,
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+)> {
     let init_response = fetch_migrations_once(indexer_state.clone()).await;
     let (sender, receiver) = watch::channel(init_response);
 
@@ -48,7 +50,10 @@ pub async fn monitor_migrations(
 
 async fn fetch_migrations_once(
     indexer_state: Arc<IndexerState>,
-) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
+) -> (
+    u64,
+    BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+) {
     loop {
         tracing::debug!(target: "indexer", "awaiting indexer full sync to read mpc contract state");
         wait_for_full_sync(&indexer_state.client).await;
@@ -61,7 +66,7 @@ async fn fetch_migrations_once(
         )
         .await
         {
-            Ok((_, migrations_info)) => {
+            Ok(migrations_info) => {
                 return migrations_info;
             }
             Err(e) => {

@@ -1,6 +1,7 @@
+use crate::migration_service::types::MigrationInfo;
+
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use migrations::MigrationInfo;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
@@ -14,6 +15,7 @@ pub mod configs;
 pub mod handler;
 pub mod lib;
 pub mod migrations;
+pub mod monitoring;
 pub mod participants;
 pub mod real;
 pub mod stats;

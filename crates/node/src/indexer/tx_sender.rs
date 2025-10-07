@@ -3,7 +3,6 @@ use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::lib::MIGRATION_INFO_ENDPOINT;
 use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetAttestationArgs};
 use crate::metrics;
 use anyhow::Context;

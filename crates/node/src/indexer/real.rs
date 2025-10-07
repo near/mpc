@@ -1,6 +1,6 @@
 use super::handler::listen_blocks;
 use super::migrations::monitor_migrations;
-use super::participants::monitor_contract_state;
+use super::participants::{monitor_contract_state, ContractState};
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
@@ -9,9 +9,12 @@ use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::monitor_allowed_docker_images;
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use crate::migration_service::types::MigrationInfo;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::state::ProtocolContractState;
 use near_sdk::AccountId;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -39,6 +42,132 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
     }
 }
 
+// below function should return tuple: (IndexerAPI, RawContractState)
+pub struct RawContractView {
+    raw_protocol_state_receiver: watch::Receiver<(u64, ProtocolContractState)>,
+    raw_migration_state_receiver: watch::Receiver<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
+}
+
+pub struct RawContractSend {
+    raw_protocol_state_sender: watch::Sender<(u64, ProtocolContractState)>,
+    raw_migration_state_sender: watch::Sender<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
+}
+
+// the information the MPC node needs to know.
+pub struct ProcessedMpcContractView {
+    contract_state: watch::Receiver<ContractState>,
+    migration_state: watch::Receiver<MigrationInfo>,
+}
+
+pub struct MpcContractView {
+    raw_view: RawContractView,
+    // anything that deviates from `RawContractView` and is processed for the MPC node
+    processed_view: ProcessedMpcContractView,
+}
+
+async fn process_protocol_state(
+    mut raw_receiver: watch::Receiver<(u64, ProtocolContractState)>,
+    raw_sender: watch::Sender<(u64, ProtocolContractState)>,
+    processed_sender: watch::Sender<ContractState>,
+    port_override: Option<u16>,
+) {
+    loop {
+        // is there a performance penalty to this?
+        let state = raw_receiver.borrow_and_update().clone();
+        // if it changed for us, then it also changed for the receiver
+        raw_sender.send(state.clone());
+        match ContractState::from_contract_state(&state.1, state.0, port_override) {
+            Ok(processed_state) => {
+                processed_sender.send_if_modified(|watched_state| {
+                    if *watched_state != processed_state {
+                        *watched_state = processed_state.clone();
+                        true
+                    } else {
+                        false
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::error!(target: "mpc", "error reading config from chain: {:?}", e);
+            }
+        }
+        raw_receiver.changed().await;
+    }
+}
+
+async fn process_migration_state(
+    mut raw_receiver: watch::Receiver<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
+    raw_sender: watch::Sender<(
+        u64,
+        BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>,
+    )>,
+    processed_sender: watch::Sender<MigrationInfo>,
+    my_near_account_id: AccountId,
+    my_p2p_tls_key: VerifyingKey,
+) {
+    loop {
+        let last_state = raw_receiver.borrow_and_update().clone();
+        // if it changed for us, then it also changed for the receiver
+        raw_sender.send(last_state.clone());
+        let processed =
+            MigrationInfo::from_raw_contract(&my_near_account_id, &my_p2p_tls_key, last_state.1);
+        processed_sender.send_if_modified(|watched_state| {
+            if *watched_state != processed {
+                *watched_state = processed;
+                true
+            } else {
+                false
+            }
+        });
+        raw_receiver.changed().await;
+    }
+}
+
+async fn spawn_processors(
+    indexer_state: Arc<IndexerState>,
+    raw_contract_sender: RawContractSend,
+    port_override: Option<u16>,
+    my_near_account_id: AccountId,
+    my_p2p_tls_key: VerifyingKey,
+) -> ProcessedMpcContractView {
+    let raw_protocol_state_receiver = monitor_contract_state(indexer_state.clone()).await;
+    let (processed_contract_state_sender, processed_contract_state_receiver) =
+        watch::channel(ContractState::Invalid);
+    tokio::spawn(process_protocol_state(
+        raw_protocol_state_receiver,
+        raw_contract_sender.raw_protocol_state_sender,
+        processed_contract_state_sender,
+        port_override,
+    ));
+
+    let raw_migration_state_receiver = monitor_migrations(indexer_state.clone()).await;
+    let (processed_migration_satate_sender, processed_migration_state_receiver) =
+        watch::channel(MigrationInfo {
+            backup_service_info: None,
+            active_migration: false,
+        });
+    tokio::spawn(process_migration_state(
+        raw_migration_state_receiver,
+        raw_contract_sender.raw_migration_state_sender,
+        processed_migration_satate_sender,
+        my_near_account_id,
+        my_p2p_tls_key,
+    ));
+    ProcessedMpcContractView {
+        contract_state: processed_contract_state_receiver,
+        migration_state: processed_migration_state_receiver,
+    }
+}
+
 /// Spawns a real indexer, returning a handle to the indexer, [`IndexerApi`].
 ///
 /// If an unrecoverable error occurs, the spawned indexer will terminate, and the provided [`oneshot::Sender`]
@@ -50,11 +179,15 @@ pub fn spawn_real_indexer(
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
-    protocol_state_sender: watch::Sender<ProtocolContractState>,
+    raw_contract_sender: RawContractSend,
+    //protocol_state_sender: watch::Sender<ProtocolContractState>,
+    //migration_state_sender: watch::Sender<BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)>>,
     tls_public_key: VerifyingKey,
 ) -> IndexerAPI<impl TransactionSender> {
-    let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
-    let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
+    let (raw_contract_state_sender_oneshot, raw_conrtact_state_receiver_oneshot) =
+        oneshot::channel();
+    //let (contract_state_sender_oneshot, contract_state_receiver_oneshot) = oneshot::channel();
+    //let (migration_info_sender_oneshot, migration_info_receiver_oneshot) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -82,6 +215,7 @@ pub fn spawn_real_indexer(
                 indexer_config.mpc_contract_id.clone(),
             ));
 
+            // akin to `write` on the MPC contract
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
                 my_near_account_id_clone,
                 account_secret_key.clone(),
@@ -123,35 +257,49 @@ pub fn spawn_real_indexer(
                 indexer_state.clone(),
             ));
 
+            // note: below functions use tokio::spawn. We are mixing up actix and tokio here. Not
+            // sure that's the best thing to do.
             // Returns once the contract state is available.
-            let contract_state_receiver = monitor_contract_state(
+            let raw_protocol_state_receiver = monitor_contract_state(
                 indexer_state.clone(),
-                indexer_config.port_override,
-                protocol_state_sender,
+                //indexer_config.port_override,
+                //protocol_state_sender,
             )
             .await;
 
-            if contract_state_sender_oneshot
-                .send(contract_state_receiver)
-                .is_err()
-            {
-                tracing::error!(
-                    "Indexer thread could not send contract state receiver back to main driver."
-                )
-            };
-
             // This feels akward. Like, really akward.
-            let my_migration_info_receiver =
-                monitor_migrations(indexer_state.clone(), &tls_public_key).await;
+            let raw_migration_state_receiver = monitor_migrations(indexer_state.clone()).await;
 
-            if migration_info_sender_oneshot
-                .send(my_migration_info_receiver)
-                .is_err()
-            {
+            let raw_contract_view = RawContractView{raw_protocol_state_receiver, raw_migration_state_receiver};
+            // spawn the processor
+            let contract_view = process_contract_view(raw_contract_view).await;
+            //actix::spawn(process_contract_view)
+            if raw_contract_state_sender_oneshot.send(RawContractView {
+                raw_protocol_state_receiver,
+                raw_migration_state_receiver,
+            }).is_err() {
                 tracing::error!(
-                    "Indexer thread could not send migration info receiver back to main driver."
+                    "Indexer thread could not send raw contract state receivers back to main driver."
                 )
+
             };
+            //if contract_state_sender_oneshot
+            //    .send(contract_state_receiver)
+            //    .is_err()
+            //{
+            //    tracing::error!(
+            //        "Indexer thread could not send contract state receiver back to main driver."
+            //    )
+            //};
+
+            //if migration_info_sender_oneshot
+            //    .send(my_migration_info_receiver)
+            //    .is_err()
+            //{
+            //    tracing::error!(
+            //        "Indexer thread could not send migration info receiver back to main driver."
+            //    )
+            //};
 
             // below function runs indefinitely and only returns in case of an error.
             #[cfg(feature = "network-hardship-simulation")]
@@ -185,13 +333,16 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("txn_sender is returned from the `block_on` expression above.");
 
-    let contract_state_receiver = contract_state_receiver_oneshot
+    let raw_receivers = raw_conrtact_state_receiver_oneshot
         .blocking_recv()
-        .expect("Contract state receiver must be returned by indexer.");
+        .expect("Raw contract state receivers must be returned by indexer.");
+    //let contract_state_receiver = contract_state_receiver_oneshot
+    //    .blocking_recv()
+    //    .expect("Contract state receiver must be returned by indexer.");
 
-    let my_migration_info_receiver = migration_info_receiver_oneshot
-        .blocking_recv()
-        .expect("Migraration info receiver must be returned by indexer.");
+    //let my_migration_info_receiver = migration_info_receiver_oneshot
+    //    .blocking_recv()
+    //    .expect("Migraration info receiver must be returned by indexer.");
 
     IndexerAPI {
         contract_state_receiver,
