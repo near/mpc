@@ -185,7 +185,7 @@ async fn resharing_computation_inner(
         .public_key(key_id.domain_id)
         .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let public_key = near_sdk::PublicKey::from(previous_public_key.clone()).into_dto_type();
+    let public_key = dtos_contract::PublicKey::from(previous_public_key.clone());
 
     let keyshare_data = match (public_key, domain.scheme) {
         (dtos_contract::PublicKey::Secp256k1(inner_public_key), SignatureScheme::Secp256k1) => {

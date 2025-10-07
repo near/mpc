@@ -46,8 +46,8 @@ impl Keyshare {
                 key_id
             );
         }
-        let near_sdk_public_key: near_sdk::PublicKey = key.key.clone().into();
-        if self.public_key()? != near_sdk_public_key.into_dto_type() {
+        let public_key: dtos_contract::PublicKey = key.key.clone().into();
+        if self.public_key()? != public_key {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
                 self.public_key()?,

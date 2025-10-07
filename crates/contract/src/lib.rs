@@ -258,7 +258,7 @@ impl MpcContract {
     #[handle_result]
     pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<near_sdk::PublicKey, Error> {
         let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        self.public_key_extended(domain_id).map(Into::into)
+        self.public_key_extended(domain_id)?.try_into()
     }
 
     /// This is the root public key combined from all the public keys of the participants.

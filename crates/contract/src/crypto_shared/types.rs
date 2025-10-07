@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
-use crate::{IntoContractType, IntoDtoType};
+use crate::{errors, IntoContractType, IntoDtoType};
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -76,15 +76,19 @@ impl Display for PublicKeyExtendedConversionError {
     }
 }
 
-impl From<PublicKeyExtended> for near_sdk::PublicKey {
-    fn from(public_key_extended: PublicKeyExtended) -> Self {
+impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
+    type Error = errors::Error;
+    fn try_from(public_key_extended: PublicKeyExtended) -> Result<Self, Self::Error> {
         match public_key_extended {
-            PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key,
+            PublicKeyExtended::Secp256k1 { near_public_key } => Ok(near_public_key),
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => near_public_key_compressed,
-            PublicKeyExtended::Bls12381 { public_key: _ } => unreachable!(),
+            } => Ok(near_public_key_compressed),
+            PublicKeyExtended::Bls12381 { public_key: _ } => {
+                Err(errors::ConversionError::DataConversion
+                    .message("Cannot convert Bls12381 key to near_sdk::PublicKey"))?
+            }
         }
     }
 }
