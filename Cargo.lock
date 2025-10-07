@@ -2884,7 +2884,6 @@ dependencies = [
 name = "dtos-contract"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "borsh",
  "bs58 0.5.1",
  "derive_more 2.0.1",
@@ -2892,6 +2891,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "thiserror 2.0.16",
 ]
 
 [[package]]

@@ -96,6 +96,18 @@ pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
 )]
 pub struct Bls12381G1PublicKey(pub [u8; BLS12381G1_PUBLIC_KEY_SIZE]);
 
+#[derive(Debug, thiserror::Error)]
+pub enum ParsePublicKeyError {
+    #[error("missing ':' separator")]
+    MissingSeparator,
+    #[error("wrong prefix")]
+    WrongPrefix,
+    #[error("invalid key length")]
+    InvalidKeyLength,
+    #[error("invalid bs58 encoding")]
+    InvalidBs58Encoding,
+}
+
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Secp256k1PublicKey {
     fn is_referenceable() -> bool {
@@ -224,7 +236,7 @@ impl From<&Bls12381G2PublicKey> for String {
 }
 
 impl std::str::FromStr for PublicKey {
-    type Err = anyhow::Error;
+    type Err = ParsePublicKeyError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         if let Some(idx) = value.find(':') {
@@ -233,99 +245,99 @@ impl std::str::FromStr for PublicKey {
                 "ed25519" => Ok(Self::Ed25519(Ed25519PublicKey::from_str(value)?)),
                 "secp256k1" => Ok(Self::Secp256k1(Secp256k1PublicKey::from_str(value)?)),
                 "bls12381g2" => Ok(Self::Bls12381(Bls12381G2PublicKey::from_str(value)?)),
-                _ => anyhow::bail!("Unknown prefix"),
+                _ => Err(ParsePublicKeyError::WrongPrefix),
             }
         } else {
-            anyhow::bail!("Separator not found")
+            Err(ParsePublicKeyError::MissingSeparator)
         }
     }
 }
 
 impl std::str::FromStr for Secp256k1PublicKey {
-    type Err = anyhow::Error;
+    type Err = ParsePublicKeyError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; SECP256K1_PUBLIC_KEY_SIZE];
-        if let Some(idx) = value.find(':') {
-            let (prefix, key_data) = value.split_at(idx);
-            match prefix {
-                "secp256k1" => {
-                    let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == SECP256K1_PUBLIC_KEY_SIZE);
-                    bytes.copy_from_slice(&data);
-                    Ok(Self(bytes))
-                }
-                _ => anyhow::bail!("Unknown prefix"),
-            }
-        } else {
-            anyhow::bail!("Separator not found")
+        let Some((prefix, key_data)) = value.split_once(':') else {
+            return Err(ParsePublicKeyError::MissingSeparator);
+        };
+
+        if prefix != "secp256k1" {
+            return Err(ParsePublicKeyError::WrongPrefix);
         }
+
+        let data = bs58::decode(&key_data[1..])
+            .into_vec()
+            .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
+        let bytes = data
+            .try_into()
+            .map_err(|_| ParsePublicKeyError::InvalidKeyLength)?;
+        Ok(Self(bytes))
     }
 }
 
 impl std::str::FromStr for Ed25519PublicKey {
-    type Err = anyhow::Error;
+    type Err = ParsePublicKeyError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; ED25519_PUBLIC_KEY_SIZE];
-        if let Some(idx) = value.find(':') {
-            let (prefix, key_data) = value.split_at(idx);
-            match prefix {
-                "ed25519" => {
-                    let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == ED25519_PUBLIC_KEY_SIZE);
-                    bytes.copy_from_slice(&data);
-                    Ok(Self(bytes))
-                }
-                _ => anyhow::bail!("Unknown prefix"),
-            }
-        } else {
-            anyhow::bail!("Separator not found")
+        let Some((prefix, key_data)) = value.split_once(':') else {
+            return Err(ParsePublicKeyError::MissingSeparator);
+        };
+
+        if prefix != "ed25519" {
+            return Err(ParsePublicKeyError::WrongPrefix);
         }
+
+        let data = bs58::decode(&key_data[1..])
+            .into_vec()
+            .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
+        let bytes = data
+            .try_into()
+            .map_err(|_| ParsePublicKeyError::InvalidKeyLength)?;
+        Ok(Self(bytes))
     }
 }
 
 impl std::str::FromStr for Bls12381G1PublicKey {
-    type Err = anyhow::Error;
+    type Err = ParsePublicKeyError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; BLS12381G1_PUBLIC_KEY_SIZE];
-        if let Some(idx) = value.find(':') {
-            let (prefix, key_data) = value.split_at(idx);
-            match prefix {
-                "bls12381g1" => {
-                    let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == BLS12381G1_PUBLIC_KEY_SIZE);
-                    bytes.copy_from_slice(&data);
-                    Ok(Self(bytes))
-                }
-                _ => anyhow::bail!("Unknown prefix"),
-            }
-        } else {
-            anyhow::bail!("Separator not found")
+        let Some((prefix, key_data)) = value.split_once(':') else {
+            return Err(ParsePublicKeyError::MissingSeparator);
+        };
+
+        if prefix != "bls1238g1" {
+            return Err(ParsePublicKeyError::WrongPrefix);
         }
+
+        let data = bs58::decode(&key_data[1..])
+            .into_vec()
+            .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
+        let bytes = data
+            .try_into()
+            .map_err(|_| ParsePublicKeyError::InvalidKeyLength)?;
+        Ok(Self(bytes))
     }
 }
 
 impl std::str::FromStr for Bls12381G2PublicKey {
-    type Err = anyhow::Error;
+    type Err = ParsePublicKeyError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; BLS12381G2_PUBLIC_KEY_SIZE];
-        if let Some(idx) = value.find(':') {
-            let (prefix, key_data) = value.split_at(idx);
-            match prefix {
-                "bls12381g2" => {
-                    let data = bs58::decode(&key_data[1..]).into_vec()?;
-                    anyhow::ensure!(data.len() == BLS12381G2_PUBLIC_KEY_SIZE);
-                    bytes.copy_from_slice(&data);
-                    Ok(Self(bytes))
-                }
-                _ => anyhow::bail!("Unknown prefix"),
-            }
-        } else {
-            anyhow::bail!("Separator not found")
+        let Some((prefix, key_data)) = value.split_once(':') else {
+            return Err(ParsePublicKeyError::MissingSeparator);
+        };
+
+        if prefix != "bls1238g2" {
+            return Err(ParsePublicKeyError::WrongPrefix);
         }
+
+        let data = bs58::decode(&key_data[1..])
+            .into_vec()
+            .map_err(|_| ParsePublicKeyError::InvalidBs58Encoding)?;
+        let bytes = data
+            .try_into()
+            .map_err(|_| ParsePublicKeyError::InvalidKeyLength)?;
+        Ok(Self(bytes))
     }
 }
 
