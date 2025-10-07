@@ -263,8 +263,8 @@ impl MpcContract {
         &self,
         domain_id: Option<DomainId>,
     ) -> Result<dtos_contract::PublicKey, Error> {
-        self.public_key_extended(domain_id.unwrap_or(DomainId::legacy_ecdsa_id()))
-            .map(Into::into)
+        let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+        self.public_key_extended(domain_id).map(Into::into)
     }
 
     /// This is the derived public key of the caller given path and predecessor

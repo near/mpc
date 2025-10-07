@@ -1,5 +1,4 @@
 use assert_matches::assert_matches;
-use core::panic;
 use digest::{Digest, FixedOutput};
 use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
 use ecdsa::signature::Verifier;
@@ -1093,7 +1092,7 @@ pub async fn execute_key_generation_and_add_random_state(
                     });
                 }
             }
-            // TODO: Create code
+            // TODO(#1243)
             SignatureScheme::Bls12381 => {}
         }
     }
