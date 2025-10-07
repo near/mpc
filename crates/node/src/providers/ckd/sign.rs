@@ -131,7 +131,6 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             OsRng,
         )?;
 
-        // TODO: this is unused https://github.com/near/mpc/issues/975
         let _timer = metrics::MPC_CKD_TIME_ELAPSED.start_timer();
         let result = run_protocol("ckd", channel, protocol).await?;
 

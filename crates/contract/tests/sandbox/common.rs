@@ -980,7 +980,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         for account in accounts {
             check_call_success(
                 account
-                    // TODO: this is tested against the old contract, so cannot use the new API
+                    // TODO(create issue before merge): this is tested against the old contract, so cannot use the new API
                     .call(contract.id(), "vote_pk")
                     .args_json(vote_pk_args.clone())
                     .transact()

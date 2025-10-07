@@ -106,7 +106,7 @@ impl TestContract {
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
         ) -> Vec<Promise> {
-            // TODO: Make CKD work here, a new generate_app_public_key function is needed
+            // TODO(create issue before merge): Make CKD work here, a new generate_app_public_key function is needed
             let _: Vec<_> = domain_map
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {

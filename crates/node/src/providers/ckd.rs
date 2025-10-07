@@ -126,7 +126,6 @@ impl SignatureProvider for CKDProvider {
     }
 }
 
-// TODO: this is not a correct implementation
 impl PublicKeyConversion for VerifyingKey {
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;

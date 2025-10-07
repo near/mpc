@@ -507,7 +507,7 @@ class MpcCluster:
                 - If the indexers fail to observe the ckd requests before `constants.TIMEOUT` is reached.
                 - If `ckd_verification` raises an AssertionError.
         """
-        # TODO: implement pytests for CKD
+        # TODO(create issue before merge): implement pytests for CKD
         return
         txs = self.make_ckd_request_txns(
             requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
