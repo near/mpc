@@ -73,7 +73,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     for account in &accounts[0..3] {
         check_call_success(
             account
-                .call(contract.id(), "vote_pk_v2")
+                .call(contract.id(), "vote_pk")
                 .args_json(vote_pk_args.clone())
                 .transact()
                 .await?,

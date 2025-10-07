@@ -33,17 +33,16 @@ use crypto_shared::{
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
+use dtos_contract::PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::elliptic_curve::PrimeField;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
-    AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
-    PromiseOrValue,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -164,20 +163,24 @@ impl MpcContract {
             );
         };
 
-        let curve_type = public_key.curve_type();
-
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match &curve_type {
-            CurveType::SECP256K1 => {
+        match &public_key {
+            PublicKey::Secp256k1(_) => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            CurveType::ED25519 => {
+            PublicKey::Ed25519(_) => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
+            }
+            PublicKey::Bls12381(_) => {
+                env::panic_str(
+                    &InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function")
+                    .to_string(),
+                );
             }
         }
 
@@ -256,17 +259,12 @@ impl MpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
-    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<near_sdk::PublicKey, Error> {
-        let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        self.public_key_extended(domain_id)?.try_into()
-    }
-
-    /// This is the root public key combined from all the public keys of the participants.
-    /// The domain parameter specifies which domain we're querying the public key for;
-    /// the default is the first domain.
-    #[handle_result]
-    pub fn public_key_v2(&self, domain_id: DomainId) -> Result<dtos_contract::PublicKey, Error> {
-        self.public_key_extended(domain_id).map(Into::into)
+    pub fn public_key(
+        &self,
+        domain_id: Option<DomainId>,
+    ) -> Result<dtos_contract::PublicKey, Error> {
+        self.public_key_extended(domain_id.unwrap_or(DomainId::legacy_ecdsa_id()))
+            .map(Into::into)
     }
 
     /// This is the derived public key of the caller given path and predecessor
@@ -276,55 +274,6 @@ impl MpcContract {
     /// the default is the first domain.
     #[handle_result]
     pub fn derived_public_key(
-        &self,
-        path: String,
-        predecessor: Option<AccountId>,
-        domain_id: Option<DomainId>,
-    ) -> Result<near_sdk::PublicKey, Error> {
-        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
-        let tweak = derive_tweak(&predecessor, &path);
-
-        let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
-        let public_key = self.public_key_extended(domain)?;
-
-        let derived_public_key = match public_key {
-            PublicKeyExtended::Secp256k1 { near_public_key } => {
-                let derived_public_key =
-                    derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
-                        .map_err(PublicKeyError::from)?;
-
-                let encoded_point = derived_public_key.to_encoded_point(false);
-                let slice: &[u8] = &encoded_point.as_bytes()[1..65];
-                near_sdk::PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
-            }
-            PublicKeyExtended::Ed25519 { edwards_point, .. } => {
-                let derived_public_key_edwards_point =
-                    derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
-
-                let encoded_point: [u8; 32] =
-                    derived_public_key_edwards_point.compress().to_bytes();
-
-                near_sdk::PublicKey::from_parts(CurveType::ED25519, encoded_point.into())
-            }
-            PublicKeyExtended::Bls12381 { public_key: _ } => {
-                env::panic_str(
-                    &InvalidParameters::InvalidDomainId
-                        .message("This method does not support Bls12381 domains")
-                        .to_string(),
-                );
-            }
-        };
-
-        derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
-    }
-
-    /// This is the derived public key of the caller given path and predecessor
-    /// if predecessor is not provided, it will be the caller of the contract.
-    ///
-    /// The domain parameter specifies which domain we're deriving the public key for;
-    /// the default is the first domain.
-    #[handle_result]
-    pub fn derived_public_key_v2(
         &self,
         path: String,
         predecessor: Option<AccountId>,
@@ -382,7 +331,7 @@ impl MpcContract {
         );
         let initial_storage = env::storage_usage();
 
-        let Ok(public_key) = self.public_key_v2(request.domain_id) else {
+        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
                     provided: request.domain_id,
@@ -778,37 +727,10 @@ impl MpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: near_sdk::PublicKey,
-    ) -> Result<(), Error> {
-        log!(
-            "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
-            env::signer_account_id(),
-            key_event_id,
-            public_key,
-        );
-
-        let extended_key =
-            public_key
-                .try_into()
-                .map_err(|err: PublicKeyExtendedConversionError| {
-                    InvalidParameters::MalformedPayload.message(err.to_string())
-                })?;
-
-        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
-            self.protocol_state = new_state;
-        }
-
-        Ok(())
-    }
-
-    #[handle_result]
-    pub fn vote_pk_v2(
-        &mut self,
-        key_event_id: KeyEventId,
         public_key: dtos_contract::PublicKey,
     ) -> Result<(), Error> {
         log!(
-            "vote_pk_v2: signer={}, key_event_id={:?}, public_key={:?}",
+            "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
             env::signer_account_id(),
             key_event_id,
             public_key,
