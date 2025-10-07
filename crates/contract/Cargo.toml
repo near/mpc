@@ -87,7 +87,7 @@ rstest = { workspace = true }
 elliptic-curve = { workspace = true }
 
 [features]
-test-utils = ["rand"]
+test-utils = ["rand", "threshold-signatures", "elliptic-curve"]
 dev-utils = ["rand", "threshold-signatures", "elliptic-curve"]
 abi = [
     "borsh/unstable__schema",

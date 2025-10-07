@@ -195,7 +195,7 @@ impl ChainSendTransactionRequest {
         match self {
             ChainSendTransactionRequest::Respond(_) => "respond",
             ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
-            ChainSendTransactionRequest::VotePk(_) => "vote_pk",
+            ChainSendTransactionRequest::VotePk(_) => "vote_pk_v2",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",

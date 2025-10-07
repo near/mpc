@@ -82,7 +82,7 @@ def create_mpc_function_call_access_key_action(
     mpc_methods_used_by_node = [
         "respond",
         "respond_ckd",
-        "vote_pk",
+        "vote_pk_v2",
         "start_keygen_instance",
         "vote_reshared",
         "start_reshare_instance",

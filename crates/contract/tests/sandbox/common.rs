@@ -76,7 +76,7 @@ pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11214);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11267);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -980,6 +980,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         for account in accounts {
             check_call_success(
                 account
+                    // TODO: this is tested against the old contract, so cannot use the new API
                     .call(contract.id(), "vote_pk")
                     .args_json(vote_pk_args.clone())
                     .transact()

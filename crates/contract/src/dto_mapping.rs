@@ -17,7 +17,7 @@ use k256::{
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 use threshold_signatures::confidential_key_derivation as ckd;
 
 use crate::crypto_shared::k256_types;
@@ -338,7 +338,7 @@ impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &CompressedEdwardsY {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 impl IntoDtoType<dtos_contract::Bls12381G1PublicKey> for &ckd::ElementG1 {
     fn into_dto_type(self) -> dtos_contract::Bls12381G1PublicKey {
         dtos_contract::Bls12381G1PublicKey::from(self.to_compressed())

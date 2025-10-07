@@ -1,10 +1,7 @@
 use rand::rngs::OsRng;
 
-#[cfg(feature = "dev-utils")]
 use crate::dto_mapping::IntoDtoType;
-#[cfg(feature = "dev-utils")]
 use elliptic_curve::{Field, Group};
-#[cfg(feature = "dev-utils")]
 use threshold_signatures::confidential_key_derivation as ckd;
 
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
@@ -141,7 +138,6 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
     output
 }
 
-#[cfg(feature = "dev-utils")]
 pub fn random_app_public_key() -> dtos_contract::Bls12381G1PublicKey {
     let x = ckd::Scalar::random(OsRng);
     let big_x = ckd::ElementG1::generator() * x;
