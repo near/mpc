@@ -305,7 +305,7 @@ impl std::str::FromStr for Bls12381G1PublicKey {
             return Err(ParsePublicKeyError::MissingSeparator);
         };
 
-        if prefix != "bls1238g1" {
+        if prefix != "bls12381g1" {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
@@ -327,7 +327,7 @@ impl std::str::FromStr for Bls12381G2PublicKey {
             return Err(ParsePublicKeyError::MissingSeparator);
         };
 
-        if prefix != "bls1238g2" {
+        if prefix != "bls12381g2" {
             return Err(ParsePublicKeyError::WrongPrefix);
         }
 
