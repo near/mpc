@@ -479,6 +479,16 @@ mod tests {
             let dtos_pk_ser = serde_json::to_string(&dtos_pk).unwrap();
             assert_eq!(near_pk_ser, dtos_pk_ser);
             assert_eq!(format!("\"{pk}\""), dtos_pk_ser);
+
+            match (near_pk.curve_type(), dtos_pk) {
+                (near_sdk::CurveType::ED25519, PublicKey::Ed25519(inner)) => {
+                    assert_eq!(*inner, near_pk.as_bytes()[1..]);
+                }
+                (near_sdk::CurveType::SECP256K1, PublicKey::Secp256k1(inner)) => {
+                    assert_eq!(*inner, near_pk.as_bytes()[1..]);
+                }
+                _ => unreachable!(),
+            }
         }
     }
 }
