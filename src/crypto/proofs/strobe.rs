@@ -8,15 +8,7 @@ use core::ops::{Deref, DerefMut};
 
 use zeroize::Zeroize;
 
-/// Strobe R value; security level 128 is hardcoded
-const STROBE_R: u8 = 166;
-
-const FLAG_I: u8 = 1;
-const FLAG_A: u8 = 1 << 1;
-const FLAG_C: u8 = 1 << 2;
-const FLAG_T: u8 = 1 << 3;
-const FLAG_M: u8 = 1 << 4;
-const FLAG_K: u8 = 1 << 5;
+use crate::crypto::constants::{FLAG_A, FLAG_C, FLAG_I, FLAG_K, FLAG_M, FLAG_T, STROBE_R};
 
 fn transmute_state(st: &mut AlignedKeccakState) -> &mut [u64; 25] {
     unsafe { &mut *std::ptr::from_mut::<AlignedKeccakState>(st).cast::<[u64; 25]>() }

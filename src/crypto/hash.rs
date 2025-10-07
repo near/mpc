@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::{Choice, ConstantTimeEq};
 
-const HASH_LABEL: &[u8] = b"Near threshold signature generic hash";
-const HASH_LEN: usize = 32;
+use super::constants::{HASH_LEN, NEAR_HASH_LABEL};
 
 /// The output of a generic hash function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +25,7 @@ impl ConstantTimeEq for HashOutput {
 /// `SHA256(HASH_LABEL` || msgpack(value))
 pub fn hash<T: Serialize>(val: &T) -> Result<HashOutput, ProtocolError> {
     let mut hasher = Sha256::new();
-    hasher.update(HASH_LABEL);
+    hasher.update(NEAR_HASH_LABEL);
     rmp_serde::encode::write(&mut hasher, val).map_err(|_| ProtocolError::ErrorEncoding)?;
     Ok(HashOutput(hasher.finalize().into()))
 }

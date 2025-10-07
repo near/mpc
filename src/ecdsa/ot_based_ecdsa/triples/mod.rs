@@ -27,7 +27,7 @@
 //! be generated.
 mod batch_random_ot;
 mod bits;
-mod constants;
+
 mod correlated_ot_extension;
 mod generation;
 mod mta;

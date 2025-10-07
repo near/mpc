@@ -32,7 +32,7 @@ fn create_transcript(
     participants: &ParticipantList,
     threshold: usize,
 ) -> Result<Transcript, ProtocolError> {
-    let mut transcript = Transcript::new(LABEL);
+    let mut transcript = Transcript::new(NEAR_TRIPLE_GENERATION_LABEL);
 
     transcript.message(b"group", NAME);
 
@@ -52,7 +52,7 @@ pub type TripleGenerationOutput = (TripleShare, TriplePub);
 pub type TripleGenerationOutputMany = Vec<(TripleShare, TriplePub)>;
 type C = Secp256K1Sha256;
 
-const LABEL: &[u8] = b"Near threshold signatures triple generation";
+use crate::crypto::constants::NEAR_TRIPLE_GENERATION_LABEL;
 const NAME: &[u8] = b"Secp256K1Sha256";
 #[allow(clippy::too_many_lines)]
 async fn do_generation(

@@ -1,3 +1,4 @@
+use crate::crypto::constants::{NEAR_PRG_CTX, SECURITY_PARAMETER};
 use auto_ops::impl_op_ex;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
@@ -6,8 +7,6 @@ use sha3::{
     Shake256,
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
-
-use super::constants::SECURITY_PARAMETER;
 
 pub const SEC_PARAM_64: usize = SECURITY_PARAMETER.div_ceil(64);
 pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
@@ -199,9 +198,6 @@ impl ConstantTimeEq for DoubleBitVector {
 impl_op_ex!(^ |u: &DoubleBitVector, v: &DoubleBitVector| -> DoubleBitVector { u.xor(v) });
 impl_op_ex!(^= |u: &mut DoubleBitVector, v: &DoubleBitVector| { u.xor_mut(v) });
 
-/// The context string for our PRG.
-const PRG_CTX: &[u8] = b"Near threshold signatures correlated OT PRG";
-
 /// Represents a matrix of bits.
 ///
 /// Each row of this matrix is a `BitVector`, although we might have more or less
@@ -307,7 +303,7 @@ impl SquareBitMatrix {
         assert!(rows % SECURITY_PARAMETER == 0);
 
         let mut hasher = Shake256::default();
-        hasher.update(PRG_CTX);
+        hasher.update(NEAR_PRG_CTX);
         hasher.update(b"sid");
         hasher.update(sid);
 

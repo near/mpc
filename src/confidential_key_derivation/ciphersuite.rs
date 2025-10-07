@@ -1,10 +1,10 @@
+use crate::confidential_key_derivation::{ElementG1, Signature, VerifyingKey};
+use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
+use crate::crypto::constants::NEAR_CKD_DOMAIN;
 use digest::{consts::U48, generic_array::GenericArray};
 use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd, FromOkm};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
-
-use crate::confidential_key_derivation::{ElementG1, Signature, VerifyingKey};
-use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BLS12381SHA256;
@@ -230,10 +230,8 @@ pub fn verify_signature(
     }
 }
 
-const DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
-
 pub fn hash_to_curve(bytes: &[u8]) -> ElementG1 {
-    G1Projective::hash_to_curve(bytes, DOMAIN, &[])
+    G1Projective::hash_to_curve(bytes, NEAR_CKD_DOMAIN, &[])
 }
 
 // From https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/src/lib.rs#L161

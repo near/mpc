@@ -9,21 +9,21 @@ use crate::{
     protocol::{errors::ProtocolError, internal::PrivateChannel},
 };
 
-use super::{
+use crate::crypto::constants::SECURITY_PARAMETER;
+use crate::ecdsa::ot_based_ecdsa::triples::{
     bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
-    constants::SECURITY_PARAMETER,
     correlated_ot_extension::{correlated_ot_receiver, correlated_ot_sender, CorrelatedOtParams},
 };
 
 use elliptic_curve::ops::Reduce;
 
-const CTX: &[u8] = b"Random OT Extension Hash";
+use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
 
 fn hash_to_scalar(i: usize, v: &BitVector) -> Scalar {
     let mut hasher = Sha256::new();
     let i64 = u64::try_from(i).expect("failed to convert usize to u64");
 
-    hasher.update(CTX);
+    hasher.update(NEAR_RANDOM_OT_EXTENSION_HASH_CTX);
     hasher.update(i64.to_le_bytes());
     hasher.update(v.bytes());
     let seed = hasher.finalize().into();

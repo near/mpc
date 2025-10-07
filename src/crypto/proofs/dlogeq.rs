@@ -1,26 +1,17 @@
+use super::strobe_transcript::Transcript;
+use crate::{
+    crypto::constants::{
+        NEAR_DLOGEQ_CHALLENGE_LABEL, NEAR_DLOGEQ_COMMITMENT_LABEL,
+        NEAR_DLOGEQ_ENCODE_LABEL_GENERATOR1, NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC0,
+        NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC1, NEAR_DLOGEQ_ENCODE_LABEL_STATEMENT,
+        NEAR_DLOGEQ_STATEMENT_LABEL,
+    },
+    protocol::errors::ProtocolError,
+    Ciphersuite, Element, Scalar,
+};
+use frost_core::{serialization::SerializableScalar, Group};
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
-
-use crate::{protocol::errors::ProtocolError, Ciphersuite, Element, Scalar};
-
-use frost_core::{serialization::SerializableScalar, Group};
-
-use super::strobe_transcript::Transcript;
-
-/// The label we use for hashing the statement.
-const STATEMENT_LABEL: &[u8] = b"dlogeq proof statement";
-/// The label we use for hashing the first prover message.
-const COMMITMENT_LABEL: &[u8] = b"dlogeq proof commitment";
-/// The label we use for generating the challenge.
-const CHALLENGE_LABEL: &[u8] = b"dlogeq proof challenge";
-/// A string used to extend an encoding
-const ENCODE_LABEL_STATEMENT: &[u8] = b"statement:";
-/// A string used to extend an encoding
-const ENCODE_LABEL_PUBLIC0: &[u8] = b"public 0:";
-/// A string used to extend an encoding
-const ENCODE_LABEL_PUBLIC1: &[u8] = b"public 1:";
-/// A string used to extend an encoding
-const ENCODE_LABEL_GENERATOR1: &[u8] = b"generator 1:";
 
 /// The public statement for this proof.
 /// This statement claims knowledge of a scalar that's the discrete logarithm
@@ -59,11 +50,11 @@ impl<C: Ciphersuite> Statement<'_, C> {
     /// Encode into Vec<u8>: some sort of serialization
     fn encode(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut enc = Vec::new();
-        enc.extend_from_slice(ENCODE_LABEL_STATEMENT);
+        enc.extend_from_slice(NEAR_DLOGEQ_ENCODE_LABEL_STATEMENT);
         // None of the following calls should panic as neither public and generator are identity
-        let ser0 = element_into::<C>(self.public0, ENCODE_LABEL_PUBLIC0)?;
-        let ser1 = element_into::<C>(self.generator1, ENCODE_LABEL_GENERATOR1)?;
-        let ser2 = element_into::<C>(self.public1, ENCODE_LABEL_PUBLIC1)?;
+        let ser0 = element_into::<C>(self.public0, NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC0)?;
+        let ser1 = element_into::<C>(self.generator1, NEAR_DLOGEQ_ENCODE_LABEL_GENERATOR1)?;
+        let ser2 = element_into::<C>(self.public1, NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC1)?;
         enc.extend_from_slice(&ser0);
         enc.extend_from_slice(&ser1);
         enc.extend_from_slice(&ser2);
@@ -125,7 +116,7 @@ where
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
     }
-    transcript.message(STATEMENT_LABEL, &statement.encode()?);
+    transcript.message(NEAR_DLOGEQ_STATEMENT_LABEL, &statement.encode()?);
 
     let k = frost_core::random_nonzero::<C, _>(rng);
     let (big_k_0, big_k_1) = statement.phi(&k);
@@ -133,8 +124,8 @@ where
     // This will never raise error as k is not zero and generator1 is not the identity
     let enc = encode_two_points::<C>(&big_k_0, &big_k_1)?;
 
-    transcript.message(COMMITMENT_LABEL, &enc);
-    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    transcript.message(NEAR_DLOGEQ_COMMITMENT_LABEL, &enc);
+    let mut rng = transcript.challenge_then_build_rng(NEAR_DLOGEQ_CHALLENGE_LABEL);
     let e = frost_core::random_nonzero::<C, _>(&mut rng);
 
     let s = k + e * witness.x.0;
@@ -151,7 +142,7 @@ pub fn prove_with_nonce<C: Ciphersuite>(
     witness: Witness<C>,
     k: Scalar<C>,
 ) -> Result<Proof<C>, ProtocolError> {
-    transcript.message(STATEMENT_LABEL, &statement.encode()?);
+    transcript.message(NEAR_DLOGEQ_STATEMENT_LABEL, &statement.encode()?);
 
     if *statement.generator1 == C::Group::identity() {
         return Err(ProtocolError::IdentityElement);
@@ -162,8 +153,8 @@ pub fn prove_with_nonce<C: Ciphersuite>(
     // This will never raise error as k is not zero and generator1 is not the identity
     let enc = encode_two_points::<C>(&big_k_0, &big_k_1)?;
 
-    transcript.message(COMMITMENT_LABEL, &enc);
-    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    transcript.message(NEAR_DLOGEQ_COMMITMENT_LABEL, &enc);
+    let mut rng = transcript.challenge_then_build_rng(NEAR_DLOGEQ_CHALLENGE_LABEL);
     let e = frost_core::random_nonzero::<C, _>(&mut rng);
 
     let s = k + e * witness.x.0;
@@ -187,7 +178,8 @@ where
     if statement.generator1.ct_eq(&C::Group::identity()).into() {
         return Err(ProtocolError::IdentityElement);
     }
-    transcript.message(STATEMENT_LABEL, &statement.encode()?);
+
+    transcript.message(NEAR_DLOGEQ_STATEMENT_LABEL, &statement.encode()?);
 
     let (phi0, phi1) = statement.phi(&proof.s.0);
     let big_k0 = phi0 - *statement.public0 * proof.e.0;
@@ -195,8 +187,8 @@ where
 
     let enc = encode_two_points::<C>(&big_k0, &big_k1)?;
 
-    transcript.message(COMMITMENT_LABEL, &enc);
-    let mut rng = transcript.challenge_then_build_rng(CHALLENGE_LABEL);
+    transcript.message(NEAR_DLOGEQ_COMMITMENT_LABEL, &enc);
+    let mut rng = transcript.challenge_then_build_rng(NEAR_DLOGEQ_CHALLENGE_LABEL);
     let e = frost_core::random_nonzero::<C, _>(&mut rng);
 
     Ok(e == proof.e.0)

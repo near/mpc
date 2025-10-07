@@ -133,7 +133,7 @@ pub async fn mta_receiver(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ecdsa::ot_based_ecdsa::triples::constants::{BITS, SECURITY_PARAMETER};
+    use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
     use crate::protocol::internal::Comms;
     use k256::Scalar;
     use rand_core::{OsRng, RngCore};

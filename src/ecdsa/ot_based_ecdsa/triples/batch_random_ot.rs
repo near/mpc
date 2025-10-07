@@ -5,6 +5,7 @@ use std::sync::Arc;
 use subtle::ConditionallySelectable;
 
 use crate::{
+    crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
     ecdsa::{
         ot_based_ecdsa::triples::bits::SEC_PARAM_64, CoefficientCommitment, Field, ProjectivePoint,
         Secp256K1ScalarField,
@@ -12,10 +13,10 @@ use crate::{
     protocol::{errors::ProtocolError, internal::PrivateChannel},
 };
 
-use super::bits::{BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8};
-use super::constants::SECURITY_PARAMETER;
-
-const BATCH_RANDOM_OT_HASH: &[u8] = b"Near threshold signatures batch ROT";
+use crate::crypto::constants::SECURITY_PARAMETER;
+use crate::ecdsa::ot_based_ecdsa::triples::bits::{
+    BitMatrix, BitVector, SquareBitMatrix, SEC_PARAM_8,
+};
 
 fn hash(
     i: usize,
@@ -24,7 +25,7 @@ fn hash(
     p: &CoefficientCommitment,
 ) -> Result<BitVector, ProtocolError> {
     let mut hasher = Sha256::new();
-    hasher.update(BATCH_RANDOM_OT_HASH);
+    hasher.update(NEAR_BATCH_RANDOM_OT_HASH);
     hasher.update((i as u64).to_le_bytes());
     hasher.update(
         &big_x_i

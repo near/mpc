@@ -1,7 +1,7 @@
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 
-const RANDOMIZER_LEN: usize = 32;
+use super::constants::RANDOMIZER_LEN;
 
 /// Represents the randomizer used to make a commit hiding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

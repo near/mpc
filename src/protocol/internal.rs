@@ -52,8 +52,7 @@ use std::collections::VecDeque;
 use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
 
-/// The domain for our use of sha here.
-const DOMAIN: &[u8] = b"Near threshold signatures channel tags";
+use crate::crypto::constants::NEAR_CHANNEL_TAGS_DOMAIN;
 
 /// Encode an arbitrary serializable with a tag.
 fn encode_with_tag<T: Serialize>(tag: &[u8], val: &T) -> Result<Vec<u8>, ProtocolError> {
@@ -76,7 +75,7 @@ impl ChannelTag {
     /// This will always yield the same tag, and is intended to be the root for shared channels.
     fn root_shared() -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(DOMAIN);
+        hasher.update(NEAR_CHANNEL_TAGS_DOMAIN);
         hasher.update(b"root shared");
         let out = hasher.finalize().into();
         Self(out)
@@ -93,7 +92,7 @@ impl ChannelTag {
         let (p0, p1) = (p0.min(p1), p0.max(p1));
 
         let mut hasher = Sha256::new();
-        hasher.update(DOMAIN);
+        hasher.update(NEAR_CHANNEL_TAGS_DOMAIN);
         hasher.update(b"root private");
         hasher.update(b"p0");
         hasher.update(p0.bytes());
@@ -111,7 +110,7 @@ impl ChannelTag {
     /// Indexed children have a separate namespace from named children.
     fn child(&self, i: u64) -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(DOMAIN);
+        hasher.update(NEAR_CHANNEL_TAGS_DOMAIN);
         hasher.update(b"parent");
         hasher.update(self.0);
         hasher.update(b"i");
