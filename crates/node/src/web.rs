@@ -115,9 +115,8 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
-async fn migrations(state: State<WebServerState>) -> String {
-    let migration_state = state.migration_state_receiver.borrow().clone();
-    serde_json::to_string_pretty(&migration_state).expect("failed to serialize")
+async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
+    Json(state.migration_state_receiver.borrow().clone())
 }
 
 async fn contract_state(state: State<WebServerState>) -> String {
