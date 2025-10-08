@@ -54,7 +54,7 @@ pub struct ReportDataV1 {
     BorshDeserialize,
     BorshSerialize,
 )]
-pub struct Ed25519PublicKey([u8; 32]);
+struct Ed25519PublicKey([u8; 32]);
 
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key) || zero padding]
