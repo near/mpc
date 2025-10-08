@@ -16,7 +16,7 @@ fn test_mock_attestation_verify(
     #[case] expected_quote_verification_result: bool,
 ) {
     let timestamp_s = 0u64;
-    let tls_key = *p2p_tls_key().as_bytes();
+    let tls_key = p2p_tls_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let attestation = Attestation::Mock(local_attestation);
 
@@ -29,7 +29,7 @@ fn test_mock_attestation_verify(
 #[test]
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
-    let tls_key = *p2p_tls_key().as_bytes();
+    let tls_key = p2p_tls_key();
 
     let report_data = ReportData::V1(ReportDataV1::new(tls_key));
     let timestamp_s = 1755186041_u64;

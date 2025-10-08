@@ -198,7 +198,7 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let attestation = mock_dto_dstack_attestation();
-    let tls_key = p2p_tls_key();
+    let tls_key = p2p_tls_key().into();
     Ok((contract, accounts, attestation, tls_key))
 }
 
@@ -233,7 +233,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
     let (_, contract, accounts, _) = init_env_secp256k1(1).await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key();
+    let tls_key = p2p_tls_key().into();
     let success =
         submit_participant_info(&accounts[0], &contract, &mock_attestation, &tls_key).await?;
     assert!(success);
@@ -371,7 +371,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
             };
             let attestation = Attestation::Mock(mock_attestation);
 
-            let dummy_tls_key = p2p_tls_key();
+            let dummy_tls_key = p2p_tls_key().into();
 
             let validation_success = submit_participant_info(
                 participant_account_1,

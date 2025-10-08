@@ -279,7 +279,7 @@ mod tests {
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
     ) {
-        let tls_key = *p2p_tls_key().as_bytes();
+        let tls_key = p2p_tls_key();
         let report_data = ReportData::V1(ReportDataV1::new(tls_key));
 
         let authority =
