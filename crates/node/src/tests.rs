@@ -26,6 +26,7 @@ use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
+use crate::migration_service::onboarding::onboard;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
@@ -51,6 +52,7 @@ mod benchmark;
 mod changing_participant_details;
 mod faulty;
 mod multidomain;
+mod onboarding;
 mod research;
 mod resharing;
 
@@ -260,6 +262,10 @@ pub struct OneNodeTestConfig {
     indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
+    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
+    keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
+    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
+    keyshares_sender: watch::Sender<Vec<Keyshare>>,
 }
 
 fn make_key_storage_config(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> KeyStorageConfig {
@@ -293,7 +299,6 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
-                // todo: use it for testing [(#1249)](https://github.com/near/mpc/issues/1249)
                 let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
                 let web_server = start_web_server(
                     root_task.into(),
@@ -309,13 +314,33 @@ impl OneNodeTestConfig {
                 let secret_db = SecretDB::new(&self.home_dir, self.secrets.local_storage_aes_key)?;
                 let key_storage_config =
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
+                let tls_public_key = self
+                    .secrets
+                    .persistent_secrets
+                    .p2p_private_key
+                    .verifying_key();
+                let mut keystore = key_storage_config
+                    .create()
+                    .await
+                    .expect("require keystore for integration tests");
+                onboard(
+                    self.indexer.contract_state_receiver.clone(),
+                    self.indexer.my_migration_info_receiver.clone(),
+                    self.config.my_near_account_id.clone(),
+                    tls_public_key,
+                    self.indexer.txn_sender.clone(),
+                    &mut keystore,
+                    self.keyshares_receiver,
+                )
+                .await
+                .expect("onboarding failed");
 
                 let coordinator = Coordinator {
                     clock: self.clock,
                     config_file: self.config,
                     secrets: self.secrets,
                     secret_db,
-                    key_storage_config,
+                    keyshare_storage: key_storage_config.create().await.unwrap().into(),
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
@@ -395,14 +420,18 @@ impl IntegrationTestSetup {
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {
-                    p2p_private_key: p2p_key,
+                    p2p_private_key: p2p_key.clone(),
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
                 local_storage_aes_key: rand::random(),
             };
-            let (indexer_api, task, currently_running_job_name) =
-                indexer_manager.add_indexer_node(i.into(), participant_accounts[i].clone());
+            let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
+                i.into(),
+                participant_accounts[i].clone(),
+                p2p_key.verifying_key(),
+            );
+            let (keyshares_sender, keyshares_receiver) = watch::channel(vec![]);
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
                 config,
@@ -411,6 +440,8 @@ impl IntegrationTestSetup {
                 indexer: indexer_api,
                 _indexer_task: task,
                 currently_running_job_name,
+                keyshares_sender,
+                keyshares_receiver,
             });
         }
         IntegrationTestSetup {

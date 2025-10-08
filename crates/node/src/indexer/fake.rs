@@ -1,4 +1,5 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
+use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
@@ -16,6 +17,7 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
+use ed25519_dalek::VerifyingKey;
 use mpc_contract::config::Config;
 use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
@@ -42,7 +44,6 @@ pub struct FakeMpcContractState {
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
-    // todo: [1249](https://github.com/near/mpc/issues/1249) test onboarding logic
     pub migration_service: NodeMigrations,
 }
 
@@ -263,7 +264,6 @@ impl FakeMpcContractState {
         }
     }
 
-    // todo: [1249](https://github.com/near/mpc/issues/1249) use this to test onboarding logic
     pub fn conclude_node_migration(
         &mut self,
         account_id: AccountId,
@@ -326,6 +326,8 @@ struct FakeIndexerCore {
     state_change_sender: broadcast::Sender<ContractState>,
     /// Broadcasts block updates to each node.
     block_update_sender: broadcast::Sender<ChainBlockUpdate>,
+    /// Broadcasts the contract state to each node.
+    migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -351,6 +353,7 @@ impl FakeIndexerCore {
             let contract = contract.clone();
             let clock = self.clock.clone();
             let state_change_sender = self.state_change_sender.clone();
+            let migration_state_sender = self.migration_change_sender.clone();
             async move {
                 loop {
                     {
@@ -362,6 +365,8 @@ impl FakeIndexerCore {
                         )
                         .expect("Failed to convert contract state");
                         state_change_sender.send(config).ok();
+                        let migration_state = state.migration_service.get_all();
+                        migration_state_sender.send(migration_state).ok();
                     }
                     clock.sleep(Duration::seconds(1)).await;
                 }
@@ -543,6 +548,8 @@ pub struct FakeIndexerManager {
     core_state_change_sender: broadcast::Sender<ContractState>,
     /// Used to call .subscribe() so that each node can receive block updates.
     core_block_update_sender: broadcast::Sender<ChainBlockUpdate>,
+    /// Used to call .subscribe() so that each node can receive migration change updates
+    core_migration_change_sender: broadcast::Sender<ContractMigrationInfo>,
     /// Task that runs the core logic.
     _core_task: AutoAbortTask<()>,
 
@@ -564,9 +571,6 @@ pub struct FakeIndexerManager {
     indexer_pauser: HashMap<TestNodeUid, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
-
-    /// Allows to set custom MigrationInfo
-    migration_info_senders: HashMap<TestNodeUid, watch::Sender<MigrationInfo>>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -640,6 +644,7 @@ struct FakeIndexerOneNode {
     // The following are counterparts of the core channels.
     core_txn_sender: mpsc::UnboundedSender<(ChainSendTransactionRequest, TestNodeUid)>,
     core_state_change_receiver: broadcast::Receiver<ContractState>,
+    core_migration_change_receiver: broadcast::Receiver<ContractMigrationInfo>,
     block_update_receiver: broadcast::Receiver<ChainBlockUpdate>,
 
     /// Whether the node should yield ContractState::Invalid to artificially simulate bringing the
@@ -650,20 +655,23 @@ struct FakeIndexerOneNode {
 
     // The following are counterparts of the API channels.
     api_state_sender: watch::Sender<ContractState>,
+    api_migration_info_sender: watch::Sender<MigrationInfo>,
     api_block_update_sender: mpsc::UnboundedSender<ChainBlockUpdate>,
     api_txn_receiver: mpsc::Receiver<ChainSendTransactionRequest>,
 }
 
 impl FakeIndexerOneNode {
-    async fn run(self) {
+    async fn run(self, account_id: AccountId, p2p_public_key: VerifyingKey) {
         let FakeIndexerOneNode {
             uid,
             core_txn_sender,
             mut core_state_change_receiver,
+            mut core_migration_change_receiver,
             mut block_update_receiver,
             disable: shutdown,
             mut indexer_suspended,
             api_state_sender,
+            api_migration_info_sender,
             api_block_update_sender,
             mut api_txn_receiver,
             ..
@@ -679,6 +687,25 @@ impl FakeIndexerOneNode {
                 };
 
                 api_state_sender.send_if_modified(|watched_state| {
+                    let state_changed = *watched_state != state;
+
+                    if state_changed {
+                        tracing::info!("State changed: {:?}", state);
+                        *watched_state = state;
+                        true
+                    } else {
+                        false
+                    }
+                });
+            }
+        }));
+        let monitor_migration_state_changes = AutoAbortTask::from(tokio::spawn(async move {
+            loop {
+                let state = core_migration_change_receiver.recv().await.unwrap();
+                let state =
+                    MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
+
+                api_migration_info_sender.send_if_modified(|watched_state| {
                     let state_changed = *watched_state != state;
 
                     if state_changed {
@@ -708,6 +735,7 @@ impl FakeIndexerOneNode {
         }));
 
         monitor_state_changes.await.unwrap();
+        monitor_migration_state_changes.await.unwrap();
         monitor_requests.await.unwrap();
         forward_txn_requests.await.unwrap();
     }
@@ -719,6 +747,7 @@ impl FakeIndexerManager {
         let (txn_sender, txn_receiver) = mpsc::unbounded_channel();
         let (state_change_sender, _) = broadcast::channel(1000);
         let (block_update_sender, _) = broadcast::channel(1000);
+        let (migration_change_sender, _) = broadcast::channel(1000);
         let (signature_request_sender, signature_request_receiver) = mpsc::unbounded_channel();
         let (signature_response_sender, signature_response_receiver) = mpsc::unbounded_channel();
         let (ckd_request_sender, ckd_request_receiver) = mpsc::unbounded_channel();
@@ -734,6 +763,7 @@ impl FakeIndexerManager {
             txn_receiver,
             state_change_sender: state_change_sender.clone(),
             block_update_sender: block_update_sender.clone(),
+            migration_change_sender: migration_change_sender.clone(),
             signature_response_sender,
             ckd_response_sender,
             block_time,
@@ -744,6 +774,7 @@ impl FakeIndexerManager {
             core_txn_sender: txn_sender,
             core_state_change_sender: state_change_sender,
             core_block_update_sender: block_update_sender,
+            core_migration_change_sender: migration_change_sender,
             _core_task: core_task,
             signature_response_receiver,
             ckd_response_receiver,
@@ -751,7 +782,6 @@ impl FakeIndexerManager {
             ckd_request_sender,
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
-            migration_info_senders: HashMap::new(),
             contract,
             account_id_by_uid,
         }
@@ -783,6 +813,7 @@ impl FakeIndexerManager {
         &mut self,
         uid: TestNodeUid,
         account_id: AccountId,
+        p2p_public_key: VerifyingKey,
     ) -> (
         IndexerAPI<MockTransactionSender>,
         AutoAbortTask<()>,
@@ -795,7 +826,6 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
-        // todo: [1249](https://github.com/near/mpc/issues/1249) use this to test onboarding logic
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
                 backup_service_info: None,
@@ -830,23 +860,24 @@ impl FakeIndexerManager {
             core_txn_sender: self.core_txn_sender.clone(),
             core_state_change_receiver: self.core_state_change_sender.subscribe(),
             block_update_receiver: self.core_block_update_sender.subscribe(),
+            core_migration_change_receiver: self.core_migration_change_sender.subscribe(),
+
             disable: disabler.disable.clone(),
             indexer_suspended: indexer_pauser_receiver,
             api_state_sender,
             api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
+            api_migration_info_sender: my_migration_info_sender,
         };
-        self.migration_info_senders
-            .insert(uid, my_migration_info_sender);
         self.node_disabler.insert(uid, disabler);
         self.indexer_pauser.insert(uid, indexer_pauser);
         self.account_id_by_uid
             .lock()
             .expect("require mutex")
-            .insert(uid, account_id);
+            .insert(uid, account_id.clone());
         (
             indexer,
-            AutoAbortTask::from(tokio::spawn(one_node.run())),
+            AutoAbortTask::from(tokio::spawn(one_node.run(account_id, p2p_public_key))),
             currently_running_job_name,
         )
     }
