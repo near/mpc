@@ -217,10 +217,8 @@ mod test {
     use crate::{
         crypto::hash::hash,
         participants::ParticipantList,
-        protocol::{
-            errors::ProtocolError, internal::make_protocol, run_protocol, Participant, Protocol,
-        },
-        test::generate_participants,
+        protocol::{errors::ProtocolError, internal::make_protocol, run_protocol},
+        test::{generate_participants, GenProtocol},
     };
 
     use super::multiplication;
@@ -242,8 +240,7 @@ mod test {
         let a = prep.iter().fold(Scalar::ZERO, |acc, (_, a_i, _)| acc + a_i);
         let b = prep.iter().fold(Scalar::ZERO, |acc, (_, _, b_i)| acc + b_i);
 
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Scalar>>)> =
-            Vec::with_capacity(prep.len());
+        let mut protocols: GenProtocol<Scalar> = Vec::with_capacity(prep.len());
 
         let sid = hash(b"sid")?;
 
@@ -308,9 +305,7 @@ mod test {
                     .collect()
             });
 
-        #[allow(clippy::type_complexity)]
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Vec<Scalar>>>)> =
-            Vec::with_capacity(prep.len());
+        let mut protocols: GenProtocol<Vec<Scalar>> = Vec::with_capacity(prep.len());
 
         let sids = (0..N)
             .map(|i| hash(&format!("sid{i}")))

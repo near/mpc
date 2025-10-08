@@ -670,7 +670,7 @@ pub mod test {
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
         <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
     {
-        let result = run_keygen::<C>(participants, threshold).unwrap();
+        let result = run_keygen::<C>(participants, threshold);
         assert!(result.len() == participants.len());
         assert_public_key_invariant(&result);
 
@@ -694,12 +694,12 @@ pub mod test {
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
         <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
     {
-        let result0 = run_keygen::<C>(participants, threshold).unwrap();
+        let result0 = run_keygen::<C>(participants, threshold);
         assert_public_key_invariant(&result0);
 
         let pub_key = result0[0].1.public_key.to_element();
 
-        let result1 = run_refresh(participants, &result0, threshold).unwrap();
+        let result1 = run_refresh(participants, &result0, threshold);
         assert_public_key_invariant(&result1);
 
         let participants = result1.iter().map(|p| p.0).collect::<Vec<_>>();
@@ -724,7 +724,7 @@ pub mod test {
         <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
         <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
     {
-        let result0 = run_keygen::<C>(participants, threshold0).unwrap();
+        let result0 = run_keygen::<C>(participants, threshold0);
         assert_public_key_invariant(&result0);
 
         let pub_key = result0[0].1.public_key;
@@ -738,8 +738,7 @@ pub mod test {
             threshold0,
             threshold1,
             &new_participant,
-        )
-        .unwrap();
+        );
         assert_public_key_invariant(&result1);
 
         let participants = result1.iter().map(|p| p.0).collect::<Vec<_>>();

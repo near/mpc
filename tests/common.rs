@@ -9,7 +9,7 @@ use threshold_signatures::{
     Ciphersuite, Element, KeygenOutput, Scalar,
 };
 
-type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C>>>)>;
+pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
 
 pub fn generate_participants(number: u32) -> Vec<Participant> {
     (0..number).map(Participant::from).collect::<Vec<_>>()
@@ -29,7 +29,7 @@ where
     Element<C>: std::marker::Send,
     Scalar<C>: std::marker::Send,
 {
-    let protocols: GenProtocol<C> = participants
+    let protocols: GenProtocol<KeygenOutput<C>> = participants
         .iter()
         .map(|p| {
             let protocol: Box<dyn Protocol<Output = KeygenOutput<C>>> =

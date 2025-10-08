@@ -376,7 +376,7 @@ mod test {
         let msg_hash = hash(&msg)?;
 
         // test dkg
-        let key_packages = run_keygen(&participants, threshold)?;
+        let key_packages = run_keygen(&participants, threshold);
         assert_public_key_invariant(&key_packages);
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
@@ -395,7 +395,7 @@ mod test {
             .is_ok());
 
         // // test refresh
-        let key_packages1 = run_refresh(&participants, &key_packages, threshold)?;
+        let key_packages1 = run_refresh(&participants, &key_packages, threshold);
         assert_public_key_invariant(&key_packages1);
         let msg = "hello_near_2";
         let msg_hash = hash(&msg)?;
@@ -425,7 +425,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
-        )?;
+        );
         assert_public_key_invariant(&key_packages2);
         let msg = "hello_near_3";
         let msg_hash = hash(&msg)?;
@@ -451,7 +451,7 @@ mod test {
     fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
         let participants = generate_participants(5);
         let threshold = 3;
-        let result0 = run_keygen(&participants, threshold)?;
+        let result0 = run_keygen(&participants, threshold);
         assert_public_key_invariant(&result0);
 
         let pub_key = result0[2].1.public_key;
@@ -469,7 +469,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
-        )?;
+        );
         assert_public_key_invariant(&key_packages);
 
         let participants: Vec<_> = key_packages
@@ -517,7 +517,7 @@ mod test {
     fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
         let participants = generate_participants(5);
         let threshold = 4;
-        let result0 = run_keygen(&participants, threshold)?;
+        let result0 = run_keygen(&participants, threshold);
         assert_public_key_invariant(&result0);
         let coordinators = vec![result0[0].0];
 
@@ -534,7 +534,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
-        )?;
+        );
         assert_public_key_invariant(&key_packages);
 
         let participants: Vec<_> = key_packages

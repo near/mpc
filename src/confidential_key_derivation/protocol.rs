@@ -182,7 +182,7 @@ fn compute_signature_share(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test::one_coordinator_output;
+    use crate::test::{one_coordinator_output, GenProtocol};
     use crate::{confidential_key_derivation::ciphersuite::hash_to_curve, protocol::run_protocol};
     use rand::Rng;
     use std::error::Error;
@@ -219,8 +219,7 @@ mod test {
         let index = rng.gen_range(0..participants.len());
         let coordinator = participants[index as usize];
 
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
-            Vec::with_capacity(participants.len());
+        let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
 
         let mut private_shares = Vec::new();
         for p in &participants {

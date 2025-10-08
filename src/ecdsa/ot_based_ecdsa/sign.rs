@@ -223,7 +223,7 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (_, sig) = run_sign_without_rerandomization(&participants_presign, public_key, msg)?;
+        let (_, sig) = run_sign_without_rerandomization(&participants_presign, public_key, msg);
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine())?).verify(msg, &sig)?;
         Ok(())

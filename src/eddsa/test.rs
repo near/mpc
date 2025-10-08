@@ -1,9 +1,9 @@
 use crate::crypto::hash::HashOutput;
 use crate::eddsa::{sign::sign, KeygenOutput, SignatureOption};
 use crate::participants::ParticipantList;
-use crate::protocol::{run_protocol, Participant, Protocol};
-use crate::test::generate_participants;
+use crate::protocol::{run_protocol, Participant};
 use crate::test::MockCryptoRng;
+use crate::test::{generate_participants, GenOutput, GenProtocol};
 
 use frost_core::keys::SigningShare;
 use frost_core::VerifyingKey as FrostVerifyingKey;
@@ -11,15 +11,11 @@ use frost_core::{Scalar as FrostScalar, SigningKey as FrostSigningKey};
 use frost_ed25519::Ed25519Sha512;
 
 type C = Ed25519Sha512;
-
 use rand_core::{OsRng, RngCore};
 use std::error::Error;
 
 /// this is a centralized key generation
-pub fn build_key_packages_with_dealer(
-    max_signers: u16,
-    min_signers: u16,
-) -> Vec<(Participant, KeygenOutput)> {
+pub fn build_key_packages_with_dealer(max_signers: u16, min_signers: u16) -> GenOutput<C> {
     use std::collections::BTreeMap;
 
     let mut identifiers = Vec::with_capacity(max_signers.into());
@@ -64,8 +60,7 @@ pub fn test_run_signature_protocols(
     threshold: usize,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> =
-        Vec::with_capacity(participants.len());
+    let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
 
     let participants_list = participants
         .iter()

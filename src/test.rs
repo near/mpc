@@ -10,6 +10,8 @@ use crate::protocol::{
 };
 use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
 
+pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
+
 // +++++++++++++++++ Participants Utilities +++++++++++++++++ //
 /// Generates a vector of `number` participants, sorted by the participant id.
 /// The participants ids range from 0 to `number`-1
@@ -33,8 +35,8 @@ pub fn generate_participants_with_random_ids(
 }
 
 // +++++++++++++++++ DKG Functions +++++++++++++++++ //
-type GenOutput<C> = Result<Vec<(Participant, KeygenOutput<C>)>, Box<dyn Error>>;
-type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = KeygenOutput<C>>>)>;
+pub type GenOutput<C> = Vec<(Participant, KeygenOutput<C>)>;
+type DKGGenProtocol<C> = GenProtocol<KeygenOutput<C>>;
 
 /// Runs distributed keygen
 /// If the protocol succeeds, returns a sorted vector based on participants id
@@ -43,16 +45,16 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    let mut protocols: GenProtocol<C> = Vec::with_capacity(participants.len());
+    let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
     for p in participants {
-        let protocol = keygen::<C>(participants, *p, threshold, OsRng)?;
+        let protocol = keygen::<C>(participants, *p, threshold, OsRng).unwrap();
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols)?;
+    let mut result = run_protocol(protocols).unwrap();
     result.sort_by_key(|(p, _)| *p);
-    Ok(result)
+    result
 }
 
 /// Runs distributed refresh
@@ -66,7 +68,7 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    let mut protocols: GenProtocol<C> = Vec::with_capacity(participants.len());
+    let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
     for (p, out) in keys {
         let protocol = refresh::<C>(
@@ -76,13 +78,14 @@ where
             threshold,
             *p,
             OsRng,
-        )?;
+        )
+        .unwrap();
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols)?;
+    let mut result = run_protocol(protocols).unwrap();
     result.sort_by_key(|(p, _)| *p);
-    Ok(result)
+    result
 }
 
 /// Runs distributed reshare
@@ -116,7 +119,7 @@ where
         }
     }
 
-    let mut protocols: GenProtocol<C> = Vec::with_capacity(participants.len());
+    let mut protocols: DKGGenProtocol<C> = Vec::with_capacity(participants.len());
 
     for (p, out) in &setup {
         let protocol = reshare(
@@ -128,13 +131,14 @@ where
             new_threshold,
             *p,
             OsRng,
-        )?;
+        )
+        .unwrap();
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols)?;
+    let mut result = run_protocol(protocols).unwrap();
     result.sort_by_key(|(p, _)| *p);
-    Ok(result)
+    result
 }
 
 /// Assert that each participant has the same view of the public key
@@ -172,8 +176,7 @@ where
         Scalar<C>,
     ) -> Result<Box<dyn Protocol<Output = Signature>>, InitializationError>,
 {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Signature>>)> =
-        Vec::with_capacity(participants_presign.len());
+    let mut protocols: GenProtocol<Signature> = Vec::with_capacity(participants_presign.len());
 
     let participants: Vec<Participant> = participants_presign.iter().map(|(p, _)| *p).collect();
     let participants = participants.as_slice();

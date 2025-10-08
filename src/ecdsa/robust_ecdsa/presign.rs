@@ -361,6 +361,7 @@ mod test {
     use super::*;
     use rand_core::OsRng;
 
+    use crate::test::GenProtocol;
     use crate::{ecdsa::KeygenOutput, protocol::run_protocol, test::generate_participants};
     use frost_secp256k1::keys::PublicKeyPackage;
     use frost_secp256k1::VerifyingKey;
@@ -378,8 +379,7 @@ mod test {
         let f = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng)?;
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero()?.0;
 
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)> =
-            Vec::with_capacity(participants.len());
+        let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
         for p in &participants {
             // simulating the key packages for each participant

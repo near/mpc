@@ -15,12 +15,14 @@ use threshold_signatures::{
         RerandomizationArguments, Secp256K1Sha256, Signature, SignatureOption,
     },
     frost_secp256k1::VerifyingKey,
-    protocol::{run_protocol, Participant, Protocol},
+    protocol::{run_protocol, Participant},
     Element, ParticipantList,
 };
 
 // TODO: This is required to use Scalar::from_repr
 use elliptic_curve::ff::PrimeField;
+
+use crate::common::GenProtocol;
 
 type C = Secp256K1Sha256;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;
@@ -31,8 +33,7 @@ fn run_presign(
     participants: HashMap<Participant, KeygenOutput>,
     max_malicious: usize,
 ) -> Vec<(Participant, PresignOutput)> {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)> =
-        Vec::with_capacity(participants.len());
+    let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
     let participant_list: Vec<Participant> = participants.keys().copied().collect();
 
@@ -63,7 +64,7 @@ fn run_sign(
         .into_option()
         .expect("Couldn't construct k256 point");
 
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> =
+    let mut protocols: GenProtocol<SignatureOption> =
         Vec::with_capacity(participants_presign.len());
 
     let participants: Vec<Participant> = participants_presign.iter().map(|(p, _)| *p).collect();

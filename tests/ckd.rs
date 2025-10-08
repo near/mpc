@@ -9,8 +9,10 @@ use threshold_signatures::{
         protocol::ckd,
         AppId, CKDOutputOption,
     },
-    protocol::{run_protocol, Participant, Protocol},
+    protocol::run_protocol,
 };
+
+use crate::common::GenProtocol;
 type C = threshold_signatures::confidential_key_derivation::BLS12381SHA256;
 type Scalar = threshold_signatures::Scalar<C>;
 
@@ -35,8 +37,7 @@ fn test_ckd() {
 
     let coordinator = choose_coordinator_at_random(&participants);
 
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = CKDOutputOption>>)> =
-        Vec::with_capacity(participants.len());
+    let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
 
     for p in &participants {
         let private_share = result.get(p).unwrap().private_share;

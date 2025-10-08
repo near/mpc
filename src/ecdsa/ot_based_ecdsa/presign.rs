@@ -199,7 +199,7 @@ mod test {
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::test::deal, KeygenOutput, Polynomial, ProjectivePoint},
         protocol::run_protocol,
-        test::generate_participants,
+        test::{generate_participants, GenProtocol},
     };
     use frost_secp256k1::{
         keys::{PublicKeyPackage, SigningShare},
@@ -221,9 +221,7 @@ mod test {
         let (triple0_pub, triple0_shares) = deal(&mut OsRng, &participants, original_threshold)?;
         let (triple1_pub, triple1_shares) = deal(&mut OsRng, &participants, original_threshold)?;
 
-        #[allow(clippy::type_complexity)]
-        let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)> =
-            Vec::with_capacity(participants.len());
+        let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
         for ((p, triple0), triple1) in participants
             .iter()
