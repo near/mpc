@@ -4,19 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = { workspace = true }
 borsh = { workspace = true }
-bs58 = { workspace = true, optional = true }
+bs58 = { workspace = true }
 derive_more = { workspace = true }
 serde = { workspace = true }
-serde_with = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 near-sdk = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }
 
 [features]
 abi = ["schemars"]
-test-utils = ["bs58"]

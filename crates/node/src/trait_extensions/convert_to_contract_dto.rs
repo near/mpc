@@ -246,6 +246,8 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
                 )
                 .unwrap()
             }
+            // TODO(#1212)
+            dtos_contract::PublicKey::Bls12381(_) => todo!(),
         }
     }
 }
