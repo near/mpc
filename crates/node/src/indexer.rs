@@ -1,3 +1,5 @@
+use crate::migration_service::types::MigrationInfo;
+
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
 use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_state::NodeId};
@@ -13,14 +15,14 @@ pub mod balances;
 pub mod configs;
 pub mod handler;
 pub mod lib;
+pub mod migrations;
 pub mod participants;
 pub mod real;
 pub mod stats;
+pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
-
-pub mod tee;
 
 #[cfg(test)]
 pub mod fake;
@@ -78,4 +80,7 @@ pub struct IndexerAPI<TransactionSender> {
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
+
+    #[allow(dead_code)] // todo: [#1249](https://github.com/near/mpc/issues/1249): remove `allow`
+    pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 }

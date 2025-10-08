@@ -25,6 +25,7 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::collections::BTreeMap;
 use std::{
     path::PathBuf,
     sync::OnceLock,
@@ -260,6 +261,8 @@ impl StartCmd {
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(ProtocolContractState::NotInitialized);
 
+        let (migration_state_sender, migration_state_receiver) =
+            watch::channel((0, BTreeMap::new()));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
@@ -267,6 +270,7 @@ impl StartCmd {
                 config.web_ui.clone(),
                 static_web_data(&secrets, Some(attestation.clone())),
                 protocol_state_receiver,
+                migration_state_receiver,
             ))
             .context("Failed to create web server.")?;
 
@@ -282,6 +286,8 @@ impl StartCmd {
             respond_config,
             indexer_exit_sender,
             protocol_state_sender,
+            migration_state_sender,
+            *tls_public_key,
         );
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);

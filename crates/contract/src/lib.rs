@@ -1305,6 +1305,7 @@ impl MpcContract {
 /// Methods for Migration service
 #[near_bindgen]
 impl MpcContract {
+    // todo: [#1248](https://github.com/near/mpc/issues/1248), we might want to delete this one
     pub fn my_migration_info(
         &self,
     ) -> (

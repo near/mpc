@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import pathlib
 import sys
 import time
@@ -7,6 +8,8 @@ from key import Key
 from ruamel.yaml import YAML
 
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
+from common_lib.contracts import ContractMethod
+from common_lib.migration_state import BackupServiceInfo, DestinationNodeInfo
 from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, FloatMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
@@ -200,3 +203,23 @@ class MpcNode(NearAccount):
             DictMetricName.MPC_PEERS_INDEXER_BLOCK_HEIGHTS
         )
         return {int(a["participant"]): int(b) for a, b in res}
+
+    def set_backup_service_info(
+        self, contract: str, backup_service_info: BackupServiceInfo
+    ):
+        tx = self.sign_tx(
+            contract,
+            ContractMethod.REGISTER_BACKUP_SERVICE,
+            {"backup_service_info": asdict(backup_service_info)},
+        )
+        return self.send_txn_and_check_success(tx)
+
+    def start_node_migration(
+        self, contract: str, destination_node_info: DestinationNodeInfo
+    ):
+        tx = self.sign_tx(
+            contract,
+            ContractMethod.START_NODE_MIGRATION,
+            {"destination_node_info": asdict(destination_node_info)},
+        )
+        return self.send_txn_and_check_success(tx)
