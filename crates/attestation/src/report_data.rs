@@ -54,7 +54,13 @@ pub struct ReportDataV1 {
     BorshDeserialize,
     BorshSerialize,
 )]
-struct Ed25519PublicKey([u8; 32]);
+pub struct Ed25519PublicKey([u8; 32]);
+
+impl core::borrow::Borrow<[u8]> for Ed25519PublicKey {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 /// report_data_v1: [u8; 64] =
 ///   [version(2 bytes big endian) || sha384(TLS pub key) || zero padding]
@@ -63,7 +69,7 @@ impl ReportDataV1 {
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
     const PUBLIC_KEYS_HASH_SIZE: usize = 48;
 
-    pub fn new(tls_public_key: [u8; 32]) -> Self {
+    pub fn new(tls_public_key: impl Into<Ed25519PublicKey>) -> Self {
         Self {
             tls_public_key: tls_public_key.into(),
         }
@@ -116,7 +122,7 @@ pub enum ReportData {
 }
 
 impl ReportData {
-    pub fn new(tls_public_key: [u8; 32]) -> Self {
+    pub fn new(tls_public_key: impl Into<Ed25519PublicKey>) -> Self {
         ReportData::V1(ReportDataV1::new(tls_public_key))
     }
 
