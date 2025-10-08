@@ -31,6 +31,20 @@ cargo install --path libs/nearcore/neard
 cargo install --path crates/node
 ```
 
+## Compile the signer contract
+Build the contract from the repository root with:
+
+```shell
+cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
+```
+
+Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
+Let's add an env variable for it. From the workspace root, run the following:
+
+```shell
+export MPC_CONTRACT_PATH=$(pwd)/target/near/mpc_contract/mpc_contract.wasm
+```
+
 ## 1. Run a local NEAR network
 
 To run a local NEAR network, first create the configuration with the following command.
@@ -63,7 +77,6 @@ export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | rg secret_k
 ```
 
 ## 2. Deploy the MPC contract to the network
-
 Now we can deploy the MPC contract with the NEAR CLI.
 First, add the mpc-localnet as a network connection in the CLI.
 
@@ -97,18 +110,6 @@ near account view-account-summary mpc-contract.test.near network-config mpc-loca
 ```
 
 Now it's time to deploy the contract.
-First build the contract from the repository root with:
-
-```shell
-cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
-```
-
-Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
-Let's add an env variable for it. From the workspace root, run the following:
-
-```shell
-export MPC_CONTRACT_PATH=$(pwd)/target/near/mpc_contract/mpc_contract.wasm
-```
 
 Now we can deploy the contract with this command.
 
