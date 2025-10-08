@@ -16,7 +16,7 @@ class DestinationNodeInfo:
 
 @dataclass
 class BackupServiceInfo:
-    public_key: list[int]  # 32 integers
+    public_key: str
 
 
 @dataclass

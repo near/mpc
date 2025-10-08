@@ -83,7 +83,7 @@ def verify_migration_endpoint(
     node_id = port - 20000
     node: MpcNode = cluster.mpc_nodes[node_id]
     # we just need a bogus key
-    bogus_backup_service = BackupServiceInfo(public_key=[node_id] * 32)
+    bogus_backup_service = BackupServiceInfo(public_key=node._signer_key.pk)
     node.set_backup_service_info(cluster.mpc_contract_account(), bogus_backup_service)
 
     expected_migrations.state_by_account[node.account_id()] = AccountEntry(
