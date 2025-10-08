@@ -295,11 +295,11 @@ We must delegate the generate signing keys Sam and Frodo generated as access key
 can sign transaction that require authorization on the contract.
 
 ```shell
-docs/assign_access_keys.sh frodo 8081
+docs/localnet/scripts/assign_access_keys.sh frodo 8081
 ```
 
 ```shell
-docs/assign_access_keys.sh sam 8082
+docs/localnet/scripts/assign_access_keys.sh sam 8082
 ```
 
 ## 6. Initialize the MPC contract
@@ -319,7 +319,7 @@ echo "Sam pubkey: $SAM_PUBKEY"
 With these set, we can prepare the arguments for the init call.
 
 ```shell
-envsubst < docs/init_args_template.json > /tmp/init_args.json
+envsubst < docs/localnet/args/init.json > /tmp/init_args.json
 ```
 
 Now, we should be ready to call the `init` function on the contract.
@@ -344,7 +344,7 @@ near contract \
   as-transaction \
   mpc-contract.test.near \
   sign \
-  file-args docs/sign_request_args.json \
+  file-args docs/localnet/args/sign.json \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '100 yoctonear' \
   sign-as frodo.test.near \
@@ -356,13 +356,13 @@ near contract \
 ### Cancel a key generation
 
 ```shell
-docs/vote_cancel_key_generation.sh <<NEXT_DOMAIN_ID>>
+docs/localnet/scripts/vote_cancel_key_generation.sh <<NEXT_DOMAIN_ID>>
 ```
 
 ### Add a domain/key to the contract.
 
 ```shell
-docs/vote_add_domain.sh <<DOMAIN_ID>>
+docs/localnet/scripts/vote_add_domain.sh <<DOMAIN_ID>>
 ```
 
 ### Check allowed image hashes:
