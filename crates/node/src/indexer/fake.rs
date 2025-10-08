@@ -800,7 +800,7 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
-        // todo actually use this logic once we fix our integration tests.
+        // todo: [1249](https://github.com/near/mpc/issues/1249) use this to test onboarding logic
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
                 backup_service_info: None,
