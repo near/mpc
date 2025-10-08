@@ -8,10 +8,9 @@ use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
-use k256::sha2::{Digest as _, Sha384};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_sdk::env::sha256;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256, Sha384};
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -251,7 +250,7 @@ impl Attestation {
             }
         };
 
-        let app_compose_hash: [u8; 32] = sha256(app_compose.as_bytes()).try_into().unwrap();
+        let app_compose_hash: [u8; 32] = Sha256::digest(app_compose.as_bytes()).into();
 
         app_compose_hash == expected_payload
     }
@@ -395,10 +394,11 @@ impl Attestation {
                 return false;
             }
         };
-        let launcher_bytes = sha256(app_compose.docker_compose_file.as_bytes());
+        let launcher_bytes: [u8; 32] =
+            Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
         allowed_hashes
             .iter()
-            .any(|hash| hash.as_hex() == hex::encode(&launcher_bytes))
+            .any(|hash| hash.as_hex() == hex::encode(launcher_bytes))
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54

@@ -3,7 +3,6 @@ use attestation::{
     quote::QuoteBytes,
 };
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-use dtos_contract::Ed25519PublicKey;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -46,9 +45,11 @@ pub fn quote() -> QuoteBytes {
         .expect("Quote collateral file is a valid json.")
 }
 
-pub fn p2p_tls_key() -> Ed25519PublicKey {
+pub fn p2p_tls_key() -> [u8; 32] {
     let key_file = include_str!("../assets/near_p2p_public_key.pub");
-    key_file.parse().expect("File contains a valid public key")
+    let public_key: dtos_contract::Ed25519PublicKey =
+        key_file.parse().expect("File contains a valid public key");
+    *public_key.as_bytes()
 }
 
 pub fn near_p2p_tls_key() -> near_sdk::PublicKey {

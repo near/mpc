@@ -14,7 +14,6 @@ use crate::{
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
-    providers::PublicKeyConversion,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -26,6 +25,7 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
+use std::collections::BTreeMap;
 use std::{
     path::PathBuf,
     sync::OnceLock,
@@ -40,6 +40,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
@@ -250,7 +251,7 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let report_data = ReportData::new(tls_public_key.to_near_sdk_public_key()?);
+        let report_data = ReportData::new(*tls_public_key.into_dto_type().as_bytes());
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime
@@ -260,6 +261,8 @@ impl StartCmd {
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(ProtocolContractState::NotInitialized);
 
+        let (migration_state_sender, migration_state_receiver) =
+            watch::channel((0, BTreeMap::new()));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
@@ -267,6 +270,7 @@ impl StartCmd {
                 config.web_ui.clone(),
                 static_web_data(&secrets, Some(attestation.clone())),
                 protocol_state_receiver,
+                migration_state_receiver,
             ))
             .context("Failed to create web server.")?;
 
@@ -282,6 +286,8 @@ impl StartCmd {
             respond_config,
             indexer_exit_sender,
             protocol_state_sender,
+            migration_state_sender,
+            *tls_public_key,
         );
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);

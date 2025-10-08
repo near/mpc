@@ -1,0 +1,8 @@
+{
+  "domains": [
+    {
+      "id": 0,
+      "scheme": "Secp256k1"
+    }
+  ]
+}
