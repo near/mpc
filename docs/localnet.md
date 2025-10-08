@@ -308,8 +308,6 @@ We'll initialize the MPC contract with two participants. Before we can call the 
 
 now we can extract their public keys.
 
-TODO: The commands below are wrong. We are extracting the public signer key of Frodo and Sam, but using it for the purpose of their public TLS when using it as init argument for the contract which are two different things. We first need to start the node, and have the node generate the TLS/P2P key, and then extract the public key from the web endpoint.
-
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
 echo "Frodo pubkey: $FRODO_PUBKEY"
