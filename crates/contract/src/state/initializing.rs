@@ -149,40 +149,15 @@ impl InitializingContractState {
 
 #[cfg(test)]
 pub mod tests {
-    use super::InitializingContractState;
-    use crate::primitives::domain::tests::gen_domains_to_add;
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_account_id};
     use crate::primitives::votes::ThresholdParametersVotes;
-    use crate::state::key_event::tests::{find_leader, Environment};
-    use crate::state::running::running_tests::gen_running_state;
+    use crate::state::key_event::tests::find_leader;
     use crate::state::running::RunningContractState;
+    use crate::state::test_utils::gen_initializing_state;
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
-
-    /// Randomly generates an InitializingContractState where we already have keys for
-    /// `num_generated` domains, and we are targeting `num_domains` total domains.
-    /// This is done by starting from a Running state with `num_generated` keys and then transition
-    /// into Initializing state by calling vote_add_domains. (We also test that code path.)
-    pub fn gen_initializing_state(
-        num_domains: usize,
-        num_generated: usize,
-    ) -> (Environment, InitializingContractState) {
-        let mut env = Environment::new(None, None, None);
-        let mut running = gen_running_state(num_generated);
-        let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
-
-        let mut initializing_state = None;
-        for (account, _, _) in running.parameters.participants().participants().clone() {
-            env.set_signer(&account);
-            assert!(initializing_state.is_none());
-            initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
-        }
-        let initializing_state = initializing_state
-            .expect("Enough votes to add domains should transition into initializing");
-        (env, initializing_state)
-    }
 
     fn test_initializing_contract_state_for(num_domains: usize, num_already_generated: usize) {
         let (mut env, mut state) = gen_initializing_state(num_domains, num_already_generated);

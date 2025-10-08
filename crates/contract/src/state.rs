@@ -2,6 +2,8 @@ pub mod initializing;
 pub mod key_event;
 pub mod resharing;
 pub mod running;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};

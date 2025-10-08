@@ -81,6 +81,5 @@ pub struct IndexerAPI<TransactionSender> {
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 
-    #[allow(dead_code)] // todo: [#1249](https://github.com/near/mpc/issues/1249): remove `allow`
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
 }
