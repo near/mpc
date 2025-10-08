@@ -316,10 +316,8 @@ mod tests {
         assert_eq!(*call_count.borrow(), 1);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_get_with_backoff_success_after_retries() {
-        tokio::time::pause();
-
         const FAILURE_COUNT: i32 = 3;
         const MAX_RETRIES: usize = 5;
         let call_count = Arc::new(AtomicI32::new(0));
@@ -366,10 +364,8 @@ mod tests {
         assert!(elapsed >= Duration::from_secs(6));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_get_with_backoff_failure_exhausts_retries() {
-        tokio::time::pause();
-
         const MAX_RETRIES: usize = 2;
         let call_count = Arc::new(AtomicI32::new(0));
         let call_count_clone = call_count.clone();
@@ -400,10 +396,8 @@ mod tests {
         assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32); // Initial attempt + retries
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_get_with_backoff_unlimited_retries_eventually_succeeds() {
-        tokio::time::pause();
-
         const FAILURE_COUNT: i32 = 5;
         let call_count = Arc::new(AtomicI32::new(0));
         let call_count_clone = call_count.clone();
