@@ -340,35 +340,51 @@ If this succeeded, you should now be able to query the contract state.
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
-## Appendix: Further useful command
+## 5. Add a domain
+Now the contract should be initialized and both nodes are running.
+To verify that the network is working let's request a singature from it.
+To do this, we first need to add a domain.
 
-### Send a sign request
+Let's have Frodo and Sam both vote to add a secp256k1 domain.
 
 ```shell
-near contract \
-  call-function \
-  as-transaction \
-  mpc-contract.test.near \
-  sign \
-  file-args docs/localnet/args/sign.json \
-  prepaid-gas '300.0 Tgas' \
-  attached-deposit '100 yoctonear' \
-  sign-as frodo.test.near \
-  network-config mpc-localnet \
-  sign-with-keychain \
-  send
+near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+
+near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
+
+## 6. Send a sign request to the network
+Now we should be able to request a signature from the network.
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+If this worked, you should see a response like:
+
+```log
+INFO Function execution return value (printed to stdout):
+{
+  "big_r": {
+    "affine_point": "036080C3D1CC86EB785F8FBB3E216786D9A9ABAB30CB6D85FC7D5157BB3E8873C5"
+  },
+  "recovery_id": 1,
+  "s": {
+    "scalar": "28DC2AB7BC81EB919797FA932632B35B6C3E8B8C037B11EC5F4071F184B3165D"
+  },
+  "scheme": "Secp256k1"
+}
+```
+
+Tadaaa! Now you should have a fully functioning MPC network running on your
+machine ready to produce signatures.
+
+## Appendix: Further useful commands
 
 ### Cancel a key generation
 
 ```shell
-docs/localnet/scripts/vote_cancel_key_generation.sh <<NEXT_DOMAIN_ID>>
-```
-
-### Add a domain/key to the contract.
-
-```shell
-docs/localnet/scripts/vote_add_domain.sh <<DOMAIN_ID>>
+near contract call-function as-transaction mpc-contract.test.near vote_cancel_keygen json-args '{"next_domain_id": 0}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Check allowed image hashes:
