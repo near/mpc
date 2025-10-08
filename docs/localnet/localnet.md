@@ -279,7 +279,7 @@ In the shell where you ran the local near node, you should see the peer count ch
 2025-08-03T14:20:12.183398Z  INFO stats: #  100579 98DQh3yG987rY1pNWKbM4jYjJ5xuFixP4g3MJuVvpiWY Validator | 1 validator 2 peers ⬇ 1.10 kB/s ⬆ 37.4 kB/s 1.60 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
 ```
 
-### 5. Assign the signer and responder keys as subkeys.
+### Assign the signer and responder keys as subkeys.
 
 We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
@@ -312,7 +312,7 @@ docs/localnet/scripts/assign_access_keys.sh frodo 8081
 docs/localnet/scripts/assign_access_keys.sh sam 8082
 ```
 
-## 6. Initialize the MPC contract
+## 4. Initialize the MPC contract
 
 We'll initialize the MPC contract with our two participants.
 The first step to achieve this is to get their public keys.
