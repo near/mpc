@@ -5,7 +5,6 @@ use crate::{
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     },
-    providers::PublicKeyConversion,
     trait_extensions::convert_to_contract_dto::IntoDtoType,
 };
 use anyhow::Context;
@@ -92,7 +91,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tls_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
+    let tls_sdk_public_key = *tls_public_key.into_dto_type().as_bytes();
     let report_data = ReportData::new(tls_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
@@ -143,7 +142,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
+    let tls_sdk_public_key = *tls_public_key.as_bytes();
     let report_data = ReportData::new(tls_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 

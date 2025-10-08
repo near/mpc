@@ -14,7 +14,6 @@ use crate::{
         GcpPermanentKeyStorageConfig, KeyStorageConfig,
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
-    providers::PublicKeyConversion,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -40,6 +39,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
@@ -250,7 +250,7 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let report_data = ReportData::new(tls_public_key.to_near_sdk_public_key()?);
+        let report_data = ReportData::new(*tls_public_key.into_dto_type().as_bytes());
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime
