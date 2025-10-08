@@ -176,7 +176,7 @@ jq '.account_id = "frodo.test.near"' ~/.near/mpc-frodo/validator_key.json > ~/.n
 
 Next we'll create a `config.yaml` for the MPC-indexer:
 
-```bash
+```shell
 cat > ~/.near/mpc-frodo/config.yaml << 'EOF'
 my_near_account_id: frodo.test.near
 near_responder_account_id: frodo.test.near
@@ -226,7 +226,7 @@ RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0
 jq '.account_id = "sam.test.near"' ~/.near/mpc-sam/validator_key.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/validator_key.json
 ```
 
-```bash
+```shell
 cat > ~/.near/mpc-sam/config.yaml << 'EOF'
 my_near_account_id: sam.test.near
 near_responder_account_id: sam.test.near
@@ -284,6 +284,26 @@ In the shell where you ran the local near node, you should see the peer count ch
 We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
 
+First we can get the keys from the `public_data` endpoint:
+
+```shell
+export FRODO_P2P_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_signer_public_key")
+export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_signer_public_key")
+
+export FRODO_RESPONDER_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_responder_public_keys[0]")
+export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_responder_public_keys[0]")
+```
+
+Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
+
+```shell
+near account add-key frodo.test.near grant-full-access use-manually-provided-public-key "$FRODO_P2P_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-full-access use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+
+near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_P2P_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
+```
+
 ```shell
 docs/localnet/scripts/assign_access_keys.sh frodo 8081
 ```
@@ -299,10 +319,7 @@ The first step to achieve this is to get their public keys.
 
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
-echo "Frodo pubkey: $FRODO_PUBKEY"
-
 export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
-echo "Sam pubkey: $SAM_PUBKEY"
 ```
 
 With these set, we can prepare the arguments for the init call.
