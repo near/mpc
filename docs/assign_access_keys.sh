@@ -2,14 +2,14 @@
 
 # Script to automate NEAR account key assignment
 # Usage: ./assign-near-keys.sh <name> <port>
-# Example: ./assign-near-keys.sh alice 8081
+# Example: ./assign-near-keys.sh frodo 8081
 
 set -e  # Exit on error
 
 # Check if required arguments are provided
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <name> <port>"
-    echo "Example: $0 alice 8081"
+    echo "Example: $0 frodo 8081"
     exit 1
 fi
 

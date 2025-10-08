@@ -5,18 +5,18 @@
       "next_id": 2,
       "participants": [
         [
-          "alice.test.near",
+          "frodo.test.near",
           0,
           {
-            "sign_pk": "$ALICE_PUBKEY",
+            "sign_pk": "$FRODO_PUBKEY",
             "url": "https://localhost:3000"
           }
         ],
         [
-          "bob.test.near", 
+          "sam.test.near", 
           1,
           {
-            "sign_pk": "$BOB_PUBKEY",
+            "sign_pk": "$SAM_PUBKEY",
             "url": "https://localhost:3001"
           }
         ]

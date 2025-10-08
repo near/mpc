@@ -124,59 +124,59 @@ near contract inspect mpc-contract.test.near network-config mpc-localnet now
 
 Now when the contract has been deployed, the next step is to initialize it.
 
-## 3. Create accounts for Alice and Bob
+## 3. Create accounts for Frodo and Sam
 
 ```shell
-near account create-account fund-myself alice.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
 ```shell
-near account create-account fund-myself bob.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
-## 4. Start Alice and Bob's MPC nodes
+## 4. Start Frodo and Sam's MPC nodes
 
-Before we can start the MPC nodes for Alice and Bob, we need to know the public key of our NEAR validator.
+Before we can start the MPC nodes for Frodo and Sam, we need to know the public key of our NEAR validator.
 
 ```shell
 export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | rg -o "ed25519:\w+")
 ```
 
-### Initialize Alice's node
+### Initialize Frodo's node
 
 ```shell
-mpc-node init --dir ~/.near/mpc-alice --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
+mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 ```
 
 TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
 
 #### The following modifications are needed
 
-Fix Alice's genesis file to correspond with the localnet.
+Fix Frodo's genesis file to correspond with the localnet.
 TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-alice/genesis.json
+cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-frodo/genesis.json
 ```
 
-Update Alice to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
+Update Frodo to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
 
 ```shell
-RPC_PORT=3031 BOOT_NODE_PORT=24567 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "localhost:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-alice/config.json > ~/.near/mpc-alice/temp.json && mv ~/.near/mpc-alice/temp.json ~/.near/mpc-alice/config.json
+RPC_PORT=3031 BOOT_NODE_PORT=24567 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "localhost:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
 ```
 
-Update Alice's `validator_key.json` to match her `account_id` field to her account.
+Update Frodo's `validator_key.json` to match her `account_id` field to her account.
 
 ```shell
-jq '.account_id = "alice.test.near"' ~/.near/mpc-alice/validator_key.json > ~/.near/mpc-alice/temp.json && mv ~/.near/mpc-alice/temp.json ~/.near/mpc-alice/validator_key.json
+jq '.account_id = "frodo.test.near"' ~/.near/mpc-frodo/validator_key.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/validator_key.json
 ```
 
 Create a `config.yaml` for the MPC-indexer:
 
 ```bash
-cat > ~/.near/mpc-alice/config.yaml << 'EOF'
-my_near_account_id: alice.test.near
-near_responder_account_id: alice.test.near
+cat > ~/.near/mpc-frodo/config.yaml << 'EOF'
+my_near_account_id: frodo.test.near
+near_responder_account_id: frodo.test.near
 number_of_responder_keys: 1
 web_ui:
   host: localhost
@@ -204,41 +204,41 @@ cores: 4
 EOF
 ```
 
-### Initialize Bob's node
+### Initialize Sam's node
 
 ```shell
-mpc-node init --dir ~/.near/mpc-bob --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
+mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 ```
 
 TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
 
 #### The following modifications are needed
 
-Fix Bob's genesis file to correspond with the localnet.
+Fix Sam's genesis file to correspond with the localnet.
 TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
 
 ```shell
-cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-bob/genesis.json
+cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-sam/genesis.json
 ```
 
-Update Bob to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
+Update Sam to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
 
 ```shell
-RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "localhost:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-bob/config.json > ~/.near/mpc-bob/temp.json && mv ~/.near/mpc-bob/temp.json ~/.near/mpc-bob/config.json
+RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "localhost:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-sam/config.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/config.json
 ```
 
-Update Bob's `validator_key.json`'s `account_id` field. TODO: Why is it initialized with `test.near`?
+Update Sam's `validator_key.json`'s `account_id` field. TODO: Why is it initialized with `test.near`?
 
 ```shell
-jq '.account_id = "bob.test.near"' ~/.near/mpc-bob/validator_key.json > ~/.near/mpc-bob/temp.json && mv ~/.near/mpc-bob/temp.json ~/.near/mpc-bob/validator_key.json
+jq '.account_id = "sam.test.near"' ~/.near/mpc-sam/validator_key.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/validator_key.json
 ```
 
 Create a `config.yaml` for the MPC-indexer:
 
 ```bash
-cat > ~/.near/mpc-bob/config.yaml << 'EOF'
-my_near_account_id: bob.test.near
-near_responder_account_id: bob.test.near
+cat > ~/.near/mpc-sam/config.yaml << 'EOF'
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
 number_of_responder_keys: 1
 web_ui:
   host: localhost
@@ -268,18 +268,18 @@ EOF
 
 ### Run the MPC binary
 
-In two separate shells run the MPC binary for alice and bob. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
+In two separate shells run the MPC binary for frodo and sam. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-bob/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+mpc-node start --home-dir ~/.near/mpc-sam/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-alice/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 Note: `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
 
-In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the alice and bob MPC indexers connect to it.
+In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the frodo and sam MPC indexers connect to it.
 
 ```log
 2025-08-03T14:19:42.179075Z  INFO stats: #  100530 Fe9M4GuFpnTgMJvwZR1uzsxMAp7gKqWp1GAVdm5RY5Rc Validator | 1 validator 0 peers ⬇ 0 B/s ⬆ 0 B/s 1.70 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
@@ -290,31 +290,31 @@ In the shell where you ran the local near node, you should see the peer count ch
 
 ### 5. Assign the signer and responder keys as subkeys.
 
-We must delegate the generate signing keys Bob and Alice generated as access keys to their near accounts such that they
+We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
 
 ```shell
-docs/assign_access_keys.sh alice 8081
+docs/assign_access_keys.sh frodo 8081
 ```
 
 ```shell
-docs/assign_access_keys.sh bob 8082
+docs/assign_access_keys.sh sam 8082
 ```
 
 ## 6. Initialize the MPC contract
 
-We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `alice` and `bob`.
+We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `frodo` and `sam`.
 
 now we can extract their public keys.
 
-TODO: The commands below are wrong. We are extracting the public signer key of Alice and Bob, but using it for the purpose of their public TLS when using it as init argument for the contract which are two different things. We first need to start the node, and have the node generate the TLS/P2P key, and then extract the public key from the web endpoint.
+TODO: The commands below are wrong. We are extracting the public signer key of Frodo and Sam, but using it for the purpose of their public TLS when using it as init argument for the contract which are two different things. We first need to start the node, and have the node generate the TLS/P2P key, and then extract the public key from the web endpoint.
 
 ```shell
-export ALICE_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
-echo "Alice pubkey: $ALICE_PUBKEY"
+export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
+echo "Frodo pubkey: $FRODO_PUBKEY"
 
-export BOB_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
-echo "Bob pubkey: $BOB_PUBKEY"
+export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
+echo "Sam pubkey: $SAM_PUBKEY"
 ```
 
 With these set, we can prepare the arguments for the init call.
@@ -348,7 +348,7 @@ near contract \
   file-args docs/sign_request_args.json \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '100 yoctonear' \
-  sign-as alice.test.near \
+  sign-as frodo.test.near \
   network-config mpc-localnet \
   sign-with-keychain \
   send
@@ -369,7 +369,7 @@ docs/vote_add_domain.sh <<DOMAIN_ID>>
 ### Check allowed image hashes:
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as bob.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Add more funds to the mpc-contract account

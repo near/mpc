@@ -11,7 +11,7 @@ else
 fi
 
 # Default signers
-SIGNERS=("alice.test.near" "bob.test.near")
+SIGNERS=("frodo.test.near" "sam.test.near")
 
 echo "Voting to cancel key resharing for domain ID: $DOMAIN_ID"
 echo "Using signers: ${SIGNERS[*]}"

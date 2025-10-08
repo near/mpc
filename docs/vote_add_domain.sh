@@ -2,7 +2,7 @@
 
 # Script to vote on adding domains with multiple signers
 # Usage: ./vote_domains.sh <domain_id> [signer1] [signer2] [signer3] ...
-# If no signers provided after domain_id, defaults to alice and bob
+# If no signers provided after domain_id, defaults to frodo and sam
 
 # Check if at least one argument (domain_id) is provided
 if [ $# -eq 0 ]; then
@@ -17,7 +17,7 @@ shift  # Remove first argument, rest are signers
 
 # Default signers if none provided after domain_id
 if [ $# -eq 0 ]; then
-    SIGNERS=("alice.test.near" "bob.test.near")
+    SIGNERS=("frodo.test.near" "sam.test.near")
 else
     SIGNERS=("$@")
 fi
