@@ -125,7 +125,9 @@ near contract inspect mpc-contract.test.near network-config mpc-localnet now
 
 Now when the contract has been deployed, the next step is to initialize it.
 
-## 3. Create accounts for Frodo and Sam
+## 3. Start MPC nodes
+In this guide we'll run two MPC nodes. We'll call the nodes "Frodo" and "Sam", and name their accounts accordingly.
+Before we're ready to initialize the nodes, we should create the accounts.
 
 ```shell
 near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
@@ -135,15 +137,16 @@ near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-
 near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
 ```
 
-## 4. Start Frodo and Sam's MPC nodes
-
-Before we can start the MPC nodes for Frodo and Sam, we need to know the public key of our NEAR validator.
+Next, we need to know the public key of our NEAR validator.
 
 ```shell
 export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | rg -o "ed25519:\w+")
 ```
 
+Now we're ready to initialize the nodes.
+
 ### Initialize Frodo's node
+This commands creates a directory with some initial config for Frodo's node.
 
 ```shell
 mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
@@ -151,28 +154,27 @@ mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/
 
 TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
 
-#### The following modifications are needed
-
-Fix Frodo's genesis file to correspond with the localnet.
-TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
+However, currently the command creates an invalid genesis file.
+We need to copy the genesis file from `mpc-localnet`.
 
 ```shell
 cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-frodo/genesis.json
 ```
 
-Update Frodo to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
+Now we must update Frodo's to point to correct port for boot nodes as it's currently pointing to localnet's RPC port.
+Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
 
 ```shell
 RPC_PORT=3031 BOOT_NODE_PORT=24567 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "0.0.0.0:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
 ```
 
-Update Frodo's `validator_key.json` to match her `account_id` field to her account.
+Now we must update Frodo's `validator_key.json` to match the `account_id` field to the right account.
 
 ```shell
 jq '.account_id = "frodo.test.near"' ~/.near/mpc-frodo/validator_key.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/validator_key.json
 ```
 
-Create a `config.yaml` for the MPC-indexer:
+Next we'll create a `config.yaml` for the MPC-indexer:
 
 ```bash
 cat > ~/.near/mpc-frodo/config.yaml << 'EOF'
@@ -206,35 +208,23 @@ EOF
 ```
 
 ### Initialize Sam's node
+Now we can do the same steps for Sam.
 
 ```shell
 mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
 ```
 
-TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
-
-#### The following modifications are needed
-
-Fix Sam's genesis file to correspond with the localnet.
-TODO: Why do we get a different genesis file from the mpc-node init command when genesis from localnet is passed as argument?.
-
 ```shell
 cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-sam/genesis.json
 ```
-
-Update Sam to point to correct port for boot nodes. It is currently pointing to localnet's RPC port. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
 
 ```shell
 RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "0.0.0.0:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-sam/config.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/config.json
 ```
 
-Update Sam's `validator_key.json`'s `account_id` field. TODO: Why is it initialized with `test.near`?
-
 ```shell
 jq '.account_id = "sam.test.near"' ~/.near/mpc-sam/validator_key.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/validator_key.json
 ```
-
-Create a `config.yaml` for the MPC-indexer:
 
 ```bash
 cat > ~/.near/mpc-sam/config.yaml << 'EOF'
@@ -304,9 +294,8 @@ docs/localnet/scripts/assign_access_keys.sh sam 8082
 
 ## 6. Initialize the MPC contract
 
-We'll initialize the MPC contract with two participants. Before we can call the contract, we first need to create accounts for the participants. Let's call them `frodo` and `sam`.
-
-now we can extract their public keys.
+We'll initialize the MPC contract with our two participants.
+The first step to achieve this is to get their public keys.
 
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
