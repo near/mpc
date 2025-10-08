@@ -63,7 +63,8 @@ impl ReportDataV1 {
             .copy_from_slice(&version_bytes);
 
         // Generate and copy hash of public keys
-        let public_keys_hash = self.public_keys_hash();
+        let public_keys_hash: [u8; Self::PUBLIC_KEYS_HASH_SIZE] =
+            Sha3_384::digest(self.tls_public_key).into();
         report_data
             [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
             .copy_from_slice(&public_keys_hash);
@@ -82,11 +83,6 @@ impl ReportDataV1 {
                 [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE],
         );
         hash
-    }
-
-    /// Generates SHA3-384 hash of TLS public key only.
-    fn public_keys_hash(&self) -> [u8; Self::PUBLIC_KEYS_HASH_SIZE] {
-        Sha3_384::digest(self.tls_public_key).into()
     }
 }
 
@@ -175,7 +171,9 @@ mod tests {
         let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
-        assert_eq!(hash, report_data_v1.public_keys_hash());
+        let public_key_hash: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] =
+            Sha3_384::digest(report_data_v1.tls_public_key).into();
+        assert_eq!(hash, public_key_hash);
 
         let report_data = ReportData::V1(report_data_v1);
         assert_eq!(report_data.to_bytes(), bytes);
