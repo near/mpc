@@ -1,3 +1,4 @@
+use crate::sandbox::common::SharedSecretKey;
 use crate::sandbox::common::{
     create_response_ckd, derive_confidential_key_and_validate, example_bls12381g1_point,
     init_env_bls12381,
@@ -22,9 +23,9 @@ async fn create_account_given_id(
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_bls12381(1).await;
     let sk = match &sks[0] {
-        crate::sandbox::common::SharedSecretKey::Secp256k1(_) => unreachable!(),
-        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
-        crate::sandbox::common::SharedSecretKey::Bls12381(sk) => sk,
+        SharedSecretKey::Secp256k1(_) => unreachable!(),
+        SharedSecretKey::Ed25519(_) => unreachable!(),
+        SharedSecretKey::Bls12381(sk) => sk,
     };
 
     let account_ids: [AccountId; 4] = [
@@ -114,10 +115,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let sk = match &sks[0] {
-        crate::sandbox::common::SharedSecretKey::Bls12381(sk) => sk,
-        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
-        crate::sandbox::common::SharedSecretKey::Secp256k1(_) => unreachable!(),
+    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
+        unreachable!();
     };
     let app_public_key = example_bls12381g1_point();
     let request = CKDRequestArgs {
@@ -250,10 +249,8 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env_bls12381(1).await;
     let alice = worker.dev_create_account().await?;
-    let sk = match &sks[0] {
-        crate::sandbox::common::SharedSecretKey::Bls12381(sk) => sk,
-        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
-        crate::sandbox::common::SharedSecretKey::Secp256k1(_) => unreachable!(),
+    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
+        unreachable!();
     };
     let app_public_key = example_bls12381g1_point();
     let request = CKDRequestArgs {

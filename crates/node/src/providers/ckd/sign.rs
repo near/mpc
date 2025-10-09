@@ -48,7 +48,7 @@ impl CKDProvider {
         };
 
         let public_key = keygen_output.public_key;
-
+        let participants = channel.participants().to_vec();
         let result = CKDComputation {
             keygen_output,
             app_public_key: ckd_request.app_public_key,
@@ -58,7 +58,14 @@ impl CKDProvider {
             channel,
             Duration::from_secs(self.config.ckd.timeout_sec),
         )
-        .await?;
+        .await
+        .inspect_err(|_| {
+            participants.iter().for_each(|id| {
+                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER
+                    .with_label_values(&[&id.raw().to_string()])
+                    .inc();
+            });
+        })?;
 
         let Some((big_y, big_c)) = result else {
             anyhow::bail!("ckd result doesn't contain value for the leader!");
@@ -83,7 +90,7 @@ impl CKDProvider {
         let Some(keygen_output) = self.keyshares.get(&ckd_request.domain_id) else {
             anyhow::bail!("No keyshare for domain {:?}", ckd_request.domain_id);
         };
-
+        let participants = channel.participants().to_vec();
         CKDComputation {
             keygen_output: keygen_output.clone(),
             app_public_key: ckd_request.app_public_key,
@@ -93,7 +100,14 @@ impl CKDProvider {
             channel,
             Duration::from_secs(self.config.ckd.timeout_sec),
         )
-        .await?;
+        .await
+        .inspect_err(|_| {
+            participants.iter().for_each(|id| {
+                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
+                    .with_label_values(&[&id.raw().to_string()])
+                    .inc();
+            })
+        })?;
 
         Ok(())
     }

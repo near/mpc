@@ -524,12 +524,12 @@ class MpcCluster:
         """
         # TODO(#1244): implement pytests for CKD
         return
-        txs = self.make_ckd_request_txns(
-            requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
-        )
-        self.request_node.send_await_check_txs_parallel(
-            "ckd request", txs, ckd_verification
-        )
+        # txs = self.make_ckd_request_txns(
+        #     requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
+        # )
+        # self.request_node.send_await_check_txs_parallel(
+        #     "ckd request", txs, ckd_verification
+        # )
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
