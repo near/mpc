@@ -124,7 +124,7 @@ impl TeeAuthority {
         tdx_quote: &str,
     ) -> anyhow::Result<Collateral> {
         let reqwest_client = reqwest::Client::builder()
-            .timeout(core::time::Duration::from_secs(10))
+            .timeout(Duration::from_secs(10))
             .build()
             .context("Failed to build HTTP client")?;
 
@@ -178,35 +178,31 @@ where
             .with_jitter();
 
         if let Some(max_retries) = max_retries {
-            builder.with_max_times(max_retries).build()
+            builder.with_max_times(max_retries)
         } else {
-            builder.without_max_times().build()
+            builder.without_max_times()
         }
+        .build()
     };
 
     // Loop until we have a response or exceed max retries
     loop {
         match operation().await {
-            Err(err) => {
-                if let Some(duration) = backoff.next() {
+            Ok(response) => return Ok(response),
+            Err(err) => match backoff.next() {
+                Some(duration) => {
                     error!(?err, "{description} failed. retrying in: {:?}", duration);
-                    continue;
-                } else {
-                    match max_retries {
-                        Some(retries) => {
-                            error!(?err, "{description} failed after {} retries", retries)
-                        }
-                        None => {
-                            error!(
-                                ?err,
-                                "{description} failed and backoff returned None with unlimited retries"
-                            );
-                        }
-                    }
+                    tokio::time::sleep(duration).await;
+                }
+                None => {
+                    let retry_msg = match max_retries {
+                        Some(retries) => format!("after {} retries", retries),
+                        None => "and backoff returned None with unlimited retries".to_string(),
+                    };
+                    error!(?err, "{description} failed {retry_msg}");
                     return Err(err);
                 }
-            }
-            Ok(response) => break Ok(response),
+            },
         }
     }
 }
@@ -215,11 +211,19 @@ where
 mod tests {
     use super::*;
     use attestation::report_data::ReportDataV1;
-    use rstest::rstest;
-
     #[cfg(feature = "external-services-tests")]
     use hex::ToHex;
+    use rstest::rstest;
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicI32, Ordering},
+        },
+    };
 
+    use test_utils::attestation::p2p_tls_key;
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
 
@@ -301,6 +305,148 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_with_backoff_success_on_first_try() {
+        const MAX_RETRIES: usize = 3;
+        let call_count = Rc::new(RefCell::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            *call_count_clone.borrow_mut() += 1;
+            async move { Ok::<i32, &str>(42) }
+        };
+
+        let result = get_with_backoff(operation, "test operation", Some(MAX_RETRIES)).await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(*call_count.borrow(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_with_backoff_success_after_retries() {
+        const FAILURE_COUNT: i32 = 3;
+        const MAX_RETRIES: usize = 5;
+        let call_count = Arc::new(AtomicI32::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            let current_count = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            async move {
+                if current_count < FAILURE_COUNT {
+                    Err("temporary failure")
+                } else {
+                    Ok::<i32, &str>(42)
+                }
+            }
+        };
+
+        let start_time = tokio::time::Instant::now();
+
+        // Run get_with_backoff in a spawned task so we can control time advancement
+        let backoff_task = tokio::spawn(async move {
+            get_with_backoff(operation, "test operation", Some(MAX_RETRIES)).await
+        });
+
+        // Let the first call execute and fail
+        tokio::time::advance(Duration::from_millis(1)).await;
+
+        // The backon ExponentialBuilder::default() uses:
+        // - Base delay: 1 second
+        // - Multiplier: 2
+        // - Max attempts: 3
+        // - Jitter: up to 100% of calculated delay
+        // So expected delays are: ~1s, ~2s (each with potential jitter up to 2x)
+
+        // Advance time for both retries: 2s + 4s = 6s total (with jitter buffer)
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        let result = backoff_task.await.unwrap();
+        let elapsed = start_time.elapsed();
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count.load(Ordering::SeqCst), FAILURE_COUNT);
+
+        // Verify time was properly simulated (1ms initial + 2s + 4s = ~6s minimum)
+        assert!(elapsed >= Duration::from_secs(6));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_with_backoff_failure_exhausts_retries() {
+        const MAX_RETRIES: usize = 2;
+        let call_count = Arc::new(AtomicI32::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            call_count_clone.fetch_add(1, Ordering::SeqCst);
+            async move { Err::<i32, &str>("persistent failure") }
+        };
+
+        // Run get_with_backoff in a spawned task so we can control time advancement
+        let backoff_task = tokio::spawn(async move {
+            get_with_backoff(operation, "test operation", Some(MAX_RETRIES)).await
+        });
+
+        // The backon ExponentialBuilder::default() uses:
+        // - Base delay: 1 second
+        // - Multiplier: 2
+        // - Max retries: 2 (as specified)
+        // - Jitter: up to 100% of calculated delay
+        // So expected delays are: ~1s, ~2s (each with potential jitter up to 2x)
+
+        // Advance time for all retry delays: 2s + 4s = 6s total (with jitter buffer)
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        let result = backoff_task.await.unwrap();
+
+        assert_eq!(result.unwrap_err(), "persistent failure");
+        assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32); // Initial attempt + retries
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_with_backoff_unlimited_retries_eventually_succeeds() {
+        const FAILURE_COUNT: i32 = 5;
+        let call_count = Arc::new(AtomicI32::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            let current_count = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            async move {
+                if current_count < FAILURE_COUNT {
+                    Err("still failing")
+                } else {
+                    Ok::<i32, &str>(42)
+                }
+            }
+        };
+
+        let start_time = tokio::time::Instant::now();
+
+        // Run get_with_backoff in a spawned task so we can control time advancement
+        let backoff_task =
+            tokio::spawn(async move { get_with_backoff(operation, "test operation", None).await });
+
+        // Let the first call execute and fail
+        tokio::time::advance(Duration::from_millis(1)).await;
+
+        // For unlimited retries, we need to advance through 4 retry delays
+        // ExponentialBuilder::default(): 1s, 2s, 4s, 8s (each with potential jitter up to 2x)
+        let retry_delays = [2, 4, 8, 16]; // With jitter buffer: 2s, 4s, 8s, 16s
+
+        for delay_secs in retry_delays {
+            tokio::time::advance(Duration::from_secs(delay_secs)).await;
+        }
+
+        let result = backoff_task.await.unwrap();
+        let elapsed = start_time.elapsed();
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count.load(Ordering::SeqCst), FAILURE_COUNT);
+
+        // Verify time was properly simulated (1ms initial + sum of delays = ~30s minimum)
+        let total_expected_secs: u64 = retry_delays.iter().sum::<u64>();
+        assert!(elapsed >= Duration::from_secs(total_expected_secs));
+    }
+
+    #[tokio::test]
     #[cfg(feature = "external-services-tests")]
     async fn test_upload_quote_for_collateral_with_phala_endpoint() {
         let quote_data = quote();
@@ -314,7 +460,7 @@ mod tests {
         let config = DstackTeeAuthorityConfig::default();
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
+            Duration::from_secs(10),
             tee_authority.upload_quote_for_collateral(&config.quote_upload_url, &quote_hex),
         )
         .await;

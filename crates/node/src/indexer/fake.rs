@@ -1,19 +1,24 @@
 use super::handler::{ChainBlockUpdate, SignatureRequestFromChain};
 use super::participants::ContractState;
-use super::types::{ChainSendTransactionRequest, ChainSignatureRespondArgs};
+use super::types::{
+    ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
+};
 use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::CKDRequestFromChain;
 use crate::indexer::types::ChainCKDRespondArgs;
+use crate::migration_service::types::MigrationInfo;
 use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
+use crate::trait_extensions::convert_to_contract_dto::{IntoContractType, IntoDtoType};
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
 use mpc_contract::config::Config;
+use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
     key_state::{EpochId, KeyEventId, Keyset},
@@ -25,7 +30,7 @@ use mpc_contract::state::{
     initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
-use near_sdk::{AccountId, PublicKey};
+use near_sdk::AccountId;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -38,6 +43,8 @@ pub struct FakeMpcContractState {
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
+    // todo: [1249](https://github.com/near/mpc/issues/1249) test onboarding logic
+    pub migration_service: NodeMigrations,
 }
 
 impl FakeMpcContractState {
@@ -54,6 +61,7 @@ impl FakeMpcContractState {
             env,
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
+            migration_service: NodeMigrations::default(),
         }
     }
 
@@ -117,8 +125,13 @@ impl FakeMpcContractState {
         });
     }
 
-    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, near_sdk_pk: PublicKey) {
-        let contract_extended_pk = near_sdk_pk.try_into().unwrap();
+    pub fn vote_pk(
+        &mut self,
+        account_id: AccountId,
+        key_id: KeyEventId,
+        dto_pk: dtos_contract::PublicKey,
+    ) {
+        let contract_extended_pk = dto_pk.into_contract_type().try_into().unwrap();
 
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
@@ -244,11 +257,29 @@ impl FakeMpcContractState {
                 self.state = ProtocolContractState::Running(new_state);
             }
             _ => {
-                tracing::info!(
+                panic!(
                     "update_participant_info  ignored because the contract is not in running state"
                 );
             }
         }
+    }
+
+    // todo: [1249](https://github.com/near/mpc/issues/1249) use this to test onboarding logic
+    pub fn conclude_node_migration(
+        &mut self,
+        account_id: AccountId,
+        args: ConcludeNodeMigrationArgs,
+    ) {
+        let (account_id, _, node) = self.migration_service.get_for_account(&account_id);
+        let node_info = node.expect("expected node info");
+        let ProtocolContractState::Running(running_state) = &self.state else {
+            panic!("only allow calling this in `running_state`");
+        };
+        if running_state.keyset != args.keyset {
+            panic!("keyset mismatch");
+        }
+        self.migration_service.remove_migration(&account_id);
+        self.update_participant_info(account_id, node_info.destination_node_info);
     }
 }
 
@@ -437,7 +468,11 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
+                        contract.vote_pk(
+                            account_id,
+                            vote_pk.key_event_id,
+                            vote_pk.public_key.into_dto_type(),
+                        );
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;
@@ -489,6 +524,10 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::SubmitParticipantInfo(_participant_info) => {
                         // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }
+                    ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
+                        let mut contract = contract.lock().await;
+                        contract.conclude_node_migration(account_id, conclude_migration_args);
+                    }
                 }
             }
             self.block_update_sender.send(block_update).ok();
@@ -530,6 +569,9 @@ pub struct FakeIndexerManager {
     indexer_pauser: HashMap<TestNodeUid, IndexerPauser>,
     /// Allows modification of the contract.
     contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
+
+    /// Allows to set custom MigrationInfo
+    migration_info_senders: HashMap<TestNodeUid, watch::Sender<MigrationInfo>>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -631,10 +673,11 @@ impl FakeIndexerOneNode {
             mut api_txn_receiver,
             ..
         } = self;
+        let shutdown_clone = shutdown.clone();
         let monitor_state_changes = AutoAbortTask::from(tokio::spawn(async move {
             loop {
                 let state = core_state_change_receiver.recv().await.unwrap();
-                let state = if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                let state = if shutdown_clone.load(std::sync::atomic::Ordering::Relaxed) {
                     ContractState::Invalid
                 } else {
                     state
@@ -668,6 +711,7 @@ impl FakeIndexerOneNode {
                 core_txn_sender.send((txn, uid)).unwrap();
             }
         }));
+
         monitor_state_changes.await.unwrap();
         monitor_requests.await.unwrap();
         forward_txn_requests.await.unwrap();
@@ -712,6 +756,7 @@ impl FakeIndexerManager {
             ckd_request_sender,
             node_disabler: HashMap::new(),
             indexer_pauser: HashMap::new(),
+            migration_info_senders: HashMap::new(),
             contract,
             account_id_by_uid,
         }
@@ -755,6 +800,13 @@ impl FakeIndexerManager {
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
 
+        // todo: [1249](https://github.com/near/mpc/issues/1249) use this to test onboarding logic
+        let (my_migration_info_sender, my_migration_info_receiver) =
+            watch::channel(MigrationInfo {
+                backup_service_info: None,
+                active_migration: false,
+            });
+
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
@@ -765,7 +817,10 @@ impl FakeIndexerManager {
             )),
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
+            attested_nodes_receiver: watch::channel(vec![]).1,
+            my_migration_info_receiver,
         };
+
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
         let disabler = NodeDisabler {
             disable: Arc::new(AtomicBool::new(false)),
@@ -786,6 +841,8 @@ impl FakeIndexerManager {
             api_block_update_sender: api_signature_request_sender,
             api_txn_receiver,
         };
+        self.migration_info_senders
+            .insert(uid, my_migration_info_sender);
         self.node_disabler.insert(uid, disabler);
         self.indexer_pauser.insert(uid, indexer_pauser);
         self.account_id_by_uid

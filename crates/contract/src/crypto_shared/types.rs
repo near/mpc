@@ -296,7 +296,7 @@ pub mod ed25519_types {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use rstest::rstest;
     use serde_json::json;

@@ -1,7 +1,6 @@
 use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use derive_more::Constructor;
-use near_sdk::PublicKey;
+use derive_more::{AsRef, Deref, From};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
@@ -34,7 +33,7 @@ impl ReportDataVersion {
     }
 }
 
-#[derive(Debug, Clone, Constructor)]
+#[derive(Debug, Clone)]
 pub struct ReportDataV1 {
     tls_public_key: PublicKey,
     account_public_key: PublicKey,
@@ -46,6 +45,12 @@ impl ReportDataV1 {
     /// V1-specific format constants
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
     const PUBLIC_KEYS_HASH_SIZE: usize = 48;
+
+    pub fn new(tls_public_key: impl Into<Ed25519PublicKey>) -> Self {
+        Self {
+            tls_public_key: tls_public_key.into(),
+        }
+    }
 
     // Compile-time assertions for V1 format.
     const _V1_LAYOUT_CHECK: () = {
@@ -65,7 +70,8 @@ impl ReportDataV1 {
             .copy_from_slice(&version_bytes);
 
         // Generate and copy hash of public keys
-        let public_keys_hash = self.public_keys_hash();
+        let public_keys_hash: [u8; Self::PUBLIC_KEYS_HASH_SIZE] =
+            Sha3_384::digest(self.tls_public_key.as_ref()).into();
         report_data
             [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
             .copy_from_slice(&public_keys_hash);
@@ -208,7 +214,9 @@ mod tests {
         let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
-        assert_eq!(hash, report_data_v1.public_keys_hash());
+        let public_key_hash: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] =
+            Sha3_384::digest(report_data_v1.tls_public_key.as_ref()).into();
+        assert_eq!(hash, public_key_hash);
 
         let report_data = ReportData::V1(report_data_v1);
         assert_eq!(report_data.to_bytes(), bytes);

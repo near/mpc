@@ -9,9 +9,22 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
+use derive_more::Display;
+use k256::elliptic_curve::sec1::FromEncodedPoint;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::{elliptic_curve::group::GroupEncoding, EncodedPoint};
+
+#[derive(Debug, Display)]
+pub struct ParsePublicKeyError {}
+impl std::error::Error for ParsePublicKeyError {}
 
 pub(crate) trait IntoDtoType<DtoType> {
     fn into_dto_type(self) -> DtoType;
+}
+
+pub(crate) trait TryIntoNodeType<NodeType> {
+    type Error;
+    fn try_into_node_type(self) -> Result<NodeType, Self::Error>;
 }
 
 impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &ed25519_dalek::VerifyingKey {
@@ -147,6 +160,114 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
             digest,
             event,
             event_payload,
+        }
+    }
+}
+
+impl IntoDtoType<dtos_contract::PublicKey> for &threshold_signatures::frost_ed25519::VerifyingKey {
+    fn into_dto_type(self) -> dtos_contract::PublicKey {
+        dtos_contract::PublicKey::Ed25519(dtos_contract::Ed25519PublicKey::from(
+            self.to_element().to_bytes(),
+        ))
+    }
+}
+
+impl IntoDtoType<dtos_contract::PublicKey>
+    for &threshold_signatures::frost_secp256k1::VerifyingKey
+{
+    fn into_dto_type(self) -> dtos_contract::PublicKey {
+        let mut bytes = [0u8; 64];
+        // The first byte is the curve type
+        bytes.copy_from_slice(&self.to_element().to_encoded_point(false).to_bytes()[1..]);
+        dtos_contract::PublicKey::Secp256k1(dtos_contract::Secp256k1PublicKey::from(bytes))
+    }
+}
+
+impl TryIntoNodeType<threshold_signatures::frost_ed25519::VerifyingKey>
+    for dtos_contract::Ed25519PublicKey
+{
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(
+        self,
+    ) -> Result<threshold_signatures::frost_ed25519::VerifyingKey, ParsePublicKeyError> {
+        threshold_signatures::frost_ed25519::VerifyingKey::deserialize(self.as_bytes())
+            .map_err(|_| ParsePublicKeyError {})
+    }
+}
+
+impl TryIntoNodeType<threshold_signatures::frost_secp256k1::VerifyingKey>
+    for dtos_contract::Secp256k1PublicKey
+{
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(
+        self,
+    ) -> Result<threshold_signatures::frost_secp256k1::VerifyingKey, ParsePublicKeyError> {
+        let mut bytes = [0u8; 65];
+        // The first byte is the curve representation, in this case uncompressed
+        bytes[0] = 0x4;
+        bytes[1..].copy_from_slice(&self.0);
+        let point = EncodedPoint::from_bytes(bytes).map_err(|_| ParsePublicKeyError {})?;
+        Ok(threshold_signatures::frost_secp256k1::VerifyingKey::new(
+            k256::ProjectivePoint::from_encoded_point(&point)
+                .into_option()
+                .ok_or(ParsePublicKeyError {})?,
+        ))
+    }
+}
+
+impl TryIntoNodeType<ed25519_dalek::VerifyingKey> for dtos_contract::Ed25519PublicKey {
+    type Error = ParsePublicKeyError;
+    fn try_into_node_type(self) -> Result<ed25519_dalek::VerifyingKey, ParsePublicKeyError> {
+        ed25519_dalek::VerifyingKey::from_bytes(self.as_bytes()).map_err(|_| ParsePublicKeyError {})
+    }
+}
+
+// This is only needed temporarily, until we finish the migration from near_sdk::PublicKey
+
+pub(crate) trait IntoContractType<ContractType> {
+    fn into_contract_type(self) -> ContractType;
+}
+
+impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
+    // This will never panic, because the key sizes match
+    fn into_contract_type(self) -> near_sdk::PublicKey {
+        match self {
+            dtos_contract::PublicKey::Secp256k1(secp256k1_public_key) => {
+                near_sdk::PublicKey::from_parts(
+                    near_sdk::CurveType::SECP256K1,
+                    secp256k1_public_key.as_bytes().to_vec(),
+                )
+                .unwrap()
+            }
+            dtos_contract::PublicKey::Ed25519(ed25519_public_key) => {
+                near_sdk::PublicKey::from_parts(
+                    near_sdk::CurveType::ED25519,
+                    ed25519_public_key.as_bytes().to_vec(),
+                )
+                .unwrap()
+            }
+            // TODO(#1212)
+            dtos_contract::PublicKey::Bls12381(_) => todo!(),
+        }
+    }
+}
+
+impl IntoDtoType<dtos_contract::PublicKey> for &near_sdk::PublicKey {
+    // This will never panic, because the key sizes match
+    fn into_dto_type(self) -> dtos_contract::PublicKey {
+        match self.curve_type() {
+            near_sdk::CurveType::SECP256K1 => {
+                let mut bytes = [0u8; 64];
+                // The first byte is the curve type
+                bytes.copy_from_slice(&self.as_bytes()[1..]);
+                dtos_contract::PublicKey::from(dtos_contract::Secp256k1PublicKey::from(bytes))
+            }
+            near_sdk::CurveType::ED25519 => {
+                let mut bytes = [0u8; 32];
+                // The first byte is the curve type
+                bytes.copy_from_slice(&self.as_bytes()[1..]);
+                dtos_contract::PublicKey::from(dtos_contract::Ed25519PublicKey::from(bytes))
+            }
         }
     }
 }

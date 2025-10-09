@@ -18,10 +18,11 @@ use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
+
 use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::elliptic_curve::sec1::FromEncodedPoint as _;
 use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
@@ -30,6 +31,9 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+
+#[cfg(test)]
+use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -254,6 +258,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
+    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let bytes = self.to_element().to_encoded_point(false).to_bytes();
         anyhow::ensure!(bytes[0] == 0x04);
@@ -287,23 +292,31 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 
-#[test]
-fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-    use crate::tests::TestGenerators;
-    let x = TestGenerators::new(4, 3)
-        .make_ecdsa_keygens()
-        .values()
-        .next()
-        .unwrap()
-        .clone();
-    x.public_key.to_near_sdk_public_key()?;
-    Ok(())
-}
+#[cfg(test)]
+mod tests {
+    use threshold_signatures::frost_secp256k1;
 
-#[test]
-fn check_conversion_from_sdk() -> anyhow::Result<()> {
-    let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
+    use crate::{
+        providers::PublicKeyConversion, trait_extensions::convert_to_contract_dto::IntoDtoType,
+    };
+    #[test]
+    fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+        use crate::tests::TestGenerators;
+        let x = TestGenerators::new(4, 3)
+            .make_ecdsa_keygens()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        x.public_key.into_dto_type();
+        Ok(())
+    }
+
+    #[test]
+    fn check_conversion_from_sdk() -> anyhow::Result<()> {
+        let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
                 .parse()?;
-    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
-    Ok(())
+        let _ = frost_secp256k1::VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
+        Ok(())
+    }
 }

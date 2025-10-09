@@ -1,4 +1,5 @@
 use crate::config::{SecretsConfig, WebUIConfig};
+use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use attestation::attestation::Attestation;
 use axum::body::Body;
@@ -10,8 +11,8 @@ use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
+use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
-use serde::Serialize;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -54,6 +55,7 @@ struct WebServerState {
     debug_request_sender: broadcast::Sender<DebugRequest>,
     /// Receiver for contract state
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     static_web_data: StaticWebData,
 }
 
@@ -113,6 +115,10 @@ async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorW
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
 }
 
+async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
+    Json(state.migration_state_receiver.borrow().clone())
+}
+
 async fn contract_state(state: State<WebServerState>) -> String {
     let protocol_state = state
         .protocol_state_receiver
@@ -125,14 +131,6 @@ async fn contract_state(state: State<WebServerState>) -> String {
 
 async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../../third-party-licenses/licenses.html"))
-}
-
-#[derive(Clone, Serialize)]
-pub struct StaticWebData {
-    pub near_signer_public_key: VerifyingKey,
-    pub near_p2p_public_key: VerifyingKey,
-    pub near_responder_public_keys: Vec<VerifyingKey>,
-    pub tee_participant_info: Option<Attestation>,
 }
 
 struct PublicKeys {
@@ -164,15 +162,17 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
     }
 }
 
-impl StaticWebData {
-    pub fn new(value: &SecretsConfig, tee_participant_info: Option<Attestation>) -> Self {
-        let public_keys = get_public_keys(value);
-        Self {
-            near_signer_public_key: public_keys.near_signer_public_key,
-            near_p2p_public_key: public_keys.near_p2p_public_key,
-            near_responder_public_keys: public_keys.near_responder_public_keys,
-            tee_participant_info,
-        }
+pub fn static_web_data(
+    value: &SecretsConfig,
+    tee_participant_info: Option<Attestation>,
+) -> StaticWebData {
+    let public_keys = get_public_keys(value);
+
+    StaticWebData {
+        near_signer_public_key: public_keys.near_signer_public_key,
+        near_p2p_public_key: public_keys.near_p2p_public_key,
+        near_responder_public_keys: public_keys.near_responder_public_keys,
+        tee_participant_info,
     }
 }
 
@@ -192,6 +192,7 @@ pub async fn start_web_server(
     config: WebUIConfig,
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
+    migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
@@ -208,6 +209,7 @@ pub async fn start_web_server(
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
+        .route("/debug/migrations", axum::routing::get(migrations))
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
         .route("/public_data", axum::routing::get(public_data))
@@ -215,6 +217,7 @@ pub async fn start_web_server(
             root_task_handle,
             debug_request_sender,
             protocol_state_receiver,
+            migration_state_receiver,
             static_web_data,
         });
 
