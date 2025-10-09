@@ -28,7 +28,6 @@ impl EcdsaSignatureProvider {
         let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
         let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
-        let participants = presignature.participants.clone();
         let channel = self.client.new_channel_for_task(
             EcdsaTaskId::Signature {
                 id,
@@ -51,14 +50,7 @@ impl EcdsaSignatureProvider {
             channel,
             Duration::from_secs(self.config.signature.timeout_sec),
         )
-        .await
-        .inspect_err(|_| {
-            participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER
-                    .with_label_values(&[&id.raw().to_string()])
-                    .inc();
-            });
-        })?;
+        .await?;
 
         Ok((
             signature.context("Leader should obtain a signature")?,
@@ -82,7 +74,6 @@ impl EcdsaSignatureProvider {
 
         let domain_data = self.domain_data(sign_request.domain)?;
 
-        let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
             presignature_store: domain_data.presignature_store.clone(),
@@ -98,14 +89,7 @@ impl EcdsaSignatureProvider {
             channel,
             Duration::from_secs(self.config.signature.timeout_sec),
         )
-        .await
-        .inspect_err(|_| {
-            participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
-                    .with_label_values(&[&id.raw().to_string()])
-                    .inc();
-            });
-        })?;
+        .await?;
 
         Ok(())
     }

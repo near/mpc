@@ -4,23 +4,17 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
-    IntoDtoType,
 };
-use curve25519_dalek::edwards::CompressedEdwardsY;
-use near_sdk::AccountId;
+use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
-fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) {
+pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     let rng = rand::thread_rng();
     let edwards_point = SerializableEdwardsPoint::random(rng);
-    (edwards_point, edwards_point.compress())
-}
-
-pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
-    let (edwards_point, compressed_edwards_point) = gen_random_edwards_point();
-    let near_public_key_compressed = near_sdk::PublicKey::from_parts(
-        near_sdk::CurveType::ED25519,
+    let compressed_edwards_point = edwards_point.compress();
+    let near_public_key_compressed = PublicKey::from_parts(
+        CurveType::ED25519,
         compressed_edwards_point.as_bytes().into(),
     )
     .unwrap();
@@ -31,18 +25,8 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
-pub fn bogus_ed25519_public_key() -> dtos_contract::Ed25519PublicKey {
-    let (_, compressed_edwards_point) = gen_random_edwards_point();
-    compressed_edwards_point.into_dto_type()
-}
-
-pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
-    let (_, compressed_edwards_point) = gen_random_edwards_point();
-    near_sdk::PublicKey::from_parts(
-        near_sdk::CurveType::ED25519,
-        compressed_edwards_point.as_bytes().into(),
-    )
-    .unwrap()
+pub fn bogus_ed25519_near_public_key() -> PublicKey {
+    bogus_ed25519_public_key_extended().into()
 }
 
 #[test]

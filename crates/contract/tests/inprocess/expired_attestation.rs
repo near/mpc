@@ -1,4 +1,4 @@
-use dtos_contract::{Attestation, MockAttestation};
+use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::types::PublicKeyExtended,
@@ -15,10 +15,11 @@ use mpc_contract::{
 };
 
 use assert_matches::assert_matches;
-use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, NearToken, VMContext};
+use near_sdk::{
+    test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
+    VMContext,
+};
 use std::time::Duration;
-
-use crate::sandbox::common::IntoDtoType;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -40,11 +41,8 @@ impl TestSetup {
                 vec![KeyForDomain {
                     domain_id: DomainId::default(),
                     key: PublicKeyExtended::Secp256k1 {
-                        near_public_key: near_sdk::PublicKey::from_parts(
-                            near_sdk::CurveType::SECP256K1,
-                            vec![1u8; 64],
-                        )
-                        .unwrap(),
+                        near_public_key: PublicKey::from_parts(CurveType::SECP256K1, vec![1u8; 64])
+                            .unwrap(),
                     },
                     attempt: AttemptId::new(),
                 }],
@@ -74,8 +72,9 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
+        let tls_key_bytes: [u8; 32] = node_id.tls_public_key.as_bytes()[1..].try_into().unwrap();
         self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone().into_dto_type())
+            .submit_participant_info(attestation, Ed25519PublicKey::from(tls_key_bytes))
     }
 
     /// Switches testing context to a given participant at a specific timestamp
@@ -93,13 +92,16 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-
+    // Returns the list of NodeIds for all participants
+    // Note that the account_public_key field in NodeId is None.
+    // This is because NodeId is used in contexts where account_public_key is not needed.
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: participant_info.sign_pk.clone(),
+                account_public_key: None,
             })
             .collect()
     }
@@ -165,6 +167,7 @@ fn test_participant_kickout_after_expiration() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -182,6 +185,7 @@ fn test_participant_kickout_after_expiration() {
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);
@@ -264,6 +268,7 @@ fn test_clean_tee_status_removes_non_participants() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -276,6 +281,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);

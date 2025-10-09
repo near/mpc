@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use digest::{Digest, FixedOutput};
-use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
+use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
 use elliptic_curve::{Field as _, Group as _};
 use fs2::FileExt;
@@ -31,7 +31,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_sdk::{log, Gas};
+use near_sdk::{log, CurveType, Gas, PublicKey};
 use near_workspaces::{
     network::Sandbox,
     operations::TransactionStatus,
@@ -176,33 +176,82 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         }
     };
 
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
     if do_build {
+        println!("🔧 Starting build for package: {package_name}");
+        println!("📂 Project directory: {}", project_dir.display());
+
+        // --- Step 1: Build the WASM ---
+        let cargo_args = [
+            "build",
+            &format!("--package={package_name}"),
+            "--profile=release-contract",
+            "--target=wasm32-unknown-unknown",
+        ];
+        println!("🚀 Running: cargo {}", cargo_args.join(" "));
+
         let status = Command::new("cargo")
-            .args([
-                "build",
-                &format!("--package={package_name}"),
-                "--profile=release-contract",
-                "--target=wasm32-unknown-unknown",
-            ])
+            .args(&cargo_args)
             .current_dir(&project_dir)
             .status()
-            .expect("Failed to run cargo build");
+            .expect("❌ Failed to run cargo build");
 
-        assert!(status.success(), "cargo build failed");
+        assert!(status.success(), "❌ cargo build failed");
+
+        println!("✅ cargo build succeeded");
+
+        // --- Step 2: Locate and optimize the WASM ---
+        println!("🔎 Expected wasm output path: {}", wasm_path.display());
+        if wasm_path.exists() {
+            let size = fs::metadata(&wasm_path).map(|m| m.len()).unwrap_or(0);
+            println!("✅ Found wasm file ({} bytes)", size);
+        } else {
+            println!("⚠️ wasm file not found at expected path! Check cargo output directory.");
+        }
+
+        // Check if wasm-opt exists in PATH
+        let check = Command::new("bash")
+            .arg("-c")
+            .arg("command -v wasm-opt")
+            .output()
+            .expect("Failed to check for wasm-opt in PATH");
+
+        if check.status.success() {
+            let path_str = String::from_utf8_lossy(&check.stdout).trim().to_string();
+            println!("🧠 Using wasm-opt from: {}", path_str);
+        } else {
+            println!("❌ wasm-opt not found in PATH");
+        }
+
+        let wasm_opt_args = [
+            "--enable-bulk-memory",
+            "-Oz",
+            "-o",
+            wasm_path.to_str().unwrap(),
+            wasm_path.to_str().unwrap(),
+        ];
+        println!("🏃 Running: wasm-opt {}", wasm_opt_args.join(" "));
 
         let status = Command::new("wasm-opt")
-            .args([
-                "--enable-bulk-memory",
-                "-Oz",
-                "-o",
-                wasm_path.to_str().unwrap(),
-                wasm_path.to_str().unwrap(),
-            ])
+            .args(&wasm_opt_args)
             .current_dir(&project_dir)
             .status()
-            .expect("Failed to run wasm-opt");
+            .expect("❌ Failed to run wasm-opt (binary not found?)");
 
-        assert!(status.success(), "wasm-opt failed");
+        assert!(status.success(), "❌ wasm-opt failed");
+        println!(
+            "✅ wasm-opt optimization succeeded for {}",
+            wasm_path.display()
+        );
+
+        // --- Step 3: Update lockfile ---
+        lockfile.set_len(0).unwrap();
+        lockfile
+            .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
+            .expect("Failed to write timestamp to lockfile");
 
         lockfile.set_len(0).unwrap();
         lockfile
@@ -233,7 +282,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
-    pks: Vec<dtos_contract::PublicKey>,
+    pks: Vec<near_sdk::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -295,7 +344,7 @@ pub async fn init_with_candidates(
             account,
             &contract,
             &Attestation::Mock(MockAttestation::Valid),
-            &participant.sign_pk.into_dto_type(),
+            &participant.sign_pk,
         )
         .await;
 
@@ -317,17 +366,15 @@ pub enum SharedSecretKey {
 }
 
 pub fn new_secp256k1() -> (
-    dtos_contract::PublicKey,
+    near_sdk::PublicKey,
     k256::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) {
     let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
     let public_key = secret_key.public_key();
 
-    let compressed_key = public_key.as_affine().to_encoded_point(false);
-    let mut bytes = [0u8; 64];
-    bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
-    let public_key =
-        dtos_contract::PublicKey::Secp256k1(dtos_contract::Secp256k1PublicKey::from(bytes));
+    let compressed_key = public_key.as_affine().to_encoded_point(false).as_bytes()[1..65].to_vec();
+
+    let public_key = near_sdk::PublicKey::from_parts(CurveType::SECP256K1, compressed_key).unwrap();
 
     (public_key, secret_key)
 }
@@ -368,7 +415,7 @@ pub async fn init_env_bls12381(
 
 pub fn make_key_for_domain(
     domain_scheme: SignatureScheme,
-) -> (dtos_contract::PublicKey, SharedSecretKey) {
+) -> (near_sdk::PublicKey, SharedSecretKey) {
     match domain_scheme {
         SignatureScheme::Secp256k1 => {
             let (pk, sk) = new_secp256k1();
@@ -385,7 +432,7 @@ pub fn make_key_for_domain(
     }
 }
 
-pub fn new_ed25519() -> (dtos_contract::PublicKey, KeygenOutput) {
+pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
@@ -397,9 +444,7 @@ pub fn new_ed25519() -> (dtos_contract::PublicKey, KeygenOutput) {
     };
 
     let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&compressed_key);
-    let pk = dtos_contract::PublicKey::Ed25519(dtos_contract::Ed25519PublicKey::from(bytes));
+    let pk = near_sdk::PublicKey::from_parts(CurveType::ED25519, compressed_key).unwrap();
 
     (pk, keygen_output)
 }
@@ -594,10 +639,11 @@ pub async fn submit_signature_response(
     respond_req: &SignatureRequest,
     respond_resp: &SignatureResponse,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond")
+    let respond = attested_account
+        .call(contract.id(),"respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -614,13 +660,14 @@ pub async fn sign_and_validate(
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = submit_sign_request(request, contract).await?;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        submit_signature_response(respond_req, respond_resp, contract).await?;
+        submit_signature_response(respond_req, respond_resp, contract,attested_account).await?;
     }
 
     let execution = status.await?;
@@ -639,10 +686,25 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
+<<<<<<< HEAD
+pub fn example_secp256k1_point() -> PublicKey {
+    "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
+}
+
+// based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
+fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
+    const DOMAIN: &[u8] = b"NEAR CURVE_XOF:SHAKE-256_SSWU_RO_";
+    <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXof<sha3::Shake256>>(
+        &[app_id],
+        &[DOMAIN],
+    )
+    .unwrap()
+=======
 pub fn example_bls12381g1_point() -> dtos_contract::Bls12381G1PublicKey {
     "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
         .parse()
         .unwrap()
+>>>>>>> origin/main
 }
 
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
@@ -674,12 +736,11 @@ pub async fn derive_confidential_key_and_validate(
     request: &CKDRequestArgs,
     respond: Option<(&CKDRequest, &CKDResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = account
         .call(contract.id(), "request_app_private_key")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
+        .args_json(serde_json::json!({ "request": request }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
         .transact_async()
@@ -689,9 +750,8 @@ pub async fn derive_confidential_key_and_validate(
 
     if let Some((respond_req, respond_resp)) = respond {
         assert!(account.id() == &respond_req.app_id);
-        // Call `respond_ckd` as if we are the MPC network itself.
-        let respond = contract
-            .call("respond_ckd")
+        let respond = attested_account
+            .call(contract.id(), "respond_ckd")
             .args_json(serde_json::json!({
                 "request": respond_req,
                 "response": respond_resp
@@ -705,8 +765,6 @@ pub async fn derive_confidential_key_and_validate(
     let execution = status.await?;
     dbg!(&execution);
     let execution = execution.into_result()?;
-
-    // Finally wait the result:
     let returned_resp: CKDResponse = execution.json()?;
     if let Some((_, respond_resp)) = respond {
         assert_eq!(
@@ -714,7 +772,6 @@ pub async fn derive_confidential_key_and_validate(
             "Returned ckd request does not match"
         );
     }
-
     Ok(())
 }
 
@@ -834,11 +891,13 @@ pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
     attestation: &Attestation,
-    tls_key: &Ed25519PublicKey,
+    tls_key: &PublicKey,
 ) -> anyhow::Result<bool> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_json((attestation, tls_key))
+        .args_json((attestation, dto_tls_key_bytes))
         .max_gas()
         .transact()
         .await?;
@@ -847,13 +906,15 @@ pub async fn submit_participant_info(
 
 pub async fn get_participant_attestation(
     contract: &Contract,
-    tls_key: &Ed25519PublicKey,
+    tls_key: &PublicKey,
 ) -> anyhow::Result<Option<Attestation>> {
+    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
+
     let result = contract
         .as_account()
         .call(contract.id(), "get_attestation")
         .args_json(json!({
-            "tls_public_key": tls_key
+            "tls_public_key": dto_tls_key_bytes
         }))
         .max_gas()
         .transact()
@@ -885,13 +946,9 @@ pub async fn submit_tee_attestations(
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let result = submit_participant_info(
-            account,
-            contract,
-            &attestation,
-            &node_id.tls_public_key.into_dto_type(),
-        )
-        .await?;
+        let result =
+            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
+                .await?;
         assert!(result);
     }
     Ok(())
@@ -973,7 +1030,7 @@ pub async fn call_contract_key_generation<const N: usize>(
                 "domain_id": domain.id,
                 "attempt_id": 0,
             },
-            "public_key": public_key.into_contract_type(),
+            "public_key": public_key,
         });
 
         for account in accounts {
@@ -1116,6 +1173,8 @@ pub async fn vote_for_hash(
     );
     Ok(())
 }
+<<<<<<< HEAD
+=======
 
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
@@ -1181,3 +1240,4 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
         }
     }
 }
+>>>>>>> origin/main

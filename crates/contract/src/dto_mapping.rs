@@ -9,6 +9,8 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
+<<<<<<< HEAD
+=======
 
 use k256::{
     elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
@@ -16,6 +18,7 @@ use k256::{
 };
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
+>>>>>>> origin/main
 
 #[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 use threshold_signatures::confidential_key_derivation as ckd;
@@ -25,21 +28,6 @@ use crate::crypto_shared::k256_types;
 use crate::errors::{ConversionError, Error};
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
-}
-
-pub(crate) trait IntoDtoType<DtoType> {
-    fn into_dto_type(self) -> DtoType;
-}
-
-#[allow(dead_code)]
-pub(crate) trait TryIntoContractType<ContractType> {
-    type Error;
-    fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
-}
-
-pub(crate) trait TryIntoDtoType<DtoType> {
-    type Error;
-    fn try_into_dto_type(self) -> Result<DtoType, Self::Error>;
 }
 
 impl IntoContractType<Attestation> for dtos_contract::Attestation {
@@ -172,6 +160,10 @@ impl IntoContractType<EventLog> for dtos_contract::EventLog {
     }
 }
 
+pub(crate) trait IntoDtoType<DtoType> {
+    fn into_dto_type(self) -> DtoType;
+}
+
 impl IntoDtoType<dtos_contract::Attestation> for Attestation {
     fn into_dto_type(self) -> dtos_contract::Attestation {
         match self {
@@ -302,6 +294,8 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
         }
     }
 }
+<<<<<<< HEAD
+=======
 
 impl IntoDtoType<dtos_contract::Secp256k1PublicKey> for &k256_types::PublicKey {
     fn into_dto_type(self) -> dtos_contract::Secp256k1PublicKey {
@@ -398,3 +392,4 @@ impl IntoDtoType<dtos_contract::PublicKey> for &near_sdk::PublicKey {
         }
     }
 }
+>>>>>>> origin/main

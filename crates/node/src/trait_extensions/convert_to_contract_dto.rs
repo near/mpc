@@ -29,11 +29,6 @@ pub(crate) trait IntoDtoType<DtoType> {
     fn into_dto_type(self) -> DtoType;
 }
 
-pub(crate) trait TryIntoNodeType<NodeType> {
-    type Error;
-    fn try_into_node_type(self) -> Result<NodeType, Self::Error>;
-}
-
 impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &ed25519_dalek::VerifyingKey {
     fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
         dtos_contract::Ed25519PublicKey::from(self.to_bytes())
