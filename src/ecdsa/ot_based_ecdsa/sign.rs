@@ -191,25 +191,24 @@ mod test {
     };
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
     use rand_core::OsRng;
-    use std::error::Error;
 
     #[test]
-    fn test_sign_without_rerandomization() -> Result<(), Box<dyn Error>> {
+    fn test_sign_without_rerandomization() {
         let threshold = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng)?;
-        let x = f.eval_at_zero()?.0;
+        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let x = f.eval_at_zero().unwrap().0;
         let public_key = ProjectivePoint::GENERATOR * x;
 
-        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng)?;
+        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
 
-        let k = g.eval_at_zero()?.0;
+        let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng)?;
+        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng).unwrap();
 
         let participants = generate_participants(2);
 
@@ -217,35 +216,36 @@ mod test {
         for p in &participants {
             let presignature = PresignOutput {
                 big_r,
-                k: g.eval_at_participant(*p)?.0,
-                sigma: h.eval_at_participant(*p)?.0,
+                k: g.eval_at_participant(*p).unwrap().0,
+                sigma: h.eval_at_participant(*p).unwrap().0,
             };
             participants_presign.push((*p, presignature));
         }
 
         let (_, sig) = run_sign_without_rerandomization(&participants_presign, public_key, msg);
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine())?).verify(msg, &sig)?;
-        Ok(())
+        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
+        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
+            .verify(msg, &sig)
+            .unwrap();
     }
 
     #[test]
-    fn test_sign_with_rerandomization() -> Result<(), Box<dyn Error>> {
+    fn test_sign_with_rerandomization() {
         let threshold = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng)?;
-        let x = f.eval_at_zero()?.0;
+        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let x = f.eval_at_zero().unwrap().0;
         let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
 
-        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng)?;
+        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
 
-        let k = g.eval_at_zero()?.0;
+        let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng)?;
+        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng).unwrap();
 
         let participants = generate_participants(2);
 
@@ -253,18 +253,20 @@ mod test {
         for p in &participants {
             let presignature = PresignOutput {
                 big_r,
-                k: g.eval_at_participant(*p)?.0,
-                sigma: h.eval_at_participant(*p)?.0,
+                k: g.eval_at_participant(*p).unwrap().0,
+                sigma: h.eval_at_participant(*p).unwrap().0,
             };
             participants_presign.push((*p, presignature));
         }
 
         let (tweak, _, sig) =
-            run_sign_with_rerandomization(&participants_presign, public_key.to_element(), msg)?;
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s)?;
+            run_sign_with_rerandomization(&participants_presign, public_key.to_element(), msg)
+                .unwrap();
+        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
         let public_key = tweak.derive_verifying_key(&public_key).to_element();
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine())?).verify(msg, &sig)?;
-        Ok(())
+        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
+            .verify(msg, &sig)
+            .unwrap();
     }
 }

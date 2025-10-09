@@ -17,7 +17,7 @@ use crate::{
         Participant,
     },
 };
-use rand_core::{CryptoRngCore, OsRng};
+use rand_core::CryptoRngCore;
 use std::sync::Arc;
 
 use super::{
@@ -34,10 +34,10 @@ pub async fn multiplication_sender(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    rng: &mut impl CryptoRngCore,
+    mut rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, x) = batch_random_ot_receiver_random_helper(rng);
+    let (delta, x) = batch_random_ot_receiver_random_helper(&mut rng);
     let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
@@ -50,15 +50,15 @@ pub async fn multiplication_sender(
         },
         delta,
         &k,
-        rng,
+        &mut rng,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let delta0 = mta_sender_random_helper(res0.len(), rng);
+    let delta0 = mta_sender_random_helper(res0.len(), &mut rng);
     let task0 = mta_sender(chan.child(2), res0, *a_i, delta0);
-    let delta1 = mta_sender_random_helper(res1.len(), rng);
+    let delta1 = mta_sender_random_helper(res1.len(), &mut rng);
     let task1 = mta_sender(chan.child(3), res1, *b_i, delta1);
 
     // Step 3
@@ -72,10 +72,10 @@ pub async fn multiplication_receiver(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    rng: &mut impl CryptoRngCore,
+    mut rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let y = batch_random_ot_sender_helper(rng);
+    let y = batch_random_ot_sender_helper(&mut rng);
     let (k0, k1) = batch_random_ot_sender(chan.child(0), y).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
@@ -88,15 +88,15 @@ pub async fn multiplication_receiver(
         },
         &k0,
         &k1,
-        rng,
+        &mut rng,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let seed0 = mta_receiver_random_helper(rng);
+    let seed0 = mta_receiver_random_helper(&mut rng);
     let task0 = mta_receiver(chan.child(2), res0, *b_i, seed0);
-    let seed1 = mta_receiver_random_helper(rng);
+    let seed1 = mta_receiver_random_helper(&mut rng);
     let task1 = mta_receiver(chan.child(3), res1, *a_i, seed1);
 
     // Step 3
@@ -112,6 +112,7 @@ pub async fn multiplication(
     me: Participant,
     a_i: Scalar,
     b_i: Scalar,
+    rng: impl CryptoRngCore + Send + Copy + 'static,
 ) -> Result<Scalar, ProtocolError> {
     let mut tasks = Vec::with_capacity(participants.len() - 1);
     for p in participants.others(me) {
@@ -119,9 +120,9 @@ pub async fn multiplication(
             let chan = comms.private_channel(me, p);
             async move {
                 if p < me {
-                    multiplication_sender(chan, sid.as_ref(), &a_i, &b_i, &mut OsRng).await
+                    multiplication_sender(chan, sid.as_ref(), &a_i, &b_i, rng).await
                 } else {
-                    multiplication_receiver(chan, sid.as_ref(), &a_i, &b_i, &mut OsRng).await
+                    multiplication_receiver(chan, sid.as_ref(), &a_i, &b_i, rng).await
                 }
             }
         };
@@ -141,6 +142,7 @@ pub async fn multiplication_many<const N: usize>(
     me: Participant,
     av_iv: Vec<Scalar>,
     bv_iv: Vec<Scalar>,
+    rng: impl CryptoRngCore + Send + Copy + 'static,
 ) -> Result<Vec<Scalar>, ProtocolError> {
     assert!(N > 0);
     let sid_arc = Arc::new(sid);
@@ -168,7 +170,7 @@ pub async fn multiplication_many<const N: usize>(
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
-                            &mut OsRng,
+                            rng,
                         )
                         .await
                     } else {
@@ -177,7 +179,7 @@ pub async fn multiplication_many<const N: usize>(
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
-                            &mut OsRng,
+                            rng,
                         )
                         .await
                     }
@@ -255,6 +257,7 @@ mod test {
                     *p,
                     a_i,
                     b_i,
+                    OsRng,
                 ),
             );
             protocols.push((*p, Box::new(prot)));
@@ -322,6 +325,7 @@ mod test {
                     *p,
                     a_iv,
                     b_iv,
+                    OsRng,
                 ),
             );
             protocols.push((*p, Box::new(prot)));
