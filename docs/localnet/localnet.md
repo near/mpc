@@ -304,14 +304,6 @@ near account add-key sam.test.near grant-full-access use-manually-provided-publi
 near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
-```shell
-docs/localnet/scripts/assign_access_keys.sh frodo 8081
-```
-
-```shell
-docs/localnet/scripts/assign_access_keys.sh sam 8082
-```
-
 ## 4. Initialize the MPC contract
 
 We'll initialize the MPC contract with our two participants.
