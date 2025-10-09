@@ -7,14 +7,11 @@ use k256::{
 };
 use mpc_contract::{
     crypto_shared::CKDResponse,
-    primitives::{
-        domain::DomainId,
-        key_state::{KeyEventId, Keyset},
-        signature::Tweak,
-    },
+    primitives::{domain::DomainId, key_state::KeyEventId, signature::Tweak},
 };
 use near_indexer_primitives::types::Gas;
 use near_sdk::AccountId;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
@@ -59,14 +56,14 @@ impl ChainSignatureRequest {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
-    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
+    pub app_public_key: near_sdk::PublicKey,
     pub app_id: AccountId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
-        app_public_key: dtos_contract::Bls12381G1PublicKey,
+        app_public_key: near_sdk::PublicKey,
         app_id: AccountId,
         domain_id: DomainId,
     ) -> Self {
@@ -144,7 +141,7 @@ pub struct GetAttestationArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
-    pub public_key: dtos_contract::PublicKey,
+    pub public_key: PublicKey,
 }
 
 #[derive(Serialize, Debug)]
@@ -173,10 +170,6 @@ pub struct SubmitParticipantInfoArgs {
     pub tls_public_key: dtos_contract::Ed25519PublicKey,
 }
 
-#[derive(Serialize, Debug)]
-pub struct ConcludeNodeMigrationArgs {
-    pub keyset: Keyset,
-}
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -196,9 +189,6 @@ pub(crate) enum ChainSendTransactionRequest {
     // For more info see clippy lint:
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
-
-    #[allow(dead_code)] // todo: [1249](https://github.com/near/mpc/issues/1249) use it
-    ConcludeNodeMigration(ConcludeNodeMigrationArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -215,7 +205,6 @@ impl ChainSendTransactionRequest {
             }
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
-            ChainSendTransactionRequest::ConcludeNodeMigration(_) => "conclude_node_migration",
         }
     }
 
@@ -231,7 +220,6 @@ impl ChainSendTransactionRequest {
             // This is too high in most settings, see https://github.com/near/mpc/issues/166
             | Self::VerifyTee() => 300 * TGAS,
             Self::SubmitParticipantInfo(_) => 300 * TGAS,
-            Self::ConcludeNodeMigration(_) => 300 * TGAS,
         }
     }
 }

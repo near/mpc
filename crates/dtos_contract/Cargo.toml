@@ -5,14 +5,8 @@ edition = "2024"
 
 [dependencies]
 borsh = { workspace = true }
-bs58 = { workspace = true }
 derive_more = { workspace = true }
 serde = { workspace = true }
-thiserror = { workspace = true }
-
-[dev-dependencies]
-near-sdk = { workspace = true }
-serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 schemars = { workspace = true, optional = true }

@@ -14,6 +14,7 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_indexer_primitives::CryptoHash;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -38,7 +39,7 @@ pub struct SignArgs {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct CKDArgs {
-    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
+    pub app_public_key: PublicKey,
     pub app_id: AccountId,
     pub domain_id: DomainId,
 }

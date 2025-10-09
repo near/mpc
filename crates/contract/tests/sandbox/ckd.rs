@@ -1,7 +1,6 @@
-use crate::sandbox::common::SharedSecretKey;
 use crate::sandbox::common::{
-    create_response_ckd, derive_confidential_key_and_validate, example_bls12381g1_point,
-    init_env_bls12381,
+    create_response_ckd, derive_confidential_key_and_validate, example_secp256k1_point,
+    init_env_secp256k1,
 };
 use mpc_contract::{
     crypto_shared::CKDResponse,
@@ -21,11 +20,12 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
+
     let sk = match &sks[0] {
-        SharedSecretKey::Secp256k1(_) => unreachable!(),
-        SharedSecretKey::Ed25519(_) => unreachable!(),
-        SharedSecretKey::Bls12381(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
 
     let account_ids: [AccountId; 4] = [
@@ -35,7 +35,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         "a_fake_one".parse().unwrap(),
     ];
 
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
 
     for account_id in account_ids {
         let account = create_account_given_id(&worker, account_id.clone())
@@ -50,18 +50,15 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
             domain_id: DomainId::default(),
         };
 
-        let (respond_req, respond_resp) = create_response_ckd(
-            account.id(),
-            app_public_key.clone(),
-            &request.domain_id,
-            &sk.private_share.to_scalar(),
-        );
+        let (respond_req, respond_resp) =
+            create_response_ckd(account.id(), app_public_key.clone(), &request.domain_id, sk);
 
         derive_confidential_key_and_validate(
             account,
             &request,
             Some((&respond_req, &respond_resp)),
             &contract,
+            attested_account,
         )
         .await?;
     }
@@ -76,18 +73,15 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
-    let (respond_req, respond_resp) = create_response_ckd(
-        account.id(),
-        app_public_key,
-        &request.domain_id,
-        &sk.private_share.to_scalar(),
-    );
+    let (respond_req, respond_resp) =
+        create_response_ckd(account.id(), app_public_key, &request.domain_id, sk);
 
     derive_confidential_key_and_validate(
         account.clone(),
         &request,
         Some((&respond_req, &respond_resp)),
         &contract,
+        attested_account,
     )
     .await?;
     derive_confidential_key_and_validate(
@@ -95,13 +89,15 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         &request,
         Some((&respond_req, &respond_resp)),
         &contract,
+        attested_account,
     )
     .await?;
 
     // Check that a ckd with no response from MPC network properly errors out:
-    let err = derive_confidential_key_and_validate(account, &request, None, &contract)
-        .await
-        .expect_err("should have failed with timeout");
+    let err =
+        derive_confidential_key_and_validate(account, &request, None, &contract, attested_account)
+            .await
+            .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
         .contains(&errors::RequestError::Timeout.to_string()));
@@ -111,25 +107,24 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
+
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
-        unreachable!();
+    let sk = match &sks[0] {
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
 
-    let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
-        app_public_key,
-        &request.domain_id,
-        &sk.private_share.to_scalar(),
-    );
+    let (respond_req, respond_resp) =
+        create_response_ckd(alice.id(), app_public_key, &request.domain_id, sk);
 
     let status = alice
         .call(contract.id(), "request_app_private_key")
@@ -143,9 +138,9 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     dbg!(&status);
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    // Call `respond_ckd` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond_ckd")
+    // Call `respond_ckd` as an attested node:
+    let respond = attested_account
+        .call(contract.id(),"respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -190,11 +185,11 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env_bls12381(1).await;
+    let (worker, contract, _, _) = init_env_secp256k1(1).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
         app_public_key,
         domain_id: DomainId::default(),
@@ -247,12 +242,15 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
+
     let alice = worker.dev_create_account().await?;
-    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
-        unreachable!();
+    let sk = match &sks[0] {
+        crate::sandbox::common::SharedSecretKey::Secp256k1(sk) => sk,
+        crate::sandbox::common::SharedSecretKey::Ed25519(_) => unreachable!(),
     };
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key: near_sdk::PublicKey = example_secp256k1_point();
     let request = CKDRequestArgs {
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
@@ -268,16 +266,12 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
         .await?;
     dbg!(&status);
 
-    let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
-        app_public_key,
-        &request.domain_id,
-        &sk.private_share.to_scalar(),
-    );
+    let (respond_req, respond_resp) =
+        create_response_ckd(alice.id(), app_public_key, &request.domain_id, sk);
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.
-    let respond = contract
-        .call("respond_ckd")
+    let respond = attested_account
+        .call(contract.id(),"respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp

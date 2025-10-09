@@ -1,4 +1,3 @@
-use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
@@ -40,7 +39,7 @@ impl EddsaSignatureProvider {
 
         let channel = self
             .client
-            .new_channel_for_task(EddsaTaskId::Signature { id }, participants.clone())?;
+            .new_channel_for_task(EddsaTaskId::Signature { id }, participants)?;
 
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain).cloned() else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
@@ -62,14 +61,7 @@ impl EddsaSignatureProvider {
             channel,
             Duration::from_secs(self.config.signature.timeout_sec),
         )
-        .await
-        .inspect_err(|_| {
-            participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER
-                    .with_label_values(&[&id.raw().to_string()])
-                    .inc();
-            })
-        })?;
+        .await?;
 
         let Some((signature, verifying_key)) = result else {
             anyhow::bail!("eddsa resulting signature doesn't contain value for the leader!");
@@ -94,7 +86,7 @@ impl EddsaSignatureProvider {
         let Some(keygen_output) = self.keyshares.get(&sign_request.domain) else {
             anyhow::bail!("No keyshare for domain {:?}", sign_request.domain);
         };
-        let participants = channel.participants().to_vec();
+
         let _ = SignComputation {
             keygen_output: keygen_output.clone(),
             threshold,
@@ -111,14 +103,7 @@ impl EddsaSignatureProvider {
             channel,
             Duration::from_secs(self.config.signature.timeout_sec),
         )
-        .await
-        .inspect_err(|_| {
-            participants.iter().for_each(|id| {
-                metrics::PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
-                    .with_label_values(&[&id.raw().to_string()])
-                    .inc();
-            })
-        })?;
+        .await?;
 
         Ok(())
     }

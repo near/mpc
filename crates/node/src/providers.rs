@@ -14,7 +14,6 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
-pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::sync::Arc;
@@ -80,7 +79,6 @@ pub trait HasParticipants {
 
 /// Helper functions to convert back and forth public key types
 pub trait PublicKeyConversion: Sized {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey>;
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self>;
 }

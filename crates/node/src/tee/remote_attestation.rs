@@ -1,12 +1,5 @@
 use std::time::Duration;
 
-use crate::{
-    indexer::{
-        tx_sender::{TransactionSender, TransactionStatus},
-        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
-    },
-    trait_extensions::convert_to_contract_dto::IntoDtoType,
-};
 use anyhow::Context;
 use attestation::{attestation::Attestation, report_data::ReportData};
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
@@ -14,10 +7,16 @@ use ed25519_dalek::VerifyingKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::tee_state::NodeId;
-use near_sdk::AccountId;
-use tokio::sync::watch;
+use crate::{
+    indexer::{
+        tx_sender::{TransactionSender, TransactionStatus},
+        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+    },
+    providers::PublicKeyConversion,
+    trait_extensions::convert_to_contract_dto::IntoDtoType,
+};
 
+const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const MAX_RETRY_DURATION: Duration = Duration::from_secs(60 * 60 * 12); // 12 hours.
@@ -85,14 +84,20 @@ pub async fn submit_remote_attestation(
         .context("failed to submit attestation after multiple retry attempts")?
 }
 
-pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
+/// Periodically generates and submits fresh attestations at regular intervals.
+///
+/// This future runs indefinitely, generating a fresh attestation every 10 minutes
+/// and submitting it to the blockchain.
+pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
+    account_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = *tls_public_key.into_dto_type().as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key);
+    let tls_sdk_public_key = tls_public_key.to_bytes();
+    let account_sdk_public_key = account_public_key.to_bytes();
+    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     loop {
@@ -112,15 +117,11 @@ fn is_node_in_contract_tee_accounts(
     tee_accounts.contains(node_id)
 }
 
-/// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
-///
-/// This function watches TEE account changes in the contract and resubmits attestations when
-/// the node's TEE attestation is no longer available.
-pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
-    node_account_id: AccountId,
+async fn periodic_attestation_submission_with_interval<T: TransactionSender + Clone, I: Tick>(
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
+    account_public_key: VerifyingKey,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
@@ -130,6 +131,15 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             tls_public_key.to_bytes().to_vec(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
+        account_public_key: Some(
+            near_sdk::PublicKey::from_parts(
+                near_sdk::CurveType::ED25519,
+                account_public_key.to_bytes().to_vec(),
+            )
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e)
+            })?,
+        ),
     };
 
     let initially_available =
@@ -142,8 +152,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let tls_sdk_public_key = *tls_public_key.as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key);
+    let tls_sdk_public_key = tls_public_key.to_bytes();
+    let account_sdk_public_key = account_public_key.to_bytes();
+    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     while tee_accounts_receiver.changed().await.is_ok() {
@@ -165,11 +176,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
                 .await?;
         }
-
-        was_available = is_available;
     }
-
-    Ok(())
 }
 
 /// Allows repeatedly awaiting for something, like a `tokio::time::Interval`.
@@ -193,8 +200,6 @@ mod tests {
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
 
     const TEST_SUBMISSION_COUNT: usize = 2;
-    const TEST_EXPECTED_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
-    const TEST_VERIFY_NO_ATTESTATION_RESUBMISSION_TIMEOUT: Duration = Duration::from_millis(100);
 
     struct MockTicker {
         count: usize,
@@ -216,36 +221,20 @@ mod tests {
         }
     }
 
-    /// Simulates contract behavior by automatically adding the node back to TEE accounts
-    /// when an attestation submission occurs, mimicking real contract response to successful submissions.
-    struct ContractSimulator {
-        sender: watch::Sender<Vec<NodeId>>,
-        node_id: NodeId,
-    }
-
-    /// Mock that tracks attestation submissions and simulates contract responses.
     #[derive(Clone)]
     struct MockSender {
         submissions: Arc<Mutex<usize>>,
-        contract_simulator: Arc<ContractSimulator>,
-        notify: Arc<tokio::sync::Notify>,
     }
 
     impl MockSender {
-        fn new(sender: watch::Sender<Vec<NodeId>>, node_id: NodeId) -> Self {
+        fn new() -> Self {
             Self {
                 submissions: Arc::new(Mutex::new(0)),
-                contract_simulator: Arc::new(ContractSimulator { sender, node_id }),
-                notify: Arc::new(tokio::sync::Notify::new()),
             }
         }
 
         fn count(&self) -> usize {
             *self.submissions.lock().unwrap()
-        }
-
-        async fn wait_for_submission(&self) {
-            self.notify.notified().await;
         }
     }
 
@@ -255,14 +244,6 @@ mod tests {
             _: ChainSendTransactionRequest,
         ) -> Result<(), TransactionProcessorError> {
             *self.submissions.lock().unwrap() += 1;
-
-            // Simulate contract adding the node back to TEE accounts after successful submission
-            let updated_tee_accounts = vec![self.contract_simulator.node_id.clone()];
-            let _ = self.contract_simulator.sender.send(updated_tee_accounts);
-
-            // Notify that a submission occurred
-            self.notify.notify_one();
-
             Ok(())
         }
 
@@ -287,15 +268,20 @@ mod tests {
                 vec![0u8; 32],
             )
             .unwrap(),
+            account_public_key: Some(
+                near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, vec![0u8; 32])
+                    .unwrap(),
+            ),
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let key = SigningKey::generate(&mut rng).verifying_key();
-
+        let tls_key = SigningKey::generate(&mut rng).verifying_key();
+        let account_key = SigningKey::generate(&mut rng).verifying_key();
         let handle = tokio::spawn(periodic_attestation_submission(
             tee_authority,
             sender.clone(),
-            key,
+            tls_key,
+            account_key,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
@@ -309,6 +295,7 @@ mod tests {
         let node_account_id: AccountId = "test_node.near".parse().unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let tls_public_key = SigningKey::generate(&mut rng).verifying_key();
+        let account_public_key = SigningKey::generate(&mut rng).verifying_key();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
@@ -318,6 +305,13 @@ mod tests {
                 tls_public_key.to_bytes().to_vec(),
             )
             .unwrap(),
+            account_public_key: Some(
+                near_sdk::PublicKey::from_parts(
+                    near_sdk::CurveType::ED25519,
+                    account_public_key.to_bytes().to_vec(),
+                )
+                .unwrap(),
+            ),
         };
 
         // Create initial TEE accounts list including our node
@@ -332,6 +326,7 @@ mod tests {
             tee_authority,
             mock_sender.clone(),
             tls_public_key,
+            account_public_key,
             receiver,
         ));
 

@@ -38,7 +38,7 @@ impl Display for DomainId {
 pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
-    Bls12381,
+    CkdSecp256k1,
 }
 
 impl Default for SignatureScheme {
@@ -198,7 +198,7 @@ pub mod tests {
     const ALL_PROTOCOLS: [SignatureScheme; 3] = [
         SignatureScheme::Secp256k1,
         SignatureScheme::Ed25519,
-        SignatureScheme::Bls12381,
+        SignatureScheme::CkdSecp256k1,
     ];
 
     /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.

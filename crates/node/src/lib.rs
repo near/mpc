@@ -29,7 +29,6 @@ mod indexer;
 mod key_events;
 mod keyshare;
 pub mod metrics;
-mod migration_service;
 mod mpc_client;
 mod network;
 mod p2p;

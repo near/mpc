@@ -1,7 +1,7 @@
 use super::Keyshare;
 use anyhow::Context;
 use k256::{AffinePoint, Scalar};
-use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
+use mpc_contract::primitives::key_state::EpochId;
 use serde::{Deserialize, Serialize};
 
 /// The single object we persist to permanent key storage.
@@ -19,32 +19,6 @@ impl PermanentKeyshareData {
             epoch_id: EpochId::new(legacy.epoch),
             keyshares: vec![Keyshare::from_legacy(legacy)],
         }
-    }
-
-    // [todo #1217](https://github.com/near/mpc/issues/1217): Move this to a separate crate, s.t. we are forced to use the constructor
-    pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
-        let is_consistent = keyshares.windows(2).all(|w| {
-            w[0].key_id.epoch_id == w[1].key_id.epoch_id
-                && w[0].key_id.domain_id < w[1].key_id.domain_id
-        });
-        if !is_consistent {
-            let key_ids: Vec<KeyEventId> = keyshares.iter().map(|share| share.key_id).collect();
-            anyhow::bail!("Inconsistent key ids: {:?}", key_ids);
-        }
-        let Some(first) = keyshares.first() else {
-            anyhow::bail!("Keyshares must not be empty");
-        };
-        if first.key_id.epoch_id != epoch_id {
-            anyhow::bail!(
-                "Inconsistent epoch id. Keyshares are of epoch id {}, but epoch id is  {}",
-                first.key_id.epoch_id,
-                epoch_id
-            );
-        }
-        Ok(PermanentKeyshareData {
-            epoch_id,
-            keyshares,
-        })
     }
 }
 
@@ -74,9 +48,7 @@ impl PermanentKeyStorage {
         let existing_data = ret.backend.load().await?;
         if let Some(data) = existing_data {
             if serde_json::from_slice::<PermanentKeyshareData>(&data).is_err() {
-                tracing::info!(
-                    "Existing permanent keyshare data is not in the expected format, attempting to migrate..."
-                );
+                tracing::info!("Existing permanent keyshare data is not in the expected format, attempting to migrate...");
                 let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
                 let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
                 ret.store_unchecked(&new_data).await?;
@@ -90,91 +62,25 @@ impl PermanentKeyStorage {
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
-    /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
-    /// replacing existing data only if the new keyset is considered valid.
-    ///
-    /// Validation is performed against the latest stored keyset to prevent
-    /// accidental downgrades or mismatches.
-    ///
-    /// # Validation rules
-    /// The new keyset is **rejected** for any of the following reasons:
-    /// - It has a **lower epoch id** than the existing keyset.
-    /// - It does not contain keshares for existing domains and public keys.
-    /// - If has the **same epoch id** as the existing keyset, but **does not** extend the keyset.
-    ///
-    /// Only if all checks succeed will the new keyset be stored via [`store_unchecked`].
-    ///
-    /// # Errors
-    /// Returns an [`anyhow::Error`] if validation fails or if persistence fails.
-    ///
-    /// # Returns
-    /// * `Ok(())` if the keyset was successfully stored.
-    /// * `Err(anyhow::Error)` otherwise.
     pub async fn store(&self, keyshare_data: &PermanentKeyshareData) -> anyhow::Result<()> {
         let existing = self.load().await.context("Checking existing keyshare")?;
         if let Some(existing) = existing {
-            let existing_keyset_is_more_recent =
-                existing.epoch_id.get() > keyshare_data.epoch_id.get();
-            if existing_keyset_is_more_recent {
-                anyhow::bail!(
-                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of older epoch {}",
+            if existing.epoch_id.get() > keyshare_data.epoch_id.get() {
+                return Err(anyhow::anyhow!(
+                    "Refusing to overwrite existing permanent keyshare of epoch {} with new permanent keyshare of older epoch {}",
                     existing.epoch_id.get(),
                     keyshare_data.epoch_id.get(),
-                );
-            }
-            let existing_keset_has_more_domains =
-                existing.keyshares.len() > keyshare_data.keyshares.len();
-            if existing_keset_has_more_domains {
-                anyhow::bail!(
-                    "Refusing to overwrite existing permanent keyshares for {} domains with new permanent keyshares for fewer domains {}",
-                    existing.keyshares.len(),
-                    keyshare_data.keyshares.len()
-                );
-            }
-            let is_same_epoch_id = existing.epoch_id.get() == keyshare_data.epoch_id.get();
-            let does_not_extend_keyset = existing.keyshares.len() >= keyshare_data.keyshares.len();
-            if is_same_epoch_id && does_not_extend_keyset {
-                anyhow::bail!(
-                    "Refusing to overwrite existing permanent keyshares of epoch {} with new permanent keyshares of same epoch but equal number of domains",
-                    existing.epoch_id.get(),
-                );
-            }
-            for (existing_keyshare, new_keyshare) in
-                existing.keyshares.iter().zip(&keyshare_data.keyshares)
+                ));
+            } else if existing.epoch_id.get() == keyshare_data.epoch_id.get()
+                && existing.keyshares.len() >= keyshare_data.keyshares.len()
             {
-                let domain_ids_match =
-                    existing_keyshare.key_id.domain_id == new_keyshare.key_id.domain_id;
-                if !domain_ids_match {
-                    anyhow::bail!(
-                        "Refusing to overwrite existing permanent keyshare for domain id {:?} with new permanent keyshare for different domain id {:?}",
-                        existing_keyshare.key_id,
-                        new_keyshare.key_id
-                    );
-                }
-
-                let key_ids_match = existing_keyshare.key_id == new_keyshare.key_id;
-                if is_same_epoch_id && !key_ids_match {
-                    anyhow::bail!(
-                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of different key id {:?} for the same epoch.",
-                        existing_keyshare.key_id,
-                        new_keyshare.key_id
-                    );
-                }
-
-                let public_keys_match =
-                    existing_keyshare.public_key()? == new_keyshare.public_key()?;
-                if !public_keys_match {
-                    anyhow::bail!(
-                        "Refusing to overwrite existing permanent keyshare of key id {:?} with new permanent keyshare of same domin id  {:?} but different public key.\
-                            Existing public key: {:?}, new public key: {:?}",
-                        existing_keyshare.key_id,
-                        new_keyshare.key_id,
-                        existing_keyshare.public_key(),
-                        new_keyshare.public_key()
-                    );
-                }
+                return Err(anyhow::anyhow!(
+                    "Refusing to overwrite existing permanent keyshare of epoch {} with new permanent keyshare of same epoch but equal or fewer domains",
+                    existing.epoch_id.get(),
+                ));
             }
         }
+
         self.store_unchecked(keyshare_data).await
     }
 
@@ -204,10 +110,8 @@ mod tests {
     use crate::keyshare::permanent::{
         LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
     };
-    use crate::keyshare::test_utils::{
-        generate_dummy_keyshare, generate_dummy_keyshares, make_key_id, KeysetBuilder,
-    };
-    use crate::keyshare::{Keyshare, KeyshareData};
+    use crate::keyshare::test_utils::{generate_dummy_keyshare, KeysetBuilder};
+    use crate::keyshare::KeyshareData;
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
@@ -225,9 +129,10 @@ mod tests {
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
         assert!(storage.load().await.unwrap().is_none());
 
-        let (key_1, key_1_alternate) = generate_dummy_keyshares(1, 0, 1);
-        let (key_2, key_2_alternate) = generate_dummy_keyshares(1, 2, 4);
-        let keys = vec![key_1.clone(), key_2];
+        let keys = vec![
+            generate_dummy_keyshare(1, 0, 1),
+            generate_dummy_keyshare(1, 2, 4),
+        ];
         let permanent_keyshare = PermanentKeyshareData {
             epoch_id: EpochId::new(1),
             keyshares: keys.clone(),
@@ -240,43 +145,33 @@ mod tests {
         // Cannot store the same permanent keyshare twice.
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store current epoch with fewer domains.
-        let keys = vec![key_1];
+        let keys = vec![generate_dummy_keyshare(1, 0, 1)];
         let permanent_keyshare = KeysetBuilder::from_keyshares(1, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
         // Cannot store older epoch than current.
         let keys = vec![
-            Keyshare {
-                key_id: make_key_id(0, 0, 1),
-                data: key_1_alternate.data.clone(),
-            },
-            Keyshare {
-                key_id: make_key_id(0, 2, 4),
-                data: key_2_alternate.data.clone(),
-            },
+            generate_dummy_keyshare(0, 0, 1),
+            generate_dummy_keyshare(0, 2, 2),
         ];
         let permanent_keyshare = KeysetBuilder::from_keyshares(0, &keys).permanent_key_data();
         assert!(storage.store(&permanent_keyshare).await.is_err());
 
         // Can store newer epoch than current.
         let keys = vec![
-            Keyshare {
-                key_id: make_key_id(2, 0, 8),
-                data: key_1_alternate.data.clone(),
-            },
-            Keyshare {
-                key_id: make_key_id(2, 2, 10),
-                data: key_2_alternate.data.clone(),
-            },
+            generate_dummy_keyshare(2, 0, 1),
+            generate_dummy_keyshare(2, 2, 2),
         ];
-
         let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
         assert_eq!(loaded, permanent_keyshare);
 
         // Can store current epoch with more domains.
-        let mut keys = keys;
-        keys.extend(vec![generate_dummy_keyshare(2, 3, 5)]);
+        let keys = vec![
+            generate_dummy_keyshare(2, 0, 1),
+            generate_dummy_keyshare(2, 2, 2),
+            generate_dummy_keyshare(2, 3, 5),
+        ];
         let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
