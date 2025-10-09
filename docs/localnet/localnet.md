@@ -149,10 +149,8 @@ Now we're ready to initialize the nodes.
 This commands creates a directory with some initial config for Frodo's node.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
+mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
 ```
-
-TODO([#714](https://github.com/near/mpc/issues/714)): Don't download any config.
 
 However, currently the command creates an invalid genesis file.
 We need to copy the genesis file from `mpc-localnet`.
@@ -211,7 +209,7 @@ EOF
 Now we can do the same steps for Sam.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030 --download-config-url https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore-deploy/testnet/rpc/config.json
+mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
 ```
 
 ```shell
