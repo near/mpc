@@ -14,7 +14,7 @@ use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
 use crate::web::{DebugRequest, DebugRequestKind};

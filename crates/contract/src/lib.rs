@@ -20,7 +20,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{IntoContractType, IntoDtoType, TryIntoDtoType},
+    dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
@@ -29,12 +29,13 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::{Config, InitConfig};
+use contract_interface::types as dtos;
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos_contract::PublicKey;
+use dtos::PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -260,10 +261,7 @@ impl MpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
-    pub fn public_key(
-        &self,
-        domain_id: Option<DomainId>,
-    ) -> Result<dtos_contract::PublicKey, Error> {
+    pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<dtos::PublicKey, Error> {
         let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         self.public_key_extended(domain_id).map(Into::into)
     }
@@ -279,14 +277,14 @@ impl MpcContract {
         path: String,
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
-    ) -> Result<dtos_contract::PublicKey, Error> {
+    ) -> Result<dtos::PublicKey, Error> {
         let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         let public_key = self.public_key_extended(domain)?;
 
-        let derived_public_key: dtos_contract::PublicKey = match public_key {
+        let derived_public_key: dtos::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
                 let derived_public_key =
                     derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
@@ -342,14 +340,12 @@ impl MpcContract {
         };
 
         match public_key {
-            dtos_contract::PublicKey::Secp256k1(_) | dtos_contract::PublicKey::Ed25519(_) => {
-                env::panic_str(
-                    &InvalidParameters::InvalidDomainId
-                        .message("Provided domain ID key type is not Bls12381")
-                        .to_string(),
-                )
-            }
-            dtos_contract::PublicKey::Bls12381(_) => {}
+            dtos::PublicKey::Secp256k1(_) | dtos::PublicKey::Ed25519(_) => env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Provided domain ID key type is not Bls12381")
+                    .to_string(),
+            ),
+            dtos::PublicKey::Bls12381(_) => {}
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -538,8 +534,8 @@ impl MpcContract {
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
-        proposed_participant_attestation: dtos_contract::Attestation,
-        tls_public_key: dtos_contract::Ed25519PublicKey,
+        proposed_participant_attestation: dtos::Attestation,
+        tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
@@ -611,8 +607,8 @@ impl MpcContract {
     #[handle_result]
     pub fn get_attestation(
         &self,
-        tls_public_key: dtos_contract::Ed25519PublicKey,
-    ) -> Result<Option<dtos_contract::Attestation>, Error> {
+        tls_public_key: dtos::Ed25519PublicKey,
+    ) -> Result<Option<dtos::Attestation>, Error> {
         Ok(self
             .tee_state
             .participants_attestations
@@ -728,7 +724,7 @@ impl MpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
-        public_key: dtos_contract::PublicKey,
+        public_key: dtos::PublicKey,
     ) -> Result<(), Error> {
         log!(
             "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
@@ -1520,7 +1516,7 @@ mod tests {
     use crate::state::key_event::tests::Environment;
     use crate::state::resharing::tests::gen_resharing_state;
     use crate::state::running::running_tests::gen_running_state;
-    use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
+    use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1684,7 +1680,7 @@ mod tests {
     #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_simple() {
         let (context, mut contract, _secret_key) = basic_setup();
-        let app_public_key: dtos_contract::Bls12381G1PublicKey =
+        let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();
@@ -1701,8 +1697,8 @@ mod tests {
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
         let response = CKDResponse {
-            big_y: dtos_contract::Bls12381G1PublicKey([1u8; 48]),
-            big_c: dtos_contract::Bls12381G1PublicKey([2u8; 48]),
+            big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
+            big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
         };
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
@@ -1719,7 +1715,7 @@ mod tests {
     #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_timeout() {
         let (context, mut contract, _secret_key) = basic_setup();
-        let app_public_key: dtos_contract::Bls12381G1PublicKey =
+        let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();

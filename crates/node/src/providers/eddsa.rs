@@ -173,7 +173,8 @@ mod tests {
     use threshold_signatures::frost_ed25519::VerifyingKey;
 
     use crate::{
-        providers::PublicKeyConversion, trait_extensions::convert_to_contract_dto::IntoDtoType,
+        providers::PublicKeyConversion,
+        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
     };
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {

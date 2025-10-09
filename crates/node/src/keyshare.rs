@@ -6,13 +6,15 @@ mod temporary;
 #[cfg(test)]
 pub mod test_utils;
 
-use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use anyhow::Context;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain};
 use permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData};
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
+
+use contract_interface::types as dtos;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
@@ -29,7 +31,7 @@ pub struct Keyshare {
 }
 
 impl Keyshare {
-    pub fn public_key(&self) -> anyhow::Result<dtos_contract::PublicKey> {
+    pub fn public_key(&self) -> anyhow::Result<contract_interface::types::PublicKey> {
         match &self.data {
             KeyshareData::Secp256k1(data) => Ok(data.public_key.into_dto_type()),
             KeyshareData::Ed25519(data) => Ok(data.public_key.into_dto_type()),
@@ -46,7 +48,7 @@ impl Keyshare {
                 key_id
             );
         }
-        let public_key: dtos_contract::PublicKey = key.key.clone().into();
+        let public_key: dtos::PublicKey = key.key.clone().into();
         if self.public_key()? != public_key {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",

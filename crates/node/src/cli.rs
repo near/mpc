@@ -40,7 +40,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::trait_extensions::convert_to_contract_dto::IntoDtoType;
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,

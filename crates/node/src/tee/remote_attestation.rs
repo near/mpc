@@ -5,7 +5,7 @@ use crate::{
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     },
-    trait_extensions::convert_to_contract_dto::IntoDtoType,
+    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
 use attestation::{attestation::Attestation, report_data::ReportData};

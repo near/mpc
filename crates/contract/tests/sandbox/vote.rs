@@ -1,8 +1,9 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info, IntoDtoType,
-    GAS_FOR_VOTE_RESHARED,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
+    IntoInterfaceType, GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
+use contract_interface::types as dtos;
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::thresholds::{Threshold, ThresholdParameters},
@@ -56,7 +57,7 @@ async fn test_keygen() -> anyhow::Result<()> {
             .await?,
     );
 
-    let pk: dtos_contract::PublicKey = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae"
+    let pk: dtos::PublicKey = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae"
         .parse()
         .unwrap();
     let vote_pk_args = json!( {
@@ -163,7 +164,7 @@ async fn test_resharing() -> anyhow::Result<()> {
     submit_participant_info(
         new_account,
         &contract,
-        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
         &new_p.2.sign_pk.into_dto_type(),
     )
     .await
@@ -261,7 +262,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     submit_participant_info(
         new_account,
         &contract,
-        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
         &new_p.2.sign_pk.into_dto_type(),
     )
     .await
@@ -358,7 +359,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
     submit_participant_info(
         &new_account,
         &contract,
-        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
         &new_participant_info.sign_pk.into_dto_type(),
     )
     .await

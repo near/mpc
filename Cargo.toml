@@ -6,7 +6,7 @@ members = [
     "crates/contract",
     "crates/contract_history",
     "crates/devnet",
-    "crates/dtos_contract",
+    "crates/contract-interface",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
@@ -42,7 +42,7 @@ overflow-checks = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-dtos-contract = { path = "crates/dtos_contract" }
+contract-interface = { path = "crates/contract-interface" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 node-types = { path = "crates/node-types" }
 test_utils = { path = "crates/test_utils" }
