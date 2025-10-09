@@ -110,8 +110,3 @@ class ContractMethod(str, Enum):
     VOTE_ADD_DOMAINS = "vote_add_domains"
     PROPOSE_UPDATE = "propose_update"
     VOTE_UPDATE = "vote_update"
-    GET_TEE_ACCOUNTS = "get_tee_accounts"
-    MIGRATION_INFO = "migration_info"
-    STATE = "state"
-    REGISTER_BACKUP_SERVICE = "register_backup_service"
-    START_NODE_MIGRATION = "start_node_migration"

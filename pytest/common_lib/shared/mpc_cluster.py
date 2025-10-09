@@ -11,11 +11,6 @@ from common_lib import ckd
 from common_lib.constants import TGAS
 from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
 from common_lib.contracts import ContractMethod
-from common_lib.migration_state import (
-    BackupServiceInfo,
-    MigrationState,
-    parse_migration_state,
-)
 from common_lib.shared.metrics import FloatMetricName, IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
@@ -157,11 +152,11 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519", "Bls12381"],
+        domains=["Secp256k1", "Ed25519", "CkdSecp256k1"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1`, `Ed25519` and `Bls12381` to the contract domains.
+        Adds `Secp256k1`, `Ed25519` and `CkdSecp256k1` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -343,7 +338,7 @@ class MpcCluster:
 
     def get_contract_state(self):
         cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.STATE, {})
+        txn = cn.sign_tx(self.mpc_contract_account(), "state", {})
         res = cn.send_txn_and_check_success(txn)
         assert "error" not in res, res
         res = res["result"]["status"]["SuccessValue"]
@@ -351,20 +346,10 @@ class MpcCluster:
         res = json.loads(res)
         return res
 
-    def get_migrations(self) -> MigrationState:
-        cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.MIGRATION_INFO, {})
-        res = cn.send_txn_and_check_success(txn)
-        assert "error" not in res, res
-        res = res["result"]["status"]["SuccessValue"]
-        res = base64.b64decode(res)
-        res = json.loads(res)
-        return parse_migration_state(res)
-
     def get_tee_approved_accounts(self) -> List[str]:
         contract_node = self.contract_node
         get_tee_accounts_transaction = contract_node.sign_tx(
-            self.mpc_contract_account(), ContractMethod.GET_TEE_ACCOUNTS, {}
+            self.mpc_contract_account(), "get_tee_accounts", {}
         )
         transaction_response = contract_node.send_txn_and_check_success(
             get_tee_accounts_transaction
@@ -488,7 +473,7 @@ class MpcCluster:
         deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "Bls12381":
+            if domain.scheme == "CkdSecp256k1":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m ckd requests for {domain}.\033[0m"
                 )
@@ -522,36 +507,16 @@ class MpcCluster:
                 - If the indexers fail to observe the ckd requests before `constants.TIMEOUT` is reached.
                 - If `ckd_verification` raises an AssertionError.
         """
-        # TODO(#1244): implement pytests for CKD
-        return
-        # txs = self.make_ckd_request_txns(
-        #     requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
-        # )
-        # self.request_node.send_await_check_txs_parallel(
-        #     "ckd request", txs, ckd_verification
-        # )
+        txs = self.make_ckd_request_txns(
+            requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
+        )
+        self.request_node.send_await_check_txs_parallel(
+            "ckd request", txs, ckd_verification
+        )
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(self.mpc_contract_account(), "config", {})
-        res = node.send_txn_and_check_success(tx)
-        return json.dumps(
-            json.loads(
-                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
-                    "utf-8"
-                )
-            )
-        )
-
-    def register_backup_service_info(
-        self, node_id, backup_service_info: BackupServiceInfo
-    ):
-        node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(
-            self.mpc_contract_account(),
-            "register_backup_service_info",
-            {"backup_service_info": backup_service_info},
-        )
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
             json.loads(

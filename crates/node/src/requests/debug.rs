@@ -251,7 +251,7 @@ mod tests {
                 request: CKDRequest {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
-                    app_public_key: "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6".parse().unwrap(),
+                    app_public_key: "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap(),
                     app_id: "test.near".parse().unwrap(),
                     entropy: [0; 32],
                     timestamp_nanosec: 0,

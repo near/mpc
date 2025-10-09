@@ -1,16 +1,19 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info, IntoDtoType,
+    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
     GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
+use core::panic;
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
+use near_sdk::PublicKey;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
+use std::str::FromStr;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
@@ -56,9 +59,7 @@ async fn test_keygen() -> anyhow::Result<()> {
             .await?,
     );
 
-    let pk: dtos_contract::PublicKey = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae"
-        .parse()
-        .unwrap();
+    let pk = PublicKey::from_str("ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae").unwrap();
     let vote_pk_args = json!( {
         "key_event_id": {
             "epoch_id": 5,
@@ -164,7 +165,7 @@ async fn test_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_p.2.sign_pk.into_dto_type(),
+        &new_p.2.sign_pk,
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -262,7 +263,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_p.2.sign_pk.into_dto_type(),
+        &new_p.2.sign_pk,
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -359,7 +360,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
         &new_account,
         &contract,
         &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
-        &new_participant_info.sign_pk.into_dto_type(),
+        &new_participant_info.sign_pk,
     )
     .await
     .expect("Attestation submission for new account must succeed.");

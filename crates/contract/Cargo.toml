@@ -62,8 +62,6 @@ near-account-id = { workspace = true }
 thiserror = { workspace = true }
 sha3 = { workspace = true }
 hex = { workspace = true, features = [] }
-threshold-signatures = { workspace = true, optional = true }
-elliptic-curve = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }
@@ -84,11 +82,10 @@ near-workspaces = { workspace = true }
 threshold-signatures = { workspace = true }
 fs2 = { workspace = true }
 rstest = { workspace = true }
-elliptic-curve = { workspace = true }
 
 [features]
-test-utils = ["rand", "threshold-signatures", "elliptic-curve"]
-dev-utils = ["rand", "threshold-signatures", "elliptic-curve"]
+test-utils = ["rand"]
+dev-utils = ["rand"]
 abi = [
     "borsh/unstable__schema",
     "mpc-primitives/abi",

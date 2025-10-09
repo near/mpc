@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::sandbox::common::{
     assert_running_return_participants, check_call_success, check_call_success_all_receipts,
     gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
-    submit_tee_attestations, IntoDtoType,
+    submit_tee_attestations,
 };
 use mpc_contract::{
     primitives::{
@@ -58,13 +58,14 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let new_uid = NodeId {
         account_id: env_accounts[0].id().clone(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
     submit_participant_info(
         &env_accounts[0],
         &contract,
         &attestation,
-        &new_uid.tls_public_key.into_dto_type(),
+        &new_uid.tls_public_key,
     )
     .await?;
 

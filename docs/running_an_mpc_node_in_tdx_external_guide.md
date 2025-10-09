@@ -91,45 +91,7 @@ Run the steps in [Getting Started](https://github.com/Dstack-TEE/dstack?tab=read
 With the following adjustments (see details below):  
 * We use a specific Dstack version for reproducibility.  
 * KMS and Gateway are not used in this setup.  
-* Some port adjustments may be required.
-
-##### VMM service persistence
-
-Note that in [3. Run Components](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#3-run-components) from dstack's guide,
-the VMM is started with:
-
-```bash
-./dstack-vmm -c vmm.toml
-```
-
-If you want to run it persistently, we recomend using the following user systemd service:
-
-```text
-[Unit]
-Description=Daemon for dstack-vmm
-
-[Service]
-Type=simple
-WorkingDirectory=<FULL_PATH_TO_DSTACK_VMM_INSTALLATION>
-ExecStart=<FULL_PATH_TO_DSTACK_VMM_INSTALLATION>/dstack-vmm -c vmm.toml
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
-
-The file should be located in the user systemd config folder, for example `~/.config/systemd/user/dstack-vmm.service`.
-After the file is created or modified you must run:
-
-```bash
-# to reload the service files
-systemctl --user --daemon-reload
-# to start/stop/restart the service
-systemctl --user start/stop/restart dstack-vmm
-# to check the status the service
-systemctl --user status dstack-vmm
-```
+* Some port adjustments may be required.  
 
 ---
 

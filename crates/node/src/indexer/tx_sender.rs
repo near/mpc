@@ -333,8 +333,7 @@ async fn observe_tx_result(
         | VotePk(_)
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
-        | VerifyTee()
-        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
+        | VerifyTee() => Ok(TransactionStatus::Unknown),
     }
 }
 

@@ -9,11 +9,12 @@ dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
+k256 = { workspace = true }
 mpc-primitives = { workspace = true }
+near-sdk = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 sha3 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

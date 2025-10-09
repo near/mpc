@@ -180,6 +180,8 @@ async fn upgrade_preserves_state_and_requests(
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
 
+    let attested_account = &accounts[0];
+
     let injected_contract_state =
         execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
 
@@ -199,12 +201,13 @@ async fn upgrade_preserves_state_and_requests(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
-
+    //TODO: need to add attested_account to the function parameters
     for pending in injected_contract_state.pending_sign_requests {
         submit_signature_response(
             &pending.signature_request,
             &pending.signature_response,
             &contract,
+            attested_account,
         )
         .await
         .unwrap();

@@ -179,7 +179,7 @@ each signature scheme. You can specify duplicate schemes here as well if you wis
 to add multiple keys for each scheme.
 
 ```shell
-mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,Bls12381
+mpc-devnet mpc $MPC_NETWORK_NAME vote-add-domains --schemes Secp256k1,Ed25519,CkdSecp256k1
 ```
 
 This triggers the MPC nodes to start performing key generation, after which the
