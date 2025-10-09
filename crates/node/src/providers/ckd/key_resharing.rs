@@ -106,6 +106,9 @@ mod tests {
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
+    use threshold_signatures::frost_core::Group;
+    use threshold_signatures::protocol::Participant;
+    use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -159,10 +162,18 @@ mod tests {
             };
 
         start_root_task_with_periodic_dump(async move {
-            let results = run_test_clients(new_participants, key_resharing_client_runner)
+            let results = run_test_clients(new_participants.clone(), key_resharing_client_runner)
                 .await
                 .unwrap();
-            println!("{:?}", results);
+            let mut msk = ckd::Scalar::from(0);
+            let pk = results[0].public_key.to_element();
+            let participants = new_participants.clone().iter().map(|p|Participant::from(*p)).collect::<Vec<_>>();
+            let participants_list = ParticipantList::new(&participants).unwrap();
+            for (key, participant) in results.iter().zip(participants) {
+                msk += key.private_share.to_scalar() * participants_list.lagrange::<ckd::BLS12381SHA256>(participant).unwrap();
+                assert_eq!(pk, key.public_key.to_element());
+            }
+            assert_eq!(<ckd::BLS12381SHA256 as threshold_signatures::frost_core::Ciphersuite>::Group::generator() * msk, pk);
         })
         .await;
     }

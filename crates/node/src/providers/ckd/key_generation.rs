@@ -68,18 +68,30 @@ mod tests {
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
+    use threshold_signatures::frost_core::Group;
+    use threshold_signatures::protocol::Participant;
+    use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn ckd_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
+            let participants_ids = TestGenerators::new(4, 3).participant_ids();
             let results = run_test_clients(
-                TestGenerators::new(4, 3).participant_ids(),
+                participants_ids.clone(),
                 run_keygen_client,
             )
             .await
             .unwrap();
-            println!("{:?}", results);
+            let mut msk = ckd::Scalar::from(0);
+            let pk = results[0].public_key.to_element();
+            let participants = participants_ids.clone().iter().map(|p|Participant::from(*p)).collect::<Vec<_>>();
+            let participants_list = ParticipantList::new(&participants).unwrap();
+            for (key, participant) in results.iter().zip(participants) {
+                msk += key.private_share.to_scalar() * participants_list.lagrange::<ckd::BLS12381SHA256>(participant).unwrap();
+                assert_eq!(pk, key.public_key.to_element());
+            }
+            assert_eq!(<ckd::BLS12381SHA256 as threshold_signatures::frost_core::Ciphersuite>::Group::generator() * msk, pk);
         })
         .await;
     }
