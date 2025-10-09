@@ -102,7 +102,7 @@ the VMM is started with:
 ./dstack-vmm -c vmm.toml
 ```
 
-If you want to run it persistently, we recomend to use the following user systemd service:
+If you want to run it persistently, we recomend using the following user systemd service:
 
 ```text
 [Unit]
