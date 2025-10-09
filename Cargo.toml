@@ -8,7 +8,6 @@ members = [
     "crates/devnet",
     "crates/dtos_contract",
     "crates/node",
-    "crates/node-types",
     "crates/primitives",
     "crates/tee_authority",
     "crates/test_migration_contract",
@@ -44,7 +43,6 @@ overflow-checks = true
 attestation = { path = "crates/attestation" }
 dtos-contract = { path = "crates/dtos_contract" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
-node-types = { path = "crates/node-types" }
 test_utils = { path = "crates/test_utils" }
 tee_authority = { path = "crates/tee_authority" }
 contract_history = { path = "crates/contract_history" }
@@ -108,7 +106,6 @@ near-sdk = { version = "5.15.1", features = [
 near-workspaces = "0.21.0"
 prometheus = {version = "0.13.4", default-features = false }
 rand = "0.8.5"
-rand_chacha = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"
 rustls = { version = "0.23.31", default-features = false, features = ["std"] }

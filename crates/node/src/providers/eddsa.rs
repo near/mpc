@@ -12,6 +12,7 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
+use near_sdk::CurveType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use threshold_signatures::eddsa::KeygenOutput;
@@ -124,15 +125,13 @@ impl SignatureProvider for EddsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data = self.serialize()?;
         let data: [u8; 32] = data
             .try_into()
             .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
 
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
-            .context("Infallible.")
+        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
@@ -148,11 +147,9 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
-    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let data: [u8; 32] = self.to_bytes();
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
-            .context("Infallible.")
+        near_sdk::PublicKey::from_parts(CurveType::ED25519, data.to_vec()).context("Infallible.")
     }
 
     fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
@@ -168,32 +165,24 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use threshold_signatures::frost_ed25519::VerifyingKey;
+#[test]
+fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+    use crate::tests::TestGenerators;
+    let x = TestGenerators::new(4, 3)
+        .make_eddsa_keygens()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    x.public_key.to_near_sdk_public_key()?;
+    Ok(())
+}
 
-    use crate::{
-        providers::PublicKeyConversion, trait_extensions::convert_to_contract_dto::IntoDtoType,
-    };
-    #[test]
-    fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-        use crate::tests::TestGenerators;
-        let x = TestGenerators::new(4, 3)
-            .make_eddsa_keygens()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        x.public_key.into_dto_type();
-        Ok(())
-    }
-
-    #[test]
-    fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
-        use std::str::FromStr;
-        let near_sdk =
-            near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
-        let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
-        Ok(())
-    }
+#[test]
+fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
+    use std::str::FromStr;
+    let near_sdk =
+        near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
+    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
+    Ok(())
 }

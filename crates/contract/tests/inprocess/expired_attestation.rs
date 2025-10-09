@@ -1,4 +1,4 @@
-use dtos_contract::{Attestation, MockAttestation};
+use dtos_contract::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::types::PublicKeyExtended,
@@ -15,10 +15,11 @@ use mpc_contract::{
 };
 
 use assert_matches::assert_matches;
-use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, NearToken, VMContext};
+use near_sdk::{
+    test_utils::VMContextBuilder, testing_env, AccountId, CurveType, NearToken, PublicKey,
+    VMContext,
+};
 use std::time::Duration;
-
-use crate::sandbox::common::IntoDtoType;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -40,11 +41,8 @@ impl TestSetup {
                 vec![KeyForDomain {
                     domain_id: DomainId::default(),
                     key: PublicKeyExtended::Secp256k1 {
-                        near_public_key: near_sdk::PublicKey::from_parts(
-                            near_sdk::CurveType::SECP256K1,
-                            vec![1u8; 64],
-                        )
-                        .unwrap(),
+                        near_public_key: PublicKey::from_parts(CurveType::SECP256K1, vec![1u8; 64])
+                            .unwrap(),
                     },
                     attempt: AttemptId::new(),
                 }],
@@ -74,8 +72,9 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
+        let tls_key_bytes: [u8; 32] = node_id.tls_public_key.as_bytes()[1..].try_into().unwrap();
         self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone().into_dto_type())
+            .submit_participant_info(attestation, Ed25519PublicKey::from(tls_key_bytes))
     }
 
     /// Switches testing context to a given participant at a specific timestamp

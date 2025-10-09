@@ -4,14 +4,12 @@ use crate::{
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
-    TryIntoDtoType,
 };
 use attestation::{
     attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use dtos_contract::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::hash::{Hash, Hasher};

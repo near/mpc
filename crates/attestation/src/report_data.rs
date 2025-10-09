@@ -1,6 +1,7 @@
 use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use derive_more::{AsRef, Deref, From};
+use derive_more::Constructor;
+use near_sdk::PublicKey;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
 
@@ -33,7 +34,7 @@ impl ReportDataVersion {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Constructor)]
 pub struct ReportDataV1 {
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
@@ -71,6 +72,7 @@ impl ReportDataV1 {
     const PUBLIC_KEYS_OFFSET: usize = BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE;
     const PUBLIC_KEYS_HASH_SIZE: usize = 48;
 
+<<<<<<< HEAD
     pub fn new(
         tls_public_key: impl Into<Ed25519PublicKey>,
         account_public_key: impl Into<Ed25519PublicKey>,
@@ -81,6 +83,8 @@ impl ReportDataV1 {
         }
     }
 
+=======
+>>>>>>> 0ef4bbf (Revert "Merge branch 'main' into barak/add_public_key_to_report_data")
     // Compile-time assertions for V1 format.
     const _V1_LAYOUT_CHECK: () = {
         assert!(
@@ -97,12 +101,17 @@ impl ReportDataV1 {
         report_data[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE]
             .copy_from_slice(&version_bytes);
 
+<<<<<<< HEAD
         // Hash both TLS and account public keys
         let mut hasher = Sha3_384::new();
         hasher.update(self.tls_public_key.as_ref());
         hasher.update(self.account_public_key.as_ref());
         let public_keys_hash: [u8; Self::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
+=======
+        // Generate and copy hash of public keys
+        let public_keys_hash = self.public_keys_hash();
+>>>>>>> 0ef4bbf (Revert "Merge branch 'main' into barak/add_public_key_to_report_data")
         report_data
             [Self::PUBLIC_KEYS_OFFSET..Self::PUBLIC_KEYS_OFFSET + Self::PUBLIC_KEYS_HASH_SIZE]
             .copy_from_slice(&public_keys_hash);
@@ -233,6 +242,7 @@ mod tests {
         let bytes = report_data_v1.to_bytes();
 
         let hash = ReportDataV1::from_bytes(&bytes);
+<<<<<<< HEAD
 
         // Expected hash = sha3_384(tls || account)
         let mut hasher = Sha3_384::new();
@@ -241,6 +251,9 @@ mod tests {
         let public_key_hash: [u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
 
         assert_eq!(hash, public_key_hash);
+=======
+        assert_eq!(hash, report_data_v1.public_keys_hash());
+>>>>>>> 0ef4bbf (Revert "Merge branch 'main' into barak/add_public_key_to_report_data")
 
         let report_data = ReportData::V1(report_data_v1);
         assert_eq!(report_data.to_bytes(), bytes);

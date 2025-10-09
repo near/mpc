@@ -1,11 +1,11 @@
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
+use crate::tests::DEFAULT_BLOCK_TIME;
 use crate::tests::{
-    get_keyshares, request_signature_and_await_response, IntegrationTestSetup,
+    get_keyshares, put_keyshares, request_signature_and_await_response, IntegrationTestSetup,
     DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
-use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use mpc_contract::state::ProtocolContractState;
@@ -18,7 +18,7 @@ use near_time::Clock;
 /// After the conclusion of the key initialization and passing of a sanity check, the participant
 /// set will be forcefully changed.
 #[tokio::test]
-async fn test_changing_participant_set_test_keyshare_import() {
+async fn test_changing_participant_set() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 2;
     const THRESHOLD: usize = 2;
@@ -95,12 +95,9 @@ async fn test_changing_participant_set_test_keyshare_import() {
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
             .await
             .unwrap();
-
-        // test keyshare import
-        std::fs::create_dir_all(&home_dir_last).unwrap();
-        let key_storage_config = make_key_storage_config(home_dir_last, local_encryption_key_last);
-        let mut keystore = key_storage_config.create().await.unwrap();
-        keystore.import_backup(keyshares, keyset).await.unwrap();
+        put_keyshares(home_dir_last, keyshares, local_encryption_key_last)
+            .await
+            .unwrap();
     }
 
     // finally, change the participant info. Remove the first node and insert the last node.

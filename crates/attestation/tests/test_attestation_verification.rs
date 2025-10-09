@@ -3,6 +3,7 @@ use attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use near_sdk::PublicKey;
 use rstest::rstest;
 use test_utils::attestation::{
     account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,

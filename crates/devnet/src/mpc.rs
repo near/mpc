@@ -14,9 +14,10 @@ use crate::rpc::NearRpcClients;
 use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
+use attestation::attestation::Attestation;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     config::InitConfig,
@@ -36,9 +37,8 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
 use near_sdk::{borsh, AccountId, CurveType};
-use node_types::http_server::StaticWebData;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 impl ListMpcCmd {
@@ -209,6 +209,14 @@ impl UpdateMpcNetworkCmd {
         )
         .await;
     }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct StaticWebData {
+    pub near_signer_public_key: VerifyingKey,
+    pub near_p2p_public_key: VerifyingKey,
+    pub near_responder_public_keys: Vec<VerifyingKey>,
+    pub _tee_participant_info: Option<Attestation>,
 }
 
 impl MpcAddKeysCmd {
