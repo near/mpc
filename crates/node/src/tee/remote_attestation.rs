@@ -136,7 +136,9 @@ async fn periodic_attestation_submission_with_interval<T: TransactionSender + Cl
                 near_sdk::CurveType::ED25519,
                 account_public_key.to_bytes().to_vec(),
             )
-            .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e))?
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e)
+            })?,
         ),
     };
 

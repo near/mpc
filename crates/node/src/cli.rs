@@ -242,7 +242,7 @@ impl StartCmd {
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
-        
+
         let report_data = ReportData::new(
             *tls_public_key.into_dto_type().as_bytes(),
             *account_public_key.into_dto_type().as_bytes(),
@@ -367,7 +367,7 @@ impl StartCmd {
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
         let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let account_public_key=secrets.persistent_secrets.near_signer_key.verifying_key();
+        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
