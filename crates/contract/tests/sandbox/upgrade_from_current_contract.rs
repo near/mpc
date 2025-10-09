@@ -1,10 +1,11 @@
 use crate::sandbox::common::{
     assert_running_return_participants, current_contract,
-    execute_key_generation_and_add_random_state, init_env_secp256k1, init_with_candidates,
+    execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT,
 };
 use mpc_contract::config::Config;
+use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
@@ -33,7 +34,7 @@ fn current_contract_proposal() -> ProposeUpdateArgs {
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -57,7 +58,7 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.
@@ -138,13 +139,13 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -180,7 +181,7 @@ async fn test_invalid_contract_deploy() {
 // TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 3;
@@ -232,7 +233,7 @@ async fn test_propose_update_contract_many() {
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     let dummy_config = Config::default();
@@ -266,7 +267,7 @@ async fn test_propose_incorrect_updates() {
 /// thus we want to test whether some problem builds up eventually.
 #[tokio::test]
 async fn many_sequential_updates() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     for _ in 0..3 {
@@ -284,7 +285,7 @@ async fn many_sequential_updates() {
 ///     4. Bob votes for B -> Update for B is triggered
 #[tokio::test]
 async fn only_one_vote_from_participant() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     dbg!(contract.id());
 
     let execution = accounts[0]
