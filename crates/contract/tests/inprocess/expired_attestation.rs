@@ -93,13 +93,16 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-
+    // Returns the list of NodeIds for all participants
+    // Note that the account_public_key field in NodeId is None.
+    // This is because NodeId is used in contexts where account_public_key is not needed.
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: participant_info.sign_pk.clone(),
+                account_public_key: None,
             })
             .collect()
     }
@@ -165,6 +168,7 @@ fn test_participant_kickout_after_expiration() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -182,6 +186,7 @@ fn test_participant_kickout_after_expiration() {
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);
@@ -264,6 +269,7 @@ fn test_clean_tee_status_removes_non_participants() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -276,6 +282,7 @@ fn test_clean_tee_status_removes_non_participants() {
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);

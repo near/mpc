@@ -282,8 +282,14 @@ mod tests {
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
     ) {
-        let tls_key = p2p_tls_key();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
+        let tls_key = "ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+            .parse()
+            .unwrap();
+
+        let account_key = "ed25519:5v8Y8ZLoxZzCVtYpjh1cYdFrRh1p9EXAMPLEaQJ5sP4o"
+            .parse()
+            .unwrap();
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));

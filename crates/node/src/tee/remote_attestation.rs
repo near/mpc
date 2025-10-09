@@ -89,27 +89,16 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
-    mut interval_ticker: I,
+    account_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = *tls_public_key.into_dto_type().as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key);
-    let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
-
-    loop {
-        interval_ticker.tick().await;
-
-        submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
-            .await?;
-    }
-}
-
-/// Checks if TEE attestation is available for the given node in the TEE accounts list.
-fn is_node_in_contract_tee_accounts(
-    tee_accounts_receiver: &mut watch::Receiver<Vec<NodeId>>,
-    node_id: &NodeId,
-) -> bool {
-    let tee_accounts = tee_accounts_receiver.borrow_and_update();
-    tee_accounts.contains(node_id)
+    periodic_attestation_submission_with_interval(
+        tee_authority,
+        tx_sender,
+        tls_public_key,
+        account_public_key,
+        tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
+    )
+    .await
 }
 
 /// Monitors the contract for TEE attestation removal and triggers resubmission when needed.
@@ -121,7 +110,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tee_authority: TeeAuthority,
     tx_sender: T,
     tls_public_key: VerifyingKey,
-    mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
+    account_public_key: VerifyingKey,
+    mut interval_ticker: I,
 ) -> anyhow::Result<()> {
     let node_id = NodeId {
         account_id: node_account_id.clone(),
@@ -132,8 +122,23 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
         .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
     };
 
-    let initially_available =
-        is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
+        let tls_sdk_public_key = tls_public_key.to_near_sdk_public_key()?;
+        let account_sdk_public_key = account_public_key.to_near_sdk_public_key()?;
+
+        let report_data = ReportData::new(
+            tls_sdk_public_key.clone(),
+            Some(account_sdk_public_key.clone()),
+        );
+        let fresh_attestation = match tee_authority.generate_attestation(report_data).await {
+            Ok(attestation) => attestation,
+            Err(error) => {
+                tracing::error!(
+                    ?error,
+                    "failed to generate fresh attestation, skipping this cycle"
+                );
+                continue;
+            }
+        };
 
     tracing::info!(
         %node_account_id,
@@ -292,10 +297,13 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let key = SigningKey::generate(&mut rng).verifying_key();
 
-        let handle = tokio::spawn(periodic_attestation_submission(
+        let account_key = SigningKey::generate(&mut rng).verifying_key();
+
+        let handle = tokio::spawn(periodic_attestation_submission_with_interval(
             tee_authority,
             sender.clone(),
             key,
+            account_key,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
