@@ -34,16 +34,25 @@ use crypto_shared::{
     near_public_key_to_affine_point,
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
+use dtos_contract::PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
+<<<<<<< HEAD
 use k256::elliptic_curve::{sec1::ToEncodedPoint, PrimeField};
+=======
+use k256::elliptic_curve::PrimeField;
+>>>>>>> origin/main
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
+<<<<<<< HEAD
     AccountId, CryptoHash, CurveType, Gas, GasWeight, NearToken, Promise, PromiseError,
     PromiseOrValue, PublicKey,
+=======
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+>>>>>>> origin/main
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -91,9 +100,6 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
-
-/// Confidential Key Derivation only supports secp256k1
-const CDK_SUPPORTED_SIGNATURE_CURVE: CurveType = CurveType::SECP256K1;
 
 impl Default for MpcContract {
     fn default() -> Self {
@@ -167,20 +173,24 @@ impl MpcContract {
             );
         };
 
-        let curve_type = public_key.curve_type();
-
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match &curve_type {
-            CurveType::SECP256K1 => {
+        match &public_key {
+            PublicKey::Secp256k1(_) => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            CurveType::ED25519 => {
+            PublicKey::Ed25519(_) => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
+            }
+            PublicKey::Bls12381(_) => {
+                env::panic_str(
+                    &InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function")
+                    .to_string(),
+                );
             }
         }
 
@@ -259,7 +269,14 @@ impl MpcContract {
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
     #[handle_result]
+<<<<<<< HEAD
     pub fn public_key(&self, domain_id: Option<DomainId>) -> Result<PublicKey, Error> {
+=======
+    pub fn public_key(
+        &self,
+        domain_id: Option<DomainId>,
+    ) -> Result<dtos_contract::PublicKey, Error> {
+>>>>>>> origin/main
         let domain_id = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         self.public_key_extended(domain_id).map(Into::into)
     }
@@ -275,35 +292,51 @@ impl MpcContract {
         path: String,
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
+<<<<<<< HEAD
     ) -> Result<PublicKey, Error> {
+=======
+    ) -> Result<dtos_contract::PublicKey, Error> {
+>>>>>>> origin/main
         let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
         let public_key = self.public_key_extended(domain)?;
 
-        let derived_public_key = match public_key {
+        let derived_public_key: dtos_contract::PublicKey = match public_key {
             PublicKeyExtended::Secp256k1 { near_public_key } => {
                 let derived_public_key =
                     derive_key_secp256k1(&near_public_key_to_affine_point(near_public_key), &tweak)
                         .map_err(PublicKeyError::from)?;
+<<<<<<< HEAD
 
                 let encoded_point = derived_public_key.to_encoded_point(false);
                 let slice: &[u8] = &encoded_point.as_bytes()[1..65];
                 PublicKey::from_parts(CurveType::SECP256K1, slice.to_vec())
+=======
+                derived_public_key.into_dto_type().into()
+>>>>>>> origin/main
             }
             PublicKeyExtended::Ed25519 { edwards_point, .. } => {
                 let derived_public_key_edwards_point =
                     derive_public_key_edwards_point_ed25519(&edwards_point, &tweak);
+<<<<<<< HEAD
 
                 let encoded_point: [u8; 32] =
                     derived_public_key_edwards_point.compress().to_bytes();
 
                 PublicKey::from_parts(CurveType::ED25519, encoded_point.into())
+=======
+                derived_public_key_edwards_point
+                    .compress()
+                    .into_dto_type()
+                    .into()
+>>>>>>> origin/main
             }
+            PublicKeyExtended::Bls12381 { public_key } => public_key,
         };
 
-        derived_public_key.map_err(|_| PublicKeyError::DerivedKeyConversionFailed.into())
+        Ok(derived_public_key)
     }
 
     /// Key versions refer new versions of the root key that we may choose to generate on cohort
@@ -340,20 +373,15 @@ impl MpcContract {
             );
         };
 
-        if public_key.curve_type() != CDK_SUPPORTED_SIGNATURE_CURVE {
-            env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not secp256k1")
-                    .to_string(),
-            )
-        }
-
-        if request.app_public_key.curve_type() != CDK_SUPPORTED_SIGNATURE_CURVE {
-            env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided app public key type is not secp256k1")
-                    .to_string(),
-            )
+        match public_key {
+            dtos_contract::PublicKey::Secp256k1(_) | dtos_contract::PublicKey::Ed25519(_) => {
+                env::panic_str(
+                    &InvalidParameters::InvalidDomainId
+                        .message("Provided domain ID key type is not Bls12381")
+                        .to_string(),
+                )
+            }
+            dtos_contract::PublicKey::Bls12381(_) => {}
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -748,7 +776,11 @@ impl MpcContract {
     pub fn vote_pk(
         &mut self,
         key_event_id: KeyEventId,
+<<<<<<< HEAD
         public_key: PublicKey,
+=======
+        public_key: dtos_contract::PublicKey,
+>>>>>>> origin/main
     ) -> Result<(), Error> {
         log!(
             "vote_pk: signer={}, key_event_id={:?}, public_key={:?}",
@@ -1535,7 +1567,7 @@ impl MpcContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto_shared::k256_types::{self, SerializableAffinePoint};
+    use crate::crypto_shared::k256_types;
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
@@ -1740,10 +1772,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_simple() {
         let (context, mut contract, _secret_key) = basic_setup();
-        let app_public_key: near_sdk::PublicKey =
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+        let app_public_key: dtos_contract::Bls12381G1PublicKey =
+            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
@@ -1759,12 +1792,8 @@ mod tests {
         contract.get_pending_ckd_request(&ckd_request).unwrap();
 
         let response = CKDResponse {
-            big_y: SerializableAffinePoint {
-                affine_point: AffinePoint::GENERATOR,
-            },
-            big_c: SerializableAffinePoint {
-                affine_point: AffinePoint::GENERATOR,
-            },
+            big_y: dtos_contract::Bls12381G1PublicKey([1u8; 48]),
+            big_c: dtos_contract::Bls12381G1PublicKey([2u8; 48]),
         };
 
      
@@ -1783,10 +1812,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // TODO(#1242): This test cannot work anymore, as `basic_setup` only works for Secp256k1
     fn test_ckd_timeout() {
         let (context, mut contract, _secret_key) = basic_setup();
-        let app_public_key: near_sdk::PublicKey =
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+        let app_public_key: dtos_contract::Bls12381G1PublicKey =
+            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {

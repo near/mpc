@@ -7,6 +7,7 @@ use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::{EcdsaTaskId, PublicKeyConversion};
 use crate::tracking::AutoAbortTaskCollection;
+use crate::trait_extensions::convert_to_contract_dto::{IntoDtoType, TryIntoNodeType};
 use crate::{
     config::ParticipantsConfig,
     indexer::{
@@ -15,7 +16,7 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
-    providers::{EcdsaSignatureProvider, SignatureProvider},
+    providers::{CKDProvider, EcdsaSignatureProvider, SignatureProvider},
 };
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
@@ -63,11 +64,10 @@ pub async fn keygen_computation_inner(
             let public_key = keyshare.public_key.to_near_sdk_public_key()?;
             (KeyshareData::Ed25519(keyshare), public_key)
         }
-        SignatureScheme::CkdSecp256k1 => {
-            let keyshare =
-                EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.to_near_sdk_public_key()?;
-            (KeyshareData::CkdSecp256k1(keyshare), public_key)
+        SignatureScheme::Bls12381 => {
+            let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = keyshare.public_key.into_dto_type();
+            (KeyshareData::Bls12381(keyshare), public_key)
         }
     };
 
@@ -185,7 +185,7 @@ async fn resharing_computation_inner(
         .public_key(key_id.domain_id)
         .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
 
-    let near_public_key = previous_public_key.as_ref();
+    let public_key = dtos_contract::PublicKey::from(previous_public_key.clone());
 
     let keyshare_data = match domain.scheme {
         SignatureScheme::Secp256k1 => {
@@ -226,16 +226,15 @@ async fn resharing_computation_inner(
             .await?;
             KeyshareData::Ed25519(res)
         }
-        SignatureScheme::CkdSecp256k1 => {
-            let public_key =
-                frost_secp256k1::VerifyingKey::from_near_sdk_public_key(near_public_key)?;
+        (dtos_contract::PublicKey::Bls12381(inner_public_key), SignatureScheme::Bls12381) => {
+            let public_key = inner_public_key.try_into_node_type()?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::CkdSecp256k1(data) => Ok(data.private_share),
+                    KeyshareData::Bls12381(data) => Ok(data.private_share),
                     _ => Err(anyhow::anyhow!("Expected ckd keyshare!")),
                 })
                 .transpose()?;
-            let res = EcdsaSignatureProvider::run_key_resharing_client(
+            let res = CKDProvider::run_key_resharing_client(
                 args.new_threshold,
                 my_share,
                 public_key,
@@ -243,7 +242,7 @@ async fn resharing_computation_inner(
                 channel,
             )
             .await?;
-            KeyshareData::CkdSecp256k1(res)
+            KeyshareData::Bls12381(res)
         }
     };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);

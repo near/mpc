@@ -34,7 +34,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::{ecdsa, eddsa};
+use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -496,7 +496,10 @@ where
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
-                let mut ckd_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
+                let mut ckd_keyshares: HashMap<
+                    DomainId,
+                    confidential_key_derivation::KeygenOutput,
+                > = HashMap::new();
                 let mut domain_to_scheme: HashMap<DomainId, SignatureScheme> = HashMap::new();
 
                 for keyshare in keyshares {
@@ -510,9 +513,9 @@ where
                             eddsa_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Ed25519);
                         }
-                        KeyshareData::CkdSecp256k1(data) => {
+                        KeyshareData::Bls12381(data) => {
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
-                            domain_to_scheme.insert(domain_id, SignatureScheme::CkdSecp256k1);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::Bls12381);
                         }
                     }
                 }

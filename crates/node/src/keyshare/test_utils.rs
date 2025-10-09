@@ -39,10 +39,13 @@ fn keyset_from_permanent_keyshare(permanent: &PermanentKeyshareData) -> Keyset {
     let keys = permanent
         .keyshares
         .iter()
-        .map(|keyshare| KeyForDomain {
-            domain_id: keyshare.key_id.domain_id,
-            key: keyshare.public_key().unwrap().try_into().unwrap(),
-            attempt: keyshare.key_id.attempt_id,
+        .map(|keyshare| {
+            let public_key = keyshare.public_key().unwrap();
+            KeyForDomain {
+                domain_id: keyshare.key_id.domain_id,
+                key: public_key.try_into().unwrap(),
+                attempt: keyshare.key_id.attempt_id,
+            }
         })
         .collect();
     Keyset::new(permanent.epoch_id, keys)

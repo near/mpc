@@ -14,6 +14,7 @@ use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::types::SignatureId;
+pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
 use std::sync::Arc;

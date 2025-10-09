@@ -117,8 +117,13 @@ impl FakeMpcContractState {
         });
     }
 
-    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, near_sdk_pk: PublicKey) {
-        let contract_extended_pk = near_sdk_pk.try_into().unwrap();
+    pub fn vote_pk(
+        &mut self,
+        account_id: AccountId,
+        key_id: KeyEventId,
+        dto_pk: dtos_contract::PublicKey,
+    ) {
+        let contract_extended_pk = dto_pk.try_into().unwrap();
 
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {

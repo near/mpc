@@ -1,7 +1,8 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -38,6 +39,10 @@ async fn test_basic_multidomain() {
             id: DomainId(1),
             scheme: SignatureScheme::Ed25519,
         },
+        DomainConfig {
+            id: DomainId(2),
+            scheme: SignatureScheme::Bls12381,
+        },
     ];
 
     {
@@ -63,25 +68,43 @@ async fn test_basic_multidomain() {
 
     tracing::info!("requesting signature");
     for domain in &domains {
-        assert!(request_signature_and_await_response(
-            &mut setup.indexer,
-            &format!("user{}", domain.id.0),
-            domain,
-            std::time::Duration::from_secs(60)
-        )
-        .await
-        .is_some());
+        match domain.scheme {
+            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+                assert!(request_signature_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+            SignatureScheme::Bls12381 => {
+                assert!(request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+        }
     }
 
     {
         let new_domains = vec![
             DomainConfig {
-                id: DomainId(2),
+                id: DomainId(3),
                 scheme: SignatureScheme::Ed25519,
             },
             DomainConfig {
-                id: DomainId(3),
+                id: DomainId(4),
                 scheme: SignatureScheme::Secp256k1,
+            },
+            DomainConfig {
+                id: DomainId(5),
+                scheme: SignatureScheme::Bls12381,
             },
         ];
         let mut contract = setup.indexer.contract_mut().await;
@@ -107,14 +130,28 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        assert!(request_signature_and_await_response(
-            &mut setup.indexer,
-            &format!("user{}", domain.id.0),
-            domain,
-            std::time::Duration::from_secs(60)
-        )
-        .await
-        .is_some());
+        match domain.scheme {
+            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+                assert!(request_signature_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+            SignatureScheme::Bls12381 => {
+                assert!(request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+        }
     }
 
     {
@@ -140,17 +177,27 @@ async fn test_basic_multidomain() {
         .expect("must not exceed timeout");
 
     for domain in &domains {
-        assert!(
-            request_signature_and_await_response(
-                &mut setup.indexer,
-                &format!("user{}", domain.id.0),
-                domain,
-                std::time::Duration::from_secs(60)
-            )
-            .await
-            .is_some(),
-            "failing for domain {}",
-            domain.id.0
-        );
+        match domain.scheme {
+            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+                assert!(request_signature_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+            SignatureScheme::Bls12381 => {
+                assert!(request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    &format!("user{}", domain.id.0),
+                    domain,
+                    std::time::Duration::from_secs(60)
+                )
+                .await
+                .is_some());
+            }
+        }
     }
 }
