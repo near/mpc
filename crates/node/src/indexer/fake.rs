@@ -12,7 +12,6 @@ use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use crate::trait_extensions::convert_to_contract_dto::{IntoContractType, IntoDtoType};
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -131,7 +130,7 @@ impl FakeMpcContractState {
         key_id: KeyEventId,
         dto_pk: dtos_contract::PublicKey,
     ) {
-        let contract_extended_pk = dto_pk.into_contract_type().try_into().unwrap();
+        let contract_extended_pk = dto_pk.try_into().unwrap();
 
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
@@ -468,11 +467,7 @@ impl FakeIndexerCore {
                 match txn {
                     ChainSendTransactionRequest::VotePk(vote_pk) => {
                         let mut contract = contract.lock().await;
-                        contract.vote_pk(
-                            account_id,
-                            vote_pk.key_event_id,
-                            vote_pk.public_key.into_dto_type(),
-                        );
+                        contract.vote_pk(account_id, vote_pk.key_event_id, vote_pk.public_key);
                     }
                     ChainSendTransactionRequest::Respond(respond) => {
                         let mut contract = contract.lock().await;

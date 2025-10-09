@@ -18,7 +18,7 @@ use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
     Ed25519(threshold_signatures::eddsa::KeygenOutput),
-    CkdSecp256k1(threshold_signatures::ecdsa::KeygenOutput),
+    Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
 }
 
 /// A single keyshare, corresponding to one epoch, one domain, one attempt.
@@ -33,7 +33,7 @@ impl Keyshare {
         match &self.data {
             KeyshareData::Secp256k1(data) => Ok(data.public_key.into_dto_type()),
             KeyshareData::Ed25519(data) => Ok(data.public_key.into_dto_type()),
-            KeyshareData::CkdSecp256k1(data) => Ok(data.public_key.into_dto_type()),
+            KeyshareData::Bls12381(data) => Ok(data.public_key.into_dto_type()),
         }
     }
 
@@ -46,8 +46,8 @@ impl Keyshare {
                 key_id
             );
         }
-        let near_sdk_public_key: near_sdk::PublicKey = key.key.clone().into();
-        if self.public_key()? != near_sdk_public_key.into_dto_type() {
+        let public_key: dtos_contract::PublicKey = key.key.clone().into();
+        if self.public_key()? != public_key {
             anyhow::bail!(
                 "Keyshare has incorrect public key {:?}, should be {:?}",
                 self.public_key()?,

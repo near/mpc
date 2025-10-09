@@ -59,14 +59,14 @@ impl ChainSignatureRequest {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
-    pub app_public_key: near_sdk::PublicKey,
+    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
     pub app_id: AccountId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
-        app_public_key: near_sdk::PublicKey,
+        app_public_key: dtos_contract::Bls12381G1PublicKey,
         app_id: AccountId,
         domain_id: DomainId,
     ) -> Self {
@@ -144,7 +144,7 @@ pub struct GetAttestationArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
-    pub public_key: near_sdk::PublicKey,
+    pub public_key: dtos_contract::PublicKey,
 }
 
 #[derive(Serialize, Debug)]

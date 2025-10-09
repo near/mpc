@@ -1,22 +1,29 @@
-mod provider;
+mod key_generation;
+mod key_resharing;
+mod sign;
 
 use std::{collections::HashMap, sync::Arc};
 
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::AffinePoint;
-use mpc_contract::primitives::domain::DomainId;
-use threshold_signatures::ecdsa::KeygenOutput;
+use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId};
+use threshold_signatures::confidential_key_derivation::{
+    ElementG1, KeygenOutput, SigningShare, VerifyingKey,
+};
 
 use crate::{
-    config::{ConfigFile, MpcConfig},
+    config::{ConfigFile, MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
+    providers::{PublicKeyConversion, SignatureProvider},
     storage::CKDRequestStorage,
-    types::CKDId,
+    types::{CKDId, SignatureId},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
 pub enum CKDTaskId {
+    KeyGeneration { key_event: KeyEventId },
+    KeyResharing { key_event: KeyEventId },
     Ckd { id: CKDId },
 }
 
@@ -51,20 +58,55 @@ impl CKDProvider {
             keyshares,
         }
     }
+}
 
-    pub async fn make_ckd(
+impl SignatureProvider for CKDProvider {
+    type PublicKey = VerifyingKey;
+    type SecretShare = SigningShare;
+    type KeygenOutput = KeygenOutput;
+    type Signature = (ElementG1, ElementG1);
+    type TaskId = CKDTaskId;
+
+    async fn make_signature(
         self: Arc<Self>,
-        id: CKDId,
-    ) -> anyhow::Result<(AffinePoint, AffinePoint)> {
+        id: SignatureId,
+    ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_ckd_leader(id).await
     }
 
-    pub async fn process_channel(
-        self: Arc<Self>,
+    async fn run_key_generation_client(
+        threshold: usize,
         channel: NetworkTaskChannel,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Self::KeygenOutput> {
+        Self::run_key_generation_client_internal(threshold, channel).await
+    }
+
+    async fn run_key_resharing_client(
+        new_threshold: usize,
+        key_share: Option<SigningShare>,
+        public_key: VerifyingKey,
+        old_participants: &ParticipantsConfig,
+        channel: NetworkTaskChannel,
+    ) -> anyhow::Result<Self::KeygenOutput> {
+        Self::run_key_resharing_client_internal(
+            new_threshold,
+            key_share,
+            public_key,
+            old_participants,
+            channel,
+        )
+        .await
+    }
+
+    async fn process_channel(self: Arc<Self>, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::CKDTaskId(task) => match task {
+                CKDTaskId::KeyGeneration { .. } => {
+                    anyhow::bail!("Key generation rejected in normal node operation");
+                }
+                CKDTaskId::KeyResharing { .. } => {
+                    anyhow::bail!("Key resharing rejected in normal node operation");
+                }
                 CKDTaskId::Ckd { id } => {
                     self.make_ckd_follower(channel, id).await?;
                 }
@@ -78,7 +120,32 @@ impl CKDProvider {
         Ok(())
     }
 
-    pub async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
+    async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+impl PublicKeyConversion for VerifyingKey {
+    #[cfg(test)]
+    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
+        let data = self.serialize()?;
+        let data: [u8; 32] = data
+            .try_into()
+            .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
+
+        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
+            .context("Infallible.")
+    }
+
+    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
+        let key_bytes = public_key.as_bytes();
+
+        // Skip first byte as it is reserved as an identifier for the curve type.
+        let key_data: [u8; 32] = key_bytes[1..]
+            .try_into()
+            .context("Invariant broken, public key must 32 bytes.")?;
+
+        VerifyingKey::deserialize(&key_data)
+            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
     }
 }

@@ -157,11 +157,11 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519", "CkdSecp256k1"],
+        domains=["Secp256k1", "Ed25519", "Bls12381"],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1`, `Ed25519` and `CkdSecp256k1` to the contract domains.
+        Adds `Secp256k1`, `Ed25519` and `Bls12381` to the contract domains.
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -488,7 +488,7 @@ class MpcCluster:
         deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "CkdSecp256k1":
+            if domain.scheme == "Bls12381":
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m ckd requests for {domain}.\033[0m"
                 )
@@ -522,12 +522,14 @@ class MpcCluster:
                 - If the indexers fail to observe the ckd requests before `constants.TIMEOUT` is reached.
                 - If `ckd_verification` raises an AssertionError.
         """
-        txs = self.make_ckd_request_txns(
-            requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
-        )
-        self.request_node.send_await_check_txs_parallel(
-            "ckd request", txs, ckd_verification
-        )
+        # TODO(#1244): implement pytests for CKD
+        return
+        # txs = self.make_ckd_request_txns(
+        #     requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
+        # )
+        # self.request_node.send_await_check_txs_parallel(
+        #     "ckd request", txs, ckd_verification
+        # )
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]

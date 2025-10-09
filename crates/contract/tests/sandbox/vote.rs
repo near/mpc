@@ -3,17 +3,14 @@ use crate::sandbox::common::{
     GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
-use core::panic;
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::thresholds::{Threshold, ThresholdParameters},
     state::{running::RunningContractState, ProtocolContractState},
 };
-use near_sdk::PublicKey;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
-use std::str::FromStr;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
@@ -59,7 +56,9 @@ async fn test_keygen() -> anyhow::Result<()> {
             .await?,
     );
 
-    let pk = PublicKey::from_str("ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae").unwrap();
+    let pk: dtos_contract::PublicKey = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae"
+        .parse()
+        .unwrap();
     let vote_pk_args = json!( {
         "key_event_id": {
             "epoch_id": 5,
