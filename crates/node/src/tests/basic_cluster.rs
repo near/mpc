@@ -29,20 +29,29 @@ async fn test_basic_cluster() {
         DEFAULT_BLOCK_TIME,
     );
 
-    let signature_domain = DomainConfig {
+    let signature_domain_ecdsa = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
     };
 
-    let ckd_domain = DomainConfig {
+    let signature_domain_eddsa = DomainConfig {
         id: DomainId(1),
+        scheme: SignatureScheme::Ed25519,
+    };
+
+    let ckd_domain = DomainConfig {
+        id: DomainId(2),
         scheme: SignatureScheme::Bls12381,
     };
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![signature_domain.clone(), ckd_domain.clone()]);
+        contract.add_domains(vec![
+            signature_domain_ecdsa.clone(),
+            signature_domain_eddsa.clone(),
+            ckd_domain.clone(),
+        ]);
     }
 
     let _runs = setup
@@ -54,7 +63,16 @@ async fn test_basic_cluster() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
-        &signature_domain,
+        &signature_domain_ecdsa,
+        std::time::Duration::from_secs(60)
+    )
+    .await
+    .is_some());
+
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &signature_domain_eddsa,
         std::time::Duration::from_secs(60)
     )
     .await
