@@ -1,8 +1,8 @@
-use crate::sandbox::common::SharedSecretKey;
 use crate::sandbox::common::{
     create_response_ckd, derive_confidential_key_and_validate, example_bls12381g1_point,
-    init_env_bls12381,
 };
+use crate::sandbox::common::{init_env, SharedSecretKey};
+use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     errors,
@@ -21,11 +21,9 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
-    let sk = match &sks[0] {
-        SharedSecretKey::Secp256k1(_) => unreachable!(),
-        SharedSecretKey::Ed25519(_) => unreachable!(),
-        SharedSecretKey::Bls12381(sk) => sk,
+    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
+    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
+        unreachable!();
     };
 
     let account_ids: [AccountId; 4] = [
@@ -111,7 +109,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -190,7 +188,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env_bls12381(1).await;
+    let (worker, contract, _, _) = init_env(1, SignatureScheme::Bls12381).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -247,7 +245,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
     let alice = worker.dev_create_account().await?;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();

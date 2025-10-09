@@ -332,40 +332,6 @@ pub fn new_secp256k1() -> (
     (public_key, secret_key)
 }
 
-pub async fn init_env_secp256k1(
-    num_domains: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<SharedSecretKey>,
-) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Secp256k1))
-        .collect();
-
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
-
-    (worker, contract, accounts, secret_keys)
-}
-
-pub async fn init_env_bls12381(
-    num_domains: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<SharedSecretKey>,
-) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Bls12381))
-        .collect();
-
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
-
-    (worker, contract, accounts, secret_keys)
-}
-
 pub fn make_key_for_domain(
     domain_scheme: SignatureScheme,
 ) -> (dtos_contract::PublicKey, SharedSecretKey) {
@@ -422,8 +388,9 @@ pub fn new_bls12381() -> (dtos_contract::PublicKey, ckd::KeygenOutput) {
     (pk, keygen_output)
 }
 
-pub async fn init_env_ed25519(
+pub async fn init_env(
     num_domains: usize,
+    scheme: SignatureScheme,
 ) -> (
     Worker<Sandbox>,
     Contract,
@@ -431,7 +398,7 @@ pub async fn init_env_ed25519(
     Vec<SharedSecretKey>,
 ) {
     let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Ed25519))
+        .map(|_| make_key_for_domain(scheme))
         .collect();
 
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
