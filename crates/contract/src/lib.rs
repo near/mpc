@@ -1179,6 +1179,9 @@ impl MpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
+        let initial_participants = parameters.participants();
+        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+
         Ok(MpcContract {
             config: Config::from(init_config),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -1187,7 +1190,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: Default::default(),
-            tee_state: Default::default(),
+            tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
         })
@@ -1590,6 +1593,31 @@ mod tests {
         (context, contract, secret_key)
     }
 
+    // Temporarily sets the testing environment so that calls appear
+    /// to come from an attested MPC node registered in the contract's `tee_state`.
+    ///
+    /// Returns the `AccountId` of the node used.
+    pub fn with_attested_context(contract: &MpcContract) -> near_sdk::AccountId {
+        // pick the first attested node from the contract state
+        let attested_node_id = contract
+            .tee_state
+            .participants_attestations
+            .keys()
+            .next()
+            .expect("No attested participants in tee_state")
+            .clone();
+
+        // build a new simulated environment with this node as caller
+        let mut ctx_builder = VMContextBuilder::new();
+        ctx_builder
+            .predecessor_account_id(attested_node_id.account_id.clone())
+            .signer_account_id(attested_node_id.account_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(1));
+
+        testing_env!(ctx_builder.build());
+        attested_node_id.account_id.clone()
+    }
+
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
         let (context, mut contract, secret_key) = basic_setup();
         let mut payload_hash = [0u8; 32];
@@ -1648,6 +1676,10 @@ mod tests {
             ))
         };
 
+        // set calling context as a MPC node
+        let node = with_attested_context(&contract);
+        println!("Responding as attested node: {}", node);
+        
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
                 assert!(success);
@@ -1730,6 +1762,11 @@ mod tests {
                 affine_point: AffinePoint::GENERATOR,
             },
         };
+
+     
+        // set calling context as a MPC node
+        let node = with_attested_context(&contract);
+        println!("Responding as attested node: {}", node);
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {

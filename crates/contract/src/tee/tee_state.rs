@@ -338,13 +338,62 @@ impl TeeState {
     pub fn is_caller_an_attested_node(&self) -> bool {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
+        let predecessor = env::predecessor_account_id();
 
-        self.participants_attestations
+        println!("println {}", predecessor);
+        env::log_str(&format!("predecessor: {:?}", predecessor));
+
+        // Print to both NEAR logs and stdout for visibility in tests / VS Code
+        env::log_str(&format!(
+            "signer_id: {:?}, signer_pk: {:?}",
+            signer_id, signer_pk
+        ));
+        println!("signer_id: {:?}, signer_pk: {:?}", signer_id, signer_pk);
+
+        env::log_str(&format!(
+            "Number of participant attestations: {}",
+            self.participants_attestations.len()
+        ));
+
+        let keys: Vec<String> = self
+            .participants_attestations
             .keys()
+<<<<<<< HEAD
             .any(|node_id| match &node_id.account_public_key {
                 Some(pk) => pk == &signer_pk,
                 None => node_id.account_id == signer_id, // TODO  legacy mock node (temporary) - remove after transition
+=======
+            .map(|node_id| {
+                format!(
+                    "account_id: {}, tls_pk: {:?}, account_pk: {:?}",
+                    node_id.account_id, node_id.tls_public_key, node_id.account_public_key
+                )
+>>>>>>> bbe8c44 (update tests)
             })
+            .collect();
+
+        env::log_str(&format!(
+            "participants_attestations keys:\n{}",
+            keys.join("\n")
+        ));
+
+        let result = self.participants_attestations.keys().any(|node_id| {
+            match &node_id.account_public_key {
+                Some(pk) => pk == &signer_pk,
+                None => {
+                    println!(
+                        "legacy check (mock node): comparing account_id {:?} == {:?}",
+                        node_id.account_id, signer_id
+                    );
+                    node_id.account_id == signer_id // TODO (#823): legacy mock node (temporary) — remove after transition
+                }
+            }
+        });
+
+        println!("println! is_caller_an_attested_node result = {}", result);
+        env::log_str(&format!("is_caller_an_attested_node result = {}", result));
+
+        result
     }
 
     /// Panics if the caller is not an attested MPC node
