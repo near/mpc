@@ -83,7 +83,7 @@ pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11179);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11195);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -184,33 +184,82 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         }
     };
 
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
     if do_build {
+        println!("🔧 Starting build for package: {package_name}");
+        println!("📂 Project directory: {}", project_dir.display());
+
+        // --- Step 1: Build the WASM ---
+        let cargo_args = [
+            "build",
+            &format!("--package={package_name}"),
+            "--profile=release-contract",
+            "--target=wasm32-unknown-unknown",
+        ];
+        println!("🚀 Running: cargo {}", cargo_args.join(" "));
+
         let status = Command::new("cargo")
-            .args([
-                "build",
-                &format!("--package={package_name}"),
-                "--profile=release-contract",
-                "--target=wasm32-unknown-unknown",
-            ])
+            .args(&cargo_args)
             .current_dir(&project_dir)
             .status()
-            .expect("Failed to run cargo build");
+            .expect("❌ Failed to run cargo build");
 
-        assert!(status.success(), "cargo build failed");
+        assert!(status.success(), "❌ cargo build failed");
+
+        println!("✅ cargo build succeeded");
+
+        // --- Step 2: Locate and optimize the WASM ---
+        println!("🔎 Expected wasm output path: {}", wasm_path.display());
+        if wasm_path.exists() {
+            let size = fs::metadata(&wasm_path).map(|m| m.len()).unwrap_or(0);
+            println!("✅ Found wasm file ({} bytes)", size);
+        } else {
+            println!("⚠️ wasm file not found at expected path! Check cargo output directory.");
+        }
+
+        // Check if wasm-opt exists in PATH
+        let check = Command::new("bash")
+            .arg("-c")
+            .arg("command -v wasm-opt")
+            .output()
+            .expect("Failed to check for wasm-opt in PATH");
+
+        if check.status.success() {
+            let path_str = String::from_utf8_lossy(&check.stdout).trim().to_string();
+            println!("🧠 Using wasm-opt from: {}", path_str);
+        } else {
+            println!("❌ wasm-opt not found in PATH");
+        }
+
+        let wasm_opt_args = [
+            "--enable-bulk-memory",
+            "-Oz",
+            "-o",
+            wasm_path.to_str().unwrap(),
+            wasm_path.to_str().unwrap(),
+        ];
+        println!("🏃 Running: wasm-opt {}", wasm_opt_args.join(" "));
 
         let status = Command::new("wasm-opt")
-            .args([
-                "--enable-bulk-memory",
-                "-Oz",
-                "-o",
-                wasm_path.to_str().unwrap(),
-                wasm_path.to_str().unwrap(),
-            ])
+            .args(&wasm_opt_args)
             .current_dir(&project_dir)
             .status()
-            .expect("Failed to run wasm-opt");
+            .expect("❌ Failed to run wasm-opt (binary not found?)");
 
-        assert!(status.success(), "wasm-opt failed");
+        assert!(status.success(), "❌ wasm-opt failed");
+        println!(
+            "✅ wasm-opt optimization succeeded for {}",
+            wasm_path.display()
+        );
+
+        // --- Step 3: Update lockfile ---
+        lockfile.set_len(0).unwrap();
+        lockfile
+            .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
+            .expect("Failed to write timestamp to lockfile");
 
         lockfile.set_len(0).unwrap();
         lockfile
@@ -556,10 +605,11 @@ pub async fn submit_signature_response(
     respond_req: &SignatureRequest,
     respond_resp: &SignatureResponse,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond")
+    let respond = attested_account
+        .call(contract.id(),"respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -576,13 +626,14 @@ pub async fn sign_and_validate(
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = submit_sign_request(request, contract).await?;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        submit_signature_response(respond_req, respond_resp, contract).await?;
+        submit_signature_response(respond_req, respond_resp, contract,attested_account).await?;
     }
 
     let execution = status.await?;
@@ -647,12 +698,11 @@ pub async fn derive_confidential_key_and_validate(
     request: &CKDRequestArgs,
     respond: Option<(&CKDRequest, &CKDResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = account
         .call(contract.id(), "request_app_private_key")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
+        .args_json(serde_json::json!({ "request": request }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
         .transact_async()
@@ -662,9 +712,8 @@ pub async fn derive_confidential_key_and_validate(
 
     if let Some((respond_req, respond_resp)) = respond {
         assert!(account.id() == &respond_req.app_id);
-        // Call `respond_ckd` as if we are the MPC network itself.
-        let respond = contract
-            .call("respond_ckd")
+        let respond = attested_account
+            .call(contract.id(), "respond_ckd")
             .args_json(serde_json::json!({
                 "request": respond_req,
                 "response": respond_resp
@@ -678,8 +727,6 @@ pub async fn derive_confidential_key_and_validate(
     let execution = status.await?;
     dbg!(&execution);
     let execution = execution.into_result()?;
-
-    // Finally wait the result:
     let returned_resp: CKDResponse = execution.json()?;
     if let Some((_, respond_resp)) = respond {
         assert_eq!(
@@ -687,7 +734,6 @@ pub async fn derive_confidential_key_and_validate(
             "Returned ckd request does not match"
         );
     }
-
     Ok(())
 }
 

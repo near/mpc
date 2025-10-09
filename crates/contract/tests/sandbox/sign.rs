@@ -22,7 +22,9 @@ const DOMAIN_ID_ZERO: DomainId = DomainId(0);
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
+
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -46,7 +48,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+            attested_account,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -65,11 +73,23 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+        attested_account,
+    )
+    .await?;
+    sign_and_validate(
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+        attested_account,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&request, None, &contract, attested_account)
         .await
         .expect_err("should have failed with timeout");
     assert!(err
@@ -81,7 +101,8 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -110,9 +131,9 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
     dbg!(&status);
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond")
+    // Call `respond` as an attested node.
+    let respond = attested_account
+        .call(contract.id(),"respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -221,7 +242,8 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
 
@@ -249,8 +271,8 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.
-    let respond = contract
-        .call("respond")
+    let respond = attested_account
+        .call(contract.id(), "respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -278,7 +300,8 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let attested_account = &mpc_nodes[0];
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -313,8 +336,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         // Call `respond` as if we are the MPC network itself.
-        let respond = contract
-            .call("respond")
+        let respond = attested_account
+            .call(contract.id(), "respond")
             .args_json(serde_json::json!({
                 "request": respond_req,
                 "response": respond_resp
@@ -393,7 +416,8 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_ed25519(1).await;
+    let (_, contract, mpc_nodes, sks) = init_env_ed25519(1).await;
+    let attested_account = &mpc_nodes[0];
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -418,7 +442,13 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+            attested_account,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -437,11 +467,23 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         domain_id: Some(DomainId(0)),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+        attested_account,
+    )
+    .await?;
+    sign_and_validate(
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+        attested_account,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&request, None, &contract, attested_account)
         .await
         .expect_err("should have failed with timeout");
     assert!(err
