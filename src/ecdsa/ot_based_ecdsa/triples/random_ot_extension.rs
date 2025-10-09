@@ -264,16 +264,15 @@ mod test {
     }
 
     #[test]
-    fn test_random_ot() -> Result<(), ProtocolError> {
-        let ((k0, k1), (delta, k)) = run_batch_random_ot()?;
+    fn test_random_ot() {
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 16;
         let (sender_out, receiver_out) =
-            run_random_ot((delta, k), (k0, k1), b"test sid".to_vec(), batch_size)?;
+            run_random_ot((delta, k), (k0, k1), b"test sid".to_vec(), batch_size).unwrap();
         assert_eq!(sender_out.len(), batch_size);
         assert_eq!(receiver_out.len(), batch_size);
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
             assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
         }
-        Ok(())
     }
 }

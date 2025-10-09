@@ -233,8 +233,7 @@ where
                     // then we know that the sender is malicious
                     if !is_enough {
                         return Err(ProtocolError::AssertionFailed(format!(
-                            "The original sender in session {sid:?} is malicious!
-                            Could not collect enough echo votes to meet the threshold"
+                            "The original sender in session {sid:?} is malicious! Could not collect enough echo votes to meet the threshold"
                         )));
                     }
                 }
@@ -327,7 +326,6 @@ mod test {
     use crate::protocol::internal::{make_protocol, Comms};
     use crate::protocol::{run_protocol, Protocol, ProtocolError};
     use crate::test::generate_participants;
-    use std::error::Error;
 
     /// This function is similar to `do_broadcast` except it is tailored to
     /// consume the inputs instead of borrowing and become suitable for `make_protocol`
@@ -370,19 +368,18 @@ mod test {
     fn broadcast_honest(
         participants: &[Participant],
         votes: &[bool],
-    ) -> Result<Vec<(Participant, Vec<bool>)>, ProtocolError> {
+    ) -> Vec<(Participant, Vec<bool>)> {
         assert_eq!(participants.len(), votes.len());
 
         let mut protocols: Vec<(_, Box<dyn Protocol<Output = Vec<bool>>>)> =
             Vec::with_capacity(participants.len());
 
         for (p, b) in participants.iter().zip(votes.iter()) {
-            let protocol = do_broadcast_honest(participants, *p, *b)?;
+            let protocol = do_broadcast_honest(participants, *p, *b).unwrap();
             protocols.push((*p, Box::new(protocol)));
         }
 
-        let result = run_protocol(protocols)?;
-        Ok(result)
+        run_protocol(protocols).unwrap()
     }
 
     async fn do_broadcast_dishonest_consume_version_1(
@@ -464,6 +461,8 @@ mod test {
         Ok(make_protocol(comms, fut))
     }
 
+    // This is needed because this function must fail in test `test_three_honest_one_dihonest`
+    #[allow(clippy::panic_in_result_fn)]
     fn broadcast_dishonest<F, Fut>(
         honest_participants: &[Participant],
         dishonest_participant: Participant,
@@ -484,7 +483,7 @@ mod test {
 
         // we run the protocol for all honest parties
         for (p, b) in honest_participants.iter().zip(honest_votes.iter()) {
-            let protocol = do_broadcast_honest(&participants, *p, *b)?;
+            let protocol = do_broadcast_honest(&participants, *p, *b).unwrap();
             protocols.push((*p, Box::new(protocol)));
         }
 
@@ -493,35 +492,33 @@ mod test {
             &participants,
             dishonest_participant,
             do_broadcast_dishonest_consume,
-        )?;
+        )
+        .unwrap();
 
         protocols.push((dishonest_participant, Box::new(protocol)));
 
-        let result = run_protocol(protocols)?;
-        Ok(result)
+        run_protocol(protocols)
     }
 
     #[test]
-    fn test_five_honest_participants() -> Result<(), Box<dyn Error>> {
+    fn test_five_honest_participants() {
         let participants = generate_participants(5);
 
         let mut votes = vec![true, true, true, true, true];
 
         // change everytime a party voting false
         for i in 0..votes.len() {
-            let result = broadcast_honest(&participants, &votes)?;
+            let result = broadcast_honest(&participants, &votes);
             for (_, vec_b) in &result {
                 let false_count = vec_b.iter().filter(|&&b| !b).count();
                 assert_eq!(false_count, i);
             }
             votes[i] = false;
         }
-
-        Ok(())
     }
 
     #[test]
-    fn test_three_honest_one_dihonest() -> Result<(), Box<dyn Error>> {
+    fn test_three_honest_one_dihonest() {
         // threshold is assumed to be n >= 3*threshold + 1
         let honest_participants = generate_participants(3);
 
@@ -536,20 +533,19 @@ mod test {
             &honest_votes,
             do_broadcast_dishonest_consume_version_1,
         );
-        assert!(result.is_err());
+        assert_eq!(result, Err(ProtocolError::AssertionFailed("The original sender in session 3 is malicious! Could not collect enough echo votes to meet the threshold".to_string())));
         // version 2
         let result = broadcast_dishonest(
             &honest_participants,
             dishonest_participant,
             &honest_votes,
             do_broadcast_dishonest_consume_version_2,
-        )?;
+        )
+        .unwrap();
 
         for (_, vec_b) in &result {
             let false_count = vec_b.iter().filter(|&&b| !b).count();
             assert_eq!(false_count, 0);
         }
-
-        Ok(())
     }
 }

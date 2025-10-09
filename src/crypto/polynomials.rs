@@ -1210,8 +1210,7 @@ mod test {
     }
 
     #[test]
-    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_none(
-    ) -> Result<(), ProtocolError> {
+    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_none() {
         for participants in 2..20 {
             for degree in 1..participants {
                 let participants = generate_participants(participants);
@@ -1244,10 +1243,11 @@ mod test {
                     &ids[..=degree],
                     &com_shares[..=degree],
                     None,
-                )?;
+                )
+                .unwrap();
 
                 // use all to evaluate the share
-                let eval = Polynomial::eval_interpolation(&ids, &shares, None)?;
+                let eval = Polynomial::eval_interpolation(&ids, &shares, None).unwrap();
 
                 println!("{participants:?} {degree:?}");
                 assert_eq!(
@@ -1256,12 +1256,9 @@ mod test {
                 );
             }
         }
-
-        Ok(())
     }
     #[test]
-    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_some(
-    ) -> Result<(), ProtocolError> {
+    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_some() {
         for participants in 2..20 {
             for degree in 1..participants {
                 let participants = generate_participants(participants);
@@ -1296,10 +1293,11 @@ mod test {
                     &ids[..=degree],
                     &com_shares[..=degree],
                     point.as_ref(),
-                )?;
+                )
+                .unwrap();
 
                 // use all to evaluate the share
-                let eval = Polynomial::eval_interpolation(&ids, &shares, point.as_ref())?;
+                let eval = Polynomial::eval_interpolation(&ids, &shares, point.as_ref()).unwrap();
 
                 assert_eq!(
                     exponent_eval.value(),
@@ -1307,7 +1305,5 @@ mod test {
                 );
             }
         }
-
-        Ok(())
     }
 }

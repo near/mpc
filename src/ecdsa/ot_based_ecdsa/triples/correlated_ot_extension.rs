@@ -41,7 +41,11 @@ pub fn correlated_ot_receiver(
     k1: &SquareBitMatrix,
     x: &BitMatrix,
 ) -> Result<BitMatrix, ProtocolError> {
-    assert_eq!(x.height(), params.batch_size);
+    if x.height() != params.batch_size {
+        return Err(ProtocolError::AssertionFailed(
+            "x.height() not equal to params.batch_size".to_string(),
+        ));
+    }
     // Spec 1
     let t0 = k0.expand_transpose(params.sid, params.batch_size);
     let t1 = k1.expand_transpose(params.sid, params.batch_size);
@@ -98,8 +102,8 @@ mod test {
     }
 
     #[test]
-    fn test_correlated_ot() -> Result<(), ProtocolError> {
-        let ((k0, k1), (delta, k)) = run_batch_random_ot()?;
+    fn test_correlated_ot() {
+        let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 256;
         let x = BitMatrix::random(&mut OsRng, batch_size);
         let (q, t) = run_correlated_ot(
@@ -107,8 +111,8 @@ mod test {
             (k0, k1, x.clone()),
             b"test sid".to_vec(),
             batch_size,
-        )?;
+        )
+        .unwrap();
         assert_eq!(t ^ (x & delta), q);
-        Ok(())
     }
 }

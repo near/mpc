@@ -185,7 +185,6 @@ mod test {
     use crate::test::{one_coordinator_output, GenProtocol};
     use crate::{confidential_key_derivation::ciphersuite::hash_to_curve, protocol::run_protocol};
     use rand::Rng;
-    use std::error::Error;
 
     #[test]
     fn test_hash2curve() {
@@ -201,7 +200,7 @@ mod test {
     }
 
     #[test]
-    fn test_ckd() -> Result<(), Box<dyn Error>> {
+    fn test_ckd() {
         let mut rng = rand::rngs::OsRng;
 
         // Create the app necessary items
@@ -234,15 +233,16 @@ mod test {
                 app_id.clone(),
                 app_pk,
                 rng,
-            )?;
+            )
+            .unwrap();
 
             protocols.push((*p, Box::new(protocol)));
         }
 
-        let result = run_protocol(protocols)?;
+        let result = run_protocol(protocols).unwrap();
 
         // test one single some for the coordinator
-        let ckd = one_coordinator_output(result, coordinator)?;
+        let ckd = one_coordinator_output(result, coordinator).unwrap();
 
         // compute msk . H(app_id)
         let confidential_key = ckd.unmask(app_sk);
@@ -251,7 +251,8 @@ mod test {
         let participants = ParticipantList::new(&participants).unwrap();
         for (i, private_share) in private_shares.iter().enumerate() {
             let lambda_i = participants
-                .lagrange::<BLS12381SHA256>(participants.get_participant(i).unwrap())?;
+                .lagrange::<BLS12381SHA256>(participants.get_participant(i).unwrap())
+                .unwrap();
             msk += lambda_i * private_share.to_scalar();
         }
 
@@ -261,6 +262,5 @@ mod test {
             confidential_key, expected_confidential_key,
             "Keys should be equal"
         );
-        Ok(())
     }
 }

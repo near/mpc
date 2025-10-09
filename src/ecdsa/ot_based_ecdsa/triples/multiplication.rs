@@ -219,7 +219,7 @@ mod test {
     use crate::{
         crypto::hash::hash,
         participants::ParticipantList,
-        protocol::{errors::ProtocolError, internal::make_protocol, run_protocol},
+        protocol::{internal::make_protocol, run_protocol},
         test::{generate_participants, GenProtocol},
     };
 
@@ -228,7 +228,7 @@ mod test {
     use crate::protocol::internal::Comms;
 
     #[test]
-    fn test_multiplication() -> Result<(), ProtocolError> {
+    fn test_multiplication() {
         let participants = generate_participants(3);
 
         let prep: Vec<_> = participants
@@ -244,7 +244,7 @@ mod test {
 
         let mut protocols: GenProtocol<Scalar> = Vec::with_capacity(prep.len());
 
-        let sid = hash(b"sid")?;
+        let sid = hash(b"sid").unwrap();
 
         for (p, a_i, b_i) in prep {
             let ctx = Comms::new();
@@ -263,18 +263,16 @@ mod test {
             protocols.push((*p, Box::new(prot)));
         }
 
-        let result = run_protocol(protocols)?;
+        let result = run_protocol(protocols).unwrap();
         let c = result
             .into_iter()
             .fold(Scalar::ZERO, |acc, (_, c_i)| acc + c_i);
 
         assert_eq!(a * b, c);
-
-        Ok(())
     }
 
     #[test]
-    fn test_multiplication_many() -> Result<(), ProtocolError> {
+    fn test_multiplication_many() {
         const N: usize = 4;
         let participants = generate_participants(3);
 
@@ -312,7 +310,8 @@ mod test {
 
         let sids = (0..N)
             .map(|i| hash(&format!("sid{i}")))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         for (p, a_iv, b_iv) in prep {
             let ctx = Comms::new();
 
@@ -331,7 +330,7 @@ mod test {
             protocols.push((*p, Box::new(prot)));
         }
 
-        let result = run_protocol(protocols)?;
+        let result = run_protocol(protocols).unwrap();
         let c_v: Vec<_> = result
             .into_iter()
             .fold(vec![Scalar::ZERO; N], |acc, (_, c_iv)| {
@@ -344,6 +343,5 @@ mod test {
         for i in 0..N {
             assert_eq!(a_v[i] * b_v[i], c_v[i]);
         }
-        Ok(())
     }
 }

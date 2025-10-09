@@ -167,7 +167,7 @@ mod test {
     }
 
     #[test]
-    fn test_mta() -> Result<(), ProtocolError> {
+    fn test_mta() {
         let batch_size = BITS + SECURITY_PARAMETER;
 
         let v: Vec<_> = (0..batch_size)
@@ -188,10 +188,8 @@ mod test {
 
         let a = Scalar::generate_biased(&mut OsRng);
         let b = Scalar::generate_biased(&mut OsRng);
-        let (alpha, beta) = run_mta((v, a), (tv, b))?;
+        let (alpha, beta) = run_mta((v, a), (tv, b)).unwrap();
 
         assert_eq!(a * b, alpha + beta);
-
-        Ok(())
     }
 }
