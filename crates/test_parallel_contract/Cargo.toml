@@ -15,7 +15,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 blstrs = { workspace = true }
 elliptic-curve = { workspace = true }
-dtos-contract = { workspace = true }
+contract-interface = { workspace = true }
 
 
 # k256 won't compile without settings the custom rand flag for `getrandom`

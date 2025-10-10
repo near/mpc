@@ -5,6 +5,7 @@ use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+use contract_interface::types::Bls12381G1PublicKey;
 // TODO: all these types should come from mpc_contract https://github.com/near/mpc/issues/1057
 
 #[derive(Serialize)]
@@ -27,7 +28,7 @@ pub struct SignArgs {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CKDRequestArgs {
-    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
+    pub app_public_key: Bls12381G1PublicKey,
     pub domain_id: u64,
 }
 
@@ -36,10 +37,10 @@ struct CKDArgs {
     pub request: CKDRequestArgs,
 }
 
-pub fn generate_app_public_key(seed: u64) -> dtos_contract::Bls12381G1PublicKey {
+pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
     let x = blstrs::Scalar::from(seed);
     let big_x = blstrs::G1Projective::generator() * x;
-    dtos_contract::Bls12381G1PublicKey::from(big_x.to_compressed())
+    Bls12381G1PublicKey::from(big_x.to_compressed())
 }
 
 #[near_bindgen]
