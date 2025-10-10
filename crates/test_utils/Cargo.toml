@@ -8,7 +8,7 @@ attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
-dtos-contract = { workspace = true }
+contract-interface = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 near-sdk = { workspace = true }

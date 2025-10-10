@@ -1,4 +1,4 @@
-use dtos_contract::{Attestation, MockAttestation};
+use contract_interface::types::{Attestation, MockAttestation};
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::types::PublicKeyExtended,
@@ -18,7 +18,7 @@ use assert_matches::assert_matches;
 use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, NearToken, VMContext};
 use std::time::Duration;
 
-use crate::sandbox::common::IntoDtoType;
+use crate::sandbox::common::IntoInterfaceType;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -74,8 +74,10 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
-        self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone().into_dto_type())
+        self.contract.submit_participant_info(
+            attestation,
+            node_id.tls_public_key.clone().into_interface_type(),
+        )
     }
 
     /// Switches testing context to a given participant at a specific timestamp

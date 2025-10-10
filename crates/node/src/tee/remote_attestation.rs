@@ -5,7 +5,7 @@ use crate::{
         tx_sender::{TransactionSender, TransactionStatus},
         types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
     },
-    trait_extensions::convert_to_contract_dto::IntoDtoType,
+    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
 use attestation::{attestation::Attestation, report_data::ReportData};
@@ -35,8 +35,8 @@ pub async fn submit_remote_attestation(
     tls_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = SubmitParticipantInfoArgs {
-        proposed_participant_attestation: attestation.into_dto_type(),
-        tls_public_key: tls_public_key.into_dto_type(),
+        proposed_participant_attestation: attestation.into_contract_interface_type(),
+        tls_public_key: tls_public_key.into_contract_interface_type(),
     };
 
     let set_attestation = move || {
@@ -91,7 +91,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tls_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = *tls_public_key.into_dto_type().as_bytes();
+    let tls_sdk_public_key = *tls_public_key.into_contract_interface_type().as_bytes();
     let report_data = ReportData::new(tls_sdk_public_key);
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
