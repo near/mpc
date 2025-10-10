@@ -69,7 +69,7 @@ Follow the three steps below to ensure you have a working TDX machine with Dstac
 
 #### 1. TDX Bare-Metal Server Setup
 
-To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/main/README.md).  
+To create a bare-metal TDX server, follow the [canonical/tdx guide](https://github.com/canonical/tdx/blob/9023cb2d952f5fe9d72004092b93a155482ba18a/README.md).  
 
 Make sure to complete:
 
@@ -81,28 +81,87 @@ This ensures that your TDX setup is correctly configured.
 ---
 #### 2. Dstack Setup and Configuration
 
-Follow the [Dstack repository](https://github.com/Dstack-TEE/dstack).  
-Run the steps in [Getting Started](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#-getting-started):
+This section will guide you through installing and configuring dstack-vmm, which is the only dstack component needed for running MPC nodes in TDX environments.
+The instructions are based on the [dstack deployment guide](https://github.com/Dstack-TEE/dstack/blob/eab86e8a3fd934656946a39bf07849bd75cf20fb/docs/deployment.md).
 
-* Prerequisites  
-* Install Dependencies  
-* Build and Run  
+**Prerequisites:**
+- Follow the [TDX setup guide](https://github.com/canonical/tdx) to setup the TDX host (completed in step 1 above)
+- Install `cargo` and `rustc`. This can be done with the following command.
 
-With the following adjustments (see details below):  
-* We use a specific Dstack version for reproducibility.  
-* KMS and Gateway are not used in this setup.  
-* Some port adjustments may be required.
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Installation Steps:**
+
+1. **Clone the dstack repository:**
+   ```bash
+   git clone https://github.com/Dstack-TEE/dstack
+   ```
+
+2. **Compile dstack-vmm:**
+   ```bash
+   cd dstack
+   git checkout v0.5.4
+
+   cargo build --release -p dstack-vmm -p supervisor
+   mkdir -p vmm-data
+   cp target/release/dstack-vmm vmm-data/
+   cp target/release/supervisor vmm-data/
+   cd vmm-data/
+   ```
+
+3. **Create the VMM configuration file:**
+   ```bash
+   cat <<EOF > vmm.toml
+   address = "unix:./vmm.sock"
+   reuse = true
+   image_path = "./images"
+   run_path = "./run/vm"
+
+   [cvm]
+   kms_urls = ["https://kms.test2.dstack.phala.network:9201"]
+   gateway_urls = []
+   cid_start = 30000
+   cid_pool_size = 1000
+   max_disk_size = 1000
+
+   [cvm.port_mapping]
+   enabled = true
+   address = "127.0.0.1"
+   range = [
+       { protocol = "tcp", from = 1, to = 30000 },
+       { protocol = "udp", from = 1, to = 30000 },
+   ]
+
+   [host_api]
+   port = 9300
+   EOF
+   ```
+
+4. **Download Guest OS images:**
+   ```bash
+   DSTACK_VERSION=0.5.4
+   wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
+   mkdir -p images/
+   tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
+   rm -f dstack-${DSTACK_VERSION}.tar.gz
+   ```
+
+**Configuration Notes:**
+- KMS and Gateway are not used in this MPC setup
+- The configuration includes port **24567** which is required for MPC nodes
+- The `max_disk_size = 1000` setting is specifically required for MPC operations
 
 ##### VMM service persistence
 
-Note that in [3. Run Components](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#3-run-components) from dstack's guide,
-the VMM is started with:
+To run dstack-vmm, you can start it manually with:
 
 ```bash
 ./dstack-vmm -c vmm.toml
 ```
 
-If you want to run it persistently, we recomend using the following user systemd service:
+However, for persistent operation, we recommend using the following user systemd service:
 
 ```text
 [Unit]
@@ -138,30 +197,31 @@ systemctl --user status dstack-vmm
 > **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes.  
 > The OS image is measured, and those measurements are hardcoded in the contract.
 
-Clone the [meta-dstack repository](https://github.com/Dstack-TEE/meta-dstack) and check out **release `v0.5.4`** (commit `f7c795b76faa693f218e1c255007e3a68c541d79`).  
-This automatically pulls in the correct version of `dstack` as a submodule (commit `3e4e462cac2a57c204698d2443d252d13e75cd29`).  
+The Guest OS image was already downloaded in step 4 of the installation process above using the specific version 0.5.4. This ensures compatibility and reproducibility across all MPC nodes.
+
+If you need to verify or re-download the image, you can use:
 
 ```bash
-#!/bin/bash
-set -e
-
-git clone https://github.com/Dstack-TEE/meta-dstack.git
-cd meta-dstack/
-git checkout f7c795b76faa693f218e1c255007e3a68c541d79
-git submodule update --init --recursive
+DSTACK_VERSION=0.5.4
+wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
+mkdir -p images/
+tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
+rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-At this point, you have two options:
+For alternative approaches or building from source, you can also:
 
-* **Download a pre-built OS image (recommended, faster):**
-```bash
-./build.sh dl 0.5.4
-```
+1. **Clone meta-dstack and checkout release `v0.5.4`:**
+   ```bash
+   git clone https://github.com/Dstack-TEE/meta-dstack.git
+   cd meta-dstack/
+   git checkout f7c795b76faa693f218e1c255007e3a68c541d79
+   git submodule update --init --recursive
+   ```
 
-* **Build a reproducible OS image yourself (slower, ~1–2 hours):**
-```bash
-cd repro-build && ./repro-build.sh -n
-```
+2. **Then either download pre-built image or build yourself:**
+   * **Download pre-built (recommended, faster):** `./build.sh dl 0.5.4`
+   * **Build reproducible image (slower, ~1–2 hours):** `cd repro-build && ./repro-build.sh -n`
 
 ---
 
@@ -302,16 +362,26 @@ RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef8343394
 
 ##### MPC-Specific Configurations
 
-You do not need to enable or run **KMS** or **TProxy (gateway)**.  
+The `vmm.toml` configuration provided in the installation steps above already includes a few necessary MPC-specific settings:
 
-Update `vmm.toml` as follows:
+* Port **24567** is included in the `cvm.port_mapping.range` (1-30000)
+* The `max_disk_size = 1000` setting is configured in the `[cvm]` section
+* KMS and TProxy (gateway) are not used in this MPC setup
 
-* Set `cvm.port_mapping.range` to include port **24567**  
-* In the `[cvm]` section, add:  
+If you need to modify the configuration later, ensure these settings remain in your `vmm.toml`:
 
-  ```toml
-  max_disk_size = 1000
-  ```
+```toml
+[cvm]
+max_disk_size = 1000
+
+[cvm.port_mapping]
+enabled = true
+address = "127.0.0.1"
+range = [
+    { protocol = "tcp", from = 1, to = 30000 },
+    { protocol = "udp", from = 1, to = 30000 },
+]
+```
 
 
 #### 3. Local Gramine-Sealing-Key-Provider Setup
