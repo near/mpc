@@ -233,7 +233,17 @@ impl OperatingAccessKey {
             ),
             wait_until: TxExecutionStatus::Final,
         };
-        self.client.submit(request).await.unwrap();
+        self.client
+            .with_retry(10, |rpc| {
+                let request = request.clone();
+                async move {
+                    rpc.call(request).await?;
+                    anyhow::Ok(())
+                }
+                .boxed()
+            })
+            .await
+            .unwrap();
     }
 
     /// Submits a transaction to the chain to mutably call a function on a contract.

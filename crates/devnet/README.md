@@ -152,7 +152,7 @@ can be obtained by:
 mpc-devnet mpc $MPC_NETWORK_NAME describe
 ```
 
-Once the `public_data` endpoint is accessible in <http://node_address:80/public_data>, run
+Once the `public_data` endpoint is accessible in <http://node_address:8080/public_data>, run
 
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME add-keys
