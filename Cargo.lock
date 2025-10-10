@@ -9827,12 +9827,13 @@ name = "test-parallel-contract"
 version = "0.2.0"
 dependencies = [
  "borsh",
+ "dtos-contract",
  "getrandom 0.2.16",
  "hex",
- "k256",
  "near-sdk",
  "serde",
  "sha2",
+ "threshold-signatures",
 ]
 
 [[package]]

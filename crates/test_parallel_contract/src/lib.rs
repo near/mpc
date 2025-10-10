@@ -1,17 +1,9 @@
-use std::collections::BTreeMap;
-
-use k256::ecdsa::VerifyingKey;
-use k256::elliptic_curve::ProjectivePoint;
-use k256::AffinePoint;
-use k256::PublicKey;
-use k256::Scalar;
-use k256::Secp256k1;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
-use near_sdk::{
-    env, near_bindgen, serde_json, AccountId, CurveType, Gas, NearToken, Promise, PromiseResult,
-};
+use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use threshold_signatures::confidential_key_derivation::{self as ckd, ciphersuite::Group as _};
 
 // TODO: all these types should come from mpc_contract https://github.com/near/mpc/issues/1057
 
@@ -35,7 +27,7 @@ pub struct SignArgs {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CKDRequestArgs {
-    pub app_public_key: near_sdk::PublicKey,
+    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
     pub domain_id: u64,
 }
 
@@ -44,12 +36,10 @@ struct CKDArgs {
     pub request: CKDRequestArgs,
 }
 
-pub fn generate_app_public_key(scalar: u128) -> near_sdk::PublicKey {
-    let random_point: AffinePoint =
-        (ProjectivePoint::<Secp256k1>::GENERATOR * Scalar::from(scalar)).to_affine();
-    let random_point = VerifyingKey::from(&PublicKey::from_affine(random_point).unwrap());
-    let bytes = random_point.to_encoded_point(false).to_bytes();
-    near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec()).unwrap()
+pub fn generate_app_public_key(seed: u64) -> dtos_contract::Bls12381G1PublicKey {
+    let x = ckd::Scalar::from(seed);
+    let big_x = ckd::ElementG1::generator() * x;
+    dtos_contract::Bls12381G1PublicKey::from(big_x.to_compressed())
 }
 
 #[near_bindgen]
@@ -106,7 +96,6 @@ impl TestContract {
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
         ) -> Vec<Promise> {
-            // TODO(#1244): Make CKD work here, a new generate_app_public_key function is needed
             let _: Vec<_> = domain_map
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {
@@ -114,7 +103,7 @@ impl TestContract {
                         let args = CKDArgs {
                             request: CKDRequestArgs {
                                 domain_id: *domain_id,
-                                app_public_key: generate_app_public_key(u128::from(seed + i + 2)),
+                                app_public_key: generate_app_public_key(seed + i + 2),
                             },
                         };
 
