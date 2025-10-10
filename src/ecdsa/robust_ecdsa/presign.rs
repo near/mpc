@@ -9,11 +9,11 @@ use crate::{
         CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256,
     },
-    participants::{ParticipantCounter, ParticipantList, ParticipantMap},
+    errors::{InitializationError, ProtocolError},
+    participants::{Participant, ParticipantCounter, ParticipantList, ParticipantMap},
     protocol::{
-        errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms, SharedChannel},
-        Participant, Protocol,
+        Protocol,
     },
     SigningShare,
 };
@@ -161,7 +161,7 @@ async fn do_presign(
     let identifiers: Vec<Scalar> = signingshares_map
         .participants()
         .iter()
-        .map(crate::protocol::Participant::scalar::<C>)
+        .map(Participant::scalar::<C>)
         .collect();
 
     let signingshares = signingshares_map

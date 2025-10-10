@@ -4,9 +4,8 @@ use sha2::{Digest, Sha256};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
-    crypto::proofs::strobe_transcript::TranscriptRng,
-    ecdsa::Scalar,
-    protocol::{errors::ProtocolError, internal::PrivateChannel},
+    crypto::proofs::strobe_transcript::TranscriptRng, ecdsa::Scalar, errors::ProtocolError,
+    protocol::internal::PrivateChannel,
 };
 
 use crate::crypto::constants::SECURITY_PARAMETER;
@@ -201,11 +200,11 @@ pub async fn random_ot_extension_receiver(
 mod test {
     use crate::{
         ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot,
+        errors::ProtocolError,
+        participants::Participant,
         protocol::{
-            errors::ProtocolError,
             internal::{make_protocol, Comms},
             test::run_two_party_protocol,
-            Participant,
         },
     };
 

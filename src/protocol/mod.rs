@@ -5,71 +5,13 @@
 //! to deliver messages to and from that protocol, and eventually it will produce
 //! a result, without you having to worry about how many rounds it has, or how
 //! to serialize the emssages it produces.
-pub mod echo_broadcast;
-pub mod errors;
+pub(crate) mod echo_broadcast;
 pub(crate) mod internal;
 
 use std::collections::HashMap;
 
-use ::serde::{Deserialize, Serialize};
-use errors::ProtocolError;
-
-use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite};
-use frost_core::serialization::SerializableScalar;
-use frost_core::{Identifier, Scalar};
-
-/// Represents a participant in the protocol.
-///
-/// Each participant should be uniquely identified by some number, which this
-/// struct holds. In our case, we use a `u32`, which is enough for billions of
-/// participants. That said, you won't actually be able to make the protocols
-/// work with billions of users.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
-pub struct Participant(u32);
-
-impl Participant {
-    /// Return this participant as little endian bytes.
-    pub fn bytes(&self) -> [u8; 4] {
-        self.0.to_le_bytes()
-    }
-
-    /// Return the scalar associated with this participant.
-    // Allowing as there is no panic here
-    #[allow(clippy::missing_panics_doc)]
-    pub fn scalar<C: Ciphersuite>(&self) -> Scalar<C> {
-        let mut bytes = [0u8; 32];
-        let id = u64::from(self.0) + 1;
-
-        match C::bytes_order() {
-            BytesOrder::BigEndian => bytes[24..].copy_from_slice(&id.to_be_bytes()),
-            BytesOrder::LittleEndian => bytes[..8].copy_from_slice(&id.to_le_bytes()),
-        }
-
-        // transform the bytes into a scalar and fails if Scalar
-        // is not in the range [0, order - 1]
-        let scalar = SerializableScalar::<C>::deserialize(&bytes).expect("Cannot be zero");
-        scalar.0
-    }
-
-    /// Returns a Frost identifier used in the frost library
-    pub fn to_identifier<C: Ciphersuite>(&self) -> Result<Identifier<C>, ProtocolError> {
-        let id = self.scalar::<C>();
-        // creating an identifier as required by the syntax of frost_core
-        Identifier::new(id).map_err(|_| ProtocolError::IdentityElement)
-    }
-}
-
-impl From<Participant> for u32 {
-    fn from(p: Participant) -> Self {
-        p.0
-    }
-}
-
-impl From<u32> for Participant {
-    fn from(x: u32) -> Self {
-        Self(x)
-    }
-}
+use crate::errors::ProtocolError;
+use crate::participants::Participant;
 
 /// Represents the data making up a message.
 ///
@@ -175,7 +117,8 @@ pub fn run_protocol<T>(
 pub mod test {
     use std::fmt;
 
-    use crate::protocol::{errors::ProtocolError, Action, Participant, Protocol};
+    use crate::errors::ProtocolError;
+    use crate::protocol::{Action, Participant, Protocol};
 
     /// Like [`run_protocol()`], except for just two parties.
     ///

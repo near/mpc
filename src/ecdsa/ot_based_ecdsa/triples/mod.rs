@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ecdsa::{AffinePoint, Scalar},
-    protocol::Participant,
+    participants::Participant,
 };
 
 /// Represents the public part of a triple.

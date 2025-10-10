@@ -6,7 +6,7 @@ use crate::{
         NEAR_DLOGEQ_ENCODE_LABEL_PUBLIC1, NEAR_DLOGEQ_ENCODE_LABEL_STATEMENT,
         NEAR_DLOGEQ_STATEMENT_LABEL,
     },
-    protocol::errors::ProtocolError,
+    errors::ProtocolError,
     Ciphersuite, Element, Scalar,
 };
 use frost_core::{serialization::SerializableScalar, Group};

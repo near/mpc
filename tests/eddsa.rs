@@ -8,7 +8,8 @@ use rand_core::OsRng;
 use threshold_signatures::{
     self,
     eddsa::{sign::sign, Ed25519Sha512, SignatureOption},
-    protocol::{run_protocol, Participant},
+    participants::Participant,
+    protocol::run_protocol,
 };
 
 use crate::common::GenProtocol;

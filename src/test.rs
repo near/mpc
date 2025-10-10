@@ -4,10 +4,9 @@
 use rand_core::{CryptoRng, CryptoRngCore, OsRng, RngCore};
 use std::error::Error;
 
-use crate::protocol::{
-    errors::{InitializationError, ProtocolError},
-    run_protocol, Participant, Protocol,
-};
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::Participant;
+use crate::protocol::{run_protocol, Protocol};
 use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar, VerifyingKey};
 
 pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;

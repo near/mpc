@@ -4,13 +4,71 @@
 //! or getting the field values corresponding to each participant, etc.
 //! This module tries to provide useful data structures for doing that.
 
-use std::{collections::HashMap, mem};
+use std::collections::HashMap;
 
-use serde::Serialize;
+use frost_core::serialization::SerializableScalar;
+use frost_core::Identifier;
+use serde::{Deserialize, Serialize};
 
+use crate::crypto::ciphersuite::BytesOrder;
 use crate::crypto::{ciphersuite::Ciphersuite, polynomials::compute_lagrange_coefficient};
-use crate::protocol::{errors::ProtocolError, Participant};
+use crate::errors::ProtocolError;
 use crate::Scalar;
+
+/// Represents a participant in the protocol.
+///
+/// Each participant should be uniquely identified by some number, which this
+/// struct holds. In our case, we use a `u32`, which is enough for billions of
+/// participants. That said, you won't actually be able to make the protocols
+/// work with billions of users.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
+pub struct Participant(u32);
+
+impl Participant {
+    /// Return this participant as little endian bytes.
+    pub fn bytes(&self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
+
+    /// Return the scalar associated with this participant.
+    // Allowing as there is no panic here
+    #[allow(clippy::missing_panics_doc)]
+    pub fn scalar<C: Ciphersuite>(&self) -> Scalar<C> {
+        let mut bytes = [0u8; 32];
+        let id = u64::from(self.0) + 1;
+
+        match C::bytes_order() {
+            BytesOrder::BigEndian => bytes[24..].copy_from_slice(&id.to_be_bytes()),
+            BytesOrder::LittleEndian => bytes[..8].copy_from_slice(&id.to_le_bytes()),
+        }
+
+        // transform the bytes into a scalar and fails if Scalar
+        // is not in the range [0, order - 1]
+        let scalar = SerializableScalar::<C>::deserialize(&bytes).expect("Cannot be zero");
+        scalar.0
+    }
+
+    /// Returns a Frost identifier used in the frost library
+    #[allow(clippy::missing_panics_doc)]
+    pub fn to_identifier<C: Ciphersuite>(&self) -> Result<Identifier<C>, ProtocolError> {
+        let id = self.scalar::<C>();
+        // creating an identifier as required by the syntax of frost_core
+        // cannot panic as the previous line ensures id is neq zero
+        Identifier::new(id).map_err(|_| ProtocolError::IdentityElement)
+    }
+}
+
+impl From<Participant> for u32 {
+    fn from(p: Participant) -> Self {
+        p.0
+    }
+}
+
+impl From<u32> for Participant {
+    fn from(x: u32) -> Self {
+        Self(x)
+    }
+}
 
 /// Represents a sorted list of participants.
 ///
@@ -97,7 +155,7 @@ impl ParticipantList {
         let identifiers: Vec<Scalar<C>> = self
             .participants()
             .iter()
-            .map(super::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect();
         Ok(compute_lagrange_coefficient::<C>(&identifiers, &p, None)?.0)
     }
@@ -143,7 +201,7 @@ impl From<ParticipantList> for Vec<Participant> {
 ///
 /// The idea is that you have one element for each participant.
 #[derive(Debug, Clone, Serialize)]
-pub struct ParticipantMap<'a, T> {
+pub(crate) struct ParticipantMap<'a, T> {
     #[serde(skip_serializing)]
     participants: &'a ParticipantList,
     data: Vec<Option<T>>,
@@ -226,7 +284,7 @@ impl<'a, T> ParticipantMap<'a, T> {
 /// participant was newly inserted or not, allowing you to thus process the
 /// first message received from them.
 #[derive(Debug, Clone)]
-pub struct ParticipantCounter<'a> {
+pub(crate) struct ParticipantCounter<'a> {
     participants: &'a ParticipantList,
     seen: Vec<bool>,
     counter: usize,
@@ -258,7 +316,7 @@ impl<'a> ParticipantCounter<'a> {
         };
 
         // Need the old value to be false.
-        let inserted = !mem::replace(&mut self.seen[i], true);
+        let inserted = !std::mem::replace(&mut self.seen[i], true);
         if inserted {
             self.counter -= 1;
         }

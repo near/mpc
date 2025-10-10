@@ -5,8 +5,8 @@ use std::slice::Iter;
 use subtle::{Choice, ConditionallySelectable};
 
 use crate::{
-    crypto::proofs::strobe_transcript::TranscriptRng,
-    protocol::{errors::ProtocolError, internal::PrivateChannel},
+    crypto::proofs::strobe_transcript::TranscriptRng, errors::ProtocolError,
+    protocol::internal::PrivateChannel,
 };
 
 use crate::ecdsa::{Scalar, Secp256K1Sha256};
@@ -141,9 +141,9 @@ mod test {
     use k256::Scalar;
     use rand_core::{OsRng, RngCore};
 
-    use crate::protocol::{
-        errors::ProtocolError, internal::make_protocol, test::run_two_party_protocol, Participant,
-    };
+    use crate::errors::ProtocolError;
+    use crate::participants::Participant;
+    use crate::protocol::{internal::make_protocol, test::run_two_party_protocol};
 
     /// Run the multiplicative to additive protocol
     fn run_mta(

@@ -1,4 +1,4 @@
-use crate::protocol::Participant;
+use crate::participants::Participant;
 use std::error;
 use thiserror::Error;
 

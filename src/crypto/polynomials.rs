@@ -5,7 +5,7 @@ use rand_core::CryptoRngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::ciphersuite::Ciphersuite;
-use crate::protocol::{errors::ProtocolError, Participant};
+use crate::{errors::ProtocolError, participants::Participant};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -854,7 +854,7 @@ mod test {
         let participants = (0u32..=degree).map(Participant::from).collect::<Vec<_>>();
         let ids = participants
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
 
         let shares = participants
@@ -888,7 +888,7 @@ mod test {
         // interpolate the polynomial using the shares at arbitrary points
         let scalars = participants
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
         for _ in 0..100 {
             // create arbitrary point
@@ -924,7 +924,7 @@ mod test {
 
         let ids = participants
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
 
         let ref_point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
@@ -973,7 +973,7 @@ mod test {
         // interpolate the polynomial using the shares at arbitrary points
         let scalars = participants
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
         for _ in 0..100 {
             // create arbitrary point
@@ -1085,7 +1085,7 @@ mod test {
     fn test_compute_lagrange_coefficient_cubic_polynomial() {
         let points = generate_participants_with_random_ids(5, &mut OsRng)
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
         let mut result = Secp256K1ScalarField::zero();
         let target_point = Scalar::generate_biased(&mut OsRng);
@@ -1156,7 +1156,7 @@ mod test {
 
         let ids = participants
             .iter()
-            .map(crate::protocol::Participant::scalar::<C>)
+            .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
         let point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
 
@@ -1217,7 +1217,7 @@ mod test {
 
                 let ids = participants
                     .iter()
-                    .map(crate::protocol::Participant::scalar::<C>)
+                    .map(Participant::scalar::<C>)
                     .collect::<Vec<_>>();
 
                 // generate polynomial
@@ -1265,7 +1265,7 @@ mod test {
 
                 let ids = participants
                     .iter()
-                    .map(crate::protocol::Participant::scalar::<C>)
+                    .map(Participant::scalar::<C>)
                     .collect::<Vec<_>>();
 
                 // generate polynomial

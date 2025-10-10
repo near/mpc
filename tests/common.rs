@@ -6,7 +6,8 @@ use rand_core::OsRng;
 
 use threshold_signatures::{
     self, keygen,
-    protocol::{run_protocol, Participant, Protocol},
+    participants::Participant,
+    protocol::{run_protocol, Protocol},
     Ciphersuite, Element, KeygenOutput, Scalar,
 };
 

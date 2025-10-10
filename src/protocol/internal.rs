@@ -43,11 +43,11 @@
 //! are deterministic, even in the presence of concurrent tasks.
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
 use futures::future::BoxFuture;
+use futures::lock::Mutex;
 use futures::task::noop_waker;
 use futures::{FutureExt, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha256};
-use smol::{future, lock::Mutex};
 use std::collections::VecDeque;
 use std::task::Context;
 use std::{collections::HashMap, error, future::Future, sync::Arc};
@@ -450,7 +450,7 @@ impl PrivateChannel {
                 .recv(self.header.with_waitpoint(waitpoint))
                 .await?;
             if from != self.to {
-                future::yield_now().await;
+                futures_lite::future::yield_now().await;
                 continue;
             }
             return Ok(data);

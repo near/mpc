@@ -1,10 +1,10 @@
 //! This module wraps a signature generation functionality from `Frost` library
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, SignatureOption};
-use crate::participants::{ParticipantCounter, ParticipantList};
-use crate::protocol::errors::{InitializationError, ProtocolError};
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::{Participant, ParticipantCounter, ParticipantList};
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
-use crate::protocol::{Participant, Protocol};
+use crate::protocol::Protocol;
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
 use frost_ed25519::{aggregate, rand_core, round1, round2, VerifyingKey};
@@ -297,7 +297,7 @@ mod test {
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512};
 
     use crate::eddsa::test::{build_key_packages_with_dealer, test_run_signature_protocols};
-    use crate::protocol::Participant;
+    use crate::participants::Participant;
     use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
 
     fn assert_single_coordinator_result(

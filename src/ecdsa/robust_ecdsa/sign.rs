@@ -8,11 +8,11 @@ use crate::{
         robust_ecdsa::RerandomizedPresignOutput, x_coordinate, AffinePoint, Scalar,
         Secp256K1Sha256, Signature, SignatureOption,
     },
-    participants::{ParticipantCounter, ParticipantList},
+    errors::{InitializationError, ProtocolError},
+    participants::{Participant, ParticipantCounter, ParticipantList},
     protocol::{
-        errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms, SharedChannel},
-        Participant, Protocol,
+        Protocol,
     },
 };
 type C = Secp256K1Sha256;

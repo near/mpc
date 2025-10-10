@@ -1,4 +1,4 @@
-use crate::protocol::errors::ProtocolError;
+use crate::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::{Choice, ConstantTimeEq};

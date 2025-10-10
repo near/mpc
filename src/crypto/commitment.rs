@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::{Choice, ConstantTimeEq};
 
-use crate::protocol::errors::ProtocolError;
+use crate::errors::ProtocolError;
 
 use super::constants::{COMMIT_LEN, NEAR_COMMIT_LABEL, START_LABEL};
 use super::random::Randomness;

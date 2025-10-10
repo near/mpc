@@ -5,7 +5,7 @@ use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
 use rand_core::OsRng;
 use std::hint::black_box;
 use threshold_signatures::{
-    batch_compute_lagrange_coefficients, compute_lagrange_coefficient, protocol::Participant,
+    batch_compute_lagrange_coefficients, compute_lagrange_coefficient, participants::Participant,
 };
 
 type C = Secp256K1Sha256;

@@ -13,11 +13,11 @@ use crate::{
         CoefficientCommitment, Polynomial, PolynomialCommitment, ProjectivePoint, Scalar,
         Secp256K1Sha256,
     },
-    participants::{ParticipantCounter, ParticipantList, ParticipantMap},
+    errors::{InitializationError, ProtocolError},
+    participants::{Participant, ParticipantCounter, ParticipantList, ParticipantMap},
     protocol::{
-        errors::{InitializationError, ProtocolError},
         internal::{make_protocol, Comms},
-        Participant, Protocol,
+        Protocol,
     },
 };
 
@@ -1189,8 +1189,9 @@ mod test {
 
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
+        participants::Participant,
         participants::ParticipantList,
-        protocol::{run_protocol, Participant, Protocol},
+        protocol::{run_protocol, Protocol},
         test::generate_participants,
     };
 

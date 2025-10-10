@@ -6,7 +6,7 @@ use crate::{
         },
         proofs::strobe_transcript::TranscriptRng,
     },
-    protocol::errors::ProtocolError,
+    errors::ProtocolError,
     Ciphersuite, Element, Scalar,
 };
 use frost_core::{serialization::SerializableScalar, Group};

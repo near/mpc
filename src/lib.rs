@@ -1,11 +1,10 @@
 mod crypto;
-mod dkg;
-mod participants;
+pub mod participants;
 
 pub mod confidential_key_derivation;
 pub mod ecdsa;
 pub mod eddsa;
-pub mod protocol;
+pub mod errors;
 #[cfg(test)]
 mod test;
 
@@ -23,15 +22,20 @@ pub use crypto::polynomials::{
     batch_compute_lagrange_coefficients, batch_invert, compute_lagrange_coefficient,
 };
 
-use frost_core::serialization::SerializableScalar;
-use frost_core::{keys::SigningShare, Group, VerifyingKey};
+mod dkg;
+pub mod protocol;
+use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
+use crate::errors::InitializationError;
+use crate::participants::Participant;
+use crate::protocol::internal::{make_protocol, Comms};
+use crate::protocol::Protocol;
 use rand_core::CryptoRngCore;
-use serde::{Deserialize, Serialize};
 use std::marker::Send;
 
-use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
-use crate::protocol::internal::{make_protocol, Comms};
-use crate::protocol::{errors::InitializationError, Participant, Protocol};
+use frost_core::serialization::SerializableScalar;
+use frost_core::{keys::SigningShare, Group, VerifyingKey};
+
+use serde::{Deserialize, Serialize};
 
 pub type Scalar<C> = frost_core::Scalar<C>;
 pub type Element<C> = frost_core::Element<C>;

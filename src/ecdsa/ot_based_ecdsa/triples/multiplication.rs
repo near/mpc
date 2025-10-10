@@ -10,12 +10,9 @@ use crate::{
         },
         Scalar,
     },
-    participants::ParticipantList,
-    protocol::{
-        errors::ProtocolError,
-        internal::{Comms, PrivateChannel},
-        Participant,
-    },
+    errors::ProtocolError,
+    participants::{Participant, ParticipantList},
+    protocol::internal::{Comms, PrivateChannel},
 };
 use rand_core::CryptoRngCore;
 use std::sync::Arc;

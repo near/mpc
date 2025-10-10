@@ -10,7 +10,8 @@ use crate::{
         ot_based_ecdsa::triples::bits::SEC_PARAM_64, CoefficientCommitment, Field, ProjectivePoint,
         Secp256K1ScalarField,
     },
-    protocol::{errors::ProtocolError, internal::PrivateChannel},
+    errors::ProtocolError,
+    protocol::internal::PrivateChannel,
 };
 
 use crate::crypto::constants::SECURITY_PARAMETER;
@@ -369,10 +370,10 @@ mod test {
 
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::participants::Participant;
     use crate::protocol::{
         internal::{make_protocol, Comms},
         test::run_two_party_protocol,
-        Participant,
     };
     use rand_core::OsRng;
 

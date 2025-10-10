@@ -16,7 +16,8 @@ use threshold_signatures::{
         RerandomizationArguments, Secp256K1Sha256, Signature, SignatureOption,
     },
     frost_secp256k1::VerifyingKey,
-    protocol::{run_protocol, Participant},
+    participants::Participant,
+    protocol::run_protocol,
     Element, ParticipantList,
 };
 

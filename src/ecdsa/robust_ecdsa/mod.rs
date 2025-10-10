@@ -5,7 +5,7 @@ mod test;
 
 use crate::{
     ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar, Tweak},
-    protocol::errors::ProtocolError,
+    errors::ProtocolError,
 };
 use serde::{Deserialize, Serialize};
 

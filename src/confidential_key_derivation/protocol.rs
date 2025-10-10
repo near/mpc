@@ -2,9 +2,12 @@ use crate::confidential_key_derivation::ciphersuite::{hash_to_curve, BLS12381SHA
 use crate::confidential_key_derivation::{
     AppId, CKDOutput, CKDOutputOption, ElementG1, PublicKey, Scalar, SigningShare,
 };
-use crate::participants::{ParticipantCounter, ParticipantList};
-use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
-use crate::protocol::{errors::InitializationError, errors::ProtocolError, Participant, Protocol};
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::{Participant, ParticipantCounter, ParticipantList};
+use crate::protocol::{
+    internal::{make_protocol, Comms, SharedChannel},
+    Protocol,
+};
 
 use elliptic_curve::{Field, Group};
 use rand_core::CryptoRngCore;

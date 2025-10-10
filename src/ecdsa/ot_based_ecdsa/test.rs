@@ -4,7 +4,8 @@ use super::{
     triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
     PresignArguments, PresignOutput,
 };
-use crate::protocol::{run_protocol, Participant, Protocol};
+use crate::participants::Participant;
+use crate::protocol::{run_protocol, Protocol};
 use crate::test::{
     assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
     one_coordinator_output, run_keygen, run_refresh, run_reshare,

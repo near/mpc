@@ -9,7 +9,7 @@ use crate::ecdsa::{
     ot_based_ecdsa::triples::{TriplePub, TripleShare},
     AffinePoint, KeygenOutput, RerandomizationArguments, Scalar, Tweak,
 };
-use crate::protocol::errors::ProtocolError;
+use crate::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
 
 /// The arguments needed to create a presignature.

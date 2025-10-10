@@ -4,13 +4,9 @@ use crate::crypto::{
     polynomials::{Polynomial, PolynomialCommitment},
 };
 
-use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
-use crate::protocol::{
-    echo_broadcast::do_broadcast,
-    errors::{InitializationError, ProtocolError},
-    internal::SharedChannel,
-    Participant,
-};
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::{Participant, ParticipantCounter, ParticipantList, ParticipantMap};
+use crate::protocol::{echo_broadcast::do_broadcast, internal::SharedChannel};
 use crate::KeygenOutput;
 
 use frost_core::keys::{
@@ -657,8 +653,7 @@ pub mod test {
 
     use super::domain_separate_hash;
     use crate::crypto::ciphersuite::Ciphersuite;
-    use crate::participants::ParticipantList;
-    use crate::protocol::Participant;
+    use crate::participants::{Participant, ParticipantList};
     use crate::test::generate_participants;
     use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
     use frost_core::{Field, Group};

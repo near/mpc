@@ -1,5 +1,6 @@
 use super::bits::{BitMatrix, BitVector, SquareBitMatrix};
-use crate::protocol::{errors::ProtocolError, internal::PrivateChannel};
+use crate::errors::ProtocolError;
+use crate::protocol::internal::PrivateChannel;
 
 /// Parameters we need for the correlated OT.
 #[derive(Debug, Clone, Copy)]
@@ -63,8 +64,9 @@ pub fn correlated_ot_receiver(
 mod test {
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
+    use crate::participants::Participant;
     use crate::protocol::internal::{make_protocol, Comms};
-    use crate::protocol::{test::run_two_party_protocol, Participant};
+    use crate::protocol::test::run_two_party_protocol;
     use rand_core::OsRng;
 
     /// Run the correlated OT protocol between two parties.
