@@ -96,7 +96,7 @@ impl TestContract {
             domain_map: &BTreeMap<u64, u64>,
             seed: u64,
         ) -> Vec<Promise> {
-            let _: Vec<_> = domain_map
+            domain_map
                 .iter()
                 .flat_map(|(domain_id, num_calls)| {
                     (0..*num_calls).map(move |i| {
@@ -115,8 +115,7 @@ impl TestContract {
                         )
                     })
                 })
-                .collect();
-            vec![]
+                .collect()
         }
 
         let mut promises = Vec::new();

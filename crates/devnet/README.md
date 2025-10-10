@@ -169,8 +169,6 @@ mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
 
-The path of the contract binary can be overridden via `--path`.
-
 ### Generating Keys
 
 When first deployed, the contract has no keys. In order to make any signatures,
