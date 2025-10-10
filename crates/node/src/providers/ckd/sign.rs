@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use dtos_contract::Bls12381G1PublicKey;
+use contract_interface::types::Bls12381G1PublicKey;
 use near_sdk::AccountId;
 use rand::rngs::OsRng;
 use threshold_signatures::{

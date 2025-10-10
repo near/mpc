@@ -1,9 +1,11 @@
 use rand::rngs::OsRng;
 
-use crate::dto_mapping::IntoDtoType;
 use elliptic_curve::{Field, Group};
 use threshold_signatures::confidential_key_derivation as ckd;
 
+use contract_interface::types as dtos;
+
+use crate::dto_mapping::IntoInterfaceType;
 use crate::{primitives::thresholds::ThresholdParameters, state::ProtocolContractState};
 
 fn params_to_string(output: &mut String, parameters: &ThresholdParameters) {
@@ -138,7 +140,7 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
     output
 }
 
-pub fn random_app_public_key() -> dtos_contract::Bls12381G1PublicKey {
+pub fn random_app_public_key() -> dtos::Bls12381G1PublicKey {
     let x = ckd::Scalar::random(OsRng);
     let big_x = ckd::ElementG1::generator() * x;
     big_x.into_dto_type()

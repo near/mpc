@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use dtos_contract::Ed25519PublicKey;
+use contract_interface::types::Ed25519PublicKey;
 use near_sdk::{near, store::IterableMap, AccountId};
 
 use crate::{primitives::participants::ParticipantInfo, storage_keys::StorageKey};

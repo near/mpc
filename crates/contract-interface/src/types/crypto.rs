@@ -442,10 +442,7 @@ impl<'de> serde::Deserialize<'de> for Bls12381G2PublicKey {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        PublicKey,
-        crypto::{ED25519_PUBLIC_KEY_SIZE, SECP256K1_PUBLIC_KEY_SIZE},
-    };
+    use super::*;
 
     #[test]
     fn test_assert_near_public_key_sizes() {

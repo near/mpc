@@ -6,7 +6,7 @@ members = [
     "crates/contract",
     "crates/contract_history",
     "crates/devnet",
-    "crates/dtos_contract",
+    "crates/contract-interface",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
@@ -42,7 +42,7 @@ overflow-checks = true
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-dtos-contract = { path = "crates/dtos_contract" }
+contract-interface = { path = "crates/contract-interface" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 node-types = { path = "crates/node-types" }
 test_utils = { path = "crates/test_utils" }
@@ -62,7 +62,7 @@ async-trait = "0.1.83"
 axum = "0.7.9"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 blstrs = "0.7.1"
-borsh = "1.5.1"
+borsh = { version = "1.5.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
 curve25519-dalek = { version = "4.1.3", features = [

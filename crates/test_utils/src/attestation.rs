@@ -47,7 +47,7 @@ pub fn quote() -> QuoteBytes {
 
 pub fn p2p_tls_key() -> [u8; 32] {
     let key_file = include_str!("../assets/near_p2p_public_key.pub");
-    let public_key: dtos_contract::Ed25519PublicKey =
+    let public_key: contract_interface::types::Ed25519PublicKey =
         key_file.parse().expect("File contains a valid public key");
     *public_key.as_bytes()
 }
@@ -67,14 +67,15 @@ pub fn mock_dstack_attestation() -> Attestation {
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
 
-pub fn mock_dto_dstack_attestation() -> dtos_contract::Attestation {
+pub fn mock_dto_dstack_attestation() -> contract_interface::types::Attestation {
     let quote = quote().into();
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: dtos_contract::TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    let tcb_info: contract_interface::types::TcbInfo =
+        serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
-    dtos_contract::Attestation::Dstack(dtos_contract::DstackAttestation::new(
-        quote, collateral, tcb_info,
-    ))
+    contract_interface::types::Attestation::Dstack(
+        contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
+    )
 }
