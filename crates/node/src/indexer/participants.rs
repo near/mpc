@@ -146,11 +146,12 @@ impl ContractState {
                     .change_participant_pk(account_id, new_p2p_public_key);
             }
             ContractState::Running(running) => {
-                running.resharing_state.as_mut().map(|resharing| {
+                if let Some(resharing) = running.resharing_state.as_mut() {
                     resharing
                         .new_participants
                         .change_participant_pk(account_id, new_p2p_public_key)
-                });
+                }
+
                 running
                     .participants
                     .change_participant_pk(account_id, new_p2p_public_key);

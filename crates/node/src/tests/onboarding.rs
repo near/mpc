@@ -143,7 +143,7 @@ async fn test_onboarding() {
             panic!("expect running");
         };
         let keyset = &running.keyset;
-        let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, &keyset)
+        let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
             .await
             .unwrap();
         onboarding_participant_keyshare_sender
