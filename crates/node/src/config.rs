@@ -1,6 +1,6 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_indexer_primitives::types::{AccountId, Finality};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
@@ -63,13 +63,8 @@ impl MpcConfig {
         my_near_account_id: &AccountId,
         my_p2p_public_key: &ed25519_dalek::VerifyingKey,
     ) -> Option<Self> {
-        let my_participant_id = participants
-            .participants
-            .iter()
-            .find(|p| {
-                &p.near_account_id == my_near_account_id && &p.p2p_public_key == my_p2p_public_key
-            })?
-            .id;
+        let my_participant_id =
+            participants.get_participant_id_by_node_id(my_near_account_id, my_p2p_public_key)?;
         Some(Self {
             my_participant_id,
             participants,
@@ -176,19 +171,87 @@ pub struct ParticipantsConfig {
     pub participants: Vec<ParticipantInfo>,
 }
 
+#[cfg(test)]
 impl ParticipantsConfig {
+    pub fn change_participant_pk(
+        &mut self,
+        account_id: &AccountId,
+        new_p2p_public_key: VerifyingKey,
+    ) {
+        self.participants.iter_mut().for_each(|p_info| {
+            if p_info.near_account_id == *account_id {
+                p_info.p2p_public_key = new_p2p_public_key
+            }
+        });
+    }
+}
+
+/// Indicates whether a registered node is currently active or idle.
+#[derive(PartialEq, Debug)]
+pub enum NodeStatus {
+    Active,
+    Idle,
+}
+
+#[derive(Debug)]
+/// Describes whether a participant is part of the contract and, if so, specifies a node status.
+pub enum ParticipantStatus {
+    Inactive,
+    Active(NodeStatus),
+}
+
+impl ParticipantsConfig {
+    /// Returns the participation status for the node of matching account_id and p2p public key.
+    ///
+    /// If the account_id exists in the participant list, returns
+    /// [`ParticipantStatus::Active`] with either [`NodeStatus::Active`] if the
+    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.  
+    /// Returns [`ParticipantStatus::Inactive`] if the account is not found.
+    pub fn participant_status(
+        &self,
+        account_id: &AccountId,
+        p2p_public_key: &VerifyingKey,
+    ) -> ParticipantStatus {
+        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
+            let status = if &participant_info.p2p_public_key == p2p_public_key {
+                NodeStatus::Active
+            } else {
+                NodeStatus::Idle
+            };
+            ParticipantStatus::Active(status)
+        } else {
+            ParticipantStatus::Inactive
+        }
+    }
+
+    pub fn get_info_by_account_id(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
+        self.participants
+            .iter()
+            .find(|participant_info| participant_info.near_account_id == *account_id)
+    }
+
     pub fn get_info(&self, id: ParticipantId) -> Option<&ParticipantInfo> {
-        self.participants.iter().find(|p| p.id == id)
+        self.participants
+            .iter()
+            .find(|participant_info| participant_info.id == id)
     }
 
     pub fn get_participant_id(&self, account_id: &AccountId) -> Option<ParticipantId> {
-        self.participants.iter().find_map(|participant_info| {
-            if participant_info.near_account_id == *account_id {
-                Some(participant_info.id)
-            } else {
-                None
+        self.get_info_by_account_id(account_id)
+            .map(|participant_info| participant_info.id)
+    }
+
+    pub fn get_participant_id_by_node_id(
+        &self,
+        account_id: &AccountId,
+        p2p_public_key: &VerifyingKey,
+    ) -> Option<ParticipantId> {
+        if let Some(participant_info) = self.get_info_by_account_id(account_id) {
+            if &participant_info.p2p_public_key == p2p_public_key {
+                return Some(participant_info.id);
             }
-        })
+        };
+        None
     }
 }
 
@@ -356,7 +419,13 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
+    use assert_matches::assert_matches;
+    use mpc_contract::primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id};
+    use rand::{distributions::Alphanumeric, Rng, RngCore};
+
+    use crate::providers::PublicKeyConversion;
+
     use super::*;
     #[test]
     fn test_secret_gen() -> anyhow::Result<()> {
@@ -383,5 +452,51 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    pub fn gen_participant() -> ParticipantInfo {
+        let near_account_id = gen_account_id();
+        let mut rng = rand::thread_rng();
+        let participant_id: u32 = rng.next_u32();
+        let address: String = (0..16).map(|_| rng.sample(Alphanumeric) as char).collect();
+        let p2p_public_key =
+            VerifyingKey::from_near_sdk_public_key(&bogus_ed25519_near_public_key()).unwrap();
+        let port: u16 = rng.gen();
+        ParticipantInfo {
+            id: ParticipantId::from_raw(participant_id),
+            address,
+            port,
+            p2p_public_key,
+            near_account_id,
+        }
+    }
+
+    #[test]
+    fn test_participant_status() {
+        let participant = gen_participant();
+        let non_participant = gen_participant();
+        let bogus_config = ParticipantsConfig {
+            threshold: 3,
+            participants: vec![participant.clone()],
+        };
+        assert_matches!(
+            bogus_config.participant_status(
+                &non_participant.near_account_id,
+                &participant.p2p_public_key
+            ),
+            ParticipantStatus::Inactive
+        );
+        assert_matches!(
+            bogus_config
+                .participant_status(&participant.near_account_id, &participant.p2p_public_key),
+            ParticipantStatus::Active(NodeStatus::Active)
+        );
+        assert_matches!(
+            bogus_config.participant_status(
+                &participant.near_account_id,
+                &non_participant.p2p_public_key
+            ),
+            ParticipantStatus::Active(NodeStatus::Idle)
+        );
     }
 }

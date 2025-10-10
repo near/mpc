@@ -9,7 +9,6 @@ use crate::indexer::{tx_sender, IndexerAPI};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
-use crate::keyshare::KeyStorageConfig;
 use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
 use crate::mpc_client::MpcClient;
@@ -53,9 +52,8 @@ pub struct Coordinator<TransactionSender> {
 
     /// Storage for triples, presignatures, signing requests.
     pub secret_db: Arc<SecretDB>,
-    /// Storage config for keyshares.
-    pub key_storage_config: KeyStorageConfig,
-
+    /// Storage for keyshares.
+    pub keyshare_storage: Arc<KeyshareStorage>,
     /// For interaction with the indexer.
     pub indexer: IndexerAPI<TransactionSender>,
 
@@ -122,7 +120,7 @@ where
                             Self::run_initialization(
                                 self.secrets.clone(),
                                 self.config_file.clone(),
-                                self.key_storage_config.create().await?.into(),
+                                self.keyshare_storage.clone(),
                                 state.participants.clone(),
                                 self.indexer.txn_sender.clone(),
                                 key_event_receiver,
@@ -159,7 +157,7 @@ where
                                 self.secret_db.clone(),
                                 self.secrets.clone(),
                                 self.config_file.clone(),
-                                self.key_storage_config.create().await?,
+                                self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
                                 self.indexer
@@ -309,7 +307,7 @@ where
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: KeyshareStorage,
+        keyshare_storage: Arc<KeyshareStorage>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
@@ -320,7 +318,6 @@ where
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
-        let keyshare_storage = Arc::new(keyshare_storage);
         let my_participant_id = running_state
             .participants
             .get_participant_id(&config_file.my_near_account_id);

@@ -198,7 +198,6 @@ pub(crate) enum ChainSendTransactionRequest {
     // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 
-    #[allow(dead_code)] // todo: [1249](https://github.com/near/mpc/issues/1249) use it
     ConcludeNodeMigration(ConcludeNodeMigrationArgs),
 }
 

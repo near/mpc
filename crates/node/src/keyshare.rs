@@ -368,7 +368,7 @@ impl KeyStorageConfig {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use mpc_contract::primitives::{
         domain::DomainId,
         key_state::{AttemptId, EpochId, KeyEventId},
@@ -381,19 +381,23 @@ mod tests {
         Keyshare,
     };
 
-    async fn generate_key_storage() -> (KeyshareStorage, TempDir) {
+    pub fn generate_key_storage_config() -> (KeyStorageConfig, TempDir) {
         let tempdir = tempfile::tempdir().unwrap();
         let home_dir = tempdir.path().to_path_buf();
         let local_encryption_key = [3; 16];
-        let storage = KeyStorageConfig {
-            home_dir,
-            local_encryption_key,
-            gcp: None,
-        }
-        .create()
-        .await
-        .unwrap();
-        (storage, tempdir)
+        (
+            KeyStorageConfig {
+                home_dir,
+                local_encryption_key,
+                gcp: None,
+            },
+            tempdir,
+        )
+    }
+
+    pub async fn generate_key_storage() -> (KeyshareStorage, TempDir) {
+        let (storage_config, tempdir) = generate_key_storage_config();
+        (storage_config.create().await.unwrap(), tempdir)
     }
 
     #[tokio::test]

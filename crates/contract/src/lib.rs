@@ -1512,10 +1512,10 @@ mod tests {
         signature::{Payload, Tweak},
         test_utils::gen_participants,
     };
-    use crate::state::initializing::tests::gen_initializing_state;
     use crate::state::key_event::tests::Environment;
-    use crate::state::resharing::tests::gen_resharing_state;
-    use crate::state::running::running_tests::gen_running_state;
+    use crate::state::test_utils::{
+        gen_initializing_state, gen_resharing_state, gen_running_state,
+    };
     use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
     use k256::{
         self,
