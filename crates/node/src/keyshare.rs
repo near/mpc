@@ -33,9 +33,9 @@ pub struct Keyshare {
 impl Keyshare {
     pub fn public_key(&self) -> anyhow::Result<contract_interface::types::PublicKey> {
         match &self.data {
-            KeyshareData::Secp256k1(data) => Ok(data.public_key.into_dto_type()),
-            KeyshareData::Ed25519(data) => Ok(data.public_key.into_dto_type()),
-            KeyshareData::Bls12381(data) => Ok(data.public_key.into_dto_type()),
+            KeyshareData::Secp256k1(data) => Ok(data.public_key.into_contract_interface_type()),
+            KeyshareData::Ed25519(data) => Ok(data.public_key.into_contract_interface_type()),
+            KeyshareData::Bls12381(data) => Ok(data.public_key.into_contract_interface_type()),
         }
     }
 

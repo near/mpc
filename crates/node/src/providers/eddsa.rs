@@ -185,7 +185,7 @@ mod tests {
             .next()
             .unwrap()
             .clone();
-        x.public_key.into_dto_type();
+        x.public_key.into_contract_interface_type();
         Ok(())
     }
 

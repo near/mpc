@@ -64,7 +64,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         &env_accounts[0],
         &contract,
         &attestation,
-        &new_uid.tls_public_key.into_dto_type(),
+        &new_uid.tls_public_key.into_interface_type(),
     )
     .await?;
 

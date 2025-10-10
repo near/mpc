@@ -74,8 +74,10 @@ impl TestSetup {
     ) -> Result<(), mpc_contract::errors::Error> {
         let context = create_context_for_participant(&node_id.account_id);
         testing_env!(context);
-        self.contract
-            .submit_participant_info(attestation, node_id.tls_public_key.clone().into_dto_type())
+        self.contract.submit_participant_info(
+            attestation,
+            node_id.tls_public_key.clone().into_interface_type(),
+        )
     }
 
     /// Switches testing context to a given participant at a specific timestamp

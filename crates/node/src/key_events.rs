@@ -58,18 +58,18 @@ pub async fn keygen_computation_inner(
         SignatureScheme::Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_dto_type();
+            let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_dto_type();
+            let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Ed25519(keyshare), public_key)
         }
         SignatureScheme::Bls12381 => {
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
-            let public_key = keyshare.public_key.into_dto_type();
+            let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Bls12381(keyshare), public_key)
         }
     };

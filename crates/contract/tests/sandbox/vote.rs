@@ -165,7 +165,7 @@ async fn test_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &new_p.2.sign_pk.into_dto_type(),
+        &new_p.2.sign_pk.into_interface_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -263,7 +263,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         new_account,
         &contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &new_p.2.sign_pk.into_dto_type(),
+        &new_p.2.sign_pk.into_interface_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");
@@ -360,7 +360,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
         &new_account,
         &contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-        &new_participant_info.sign_pk.into_dto_type(),
+        &new_participant_info.sign_pk.into_interface_type(),
     )
     .await
     .expect("Attestation submission for new account must succeed.");

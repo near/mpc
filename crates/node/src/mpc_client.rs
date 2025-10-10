@@ -425,8 +425,8 @@ impl MpcClient {
                                             let response = ChainCKDRespondArgs::new_ckd(
                                                 &ckd_attempt.request,
                                                 &CKDResponse {
-                                                    big_y: response.0 .0.into_dto_type(),
-                                                    big_c: response.0 .1.into_dto_type(),
+                                                    big_y: response.0 .0.into_contract_interface_type(),
+                                                    big_c: response.0 .1.into_contract_interface_type(),
                                                 },
                                             )?;
 

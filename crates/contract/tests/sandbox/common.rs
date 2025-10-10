@@ -295,7 +295,7 @@ pub async fn init_with_candidates(
             account,
             &contract,
             &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
-            &participant.sign_pk.into_dto_type(),
+            &participant.sign_pk.into_interface_type(),
         )
         .await;
 
@@ -659,8 +659,8 @@ pub fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: big_y.into_dto_type(),
-        big_c: big_c.into_dto_type(),
+        big_y: big_y.into_interface_type(),
+        big_c: big_c.into_interface_type(),
     };
     (request, response)
 }
@@ -885,7 +885,7 @@ pub async fn submit_tee_attestations(
             account,
             contract,
             &attestation,
-            &node_id.tls_public_key.into_dto_type(),
+            &node_id.tls_public_key.into_interface_type(),
         )
         .await?;
         assert!(result);
@@ -1118,7 +1118,7 @@ pub async fn vote_for_hash(
 // needed anymore
 
 pub(crate) trait IntoInterfaceType<InterfaceType> {
-    fn into_dto_type(self) -> InterfaceType;
+    fn into_interface_type(self) -> InterfaceType;
 }
 
 pub(crate) trait IntoContractType<ContractType> {
@@ -1126,7 +1126,7 @@ pub(crate) trait IntoContractType<ContractType> {
 }
 
 impl IntoInterfaceType<dtos::Ed25519PublicKey> for &near_sdk::PublicKey {
-    fn into_dto_type(self) -> dtos::Ed25519PublicKey {
+    fn into_interface_type(self) -> dtos::Ed25519PublicKey {
         // This function should not be called with any other type
         assert!(self.curve_type() == near_sdk::CurveType::ED25519);
         let mut bytes = [0u8; 32];
@@ -1136,7 +1136,7 @@ impl IntoInterfaceType<dtos::Ed25519PublicKey> for &near_sdk::PublicKey {
 }
 
 impl IntoInterfaceType<dtos::Bls12381G1PublicKey> for &ckd::ElementG1 {
-    fn into_dto_type(self) -> dtos::Bls12381G1PublicKey {
+    fn into_interface_type(self) -> dtos::Bls12381G1PublicKey {
         dtos::Bls12381G1PublicKey::from(self.to_compressed())
     }
 }
