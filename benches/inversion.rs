@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use criterion::{criterion_group, Criterion};
 use frost_core::{Field, Group};
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};

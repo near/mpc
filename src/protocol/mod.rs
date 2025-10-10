@@ -52,12 +52,10 @@ impl Participant {
     }
 
     /// Returns a Frost identifier used in the frost library
-    #[allow(clippy::missing_panics_doc)]
-    pub fn to_identifier<C: Ciphersuite>(&self) -> Identifier<C> {
+    pub fn to_identifier<C: Ciphersuite>(&self) -> Result<Identifier<C>, ProtocolError> {
         let id = self.scalar::<C>();
         // creating an identifier as required by the syntax of frost_core
-        // cannot panic as the previous line ensures id is neq zero
-        Identifier::new(id).unwrap()
+        Identifier::new(id).map_err(|_| ProtocolError::IdentityElement)
     }
 }
 

@@ -43,9 +43,9 @@ fn hash(
     );
 
     let bytes: [u8; 32] = hasher.finalize().into();
-    // the hash output is 256 bits
-    // it is possible to take the first 128 bits out
-    let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8].try_into().unwrap();
+    let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8]
+        .try_into()
+        .expect("the hash output is 256 bits, so it is possible to take the first 128 bits out");
 
     Ok(BitVector::from_bytes(&bytes))
 }
@@ -99,7 +99,14 @@ pub async fn batch_random_ot_sender(
 
     let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
     let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
-    Ok((big_k0.try_into().unwrap(), big_k1.try_into().unwrap()))
+
+    let big_k0 = big_k0
+        .try_into()
+        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+    let big_k1 = big_k1
+        .try_into()
+        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+    Ok((big_k0, big_k1))
 }
 
 #[allow(dead_code)]
@@ -180,7 +187,13 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
     for out in outs.iter().take(N) {
         let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
         let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
-        ret.push((big_k0.try_into().unwrap(), big_k1.try_into().unwrap()));
+        let big_k0 = big_k0
+            .try_into()
+            .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+        let big_k1 = big_k1
+            .try_into()
+            .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+        ret.push((big_k0, big_k1));
     }
 
     Ok(ret)
@@ -239,7 +252,10 @@ pub async fn batch_random_ot_receiver(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let big_k: BitMatrix = out.into_iter().collect();
-    Ok((delta, big_k.try_into().unwrap()))
+    let big_k = big_k
+        .try_into()
+        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+    Ok((delta, big_k))
 }
 
 #[allow(dead_code)]
@@ -342,7 +358,8 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
         let out = &outs[j];
         let big_k: BitMatrix = out.iter().copied().collect();
         let h = SquareBitMatrix::try_from(big_k);
-        ret.push((delta, h.unwrap()));
+        let h = h.map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
+        ret.push((delta, h));
     }
     Ok(ret)
 }

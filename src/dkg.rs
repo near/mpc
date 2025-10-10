@@ -148,7 +148,10 @@ fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
 ) -> Result<(), ProtocolError> {
     // creates an identifier for the participant
     let id = participant.scalar::<C>();
-    let vk_share = commitment.coefficients().first().unwrap();
+    let vk_share = commitment
+        .coefficients()
+        .first()
+        .ok_or_else(|| ProtocolError::AssertionFailed("Empty coefficient list".to_string()))?;
 
     let big_r = proof_of_knowledge.R();
     let z = proof_of_knowledge.z();
@@ -172,39 +175,42 @@ fn verify_proof_of_knowledge<C: Ciphersuite>(
     commitment: &VerifiableSecretSharingCommitment<C>,
     proof_of_knowledge: Option<&Signature<C>>,
 ) -> Result<(), ProtocolError> {
-    // if participant did not send anything but he is actually an old participant
-    if proof_of_knowledge.is_none() {
-        // if basic dkg or participant is old
-        if old_participants.is_none() || old_participants.unwrap().contains(participant) {
-            return Err(ProtocolError::MaliciousParticipant(participant));
+    match proof_of_knowledge {
+        // if participant did not send anything but he is actually an old participant
+        None => {
+            // if basic dkg or participant is old
+            if old_participants.is_none_or(|p| p.contains(participant)) {
+                return Err(ProtocolError::MaliciousParticipant(participant));
+            }
+            // since previous line did not abort, then we know participant is new indeed
+            // check the commitment length is threshold - 1
+            if commitment.coefficients().len() != threshold - 1 {
+                return Err(ProtocolError::IncorrectNumberOfCommitments);
+            }
+            // nothing to verify
+            Ok(())
         }
-        // since previous line did not abort, then we know participant is new indeed
-        // check the commitment length is threshold - 1
-        if commitment.coefficients().len() != threshold - 1 {
-            return Err(ProtocolError::IncorrectNumberOfCommitments);
-        }
-        // nothing to verify
-        return Ok(());
-    }
-    // if participant sent something but he is actually a new participant
-    if old_participants.is_some() && !old_participants.unwrap().contains(participant) {
-        return Err(ProtocolError::MaliciousParticipant(participant));
-    }
-    // since the previous did not abort, we know the participant is old or we are dealing with a dkg
-    if commitment.coefficients().len() != threshold {
-        return Err(ProtocolError::IncorrectNumberOfCommitments);
-    }
+        // now we know the proof is not none
+        Some(proof_of_knowledge) => {
+            // if participant sent something but he is actually a new participant
+            if old_participants.is_some_and(|p| !p.contains(participant)) {
+                return Err(ProtocolError::MaliciousParticipant(participant));
+            }
+            // since the previous did not abort, we know the participant is old or we are dealing with a dkg
+            if commitment.coefficients().len() != threshold {
+                return Err(ProtocolError::IncorrectNumberOfCommitments);
+            }
 
-    // now we know the proof is not none
-    let proof_of_knowledge = proof_of_knowledge.unwrap();
-    // creating an identifier as required by the syntax of verify_proof_of_knowledge of frost_core
-    internal_verify_proof_of_knowledge(
-        session_id,
-        domain_separator,
-        participant,
-        commitment,
-        proof_of_knowledge,
-    )
+            // creating an identifier as required by the syntax of verify_proof_of_knowledge of frost_core
+            internal_verify_proof_of_knowledge(
+                session_id,
+                domain_separator,
+                participant,
+                commitment,
+                proof_of_knowledge,
+            )
+        }
+    }
 }
 
 /// Takes a commitment and a commitment hash and checks that
@@ -252,7 +258,7 @@ fn validate_received_share<C: Ciphersuite>(
     signing_share_from: &SigningShare<C>,
     commitment: &VerifiableSecretSharingCommitment<C>,
 ) -> Result<(), ProtocolError> {
-    let id = me.to_identifier::<C>();
+    let id = me.to_identifier::<C>()?;
 
     // The verification is exactly the same as the regular SecretShare verification;
     // however the required components are in different places.
@@ -303,7 +309,9 @@ async fn broadcast_success(
     // broadcast node me succeded
     let vote_list = do_broadcast(chan, participants, me, (true, session_id)).await?;
     // unwrap here would never fail as the broadcast protocol ends only when the map is full
-    let vote_list = vote_list.into_vec_or_none().unwrap();
+    let vote_list = vote_list
+        .into_vec_or_none()
+        .ok_or_else(|| ProtocolError::AssertionFailed("vote_list is empty".to_string()))?;
     // go through all the list of votes and check if any is fail or some does not contain the session id
 
     if !vote_list.iter().all(|(_, ref sid)| sid == &session_id) {
@@ -448,7 +456,9 @@ async fn do_keyshare<C: Ciphersuite>(
 
     // Verify vk asap
     // cannot fail as all_commitments at least contains my commitment
-    let all_commitments_refs = all_full_commitments.to_refs_or_none().unwrap();
+    let all_commitments_refs = all_full_commitments.to_refs_or_none().ok_or_else(|| {
+        ProtocolError::AssertionFailed("all_full_commitments is empty".to_string())
+    })?;
     let verifying_key = public_key_from_commitments(all_commitments_refs)?;
 
     // In the case of Resharing, check if the old public key is the same as the new one

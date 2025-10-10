@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 mod common;
 
 use common::{choose_coordinator_at_random, generate_participants, run_keygen};

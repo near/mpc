@@ -26,7 +26,7 @@ pub fn build_key_packages_with_dealer(max_signers: u16, min_signers: u16) -> Gen
 
     let from_frost_identifiers = identifiers
         .iter()
-        .map(|&x| (x.to_identifier(), x))
+        .map(|&x| (x.to_identifier().unwrap(), x))
         .collect::<BTreeMap<_, _>>();
 
     let identifiers_list = from_frost_identifiers.keys().copied().collect::<Vec<_>>();

@@ -117,7 +117,10 @@ pub async fn mta_receiver(
     chi1.conditional_assign(&(-chi1), tv[0].0);
 
     // Step 5
-    let mut beta = chi1 * m.next().unwrap();
+    let mut beta = chi1
+        * m.next().ok_or_else(|| {
+            ProtocolError::AssertionFailed("Not enough elements received".to_string())
+        })?;
     for (&chi_i, m_i) in chi.iter().zip(m) {
         beta += chi_i * m_i;
     }

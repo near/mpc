@@ -7,8 +7,7 @@ use super::strobe::Strobe128;
 fn encode_array_len_as_u32(array: &[u8]) -> [u8; 4] {
     use byteorder::{ByteOrder, LittleEndian};
 
-    // This should never panic
-    let x = u32::try_from(array.len()).unwrap();
+    let x = u32::try_from(array.len()).expect("array.len() should always fit in u32 here");
 
     let mut buf = [0; 4];
     LittleEndian::write_u32(&mut buf, x);

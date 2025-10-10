@@ -159,8 +159,16 @@ impl MessageHeader {
             return None;
         }
         // Unwrapping is fine because we checked the length already.
-        let channel = ChannelTag(bytes[..ChannelTag::SIZE].try_into().unwrap());
-        let waitpoint = u64::from_le_bytes(bytes[ChannelTag::SIZE..Self::LEN].try_into().unwrap());
+        let channel = ChannelTag(
+            bytes[..ChannelTag::SIZE]
+                .try_into()
+                .expect("This cannot fail"),
+        );
+        let waitpoint = u64::from_le_bytes(
+            bytes[ChannelTag::SIZE..Self::LEN]
+                .try_into()
+                .expect("This cannot fail"),
+        );
 
         Some(Self { channel, waitpoint })
     }
@@ -196,7 +204,9 @@ struct SubMessageQueue {
 impl SubMessageQueue {
     pub fn send(&self, from: Participant, message: MessageData) {
         // This cannot fail because the receiver is also alive.
-        self.sender.unbounded_send((from, message)).unwrap();
+        self.sender
+            .unbounded_send((from, message))
+            .expect("unbound_send should not fail");
     }
 }
 
@@ -233,7 +243,7 @@ impl MessageBuffer {
     ///
     /// We also need the header for the message, and the participant who sent it.
     fn push(&self, header: MessageHeader, from: Participant, message: MessageData) {
-        let mut messages_lock = self.messages.lock().unwrap();
+        let mut messages_lock = self.messages.lock().expect("lock should not fail");
         messages_lock.entry(header).or_default().send(from, message);
     }
 
@@ -243,7 +253,7 @@ impl MessageBuffer {
     /// also correctly wake the underlying task when such a message arrives.
     async fn pop(&self, header: MessageHeader) -> (Participant, MessageData) {
         let receiver = {
-            let mut messages_lock = self.messages.lock().unwrap();
+            let mut messages_lock = self.messages.lock().expect("lock should not fail");
             messages_lock.entry(header).or_default().receiver.clone()
         };
         let mut receiver_lock = receiver.lock().await;
@@ -278,7 +288,7 @@ impl Comms {
     }
 
     fn outgoing(&self) -> Option<Message> {
-        let mut outgoing_lock = self.outgoing.lock().unwrap();
+        let mut outgoing_lock = self.outgoing.lock().expect("lock should not fail");
         outgoing_lock.pop_front()
     }
 
@@ -295,7 +305,10 @@ impl Comms {
     }
 
     fn send_raw(&self, data: Message) {
-        self.outgoing.lock().unwrap().push_back(data);
+        self.outgoing
+            .lock()
+            .expect("lock should not fail")
+            .push_back(data);
     }
 
     /// (Indicate that you want to) send a message to everybody else.

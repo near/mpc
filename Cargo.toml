@@ -82,6 +82,7 @@ indexing-slicing = "allow"
 # Part of clippy restriction group
 panic = "deny"
 panic-in-result-fn = "warn"
+unwrap-used = "warn"
 
 # Lint groups used
 nursery = {level = "warn", priority = -1}

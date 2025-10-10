@@ -111,8 +111,8 @@ impl ParticipantList {
                 out.push(p);
             }
         }
-        // We know that no duplicates will be created, so unwrapping is safe
-        Self::new_vec(out).unwrap()
+        Self::new_vec(out)
+            .expect("We know that no duplicates will be created, so unwrapping is safe")
     }
 
     // Returns all the participants in the list
@@ -179,18 +179,14 @@ impl<'a, T> ParticipantMap<'a, T> {
     ///
     /// This will do nothing if the participant is unknown, or already has a value
     pub fn put(&mut self, participant: Participant, data: T) {
-        let i = self.participants.indices.get(&participant);
-        if i.is_none() {
-            return;
-        }
-        let i = *i.unwrap();
+        if let Some(&i) = self.participants.indices.get(&participant) {
+            if self.data[i].is_some() {
+                return;
+            }
 
-        if self.data[i].is_some() {
-            return;
+            self.data[i] = Some(data);
+            self.count += 1;
         }
-
-        self.data[i] = Some(data);
-        self.count += 1;
     }
 
     // Consumes the Map returning only the vector of the unwrapped data

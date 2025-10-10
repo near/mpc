@@ -19,7 +19,7 @@ fn construct_key_package(
     signing_share: &SigningShare,
     verifying_key: &VerifyingKey,
 ) -> Result<KeyPackage, ProtocolError> {
-    let identifier = me.to_identifier();
+    let identifier = me.to_identifier()?;
     let signing_share = *signing_share;
     let verifying_share = signing_share.into();
 
@@ -64,7 +64,7 @@ async fn do_sign_coordinator(
     let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
 
     let (nonces, commitments) = round1::commit(&signing_share, rng);
-    commitments_map.insert(me.to_identifier(), commitments);
+    commitments_map.insert(me.to_identifier()?, commitments);
     seen.put(me);
 
     let commit_waitpoint = chan.next_waitpoint();
@@ -75,7 +75,7 @@ async fn do_sign_coordinator(
         if !seen.put(from) {
             continue;
         }
-        commitments_map.insert(from.to_identifier(), commitment);
+        commitments_map.insert(from.to_identifier()?, commitment);
     }
 
     let signing_package = frost_ed25519::SigningPackage::new(commitments_map, message.as_slice());
@@ -96,7 +96,7 @@ async fn do_sign_coordinator(
 
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
-    signature_shares.insert(me.to_identifier(), signature_share);
+    signature_shares.insert(me.to_identifier()?, signature_share);
     seen.clear();
     seen.put(me);
 
@@ -105,7 +105,7 @@ async fn do_sign_coordinator(
         if !seen.put(from) {
             continue;
         }
-        signature_shares.insert(from.to_identifier(), signature_share);
+        signature_shares.insert(from.to_identifier()?, signature_share);
     }
 
     // --- Signature aggregation.

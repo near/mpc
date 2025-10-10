@@ -144,7 +144,11 @@ pub async fn multiplication_many<const N: usize>(
     bv_iv: Vec<Scalar>,
     rng: impl CryptoRngCore + Send + Copy + 'static,
 ) -> Result<Vec<Scalar>, ProtocolError> {
-    assert!(N > 0);
+    if N == 0 {
+        return Err(ProtocolError::AssertionFailed(
+            "N must be greater than 0".to_string(),
+        ));
+    }
     let sid_arc = Arc::new(sid);
     let av_iv_arc = Arc::new(av_iv);
     let bv_iv_arc = Arc::new(bv_iv);
@@ -203,8 +207,13 @@ pub async fn multiplication_many<const N: usize>(
 
     for oi in outs.iter_mut().take(N) {
         for _ in participants.others(me) {
-            let result = results.pop_front().unwrap();
-            *oi += result;
+            if let Some(result) = results.pop_front() {
+                *oi += result;
+            } else {
+                return Err(ProtocolError::AssertionFailed(
+                    "Received less values than expected".to_string(),
+                ));
+            }
         }
     }
 

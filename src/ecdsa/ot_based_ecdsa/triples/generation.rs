@@ -41,7 +41,9 @@ fn create_transcript(
     // To allow interop between platforms where usize is different
     transcript.message(
         b"threshold",
-        &u64::try_from(threshold).unwrap().to_be_bytes(),
+        &u64::try_from(threshold)
+            .expect("threshold should always fit in u64")
+            .to_be_bytes(),
     );
     Ok(transcript)
 }
