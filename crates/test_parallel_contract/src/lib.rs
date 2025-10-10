@@ -1,9 +1,9 @@
+use elliptic_curve::group::Group;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use threshold_signatures::confidential_key_derivation::{self as ckd, ciphersuite::Group as _};
 
 // TODO: all these types should come from mpc_contract https://github.com/near/mpc/issues/1057
 
@@ -37,8 +37,8 @@ struct CKDArgs {
 }
 
 pub fn generate_app_public_key(seed: u64) -> dtos_contract::Bls12381G1PublicKey {
-    let x = ckd::Scalar::from(seed);
-    let big_x = ckd::ElementG1::generator() * x;
+    let x = blstrs::Scalar::from(seed);
+    let big_x = blstrs::G1Projective::generator() * x;
     dtos_contract::Bls12381G1PublicKey::from(big_x.to_compressed())
 }
 

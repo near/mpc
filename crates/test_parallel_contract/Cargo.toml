@@ -13,7 +13,8 @@ near-sdk = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-threshold-signatures = { workspace = true }
+blstrs = { workspace = true }
+elliptic-curve = { workspace = true }
 dtos-contract = { workspace = true }
 
 
