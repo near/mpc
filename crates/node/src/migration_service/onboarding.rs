@@ -50,7 +50,6 @@ pub async fn onboard(
 
         match job {
             OnboardingJob::Done => {
-                // todo: figure out this tracing framework.
                 tracing::info!(target: "Onboarding", "Done onboarding {:?}", my_near_account_id);
                 cancel_monitoring_task.cancel();
                 return Ok(());
@@ -180,7 +179,7 @@ async fn execute_onboarding(
         .await
         .is_ok()
     {
-        return Ok(());
+        break;
     } else {
         wait_for_and_import_keyshares(
             &importing_keyset,
