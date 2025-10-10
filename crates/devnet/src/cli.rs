@@ -386,7 +386,7 @@ pub struct DeployParallelSignContractCmd {
     /// Defaults to `constants::DEFAULT_PARALLEL_SIGN_CONTRACT_PATH`.
     #[clap(long)]
     pub path: Option<String>,
-    #[clap(long, default_value = "2")]
+    #[clap(long, default_value = "20")]
     pub deposit_near: u128,
 }
 
