@@ -1,0 +1,19 @@
+name: Check Crate Names
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check
+      - name: Enforce hyphens in crate names
+        run: |
+          if grep -r --include="Cargo.toml" 'name = ".*_.*"' . | grep -v "libs/nearcore"; then
+            echo "Error: Underscores found in crate names!"
+            exit 1
+          fi

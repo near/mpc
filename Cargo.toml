@@ -4,16 +4,16 @@ exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
     "crates/contract",
-    "crates/contract_history",
+    "crates/contract-history",
     "crates/devnet",
     "crates/contract-interface",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
-    "crates/tee_authority",
+    "crates/tee-authority",
     "crates/test_migration_contract",
     "crates/test_parallel_contract",
-    "crates/test_utils",
+    "crates/test-utils",
     "crates/tls",
 ]
 
@@ -45,9 +45,9 @@ attestation = { path = "crates/attestation" }
 contract-interface = { path = "crates/contract-interface" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 node-types = { path = "crates/node-types" }
-test_utils = { path = "crates/test_utils" }
-tee_authority = { path = "crates/tee_authority" }
-contract_history = { path = "crates/contract_history" }
+test-utils = { path = "crates/test-utils" }
+tee-authority = { path = "crates/tee-authority" }
+contract-history = { path = "crates/contract-history" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
 ] }
