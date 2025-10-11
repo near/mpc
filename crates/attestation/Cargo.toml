@@ -20,4 +20,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
-test_utils = { workspace = true }
+test-utils = { workspace = true }

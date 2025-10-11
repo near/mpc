@@ -1,10 +1,10 @@
 [package]
-name = "contract_history"
+name = "contract-history"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "export_contracts"
+name = "export-contracts"
 path = "src/bin/export_contracts.rs"
 
 [dependencies]
