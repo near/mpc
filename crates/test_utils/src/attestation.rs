@@ -55,7 +55,7 @@ pub fn p2p_tls_key() -> [u8; 32] {
 
 pub fn account_key() -> [u8; 32] {
     let key_file = include_str!("../assets/near_account_public_key.pub");
-    let public_key: dtos_contract::Ed25519PublicKey =
+    let public_key: contract_interface::types::Ed25519PublicKey  =
         key_file.parse().expect("File contains a valid public key");
     *public_key.as_bytes()
 }

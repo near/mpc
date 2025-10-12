@@ -40,7 +40,7 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
->>>>>>> origin/main
+
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
@@ -1527,7 +1527,7 @@ mod tests {
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, gen_account_id, gen_participant,
+        bogus_ed25519_public_key,bogus_ed25519_near_public_key, gen_account_id, gen_participant,
     };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},

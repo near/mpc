@@ -15,29 +15,18 @@ use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
 use std::{collections::HashSet, time::Duration};
+use std::hash::Hasher;
+use std::hash::Hash;
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone, Hash)] //#[derive(Debug, Ord, PartialOrd, Clone)]
+#[derive(Debug,  Ord,  PartialOrd, Clone)] //#[derive(Debug, Ord, PartialOrd, Clone)]
 pub struct NodeId {
     /// Operator account
     pub account_id: AccountId,
     /// TLS public key, MUST BE of type Ed25519
     pub tls_public_key: near_sdk::PublicKey,
-    pub account_public_key: Option<PublicKey>,
+    pub account_public_key: Option<near_sdk::PublicKey>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TeeQuoteStatus {
-    /// TEE quote and Docker image verification both passed successfully.
-    /// The participant is considered to have a valid, verified TEE status.
-    Valid,
-
-    /// TEE verification failed - either the quote verification failed,
-    /// the Docker image verification failed, or both validations failed.
-    /// The participant should not be trusted for TEE-dependent operations.
-    Invalid,
-}
-
 
 
 // Implement Eq + Hash ignoring account_public_key
@@ -57,6 +46,18 @@ impl Hash for NodeId {
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TeeQuoteStatus {
+    /// TEE quote and Docker image verification both passed successfully.
+    /// The participant is considered to have a valid, verified TEE status.
+    Valid,
+
+    /// TEE verification failed - either the quote verification failed,
+    /// the Docker image verification failed, or both validations failed.
+    /// The participant should not be trusted for TEE-dependent operations.
+    Invalid,
+}
 pub enum TeeValidationResult {
     /// All participants are valid
     Full,
@@ -326,6 +327,7 @@ impl TeeState {
             .find(|node_id| &node_id.tls_public_key == tls_public_key)
             .cloned()
     }
+
     /// Returns true if the caller belongs to an attested node.
     ///
     /// Transition phase (non-TEE → TEE):
@@ -358,18 +360,7 @@ impl TeeState {
         let keys: Vec<String> = self
             .participants_attestations
             .keys()
-<<<<<<< HEAD
-            .any(|node_id| match &node_id.account_public_key {
-                Some(pk) => pk == &signer_pk,
-                None => node_id.account_id == signer_id, // TODO  legacy mock node (temporary) - remove after transition
-=======
-            .map(|node_id| {
-                format!(
-                    "account_id: {}, tls_pk: {:?}, account_pk: {:?}",
-                    node_id.account_id, node_id.tls_public_key, node_id.account_public_key
-                )
->>>>>>> bbe8c44 (update tests)
-            })
+            .map(|node_id| format!("{:?}", node_id))
             .collect();
 
         env::log_str(&format!(

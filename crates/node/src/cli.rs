@@ -256,7 +256,7 @@ impl StartCmd {
 
         let report_data = ReportData::new(
             *tls_public_key.into_contract_interface_type().as_bytes(),
-            *account_public_key.into_dto_type().as_bytes(),
+            *account_public_key.into_contract_interface_type().as_bytes(),
         );
 
         let attestation = tee_authority.generate_attestation(report_data).await?;

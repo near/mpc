@@ -223,9 +223,10 @@ mod tests {
         },
     };
 
-    use test_utils::attestation::p2p_tls_key;
+   
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
+
     use test_utils::attestation::{account_key, p2p_tls_key};
 
     extern crate std;
