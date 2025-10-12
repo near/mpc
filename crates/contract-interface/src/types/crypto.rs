@@ -21,8 +21,6 @@ impl AsRef<[u8]> for Ed25519PublicKey {
         &self.0
     }
 }
-<<<<<<< HEAD:crates/dtos_contract/src/crypto.rs
-=======
 
 impl Secp256k1PublicKey {
     pub fn as_bytes(&self) -> &[u8; SECP256K1_PUBLIC_KEY_SIZE] {
@@ -360,4 +358,3 @@ mod tests {
         }
     }
 }
->>>>>>> origin/main:crates/contract-interface/src/types/crypto.rs

@@ -2139,6 +2139,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
+name = "contract-interface"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "derive_more 2.0.1",
+ "schemars 0.8.22",
+ "serde",
+]
+
+[[package]]
 name = "contract_history"
 version = "0.1.0"
 dependencies = [
@@ -2894,16 +2904,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
-]
-
-[[package]]
-name = "dtos-contract"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "derive_more 2.0.1",
- "schemars 0.8.22",
- "serde",
 ]
 
 [[package]]
@@ -4971,11 +4971,11 @@ dependencies = [
  "assert_matches",
  "attestation",
  "borsh",
+ "contract-interface",
  "contract_history",
  "curve25519-dalek",
  "derive_more 2.0.1",
  "digest 0.10.7",
- "dtos-contract",
  "ecdsa",
  "elliptic-curve",
  "fs2",
@@ -5045,8 +5045,8 @@ dependencies = [
  "borsh",
  "built",
  "clap",
+ "contract-interface",
  "derive_more 2.0.1",
- "dtos-contract",
  "ed25519-dalek",
  "flume",
  "futures",
@@ -9823,8 +9823,8 @@ name = "test_utils"
 version = "0.1.0"
 dependencies = [
  "attestation",
+ "contract-interface",
  "dstack-sdk-types",
- "dtos-contract",
  "hex",
  "mpc-primitives",
  "near-sdk",
