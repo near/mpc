@@ -252,8 +252,14 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let report_data =
-            ReportData::new(*tls_public_key.into_contract_interface_type().as_bytes());
+
+        let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
+
+        let report_data = ReportData::new(
+            *tls_public_key.into_contract_interface_type().as_bytes(),
+            *account_public_key.into_contract_interface_type().as_bytes(),
+        );
+
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime
@@ -374,6 +380,7 @@ impl StartCmd {
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
         let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
+        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
@@ -406,6 +413,7 @@ impl StartCmd {
                 tee_authority_clone,
                 tx_sender_clone,
                 tls_public_key,
+                account_public_key,
                 tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
             )
             .await
@@ -428,6 +436,7 @@ impl StartCmd {
                 tee_authority,
                 tx_sender_clone,
                 tls_public_key,
+                account_public_key,
                 tee_accounts_receiver,
             )
             .await

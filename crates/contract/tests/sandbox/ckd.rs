@@ -22,7 +22,8 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let attested_account = &mpc_nodes[0];
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
     };
@@ -61,6 +62,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
             &request,
             Some((&respond_req, &respond_resp)),
             &contract,
+            attested_account,
         )
         .await?;
     }
@@ -87,6 +89,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         &request,
         Some((&respond_req, &respond_resp)),
         &contract,
+        attested_account,
     )
     .await?;
     derive_confidential_key_and_validate(
@@ -94,13 +97,15 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         &request,
         Some((&respond_req, &respond_resp)),
         &contract,
+        attested_account,
     )
     .await?;
 
     // Check that a ckd with no response from MPC network properly errors out:
-    let err = derive_confidential_key_and_validate(account, &request, None, &contract)
-        .await
-        .expect_err("should have failed with timeout");
+    let err =
+        derive_confidential_key_and_validate(account, &request, None, &contract, attested_account)
+            .await
+            .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
         .contains(&errors::RequestError::Timeout.to_string()));
@@ -110,7 +115,9 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let attested_account = &mpc_nodes[0];
+
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -142,9 +149,9 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     dbg!(&status);
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    // Call `respond_ckd` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond_ckd")
+    // Call `respond_ckd` as an attested node:
+    let respond = attested_account
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -247,6 +254,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    
     let alice = worker.dev_create_account().await?;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
@@ -275,8 +283,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     );
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.
-    let respond = contract
-        .call("respond_ckd")
+    let respond = attested_account
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
