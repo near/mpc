@@ -14,12 +14,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
-use std::{collections::HashSet, time::Duration};
-use std::hash::Hasher;
 use std::hash::Hash;
+use std::hash::Hasher;
+use std::{collections::HashSet, time::Duration};
 
 #[near(serializers=[borsh, json])]
-#[derive(Debug,  Ord,  PartialOrd, Clone)] //#[derive(Debug, Ord, PartialOrd, Clone)]
+#[derive(Debug, Ord, PartialOrd, Clone)] //#[derive(Debug, Ord, PartialOrd, Clone)]
 pub struct NodeId {
     /// Operator account
     pub account_id: AccountId,
@@ -27,7 +27,6 @@ pub struct NodeId {
     pub tls_public_key: near_sdk::PublicKey,
     pub account_public_key: Option<near_sdk::PublicKey>,
 }
-
 
 // Implement Eq + Hash ignoring account_public_key
 impl PartialEq for NodeId {
@@ -46,7 +45,6 @@ impl Hash for NodeId {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeeQuoteStatus {
     /// TEE quote and Docker image verification both passed successfully.
@@ -58,6 +56,7 @@ pub enum TeeQuoteStatus {
     /// The participant should not be trusted for TEE-dependent operations.
     Invalid,
 }
+#[derive(Debug)]
 pub enum TeeValidationResult {
     /// All participants are valid
     Full,
@@ -72,7 +71,8 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) participants_attestations: IterableMap<NodeId, Attestation>,
+    //pub(crate) participants_attestations: IterableMap<NodeId, Attestation>,
+    pub participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
 impl Default for TeeState {
@@ -101,8 +101,10 @@ impl TeeState {
                     account_public_key: None,
                 };
 
-                participants_attestations
-                    .insert(node_id, Attestation::Mock(MockAttestation::Valid));
+                participants_attestations.insert(
+                    participant_info.sign_pk.clone(),
+                    (node_id, Attestation::Mock(MockAttestation::Valid)),
+                );
             });
 
         Self {
@@ -110,7 +112,6 @@ impl TeeState {
             ..Default::default()
         }
     }
-
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
@@ -142,6 +143,7 @@ impl TeeState {
     }
 
     /// Verifies the TEE quote and Docker image
+    /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
         node_id: &NodeId,
@@ -151,39 +153,93 @@ impl TeeState {
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
-        let participant_attestation = self.participants_attestations.get(node_id);
+        env::log_str(&format!(
+            "verify_tee_participant: start for node_id.account_id={}, tls_pk={:?}, account_pk={:?}",
+            node_id.account_id, node_id.tls_public_key, node_id.account_public_key
+        ));
+
+        //let participant_attestation = self.participants_attestations.get(node_id);
+        let participant_attestation = self.participants_attestations.get(&node_id.tls_public_key);
+
         let Some(participant_attestation) = participant_attestation else {
+            env::log_str("verify_tee_participant: no participant attestation found");
             return TeeQuoteStatus::Invalid;
         };
 
-        //todo check convertion...    
+        env::log_str("verify_tee_participant: found participant attestation entry");
+
+        // --- Convert TLS public key ---
         let tls_public_key = match node_id.tls_public_key.clone().try_into_dto_type() {
-            Ok(value) => value,
-            Err(_) => return TeeQuoteStatus::Invalid,
+            Ok(value) => {
+                env::log_str("verify_tee_participant: tls_public_key converted OK");
+                value
+            }
+            Err(_) => {
+                env::log_str("verify_tee_participant: failed to convert tls_public_key");
+                return TeeQuoteStatus::Invalid;
+            }
         };
 
-
+        // --- Convert account public key if available ---
+        //
+        // WARNING:
+        // Some legacy/mock nodes may not have an account_public_key set yet.
+        // In that case, we allow `None` temporarily to avoid breaking existing tests or flows.
+        //
+        // TODO(#823): Remove this fallback once all MPC nodes are required
+        //             to run inside a TEE and provide a valid account_public_key.
         let account_public_key = match node_id.account_public_key.clone() {
             Some(pk) => match pk.try_into_dto_type() {
-                Ok(value) => value,
-                Err(_) => return TeeQuoteStatus::Invalid,
+                Ok(value) => {
+                    env::log_str("verify_tee_participant: account_public_key converted OK");
+                    Some(value)
+                }
+                Err(_) => {
+                    env::log_str(&format!(
+                    "verify_tee_participant: account_public_key for {} failed conversion (continuing)",
+                    node_id.account_id
+                ));
+                    None
+                }
             },
-            None => return TeeQuoteStatus::Invalid, //TODO need to handle legacy mock nodes?
+            None => {
+                env::log_str(&format!(
+                    "verify_tee_participant: account_public_key is None (legacy/mock node?) for {}",
+                    node_id.account_id
+                ));
+                None
+            }
         };
 
+        // --- Prepare expected report data ---
         let expected_report_data = ReportData::new(
             *tls_public_key.as_bytes(),
-            *account_public_key.as_bytes(),
+            match account_public_key {
+                Some(ref pk) => *pk.as_bytes(),
+                None => [0u8; 32], // TODO(#823): Remove this fallback once all MPC nodes are required
+                                   //to run inside a TEE and provide a valid account_public_key.
+            },
         );
-        
+
+        env::log_str(&format!(
+            "verify_tee_participant: prepared expected_report_data with account_pk_present={}",
+            account_public_key.is_some()
+        ));
+
+        // --- Verify the attestation quote ---
         let time_stamp_seconds = Self::current_time_seconds();
 
-        let quote_result = participant_attestation.verify(
+        let quote_result = participant_attestation.1.verify(
             expected_report_data,
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
         );
+
+        env::log_str(&format!(
+            "verify_tee_participant: verification result = {}",
+            if quote_result { "Valid" } else { "Invalid" }
+        ));
 
         if quote_result {
             TeeQuoteStatus::Valid
@@ -192,34 +248,72 @@ impl TeeState {
         }
     }
 
-    /// Performs TEE validation on the given participants.
     pub fn validate_tee(
         &mut self,
         participants: &Participants,
         tee_upgrade_deadline_duration: Duration,
     ) -> TeeValidationResult {
+        env::log_str(&format!(
+            "validate_tee: starting validation for {} participants",
+            participants.len()
+        ));
+
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
         let participants_with_valid_attestation: Vec<_> = participants
-            .participants()
-            .iter()
-            .filter(|(account_id, _, participant_info)| {
-                let tls_public_key = participant_info.sign_pk.clone();
+        .participants()
+        .iter()
+        .filter(|(account_id, _, participant_info)| {
+            let tls_public_key = participant_info.sign_pk.clone();
 
-                let tee_status = self.verify_tee_participant(
-                    &NodeId {
-                        account_id: account_id.clone(),
-                        tls_public_key,
-                        account_public_key: None,
-                    },
-                    tee_upgrade_deadline_duration,
-                );
+            // Try to find an existing NodeId with account_public_key filled
+            let maybe_node = self.find_node_id_by_tls_key(&tls_public_key);
 
-                matches!(tee_status, TeeQuoteStatus::Valid)
-            })
-            .cloned()
-            .collect();
+            env::log_str(&format!(
+    "validate_tee: maybe_node lookup for account_id={} tls_pk={:?} -> {:?}",
+    account_id,
+    tls_public_key,
+    maybe_node.as_ref().map(|n| format!(
+        "NodeId(account_id={}, has_account_pk={})",
+        n.account_id,
+        n.account_public_key.is_some()
+    ))
+));
+
+            let node_id = NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: tls_public_key.clone(),
+
+                // In transition (mock attestation) mode — try to reuse known key, else None.
+                // TODO(#823): remove this fallback once all MPC nodes have a valid TEE key.
+                account_public_key: maybe_node.and_then(|n| n.account_public_key.clone()),
+            };
+
+            env::log_str(&format!(
+                "validate_tee: checking participant account_id={} tls_pk={:?} recovered_account_pk={:?}",
+                account_id,
+                tls_public_key,
+                node_id.account_public_key,
+            ));
+
+            let tee_status = self.verify_tee_participant(&node_id, tee_upgrade_deadline_duration);
+
+            env::log_str(&format!(
+                "validate_tee: participant {} -> tee_status={:?}",
+                account_id, tee_status
+            ));
+
+            matches!(tee_status, TeeQuoteStatus::Valid)
+        })
+        .cloned()
+        .collect();
+
+        env::log_str(&format!(
+            "validate_tee: {} of {} participants have valid attestations",
+            participants_with_valid_attestation.len(),
+            participants.len()
+        ));
 
         if participants_with_valid_attestation.len() != participants.len() {
             let participants_with_valid_attestation =
@@ -238,14 +332,16 @@ impl TeeState {
     /// Returns:
     /// - `true` if this is the first attestation for the node (i.e., a new participant was added).
     /// - `false` if the node already had an attestation (the existing one was replaced).
-    pub fn add_participant(
-        &mut self,
-        node_id: NodeId,
-        proposed_tee_participant: Attestation,
-    ) -> bool {
+    pub fn add_participant(&mut self, node_id: NodeId, attestation: Attestation) -> bool {
+        let tls_pk = node_id.tls_public_key.clone();
+
+        let is_new = !self.participants_attestations.contains_key(&tls_pk);
+
+        // Must pass owned values, not references
         self.participants_attestations
-            .insert(node_id, proposed_tee_participant)
-            .is_none()
+            .insert(tls_pk, (node_id, attestation));
+
+        is_new
     }
 
     pub fn vote(
@@ -287,101 +383,85 @@ impl TeeState {
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
-    /// Removes TEE information for accounts that are not in the provided participants list.
-    /// This is used to clean up storage after a resharing concludes.
+    /// Removes TEE information for nodes that are not in the provided participants list.
+    /// Used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
-        let participant_accounts: HashSet<NodeId> = participants
+        // Collect all allowed TLS public keys from current participants
+        let active_tls_keys: HashSet<near_sdk::PublicKey> = participants
             .participants()
             .iter()
-            .map(|(account_id, _, p_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: p_info.sign_pk.clone(),
-                account_public_key: None, //mapping to NodeId without account_public_key.
-            })
+            .map(|(_, _, p_info)| p_info.sign_pk.clone())
             .collect();
 
-        // Collect accounts to remove (can't remove while iterating)
-        let nodes_to_remove: Vec<NodeId> = self
+        // Collect TLS keys that are *not* in the active participants list
+        let stale_keys: Vec<near_sdk::PublicKey> = self
             .participants_attestations
             .keys()
-            .filter(|node_id| !participant_accounts.contains(node_id))
+            .filter(|tls_pk| !active_tls_keys.contains(*tls_pk))
             .cloned()
             .collect();
 
-        // Remove non-participant TEE information
-        for node_id in &nodes_to_remove {
-            self.participants_attestations.remove(node_id);
+        // Remove all stale TEE entries
+        for tls_pk in stale_keys {
+            self.participants_attestations.remove(&tls_pk);
         }
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
     /// Note: This may include accounts that are no longer active protocol participants.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {
-        self.participants_attestations.keys().cloned().collect()
+        self.participants_attestations
+            .values()
+            .map(|(node_id, _)| node_id.clone())
+            .collect()
     }
 
     /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &near_sdk::PublicKey) -> Option<NodeId> {
         self.participants_attestations
-            .keys()
-            .find(|node_id| &node_id.tls_public_key == tls_public_key)
-            .cloned()
+            .get(tls_public_key)
+            .map(|(node_id, _)| node_id.clone())
     }
-
-    /// Returns true if the caller belongs to an attested node.
-    ///
-    /// Transition phase (non-TEE → TEE):
-    /// - If `account_public_key` is `Some`, we validate against the signer public key.
-    /// - If `account_public_key` is `None`, we fall back to account_id (legacy mock nodes).
-    ///
-    ///  TODO (Migration plan):
-    ///   1. [Current] Allow `None` and fall back to account_id for legacy mock nodes.
-    ///   2.  [Final phase] Remove the `None` branch entirely, making TEE attestation mandatory.
     pub fn is_caller_an_attested_node(&self) -> bool {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
         let predecessor = env::predecessor_account_id();
 
-        println!("println {}", predecessor);
-        env::log_str(&format!("predecessor: {:?}", predecessor));
-
-        // Print to both NEAR logs and stdout for visibility in tests / VS Code
-        env::log_str(&format!(
-            "signer_id: {:?}, signer_pk: {:?}",
+        // Debug info for tests and logs
+        println!("[TEE] predecessor: {}", predecessor);
+        println!(
+            "[TEE] signer_id: {:?}, signer_pk: {:?}",
             signer_id, signer_pk
-        ));
-        println!("signer_id: {:?}, signer_pk: {:?}", signer_id, signer_pk);
-
-        env::log_str(&format!(
-            "Number of participant attestations: {}",
+        );
+        println!(
+            "[TEE] Number of participant attestations: {}",
             self.participants_attestations.len()
-        ));
+        );
 
-        let keys: Vec<String> = self
-            .participants_attestations
-            .keys()
-            .map(|node_id| format!("{:?}", node_id))
-            .collect();
+        // Log all node IDs (for test visibility)
+        for (tls_pk, (node_id, _)) in self.participants_attestations.iter() {
+            println!(
+                "[TEE] attested node: account_id={:?}, tls_pk={:?}, account_pk={:?}",
+                node_id.account_id, tls_pk, node_id.account_public_key
+            );
+        }
 
-        env::log_str(&format!(
-            "participants_attestations keys:\n{}",
-            keys.join("\n")
-        ));
-
-        let result = self.participants_attestations.keys().any(|node_id| {
+        // Check if caller matches an attested node
+        let result = self.participants_attestations.values().any(|(node_id, _)| {
             match &node_id.account_public_key {
                 Some(pk) => pk == &signer_pk,
                 None => {
+                    // TODO (#823) Legacy fallback for mock nodes (no account_public_key) -remove when TEE is enforced
                     println!(
-                        "legacy check (mock node): comparing account_id {:?} == {:?}",
+                        "[TEE] legacy check: comparing account_id {:?} == {:?}",
                         node_id.account_id, signer_id
                     );
-                    node_id.account_id == signer_id // TODO (#823): legacy mock node (temporary) — remove after transition
+                    node_id.account_id == signer_id
                 }
             }
         });
 
-        println!("println! is_caller_an_attested_node result = {}", result);
+        println!("[TEE] is_caller_an_attested_node result = {}", result);
         env::log_str(&format!("is_caller_an_attested_node result = {}", result));
 
         result
@@ -419,7 +499,7 @@ mod tests {
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
-                account_public_key: Some(bogus_ed25519_near_public_key()), //TODO check if this is ok.
+                account_public_key: Some(bogus_ed25519_near_public_key()),
             })
             .collect();
 
@@ -431,6 +511,7 @@ mod tests {
             account_public_key: Some(bogus_ed25519_near_public_key()),
             tls_public_key: bogus_ed25519_near_public_key(),
         };
+
         for node_id in &participant_nodes {
             tee_state.add_participant(node_id.clone(), local_attestation.clone());
         }
@@ -439,11 +520,13 @@ mod tests {
         // Verify all 4 accounts have TEE info initially
         assert_eq!(tee_state.participants_attestations.len(), 4);
         for node_id in &participant_nodes {
-            assert!(tee_state.participants_attestations.contains_key(node_id));
+            assert!(tee_state
+                .participants_attestations
+                .contains_key(&node_id.tls_public_key)); 
         }
         assert!(tee_state
             .participants_attestations
-            .contains_key(&non_participant_uid));
+            .contains_key(&non_participant_uid.tls_public_key)); 
 
         // Clean non-participants
         tee_state.clean_non_participants(&participants);
@@ -451,10 +534,12 @@ mod tests {
         // Verify only participants remain
         assert_eq!(tee_state.participants_attestations.len(), 3);
         for node_id in &participant_nodes {
-            assert!(tee_state.participants_attestations.contains_key(node_id));
+            assert!(tee_state
+                .participants_attestations
+                .contains_key(&node_id.tls_public_key)); 
         }
         assert!(!tee_state
             .participants_attestations
-            .contains_key(&non_participant_uid));
+            .contains_key(&non_participant_uid.tls_public_key));
     }
 }

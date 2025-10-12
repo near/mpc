@@ -46,7 +46,7 @@ use near_sdk::{
     log, near_bindgen,
     store::LookupMap,
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
-};  //PublicKey?
+}; //PublicKey?
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -621,8 +621,12 @@ impl MpcContract {
             .tee_state
             .participants_attestations
             .iter()
-            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key.into_contract_type())
-            .map(|(_, attestation)| attestation.clone().into_dto_type()))
+            // Compare the stored key (tls_pk) to the requested one
+            .find(|(stored_tls_pk, _)| {
+                **stored_tls_pk == tls_public_key.clone().into_contract_type()
+            })
+            // Extract the attestation from the (NodeId, Attestation) tuple
+            .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -651,10 +655,15 @@ impl MpcContract {
             .tee_state
             .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
 
-        let proposed_participants = proposal.participants();
+        env::log_str(&format!(
+            "vote_new_parameters: tee validation result = {:?}",
+            validation_result
+        ));
 
+        let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
+                env::log_str("vote_new_parameters: TEE validation FULL — proceeding");
                 if let Some(new_state) = self
                     .protocol_state
                     .vote_new_parameters(prospective_epoch_id, &proposal)?
@@ -666,6 +675,11 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
+                env::log_str(&format!(
+                    "vote_new_parameters: TEE validation PARTIAL — valid participants = {:?}",
+                    participants_with_valid_attestation
+                ));
+
                 let invalid_participants: Vec<_> = proposed_participants
                     .participants()
                     .iter()
@@ -673,6 +687,11 @@ impl MpcContract {
                         participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
+
+                env::log_str(&format!(
+                    "vote_new_parameters: invalid participants = {:?}",
+                    invalid_participants
+                ));
 
                 Err(
                     InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
@@ -1527,7 +1546,7 @@ mod tests {
     use crate::errors::{ErrorKind, NodeMigrationError};
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key,bogus_ed25519_near_public_key, gen_account_id, gen_participant,
+        bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
     };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -1590,25 +1609,28 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     ///
     /// Returns the `AccountId` of the node used.
+    /// Temporarily sets the testing environment so that calls appear
+    /// to come from an attested MPC node registered in the contract's `tee_state`.
+    ///
+    /// Returns the `AccountId` of the node used.
     pub fn with_attested_context(contract: &MpcContract) -> near_sdk::AccountId {
-        // pick the first attested node from the contract state
-        let attested_node_id = contract
+        // Pick the first attested node (key is TLS PK, value is (NodeId, Attestation))
+        let (_account_id, (node_id, _)) = contract
             .tee_state
             .participants_attestations
-            .keys()
+            .iter()
             .next()
-            .expect("No attested participants in tee_state")
-            .clone();
+            .expect("No attested participants in tee_state");
 
-        // build a new simulated environment with this node as caller
+        // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .predecessor_account_id(attested_node_id.account_id.clone())
-            .signer_account_id(attested_node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
-        attested_node_id.account_id.clone()
+        node_id.account_id.clone()
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
@@ -1672,7 +1694,7 @@ mod tests {
         // set calling context as a MPC node
         let node = with_attested_context(&contract);
         println!("Responding as attested node: {}", node);
-        
+
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
                 assert!(success);
@@ -1753,7 +1775,6 @@ mod tests {
             big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
         };
 
-     
         // set calling context as a MPC node
         let node = with_attested_context(&contract);
         println!("Responding as attested node: {}", node);

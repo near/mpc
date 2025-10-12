@@ -19,9 +19,7 @@ use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, NearToken, 
 use std::time::Duration;
 //PublicKey ???
 
-
 use crate::sandbox::common::IntoInterfaceType;
-
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
@@ -161,7 +159,13 @@ fn test_participant_kickout_after_expiration() {
 
     let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD, None);
 
-    assert_eq!(setup.contract.get_tee_accounts().len(), 0);
+    println!(
+        "[DEBUG] Initial TEE accounts = {} (should be {})",
+        setup.contract.get_tee_accounts().len(),
+        PARTICIPANT_COUNT
+    );
+
+    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Submit valid attestations for first 2 participants
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
@@ -196,6 +200,11 @@ fn test_participant_kickout_after_expiration() {
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);
 
+    println!(
+        "[DEBUG] Before expiry assert: TEE accounts = {}, expected = {}",
+        setup.contract.get_tee_accounts().len(),
+        PARTICIPANT_COUNT
+    );
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Fast-forward time past expiry and trigger resharing
@@ -205,6 +214,9 @@ fn test_participant_kickout_after_expiration() {
         .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
+    testing_env!(create_context_for_participant(
+        &participant_nodes[0].account_id
+    ));
     assert!(setup.contract.verify_tee().unwrap());
 
     let resharing_state = match setup.contract.state() {
@@ -239,11 +251,20 @@ fn test_participant_kickout_after_expiration() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should be in Running state after resharing"),
     };
-
     const EXPECTED_PARTICIPANT_COUNT: usize = PARTICIPANT_COUNT - 1;
+    println!(
+        "[DEBUG] Final Running state participant count = {}, expected = {}",
+        final_running_state.parameters.participants().len(),
+        EXPECTED_PARTICIPANT_COUNT
+    );
     assert_eq!(
         final_running_state.parameters.participants().len(),
         EXPECTED_PARTICIPANT_COUNT
+    );
+    println!(
+        "[DEBUG] TEE accounts after resharing = {}, expected = {}",
+        setup.contract.get_tee_accounts().len(),
+        PARTICIPANT_COUNT
     );
     // Before clean_tee_status() cleanup, we still have old TEE accounts
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
@@ -277,52 +298,73 @@ fn test_clean_tee_status_removes_non_participants() {
             account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
-
+    let tee_accounts_before = setup.contract.get_tee_accounts().len();
+    println!(
+        "[DEBUG] Before the 2xsubmit_attestation_for_node: TEE accounts = {}, expected = {}",
+        tee_accounts_before, INITIAL_TEE_ACCOUNTS
+    );
     for node_id in &participant_nodes {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
     // Add TEE account for someone who is NOT a current participant
-    // (simulates leftover data from a participant who was removed during resharing)
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_near_public_key(),
         account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
+    let tee_accounts_before = setup.contract.get_tee_accounts().len();
+    println!(
+        "[DEBUG] Before submit_attestation_for_node: TEE accounts = {}, expected = {}",
+        tee_accounts_before, INITIAL_TEE_ACCOUNTS
+    );
+
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        INITIAL_TEE_ACCOUNTS
+    let tee_accounts_before = setup.contract.get_tee_accounts().len();
+    println!(
+        "[DEBUG] Before cleanup: TEE accounts = {}, expected = {}",
+        tee_accounts_before, INITIAL_TEE_ACCOUNTS
     );
+    assert_eq!(tee_accounts_before, INITIAL_TEE_ACCOUNTS);
 
     let running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should be in Running state"),
     };
-    assert_eq!(
-        running_state.parameters.participants().len(),
-        PARTICIPANT_COUNT
+    let participant_count = running_state.parameters.participants().len();
+    println!(
+        "[DEBUG] Running state participant count = {}, expected = {}",
+        participant_count, PARTICIPANT_COUNT
     );
+    assert_eq!(participant_count, PARTICIPANT_COUNT);
 
     // Test cleanup: should remove TEE account for non-participant
+    println!("[DEBUG] Invoking clean_tee_status()...");
     setup.contract.clean_tee_status().unwrap();
 
     // Verify cleanup worked: TEE accounts reduced to match participant count
-    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
+    let tee_accounts_after = setup.contract.get_tee_accounts().len();
+    println!(
+        "[DEBUG] After cleanup: TEE accounts = {}, expected = {}",
+        tee_accounts_after, PARTICIPANT_COUNT
+    );
+    assert_eq!(tee_accounts_after, PARTICIPANT_COUNT);
 
     // State should remain Running with same participant count
     let final_running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    assert_eq!(
-        final_running_state.parameters.participants().len(),
-        PARTICIPANT_COUNT
+    let final_participant_count = final_running_state.parameters.participants().len();
+    println!(
+        "[DEBUG] Final Running state participant count = {}, expected = {}",
+        final_participant_count, PARTICIPANT_COUNT
     );
+    assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 
 /// **Test for grace-period expiry of older code hashes**

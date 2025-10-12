@@ -173,7 +173,7 @@ mod tests {
     }*/
 
     #[test]
-    #[ignore] // TODO, update str from node.
+    #[ignore] // TODO, update str from node.#1269
     fn test_from_str_valid() {
         let valid_quote: Vec<u8> =
             serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();
