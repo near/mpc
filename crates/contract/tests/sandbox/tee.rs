@@ -5,7 +5,11 @@ use crate::sandbox::common::{
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
+<<<<<<< HEAD
 use dtos_contract::{Attestation, MockAttestation};
+=======
+use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
+>>>>>>> origin/main
 use mpc_contract::{
     errors::InvalidState, primitives::test_utils::bogus_ed25519_near_public_key,
     state::ProtocolContractState,
@@ -404,7 +408,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
     let validation_success = submit_participant_info(
         participant_account_1,
         &contract,
-        &dtos_contract::Attestation::Mock(dtos_contract::MockAttestation::Valid),
+        &Attestation::Mock(MockAttestation::Valid),
         &tls_key_1,
     )
     .await

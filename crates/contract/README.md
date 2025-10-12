@@ -1,26 +1,47 @@
 # MPC Contract
+This crate defines the **MPC Contract**, which governs the MPC network and allows any NEAR account to request signatures.
 
-This folder contains the code for the **MPC Contract**, which is deployed on the [NEAR blockchain](https://nearblocks.io/address/v1.signer).
+```text
+     ┌───────┐  ┌─────────────┐   ┌───────────┐
+     │ User  │  │ Participant │   │ MPC Node  │
+     └───────┘  └─────────────┘   └───────────┘
+         │            │                │      
+Request signature.    │                │      
+         │    Vote on changes.         │      
+         │            │                │      
+         └────────┐   │   ┌──Respond to signature requests.
+                  │   │   │
+                  ▼   ▼   ▼
+               ┌──────────────┐
+               │ MPC Contract │
+               └──────────────┘
 
-This code will be moved to its own repository in the near future (c.f. [issue #417](https://github.com/Near-One/mpc/issues/417)).
+```
+
+## Live deployments
+The MPC contract is deployed on the [NEAR blockchain](https://nearblocks.io/address/v1.signer)
+and on the [NEAR testnet](https://testnet.nearblocks.io/address/v1.signer-prod.testnet).
 
 ## Role of the contract in Chain Signatures
 
-This contract serves as an API-endpoint to the MPC network. Users can submit signature requests via this contract and MPC Participants can vote on changes to the MPC network, such as:
+This contract serves as an interface to the MPC network.
+Users and contracts can submit signature requests via this contract,
+and MPC Participants can vote on changes to the MPC network, such as:
 
-- Changing the set of MPC participants
-- Adjusting the cryptographic threshold
-- Generating new distributed keys
-- Updating the contract code
+- Changing the set of MPC participants.
+- Adjusting the cryptographic threshold.
+- Generating new distributed keys.
+- Updating the contract code.
 
 ## Contract State
 
 The contract tracks the following information:
 
-- Pending signature requests
-- Current participant set of the MPC network
-- Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`)
-- (Currently unused) metadata related to trusted execution environments
+- Pending signature requests.
+- Current participant set of the MPC network.
+- Node migrations.
+- Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`).
+- Metadata related to trusted execution environments.
 - Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state).
 
 ## Usage
@@ -241,26 +262,17 @@ These functions require the caller to be a participant or candidate.
 | `update_config(config: ConfigV1)`                                          | Updates the contract configuration for `V1`.                                                                                                                                                                                             | `()`                     | TBD             | TBD                |
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
-## Development
-
-Note that due to the Rust compiler version used in this project and a lack of compatibility with the runtime version used in near-workspaces,
-we need to use wasm-opt to strip the contract of unused features. Otherwise the contract cannot be deserialized by near-workspaces runtime.
-
-Make sure you have wasm-opt installed on version 123 or later.
+## Building the contract
+During development, it's recommended to build non-deterministically using [cargo-near](https://github.com/near/cargo-near).
 
 ```bash
-cargo build --release --target=wasm32-unknown-unknown
-wasm-opt -Oz -o target/wasm32-unknown-unknown/release/mpc_contract.wasm target/wasm32-unknown-unknown/release/mpc_contract.wasm --enable-bulk-memory-opt
+cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
 ```
 
-### Deterministic build
-
-The contract can also be built deterministically using
-[cargo-near](https://github.com/near/cargo-near). Make sure you have
-`cargo-near` and `docker` installed.
+The contract can also be built deterministically. This requires `docker` to be installed.
 
 ```bash
-cargo near build reproducible-wasm
+cargo near build reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
 ```
 
 ## TEE Specific information

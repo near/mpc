@@ -165,24 +165,33 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
     }
 }
 
-#[test]
-fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-    use crate::tests::TestGenerators;
-    let x = TestGenerators::new(4, 3)
-        .make_eddsa_keygens()
-        .values()
-        .next()
-        .unwrap()
-        .clone();
-    x.public_key.to_near_sdk_public_key()?;
-    Ok(())
-}
+#[cfg(test)]
+mod tests {
+    use threshold_signatures::frost_ed25519::VerifyingKey;
 
-#[test]
-fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
-    use std::str::FromStr;
-    let near_sdk =
-        near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
-    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
-    Ok(())
+    use crate::{
+        providers::PublicKeyConversion,
+        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    };
+    #[test]
+    fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+        use crate::tests::TestGenerators;
+        let x = TestGenerators::new(4, 3)
+            .make_eddsa_keygens()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        x.public_key.into_contract_interface_type();
+        Ok(())
+    }
+
+    #[test]
+    fn check_pubkey_conversion_from_sdk() -> anyhow::Result<()> {
+        use std::str::FromStr;
+        let near_sdk =
+            near_sdk::PublicKey::from_str("ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp")?;
+        let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
+        Ok(())
+    }
 }

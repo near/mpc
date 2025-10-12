@@ -42,6 +42,10 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+<<<<<<< HEAD
+=======
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
+>>>>>>> origin/main
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
@@ -241,12 +245,17 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
+<<<<<<< HEAD
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let report_data = ReportData::new(
             *tls_public_key.into_dto_type().as_bytes(),
             *account_public_key.into_dto_type().as_bytes(),
         );
+=======
+        let report_data =
+            ReportData::new(*tls_public_key.into_contract_interface_type().as_bytes());
+>>>>>>> origin/main
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime

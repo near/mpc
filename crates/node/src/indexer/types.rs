@@ -1,5 +1,6 @@
 use crate::{types::CKDRequest, types::SignatureRequest};
 use anyhow::Context;
+use contract_interface::types as dtos;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -56,14 +57,14 @@ impl ChainSignatureRequest {
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
-    pub app_public_key: dtos_contract::Bls12381G1PublicKey,
+    pub app_public_key: dtos::Bls12381G1PublicKey,
     pub app_id: AccountId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
-        app_public_key: dtos_contract::Bls12381G1PublicKey,
+        app_public_key: dtos::Bls12381G1PublicKey,
         app_id: AccountId,
         domain_id: DomainId,
     ) -> Self {
@@ -135,13 +136,13 @@ pub struct ChainGetPendingCKDRequestArgs {
 
 #[derive(Serialize, Debug)]
 pub struct GetAttestationArgs {
-    pub tls_public_key: dtos_contract::Ed25519PublicKey,
+    pub tls_public_key: contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]
 pub struct ChainVotePkArgs {
     pub key_event_id: KeyEventId,
-    pub public_key: dtos_contract::PublicKey,
+    pub public_key: dtos::PublicKey,
 }
 
 #[derive(Serialize, Debug)]
@@ -166,8 +167,8 @@ pub struct ChainVoteAbortKeyEventInstanceArgs {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitParticipantInfoArgs {
-    pub proposed_participant_attestation: dtos_contract::Attestation,
-    pub tls_public_key: dtos_contract::Ed25519PublicKey,
+    pub proposed_participant_attestation: contract_interface::types::Attestation,
+    pub tls_public_key: contract_interface::types::Ed25519PublicKey,
 }
 
 /// Request to send a transaction to the contract on chain.

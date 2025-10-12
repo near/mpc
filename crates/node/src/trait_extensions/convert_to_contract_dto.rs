@@ -1,7 +1,7 @@
 //! This module provides convenience methods to map internal node types
-//! into `data transfer object`s from the [`dtos_contract`] crate.
+//! into contract interface types from the [`contract_interface::types`] module.
 //!
-//! These types are mapped with the [IntoDtoType] trait. We can not use [`From`]
+//! These types are mapped with the [IntoContractInterfaceType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
 use attestation::{
@@ -21,43 +21,54 @@ use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1;
 
+use contract_interface::types as dtos;
+
 #[derive(Debug, Display)]
 pub struct ParsePublicKeyError {}
 impl std::error::Error for ParsePublicKeyError {}
 
-pub(crate) trait IntoDtoType<DtoType> {
-    fn into_dto_type(self) -> DtoType;
+pub(crate) trait IntoContractInterfaceType<InterfaceType> {
+    fn into_contract_interface_type(self) -> InterfaceType;
 }
 
-impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &ed25519_dalek::VerifyingKey {
-    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
-        dtos_contract::Ed25519PublicKey::from(self.to_bytes())
+pub(crate) trait TryIntoNodeType<NodeType> {
+    type Error;
+    fn try_into_node_type(self) -> Result<NodeType, Self::Error>;
+}
+
+impl IntoContractInterfaceType<contract_interface::types::Ed25519PublicKey>
+    for &ed25519_dalek::VerifyingKey
+{
+    fn into_contract_interface_type(self) -> contract_interface::types::Ed25519PublicKey {
+        contract_interface::types::Ed25519PublicKey::from(self.to_bytes())
     }
 }
 
-impl IntoDtoType<dtos_contract::Attestation> for Attestation {
-    fn into_dto_type(self) -> dtos_contract::Attestation {
+impl IntoContractInterfaceType<contract_interface::types::Attestation> for Attestation {
+    fn into_contract_interface_type(self) -> contract_interface::types::Attestation {
         match self {
             Attestation::Dstack(dstack_attestation) => {
-                dtos_contract::Attestation::Dstack(dstack_attestation.into_dto_type())
+                contract_interface::types::Attestation::Dstack(
+                    dstack_attestation.into_contract_interface_type(),
+                )
             }
-            Attestation::Mock(mock_attestation) => {
-                dtos_contract::Attestation::Mock(mock_attestation.into_dto_type())
-            }
+            Attestation::Mock(mock_attestation) => contract_interface::types::Attestation::Mock(
+                mock_attestation.into_contract_interface_type(),
+            ),
         }
     }
 }
 
-impl IntoDtoType<dtos_contract::MockAttestation> for MockAttestation {
-    fn into_dto_type(self) -> dtos_contract::MockAttestation {
+impl IntoContractInterfaceType<contract_interface::types::MockAttestation> for MockAttestation {
+    fn into_contract_interface_type(self) -> contract_interface::types::MockAttestation {
         match self {
-            MockAttestation::Valid => dtos_contract::MockAttestation::Valid,
-            MockAttestation::Invalid => dtos_contract::MockAttestation::Invalid,
+            MockAttestation::Valid => contract_interface::types::MockAttestation::Valid,
+            MockAttestation::Invalid => contract_interface::types::MockAttestation::Invalid,
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
                 expiry_time_stamp_seconds,
-            } => dtos_contract::MockAttestation::WithConstraints {
+            } => contract_interface::types::MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
                 expiry_time_stamp_seconds,
@@ -66,24 +77,24 @@ impl IntoDtoType<dtos_contract::MockAttestation> for MockAttestation {
     }
 }
 
-impl IntoDtoType<dtos_contract::DstackAttestation> for DstackAttestation {
-    fn into_dto_type(self) -> dtos_contract::DstackAttestation {
+impl IntoContractInterfaceType<contract_interface::types::DstackAttestation> for DstackAttestation {
+    fn into_contract_interface_type(self) -> contract_interface::types::DstackAttestation {
         let DstackAttestation {
             quote,
             collateral,
             tcb_info,
         } = self;
 
-        dtos_contract::DstackAttestation {
+        contract_interface::types::DstackAttestation {
             quote: quote.into(),
-            collateral: collateral.into_dto_type(),
-            tcb_info: tcb_info.into_dto_type(),
+            collateral: collateral.into_contract_interface_type(),
+            tcb_info: tcb_info.into_contract_interface_type(),
         }
     }
 }
 
-impl IntoDtoType<dtos_contract::Collateral> for Collateral {
-    fn into_dto_type(self) -> dtos_contract::Collateral {
+impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collateral {
+    fn into_contract_interface_type(self) -> contract_interface::types::Collateral {
         // Collateral is a newtype wrapper around QuoteCollateralV3
         let QuoteCollateralV3 {
             pck_crl_issuer_chain,
@@ -97,7 +108,7 @@ impl IntoDtoType<dtos_contract::Collateral> for Collateral {
             qe_identity_signature,
         } = self.into();
 
-        dtos_contract::Collateral {
+        contract_interface::types::Collateral {
             pck_crl_issuer_chain,
             root_ca_crl,
             pck_crl,
@@ -111,8 +122,8 @@ impl IntoDtoType<dtos_contract::Collateral> for Collateral {
     }
 }
 
-impl IntoDtoType<dtos_contract::TcbInfo> for TcbInfo {
-    fn into_dto_type(self) -> dtos_contract::TcbInfo {
+impl IntoContractInterfaceType<contract_interface::types::TcbInfo> for TcbInfo {
+    fn into_contract_interface_type(self) -> contract_interface::types::TcbInfo {
         let TcbInfo {
             mrtd,
             rtmr0,
@@ -128,10 +139,10 @@ impl IntoDtoType<dtos_contract::TcbInfo> for TcbInfo {
 
         let event_log = event_log
             .into_iter()
-            .map(IntoDtoType::into_dto_type)
+            .map(IntoContractInterfaceType::into_contract_interface_type)
             .collect();
 
-        dtos_contract::TcbInfo {
+        contract_interface::types::TcbInfo {
             mrtd,
             rtmr0,
             rtmr1,
@@ -146,8 +157,8 @@ impl IntoDtoType<dtos_contract::TcbInfo> for TcbInfo {
     }
 }
 
-impl IntoDtoType<dtos_contract::EventLog> for EventLog {
-    fn into_dto_type(self) -> dtos_contract::EventLog {
+impl IntoContractInterfaceType<contract_interface::types::EventLog> for EventLog {
+    fn into_contract_interface_type(self) -> contract_interface::types::EventLog {
         let EventLog {
             imr,
             event_type,
@@ -156,7 +167,7 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
             event_payload,
         } = self;
 
-        dtos_contract::EventLog {
+        contract_interface::types::EventLog {
             imr,
             event_type,
             digest,
@@ -166,32 +177,32 @@ impl IntoDtoType<dtos_contract::EventLog> for EventLog {
     }
 }
 
-impl IntoDtoType<dtos_contract::PublicKey> for &frost_ed25519::VerifyingKey {
-    fn into_dto_type(self) -> dtos_contract::PublicKey {
-        dtos_contract::PublicKey::Ed25519(dtos_contract::Ed25519PublicKey::from(
-            self.to_element().to_bytes(),
-        ))
+impl IntoContractInterfaceType<dtos::PublicKey> for &frost_ed25519::VerifyingKey {
+    fn into_contract_interface_type(self) -> dtos::PublicKey {
+        dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(self.to_element().to_bytes()))
     }
 }
 
-impl IntoDtoType<dtos_contract::PublicKey> for &ckd::VerifyingKey {
-    fn into_dto_type(self) -> dtos_contract::PublicKey {
-        dtos_contract::PublicKey::Bls12381(dtos_contract::Bls12381G2PublicKey::from(
+impl IntoContractInterfaceType<dtos::PublicKey> for &ckd::VerifyingKey {
+    fn into_contract_interface_type(self) -> dtos::PublicKey {
+        dtos::PublicKey::Bls12381(dtos::Bls12381G2PublicKey::from(
             self.to_element().to_compressed(),
         ))
     }
 }
 
-impl IntoDtoType<dtos_contract::PublicKey> for &frost_secp256k1::VerifyingKey {
-    fn into_dto_type(self) -> dtos_contract::PublicKey {
+impl IntoContractInterfaceType<dtos::PublicKey> for &frost_secp256k1::VerifyingKey {
+    fn into_contract_interface_type(self) -> dtos::PublicKey {
         let mut bytes = [0u8; 64];
         // The first byte is the curve type
         bytes.copy_from_slice(&self.to_element().to_encoded_point(false).to_bytes()[1..]);
-        dtos_contract::PublicKey::Secp256k1(dtos_contract::Secp256k1PublicKey::from(bytes))
+        contract_interface::types::PublicKey::Secp256k1(
+            contract_interface::types::Secp256k1PublicKey::from(bytes),
+        )
     }
 }
 
-impl TryIntoNodeType<frost_ed25519::VerifyingKey> for dtos_contract::Ed25519PublicKey {
+impl TryIntoNodeType<frost_ed25519::VerifyingKey> for dtos::Ed25519PublicKey {
     type Error = ParsePublicKeyError;
     fn try_into_node_type(self) -> Result<frost_ed25519::VerifyingKey, ParsePublicKeyError> {
         frost_ed25519::VerifyingKey::deserialize(self.as_bytes())
@@ -199,7 +210,7 @@ impl TryIntoNodeType<frost_ed25519::VerifyingKey> for dtos_contract::Ed25519Publ
     }
 }
 
-impl TryIntoNodeType<frost_secp256k1::VerifyingKey> for dtos_contract::Secp256k1PublicKey {
+impl TryIntoNodeType<frost_secp256k1::VerifyingKey> for dtos::Secp256k1PublicKey {
     type Error = ParsePublicKeyError;
     fn try_into_node_type(self) -> Result<frost_secp256k1::VerifyingKey, ParsePublicKeyError> {
         let mut bytes = [0u8; 65];
@@ -215,14 +226,14 @@ impl TryIntoNodeType<frost_secp256k1::VerifyingKey> for dtos_contract::Secp256k1
     }
 }
 
-impl TryIntoNodeType<ed25519_dalek::VerifyingKey> for dtos_contract::Ed25519PublicKey {
+impl TryIntoNodeType<ed25519_dalek::VerifyingKey> for contract_interface::types::Ed25519PublicKey {
     type Error = ParsePublicKeyError;
     fn try_into_node_type(self) -> Result<ed25519_dalek::VerifyingKey, ParsePublicKeyError> {
         ed25519_dalek::VerifyingKey::from_bytes(self.as_bytes()).map_err(|_| ParsePublicKeyError {})
     }
 }
 
-impl TryIntoNodeType<ckd::VerifyingKey> for dtos_contract::Bls12381G2PublicKey {
+impl TryIntoNodeType<ckd::VerifyingKey> for dtos::Bls12381G2PublicKey {
     type Error = ParsePublicKeyError;
     fn try_into_node_type(self) -> Result<ckd::VerifyingKey, ParsePublicKeyError> {
         let key = ckd::ElementG2::from_compressed(&self.0)
@@ -232,7 +243,7 @@ impl TryIntoNodeType<ckd::VerifyingKey> for dtos_contract::Bls12381G2PublicKey {
     }
 }
 
-impl TryIntoNodeType<ckd::ElementG1> for dtos_contract::Bls12381G1PublicKey {
+impl TryIntoNodeType<ckd::ElementG1> for dtos::Bls12381G1PublicKey {
     type Error = ParsePublicKeyError;
     fn try_into_node_type(self) -> Result<ckd::ElementG1, ParsePublicKeyError> {
         ckd::ElementG1::from_compressed(&self.0)
@@ -241,28 +252,32 @@ impl TryIntoNodeType<ckd::ElementG1> for dtos_contract::Bls12381G1PublicKey {
     }
 }
 
-impl IntoDtoType<dtos_contract::PublicKey> for &near_sdk::PublicKey {
+impl IntoContractInterfaceType<contract_interface::types::PublicKey> for &near_sdk::PublicKey {
     // This will never panic, because the key sizes match
-    fn into_dto_type(self) -> dtos_contract::PublicKey {
+    fn into_contract_interface_type(self) -> contract_interface::types::PublicKey {
         match self.curve_type() {
             near_sdk::CurveType::SECP256K1 => {
                 let mut bytes = [0u8; 64];
                 // The first byte is the curve type
                 bytes.copy_from_slice(&self.as_bytes()[1..]);
-                dtos_contract::PublicKey::from(dtos_contract::Secp256k1PublicKey::from(bytes))
+                contract_interface::types::PublicKey::from(
+                    contract_interface::types::Secp256k1PublicKey::from(bytes),
+                )
             }
             near_sdk::CurveType::ED25519 => {
                 let mut bytes = [0u8; 32];
                 // The first byte is the curve type
                 bytes.copy_from_slice(&self.as_bytes()[1..]);
-                dtos_contract::PublicKey::from(dtos_contract::Ed25519PublicKey::from(bytes))
+                contract_interface::types::PublicKey::from(
+                    contract_interface::types::Ed25519PublicKey::from(bytes),
+                )
             }
         }
     }
 }
 
-impl IntoDtoType<dtos_contract::Bls12381G1PublicKey> for &ckd::ElementG1 {
-    fn into_dto_type(self) -> dtos_contract::Bls12381G1PublicKey {
-        dtos_contract::Bls12381G1PublicKey::from(self.to_compressed())
+impl IntoContractInterfaceType<dtos::Bls12381G1PublicKey> for &ckd::ElementG1 {
+    fn into_contract_interface_type(self) -> dtos::Bls12381G1PublicKey {
+        dtos::Bls12381G1PublicKey::from(self.to_compressed())
     }
 }

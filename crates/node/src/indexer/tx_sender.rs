@@ -306,7 +306,7 @@ async fn observe_tx_result(
                     return Ok(TransactionStatus::Unknown);
                 }
             };
-            let attestation_stored_on_contract: Option<dtos_contract::Attestation> =
+            let attestation_stored_on_contract: Option<contract_interface::types::Attestation> =
                 match query_response.kind {
                     QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
                         .context("Failed to deserialize get_tee_accounts response")?,

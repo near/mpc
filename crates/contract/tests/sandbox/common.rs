@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
+use contract_interface::types::{self as dtos, Ed25519PublicKey};
 use digest::{Digest, FixedOutput};
-use dtos_contract::{Attestation, MockAttestation};
 use ecdsa::signature::Verifier;
 use elliptic_curve::{Field as _, Group as _};
 use fs2::FileExt;
@@ -282,7 +282,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
-    pks: Vec<near_sdk::PublicKey>,
+    pks: Vec<dtos::PublicKey>,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -298,9 +298,9 @@ pub async fn init_with_candidates(
             .map(|(i, pk)| {
                 let domain_id = DomainId((i as u64) * 2);
                 let scheme = match pk {
-                    dtos_contract::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
-                    dtos_contract::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
-                    dtos_contract::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
+                    dtos::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
+                    dtos::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
+                    dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
                 };
                 let key = pk.try_into().unwrap();
 
@@ -343,8 +343,8 @@ pub async fn init_with_candidates(
         let tee_submission_result = submit_participant_info(
             account,
             &contract,
-            &Attestation::Mock(MockAttestation::Valid),
-            &participant.sign_pk,
+            &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+            &participant.sign_pk.into_interface_type(),
         )
         .await;
 
@@ -366,15 +366,16 @@ pub enum SharedSecretKey {
 }
 
 pub fn new_secp256k1() -> (
-    near_sdk::PublicKey,
+    dtos::PublicKey,
     k256::elliptic_curve::SecretKey<k256::Secp256k1>,
 ) {
     let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
     let public_key = secret_key.public_key();
 
-    let compressed_key = public_key.as_affine().to_encoded_point(false).as_bytes()[1..65].to_vec();
-
-    let public_key = near_sdk::PublicKey::from_parts(CurveType::SECP256K1, compressed_key).unwrap();
+    let compressed_key = public_key.as_affine().to_encoded_point(false);
+    let mut bytes = [0u8; 64];
+    bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
+    let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes));
 
     (public_key, secret_key)
 }
@@ -413,9 +414,7 @@ pub async fn init_env_bls12381(
     (worker, contract, accounts, secret_keys)
 }
 
-pub fn make_key_for_domain(
-    domain_scheme: SignatureScheme,
-) -> (near_sdk::PublicKey, SharedSecretKey) {
+pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
     match domain_scheme {
         SignatureScheme::Secp256k1 => {
             let (pk, sk) = new_secp256k1();
@@ -432,7 +431,7 @@ pub fn make_key_for_domain(
     }
 }
 
-pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
+pub fn new_ed25519() -> (dtos::PublicKey, KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
@@ -444,12 +443,14 @@ pub fn new_ed25519() -> (near_sdk::PublicKey, KeygenOutput) {
     };
 
     let compressed_key = public_key.to_element().compress().as_bytes().to_vec();
-    let pk = near_sdk::PublicKey::from_parts(CurveType::ED25519, compressed_key).unwrap();
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&compressed_key);
+    let pk = dtos::PublicKey::Ed25519(dtos::Ed25519PublicKey::from(bytes));
 
     (pk, keygen_output)
 }
 
-pub fn new_bls12381() -> (dtos_contract::PublicKey, ckd::KeygenOutput) {
+pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
     let scalar = ckd::Scalar::random(&mut OsRng);
     let private_share = ckd::SigningShare::new(scalar);
     let public_key_element = ckd::ElementG2::generator() * scalar;
@@ -461,8 +462,7 @@ pub fn new_bls12381() -> (dtos_contract::PublicKey, ckd::KeygenOutput) {
     };
 
     let compressed_key = public_key.to_element().to_compressed();
-    let pk =
-        dtos_contract::PublicKey::from(dtos_contract::Bls12381G2PublicKey::from(compressed_key));
+    let pk = dtos::PublicKey::from(dtos::Bls12381G2PublicKey::from(compressed_key));
 
     (pk, keygen_output)
 }
@@ -686,7 +686,7 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
-<<<<<<< HEAD
+
 pub fn example_secp256k1_point() -> PublicKey {
     "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
 }
@@ -701,6 +701,9 @@ fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
     .unwrap()
 =======
 pub fn example_bls12381g1_point() -> dtos_contract::Bls12381G1PublicKey {
+=======
+pub fn example_bls12381g1_point() -> dtos::Bls12381G1PublicKey {
+>>>>>>> origin/main
     "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
         .parse()
         .unwrap()
@@ -710,7 +713,7 @@ pub fn example_bls12381g1_point() -> dtos_contract::Bls12381G1PublicKey {
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
 pub fn create_response_ckd(
     account_id: &AccountId,
-    app_public_key: dtos_contract::Bls12381G1PublicKey,
+    app_public_key: dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
     signing_key: &ckd::Scalar,
 ) -> (CKDRequest, CKDResponse) {
@@ -725,8 +728,8 @@ pub fn create_response_ckd(
     let big_c = big_s + app_pk * y;
 
     let response = CKDResponse {
-        big_y: big_y.into_dto_type(),
-        big_c: big_c.into_dto_type(),
+        big_y: big_y.into_interface_type(),
+        big_c: big_c.into_interface_type(),
     };
     (request, response)
 }
@@ -890,8 +893,8 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
-    attestation: &Attestation,
-    tls_key: &PublicKey,
+    attestation: &dtos::Attestation,
+    tls_key: &dtos::Ed25519PublicKey,
 ) -> anyhow::Result<bool> {
     let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
 
@@ -906,10 +909,8 @@ pub async fn submit_participant_info(
 
 pub async fn get_participant_attestation(
     contract: &Contract,
-    tls_key: &PublicKey,
-) -> anyhow::Result<Option<Attestation>> {
-    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
-
+    tls_key: &Ed25519PublicKey,
+) -> anyhow::Result<Option<dtos::Attestation>> {
     let result = contract
         .as_account()
         .call(contract.id(), "get_attestation")
@@ -945,10 +946,14 @@ pub async fn submit_tee_attestations(
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
-        let result =
-            submit_participant_info(account, contract, &attestation, &node_id.tls_public_key)
-                .await?;
+        let attestation = dtos::Attestation::Mock(dtos::MockAttestation::Valid); // todo #1109, add TLS key.
+        let result = submit_participant_info(
+            account,
+            contract,
+            &attestation,
+            &node_id.tls_public_key.into_interface_type(),
+        )
+        .await?;
         assert!(result);
     }
     Ok(())
@@ -1173,71 +1178,64 @@ pub async fn vote_for_hash(
     );
     Ok(())
 }
-<<<<<<< HEAD
-=======
 
 // These are temporary conversions to avoid breaking the contract API.
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
 
-pub(crate) trait IntoDtoType<DtoType> {
-    fn into_dto_type(self) -> DtoType;
+pub(crate) trait IntoInterfaceType<InterfaceType> {
+    fn into_interface_type(self) -> InterfaceType;
 }
 
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
-impl IntoDtoType<dtos_contract::Ed25519PublicKey> for &near_sdk::PublicKey {
-    fn into_dto_type(self) -> dtos_contract::Ed25519PublicKey {
+impl IntoInterfaceType<dtos::Ed25519PublicKey> for &near_sdk::PublicKey {
+    fn into_interface_type(self) -> dtos::Ed25519PublicKey {
         // This function should not be called with any other type
         assert!(self.curve_type() == near_sdk::CurveType::ED25519);
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(&self.as_bytes()[1..]);
-        dtos_contract::Ed25519PublicKey::from(bytes)
+        dtos::Ed25519PublicKey::from(bytes)
     }
 }
 
-impl IntoDtoType<dtos_contract::Bls12381G1PublicKey> for &ckd::ElementG1 {
-    fn into_dto_type(self) -> dtos_contract::Bls12381G1PublicKey {
-        dtos_contract::Bls12381G1PublicKey::from(self.to_compressed())
+impl IntoInterfaceType<dtos::Bls12381G1PublicKey> for &ckd::ElementG1 {
+    fn into_interface_type(self) -> dtos::Bls12381G1PublicKey {
+        dtos::Bls12381G1PublicKey::from(self.to_compressed())
     }
 }
 
-impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::Ed25519PublicKey {
+impl IntoContractType<near_sdk::PublicKey> for &dtos::Ed25519PublicKey {
     fn into_contract_type(self) -> near_sdk::PublicKey {
         near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, self.0.into()).unwrap()
     }
 }
 
-impl IntoContractType<ckd::ElementG1> for &dtos_contract::Bls12381G1PublicKey {
+impl IntoContractType<ckd::ElementG1> for &dtos::Bls12381G1PublicKey {
     fn into_contract_type(self) -> ckd::ElementG1 {
         ckd::ElementG1::from_compressed(&self.0).unwrap()
     }
 }
 
-impl IntoContractType<near_sdk::PublicKey> for &dtos_contract::PublicKey {
+impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKey {
     fn into_contract_type(self) -> near_sdk::PublicKey {
         match self {
-            dtos_contract::PublicKey::Secp256k1(secp256k1_public_key) => {
-                near_sdk::PublicKey::from_parts(
-                    near_sdk::CurveType::SECP256K1,
-                    secp256k1_public_key.as_bytes().to_vec(),
-                )
-                .unwrap()
-            }
-            dtos_contract::PublicKey::Ed25519(ed25519_public_key) => {
-                near_sdk::PublicKey::from_parts(
-                    near_sdk::CurveType::ED25519,
-                    ed25519_public_key.as_bytes().to_vec(),
-                )
-                .unwrap()
-            }
-            dtos_contract::PublicKey::Bls12381(_bls12381_public_key) => {
+            dtos::PublicKey::Secp256k1(secp256k1_public_key) => near_sdk::PublicKey::from_parts(
+                near_sdk::CurveType::SECP256K1,
+                secp256k1_public_key.as_bytes().to_vec(),
+            )
+            .unwrap(),
+            dtos::PublicKey::Ed25519(ed25519_public_key) => near_sdk::PublicKey::from_parts(
+                near_sdk::CurveType::ED25519,
+                ed25519_public_key.as_bytes().to_vec(),
+            )
+            .unwrap(),
+            dtos::PublicKey::Bls12381(_bls12381_public_key) => {
                 // This conversion is not possible
                 unreachable!()
             }
         }
     }
 }
->>>>>>> origin/main

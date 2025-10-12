@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serializable::SerializableEdwardsPoint;
 
-use crate::{errors, IntoContractType, IntoDtoType};
+use crate::{errors, IntoContractType, IntoInterfaceType};
+use contract_interface::types as dtos;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -31,8 +32,8 @@ pub enum SignatureResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "scheme")]
 pub struct CKDResponse {
-    pub big_y: dtos_contract::Bls12381G1PublicKey,
-    pub big_c: dtos_contract::Bls12381G1PublicKey,
+    pub big_y: dtos::Bls12381G1PublicKey,
+    pub big_c: dtos::Bls12381G1PublicKey,
 }
 
 #[cfg_attr(
@@ -53,7 +54,7 @@ pub enum PublicKeyExtended {
         edwards_point: SerializableEdwardsPoint,
     },
     Bls12381 {
-        public_key: dtos_contract::PublicKey,
+        public_key: dtos::PublicKey,
     },
 }
 
@@ -93,7 +94,7 @@ impl TryFrom<PublicKeyExtended> for near_sdk::PublicKey {
     }
 }
 
-impl From<PublicKeyExtended> for dtos_contract::PublicKey {
+impl From<PublicKeyExtended> for dtos::PublicKey {
     fn from(public_key_extended: PublicKeyExtended) -> Self {
         match public_key_extended {
             PublicKeyExtended::Secp256k1 { near_public_key } => near_public_key.into_dto_type(),
@@ -134,11 +135,11 @@ impl TryFrom<near_sdk::PublicKey> for PublicKeyExtended {
     }
 }
 
-impl TryFrom<dtos_contract::PublicKey> for PublicKeyExtended {
+impl TryFrom<dtos::PublicKey> for PublicKeyExtended {
     type Error = PublicKeyExtendedConversionError;
-    fn try_from(public_key: dtos_contract::PublicKey) -> Result<Self, Self::Error> {
+    fn try_from(public_key: dtos::PublicKey) -> Result<Self, Self::Error> {
         let extended_key = match public_key {
-            dtos_contract::PublicKey::Ed25519(inner_public_key) => {
+            dtos::PublicKey::Ed25519(inner_public_key) => {
                 let near_public_key = inner_public_key.into_contract_type();
                 let public_key_bytes: &[u8; 32] = near_public_key
                     .as_bytes()
@@ -156,12 +157,12 @@ impl TryFrom<dtos_contract::PublicKey> for PublicKeyExtended {
                     edwards_point,
                 }
             }
-            dtos_contract::PublicKey::Secp256k1(inner_public_key) => {
+            dtos::PublicKey::Secp256k1(inner_public_key) => {
                 let near_public_key = inner_public_key.into_contract_type();
                 Self::Secp256k1 { near_public_key }
             }
-            dtos_contract::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {
-                public_key: dtos_contract::PublicKey::from(inner_public_key),
+            dtos::PublicKey::Bls12381(inner_public_key) => Self::Bls12381 {
+                public_key: dtos::PublicKey::from(inner_public_key),
             },
         };
 

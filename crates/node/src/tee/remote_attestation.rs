@@ -1,5 +1,15 @@
 use std::time::Duration;
 
+<<<<<<< HEAD
+=======
+use crate::{
+    indexer::{
+        tx_sender::{TransactionSender, TransactionStatus},
+        types::{ChainSendTransactionRequest, SubmitParticipantInfoArgs},
+    },
+    trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+};
+>>>>>>> origin/main
 use anyhow::Context;
 use attestation::{attestation::Attestation, report_data::ReportData};
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
@@ -34,8 +44,8 @@ pub async fn submit_remote_attestation(
     tls_public_key: VerifyingKey,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = SubmitParticipantInfoArgs {
-        proposed_participant_attestation: attestation.into_dto_type(),
-        tls_public_key: tls_public_key.into_dto_type(),
+        proposed_participant_attestation: attestation.into_contract_interface_type(),
+        tls_public_key: tls_public_key.into_contract_interface_type(),
     };
 
     let set_attestation = move || {
@@ -95,9 +105,14 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone>(
     account_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
+<<<<<<< HEAD
     let tls_sdk_public_key = tls_public_key.to_bytes();
     let account_sdk_public_key = account_public_key.to_bytes();
     let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
+=======
+    let tls_sdk_public_key = *tls_public_key.into_contract_interface_type().as_bytes();
+    let report_data = ReportData::new(tls_sdk_public_key);
+>>>>>>> origin/main
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     loop {

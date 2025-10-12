@@ -287,23 +287,32 @@ impl PublicKeyConversion for VerifyingKey {
     }
 }
 
-#[test]
-fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-    use crate::tests::TestGenerators;
-    let x = TestGenerators::new(4, 3)
-        .make_ecdsa_keygens()
-        .values()
-        .next()
-        .unwrap()
-        .clone();
-    x.public_key.to_near_sdk_public_key()?;
-    Ok(())
-}
+#[cfg(test)]
+mod tests {
+    use threshold_signatures::frost_secp256k1;
 
-#[test]
-fn check_conversion_from_sdk() -> anyhow::Result<()> {
-    let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
+    use crate::{
+        providers::PublicKeyConversion,
+        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
+    };
+    #[test]
+    fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+        use crate::tests::TestGenerators;
+        let x = TestGenerators::new(4, 3)
+            .make_ecdsa_keygens()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        x.public_key.into_contract_interface_type();
+        Ok(())
+    }
+
+    #[test]
+    fn check_conversion_from_sdk() -> anyhow::Result<()> {
+        let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
                 .parse()?;
-    let _ = VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
-    Ok(())
+        let _ = frost_secp256k1::VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
+        Ok(())
+    }
 }

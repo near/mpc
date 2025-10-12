@@ -121,7 +121,7 @@ impl FakeMpcContractState {
         &mut self,
         account_id: AccountId,
         key_id: KeyEventId,
-        dto_pk: dtos_contract::PublicKey,
+        dto_pk: contract_interface::types::PublicKey,
     ) {
         let contract_extended_pk = dto_pk.try_into().unwrap();
 

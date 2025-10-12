@@ -16,7 +16,7 @@ borsh = { workspace = true }
 threshold-signatures = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
-dtos-contract = { workspace = true }
+contract-interface = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

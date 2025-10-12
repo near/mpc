@@ -4,6 +4,10 @@ use crate::{
         participants::{ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
+<<<<<<< HEAD
+=======
+    IntoInterfaceType,
+>>>>>>> origin/main
 };
 use near_sdk::{AccountId, CurveType, PublicKey};
 use rand::{distributions::Uniform, Rng};
@@ -25,8 +29,23 @@ pub fn bogus_ed25519_public_key_extended() -> PublicKeyExtended {
     }
 }
 
+<<<<<<< HEAD
 pub fn bogus_ed25519_near_public_key() -> PublicKey {
     bogus_ed25519_public_key_extended().into()
+=======
+pub fn bogus_ed25519_public_key() -> contract_interface::types::Ed25519PublicKey {
+    let (_, compressed_edwards_point) = gen_random_edwards_point();
+    compressed_edwards_point.into_dto_type()
+}
+
+pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
+    let (_, compressed_edwards_point) = gen_random_edwards_point();
+    near_sdk::PublicKey::from_parts(
+        near_sdk::CurveType::ED25519,
+        compressed_edwards_point.as_bytes().into(),
+    )
+    .unwrap()
+>>>>>>> origin/main
 }
 
 #[test]
