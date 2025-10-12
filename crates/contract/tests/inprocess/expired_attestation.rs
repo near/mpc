@@ -279,7 +279,6 @@ fn test_clean_tee_status_removes_non_participants() {
             account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
-    let tee_accounts_before = setup.contract.get_tee_accounts().len();
     for node_id in &participant_nodes {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
@@ -290,8 +289,6 @@ fn test_clean_tee_status_removes_non_participants() {
         tls_public_key: bogus_ed25519_near_public_key(),
         account_public_key: Some(bogus_ed25519_near_public_key()),
     };
-
-    let tee_accounts_before = setup.contract.get_tee_accounts().len();
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
