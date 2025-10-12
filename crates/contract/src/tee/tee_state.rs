@@ -143,7 +143,6 @@ impl TeeState {
     }
 
     /// Verifies the TEE quote and Docker image
-    /// Verifies the TEE quote and Docker image
     pub(crate) fn verify_tee_participant(
         &mut self,
         node_id: &NodeId,
@@ -153,34 +152,18 @@ impl TeeState {
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
-        env::log_str(&format!(
-            "verify_tee_participant: start for node_id.account_id={}, tls_pk={:?}, account_pk={:?}",
-            node_id.account_id, node_id.tls_public_key, node_id.account_public_key
-        ));
-
-        //let participant_attestation = self.participants_attestations.get(node_id);
         let participant_attestation = self.participants_attestations.get(&node_id.tls_public_key);
-
         let Some(participant_attestation) = participant_attestation else {
-            env::log_str("verify_tee_participant: no participant attestation found");
             return TeeQuoteStatus::Invalid;
         };
 
-        env::log_str("verify_tee_participant: found participant attestation entry");
-
-        // --- Convert TLS public key ---
+        // Convert TLS public key
         let tls_public_key = match node_id.tls_public_key.clone().try_into_dto_type() {
-            Ok(value) => {
-                env::log_str("verify_tee_participant: tls_public_key converted OK");
-                value
-            }
-            Err(_) => {
-                env::log_str("verify_tee_participant: failed to convert tls_public_key");
-                return TeeQuoteStatus::Invalid;
-            }
+            Ok(value) => value,
+            Err(_) => return TeeQuoteStatus::Invalid,
         };
 
-        // --- Convert account public key if available ---
+        // Convert account public key if available
         //
         // WARNING:
         // Some legacy/mock nodes may not have an account_public_key set yet.
@@ -189,57 +172,27 @@ impl TeeState {
         // TODO(#823): Remove this fallback once all MPC nodes are required
         //             to run inside a TEE and provide a valid account_public_key.
         let account_public_key = match node_id.account_public_key.clone() {
-            Some(pk) => match pk.try_into_dto_type() {
-                Ok(value) => {
-                    env::log_str("verify_tee_participant: account_public_key converted OK");
-                    Some(value)
-                }
-                Err(_) => {
-                    env::log_str(&format!(
-                    "verify_tee_participant: account_public_key for {} failed conversion (continuing)",
-                    node_id.account_id
-                ));
-                    None
-                }
-            },
-            None => {
-                env::log_str(&format!(
-                    "verify_tee_participant: account_public_key is None (legacy/mock node?) for {}",
-                    node_id.account_id
-                ));
-                None
-            }
+            Some(pk) => pk.try_into_dto_type().ok(),
+            None => None,
         };
 
-        // --- Prepare expected report data ---
+        // Prepare expected report data
         let expected_report_data = ReportData::new(
             *tls_public_key.as_bytes(),
             match account_public_key {
                 Some(ref pk) => *pk.as_bytes(),
-                None => [0u8; 32], // TODO(#823): Remove this fallback once all MPC nodes are required
-                                   //to run inside a TEE and provide a valid account_public_key.
+                None => [0u8; 32], // TODO(#823): remove this fallback once all nodes must have account_public_key
             },
         );
 
-        env::log_str(&format!(
-            "verify_tee_participant: prepared expected_report_data with account_pk_present={}",
-            account_public_key.is_some()
-        ));
-
-        // --- Verify the attestation quote ---
+        // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();
-
         let quote_result = participant_attestation.1.verify(
             expected_report_data,
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
         );
-
-        env::log_str(&format!(
-            "verify_tee_participant: verification result = {}",
-            if quote_result { "Valid" } else { "Invalid" }
-        ));
 
         if quote_result {
             TeeQuoteStatus::Valid

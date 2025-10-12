@@ -76,7 +76,7 @@ impl ReportDataV1 {
     ) -> Self {
         Self {
             tls_public_key: tls_public_key.into(),
-            account_public_key: account_public_key.into(), //todo: what if it is empty?
+            account_public_key: account_public_key.into(),
         }
     }
 
@@ -129,8 +129,8 @@ pub enum ReportData {
 impl ReportData {
     /// Creates a new ReportData instance.
     ///
-    /// - `tls_public_key`: The TLS key of the MPC node (always required).
-    /// - `account_public_key`: The NEAR account signing key (optional during transition).
+    /// - `tls_public_key`: The TLS key of the MPC node
+    /// - `account_public_key`: The NEAR account signing key
     pub fn new(
         tls_public_key: impl Into<Ed25519PublicKey>,
         account_public_key: impl Into<Ed25519PublicKey>,
@@ -162,12 +162,6 @@ mod tests {
     use alloc::vec::Vec;
     use dcap_qvl::quote::Quote;
     use test_utils::attestation::{account_key, p2p_tls_key, quote};
-
-    /*fn create_test_key() -> PublicKey {
-        "secp256k1:qMoRgcoXai4mBPsdbHi1wfyxF9TdbPCF4qSDQTRP3TfescSRoUdSx6nmeQoN3aiwGzwMyGXAb1gUjBTv5AY8DXj"
-            .parse()
-            .unwrap()
-    }*/
 
     #[test]
     #[ignore] // TODO #1269, update str from node.
@@ -230,7 +224,7 @@ mod tests {
 
         let hash = ReportDataV1::from_bytes(&bytes);
 
-        // Expected hash = sha3_384(tls || account)
+        // Expected hash = sha3_384(tls_key || account_key)
         let mut hasher = Sha3_384::new();
         hasher.update(report_data_v1.tls_public_key.as_ref());
         hasher.update(report_data_v1.account_public_key.as_ref());
@@ -268,7 +262,7 @@ mod tests {
             ..ReportDataV1::PUBLIC_KEYS_OFFSET + ReportDataV1::PUBLIC_KEYS_HASH_SIZE];
         assert_ne!(hash_bytes, &[0u8; ReportDataV1::PUBLIC_KEYS_HASH_SIZE]);
 
-        // Expected hash = sha3_384(tls || account)
+        // Expected hash = sha3_384(tls_key || account_key)
         let mut hasher = Sha3_384::new();
         hasher.update(tls_key.as_ref());
         hasher.update(account_key.as_ref());

@@ -46,7 +46,7 @@ use near_sdk::{
     log, near_bindgen,
     store::LookupMap,
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
-}; //PublicKey?
+};
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
@@ -621,11 +621,9 @@ impl MpcContract {
             .tee_state
             .participants_attestations
             .iter()
-            // Compare the stored key (tls_pk) to the requested one
             .find(|(stored_tls_pk, _)| {
                 **stored_tls_pk == tls_public_key.clone().into_contract_type()
             })
-            // Extract the attestation from the (NodeId, Attestation) tuple
             .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
     }
 
