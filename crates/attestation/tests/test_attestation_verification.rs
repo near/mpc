@@ -32,8 +32,8 @@ fn test_mock_attestation_verify(
 #[ignore] // TODO, update str from node. #1269
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
-    let tls_key  = p2p_tls_key();
-    let account_key  = account_key();
+    let tls_key = p2p_tls_key();
+    let account_key = account_key();
 
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = 1755186041_u64;

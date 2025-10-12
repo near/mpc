@@ -131,9 +131,6 @@ impl ReportData {
     ///
     /// - `tls_public_key`: The TLS key of the MPC node (always required).
     /// - `account_public_key`: The NEAR account signing key (optional during transition).
-    ///   If `None`, a zero key will be substituted for backward compatibility.
-    ///W
-    /// TODO (#823): Remove zero-key fallback once TEE enforcement is mandatory.
     pub fn new(
         tls_public_key: impl Into<Ed25519PublicKey>,
         account_public_key: impl Into<Ed25519PublicKey>,
@@ -173,7 +170,7 @@ mod tests {
     }*/
 
     #[test]
-    #[ignore] // TODO, update str from node.#1269
+    #[ignore] // TODO #1269, update str from node.
     fn test_from_str_valid() {
         let valid_quote: Vec<u8> =
             serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();

@@ -223,7 +223,6 @@ mod tests {
         },
     };
 
-   
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
 

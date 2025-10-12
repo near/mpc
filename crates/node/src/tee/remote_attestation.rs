@@ -92,12 +92,9 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     account_public_key: VerifyingKey,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-
-    
     let tls_sdk_public_key = *tls_public_key.into_contract_interface_type().as_bytes();
     let account_sdk_public_key = *account_public_key.into_contract_interface_type().as_bytes();
     let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
-   
 
     let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 

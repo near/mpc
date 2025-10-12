@@ -522,11 +522,11 @@ mod tests {
         for node_id in &participant_nodes {
             assert!(tee_state
                 .participants_attestations
-                .contains_key(&node_id.tls_public_key)); 
+                .contains_key(&node_id.tls_public_key));
         }
         assert!(tee_state
             .participants_attestations
-            .contains_key(&non_participant_uid.tls_public_key)); 
+            .contains_key(&non_participant_uid.tls_public_key));
 
         // Clean non-participants
         tee_state.clean_non_participants(&participants);
@@ -536,7 +536,7 @@ mod tests {
         for node_id in &participant_nodes {
             assert!(tee_state
                 .participants_attestations
-                .contains_key(&node_id.tls_public_key)); 
+                .contains_key(&node_id.tls_public_key));
         }
         assert!(!tee_state
             .participants_attestations

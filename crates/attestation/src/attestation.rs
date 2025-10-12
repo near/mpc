@@ -121,25 +121,19 @@ impl Attestation {
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> bool {
         match self {
-            Self::Dstack(dstack_attestation) => {
-          
-            self.verify_attestation(
+            Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
                 timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
-            )
-            }
-            Self::Mock(mock_attestation) => {
-        
-            verify_mock_attestation(
+            ),
+            Self::Mock(mock_attestation) => verify_mock_attestation(
                 mock_attestation,
                 timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
-            )
-            }
+            ),
         }
     }
 

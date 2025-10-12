@@ -596,7 +596,7 @@ pub async fn submit_signature_response(
 ) -> anyhow::Result<()> {
     // Call `respond` as if we are an attested_account
     let respond = attested_account
-        .call(contract.id(),"respond")
+        .call(contract.id(), "respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -620,7 +620,7 @@ pub async fn sign_and_validate(
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        submit_signature_response(respond_req, respond_resp, contract,attested_account).await?;
+        submit_signature_response(respond_req, respond_resp, contract, attested_account).await?;
     }
 
     let execution = status.await?;

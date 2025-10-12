@@ -133,7 +133,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
     // Call `respond` as an attested node.
     let respond = attested_account
-        .call(contract.id(),"respond")
+        .call(contract.id(), "respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp

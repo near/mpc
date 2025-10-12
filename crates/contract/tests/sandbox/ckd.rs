@@ -22,8 +22,7 @@ async fn create_account_given_id(
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
     let (worker, contract, mpc_nodes, sks) = init_env_bls12381(1).await;
-    
-    
+
     let attested_account = &mpc_nodes[0];
 
     let sk = match &sks[0] {
@@ -155,7 +154,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
     // Call `respond_ckd` as an attested node:
     let respond = attested_account
-        .call(contract.id(),"respond_ckd")
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -289,7 +288,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.
     let respond = attested_account
-        .call(contract.id(),"respond_ckd")
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
