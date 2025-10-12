@@ -197,9 +197,9 @@ mod tests {
 
     #[test]
     fn test_report_data_enum_structure() {
-        let tls_key = p2p_tls_key(); //may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
-        let data = ReportData::V1(ReportDataV1::new(tls_key.clone(), account_key.clone()));
+        let data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         match &data {
             ReportData::V1(v1) => {
@@ -213,17 +213,17 @@ mod tests {
 
     #[test]
     fn test_report_data_v1_struct() {
-        let tls_key = p2p_tls_key(); //may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
 
-        let v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let v1 = ReportDataV1::new(tls_key, account_key);
         assert_eq!(v1.tls_public_key, Ed25519PublicKey(tls_key));
         assert_eq!(v1.account_public_key, Ed25519PublicKey(account_key));
     }
 
     #[test]
     fn test_from_bytes() {
-        let tls_key = p2p_tls_key(); // may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
         let report_data_v1 = ReportDataV1::new(tls_key, account_key);
         let bytes = report_data_v1.to_bytes();
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_binary_version_placement() {
-        let tls_key = p2p_tls_key(); //may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
         let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
 
@@ -256,9 +256,9 @@ mod tests {
     #[test]
 
     fn test_public_key_hash_placement() {
-        let tls_key = p2p_tls_key(); // may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
-        let report_data_v1 = ReportDataV1::new(tls_key.clone(), account_key.clone());
+        let report_data_v1 = ReportDataV1::new(tls_key, account_key);
         let bytes = report_data_v1.to_bytes();
 
         let report_data = ReportData::V1(report_data_v1.clone());
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_zero_padding() {
-        let tls_key = p2p_tls_key(); //may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
         let bytes = ReportDataV1::new(tls_key, account_key).to_bytes();
 
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_report_data_size() {
-        let tls_key = p2p_tls_key(); //may use p2p_tls_key() if needed
+        let tls_key = p2p_tls_key();
         let account_key = account_key();
         let bytes = ReportDataV1::new(tls_key, account_key);
         assert_eq!(bytes.to_bytes().len(), REPORT_DATA_SIZE);
