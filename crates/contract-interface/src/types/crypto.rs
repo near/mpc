@@ -1,17 +1,160 @@
+use borsh::BorshDeserialize;
+use borsh::BorshSerialize;
 use derive_more::{Deref, From};
-use serde::{Deserialize, Serialize};
+
+const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+const SECP256K1_PUBLIC_KEY_SIZE: usize = 64;
+const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
+const BLS12381G2_PUBLIC_KEY_SIZE: usize = 96;
 
 #[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deref, From, Serialize, Deserialize,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Ed25519PublicKey(pub [u8; 32]);
+pub enum PublicKey {
+    Secp256k1(Secp256k1PublicKey),
+    Ed25519(Ed25519PublicKey),
+    Bls12381(Bls12381G2PublicKey),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deref,
+    From,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct Ed25519PublicKey(pub [u8; ED25519_PUBLIC_KEY_SIZE]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deref,
+    From,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub struct Secp256k1PublicKey(pub [u8; SECP256K1_PUBLIC_KEY_SIZE]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deref,
+    From,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub struct Bls12381G2PublicKey(pub [u8; BLS12381G2_PUBLIC_KEY_SIZE]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deref,
+    From,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(borsh::BorshSchema)
+)]
+pub struct Bls12381G1PublicKey(pub [u8; BLS12381G1_PUBLIC_KEY_SIZE]);
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParsePublicKeyError {
+    #[error("missing ':' separator")]
+    MissingSeparator,
+    #[error("wrong prefix")]
+    WrongPrefix,
+    #[error("invalid key length")]
+    InvalidKeyLength,
+    #[error("invalid bs58 encoding")]
+    InvalidBs58Encoding,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Secp256k1PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
+    fn schema_name() -> String {
+        "Secp256k1PublicKey".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Bls12381G1PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
+    fn schema_name() -> String {
+        "Bls12381G1PublicKey".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl schemars::JsonSchema for Bls12381G2PublicKey {
+    fn is_referenceable() -> bool {
+        true
+    }
+
+    fn schema_name() -> String {
+        "Bls12381G2PublicKey".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        String::json_schema(generator)
+    }
+}
 
 impl Ed25519PublicKey {
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
         &self.0
     }
 }

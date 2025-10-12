@@ -25,13 +25,12 @@ use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
-use crate::keyshare;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
-use crate::web::{start_web_server, StaticWebData};
+use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
@@ -281,17 +280,6 @@ pub async fn get_keyshares(
     keystore.load_keyset(keyset).await
 }
 
-pub async fn put_keyshares(
-    home_dir: PathBuf,
-    keyshares: Vec<Keyshare>,
-    local_encryption_key: [u8; 16],
-) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&home_dir)?;
-    let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
-    let keystore = key_storage_config.create().await?;
-    keyshare::recovery_test_utils::put_keyshares(&keystore, keyshares).await
-}
-
 impl OneNodeTestConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.home_dir)?;
@@ -305,12 +293,15 @@ impl OneNodeTestConfig {
 
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
+                // todo: use it for testing [(#1249)](https://github.com/near/mpc/issues/1249)
+                let (_, dummy_migration_state_receiver) = watch::channel((0, BTreeMap::new()));
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui.clone(),
-                    StaticWebData::new(&self.secrets, None),
+                    static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
+                    dummy_migration_state_receiver,
                 )
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);

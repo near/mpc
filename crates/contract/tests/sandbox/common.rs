@@ -31,7 +31,9 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_sdk::{log, CurveType, Gas, PublicKey};
+use near_sdk::{log, Gas};
+//use near_sdk::{log, CurveType, Gas, PublicKey};
+
 use near_workspaces::{
     network::Sandbox,
     operations::TransactionStatus,
@@ -176,82 +178,33 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         }
     };
 
-    use std::fs;
-    use std::path::Path;
-    use std::process::Command;
-
     if do_build {
-        println!("🔧 Starting build for package: {package_name}");
-        println!("📂 Project directory: {}", project_dir.display());
-
-        // --- Step 1: Build the WASM ---
-        let cargo_args = [
-            "build",
-            &format!("--package={package_name}"),
-            "--profile=release-contract",
-            "--target=wasm32-unknown-unknown",
-        ];
-        println!("🚀 Running: cargo {}", cargo_args.join(" "));
-
         let status = Command::new("cargo")
-            .args(&cargo_args)
+            .args([
+                "build",
+                &format!("--package={package_name}"),
+                "--profile=release-contract",
+                "--target=wasm32-unknown-unknown",
+            ])
             .current_dir(&project_dir)
             .status()
-            .expect("❌ Failed to run cargo build");
+            .expect("Failed to run cargo build");
 
-        assert!(status.success(), "❌ cargo build failed");
-
-        println!("✅ cargo build succeeded");
-
-        // --- Step 2: Locate and optimize the WASM ---
-        println!("🔎 Expected wasm output path: {}", wasm_path.display());
-        if wasm_path.exists() {
-            let size = fs::metadata(&wasm_path).map(|m| m.len()).unwrap_or(0);
-            println!("✅ Found wasm file ({} bytes)", size);
-        } else {
-            println!("⚠️ wasm file not found at expected path! Check cargo output directory.");
-        }
-
-        // Check if wasm-opt exists in PATH
-        let check = Command::new("bash")
-            .arg("-c")
-            .arg("command -v wasm-opt")
-            .output()
-            .expect("Failed to check for wasm-opt in PATH");
-
-        if check.status.success() {
-            let path_str = String::from_utf8_lossy(&check.stdout).trim().to_string();
-            println!("🧠 Using wasm-opt from: {}", path_str);
-        } else {
-            println!("❌ wasm-opt not found in PATH");
-        }
-
-        let wasm_opt_args = [
-            "--enable-bulk-memory",
-            "-Oz",
-            "-o",
-            wasm_path.to_str().unwrap(),
-            wasm_path.to_str().unwrap(),
-        ];
-        println!("🏃 Running: wasm-opt {}", wasm_opt_args.join(" "));
+        assert!(status.success(), "cargo build failed");
 
         let status = Command::new("wasm-opt")
-            .args(&wasm_opt_args)
+            .args([
+                "--enable-bulk-memory",
+                "-Oz",
+                "-o",
+                wasm_path.to_str().unwrap(),
+                wasm_path.to_str().unwrap(),
+            ])
             .current_dir(&project_dir)
             .status()
-            .expect("❌ Failed to run wasm-opt (binary not found?)");
+            .expect("Failed to run wasm-opt");
 
-        assert!(status.success(), "❌ wasm-opt failed");
-        println!(
-            "✅ wasm-opt optimization succeeded for {}",
-            wasm_path.display()
-        );
-
-        // --- Step 3: Update lockfile ---
-        lockfile.set_len(0).unwrap();
-        lockfile
-            .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
-            .expect("Failed to write timestamp to lockfile");
+        assert!(status.success(), "wasm-opt failed");
 
         lockfile.set_len(0).unwrap();
         lockfile
@@ -641,7 +594,7 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are the MPC network itself.
+    // Call `respond` as if we are an attested_account
     let respond = attested_account
         .call(contract.id(),"respond")
         .args_json(serde_json::json!({
@@ -686,28 +639,10 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
-
-pub fn example_secp256k1_point() -> PublicKey {
-    "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd".parse().unwrap()
-}
-
-// based on https://github.com/near/threshold-signatures/blob/eb04be447bc3385000a71adfcfc930e44819bff1/src/confidential_key_derivation/ckd.rs
-fn hash2curve(app_id: &[u8]) -> ProjectivePoint {
-    const DOMAIN: &[u8] = b"NEAR CURVE_XOF:SHAKE-256_SSWU_RO_";
-    <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXof<sha3::Shake256>>(
-        &[app_id],
-        &[DOMAIN],
-    )
-    .unwrap()
-=======
-pub fn example_bls12381g1_point() -> dtos_contract::Bls12381G1PublicKey {
-=======
 pub fn example_bls12381g1_point() -> dtos::Bls12381G1PublicKey {
->>>>>>> origin/main
     "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
         .parse()
         .unwrap()
->>>>>>> origin/main
 }
 
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
@@ -768,6 +703,8 @@ pub async fn derive_confidential_key_and_validate(
     let execution = status.await?;
     dbg!(&execution);
     let execution = execution.into_result()?;
+
+    // Finally wait the result:
     let returned_resp: CKDResponse = execution.json()?;
     if let Some((_, respond_resp)) = respond {
         assert_eq!(
@@ -896,11 +833,9 @@ pub async fn submit_participant_info(
     attestation: &dtos::Attestation,
     tls_key: &dtos::Ed25519PublicKey,
 ) -> anyhow::Result<bool> {
-    let dto_tls_key_bytes: [u8; 32] = tls_key.as_bytes()[1..].try_into().unwrap();
-
     let result = account
         .call(contract.id(), "submit_participant_info")
-        .args_json((attestation, dto_tls_key_bytes))
+        .args_json((attestation, tls_key))
         .max_gas()
         .transact()
         .await?;
@@ -915,7 +850,7 @@ pub async fn get_participant_attestation(
         .as_account()
         .call(contract.id(), "get_attestation")
         .args_json(json!({
-            "tls_public_key": dto_tls_key_bytes
+            "tls_public_key": tls_key
         }))
         .max_gas()
         .transact()
@@ -1035,7 +970,7 @@ pub async fn call_contract_key_generation<const N: usize>(
                 "domain_id": domain.id,
                 "attempt_id": 0,
             },
-            "public_key": public_key,
+            "public_key": public_key.into_contract_type(),
         });
 
         for account in accounts {

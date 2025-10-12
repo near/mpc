@@ -21,7 +21,9 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_bls12381(1).await;
+    
+    
     let attested_account = &mpc_nodes[0];
 
     let sk = match &sks[0] {
@@ -117,7 +119,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_bls12381(1).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -255,7 +257,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, mpc_nodes, sks) = init_env_bls12381(1).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;

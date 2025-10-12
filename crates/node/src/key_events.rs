@@ -5,7 +5,7 @@ use crate::indexer::types::{
 };
 use crate::network::MeshNetworkClient;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
-use crate::providers::{EcdsaTaskId, PublicKeyConversion};
+use crate::providers::EcdsaTaskId;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::trait_extensions::convert_to_contract_dto::{
     IntoContractInterfaceType, TryIntoNodeType,
@@ -25,7 +25,7 @@ use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::{frost_ed25519, frost_secp256k1};
+use threshold_signatures::frost_ed25519;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 use tracing::{error, info};
@@ -252,6 +252,13 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Bls12381(res)
+        }
+        (public_key, scheme) => {
+            return Err(anyhow::anyhow!(
+                "Unexpected pair of ({:?}, {:?})",
+                public_key,
+                scheme
+            ));
         }
     };
     tracing::info!("Key resharing attempt {:?}: committing keyshare.", key_id);

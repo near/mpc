@@ -18,10 +18,11 @@ use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{PublicKeyConversion, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
+
 use crate::types::SignatureId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::elliptic_curve::sec1::FromEncodedPoint as _;
 use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
@@ -30,6 +31,9 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
+
+#[cfg(test)]
+use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -254,6 +258,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
 }
 
 impl PublicKeyConversion for VerifyingKey {
+    #[cfg(test)]
     fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
         let bytes = self.to_element().to_encoded_point(false).to_bytes();
         anyhow::ensure!(bytes[0] == 0x04);

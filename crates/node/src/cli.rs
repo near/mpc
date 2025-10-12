@@ -1,15 +1,12 @@
-use crate::config::{CKDConfig, PersistentSecrets, RespondConfig};
-use crate::indexer::tx_sender::TransactionSender;
-use crate::providers::PublicKeyConversion;
-use crate::web::{DebugRequest, StaticWebData};
 use crate::{
     config::{
-        load_config_file, BlockArgs, ConfigFile, IndexerConfig, KeygenConfig, PresignatureConfig,
-        SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        load_config_file, BlockArgs, CKDConfig, ConfigFile, IndexerConfig, KeygenConfig,
+        PersistentSecrets, PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig,
+        SyncMode, TripleConfig, WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{real::spawn_real_indexer, IndexerAPI},
+    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -18,21 +15,22 @@ use crate::{
     },
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
-    web::start_web_server,
+    web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use attestation::attestation::Attestation;
-use attestation::report_data::ReportData;
+use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::sync::OnceLock;
+use std::collections::BTreeMap;
 use std::{
     path::PathBuf,
+    sync::OnceLock,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
@@ -42,19 +40,20 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-<<<<<<< HEAD
-=======
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
->>>>>>> origin/main
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
-        remote_attestation::{periodic_attestation_submission, submit_remote_attestation},
+        remote_attestation::{
+            monitor_attestation_removal, periodic_attestation_submission, submit_remote_attestation,
+        },
         AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
     tracing::info,
 };
+
+pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
@@ -229,6 +228,13 @@ pub struct ExportKeyshareCmd {
 
 impl StartCmd {
     async fn run(self) -> anyhow::Result<()> {
+        let root_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(1)
+            .build()?;
+
+        let _tokio_enter_guard = root_runtime.enter();
+
         // Load configuration and initialize persistent secrets
         let home_dir = PathBuf::from(self.home_dir.clone());
         let config = load_config_file(&home_dir)?;
@@ -245,38 +251,33 @@ impl StartCmd {
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
         let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
-<<<<<<< HEAD
+
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
         let report_data = ReportData::new(
-            *tls_public_key.into_dto_type().as_bytes(),
+            *tls_public_key.into_contract_interface_type().as_bytes(),
             *account_public_key.into_dto_type().as_bytes(),
         );
-=======
-        let report_data =
-            ReportData::new(*tls_public_key.into_contract_interface_type().as_bytes());
->>>>>>> origin/main
+
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
         // Create communication channels and runtime
         let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
         let root_task_handle = Arc::new(OnceLock::new());
 
-        let root_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(1)
-            .build()?;
-
         let (protocol_state_sender, protocol_state_receiver) =
             watch::channel(ProtocolContractState::NotInitialized);
 
+        let (migration_state_sender, migration_state_receiver) =
+            watch::channel((0, BTreeMap::new()));
         let web_server = root_runtime
             .block_on(start_web_server(
                 root_task_handle.clone(),
                 debug_request_sender.clone(),
                 config.web_ui.clone(),
-                StaticWebData::new(&secrets, Some(attestation.clone())),
+                static_web_data(&secrets, Some(attestation.clone())),
                 protocol_state_receiver,
+                migration_state_receiver,
             ))
             .context("Failed to create web server.")?;
 
@@ -292,6 +293,8 @@ impl StartCmd {
             respond_config,
             indexer_exit_sender,
             protocol_state_sender,
+            migration_state_sender,
+            *tls_public_key,
         );
 
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
@@ -403,6 +406,7 @@ impl StartCmd {
 
         // Spawn periodic attestation submission task
         let tx_sender_clone = indexer_api.txn_sender.clone();
+        let tee_authority_clone = tee_authority.clone();
         tokio::spawn(async move {
             if let Err(e) = periodic_attestation_submission(
                 tee_authority_clone,

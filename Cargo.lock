@@ -1217,13 +1217,12 @@ dependencies = [
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
- "k256",
  "mpc-primitives",
- "near-sdk",
  "rstest",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "sha3",
  "test_utils",
  "thiserror 2.0.16",
@@ -2143,9 +2142,13 @@ name = "contract-interface"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "bs58 0.5.1",
  "derive_more 2.0.1",
+ "near-sdk",
  "schemars 0.8.22",
  "serde",
+ "serde_json",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -5007,7 +5010,6 @@ name = "mpc-devnet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "attestation",
  "borsh",
  "bs58 0.5.1",
  "clap",
@@ -5021,6 +5023,7 @@ dependencies = [
  "near-jsonrpc-primitives 0.28.0",
  "near-primitives 0.28.0",
  "near-sdk",
+ "node-types",
  "rand 0.9.2",
  "reqwest 0.12.23",
  "serde",
@@ -5067,6 +5070,7 @@ dependencies = [
  "near-o11y",
  "near-sdk",
  "near-time 2.8.0",
+ "node-types",
  "prometheus",
  "rand 0.8.5",
  "rocksdb",
@@ -6832,6 +6836,19 @@ dependencies = [
  "sha2",
  "thiserror 2.0.16",
  "tracing",
+]
+
+[[package]]
+name = "node-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "attestation",
+ "bs58 0.5.1",
+ "ed25519-dalek",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

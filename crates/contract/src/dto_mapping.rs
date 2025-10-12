@@ -9,12 +9,7 @@ use attestation::{
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
 use contract_interface::types as dtos;
->>>>>>> origin/main
 
 use k256::{
     elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
@@ -22,7 +17,6 @@ use k256::{
 };
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
->>>>>>> origin/main
 
 #[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 use threshold_signatures::confidential_key_derivation as ckd;
@@ -34,9 +28,6 @@ pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
-<<<<<<< HEAD
-impl IntoContractType<Attestation> for dtos_contract::Attestation {
-=======
 pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
@@ -53,7 +44,6 @@ pub(crate) trait TryIntoInterfaceType<InterfaceType> {
 }
 
 impl IntoContractType<Attestation> for dtos::Attestation {
->>>>>>> origin/main
     fn into_contract_type(self) -> Attestation {
         match self {
             dtos::Attestation::Dstack(dstack_attestation) => {
@@ -183,17 +173,8 @@ impl IntoContractType<EventLog> for dtos::EventLog {
     }
 }
 
-<<<<<<< HEAD
-pub(crate) trait IntoDtoType<DtoType> {
-    fn into_dto_type(self) -> DtoType;
-}
-
-impl IntoDtoType<dtos_contract::Attestation> for Attestation {
-    fn into_dto_type(self) -> dtos_contract::Attestation {
-=======
 impl IntoInterfaceType<dtos::Attestation> for Attestation {
     fn into_dto_type(self) -> dtos::Attestation {
->>>>>>> origin/main
         match self {
             Attestation::Dstack(dstack_attestation) => {
                 dtos::Attestation::Dstack(dstack_attestation.into_dto_type())
@@ -322,8 +303,6 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
         }
     }
 }
-<<<<<<< HEAD
-=======
 
 impl IntoInterfaceType<dtos::Secp256k1PublicKey> for &k256_types::PublicKey {
     fn into_dto_type(self) -> dtos::Secp256k1PublicKey {
@@ -420,4 +399,3 @@ impl IntoInterfaceType<dtos::PublicKey> for &near_sdk::PublicKey {
         }
     }
 }
->>>>>>> origin/main

@@ -16,7 +16,9 @@ hex = { workspace = true }
 http = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
+
 
 [dev-dependencies]
 hex = { workspace = true }

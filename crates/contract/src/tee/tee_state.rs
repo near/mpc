@@ -4,24 +4,27 @@ use crate::{
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
-<<<<<<< HEAD
-=======
     TryIntoInterfaceType,
->>>>>>> origin/main
 };
 use attestation::{
     attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-<<<<<<< HEAD
-=======
 use contract_interface::types::Ed25519PublicKey;
->>>>>>> origin/main
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
-use std::hash::{Hash, Hasher};
 use std::{collections::HashSet, time::Duration};
+
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone, Hash)] //#[derive(Debug, Ord, PartialOrd, Clone)]
+pub struct NodeId {
+    /// Operator account
+    pub account_id: AccountId,
+    /// TLS public key, MUST BE of type Ed25519
+    pub tls_public_key: near_sdk::PublicKey,
+    pub account_public_key: Option<PublicKey>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeeQuoteStatus {
@@ -35,16 +38,7 @@ pub enum TeeQuoteStatus {
     Invalid,
 }
 
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Ord, PartialOrd, Clone)]
-pub struct NodeId {
-    /// Operator account (on-chain identity)
-    pub account_id: AccountId,
-    /// TLS public key
-    pub tls_public_key: near_sdk::PublicKey,
-    /// Account signing public key (optional for backward compatibility)
-    pub account_public_key: Option<near_sdk::PublicKey>,
-}
+
 
 // Implement Eq + Hash ignoring account_public_key
 impl PartialEq for NodeId {
