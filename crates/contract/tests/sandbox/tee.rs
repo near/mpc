@@ -1,13 +1,13 @@
 use crate::sandbox::common::{
     assert_running_return_participants, gen_accounts, get_participant_attestation,
-    get_tee_accounts, init_env_secp256k1, submit_participant_info, submit_tee_attestations,
-    vote_for_hash,
+    get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations, vote_for_hash,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
 use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
-    errors::InvalidState, primitives::test_utils::bogus_ed25519_public_key,
+    errors::InvalidState,
+    primitives::{domain::SignatureScheme, test_utils::bogus_ed25519_public_key},
     state::ProtocolContractState,
 };
 use mpc_primitives::hash::MpcDockerImageHash;
@@ -19,7 +19,7 @@ use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls
 /// and additional votes don't change the allowed state or latest hash.
 #[tokio::test]
 async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let allowed_mpc_image_digest = image_digest();
 
@@ -64,7 +64,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 /// it remains in the allowed list even when participants change their votes away from it.
 #[tokio::test]
 async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let first_hash = image_digest();
 
@@ -132,7 +132,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 /// account id that is not in the participant list
 #[tokio::test]
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
-    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, _accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
     let allowed_mpc_image_digest = image_digest();
 
@@ -142,7 +142,9 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
         .transact()
         .await?;
     let Err(err) = res.into_result() else {
-        panic!("vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list");
+        panic!(
+            "vote_code_hash should not accept votes from a randomly generated account id that is not in the participant list"
+        );
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
     let err_str = format!("{:?}", err);
@@ -196,7 +198,7 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
 async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     let attestation = mock_dto_dstack_attestation();
     let tls_key = p2p_tls_key().into();
     Ok((contract, accounts, attestation, tls_key))
@@ -231,7 +233,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
     let mock_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key().into();
     let success =
@@ -265,7 +267,7 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 /// This verifies the security boundary: only the contract itself should be able to perform internal cleanup operations.
 #[tokio::test]
 async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
-    let (worker, contract, _accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, _accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     // Create a new account that's not the contract
     let external_account = worker.dev_create_account().await?;
@@ -297,7 +299,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 /// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
-    let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let participant_uids = assert_running_return_participants(&contract)
         .await?
@@ -340,9 +342,9 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 }
 
 #[tokio::test]
-async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
-) -> Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification()
+-> Result<()> {
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let hash_1 = [1; 32];
     let hash_2 = [2; 32];
@@ -393,7 +395,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
 #[tokio::test]
 async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_attestation() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let participant_account_1 = &accounts[0];
     let tls_key_1 = bogus_ed25519_public_key();
@@ -421,7 +423,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 
 #[tokio::test]
 async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestation() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let participant_account_1 = &accounts[0];
     let tls_key_1 = bogus_ed25519_public_key();
@@ -481,7 +483,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
 
 #[tokio::test]
 async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let participant_account = &accounts[0];
     let tls_key = bogus_ed25519_public_key();

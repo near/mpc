@@ -4,13 +4,13 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 use crate::sandbox::common::{
-    assert_running_return_participants, check_call_success, check_call_success_all_receipts,
-    gen_accounts, get_tee_accounts, init_env_secp256k1, submit_participant_info,
-    submit_tee_attestations, IntoInterfaceType,
+    IntoInterfaceType, assert_running_return_participants, check_call_success,
+    check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
+    submit_participant_info, submit_tee_attestations,
 };
 use mpc_contract::{
     primitives::{
-        domain::DomainId,
+        domain::{DomainId, SignatureScheme},
         key_state::EpochId,
         participants::Participants,
         test_utils::bogus_ed25519_near_public_key,
@@ -31,7 +31,7 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, env_accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, env_accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;

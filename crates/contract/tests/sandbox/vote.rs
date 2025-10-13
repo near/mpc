@@ -1,21 +1,24 @@
 use crate::sandbox::common::{
-    check_call_success, gen_accounts, init_env_secp256k1, submit_participant_info,
-    IntoInterfaceType, GAS_FOR_VOTE_RESHARED,
+    GAS_FOR_VOTE_RESHARED, IntoInterfaceType, check_call_success, gen_accounts, init_env,
+    submit_participant_info,
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
 use mpc_contract::{
     errors::InvalidParameters,
-    primitives::thresholds::{Threshold, ThresholdParameters},
-    state::{running::RunningContractState, ProtocolContractState},
+    primitives::{
+        domain::SignatureScheme,
+        thresholds::{Threshold, ThresholdParameters},
+    },
+    state::{ProtocolContractState, running::RunningContractState},
 };
-use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use near_workspaces::{Account, Contract, Worker, network::Sandbox};
 use rstest::rstest;
 use serde_json::json;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let args = json!({
         "domains": vec![
@@ -92,7 +95,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env_secp256k1(1).await;
+    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let args = json!({
         "domains": vec![
@@ -146,7 +149,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -244,7 +247,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -334,7 +337,8 @@ struct ResharingTestContext {
 /// Test helper: Initialize environment and transition to resharing state
 #[rstest::fixture]
 async fn setup_resharing_state() -> ResharingTestContext {
-    let (worker, contract, mut current_participant_accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut current_participant_accounts, _) =
+        init_env(1, SignatureScheme::Secp256k1).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {
@@ -858,7 +862,8 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 
 #[tokio::test]
 async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
-    let (worker, contract, mut current_participant_accounts, _) = init_env_secp256k1(1).await;
+    let (worker, contract, mut current_participant_accounts, _) =
+        init_env(1, SignatureScheme::Secp256k1).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {
