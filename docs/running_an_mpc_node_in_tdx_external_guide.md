@@ -102,7 +102,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 2. **Compile dstack-vmm:**
    ```bash
    cd dstack
-   git checkout v0.5.4
+   git checkout v0.5.4 # Should point to commit `3e4e462cac2a57c204698d2443d252d13e75cd29`
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
