@@ -2,8 +2,8 @@ use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
-    request_signature_and_await_response,
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -55,16 +55,14 @@ async fn test_key_resharing_simple() {
         .collect::<Vec<_>>();
 
     // Sanity check.
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user0",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 
     setup
         .indexer
@@ -87,16 +85,14 @@ async fn test_key_resharing_simple() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user1",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 }
 
 // Test two nodes joining and two old nodes leaving.
@@ -159,16 +155,14 @@ async fn test_key_resharing_multistage() {
         .expect("Timeout waiting for resharing to complete");
 
     // Sanity check.
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user0",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 
     // Have the fifth node join.
     let mut participants_2 = setup.participants.clone();
@@ -195,16 +189,14 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user1",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 
     // Have the sixth node join.
     setup
@@ -228,16 +220,14 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user2",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 
     // Have the first node quit.
     let mut participants_3 = setup.participants.clone();
@@ -264,16 +254,14 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user1",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 
     // Have the second node quit.
     let mut participants_4 = setup.participants.clone();
@@ -301,16 +289,14 @@ async fn test_key_resharing_multistage() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user1",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
 }
 
 /// Test that signatures during resharing

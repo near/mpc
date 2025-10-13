@@ -1,8 +1,8 @@
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-    IntegrationTestSetup, request_signature_and_await_response,
+    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -63,16 +63,14 @@ async fn test_faulty_cluster() {
         .expect("Timeout waiting for resharing to complete");
     tracing::info!("Key generation complete");
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user0",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME,
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await
+    .is_some());
 
     // first step: drop one node, and make sure signatures can still be generated
     let mut rng = rand::thread_rng();
@@ -80,16 +78,14 @@ async fn test_faulty_cluster() {
     tracing::info!("Bringing down one node #{}", to_drop);
     let disabled1 = setup.indexer.disable(to_drop.into()).await;
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user1",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
     tracing::info!("Step 1 complete");
 
     // Second step: drop another node, and make sure signatures cannot be generated
@@ -101,30 +97,26 @@ async fn test_faulty_cluster() {
     };
     tracing::info!("Bringing down another node #{}", another_to_drop);
     let disabled2 = setup.indexer.disable(another_to_drop.into()).await;
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user2",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_none()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_none());
     tracing::info!("Step 2 complete");
 
     // Third step: bring up the dropped node in step 2, and make sure signatures can be generated again
     disabled2.reenable_and_wait_till_running().await;
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user3",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user3",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
     tracing::info!("Step 3 complete");
 
     drop(disabled1);
@@ -134,30 +126,26 @@ async fn test_faulty_cluster() {
     tracing::info!("Pausing node #1");
     let paused2 = setup.indexer.pause_indexer(1.into()).await;
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user2",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_none()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user2",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_none());
     tracing::info!("Step 4 complete");
     drop(paused2);
     drop(paused1);
 
-    assert!(
-        request_signature_and_await_response(
-            &mut setup.indexer,
-            "user3",
-            &domain,
-            DEFAULT_MAX_SIGNATURE_WAIT_TIME
-        )
-        .await
-        .is_some()
-    );
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user3",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
     tracing::info!("Step 5 complete");
 }
 
@@ -228,15 +216,13 @@ async fn test_indexer_stuck() {
 
     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
     for _ in 0..5 {
-        assert!(
-            request_signature_and_await_response(
-                &mut setup.indexer,
-                "user2",
-                &domain,
-                DEFAULT_MAX_SIGNATURE_WAIT_TIME
-            )
-            .await
-            .is_some()
-        );
+        assert!(request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some());
     }
 }
