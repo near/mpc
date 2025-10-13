@@ -9,6 +9,7 @@ use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
+use rand_core::OsRng;
 
 pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
@@ -375,12 +376,19 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    let (_worker, contract, accounts) = init_with_candidates(vec![]).await;
+    let (worker, contract, accounts) = init_with_candidates(vec![]).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
         .expect("Contract must be in running state.");
 
-    execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
+    execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        &mut OsRng,
+    )
+    .await;
     propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }

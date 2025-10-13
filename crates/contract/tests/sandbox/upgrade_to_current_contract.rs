@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 
 use crate::sandbox::common::{
-    current_contract, execute_key_generation_and_add_random_state, gen_accounts, get_participants,
-    get_tee_accounts, propose_and_vote_contract_binary, submit_signature_response, PARTICIPANT_LEN,
+    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
+    gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests,
+    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
+    PARTICIPANT_LEN,
 };
+use mpc_contract::crypto_shared::CKDResponse;
+use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::{
     crypto_shared::SignatureResponse,
     primitives::{
@@ -14,6 +18,7 @@ use mpc_contract::{
 };
 use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use rand_core::OsRng;
 use rstest::rstest;
 
 enum Network {
@@ -29,10 +34,10 @@ fn contract_code(network: Network) -> &'static [u8] {
 }
 
 async fn init_old_contract(
-    worker: Worker<Sandbox>,
+    worker: &Worker<Sandbox>,
     contract: &Contract,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
-    let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
+    let (accounts, participants) = gen_accounts(worker, PARTICIPANT_LEN).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = Threshold::new(threshold);
@@ -102,7 +107,7 @@ async fn back_compatibility_without_state(
 
     let contract = deploy_old(&worker, network).await?;
 
-    init_old_contract(worker, &contract).await?;
+    init_old_contract(&worker, &contract).await?;
 
     assert!(healthcheck(&contract).await?);
 
@@ -137,12 +142,21 @@ async fn back_compatibility_without_state(
 async fn propose_upgrade_from_production_to_current_binary(
     #[values(Network::Mainnet, Network::Testnet)] network: Network,
 ) {
+    use rand_core::OsRng;
+
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
     // Add state so migration logic is exercised
-    execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
+    execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        &mut OsRng,
+    )
+    .await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -178,10 +192,16 @@ async fn upgrade_preserves_state_and_requests(
 ) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(worker, &contract).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
-    let injected_contract_state =
-        execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
+    let (injected_contract_state, _) = execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        &mut OsRng,
+    )
+    .await;
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -225,7 +245,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    init_old_contract(worker, &contract).await?;
+    init_old_contract(&worker, &contract).await?;
 
     let initial_participants = get_participants(&contract).await?;
     let participant_set_is_not_empty = !initial_participants.participants().is_empty();
@@ -260,4 +280,121 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
         "All initial participants must have a valid attestation post upgrade."
     );
     Ok(())
+}
+
+//// Verifies that upgrading the contract preserves state and allows the new
+/// functionality, in this case only CKD
+///
+/// This test:
+/// 1. Deploys an older version of the contract.
+/// 2. Initializes it with participants and submits a parameter update proposal.
+/// 3. Adds multiple domains with both `Ed25519` and `Secp256k1` schemes.
+/// 4. Submits pending signature requests across those domains.
+/// 5. Captures the full pre-upgrade state.
+/// 6. Upgrades the contract to the new version and runs `migrate()`.
+/// 7. Asserts that the state (participants, domains, proposals, signature requests, etc.)
+///    is identical post-upgrade.
+/// 10. Adds new domains, including CKD
+/// 11. Submits new signature and ckd requests
+/// 12. Confirms that pending signature and ckd requests created before and after the upgrade
+///    can still be responded to.
+#[rstest]
+#[tokio::test]
+async fn upgrade_allows_new_request_types(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) {
+    let rng = &mut OsRng;
+
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let contract = deploy_old(&worker, network).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+
+    let (injected_contract_state, mut added_domains) = execute_key_generation_and_add_random_state(
+        &accounts,
+        participants,
+        &contract,
+        &worker,
+        rng,
+    )
+    .await;
+
+    let state_pre_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    assert!(healthcheck(&contract).await.unwrap());
+    let contract = upgrade_to_new(contract).await.unwrap();
+    migrate_and_assert_contract_code(&contract)
+        .await
+        .expect("❌ migration() failed");
+
+    let state_post_upgrade: ProtocolContractState =
+        contract.view("state").await.unwrap().json().unwrap();
+
+    assert_eq!(
+        state_pre_upgrade, state_post_upgrade,
+        "State of the contract should remain the same post upgrade."
+    );
+
+    let first_available_domain_id = added_domains.len() as u64;
+
+    // 2. Add new domains
+    let domains_to_add = [
+        DomainConfig {
+            id: first_available_domain_id.into(),
+            scheme: SignatureScheme::Bls12381,
+        },
+        DomainConfig {
+            id: (first_available_domain_id + 1).into(),
+            scheme: SignatureScheme::Ed25519,
+        },
+    ];
+    added_domains.append(&mut domains_to_add.to_vec());
+    const EPOCH_ID: u64 = 0;
+    let shared_secret_keys =
+        call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
+
+    let (pending_sign_requests, pending_ckd_requests) = make_and_submit_requests(
+        &domains_to_add,
+        &shared_secret_keys,
+        &contract,
+        &worker,
+        rng,
+    )
+    .await;
+
+    for pending in injected_contract_state
+        .pending_sign_requests
+        .into_iter()
+        .chain(pending_sign_requests.into_iter())
+    {
+        submit_signature_response(
+            &pending.signature_request,
+            &pending.signature_response,
+            &contract,
+        )
+        .await
+        .unwrap();
+
+        let execution = pending.transaction.await.unwrap().into_result().unwrap();
+        let returned: SignatureResponse = execution.json().unwrap();
+
+        assert_eq!(
+            returned, pending.signature_response,
+            "Returned signature response does not match"
+        );
+    }
+
+    for pending in pending_ckd_requests {
+        submit_ckd_response(&pending.ckd_request, &pending.ckd_response, &contract)
+            .await
+            .unwrap();
+
+        let execution = pending.transaction.await.unwrap().into_result().unwrap();
+        let returned: CKDResponse = execution.json().unwrap();
+
+        assert_eq!(
+            returned, pending.ckd_response,
+            "Returned ckd response does not match"
+        );
+    }
 }
