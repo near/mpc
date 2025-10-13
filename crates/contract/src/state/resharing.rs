@@ -189,19 +189,42 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::state::{key_event::tests::find_leader, running::RunningContractState};
-    use crate::{
-        primitives::{
-            domain::{AddDomainsVotes, DomainId},
-            key_state::{AttemptId, KeyEventId},
-            test_utils::gen_account_id,
-            thresholds::{Threshold, ThresholdParameters},
-            votes::ThresholdParametersVotes,
-        },
-        state::test_utils::gen_resharing_state,
+    use crate::primitives::{
+        domain::{AddDomainsVotes, DomainId},
+        key_state::{AttemptId, KeyEventId},
+        test_utils::gen_account_id,
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
+    };
+    use crate::state::{
+        key_event::tests::{find_leader, Environment},
+        resharing::ResharingContractState,
+        running::running_tests::{gen_running_state, gen_valid_params_proposal},
+        running::RunningContractState,
     };
     use near_sdk::AccountId;
     use std::collections::BTreeSet;
+
+    /// Generates a resharing state with the given number of domains.
+    /// We do this by starting from the Running state and calling vote_new_parameters to have it
+    /// transition into Resharing. (This also tests the transitioning code path.)
+    pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
+        let mut env = Environment::new(Some(100), None, None);
+        let mut running = gen_running_state(num_domains);
+        let proposal = gen_valid_params_proposal(&running.parameters);
+        let mut resharing_state = None;
+        for (account, _, _) in proposal.participants().participants() {
+            env.set_signer(account);
+            assert!(resharing_state.is_none());
+            resharing_state = running
+                .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+                .unwrap();
+        }
+        (
+            env,
+            resharing_state.expect("Should've transitioned into resharing"),
+        )
+    }
 
     fn test_resharing_contract_state_for(num_domains: usize) {
         println!("Testing with {} domains", num_domains);

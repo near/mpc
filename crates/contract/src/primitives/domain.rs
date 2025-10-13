@@ -195,6 +195,36 @@ impl AddDomainsVotes {
 pub mod tests {
     use super::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 
+    const ALL_PROTOCOLS: [SignatureScheme; 3] = [
+        SignatureScheme::Secp256k1,
+        SignatureScheme::Ed25519,
+        SignatureScheme::Bls12381,
+    ];
+
+    /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
+    pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
+        let mut domains = Vec::new();
+        for i in 0..num_domains {
+            domains.push(DomainConfig {
+                id: DomainId(i as u64 * 2),
+                scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            });
+        }
+        DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
+    }
+
+    /// Generates a valid list of domains to add to the given registry.
+    pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<DomainConfig> {
+        let mut new_domains = Vec::new();
+        for i in 0..num_domains {
+            new_domains.push(DomainConfig {
+                id: DomainId(registry.next_domain_id + i as u64),
+                scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
+            });
+        }
+        new_domains
+    }
+
     #[test]
     fn test_add_domains() {
         let registry = DomainRegistry::default();

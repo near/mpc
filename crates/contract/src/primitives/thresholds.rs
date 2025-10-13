@@ -159,14 +159,12 @@ impl ThresholdParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        primitives::{
-            participants::{ParticipantId, Participants},
-            test_utils::{gen_participant, gen_participants, gen_threshold_params},
-            thresholds::{Threshold, ThresholdParameters},
-        },
-        state::test_utils::gen_valid_params_proposal,
+    use crate::primitives::{
+        participants::{ParticipantId, Participants},
+        test_utils::{gen_participant, gen_participants, gen_threshold_params},
+        thresholds::{Threshold, ThresholdParameters},
     };
+    use crate::state::running::running_tests::gen_valid_params_proposal;
     use rand::Rng;
 
     #[test]

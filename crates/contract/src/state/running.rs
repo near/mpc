@@ -183,13 +183,79 @@ impl RunningContractState {
 
 #[cfg(test)]
 pub mod running_tests {
-    use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::gen_threshold_params;
-    use crate::state::key_event::tests::Environment;
-    use crate::state::test_utils::gen_valid_params_proposal;
-    use crate::{
-        primitives::votes::ThresholdParametersVotes, state::test_utils::gen_running_state,
+    use std::collections::BTreeSet;
+
+    use super::RunningContractState;
+    use crate::primitives::{
+        domain::{tests::gen_domain_registry, AddDomainsVotes},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        participants::{ParticipantId, Participants},
+        test_utils::{bogus_ed25519_public_key_extended, gen_participant, gen_threshold_params},
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
     };
+    use crate::state::key_event::tests::Environment;
+    use rand::Rng;
+
+    /// Generates a Running state that contains this many domains.
+    pub fn gen_running_state(num_domains: usize) -> RunningContractState {
+        let epoch_id = EpochId::new(rand::thread_rng().gen());
+        let domains = gen_domain_registry(num_domains);
+
+        let mut keys = Vec::new();
+        for domain in domains.domains() {
+            let mut attempt = AttemptId::default();
+            let x: usize = rand::thread_rng().gen();
+            let x = x % 800;
+            for _ in 0..x {
+                attempt = attempt.next();
+            }
+            keys.push(KeyForDomain {
+                attempt,
+                domain_id: domain.id,
+                key: bogus_ed25519_public_key_extended(),
+            });
+        }
+        let max_n = 30;
+        let threshold_parameters = gen_threshold_params(max_n);
+        RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
+    }
+
+    pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
+        let mut rng = rand::thread_rng();
+        let current_k = params.threshold().value() as usize;
+        let current_n = params.participants().len();
+        let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
+        let current_participants = params.participants();
+        let mut old_ids: BTreeSet<ParticipantId> = current_participants
+            .participants()
+            .iter()
+            .map(|(_, id, _)| id.clone())
+            .collect();
+        let mut new_ids = BTreeSet::new();
+        while new_ids.len() < (n_old_participants as usize) {
+            let x: usize = rng.gen::<usize>() % old_ids.len();
+            let c = old_ids.iter().nth(x).unwrap().clone();
+            new_ids.insert(c.clone());
+            old_ids.remove(&c);
+        }
+        let mut new_participants = Participants::default();
+        for id in new_ids {
+            let account_id = current_participants.account_id(&id).unwrap();
+            let info = current_participants.info(&account_id).unwrap();
+            let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
+        }
+        let max_added: usize = rng.gen_range(0..10);
+        let mut next_id = current_participants.next_id();
+        for i in 0..max_added {
+            let (account_id, info) = gen_participant(i);
+            let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
+            next_id = next_id.next();
+        }
+
+        let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
+        ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
+    }
 
     fn test_running_for(num_domains: usize) {
         let mut state = gen_running_state(num_domains);
