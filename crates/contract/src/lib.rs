@@ -41,10 +41,10 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 use near_sdk::{
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -53,7 +53,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
-use state::{ProtocolContractState, running::RunningContractState};
+use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, TeeValidationResult},
@@ -1524,11 +1524,11 @@ mod tests {
         self,
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
-        {AffinePoint, Secp256k1, elliptic_curve},
+        {elliptic_curve, AffinePoint, Secp256k1},
     };
-    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
-    use rand::{RngCore, rngs::OsRng};
+    use rand::{rngs::OsRng, RngCore};
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
