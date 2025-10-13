@@ -177,10 +177,8 @@ async fn execute_onboarding(
     if keyshare_storage
         .load_keyset(&importing_keyset)
         .await
-        .is_ok()
+        .is_err()
     {
-        break;
-    } else {
         wait_for_and_import_keyshares(
             &importing_keyset,
             keyshare_storage,
