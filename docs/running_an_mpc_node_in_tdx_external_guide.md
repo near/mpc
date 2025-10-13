@@ -79,6 +79,7 @@ Make sure to complete:
 This ensures that your TDX setup is correctly configured.  
 
 ---
+
 #### 2. Dstack Setup and Configuration
 
 This section will guide you through installing and configuring dstack-vmm, which is the only dstack component needed for running MPC nodes in TDX environments.
@@ -160,6 +161,8 @@ To run dstack-vmm, you can start it manually with:
 ```bash
 ./dstack-vmm -c vmm.toml
 ```
+
+When `dstackv-vmm` is running, you should be able to access it's web interface at port `9300`.
 
 However, for persistent operation, we recommend using the following user systemd service:
 
