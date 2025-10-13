@@ -439,7 +439,7 @@ impl StartCmd {
             }
         });
 
-        // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085
+        // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085)
         let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
         let mut keyshare_storage: KeyshareStorage = key_storage_config.create().await?;
         onboard(
