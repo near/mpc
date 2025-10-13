@@ -41,10 +41,10 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 use near_sdk::{
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -53,7 +53,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
-use state::{running::RunningContractState, ProtocolContractState};
+use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, TeeValidationResult},
@@ -1524,11 +1524,11 @@ mod tests {
         self,
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
-        {elliptic_curve, AffinePoint, Secp256k1},
+        {AffinePoint, Secp256k1, elliptic_curve},
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
     use primitives::key_state::{AttemptId, KeyForDomain};
-    use rand::{rngs::OsRng, RngCore};
+    use rand::{RngCore, rngs::OsRng};
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -1547,54 +1547,54 @@ mod tests {
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 
-    pub fn new_secp256k1() -> (dtos_contract::Secp256k1PublicKey, k256::Scalar) {
+    pub fn new_secp256k1() -> (dtos::Secp256k1PublicKey, k256::Scalar) {
         let scalar = k256::Scalar::random(&mut rand::thread_rng());
         let public_key_element = Secp256K1Group::generator() * scalar;
 
         let compressed_key = public_key_element.to_encoded_point(false);
         let mut bytes = [0u8; 64];
         bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
-        let pk = dtos_contract::Secp256k1PublicKey::from(bytes);
+        let pk = dtos::Secp256k1PublicKey::from(bytes);
 
         (pk, scalar)
     }
 
-    pub fn new_ed25519() -> (dtos_contract::Ed25519PublicKey, curve25519_dalek::Scalar) {
+    pub fn new_ed25519() -> (dtos::Ed25519PublicKey, curve25519_dalek::Scalar) {
         let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
         let public_key_element = Ed25519Group::generator() * scalar;
 
         let compressed_key = public_key_element.compress().as_bytes().to_vec();
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(&compressed_key);
-        let pk = dtos_contract::Ed25519PublicKey::from(bytes);
+        let pk = dtos::Ed25519PublicKey::from(bytes);
 
         (pk, scalar)
     }
 
-    pub fn new_bls12381g2() -> (dtos_contract::Bls12381G2PublicKey, ckd::Scalar) {
+    pub fn new_bls12381g2() -> (dtos::Bls12381G2PublicKey, ckd::Scalar) {
         let scalar = ckd::Scalar::random(&mut OsRng);
         let public_key_element = ckd::ElementG2::generator() * scalar;
 
         let compressed_key = public_key_element.to_compressed();
-        let pk = dtos_contract::Bls12381G2PublicKey::from(compressed_key);
+        let pk = dtos::Bls12381G2PublicKey::from(compressed_key);
 
         (pk, scalar)
     }
 
     #[allow(dead_code)]
-    pub fn new_bls12381g1() -> (dtos_contract::Bls12381G1PublicKey, ckd::Scalar) {
+    pub fn new_bls12381g1() -> (dtos::Bls12381G1PublicKey, ckd::Scalar) {
         let scalar = ckd::Scalar::random(&mut OsRng);
         let public_key_element = ckd::ElementG1::generator() * scalar;
 
         let compressed_key = public_key_element.to_compressed();
-        let pk = dtos_contract::Bls12381G1PublicKey::from(compressed_key);
+        let pk = dtos::Bls12381G1PublicKey::from(compressed_key);
 
         (pk, scalar)
     }
 
     pub fn make_public_key_for_domain(
         domain_scheme: SignatureScheme,
-    ) -> (dtos_contract::PublicKey, SharedSecretKey) {
+    ) -> (dtos::PublicKey, SharedSecretKey) {
         match domain_scheme {
             SignatureScheme::Secp256k1 => {
                 let (pk, sk) = new_secp256k1();
