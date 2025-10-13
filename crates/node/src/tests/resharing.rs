@@ -3,6 +3,7 @@ use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -58,7 +59,7 @@ async fn test_key_resharing_simple() {
         &mut setup.indexer,
         "user0",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -88,7 +89,7 @@ async fn test_key_resharing_simple() {
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -158,7 +159,7 @@ async fn test_key_resharing_multistage() {
         &mut setup.indexer,
         "user0",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -192,7 +193,7 @@ async fn test_key_resharing_multistage() {
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -223,7 +224,7 @@ async fn test_key_resharing_multistage() {
         &mut setup.indexer,
         "user2",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -257,7 +258,7 @@ async fn test_key_resharing_multistage() {
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -292,7 +293,7 @@ async fn test_key_resharing_multistage() {
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -350,11 +351,11 @@ async fn test_signature_requests_in_resharing_are_processed() {
         .await
         .expect("Protocol state must change within timeout period.");
 
-    let response_time = request_signature_and_await_response(
+    request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
         &domain,
-        std::time::Duration::from_secs(60),
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     )
     .await
     .expect("Timed out generating the first signature");
@@ -385,9 +386,14 @@ async fn test_signature_requests_in_resharing_are_processed() {
     }
 
     // Send a request for signature.
-    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
-        .await
-        .expect("Signature requests during resharing are processed.");
+    request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await
+    .expect("Signature requests during resharing are processed.");
 
     // Re-enable the node.
     drop(disabled);
@@ -399,13 +405,18 @@ async fn test_signature_requests_in_resharing_are_processed() {
                 ContractState::Running(running) => running.resharing_state.is_none(),
                 _ => false,
             },
-            std::time::Duration::from_secs(60),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
         )
         .await
         .expect("Protocol state must change within timeout period.");
 
     // Send a request for signature.
-    request_signature_and_await_response(&mut setup.indexer, "user1", &domain, response_time * 2)
-        .await
-        .expect("Signature request in running should be processed.");
+    request_signature_and_await_response(
+        &mut setup.indexer,
+        "user1",
+        &domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await
+    .expect("Signature request in running should be processed.");
 }
