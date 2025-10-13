@@ -1520,7 +1520,6 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::elliptic_curve::sec1::ToEncodedPoint as _;
-    use k256::schnorr::CryptoRngCore;
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1530,6 +1529,7 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
+    use rand_core::CryptoRngCore;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;

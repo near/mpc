@@ -4991,6 +4991,7 @@ dependencies = [
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
+ "rand_core 0.6.4",
  "rstest",
  "schemars 0.8.22",
  "serde",
