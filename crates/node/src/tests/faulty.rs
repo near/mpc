@@ -2,7 +2,7 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_signature_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -63,16 +63,14 @@ async fn test_faulty_cluster() {
         .expect("Timeout waiting for resharing to complete");
     tracing::info!("Key generation complete");
 
-    let Some(signature_delay) = request_signature_and_await_response(
+    assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
         &domain,
-        std::time::Duration::from_secs(60),
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
     )
     .await
-    else {
-        panic!("Timed out generating the first signature");
-    };
+    .is_some());
 
     // first step: drop one node, and make sure signatures can still be generated
     let mut rng = rand::thread_rng();
@@ -84,7 +82,7 @@ async fn test_faulty_cluster() {
         &mut setup.indexer,
         "user1",
         &domain,
-        signature_delay * 2
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -103,7 +101,7 @@ async fn test_faulty_cluster() {
         &mut setup.indexer,
         "user2",
         &domain,
-        signature_delay * 2
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_none());
@@ -115,7 +113,7 @@ async fn test_faulty_cluster() {
         &mut setup.indexer,
         "user3",
         &domain,
-        signature_delay * 2
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -132,7 +130,7 @@ async fn test_faulty_cluster() {
         &mut setup.indexer,
         "user2",
         &domain,
-        signature_delay * 2
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_none());
@@ -144,7 +142,7 @@ async fn test_faulty_cluster() {
         &mut setup.indexer,
         "user3",
         &domain,
-        signature_delay * 2
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -222,7 +220,7 @@ async fn test_indexer_stuck() {
             &mut setup.indexer,
             "user2",
             &domain,
-            std::time::Duration::from_secs(60)
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
         )
         .await
         .is_some());

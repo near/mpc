@@ -13,7 +13,9 @@ near-sdk = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-k256 = { workspace = true }
+blstrs = { workspace = true }
+elliptic-curve = { workspace = true }
+contract-interface = { workspace = true }
 
 
 # k256 won't compile without settings the custom rand flag for `getrandom`
