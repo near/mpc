@@ -3,11 +3,10 @@ use crate::confidential_key_derivation::{
     AppId, CKDOutput, CKDOutputOption, ElementG1, PublicKey, Scalar, SigningShare,
 };
 use crate::errors::{InitializationError, ProtocolError};
-use crate::participants::{Participant, ParticipantCounter, ParticipantList};
-use crate::protocol::{
-    internal::{make_protocol, Comms, SharedChannel},
-    Protocol,
-};
+use crate::participants::{Participant, ParticipantList};
+use crate::protocol::helpers::recv_from_others;
+use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
+use crate::Protocol;
 
 use elliptic_curve::{Field, Group};
 use rand_core::CryptoRngCore;
@@ -44,15 +43,11 @@ async fn do_ckd_coordinator(
         compute_signature_share(&participants, me, private_share, app_id, app_pk, rng)?;
 
     // Receive everyone's inputs and add them together
-    let mut seen = ParticipantCounter::new(&participants);
     let waitpoint = chan.next_waitpoint();
 
-    seen.put(me);
-    while !seen.full() {
-        let (from, (big_y, big_c)): (_, (ElementG1, ElementG1)) = chan.recv(waitpoint).await?;
-        if !seen.put(from) {
-            continue;
-        }
+    for (_, (big_y, big_c)) in
+        recv_from_others::<(ElementG1, ElementG1)>(&chan, waitpoint, &participants, me).await?
+    {
         norm_big_y += big_y;
         norm_big_c += big_c;
     }

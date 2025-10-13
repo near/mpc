@@ -2,11 +2,12 @@ use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
 use super::RerandomizedPresignOutput;
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::{Participant, ParticipantList};
 use crate::{
     ecdsa::{x_coordinate, AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption},
-    errors::{InitializationError, ProtocolError},
-    participants::{Participant, ParticipantCounter, ParticipantList},
     protocol::{
+        helpers::recv_from_others,
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
@@ -98,14 +99,8 @@ async fn do_sign_coordinator(
     let wait0 = chan.next_waitpoint();
     // Receive sj
     // Spec 1.5
-    let mut seen = ParticipantCounter::new(&participants);
     let mut s = s_i;
-    seen.put(me);
-    while !seen.full() {
-        let (from, s_j): (_, Scalar) = chan.recv(wait0).await?;
-        if !seen.put(from) {
-            continue;
-        }
+    for (_, s_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
         // Spec 1.6
         s += s_j;
     }

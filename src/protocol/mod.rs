@@ -6,6 +6,7 @@
 //! a result, without you having to worry about how many rounds it has, or how
 //! to serialize the emssages it produces.
 pub(crate) mod echo_broadcast;
+pub(crate) mod helpers;
 pub(crate) mod internal;
 
 use std::collections::HashMap;

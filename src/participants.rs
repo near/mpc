@@ -323,14 +323,6 @@ impl<'a> ParticipantCounter<'a> {
         inserted
     }
 
-    /// Clear the contents of this counter.
-    pub fn clear(&mut self) {
-        for x in &mut self.seen {
-            *x = false;
-        }
-        self.counter = self.participants.len();
-    }
-
     /// Check if this counter contains all participants
     pub fn full(&self) -> bool {
         self.counter == 0

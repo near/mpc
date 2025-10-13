@@ -5,8 +5,10 @@ use crate::crypto::{
 };
 
 use crate::errors::{InitializationError, ProtocolError};
-use crate::participants::{Participant, ParticipantCounter, ParticipantList, ParticipantMap};
-use crate::protocol::{echo_broadcast::do_broadcast, internal::SharedChannel};
+use crate::participants::{Participant, ParticipantList, ParticipantMap};
+use crate::protocol::{
+    echo_broadcast::do_broadcast, helpers::recv_from_others, internal::SharedChannel,
+};
 use crate::KeygenOutput;
 
 use frost_core::keys::{
@@ -391,13 +393,17 @@ async fn do_keyshare<C: Ciphersuite>(
     // hash commitment and send it
     let commit_domain_separator = domain_separator;
     let commitment_hash = domain_separate_hash(domain_separator, &(&me, &commitment, &session_id))?;
+
     let wait_round_1 = chan.next_waitpoint();
     chan.send_many(wait_round_1, &commitment_hash)?;
     // receive commitment_hash
+
     let mut all_hash_commitments = ParticipantMap::new(&participants);
     all_hash_commitments.put(me, commitment_hash);
-    while !all_hash_commitments.full() {
-        let (from, their_commitment_hash) = chan.recv(wait_round_1).await?;
+
+    for (from, their_commitment_hash) in
+        recv_from_others(&chan, wait_round_1, &participants, me).await?
+    {
         all_hash_commitments.put(from, their_commitment_hash);
     }
 
@@ -481,15 +487,9 @@ async fn do_keyshare<C: Ciphersuite>(
     // should not panic as secret_coefficients are created internally
     let mut my_signing_share = secret_coefficients.eval_at_participant(me)?.0;
     // receive evaluations from all participants
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, signing_share_from): (Participant, SigningShare<C>) =
-            chan.recv(wait_round_3).await?;
-        if !seen.put(from) {
-            continue;
-        }
-
+    for (from, signing_share_from) in
+        recv_from_others(&chan, wait_round_3, &participants, me).await?
+    {
         // Verify the share
         // this deviates from the original FROST DKG paper
         // however it matches the FROST implementation of ZCash

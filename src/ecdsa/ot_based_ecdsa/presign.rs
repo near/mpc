@@ -1,7 +1,8 @@
 use super::{PresignArguments, PresignOutput};
 use crate::ecdsa::{ProjectivePoint, Scalar, Secp256K1Sha256};
 use crate::errors::{InitializationError, ProtocolError};
-use crate::participants::{Participant, ParticipantCounter, ParticipantList};
+use crate::participants::{Participant, ParticipantList};
+use crate::protocol::helpers::recv_from_others;
 use crate::protocol::{
     internal::{make_protocol, Comms, SharedChannel},
     Protocol,
@@ -109,20 +110,14 @@ async fn do_presign(
     // Receive ej and compute e = SUM_j ej
     // Spec 1.3
     let mut e = e_i;
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, e_j): (_, Scalar) = chan.recv(wait0).await?;
 
+    for (_, e_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
         if e_j.is_zero().into() {
             return Err(ProtocolError::AssertionFailed(
                 "Received zero share of kd, indicating a triple wasn't available.".to_string(),
             ));
         }
 
-        if !seen.put(from) {
-            continue;
-        }
         // Spec 1.4
         e += e_j;
     }
@@ -152,13 +147,10 @@ async fn do_presign(
     // Spec 2.3
     let mut alpha = alpha_i;
     let mut beta = beta_i;
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (from, (alpha_j, beta_j)): (_, (Scalar, Scalar)) = chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
+
+    for (_, (alpha_j, beta_j)) in
+        recv_from_others::<(Scalar, Scalar)>(&chan, wait1, &participants, me).await?
+    {
         // Spec 2.4
         alpha += alpha_j;
         beta += beta_j;

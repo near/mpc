@@ -1,22 +1,22 @@
-use frost_core::serialization::SerializableScalar;
-use frost_secp256k1::{Group, Secp256K1Group};
-use rand_core::CryptoRngCore;
-use subtle::ConstantTimeEq;
-
 use super::{PresignArguments, PresignOutput};
+use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
     ecdsa::{
         CoefficientCommitment, Field, Polynomial, PolynomialCommitment, Scalar,
         Secp256K1ScalarField, Secp256K1Sha256,
     },
     errors::{InitializationError, ProtocolError},
-    participants::{Participant, ParticipantCounter, ParticipantList, ParticipantMap},
     protocol::{
+        helpers::recv_from_others,
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
     SigningShare,
 };
+use frost_core::serialization::SerializableScalar;
+use frost_secp256k1::{Group, Secp256K1Group};
+use rand_core::CryptoRngCore;
+use subtle::ConstantTimeEq;
 
 type C = Secp256K1Sha256;
 
@@ -121,14 +121,7 @@ async fn do_presign(
 
     // Round 1
     // Receive evaluations from all participants
-    let mut seen = ParticipantCounter::new(&participants);
-    seen.put(me);
-    while !seen.full() {
-        let (from, package): (_, Shares) = chan.recv(wait_round_0).await?;
-        if !seen.put(from) {
-            continue;
-        }
-
+    for (_, package) in recv_from_others(&chan, wait_round_0, &participants, me).await? {
         // calculate the respective sum of the different shares received from each participant
         shares.add_shares(&package);
     }

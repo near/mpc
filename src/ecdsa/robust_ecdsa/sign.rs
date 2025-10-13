@@ -1,20 +1,20 @@
 use elliptic_curve::scalar::IsHigh;
 
-use frost_core::serialization::SerializableScalar;
-use subtle::ConditionallySelectable;
-
+use crate::errors::{InitializationError, ProtocolError};
+use crate::participants::{Participant, ParticipantList};
 use crate::{
     ecdsa::{
         robust_ecdsa::RerandomizedPresignOutput, x_coordinate, AffinePoint, Scalar,
         Secp256K1Sha256, Signature, SignatureOption,
     },
-    errors::{InitializationError, ProtocolError},
-    participants::{Participant, ParticipantCounter, ParticipantList},
     protocol::{
+        helpers::recv_from_others,
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
 };
+use frost_core::serialization::SerializableScalar;
+use subtle::ConditionallySelectable;
 type C = Secp256K1Sha256;
 
 /// Depending on whether the current participant is a coordinator or not,
@@ -93,14 +93,9 @@ async fn do_sign_coordinator(
     let mut s = compute_signature_share(&presignature, msg_hash, &participants, me)?.0;
     let wait_round = chan.next_waitpoint();
 
-    let mut seen = ParticipantCounter::new(&participants);
-
-    seen.put(me);
-    while !seen.full() {
-        let (from, s_i): (_, SerializableScalar<C>) = chan.recv(wait_round).await?;
-        if !seen.put(from) {
-            continue;
-        }
+    for (_, s_i) in
+        recv_from_others::<SerializableScalar<C>>(&chan, wait_round, &participants, me).await?
+    {
         // Sum the linearized shares
         s += s_i.0;
     }
