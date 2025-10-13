@@ -5,14 +5,14 @@ use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::{BTreeMap, HashMap};
 use threshold_signatures::confidential_key_derivation as ckd;
-use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
+use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
 use threshold_signatures::ecdsa::{RerandomizationArguments, Signature};
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
-use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
-use threshold_signatures::{ecdsa, eddsa, keygen, ParticipantList};
+use threshold_signatures::protocol::{Participant, Protocol, run_protocol};
+use threshold_signatures::{ParticipantList, ecdsa, eddsa, keygen};
 
 use tokio::sync::watch;
 
@@ -22,20 +22,20 @@ use crate::config::{
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
+use crate::indexer::IndexerAPI;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
-use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
-use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
+use crate::p2p::testing::{PortSeed, generate_test_p2p_configs};
 use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
-use crate::tracking::{self, start_root_task, AutoAbortTask};
+use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
-use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
 use rand::{Rng, RngCore};
@@ -56,6 +56,7 @@ mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(30);
+const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 pub struct TestGenerators {
@@ -420,7 +421,6 @@ impl IntegrationTestSetup {
         }
     }
 }
-
 /// Request a signature from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
 pub async fn request_signature_and_await_response(

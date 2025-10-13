@@ -1,7 +1,7 @@
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_BLOCK_TIME,
+    DEFAULT_BLOCK_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
+    request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -60,30 +60,36 @@ async fn test_basic_cluster() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &signature_domain_ecdsa,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &signature_domain_ecdsa,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &signature_domain_eddsa,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &signature_domain_eddsa,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_ckd_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &ckd_domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_ckd_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &ckd_domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 }

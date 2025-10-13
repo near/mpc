@@ -1,11 +1,11 @@
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
+use crate::tests::{DEFAULT_BLOCK_TIME, make_key_storage_config};
 use crate::tests::{
-    get_keyshares, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME, IntegrationTestSetup,
+    get_keyshares, request_signature_and_await_response,
 };
-use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use mpc_contract::state::ProtocolContractState;
@@ -75,14 +75,16 @@ async fn test_changing_participant_set_test_keyshare_import() {
     tracing::info!("we are in running state");
 
     // Sanity check.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user0",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
     tracing::info!("we are in running state");
 
     {
@@ -117,30 +119,36 @@ async fn test_changing_participant_set_test_keyshare_import() {
 
     // Sanity check. Since we are in full-threshold, we have confirmation that the new node is up
     // and running.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user1",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user2",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user2",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user3",
-        &domain,
-        std::time::Duration::from_secs(60)
-    )
-    .await
-    .is_some());
+    assert!(
+        request_signature_and_await_response(
+            &mut setup.indexer,
+            "user3",
+            &domain,
+            DEFAULT_MAX_SIGNATURE_WAIT_TIME
+        )
+        .await
+        .is_some()
+    );
 }
