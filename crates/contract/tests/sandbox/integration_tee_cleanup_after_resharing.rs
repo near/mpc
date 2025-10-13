@@ -4,9 +4,9 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 use crate::sandbox::common::{
-    IntoInterfaceType, assert_running_return_participants, check_call_success,
-    check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
-    submit_participant_info, submit_tee_attestations,
+    assert_running_return_participants, check_call_success, check_call_success_all_receipts,
+    gen_accounts, get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
+    IntoInterfaceType,
 };
 use mpc_contract::{
     primitives::{

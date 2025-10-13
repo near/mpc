@@ -5,14 +5,14 @@ use ecdsa::signature::Verifier as _;
 use elliptic_curve::{Field as _, Group as _};
 use fs2::FileExt;
 use k256::{
+    elliptic_curve::{point::DecompressPoint as _, sec1::ToEncodedPoint as _, PrimeField as _},
     AffinePoint, FieldBytes, Secp256k1,
-    elliptic_curve::{PrimeField as _, point::DecompressPoint as _, sec1::ToEncodedPoint as _},
 };
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::{
-        CKDResponse, SerializableScalar, SignatureResponse, derive_key_secp256k1, derive_tweak,
-        ed25519_types, k256_types, kdf::check_ec_signature,
+        derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
+        CKDResponse, SerializableScalar, SignatureResponse,
     },
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
@@ -31,13 +31,13 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
-use near_sdk::{Gas, log};
+use near_sdk::{log, Gas};
 use near_workspaces::{
-    Account, Contract, Worker,
     network::Sandbox,
     operations::TransactionStatus,
     result::ExecutionFinalResult,
     types::{AccountId, NearToken},
+    Account, Contract, Worker,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ use std::{
 use threshold_signatures::{
     confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve},
     ecdsa as ts_ecdsa, eddsa,
-    frost_ed25519::{self, Ed25519Group, Group as _, VerifyingKey, keys::SigningShare},
+    frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
 pub const PARTICIPANT_LEN: usize = 3;

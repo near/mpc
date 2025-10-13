@@ -1,6 +1,6 @@
 use crate::sandbox::common::{
-    GAS_FOR_VOTE_RESHARED, IntoInterfaceType, check_call_success, gen_accounts, init_env,
-    submit_participant_info,
+    check_call_success, gen_accounts, init_env, submit_participant_info, IntoInterfaceType,
+    GAS_FOR_VOTE_RESHARED,
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
@@ -10,9 +10,9 @@ use mpc_contract::{
         domain::SignatureScheme,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::{ProtocolContractState, running::RunningContractState},
+    state::{running::RunningContractState, ProtocolContractState},
 };
-use near_workspaces::{Account, Contract, Worker, network::Sandbox};
+use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
 
