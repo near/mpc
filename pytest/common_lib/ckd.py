@@ -3,7 +3,9 @@ import sys
 import json
 import base64
 import base58
+import os
 from cryptography.hazmat.primitives.asymmetric import ec
+from blspy import AugSchemeMPL, PrivateKey, G1Element
 
 from typing import Optional
 
@@ -28,16 +30,13 @@ def assert_ckd_success(res):
 # some of our tests use concurrent ckd requests, and the indexer
 # currently optimizes away identical requests
 def generate_app_public_key() -> str:
-    def b58encode(x, y):
-        coordinate_length = 32
-        x_bytes = x.to_bytes(coordinate_length, byteorder="big")
-        y_bytes = y.to_bytes(coordinate_length, byteorder="big")
-        return "secp256k1:" + base58.b58encode(x_bytes + y_bytes).decode("ascii")
+    def b58encode(pk):
+        pk_bytes = bytes(pk)
+        return "bls12381g1:" + base58.b58encode(pk_bytes).decode("ascii")
 
-    private_key = ec.generate_private_key(ec.SECP256K1())
-    public_key = private_key.public_key()
-    pk = public_key.public_numbers()
-    pk = b58encode(pk.x, pk.y)
+    private_key: PrivateKey = AugSchemeMPL.key_gen(os.urandom(32))
+    public_key: G1Element = private_key.get_g1()
+    pk = b58encode(public_key)
     return pk
 
 
