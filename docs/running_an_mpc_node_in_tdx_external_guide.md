@@ -369,7 +369,7 @@ The `vmm.toml` configuration provided in the installation steps above already in
 
 * Port **24567** is included in the `cvm.port_mapping.range` (1-30000)
 * The `max_disk_size = 1000` setting is configured in the `[cvm]` section
-* KMS and TProxy (gateway) are not used in this MPC setup
+* KMS and Gateway are not used in this MPC setup
 
 If you need to modify the configuration later, ensure these settings remain in your `vmm.toml`:
 
