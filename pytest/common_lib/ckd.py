@@ -4,7 +4,6 @@ import json
 import base64
 import base58
 import os
-from cryptography.hazmat.primitives.asymmetric import ec
 from blspy import AugSchemeMPL, PrivateKey, G1Element
 
 from typing import Optional
