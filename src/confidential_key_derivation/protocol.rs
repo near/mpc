@@ -45,11 +45,11 @@ async fn do_ckd_coordinator(
     // Receive everyone's inputs and add them together
     let waitpoint = chan.next_waitpoint();
 
-    for (_, (big_y, big_c)) in
-        recv_from_others::<(ElementG1, ElementG1)>(&chan, waitpoint, &participants, me).await?
+    for (_, participant_output) in
+        recv_from_others::<CKDOutput>(&chan, waitpoint, &participants, me).await?
     {
-        norm_big_y += big_y;
-        norm_big_c += big_c;
+        norm_big_y += participant_output.big_y();
+        norm_big_c += participant_output.big_c();
     }
     let ckd_output = CKDOutput::new(norm_big_y, norm_big_c);
     Ok(Some(ckd_output))
