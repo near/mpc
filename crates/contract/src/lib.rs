@@ -1520,6 +1520,7 @@ mod tests {
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::elliptic_curve::sec1::ToEncodedPoint as _;
+    use k256::schnorr::CryptoRngCore;
     use k256::{
         self,
         ecdsa::SigningKey,
@@ -1547,8 +1548,8 @@ mod tests {
         k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
     }
 
-    pub fn new_secp256k1() -> (dtos::Secp256k1PublicKey, k256::Scalar) {
-        let scalar = k256::Scalar::random(&mut rand::thread_rng());
+    pub fn new_secp256k1(rng: &mut impl CryptoRngCore) -> (dtos::Secp256k1PublicKey, k256::Scalar) {
+        let scalar = k256::Scalar::random(rng);
         let public_key_element = Secp256K1Group::generator() * scalar;
 
         let compressed_key = public_key_element.to_encoded_point(false);
@@ -1559,8 +1560,10 @@ mod tests {
         (pk, scalar)
     }
 
-    pub fn new_ed25519() -> (dtos::Ed25519PublicKey, curve25519_dalek::Scalar) {
-        let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
+    pub fn new_ed25519(
+        rng: &mut impl CryptoRngCore,
+    ) -> (dtos::Ed25519PublicKey, curve25519_dalek::Scalar) {
+        let scalar = curve25519_dalek::Scalar::random(rng);
         let public_key_element = Ed25519Group::generator() * scalar;
 
         let compressed_key = public_key_element.compress().as_bytes().to_vec();
@@ -1571,8 +1574,10 @@ mod tests {
         (pk, scalar)
     }
 
-    pub fn new_bls12381g2() -> (dtos::Bls12381G2PublicKey, ckd::Scalar) {
-        let scalar = ckd::Scalar::random(&mut OsRng);
+    pub fn new_bls12381g2(
+        rng: &mut impl CryptoRngCore,
+    ) -> (dtos::Bls12381G2PublicKey, ckd::Scalar) {
+        let scalar = ckd::Scalar::random(rng);
         let public_key_element = ckd::ElementG2::generator() * scalar;
 
         let compressed_key = public_key_element.to_compressed();
@@ -1581,37 +1586,30 @@ mod tests {
         (pk, scalar)
     }
 
-    #[allow(dead_code)]
-    pub fn new_bls12381g1() -> (dtos::Bls12381G1PublicKey, ckd::Scalar) {
-        let scalar = ckd::Scalar::random(&mut OsRng);
-        let public_key_element = ckd::ElementG1::generator() * scalar;
-
-        let compressed_key = public_key_element.to_compressed();
-        let pk = dtos::Bls12381G1PublicKey::from(compressed_key);
-
-        (pk, scalar)
-    }
-
     pub fn make_public_key_for_domain(
         domain_scheme: SignatureScheme,
+        rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
         match domain_scheme {
             SignatureScheme::Secp256k1 => {
-                let (pk, sk) = new_secp256k1();
+                let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
             SignatureScheme::Ed25519 => {
-                let (pk, sk) = new_ed25519();
+                let (pk, sk) = new_ed25519(rng);
                 (pk.into(), SharedSecretKey::Ed25519(sk))
             }
             SignatureScheme::Bls12381 => {
-                let (pk, sk) = new_bls12381g2();
+                let (pk, sk) = new_bls12381g2(rng);
                 (pk.into(), SharedSecretKey::Bls12381(sk))
             }
         }
     }
 
-    fn basic_setup(scheme: SignatureScheme) -> (VMContext, MpcContract, SharedSecretKey) {
+    fn basic_setup(
+        scheme: SignatureScheme,
+        rng: &mut impl CryptoRngCore,
+    ) -> (VMContext, MpcContract, SharedSecretKey) {
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .build();
@@ -1622,7 +1620,7 @@ mod tests {
             scheme: SignatureScheme::Secp256k1,
         }];
         let epoch_id = EpochId::new(0);
-        let (pk, sk) = make_public_key_for_domain(scheme);
+        let (pk, sk) = make_public_key_for_domain(scheme, rng);
         let key_for_domain = KeyForDomain {
             domain_id,
             key: pk.try_into().unwrap(),
@@ -1635,7 +1633,8 @@ mod tests {
     }
 
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1);
+        let (context, mut contract, secret_key) =
+            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -1723,7 +1722,7 @@ mod tests {
 
     #[test]
     fn test_signature_timeout() {
-        let (context, mut contract, _) = basic_setup(SignatureScheme::Secp256k1);
+        let (context, mut contract, _) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
         let payload = Payload::from_legacy_ecdsa([0u8; 32]);
         let key_path = "m/44'\''/60'\''/0'\''/0/0".to_string();
 
@@ -1752,7 +1751,8 @@ mod tests {
 
     #[test]
     fn test_ckd_simple() {
-        let (context, mut contract, _secret_key) = basic_setup(SignatureScheme::Bls12381);
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
@@ -1786,7 +1786,8 @@ mod tests {
 
     #[test]
     fn test_ckd_timeout() {
-        let (context, mut contract, _secret_key) = basic_setup(SignatureScheme::Bls12381);
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                 .parse()
