@@ -182,6 +182,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
+    use serial_test::serial;
     use tokio::sync::watch;
 
     use crate::{config::WebUIConfig, migration_service::types::MigrationInfo};
@@ -189,6 +190,7 @@ mod tests {
     use super::{connect_to_web_server, start_web_server};
 
     #[tokio::test]
+    #[serial]
     pub async fn test_web() {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
@@ -220,5 +222,40 @@ mod tests {
             .unwrap();
         println!("received: {}", res);
         assert_eq!("Hello, world!", res);
+    }
+
+    #[tokio::test]
+    #[serial]
+    pub async fn test_web_failure() {
+        let client_key = SigningKey::generate(&mut OsRng);
+        let server_key = SigningKey::generate(&mut OsRng);
+
+        let ip = "127.0.0.1";
+        let port: u16 = 5678;
+        let config = WebUIConfig {
+            host: ip.to_string(),
+            port: port.clone(),
+        };
+        let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
+            backup_service_info: Some(BackupServiceInfo {
+                public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
+            }),
+            active_migration: false,
+        });
+        let expected_servert_key = server_key.verifying_key();
+        tokio::spawn(async move {
+            if let Err(err) = start_web_server(config, migration_state_receiver, &server_key).await
+            {
+                panic!("issue: {}", err);
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let target_address = format!("127.0.0.1:{port}");
+        assert!(
+            connect_to_web_server(&client_key, &target_address, expected_servert_key)
+                .await
+                .is_err()
+        );
     }
 }
