@@ -217,7 +217,7 @@ User=mpc
 Group=mpc
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 ```
 
 The file should be located in the user systemd config folder, for example `/etc/systemd/system/dstack-vmm.service`.
