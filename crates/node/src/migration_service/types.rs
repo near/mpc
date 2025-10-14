@@ -4,15 +4,32 @@ use mpc_contract::{
     primitives::key_state::Keyset,
 };
 use near_sdk::AccountId;
+use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{NodeStatus, ParticipantStatus},
     indexer::{migrations::ContractMigrationInfo, participants::ContractState},
     providers::PublicKeyConversion,
+    trait_extensions::convert_to_contract_dto::TryIntoNodeType,
 };
 
-#[derive(PartialEq, Debug, Clone)]
+pub struct NodeBackupServiceInfo {
+    pub p2p_key: VerifyingKey,
+}
+
+impl NodeBackupServiceInfo {
+    pub fn from_contract(value: BackupServiceInfo) -> anyhow::Result<Self> {
+        let p2p_key = match value.public_key.try_into_node_type() {
+            Ok(res) => res,
+            Err(err) => {
+                anyhow::bail!("can't convert key: {}", err);
+            }
+        };
+        Ok(Self { p2p_key })
+    }
+}
+#[derive(PartialEq, Debug, Clone, Serialize)]
 pub struct MigrationInfo {
     pub backup_service_info: Option<BackupServiceInfo>,
     pub active_migration: bool,
