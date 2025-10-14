@@ -225,7 +225,7 @@ After the file is created or modified you must run:
 
 ```bash
 # to reload the service files
-sudo systemctl --daemon-reload
+sudo systemctl daemon-reload
 # to start/stop/restart the service
 sudo systemctl start/stop/restart dstack-vmm
 # to check the status the service
