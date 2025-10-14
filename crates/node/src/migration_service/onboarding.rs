@@ -34,10 +34,7 @@ pub async fn onboard(
     keyshare_storage: &mut KeyshareStorage,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
 ) -> anyhow::Result<()> {
-    tracing::info!(
-        "starting onboarding. My account id:  {:?}",
-        my_near_account_id
-    );
+    tracing::info!(?my_near_account_id, "starting onboarding");
     let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
         contract_state_receiver,
         my_migration_info_receiver,
@@ -53,17 +50,17 @@ pub async fn onboard(
 
         match job {
             OnboardingJob::Done => {
-                tracing::info!("Done onboarding {:?}", my_near_account_id);
+                tracing::info!(?my_near_account_id, "done onboarding");
                 cancel_monitoring_task.cancel();
                 return Ok(());
             }
             OnboardingJob::WaitForStateChange => {
-                tracing::info!("Waiting for state change {:?}", my_near_account_id);
+                tracing::info!(?my_near_account_id, "waiting for state change");
                 cancellation_token.cancelled().await;
                 continue;
             }
             OnboardingJob::Onboard(importing_keyset) => {
-                tracing::info!("Start onboarding {:?}", my_near_account_id);
+                tracing::info!(?my_near_account_id, "execute onboarding");
                 let res = execute_onboarding(
                     importing_keyset.clone(),
                     keyshare_storage,
@@ -169,7 +166,7 @@ async fn retry_conclude_onboarding(
         .without_max_times();
     let send = move || {
         send_conclude_onboarding(importing_keyset.clone(), tx_sender.clone()).inspect_err(|err| {
-            tracing::error!("error sending conclude migration transaction: {}", err);
+            tracing::error!(?err, "error sending conclude migration transaction");
         })
     };
     send.retry(builder).await
@@ -258,7 +255,7 @@ async fn wait_for_and_import_keyshares(
                     return Ok(());
                 }
                 Err(err) => {
-                    tracing::info!("{},err: {}", IMPORT_FAILURE_MSG, err);
+                    tracing::info!(?err, "{}", IMPORT_FAILURE_MSG);
                 }
             }
         }
