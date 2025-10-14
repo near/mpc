@@ -82,25 +82,58 @@ This ensures that your TDX setup is correctly configured.
 
 #### 2. Dstack Setup and Configuration
 
-This section will guide you through installing and configuring dstack-vmm, which is the only dstack component needed for running MPC nodes in TDX environments.
+This section will guide you through installing and configuring `dstack-vmm`, which is the only dstack component needed for running MPC nodes in TDX environments.
 The instructions are based on the [dstack deployment guide](https://github.com/Dstack-TEE/dstack/blob/eab86e8a3fd934656946a39bf07849bd75cf20fb/docs/deployment.md).
 
 **Prerequisites:**
-- Follow the [TDX setup guide](https://github.com/canonical/tdx) to setup the TDX host (completed in step 1 above)
-- Install `cargo` and `rustc`. This can be done with the following command.
 
-```sh
+* Follow the [TDX setup guide](https://github.com/canonical/tdx) to setup the TDX host (completed in step 1 above)
+
+* Install system dependencies
+
+```bash
+sudo apt update
+sudo apt install build-essential qemu-system docker.io
+```
+
+* Create `mpc` user and installation folder
+
+```bash
+# create user
+sudo useradd -m -G docker -s /usr/bin/bash mpc
+# set password
+sudo passwd mpc
+# create installation folder
+sudo mkdir /opt/mpc
+# set ownership
+sudo chown mpc:mpc /opt/mpc
+# change user
+sudo -u mpc -s
+# change directory
+cd /opt/mpc
+```
+
+* Install `cargo` and `rustc`. This can be done with the following command.
+
+```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+Note that after running this command you might need to restart the shell.
+
 **Installation Steps:**
 
+All steps below assume the current user is `mpc` and the current directory is
+`/opt/mpc`.
+
 1. **Clone the dstack repository:**
+
    ```bash
    git clone https://github.com/Dstack-TEE/dstack
    ```
 
 2. **Compile dstack-vmm:**
+
    ```bash
    cd dstack
    git checkout v0.5.4 # Should point to commit `3e4e462cac2a57c204698d2443d252d13e75cd29`
@@ -113,34 +146,37 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
 3. **Create the VMM configuration file:**
-   ```bash
-   cat <<EOF > vmm.toml
-   address = "unix:./vmm.sock"
-   reuse = true
-   image_path = "./images"
-   run_path = "./run/vm"
 
-   [cvm]
-   kms_urls = ["https://kms.test2.dstack.phala.network:9201"]
-   gateway_urls = []
-   cid_start = 30000
-   cid_pool_size = 1000
-   max_disk_size = 1000
+```bash
+cat <<EOF > vmm.toml
+address = "unix:./vmm.sock"
+reuse = true
+image_path = "./images"
+run_path = "./run/vm"
 
-   [cvm.port_mapping]
-   enabled = true
-   address = "127.0.0.1"
-   range = [
-       { protocol = "tcp", from = 1, to = 30000 },
-       { protocol = "udp", from = 1, to = 30000 },
-   ]
+[cvm]
+kms_urls = ["https://kms.test2.dstack.phala.network:9201"]
+gateway_urls = []
+cid_start = 30000
+cid_pool_size = 1000
+max_disk_size = 1000
 
-   [host_api]
-   port = 9300
-   EOF
-   ```
+[cvm.port_mapping]
+enabled = true
+address = "127.0.0.1"
+range = [
+    { protocol = "tcp", from = 1, to = 30000 },
+    { protocol = "udp", from = 1, to = 30000 },
+]
+
+[host_api]
+address = "127.0.0.1"
+port = 9300
+EOF
+```
 
 4. **Download Guest OS images:**
+
    ```bash
    DSTACK_VERSION=0.5.4
    wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
@@ -150,9 +186,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
 
 **Configuration Notes:**
-- KMS and Gateway are not used in this MPC setup
-- The configuration includes port **24567** which is required for MPC nodes
-- The `max_disk_size = 1000` setting is specifically required for MPC operations
+
+* KMS and Gateway are not used in this MPC setup
+* The configuration includes port **24567** which is required for MPC nodes
+* The `max_disk_size = 1000` setting is specifically required for MPC operations
 
 ##### VMM service persistence
 
@@ -162,9 +199,9 @@ To run dstack-vmm, you can start it manually with:
 ./dstack-vmm -c vmm.toml
 ```
 
-When `dstackv-vmm` is running, you should be able to access it's web interface at port `9300`.
+When `dstack-vmm` is running, you should be able to access its web interface at port `9300`.
 
-However, for persistent operation, we recommend using the following user systemd service:
+However, for persistent operation, we recommend using the following systemd service:
 
 ```text
 [Unit]
@@ -172,26 +209,31 @@ Description=Daemon for dstack-vmm
 
 [Service]
 Type=simple
-WorkingDirectory=<FULL_PATH_TO_DSTACK_VMM_INSTALLATION>
-ExecStart=<FULL_PATH_TO_DSTACK_VMM_INSTALLATION>/dstack-vmm -c vmm.toml
+WorkingDirectory=/opt/mpc/dstack/vmm-data/
+ExecStart=/opt/mpc/dstack/vmm-data/dstack-vmm -c vmm.toml
 Restart=on-failure
 RestartSec=5
+User=mpc
+Group=mpc
 
 [Install]
 WantedBy=default.target
 ```
 
-The file should be located in the user systemd config folder, for example `~/.config/systemd/user/dstack-vmm.service`.
+The file should be located in the user systemd config folder, for example `/etc/systemd/system/dstack-vmm.service`.
 After the file is created or modified you must run:
 
 ```bash
 # to reload the service files
-systemctl --user --daemon-reload
+sudo systemctl --daemon-reload
 # to start/stop/restart the service
-systemctl --user start/stop/restart dstack-vmm
+sudo systemctl start/stop/restart dstack-vmm
 # to check the status the service
-systemctl --user status dstack-vmm
+systemctl status dstack-vmm
 ```
+
+Notice that some of the commands require `sudo`, so they cannot be run using the
+`mpc` user which has no such permissions by default.
 
 ---
 
@@ -233,6 +275,7 @@ For alternative approaches or building from source, you can also:
 Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
 
 **1. Verify file hashes against expected values:**
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -295,7 +338,7 @@ echo "  Hash offset:   $HASH_OFFSET"
 echo "  Rootfs hash:   $ROOTFS_HASH"
 
 # Run verification
-sudo veritysetup verify \
+veritysetup verify \
   --data-blocks=$DATA_BLOCKS \
   --hash-offset=$HASH_OFFSET \
   --data-block-size=$BLOCK_SIZE \
@@ -306,14 +349,20 @@ echo "✅ Verification succeeded"
 ```
 
 **3. Check actual vs. expected RTMR values:**
-1. Build `dstack-mr` tool (using Docker).  
-2. Calculate the actual RTMRs of the image.  
-3. Compare against expected RTMRs from the contract (shown below).  
+
+1. Build `dstack-mr` tool (using Docker).
+2. Calculate the actual RTMRs of the image.
+3. Compare against expected RTMRs from the contract (shown below).
 
 For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
 
 Build `dstack-mr` docker image:
+
 ```bash
+cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
+```
+
+```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
 ARG DSTACK_REV
@@ -340,11 +389,13 @@ CMD []
 ```
 
 Build:
+
 ```bash
 docker build . -t dstack-mr
 ```
 
 Run:
+
 ```bash
 docker run --rm \
   -v "$(pwd)":/dstack-0.5.4 \
@@ -353,6 +404,7 @@ docker run --rm \
 ```
 
 Example output:
+
 ```text
 Machine measurements:
 MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
