@@ -9,7 +9,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
-use tokio_rustls::{TlsAcceptor, TlsConnector};
+use tokio_rustls::TlsAcceptor;
 
 use crate::{config::WebUIConfig, migration_service::types::NodeBackupServiceInfo};
 
@@ -18,6 +18,7 @@ struct WebServerState {
     migration_state_receiver: watch::Receiver<MigrationInfo>,
 }
 
+#[allow(dead_code)]
 async fn handle_with_state(
     req: hyper::Request<Body>,
     state: Arc<WebServerState>,
@@ -38,12 +39,41 @@ async fn handle_with_state(
     }
 }
 
-/// Starts the web server. This is an async function that returns a future.
-/// The function itself will return error if the server cannot be started.
-///
-/// The returned future is the one that actually serves. It will be
-/// long-running, and is typically not expected to return. However, dropping
-/// the returned future will stop the web server.
+#[allow(dead_code)]
+fn authenticate_backup_service(
+    migration_state_receiver: &watch::Receiver<MigrationInfo>,
+    client_public_key: VerifyingKey,
+) -> anyhow::Result<()> {
+    let expected_pk: VerifyingKey = match migration_state_receiver
+        .borrow()
+        .clone()
+        .backup_service_info
+    {
+        Some(backup_service_info) => {
+            let service =
+                NodeBackupServiceInfo::from_contract(backup_service_info).context("failed")?;
+            service.p2p_key
+        }
+        None => {
+            anyhow::bail!("no backup service registered.");
+        }
+    };
+
+    if client_public_key != expected_pk {
+        tracing::info!(
+            ?expected_pk,
+            ?client_public_key,
+            "closing connection, public key mismatch"
+        );
+        anyhow::bail!("closing connection, public key mismatch");
+    }
+    tracing::info!(
+        "TLS handshake complete, backup service authenticated and encrypted channel established."
+    );
+    Ok(())
+}
+
+#[allow(dead_code)]
 pub async fn start_web_server(
     config: WebUIConfig,
     migration_state_receiver: watch::Receiver<MigrationInfo>,
@@ -66,40 +96,17 @@ pub async fn start_web_server(
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
     let tcp_listener = TcpListener::bind(&bind_address).await?;
-    let migration_state_receiver_clone = migration_state_receiver.clone();
     tokio::spawn(async move {
         tracing::info!("Handle incoming connections");
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-            let migration_state_receiver_clone_clone = migration_state_receiver_clone.clone();
+            let migration_state_receiver_clone = migration_state_receiver.clone();
             let tls_acceptor = tls_acceptor.clone();
             let state_clone = state.clone();
             tokio::spawn(async move {
                 tracing::info!("Handle connection");
                 let stream = tls_acceptor.accept(tcp_stream).await?;
-                let expected_pk: VerifyingKey = match migration_state_receiver_clone_clone
-                    .borrow()
-                    .clone()
-                    .backup_service_info
-                {
-                    Some(backup_service_info) => {
-                        let service = NodeBackupServiceInfo::from_contract(backup_service_info)
-                            .context("failed")?;
-                        service.p2p_key
-                    }
-                    None => {
-                        anyhow::bail!("no backup service registered.");
-                    }
-                };
-
-                let public_key = mpc_tls::tls::extract_public_key(stream.get_ref().1)?;
-                if public_key != expected_pk {
-                    tracing::info!(
-                        ?expected_pk,
-                        ?public_key,
-                        "closing connection, public key mismatch"
-                    );
-                    return Ok(());
-                }
+                let client_public_key = mpc_tls::tls::extract_public_key(stream.get_ref().1)?;
+                authenticate_backup_service(&migration_state_receiver_clone, client_public_key)?;
                 tracing::info!("TLS handshake complete, backup service authenticated and encrypted channel established.");
                 tokio::spawn(async move {
                     if let Err(err) = hyper::server::conn::Http::new()
@@ -112,17 +119,17 @@ pub async fn start_web_server(
                         tracing::error!("Error serving connection: {err}");
                     }
                 });
-                return Ok(());
+                anyhow::Ok(())
             });
         }
     });
 
     tracing::info!(address = %bind_address,"Successfully bound to address");
-
     Ok(())
 }
 
-/// Connects to the web server, performs the MPC-TLS handshake and sends a simple HTTP request.
+#[allow(dead_code)]
+/// Connects to the web server, performs the TLS handshake and sends a simple HTTP request.
 pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
     target_address: &str,
@@ -146,6 +153,7 @@ pub async fn connect_to_web_server(
         );
         anyhow::bail!("closing connection, public key mismatch");
     }
+
     tracing::info!(
         "TLS handshake complete, backup service authenticated and encrypted channel established."
     );
@@ -199,7 +207,7 @@ mod tests {
         let port: u16 = 5678;
         let config = WebUIConfig {
             host: ip.to_string(),
-            port: port.clone(),
+            port,
         };
         let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
@@ -234,7 +242,7 @@ mod tests {
         let port: u16 = 5678;
         let config = WebUIConfig {
             host: ip.to_string(),
-            port: port.clone(),
+            port,
         };
         let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
@@ -242,6 +250,7 @@ mod tests {
             }),
             active_migration: false,
         });
+
         let expected_servert_key = server_key.verifying_key();
         tokio::spawn(async move {
             if let Err(err) = start_web_server(config, migration_state_receiver, &server_key).await
