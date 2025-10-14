@@ -119,9 +119,7 @@ impl DomainRegistry {
 
     /// Returns the given domain by the DomainId.
     pub fn get_domain_by_domain_id(&self, id: DomainId) -> Option<&DomainConfig> {
-        self.domains
-            .iter()
-            .find(|domain| domain.id == id)
+        self.domains.iter().find(|domain| domain.id == id)
     }
 
     /// Returns the most recently added domain for the given protocol,

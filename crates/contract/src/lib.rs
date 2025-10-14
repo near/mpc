@@ -156,13 +156,11 @@ impl MpcContract {
 
         let request: SignRequest = request.try_into().unwrap();
 
-        let domains = match self.protocol_state.domain_registry(){
+        let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
-            Err(err) => env::panic_str(
-                &err.to_string(),
-            )
+            Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else{
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
                     provided: request.domain_id,
@@ -336,13 +334,11 @@ impl MpcContract {
         );
         let initial_storage = env::storage_usage();
 
-        let domains = match self.protocol_state.domain_registry(){
+        let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
-            Err(err) => env::panic_str(
-                &err.to_string(),
-            )
+            Err(err) => env::panic_str(&err.to_string()),
         };
-        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else{
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else {
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
                     provided: request.domain_id,
@@ -350,7 +346,7 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        if domain_config.scheme != SignatureScheme::Bls12381{
+        if domain_config.scheme != SignatureScheme::Bls12381 {
             env::panic_str(
                 &InvalidParameters::InvalidDomainId
                     .message("Provided domain ID key type is not Bls12381")
