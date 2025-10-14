@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use backon::{ExponentialBuilder, Retryable};
 use ed25519_dalek::VerifyingKey;
+use futures::TryFutureExt;
 use mpc_contract::primitives::key_state::Keyset;
 use near_sdk::AccountId;
 use tokio::sync::watch;
@@ -18,7 +20,7 @@ use crate::{
 };
 
 /// Waits until the node becomes an active participant in the current epoch or
-/// terminates if an unrecoverable error occurs.
+/// terminates if the keyshare channel closes.
 /// Internally, this function monitors contract and migration state changes and
 /// runs onboarding tasks as needed.
 ///
@@ -32,17 +34,18 @@ pub async fn onboard(
     keyshare_storage: &mut KeyshareStorage,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
 ) -> anyhow::Result<()> {
-    tracing::info!(target: "Onboarding", "starting onboarding. My account id:  {:?}", my_near_account_id);
+    tracing::info!(
+        "starting onboarding. My account id:  {:?}",
+        my_near_account_id
+    );
     let (cancel_monitoring_task, mut onboarding_job_receiver) = start_onboarding_monitoring_task(
         contract_state_receiver,
         my_migration_info_receiver,
         my_near_account_id.clone(),
         tls_public_key,
     );
-    const DEFAULT_TIMOUT_ON_FAILURE: Duration = Duration::from_secs(1);
-    const MAX_TIMEOUT: Duration = Duration::from_secs(60);
 
-    'new_task: loop {
+    loop {
         let OnboardingTask {
             job,
             cancellation_token,
@@ -50,42 +53,36 @@ pub async fn onboard(
 
         match job {
             OnboardingJob::Done => {
-                tracing::info!(target: "Onboarding", "Done onboarding {:?}", my_near_account_id);
+                tracing::info!("Done onboarding {:?}", my_near_account_id);
                 cancel_monitoring_task.cancel();
                 return Ok(());
             }
             OnboardingJob::WaitForStateChange => {
-                tracing::info!(target: "Onboarding", "Waiting for state change {:?}", my_near_account_id);
+                tracing::info!("Waiting for state change {:?}", my_near_account_id);
                 cancellation_token.cancelled().await;
                 continue;
             }
             OnboardingJob::Onboard(importing_keyset) => {
-                tracing::info!(target: "Onboarding", "Start onboarding {:?}", my_near_account_id);
-                let mut next_timeout = DEFAULT_TIMOUT_ON_FAILURE;
-                'onboard: loop {
-                    let res = execute_onboarding(
-                        importing_keyset.clone(),
-                        keyshare_storage,
-                        keyshare_receiver.clone(),
-                        tx_sender.clone(),
-                        cancellation_token.clone(),
-                    )
-                    .await;
-                    if cancellation_token.is_cancelled() {
-                        break;
-                    }
-                    // the only unrecoverable error is if the keyshare sender drops.
-                    if res.is_err() && keyshare_receiver.has_changed().is_err() {
-                        anyhow::bail!("keyshare sender dropped, quitting onboarding");
-                    }
-                    // in case we failed for other reasons, or need to wait for a contract update,
-                    // lets prolong the waiting duration
-                    next_timeout = std::cmp::min(next_timeout * 2, MAX_TIMEOUT);
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {continue 'new_task;}
-                        _ = tokio::time::sleep(next_timeout) => {continue 'onboard;}
-                    }
+                tracing::info!("Start onboarding {:?}", my_near_account_id);
+                let res = execute_onboarding(
+                    importing_keyset.clone(),
+                    keyshare_storage,
+                    keyshare_receiver.clone(),
+                    tx_sender.clone(),
+                    cancellation_token.clone(),
+                )
+                .await;
+                if cancellation_token.is_cancelled() {
+                    continue;
                 }
+
+                // the only unrecoverable error is if the keyshare sender drops.
+                if let Err(err) = res {
+                    cancel_monitoring_task.cancel();
+                    anyhow::bail!("keyshare sender dropped, quitting onboarding: {}", err);
+                }
+                // The monitoring function will cancel this task once the contract state changes.
+                cancellation_token.cancelled().await;
             }
         }
     }
@@ -158,13 +155,34 @@ fn start_onboarding_monitoring_task(
     (cancel_monitoring_task, receiver)
 }
 
+/// Sends the conclude-onboarding transaction with exponential backoff until successful.
+/// No limit on the number of retries, this function will either succeed or get cancelled.
+async fn retry_conclude_onboarding(
+    importing_keyset: Keyset,
+    tx_sender: impl TransactionSender,
+) -> anyhow::Result<()> {
+    const MIN_DELAY: Duration = Duration::from_secs(2);
+    const MAX_TIMEOUT: Duration = Duration::from_secs(60);
+    let builder = ExponentialBuilder::new()
+        .with_max_delay(MAX_TIMEOUT)
+        .with_min_delay(MIN_DELAY)
+        .without_max_times();
+    let send = move || {
+        send_conclude_onboarding(importing_keyset.clone(), tx_sender.clone()).inspect_err(|err| {
+            tracing::error!("error sending conclude migration transaction: {}", err);
+        })
+    };
+    send.retry(builder).await
+}
+
 /// Performs the onboarding process for a given keyset.
 ///
-/// Waits to receive missing keyshares (if not already present) and repeatedly tries to
+/// Waits to receive missing keyshares (if not already present) and tries to
 /// send the “conclude onboarding” transaction until it succeeds or the provided
 /// [`CancellationToken`] is triggered.
 ///
-/// This function implements an exponential backoff between retries.
+/// This function returns an error only in case the keyshare_receiver channel is closed.
+/// This function returns Ok(()) if it is cancelled or succeeds.
 ///
 /// **Not cancellation-safe!** Needs to be cancelled via `cancel_import_token`
 async fn execute_onboarding(
@@ -188,29 +206,13 @@ async fn execute_onboarding(
         .await?;
     }
 
-    let mut next_timeout = Duration::from_secs(2);
-    const MAX_TIMEOUT: Duration = Duration::from_secs(60);
-    loop {
-        match send_conclude_onboarding(importing_keyset.clone(), tx_sender.clone()).await {
-            Ok(()) => {
-                tracing::info!("successfully sent conclude resharing transaction");
-                return Ok(());
-            }
-            Err(err) => {
-                tracing::error!("error sending reshare transaction {}", err);
-            }
-        }
-
-        tokio::select! {
-            _ = tokio::time::sleep(next_timeout) => {
-                next_timeout = std::cmp::min(next_timeout * 2, MAX_TIMEOUT);
-            },
-            _ = cancel_import_token.cancelled() => {
-                tracing::info!("import cancelled");
-                return Ok(());
-            },
-        }
+    tokio::select! {
+        _ = retry_conclude_onboarding(importing_keyset, tx_sender) => {},
+        _ = cancel_import_token.cancelled() => {
+            tracing::info!("import cancelled");
+        },
     }
+    return Ok(());
 }
 
 async fn send_conclude_onboarding(
@@ -243,10 +245,7 @@ async fn wait_for_and_import_keyshares(
     mut keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
     cancel_import: CancellationToken,
 ) -> anyhow::Result<()> {
-    #[cfg(test)] // required for testing, because "target" seems to mess up `traced-tests`
-                 // framework.
     tracing::info!(START_IMPORT_LOOP_MSG);
-    tracing::info!(target:"Onboarding",START_IMPORT_LOOP_MSG);
     loop {
         let received_keyshares = keyshare_receiver.borrow_and_update().clone();
         if !received_keyshares.is_empty() {
@@ -255,15 +254,11 @@ async fn wait_for_and_import_keyshares(
                 .await
             {
                 Ok(_) => {
-                    #[cfg(test)] // required for testing.
                     tracing::info!(IMPORT_SUCCESS_MSG);
-                    tracing::info!(target: "Onboarding",IMPORT_SUCCESS_MSG);
                     return Ok(());
                 }
                 Err(err) => {
-                    #[cfg(test)] // required for testing.
-                    tracing::info!(IMPORT_FAILURE_MSG);
-                    tracing::error!(target: "Onboarding","{}: {}", IMPORT_FAILURE_MSG, err)
+                    tracing::info!("{},err: {}", IMPORT_FAILURE_MSG, err);
                 }
             }
         }
@@ -273,9 +268,7 @@ async fn wait_for_and_import_keyshares(
                 continue;
             },
             _ = cancel_import.cancelled() => {
-                #[cfg(test)] // required for testing.
-                 tracing::info!(IMPORT_CANCELLED_MSG);
-                tracing::info!(target: "Onboarding",IMPORT_CANCELLED_MSG);
+                tracing::info!(IMPORT_CANCELLED_MSG);
                 return Ok(());
             },
 
