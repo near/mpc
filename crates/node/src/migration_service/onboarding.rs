@@ -212,7 +212,7 @@ async fn execute_onboarding(
             tracing::info!("import cancelled");
         },
     }
-    return Ok(());
+    Ok(())
 }
 
 async fn send_conclude_onboarding(
