@@ -4991,6 +4991,7 @@ dependencies = [
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
+ "rand_core 0.6.4",
  "rstest",
  "schemars 0.8.22",
  "serde",
@@ -9826,10 +9827,12 @@ dependencies = [
 name = "test-parallel-contract"
 version = "0.2.0"
 dependencies = [
+ "blstrs",
  "borsh",
+ "contract-interface",
+ "elliptic-curve",
  "getrandom 0.2.16",
  "hex",
- "k256",
  "near-sdk",
  "serde",
  "sha2",

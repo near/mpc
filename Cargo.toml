@@ -61,6 +61,7 @@ assert_matches = "1.5.0"
 async-trait = "0.1.83"
 axum = "0.7.9"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
+blstrs = "0.7.1"
 borsh = { version = "1.5.1", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 clap = { version = "4.5.20", features = ["derive", "env"] }
@@ -109,6 +110,7 @@ near-sdk = { version = "5.15.1", features = [
 near-workspaces = "0.21.0"
 prometheus = {version = "0.13.4", default-features = false }
 rand = "0.8.5"
+rand_core = "0.6.4"
 rand_chacha = "0.3"
 rcgen = "0.13.1"
 rocksdb = "0.21.0"

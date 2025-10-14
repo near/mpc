@@ -2,7 +2,7 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -74,7 +74,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());
@@ -84,7 +84,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());
@@ -136,7 +136,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());
@@ -146,7 +146,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());
@@ -183,7 +183,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());
@@ -193,7 +193,7 @@ async fn test_basic_multidomain() {
                     &mut setup.indexer,
                     &format!("user{}", domain.id.0),
                     domain,
-                    std::time::Duration::from_secs(60)
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
                 )
                 .await
                 .is_some());

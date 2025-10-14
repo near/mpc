@@ -3,7 +3,7 @@ use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     get_keyshares, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
@@ -79,7 +79,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         &mut setup.indexer,
         "user0",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -121,7 +121,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         &mut setup.indexer,
         "user1",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -130,7 +130,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         &mut setup.indexer,
         "user2",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
@@ -139,7 +139,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         &mut setup.indexer,
         "user3",
         &domain,
-        std::time::Duration::from_secs(60)
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
     .is_some());
