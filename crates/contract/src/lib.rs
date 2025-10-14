@@ -35,7 +35,6 @@ use crypto_shared::{
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
-use dtos::PublicKey;
 use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
@@ -156,7 +155,14 @@ impl MpcContract {
         let initial_storage = env::storage_usage();
 
         let request: SignRequest = request.try_into().unwrap();
-        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
+
+        let domains = match self.protocol_state.domain_registry(){
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(
+                &err.to_string(),
+            )
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else{
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
                     provided: request.domain_id,
@@ -168,17 +174,17 @@ impl MpcContract {
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
-        match &public_key {
-            PublicKey::Secp256k1(_) => {
+        match domain_config.scheme {
+            SignatureScheme::Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
                     .expect("Ecdsa payload cannot be converted to Scalar");
             }
-            PublicKey::Ed25519(_) => {
+            SignatureScheme::Ed25519 => {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
-            PublicKey::Bls12381(_) => {
+            SignatureScheme::Bls12381 => {
                 env::panic_str(
                     &InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function")
                     .to_string(),
@@ -330,7 +336,13 @@ impl MpcContract {
         );
         let initial_storage = env::storage_usage();
 
-        let Ok(public_key) = self.public_key(Some(request.domain_id)) else {
+        let domains = match self.protocol_state.domain_registry(){
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(
+                &err.to_string(),
+            )
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id) else{
             env::panic_str(
                 &InvalidParameters::DomainNotFound {
                     provided: request.domain_id,
@@ -338,14 +350,12 @@ impl MpcContract {
                 .to_string(),
             );
         };
-
-        match public_key {
-            dtos::PublicKey::Secp256k1(_) | dtos::PublicKey::Ed25519(_) => env::panic_str(
+        if domain_config.scheme != SignatureScheme::Bls12381{
+            env::panic_str(
                 &InvalidParameters::InvalidDomainId
                     .message("Provided domain ID key type is not Bls12381")
                     .to_string(),
-            ),
-            dtos::PublicKey::Bls12381(_) => {}
+            );
         }
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
@@ -1617,7 +1627,7 @@ mod tests {
         let domain_id = DomainId::default();
         let domains = vec![DomainConfig {
             id: domain_id,
-            scheme: SignatureScheme::Secp256k1,
+            scheme,
         }];
         let epoch_id = EpochId::new(0);
         let (pk, sk) = make_public_key_for_domain(scheme, rng);
