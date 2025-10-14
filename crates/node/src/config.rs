@@ -177,13 +177,17 @@ impl ParticipantsConfig {
         &mut self,
         account_id: &AccountId,
         new_p2p_public_key: VerifyingKey,
-    ) {
-        let p_info = self
+    ) -> anyhow::Result<()> {
+        if let Some(p_info) = self
             .participants
             .iter_mut()
             .find(|p_info| p_info.near_account_id == *account_id)
-            .expect("require participant");
-        p_info.p2p_public_key = new_p2p_public_key;
+        {
+            p_info.p2p_public_key = new_p2p_public_key;
+        } else {
+            anyhow::bail!("expected participant");
+        }
+        Ok(())
     }
 }
 

@@ -143,18 +143,24 @@ impl ContractState {
             ContractState::Invalid => panic!("invalid contract state"),
             ContractState::Initializing(init) => {
                 init.participants
-                    .change_participant_pk(account_id, new_p2p_public_key);
+                    .change_participant_pk(account_id, new_p2p_public_key)
+                    .expect("require participant");
             }
             ContractState::Running(running) => {
                 if let Some(resharing) = running.resharing_state.as_mut() {
                     resharing
                         .new_participants
                         .change_participant_pk(account_id, new_p2p_public_key)
+                        .expect("require participant");
+                    let _ = running
+                        .participants
+                        .change_participant_pk(account_id, new_p2p_public_key);
+                } else {
+                    running
+                        .participants
+                        .change_participant_pk(account_id, new_p2p_public_key)
+                        .expect("require participant");
                 }
-
-                running
-                    .participants
-                    .change_participant_pk(account_id, new_p2p_public_key);
             }
         }
     }
