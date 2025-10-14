@@ -178,10 +178,12 @@ impl ParticipantsConfig {
         account_id: &AccountId,
         new_p2p_public_key: VerifyingKey,
     ) {
-        self.participants
+        let p_info = self
+            .participants
             .iter_mut()
             .find(|p_info| p_info.near_account_id == *account_id)
-            .map(|p_info| p_info.p2p_public_key = new_p2p_public_key);
+            .expect("require participant");
+        p_info.p2p_public_key = new_p2p_public_key;
     }
 }
 
