@@ -2,11 +2,11 @@
 
 ## Prerequisites
 
-neard, near CLI, cargo, ripgrep, envsubst, python3-keyring
+neard, near CLI, cargo, grep, envsubst, python3-keyring
 
 ## Install neard and MPC node binary
 
-### Note about `neard`.
+### Note about `neard`
 
 If you skip the installation below, make sure that your `neard` version is compatible with the `near` version with the `near-indexer` version
 that is used by the MPC binary defined in the workspace cargo file, `/Cargo.toml`.
@@ -32,6 +32,7 @@ cargo install --path crates/node
 ```
 
 ## Compile the signer contract
+
 Build the contract from the repository root with:
 
 ```shell
@@ -42,7 +43,7 @@ Now you should have a `mpc_contract.wasm` artifact ready in the target directory
 Let's add an env variable for it. From the workspace root, run the following:
 
 ```shell
-export MPC_CONTRACT_PATH=$(pwd)/target/near/mpc_contract/mpc_contract.wasm
+export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
 ```
 
 ## 1. Run a local NEAR network
@@ -73,11 +74,12 @@ as a `VALIDATOR_KEY` environment variable.
 We will need it in the next step.
 
 ```shell
-export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | rg secret_key | rg -o "ed25519:\w+")
+export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret_key" | grep -Eo "ed25519:\w+")
 ```
 
 ## 2. Deploy the MPC contract to the network
-Now we can deploy the MPC contract with the NEAR CLI.
+
+Now we can deploy the MPC contract with NEAR CLI (that you can install from https://docs.near.org/tools/near-cli).
 First, add the mpc-localnet as a network connection in the CLI.
 
 To view existing connections and the location of your CLI config file use;
@@ -100,10 +102,10 @@ linkdrop_account_id = "test.near"
 Now, create an account for the contract with the following command.
 
 ```shell
-near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
-We can verify that the account exists and has 10 NEAR with this command.
+We can verify that the account exists and has 1000 NEAR with this command.
 
 ```shell
 near account view-account-summary mpc-contract.test.near network-config mpc-localnet now
@@ -114,7 +116,7 @@ Now it's time to deploy the contract.
 Now we can deploy the contract with this command.
 
 ```shell
-near contract deploy mpc-contract.test.near use-file $MPC_CONTRACT_PATH without-init-call network-config mpc-localnet sign-with-keychain send
+near contract deploy mpc-contract.test.near use-file "$MPC_CONTRACT_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```
 
 When the contract has been deployed you should be able to see its functions through the CLI.
@@ -126,30 +128,32 @@ near contract inspect mpc-contract.test.near network-config mpc-localnet now
 Now when the contract has been deployed, the next step is to initialize it.
 
 ## 3. Start MPC nodes
-In this guide we'll run two MPC nodes. We'll call the nodes "Frodo" and "Sam", and name their accounts accordingly.
+
+In this guide we'll run two MPC nodes. We'll call the nodes `Frodo` and `Sam`, and name their accounts accordingly.
 Before we're ready to initialize the nodes, we should create the accounts.
 
 ```shell
-near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 ```shell
-near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 Next, we need to know the public key of our NEAR validator.
 
 ```shell
-export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | rg -o "ed25519:\w+")
+export NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | grep -oE "ed25519:\w+")
 ```
 
 Now we're ready to initialize the nodes.
 
 ### Initialize Frodo's node
+
 This commands creates a directory with some initial config for Frodo's node.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
+mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@localhost:3030"
 ```
 
 However, currently the command creates an invalid genesis file.
@@ -206,10 +210,11 @@ EOF
 ```
 
 ### Initialize Sam's node
+
 Now we can do the same steps for Sam.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes $NODE_PUBKEY@localhost:3030
+mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@localhost:3030"
 ```
 
 ```shell
@@ -266,7 +271,14 @@ mpc-node start --home-dir ~/.near/mpc-sam/ 11111111111111111111111111111111 --im
 ```shell
 mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
-Note: `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
+
+Notes:
+- `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
+- If you get the following error:
+  ```
+  HostError(GuestPanic { panic_msg: "Calling default not allowed." })
+  ```
+  you can safely ignore it — it disappears once the contract is initialized (tracking issue: https://github.com/near/mpc/issues/1280).
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the frodo and sam MPC indexers connect to it.
 
@@ -277,7 +289,7 @@ In the shell where you ran the local near node, you should see the peer count ch
 2025-08-03T14:20:12.183398Z  INFO stats: #  100579 98DQh3yG987rY1pNWKbM4jYjJ5xuFixP4g3MJuVvpiWY Validator | 1 validator 2 peers ⬇ 1.10 kB/s ⬆ 37.4 kB/s 1.60 bps 0 gas/s CPU: 3%, Mem: 2.17 GB
 ```
 
-### Assign the signer and responder keys as subkeys.
+### Assign the signer and responder keys as subkeys
 
 We must delegate the generate signing keys Sam and Frodo generated as access keys to their near accounts such that they
 can sign transaction that require authorization on the contract.
@@ -331,6 +343,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 ```
 
 ## 5. Add a domain
+
 Now the contract should be initialized and both nodes are running.
 To verify that the network is working let's request a singature from it.
 To do this, we first need to add a domain.
@@ -344,6 +357,7 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 ```
 
 ## 6. Send a sign request to the network
+
 Now we should be able to request a signature from the network.
 
 ```shell
@@ -388,5 +402,5 @@ near contract call-function as-transaction mpc-contract.test.near allowed_code_h
 The following command sends 10 NEAR to the mpc-contract.test.near account.
 
 ```shell
-near transaction construct-transaction test.near mpc-contract.test.near add-action transfer '10 NEAR' skip network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send
+near transaction construct-transaction test.near mpc-contract.test.near add-action transfer '10 NEAR' skip network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
