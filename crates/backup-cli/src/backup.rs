@@ -14,8 +14,13 @@ where
     P: ports::P2PClient,
     C: ports::ContractInterface,
 {
-    pub fn generate_keypair(&self) {
-        todo!();
+    pub async fn generate_keypair(&self) {
+        // TODO: Implement
+        let private_key = crate::types::PrivateKey {};
+        self.secrets_storage
+            .store_private_key(&private_key)
+            .await
+            .expect("todo: Error handling");
     }
 
     /// Put backup service data to the smart contract
