@@ -7,6 +7,15 @@ pub struct BackupService<SecretStorage, KeyShareStorage, P2PClient, MpcContract>
     mpc_contract: MpcContract,
 }
 
+impl<SecretStorage, KeyShareStorage, P2PClient, MpcContract> BackupService<SecretStorage, KeyShareStorage, P2PClient, MpcContract> {
+    pub fn new(secrets_storage: SecretStorage, key_shares_storage: KeyShareStorage, mpc_p2p_client: P2PClient, mpc_contract: MpcContract) -> Self {
+        Self { secrets_storage, key_shares_storage, mpc_p2p_client, mpc_contract }
+    }
+}
+
+
+
+
 impl<S, K, P, C> BackupService<S, K, P, C>
 where
     S: ports::SecretsRepository,
@@ -61,3 +70,5 @@ where
             .expect("fail to put key shares");
     }
 }
+
+

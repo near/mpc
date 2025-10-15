@@ -3,7 +3,7 @@ use std::future::Future;
 use crate::types;
 
 pub trait SecretsRepository {
-    type Error: std::error::Error;
+    type Error: std::fmt::Debug;
 
     fn store_private_key(
         &self,
@@ -15,7 +15,7 @@ pub trait SecretsRepository {
 }
 
 pub trait KeyShareRepository {
-    type Error: std::error::Error;
+    type Error: std::fmt::Debug;
 
     fn store_key_shares(
         &self,
@@ -27,7 +27,7 @@ pub trait KeyShareRepository {
 }
 
 pub trait P2PClient {
-    type Error: std::error::Error;
+    type Error: std::fmt::Debug;
 
     fn get_key_shares(&self) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
     fn put_key_shares(
@@ -37,7 +37,7 @@ pub trait P2PClient {
 }
 
 pub trait ContractInterface {
-    type Error: std::error::Error;
+    type Error: std::fmt::Debug;
 
     fn register_backup_data(
         &self,
