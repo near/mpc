@@ -5092,7 +5092,6 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
- "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
  "tracing-test",

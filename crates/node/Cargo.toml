@@ -57,7 +57,6 @@ mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 itertools = { workspace = true }
 hyper = {workspace = true}
-tower = {workspace = true}
 
 [dev-dependencies]
 assert_matches = { workspace = true }

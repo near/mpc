@@ -185,26 +185,27 @@ pub async fn connect_to_web_server(
 
 #[cfg(test)]
 mod tests {
+
     use std::time::Duration;
 
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
-    use serial_test::serial;
     use tokio::sync::watch;
 
-    use crate::{config::WebUIConfig, migration_service::types::MigrationInfo};
+    use crate::{
+        config::WebUIConfig, migration_service::types::MigrationInfo, p2p::testing::PortSeed,
+    };
 
     use super::{connect_to_web_server, start_web_server};
 
     #[tokio::test]
-    #[serial]
-    pub async fn test_web() {
+    pub async fn test_web_success() {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
         let ip = "127.0.0.1";
-        let port: u16 = 5678;
+        let port: u16 = PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST.p2p_port(0);
         let config = WebUIConfig {
             host: ip.to_string(),
             port,
@@ -233,13 +234,12 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     pub async fn test_web_failure() {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
         let ip = "127.0.0.1";
-        let port: u16 = 5678;
+        let port: u16 = PortSeed::MIGRATION_WEBSERVER_FAILURE_TEST.p2p_port(0);
         let config = WebUIConfig {
             host: ip.to_string(),
             port,
