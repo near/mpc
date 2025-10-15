@@ -108,17 +108,15 @@ pub async fn start_web_server(
                 let client_public_key = mpc_tls::tls::extract_public_key(stream.get_ref().1)?;
                 authenticate_backup_service(&migration_state_receiver_clone, client_public_key)?;
                 tracing::info!("TLS handshake complete, backup service authenticated and encrypted channel established.");
-                tokio::spawn(async move {
-                    if let Err(err) = hyper::server::conn::Http::new()
-                        .serve_connection(
-                            stream,
-                            service_fn(move |req| handle_with_state(req, state_clone.clone())),
-                        )
-                        .await
-                    {
-                        tracing::error!("Error serving connection: {err}");
-                    }
-                });
+                if let Err(err) = hyper::server::conn::Http::new()
+                    .serve_connection(
+                        stream,
+                        service_fn(move |req| handle_with_state(req, state_clone.clone())),
+                    )
+                    .await
+                {
+                    tracing::error!("Error serving connection: {err}");
+                }
                 anyhow::Ok(())
             });
         }
