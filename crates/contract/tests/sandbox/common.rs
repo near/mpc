@@ -956,9 +956,8 @@ pub async fn call_contract_key_generation<const N: usize>(
     let existing_domains = {
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
         match state {
-            ProtocolContractState::Initializing(state) => state.domains.domains().len(),
             ProtocolContractState::Running(state) => state.domains.domains().len(),
-            _ => 0,
+            _ => panic!("ProtocolContractState must be Running"),
         }
     };
 
