@@ -95,9 +95,9 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-    // Returns the list of NodeIds for all participants
-    // Note that the account_public_key field in NodeId is None.
-    // This is because NodeId is used in contexts where account_public_key is not needed.
+    /// Returns the list of NodeIds for all participants
+    /// Note that the account_public_key field in NodeId is None.
+    /// This is because NodeId is used in contexts where account_public_key is not needed. (only TLS key is needed)
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()

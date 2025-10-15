@@ -623,13 +623,13 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<Option<dtos::Attestation>, Error> {
+        let tls_public_key = tls_public_key.into_contract_type();
+
         Ok(self
             .tee_state
             .participants_attestations
             .iter()
-            .find(|(stored_tls_pk, _)| {
-                **stored_tls_pk == tls_public_key.clone().into_contract_type()
-            })
+            .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
             .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
     }
 
@@ -1028,7 +1028,7 @@ impl MpcContract {
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
-        //caller must be a participant (node or operator)
+        // Caller must be a participant (node or operator).
         self.voter_or_panic();
         let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -1662,16 +1662,10 @@ mod tests {
         (context, contract, sk)
     }
 
-    // Temporarily sets the testing environment so that calls appear
-    /// to come from an attested MPC node registered in the contract's `tee_state`.
-    ///
-    /// Returns the `AccountId` of the node used.
     /// Temporarily sets the testing environment so that calls appear
     /// to come from an attested MPC node registered in the contract's `tee_state`.
-    ///
     /// Returns the `AccountId` of the node used.
     pub fn with_attested_context(contract: &MpcContract) -> near_sdk::AccountId {
-        // Pick the first attested node (key is TLS PK, value is (NodeId, Attestation))
         let (_account_id, (node_id, _)) = contract
             .tee_state
             .participants_attestations
@@ -1752,9 +1746,7 @@ mod tests {
             ))
         };
 
-        // set calling context as a MPC node
-        let node = with_attested_context(&contract);
-        println!("Responding as attested node: {}", node);
+        with_attested_context(&contract);
 
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
@@ -1836,9 +1828,7 @@ mod tests {
             big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
         };
 
-        // set calling context as a MPC node
-        let node = with_attested_context(&contract);
-        println!("Responding as attested node: {}", node);
+        with_attested_context(&contract);
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {

@@ -34,7 +34,6 @@ use mpc_contract::{
     primitives::signature::{Payload, SignRequestArgs},
 };
 use near_sdk::{log, Gas};
-//use near_sdk::{log, CurveType, Gas, PublicKey};
 
 use near_workspaces::{
     network::Sandbox,
