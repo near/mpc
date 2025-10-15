@@ -1,15 +1,18 @@
+use crate::ports;
 // TODO: Better name
-pub struct BackupService<Storage, P2PClient, MpcContract> {
-    key_storage: Storage,
+pub struct BackupService<SecretStorage, KeyShareStorage, P2PClient, MpcContract> {
+    secrets_storage: SecretStorage,
+    key_shares_storage: KeyShareStorage,
     mpc_p2p_client: P2PClient,
     mpc_contract: MpcContract,
 }
 
-impl<S, P, C> BackupService<S, P, C>
+impl<S, K, P, C> BackupService<S, K, P, C>
 where
-    S: KeyRepository,
-    P: P2PClient,
-    C: ContractInterface,
+    S: ports::SecretsRepository,
+    K: ports::KeyShareRepository,
+    P: ports::P2PClient,
+    C: ports::ContractInterface,
 {
     pub fn generate_keypair(&self) {
         todo!();
@@ -28,10 +31,3 @@ where
         todo!();
     }
 }
-
-// TODO: Decent types
-type Ed25519KeyPair = String;
-
-trait KeyRepository {}
-trait P2PClient {}
-trait ContractInterface {}
