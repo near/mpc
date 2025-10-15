@@ -15,6 +15,7 @@ members = [
     "crates/test_parallel_contract",
     "crates/test_utils",
     "crates/tls",
+    "crates/backup-cli",
 ]
 
 [profile.dev-release]

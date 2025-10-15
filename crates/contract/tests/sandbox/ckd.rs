@@ -1,8 +1,8 @@
-use crate::sandbox::common::SharedSecretKey;
 use crate::sandbox::common::{
-    create_response_ckd, derive_confidential_key_and_validate, example_bls12381g1_point,
-    init_env_bls12381,
+    create_response_ckd, derive_confidential_key_and_validate, generate_random_app_public_key,
 };
+use crate::sandbox::common::{init_env, SharedSecretKey};
+use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     errors,
@@ -10,6 +10,7 @@ use mpc_contract::{
 };
 use near_sdk::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
+use rand_core::OsRng;
 
 async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -21,11 +22,9 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
-    let sk = match &sks[0] {
-        SharedSecretKey::Secp256k1(_) => unreachable!(),
-        SharedSecretKey::Ed25519(_) => unreachable!(),
-        SharedSecretKey::Bls12381(sk) => sk,
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let SharedSecretKey::Bls12381(sk) = &sks[0] else {
+        unreachable!();
     };
 
     let account_ids: [AccountId; 4] = [
@@ -35,7 +34,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         "a_fake_one".parse().unwrap(),
     ];
 
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key = generate_random_app_public_key(&mut OsRng);
 
     for account_id in account_ids {
         let account = create_account_given_id(&worker, account_id.clone())
@@ -111,14 +110,14 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
     };
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
@@ -190,11 +189,11 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env_bls12381(1).await;
+    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
         app_public_key,
         domain_id: DomainId::default(),
@@ -247,12 +246,12 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_bls12381(1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
     };
-    let app_public_key = example_bls12381g1_point();
+    let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
