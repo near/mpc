@@ -64,6 +64,7 @@ itertools = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 mockall = { workspace = true }
 rstest = { workspace = true }
+tracing-test = { workspace = true }
 
 [build-dependencies]
 built = { version = "0.8", features = ["git2", "chrono"] }

@@ -102,6 +102,16 @@ impl KeysetBuilder {
         }
     }
 
+    pub fn new_populated(epoch_id: u64, num_keys: u64) -> Self {
+        let mut res = KeysetBuilder::new(epoch_id);
+        for domain_id in 0..num_keys {
+            let attempt_id: u64 = rand::random();
+            let keyshare = generate_dummy_keyshare(epoch_id, domain_id, attempt_id);
+            res.add_keyshare(keyshare);
+        }
+        res
+    }
+
     pub fn from_keyshares(epoch_id: u64, keyshares: &[Keyshare]) -> Self {
         Self {
             epoch_id,

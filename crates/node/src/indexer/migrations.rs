@@ -28,11 +28,14 @@ pub async fn monitor_migrations(
 
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     my_near_account_id: AccountId,
-    my_tls_p2p_key: VerifyingKey,
+    my_p2p_public_key: VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
     let init_response = fetch_migrations_once(indexer_state.clone()).await;
-    let init_migration_state =
-        MigrationInfo::from_contract_state(&my_near_account_id, &my_tls_p2p_key, &init_response.1);
+    let init_migration_state = MigrationInfo::from_contract_state(
+        &my_near_account_id,
+        &my_p2p_public_key,
+        &init_response.1,
+    );
 
     let (sender, receiver) = watch::channel(init_migration_state);
 
@@ -54,7 +57,7 @@ pub async fn monitor_migrations(
                 });
                 let my_migration_state = MigrationInfo::from_contract_state(
                     &my_near_account_id,
-                    &my_tls_p2p_key,
+                    &my_p2p_public_key,
                     &response.1,
                 );
                 sender.send_if_modified(|watched_state| {
