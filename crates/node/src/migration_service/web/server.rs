@@ -43,7 +43,7 @@ async fn spawn_expected_peer_info_monitoring(
             }
         }
     });
-    return receiver;
+    receiver
 }
 
 pub async fn start_web_server(
@@ -154,7 +154,7 @@ async fn handle_stream(
     let Some(expected_pk) = expected_peer.expected_pk else {
         anyhow::bail!("not accepting connections without a Backup service info");
     };
-    authenticate_peer(&stream.get_ref().1, &expected_pk)?;
+    authenticate_peer(stream.get_ref().1, &expected_pk)?;
     tracing::info!(
         "TLS handshake complete, backup service authenticated and encrypted channel established."
     );
