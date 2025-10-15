@@ -1,13 +1,12 @@
 use crate::sandbox::common::{
-    candidates, create_message_payload_and_response, init, init_env_ed25519, init_env_secp256k1,
-    sign_and_validate,
+    candidates, create_message_payload_and_response, init, init_env, sign_and_validate,
 };
 use mpc_contract::{
     config::InitConfig,
     crypto_shared::SignatureResponse,
     errors,
     primitives::{
-        domain::DomainId,
+        domain::{DomainId, SignatureScheme},
         participants::Participants,
         signature::SignRequestArgs,
         thresholds::{Threshold, ThresholdParameters},
@@ -22,9 +21,12 @@ const DOMAIN_ID_ZERO: DomainId = DomainId(0);
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
-    let predecessor_id = contract.id();
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
+
     let path = "test";
+
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
 
     let messages = [
         "hello world",
@@ -46,7 +48,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &alice,
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -65,11 +73,23 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&alice, &request, None, &contract)
         .await
         .expect_err("should have failed with timeout");
     assert!(err
@@ -81,7 +101,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -157,7 +177,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env_secp256k1(1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -221,7 +241,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
 
@@ -278,7 +298,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_secp256k1(1).await;
+    let (_, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -393,9 +413,12 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env_ed25519(1).await;
-    let predecessor_id = contract.id();
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Ed25519]).await;
+
     let path = "test";
+
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
 
     let messages = [
         "hello world",
@@ -418,7 +441,13 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &alice,
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -437,11 +466,23 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         domain_id: Some(DomainId(0)),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&alice, &request, None, &contract)
         .await
         .expect_err("should have failed with timeout");
     assert!(err

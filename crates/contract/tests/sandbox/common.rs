@@ -1,7 +1,9 @@
 use assert_matches::assert_matches;
-use contract_interface::types::{self as dtos, Ed25519PublicKey};
+use contract_interface::types::{
+    self as dtos, Attestation, Bls12381G1PublicKey, Ed25519PublicKey, MockAttestation,
+};
 use digest::{Digest, FixedOutput};
-use ecdsa::signature::Verifier;
+use ecdsa::signature::Verifier as _;
 use elliptic_curve::{Field as _, Group as _};
 use fs2::FileExt;
 use k256::{
@@ -39,7 +41,9 @@ use near_workspaces::{
     types::{AccountId, NearToken},
     Account, Contract, Worker,
 };
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::{distributions::Alphanumeric, rngs::OsRng};
+use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
@@ -54,9 +58,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use threshold_signatures::{
+    blstrs,
     confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve},
-    eddsa::{self, KeygenOutput},
+    ecdsa as ts_ecdsa, eddsa,
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
+    frost_secp256k1::{self, Secp256K1Group},
 };
 pub const PARTICIPANT_LEN: usize = 3;
 
@@ -294,7 +300,7 @@ pub async fn init_with_candidates(
         let tee_submission_result = submit_participant_info(
             account,
             &contract,
-            &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+            &Attestation::Mock(MockAttestation::Valid),
             &participant.sign_pk.into_interface_type(),
         )
         .await;
@@ -309,60 +315,30 @@ pub async fn init_with_candidates(
     (worker, contract, accounts)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SharedSecretKey {
-    Secp256k1(k256::elliptic_curve::SecretKey<k256::Secp256k1>),
+    Secp256k1(ts_ecdsa::KeygenOutput),
     Ed25519(eddsa::KeygenOutput),
     Bls12381(ckd::KeygenOutput),
 }
 
-pub fn new_secp256k1() -> (
-    dtos::PublicKey,
-    k256::elliptic_curve::SecretKey<k256::Secp256k1>,
-) {
-    let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
-    let public_key = secret_key.public_key();
+pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
+    let scalar = k256::Scalar::random(&mut rand::thread_rng());
+    let private_share = frost_secp256k1::keys::SigningShare::new(scalar);
+    let public_key_element = Secp256K1Group::generator() * scalar;
+    let public_key = frost_secp256k1::VerifyingKey::new(public_key_element);
 
-    let compressed_key = public_key.as_affine().to_encoded_point(false);
+    let keygen_output = ts_ecdsa::KeygenOutput {
+        private_share,
+        public_key,
+    };
+
+    let compressed_key = public_key.to_element().to_encoded_point(false);
     let mut bytes = [0u8; 64];
     bytes.copy_from_slice(&compressed_key.as_bytes()[1..]);
-    let public_key = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes));
+    let pk = dtos::PublicKey::Secp256k1(dtos::Secp256k1PublicKey::from(bytes));
 
-    (public_key, secret_key)
-}
-
-pub async fn init_env_secp256k1(
-    num_domains: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<SharedSecretKey>,
-) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Secp256k1))
-        .collect();
-
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
-
-    (worker, contract, accounts, secret_keys)
-}
-
-pub async fn init_env_bls12381(
-    num_domains: usize,
-) -> (
-    Worker<Sandbox>,
-    Contract,
-    Vec<Account>,
-    Vec<SharedSecretKey>,
-) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Bls12381))
-        .collect();
-
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
-
-    (worker, contract, accounts, secret_keys)
+    (pk, keygen_output)
 }
 
 pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
@@ -382,13 +358,13 @@ pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, 
     }
 }
 
-pub fn new_ed25519() -> (dtos::PublicKey, KeygenOutput) {
+pub fn new_ed25519() -> (dtos::PublicKey, eddsa::KeygenOutput) {
     let scalar = curve25519_dalek::Scalar::random(&mut OsRng);
     let private_share = SigningShare::new(scalar);
     let public_key_element = Ed25519Group::generator() * scalar;
     let public_key = VerifyingKey::new(public_key_element);
 
-    let keygen_output = KeygenOutput {
+    let keygen_output = eddsa::KeygenOutput {
         private_share,
         public_key,
     };
@@ -418,16 +394,17 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
     (pk, keygen_output)
 }
 
-pub async fn init_env_ed25519(
-    num_domains: usize,
+pub async fn init_env(
+    schemes: &[SignatureScheme],
 ) -> (
     Worker<Sandbox>,
     Contract,
     Vec<Account>,
     Vec<SharedSecretKey>,
 ) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(SignatureScheme::Ed25519))
+    let (public_keys, secret_keys) = schemes
+        .iter()
+        .map(|scheme| make_key_for_domain(*scheme))
         .collect();
 
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;
@@ -445,18 +422,32 @@ pub fn process_message(msg: &str) -> (impl Digest, Payload) {
     (digest, payload_hash)
 }
 
-pub fn derive_secret_key_secp256k1(secret_key: &k256::SecretKey, tweak: &Tweak) -> k256::SecretKey {
+pub fn derive_secret_key_secp256k1(
+    secret_key: &ts_ecdsa::KeygenOutput,
+    tweak: &Tweak,
+) -> ts_ecdsa::KeygenOutput {
     let tweak = k256::Scalar::from_repr(tweak.as_bytes().into()).unwrap();
-    k256::SecretKey::new((tweak + secret_key.to_nonzero_scalar().as_ref()).into())
+    let private_share =
+        frost_secp256k1::keys::SigningShare::new(secret_key.private_share.to_scalar() + tweak);
+    let public_key = frost_secp256k1::VerifyingKey::new(
+        secret_key.public_key.to_element() + Secp256K1Group::generator() * tweak,
+    );
+    ts_ecdsa::KeygenOutput {
+        private_share,
+        public_key,
+    }
 }
 
-pub fn derive_secret_key_ed25519(secret_key: &KeygenOutput, tweak: &Tweak) -> KeygenOutput {
+pub fn derive_secret_key_ed25519(
+    secret_key: &eddsa::KeygenOutput,
+    tweak: &Tweak,
+) -> eddsa::KeygenOutput {
     let tweak = curve25519_dalek::Scalar::from_bytes_mod_order(tweak.as_bytes());
     let private_share = SigningShare::new(secret_key.private_share.to_scalar() + tweak);
     let public_key =
         VerifyingKey::new(secret_key.public_key.to_element() + Ed25519Group::generator() * tweak);
 
-    KeygenOutput {
+    eddsa::KeygenOutput {
         private_share,
         public_key,
     }
@@ -485,15 +476,16 @@ pub fn create_response_secp256k1(
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
-    sk: &k256::SecretKey,
+    signing_key: &ts_ecdsa::KeygenOutput,
 ) -> (Payload, SignatureRequest, SignatureResponse) {
     let (digest, payload) = process_message(msg);
-    let pk = sk.public_key();
+    let pk = signing_key.public_key;
 
     let tweak = derive_tweak(predecessor_id, path);
-    let derived_sk = derive_secret_key_secp256k1(sk, &tweak);
-    let derived_pk = derive_key_secp256k1(&pk.into(), &tweak).unwrap();
-    let signing_key = k256::ecdsa::SigningKey::from(&derived_sk);
+    let derived_sk = derive_secret_key_secp256k1(signing_key, &tweak);
+    let derived_pk = derive_key_secp256k1(&pk.to_element().to_affine(), &tweak).unwrap();
+    let signing_key =
+        k256::ecdsa::SigningKey::from_bytes(&derived_sk.private_share.to_scalar().into()).unwrap();
     let verifying_key =
         k256::ecdsa::VerifyingKey::from(&k256::PublicKey::from_affine(derived_pk).unwrap());
 
@@ -534,7 +526,7 @@ pub fn create_response_ed25519(
     predecessor_id: &AccountId,
     msg: &str,
     path: &str,
-    signing_key: &KeygenOutput,
+    signing_key: &eddsa::KeygenOutput,
 ) -> (Payload, SignatureRequest, SignatureResponse) {
     let tweak = derive_tweak(predecessor_id, path);
     let derived_signing_key = derive_secret_key_ed25519(signing_key, &tweak);
@@ -569,11 +561,31 @@ pub fn create_response_ed25519(
 }
 
 pub async fn submit_sign_request(
+    account: &Account,
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    let status = contract
-        .call("sign")
+    let status = account
+        .call(contract.id(), "sign")
+        .args_json(serde_json::json!({
+            "request": request,
+        }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+
+    Ok(status)
+}
+
+pub async fn submit_ckd_request(
+    account: &Account,
+    request: &CKDRequestArgs,
+    contract: &Contract,
+) -> anyhow::Result<TransactionStatus> {
+    let status = account
+        .call(contract.id(), "request_app_private_key")
         .args_json(serde_json::json!({
             "request": request,
         }))
@@ -606,12 +618,33 @@ pub async fn submit_signature_response(
     Ok(())
 }
 
+pub async fn submit_ckd_response(
+    respond_req: &CKDRequest,
+    respond_resp: &CKDResponse,
+    contract: &Contract,
+) -> anyhow::Result<()> {
+    // Call `respond` as if we are the MPC network itself.
+    let respond = contract
+        .call("respond_ckd")
+        .args_json(serde_json::json!({
+            "request": respond_req,
+            "response": respond_resp
+        }))
+        .max_gas()
+        .transact()
+        .await?;
+    dbg!(&respond);
+
+    Ok(())
+}
+
 pub async fn sign_and_validate(
+    account: &Account,
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
-    let status = submit_sign_request(request, contract).await?;
+    let status = submit_sign_request(account, request, contract).await?;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
@@ -635,10 +668,10 @@ pub async fn sign_and_validate(
     Ok(())
 }
 
-pub fn example_bls12381g1_point() -> dtos::Bls12381G1PublicKey {
-    "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-        .parse()
-        .unwrap()
+pub fn generate_random_app_public_key(rng: &mut impl CryptoRngCore) -> Bls12381G1PublicKey {
+    let x = blstrs::Scalar::random(rng);
+    let big_x = blstrs::G1Projective::generator() * x;
+    Bls12381G1PublicKey::from(big_x.to_compressed())
 }
 
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
@@ -829,8 +862,8 @@ pub async fn get_tee_accounts(contract: &Contract) -> anyhow::Result<BTreeSet<No
 pub async fn submit_participant_info(
     account: &Account,
     contract: &Contract,
-    attestation: &dtos::Attestation,
-    tls_key: &dtos::Ed25519PublicKey,
+    attestation: &Attestation,
+    tls_key: &Ed25519PublicKey,
 ) -> anyhow::Result<bool> {
     let result = account
         .call(contract.id(), "submit_participant_info")
@@ -844,7 +877,7 @@ pub async fn submit_participant_info(
 pub async fn get_participant_attestation(
     contract: &Contract,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<Option<dtos::Attestation>> {
+) -> anyhow::Result<Option<Attestation>> {
     let result = contract
         .as_account()
         .call(contract.id(), "get_attestation")
@@ -880,7 +913,7 @@ pub async fn submit_tee_attestations(
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
         assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
-        let attestation = dtos::Attestation::Mock(dtos::MockAttestation::Valid); // todo #1109, add TLS key.
+        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
         let result = submit_participant_info(
             account,
             contract,
@@ -920,7 +953,15 @@ pub async fn call_contract_key_generation<const N: usize>(
     let account_with_lowest_participant_id = &accounts[0];
     let mut private_key_shares = vec![];
 
-    for (domain_attempt, domain) in domains_to_add.iter().enumerate() {
+    let existing_domains = {
+        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+        match state {
+            ProtocolContractState::Running(state) => state.domains.domains().len(),
+            _ => panic!("ProtocolContractState must be Running"),
+        }
+    };
+
+    for (domain_counter, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
             check_call_success(
                 account
@@ -937,7 +978,10 @@ pub async fn call_contract_key_generation<const N: usize>(
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
         match state {
             ProtocolContractState::Initializing(state) => {
-                assert_eq!(state.domains.domains().len(), domain_attempt + 1);
+                assert_eq!(
+                    state.domains.domains().len(),
+                    existing_domains + domain_counter + 1
+                );
             }
             _ => panic!("should be in initializing state"),
         };
@@ -948,7 +992,7 @@ pub async fn call_contract_key_generation<const N: usize>(
                 .args_json(json!({
                     "key_event_id": {
                         "epoch_id": expected_epoch_id,
-                        "domain_id": domain_attempt,
+                        "domain_id": domain.id.0,
                         "attempt_id": 0,
                     },
                 }))
@@ -966,16 +1010,15 @@ pub async fn call_contract_key_generation<const N: usize>(
         let vote_pk_args = json!( {
             "key_event_id": {
                 "epoch_id": expected_epoch_id,
-                "domain_id": domain.id,
+                "domain_id": domain.id.0,
                 "attempt_id": 0,
             },
-            "public_key": public_key.into_contract_type(),
+            "public_key": public_key,
         });
 
         for account in accounts {
             check_call_success(
                 account
-                    // TODO(#1243): this is tested against the old contract, so cannot use the new API
                     .call(contract.id(), "vote_pk")
                     .args_json(vote_pk_args.clone())
                     .transact()
@@ -988,7 +1031,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         match state {
             ProtocolContractState::Running(state) => {
                 assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);
-                assert_eq!(state.domains.domains().len(), domain_attempt + 1);
+                assert_eq!(state.domains.domains().len(), domain.id.0 as usize + 1);
             }
             state => panic!("should be in running state. Actual state: {state:#?}"),
         };
@@ -1003,8 +1046,16 @@ pub struct PendingSignRequest {
     pub signature_response: SignatureResponse,
 }
 
+pub struct PendingCKDRequest {
+    pub transaction: TransactionStatus,
+    pub ckd_request: CKDRequest,
+    pub ckd_response: CKDResponse,
+}
+
 pub struct InjectedContractState {
     pub pending_sign_requests: Vec<PendingSignRequest>,
+    pub added_domains: Vec<DomainConfig>,
+    pub shared_secret_keys: Vec<SharedSecretKey>,
 }
 
 /// Adds dummy state to a contract (threshold proposal, domains, sign requests)
@@ -1015,6 +1066,8 @@ pub async fn execute_key_generation_and_add_random_state(
     accounts: &[Account],
     participants: Participants,
     contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
     const EPOCH_ID: u64 = 0;
 
@@ -1053,15 +1106,47 @@ pub async fn execute_key_generation_and_add_random_state(
         call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
 
     // 3. Submit pending sign requests.
-    let mut pending_sign_requests = vec![];
-    let path = "test";
-    let predecessor_id = contract.id();
-    let signature_request_payloads = ["hello world", "hello world!!!!"];
+    let (pending_sign_requests, _) =
+        make_and_submit_requests(&domains_to_add, &shared_secret_keys, contract, worker, rng).await;
 
-    for (domain, shared_secret_key) in domains_to_add.iter().zip(shared_secret_keys.iter()) {
+    InjectedContractState {
+        pending_sign_requests,
+        added_domains: domains_to_add.to_vec(),
+        shared_secret_keys: shared_secret_keys.to_vec(),
+    }
+}
+
+fn generate_random_request_payloads(n: usize, rng: &mut impl CryptoRngCore) -> String {
+    (0..n).map(|_| rng.sample(Alphanumeric) as char).collect()
+}
+
+pub async fn make_and_submit_requests(
+    domains: &[DomainConfig],
+    shared_secret_keys: &[SharedSecretKey],
+    contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl CryptoRngCore,
+) -> (Vec<PendingSignRequest>, Vec<PendingCKDRequest>) {
+    let mut pending_sign_requests = vec![];
+    let mut pending_ckd_requests = vec![];
+    let path = "test";
+
+    let signature_request_payloads = [
+        generate_random_request_payloads(10, rng),
+        generate_random_request_payloads(4, rng),
+    ];
+    let app_public_keys = [
+        generate_random_app_public_key(rng),
+        generate_random_app_public_key(rng),
+    ];
+
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
+
+    for (domain, shared_secret_key) in domains.iter().zip(shared_secret_keys.iter()) {
         match domain.scheme {
             SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
-                for message in signature_request_payloads {
+                for message in &signature_request_payloads {
                     let (payload, signature_request, signature_response) =
                         create_message_payload_and_response(
                             domain.id,
@@ -1079,7 +1164,9 @@ pub async fn execute_key_generation_and_add_random_state(
                         ..Default::default()
                     };
 
-                    let transaction = submit_sign_request(&request, contract).await.unwrap();
+                    let transaction = submit_sign_request(&alice, &request, contract)
+                        .await
+                        .unwrap();
 
                     pending_sign_requests.push(PendingSignRequest {
                         transaction,
@@ -1088,14 +1175,35 @@ pub async fn execute_key_generation_and_add_random_state(
                     });
                 }
             }
-            // TODO(#1243)
-            SignatureScheme::Bls12381 => {}
+            SignatureScheme::Bls12381 => {
+                for app_public_key in &app_public_keys {
+                    let SharedSecretKey::Bls12381(sk) = &shared_secret_key else {
+                        unreachable!();
+                    };
+                    let (ckd_request, ckd_response) = create_response_ckd(
+                        alice.id(),
+                        app_public_key.clone(),
+                        &domain.id,
+                        &sk.private_share.to_scalar(),
+                    );
+                    let request_args = CKDRequestArgs {
+                        app_public_key: app_public_key.clone(),
+                        domain_id: domain.id,
+                    };
+                    let transaction = submit_ckd_request(&alice, &request_args, contract)
+                        .await
+                        .unwrap();
+
+                    pending_ckd_requests.push(PendingCKDRequest {
+                        transaction,
+                        ckd_request,
+                        ckd_response,
+                    });
+                }
+            }
         }
     }
-
-    InjectedContractState {
-        pending_sign_requests,
-    }
+    (pending_sign_requests, pending_ckd_requests)
 }
 
 pub async fn vote_for_hash(
