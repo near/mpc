@@ -12,3 +12,18 @@ pub struct Args {
     #[arg(long, env)]
     pub near_network: String,
 }
+
+pub enum Command {
+    GenerateKeys(GenerateKeysArgs),
+    Register(RegisterArgs),
+    GetKeyshares(GetKeysharesArgs),
+    PutKeyshares(PutKeysharesArgs),
+}
+
+pub struct GenerateKeysArgs {}
+
+pub struct RegisterArgs {}
+
+pub struct GetKeysharesArgs {}
+
+pub struct PutKeysharesArgs {}
