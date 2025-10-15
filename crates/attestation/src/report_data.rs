@@ -110,12 +110,6 @@ impl ReportDataV1 {
         report_data[BINARY_VERSION_OFFSET..BINARY_VERSION_OFFSET + BINARY_VERSION_SIZE]
             .copy_from_slice(&version_bytes);
 
-        //let mut hasher = Sha3_384::new();
-
-        //  hasher.update(self.tls_public_key.as_ref());
-        // hasher.update(self.account_public_key.as_ref());
-        //let public_keys_hash: [u8; Self::PUBLIC_KEYS_HASH_SIZE] = hasher.finalize().into();
-
         let public_keys_hash = Self::compute_public_keys_hash(
             self.tls_public_key.as_ref(),
             self.account_public_key.as_ref(),
@@ -183,7 +177,7 @@ mod tests {
     use test_utils::attestation::{account_key, p2p_tls_key, quote};
 
     #[test]
-    #[ignore] // TODO #1269, update str from node.
+    #[ignore] // TODO(#1269): update quote from node
     fn test_from_str_valid() {
         let valid_quote: Vec<u8> =
             serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();
