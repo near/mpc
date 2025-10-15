@@ -42,7 +42,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     }
     new_domains
 }
-pub fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) {
+fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) {
     let rng = rand::thread_rng();
     let edwards_point = SerializableEdwardsPoint::random(rng);
     (edwards_point, edwards_point.compress())
