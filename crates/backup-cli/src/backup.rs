@@ -3,7 +3,6 @@ pub struct BackupService<Storage, P2PClient, MpcContract> {
     key_storage: Storage,
     mpc_p2p_client: P2PClient,
     mpc_contract: MpcContract,
-    keypair: Ed25519KeyPair,
 }
 
 impl<S, P, C> BackupService<S, P, C>
@@ -12,8 +11,20 @@ where
     P: P2PClient,
     C: ContractInterface,
 {
+    pub fn generate_keypair(&self) {
+        todo!();
+    }
+
     /// Put backup service data to the smart contract
-    pub fn publish_backup_data() {
+    pub async fn register_backup_service(&self) {
+        todo!();
+    }
+
+    pub async fn get_keyshares(&self) {
+        todo!();
+    }
+
+    pub async fn put_keyshares(&self) {
         todo!();
     }
 }
