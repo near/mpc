@@ -99,17 +99,13 @@ sudo apt install build-essential qemu-system docker.io
 * Create `mpc` user and installation folder
 
 ```bash
-# create user
 sudo useradd -m -G docker -s /usr/bin/bash mpc
-# set password
 sudo passwd mpc
 # create installation folder
 sudo mkdir /opt/mpc
-# set ownership
 sudo chown mpc:mpc /opt/mpc
 # change user
 sudo -u mpc -s
-# change directory
 cd /opt/mpc
 ```
 
