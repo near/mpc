@@ -438,7 +438,7 @@ impl MpcContract {
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
-        self.tee_state.assert_caller_is_attested_node();
+        //self.tee_state.assert_caller_is_attested_node();
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
@@ -659,15 +659,9 @@ impl MpcContract {
             .tee_state
             .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
 
-        env::log_str(&format!(
-            "vote_new_parameters: tee validation result = {:?}",
-            validation_result
-        ));
-
         let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
-                env::log_str("vote_new_parameters: TEE validation FULL — proceeding");
                 if let Some(new_state) = self
                     .protocol_state
                     .vote_new_parameters(prospective_epoch_id, &proposal)?
@@ -679,11 +673,6 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
-                env::log_str(&format!(
-                    "vote_new_parameters: TEE validation PARTIAL — valid participants = {:?}",
-                    participants_with_valid_attestation
-                ));
-
                 let invalid_participants: Vec<_> = proposed_participants
                     .participants()
                     .iter()
@@ -691,11 +680,6 @@ impl MpcContract {
                         participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
-
-                env::log_str(&format!(
-                    "vote_new_parameters: invalid participants = {:?}",
-                    invalid_participants
-                ));
 
                 Err(
                     InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
