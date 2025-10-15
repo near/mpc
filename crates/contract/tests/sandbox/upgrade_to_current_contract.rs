@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
 use crate::sandbox::common::{
-    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state, gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests, propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response, SharedSecretKey, PARTICIPANT_LEN
+    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
+    gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests,
+    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
+    SharedSecretKey, PARTICIPANT_LEN,
 };
 use mpc_contract::crypto_shared::CKDResponse;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
@@ -345,14 +348,26 @@ async fn upgrade_allows_new_request_types(
             scheme: SignatureScheme::Ed25519,
         },
     ];
-    
+
     const EPOCH_ID: u64 = 0;
     let shared_secret_keys =
         call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
 
-    let current_domains: Vec<DomainConfig> = injected_contract_state.added_domains.clone().iter().chain(domains_to_add.iter()).cloned().collect();
-    let current_shared_secret_keys: Vec<SharedSecretKey> =  injected_contract_state.shared_secret_keys.clone().iter().chain(shared_secret_keys.iter()).cloned().collect();
-    
+    let current_domains: Vec<DomainConfig> = injected_contract_state
+        .added_domains
+        .clone()
+        .iter()
+        .chain(domains_to_add.iter())
+        .cloned()
+        .collect();
+    let current_shared_secret_keys: Vec<SharedSecretKey> = injected_contract_state
+        .shared_secret_keys
+        .clone()
+        .iter()
+        .chain(shared_secret_keys.iter())
+        .cloned()
+        .collect();
+
     let (pending_sign_requests, pending_ckd_requests) = make_and_submit_requests(
         &current_domains,
         &current_shared_secret_keys,

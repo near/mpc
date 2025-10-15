@@ -561,11 +561,12 @@ pub fn create_response_ed25519(
 }
 
 pub async fn submit_sign_request(
+    account: &Account,
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    let status = contract
-        .call("sign")
+    let status = account
+        .call(contract.id(), "sign")
         .args_json(serde_json::json!({
             "request": request,
         }))
@@ -638,11 +639,12 @@ pub async fn submit_ckd_response(
 }
 
 pub async fn sign_and_validate(
+    account: &Account,
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
 ) -> anyhow::Result<()> {
-    let status = submit_sign_request(request, contract).await?;
+    let status = submit_sign_request(account, request, contract).await?;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
@@ -977,7 +979,10 @@ pub async fn call_contract_key_generation<const N: usize>(
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
         match state {
             ProtocolContractState::Initializing(state) => {
-                assert_eq!(state.domains.domains().len(), existing_domains + domain_counter + 1);
+                assert_eq!(
+                    state.domains.domains().len(),
+                    existing_domains + domain_counter + 1
+                );
             }
             _ => panic!("should be in initializing state"),
         };
@@ -1051,7 +1056,7 @@ pub struct PendingCKDRequest {
 pub struct InjectedContractState {
     pub pending_sign_requests: Vec<PendingSignRequest>,
     pub added_domains: Vec<DomainConfig>,
-    pub shared_secret_keys: Vec<SharedSecretKey>
+    pub shared_secret_keys: Vec<SharedSecretKey>,
 }
 
 /// Adds dummy state to a contract (threshold proposal, domains, sign requests)
@@ -1126,7 +1131,7 @@ pub async fn make_and_submit_requests(
     let mut pending_sign_requests = vec![];
     let mut pending_ckd_requests = vec![];
     let path = "test";
-    let predecessor_id = contract.id();
+
     let signature_request_payloads = [
         generate_random_request_payloads(10, rng),
         generate_random_request_payloads(4, rng),
@@ -1137,6 +1142,7 @@ pub async fn make_and_submit_requests(
     ];
 
     let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
 
     for (domain, shared_secret_key) in domains.iter().zip(shared_secret_keys.iter()) {
         match domain.scheme {
@@ -1159,7 +1165,9 @@ pub async fn make_and_submit_requests(
                         ..Default::default()
                     };
 
-                    let transaction = submit_sign_request(&request, contract).await.unwrap();
+                    let transaction = submit_sign_request(&alice, &request, contract)
+                        .await
+                        .unwrap();
 
                     pending_sign_requests.push(PendingSignRequest {
                         transaction,

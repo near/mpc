@@ -21,9 +21,12 @@ const DOMAIN_ID_ZERO: DomainId = DomainId(0);
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
-    let predecessor_id = contract.id();
+    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+
     let path = "test";
+
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
 
     let messages = [
         "hello world",
@@ -45,7 +48,13 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &alice,
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -64,11 +73,23 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         domain_id: Some(DOMAIN_ID_ZERO),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&alice, &request, None, &contract)
         .await
         .expect_err("should have failed with timeout");
     assert!(err
@@ -392,9 +413,12 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env(1, SignatureScheme::Ed25519).await;
-    let predecessor_id = contract.id();
+    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Ed25519).await;
+
     let path = "test";
+
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
 
     let messages = [
         "hello world",
@@ -417,7 +441,13 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+        sign_and_validate(
+            &alice,
+            &request,
+            Some((&respond_req, &respond_resp)),
+            &contract,
+        )
+        .await?;
     }
 
     // check duplicate requests can also be signed:
@@ -436,11 +466,23 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         domain_id: Some(DomainId(0)),
         ..Default::default()
     };
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
-    sign_and_validate(&request, Some((&respond_req, &respond_resp)), &contract).await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
+    sign_and_validate(
+        &alice,
+        &request,
+        Some((&respond_req, &respond_resp)),
+        &contract,
+    )
+    .await?;
 
     // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&request, None, &contract)
+    let err = sign_and_validate(&alice, &request, None, &contract)
         .await
         .expect_err("should have failed with timeout");
     assert!(err
