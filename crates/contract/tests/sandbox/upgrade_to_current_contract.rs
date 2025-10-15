@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 
 use crate::sandbox::common::{
-    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
-    gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests,
-    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
-    PARTICIPANT_LEN,
+    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state, gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests, propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response, SharedSecretKey, PARTICIPANT_LEN
 };
 use mpc_contract::crypto_shared::CKDResponse;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
@@ -194,7 +191,7 @@ async fn upgrade_preserves_state_and_requests(
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
-    let (injected_contract_state, _) = execute_key_generation_and_add_random_state(
+    let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
         participants,
         &contract,
@@ -309,7 +306,7 @@ async fn upgrade_allows_new_request_types(
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
-    let (injected_contract_state, mut added_domains) = execute_key_generation_and_add_random_state(
+    let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
         participants,
         &contract,
@@ -335,7 +332,7 @@ async fn upgrade_allows_new_request_types(
         "State of the contract should remain the same post upgrade."
     );
 
-    let first_available_domain_id = added_domains.len() as u64;
+    let first_available_domain_id = injected_contract_state.added_domains.len() as u64;
 
     // 2. Add new domains
     let domains_to_add = [
@@ -348,14 +345,17 @@ async fn upgrade_allows_new_request_types(
             scheme: SignatureScheme::Ed25519,
         },
     ];
-    added_domains.append(&mut domains_to_add.to_vec());
+    
     const EPOCH_ID: u64 = 0;
     let shared_secret_keys =
         call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
 
+    let current_domains: Vec<DomainConfig> = injected_contract_state.added_domains.clone().iter().chain(domains_to_add.iter()).cloned().collect();
+    let current_shared_secret_keys: Vec<SharedSecretKey> =  injected_contract_state.shared_secret_keys.clone().iter().chain(shared_secret_keys.iter()).cloned().collect();
+    
     let (pending_sign_requests, pending_ckd_requests) = make_and_submit_requests(
-        &domains_to_add,
-        &shared_secret_keys,
+        &current_domains,
+        &current_shared_secret_keys,
         &contract,
         &worker,
         rng,
