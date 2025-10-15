@@ -551,6 +551,7 @@ pub mod testing {
         pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
         pub const FAULTY_STUCK_INDEXER_TEST: Self = Self(9);
         pub const RECOVERY_TEST: Self = Self(10);
+        pub const ONBOARDING_TEST: Self = Self(11);
     }
 
     pub fn generate_test_p2p_configs(
