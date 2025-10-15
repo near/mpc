@@ -22,7 +22,7 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
     };
@@ -110,7 +110,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -189,7 +189,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env(1, SignatureScheme::Bls12381).await;
+    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -246,7 +246,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Bls12381).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
     let alice = worker.dev_create_account().await?;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();

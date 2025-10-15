@@ -31,7 +31,7 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, env_accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, env_accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;

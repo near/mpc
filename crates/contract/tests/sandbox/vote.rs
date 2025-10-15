@@ -18,7 +18,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     let args = json!({
         "domains": vec![
@@ -95,7 +95,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     let args = json!({
         "domains": vec![
@@ -149,7 +149,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -247,7 +247,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -338,7 +338,7 @@ struct ResharingTestContext {
 #[rstest::fixture]
 async fn setup_resharing_state() -> ResharingTestContext {
     let (worker, contract, mut current_participant_accounts, _) =
-        init_env(1, SignatureScheme::Secp256k1).await;
+        init_env(&[SignatureScheme::Secp256k1]).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {
@@ -863,7 +863,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 #[tokio::test]
 async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
     let (worker, contract, mut current_participant_accounts, _) =
-        init_env(1, SignatureScheme::Secp256k1).await;
+        init_env(&[SignatureScheme::Secp256k1]).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {

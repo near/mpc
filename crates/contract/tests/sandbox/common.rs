@@ -395,16 +395,16 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
 }
 
 pub async fn init_env(
-    num_domains: usize,
-    scheme: SignatureScheme,
+    schemes: &[SignatureScheme],
 ) -> (
     Worker<Sandbox>,
     Contract,
     Vec<Account>,
     Vec<SharedSecretKey>,
 ) {
-    let (public_keys, secret_keys) = (0..num_domains)
-        .map(|_| make_key_for_domain(scheme))
+    let (public_keys, secret_keys) = schemes
+        .iter()
+        .map(|scheme| make_key_for_domain(*scheme))
         .collect();
 
     let (worker, contract, accounts) = init_with_candidates(public_keys).await;

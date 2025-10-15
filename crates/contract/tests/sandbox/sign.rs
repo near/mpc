@@ -21,7 +21,7 @@ const DOMAIN_ID_ZERO: DomainId = DomainId(0);
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
 
     let path = "test";
 
@@ -101,7 +101,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -177,7 +177,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -241,7 +241,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (_, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
 
@@ -298,7 +298,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
-    let (_, contract, _, sks) = init_env(1, SignatureScheme::Secp256k1).await;
+    let (_, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let predecessor_id = contract.id();
     let path = "test";
 
@@ -413,7 +413,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(1, SignatureScheme::Ed25519).await;
+    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Ed25519]).await;
 
     let path = "test";
 
