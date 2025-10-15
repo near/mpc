@@ -184,8 +184,6 @@ pub async fn connect_to_web_server(
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
-
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
@@ -199,66 +197,77 @@ mod tests {
 
     const LOCALHOST_IP: &str = "127.0.0.1";
 
-    #[tokio::test]
-    pub async fn test_web_success() {
+    struct TestSetup {
+        client_key: SigningKey,
+        server_key: SigningKey,
+        target_address: String,
+        migration_state_sender: watch::Sender<MigrationInfo>,
+    }
+    async fn setup(port_seed: PortSeed) -> TestSetup {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
-        let port: u16 = PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST.p2p_port(0);
+        let port: u16 = port_seed.p2p_port(0);
         let config = WebUIConfig {
             host: LOCALHOST_IP.to_string(),
             port,
         };
-        let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
+        let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
                 public_key: client_key.verifying_key().to_bytes().into(),
             }),
             active_migration: false,
         });
-        let expected_servert_key = server_key.verifying_key();
         assert!(
             start_web_server(config, migration_state_receiver, &server_key)
                 .await
                 .is_ok()
         );
-
         let target_address = format!("{LOCALHOST_IP}:{port}");
-        let res = connect_to_web_server(&client_key, &target_address, expected_servert_key)
-            .await
-            .unwrap();
+        TestSetup {
+            client_key,
+            server_key,
+            target_address,
+            migration_state_sender,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_web_success() {
+        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST).await;
+
+        let res = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+
         println!("received: {}", res);
         assert_eq!("Hello, world!", res);
     }
 
     #[tokio::test]
-    pub async fn test_web_failure() {
-        let client_key = SigningKey::generate(&mut OsRng);
-        let server_key = SigningKey::generate(&mut OsRng);
-
-        let port: u16 = PortSeed::MIGRATION_WEBSERVER_FAILURE_TEST.p2p_port(0);
-        let config = WebUIConfig {
-            host: LOCALHOST_IP.to_string(),
-            port,
-        };
-        let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
+    async fn test_web_failure() {
+        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_FAILURE_TEST).await;
+        let wrong_backup_service_info = MigrationInfo {
             backup_service_info: Some(BackupServiceInfo {
                 public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
             }),
             active_migration: false,
-        });
+        };
+        test_setup
+            .migration_state_sender
+            .send(wrong_backup_service_info)
+            .unwrap();
 
-        let expected_servert_key = server_key.verifying_key();
-        assert!(
-            start_web_server(config, migration_state_receiver, &server_key)
-                .await
-                .is_ok()
-        );
-
-        let target_address = format!("{LOCALHOST_IP}:{port}");
-        assert!(
-            connect_to_web_server(&client_key, &target_address, expected_servert_key)
-                .await
-                .is_err()
-        );
+        assert!(connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            test_setup.server_key.verifying_key(),
+        )
+        .await
+        .is_err());
     }
 }
