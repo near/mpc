@@ -19,7 +19,7 @@ struct WebServerState {
 }
 
 #[allow(dead_code)]
-async fn handle_with_state(
+async fn handle(
     req: hyper::Request<Body>,
     state: Arc<WebServerState>,
 ) -> Result<hyper::Response<Body>, Infallible> {
@@ -111,7 +111,7 @@ pub async fn start_web_server(
                 if let Err(err) = hyper::server::conn::Http::new()
                     .serve_connection(
                         stream,
-                        service_fn(move |req| handle_with_state(req, state_clone.clone())),
+                        service_fn(move |req| handle(req, state_clone.clone())),
                     )
                     .await
                 {
@@ -197,15 +197,16 @@ mod tests {
 
     use super::{connect_to_web_server, start_web_server};
 
+    const LOCALHOST_IP: &str = "127.0.0.1";
+
     #[tokio::test]
     pub async fn test_web_success() {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
-        let ip = "127.0.0.1";
         let port: u16 = PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST.p2p_port(0);
         let config = WebUIConfig {
-            host: ip.to_string(),
+            host: LOCALHOST_IP.to_string(),
             port,
         };
         let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
@@ -215,15 +216,13 @@ mod tests {
             active_migration: false,
         });
         let expected_servert_key = server_key.verifying_key();
-        tokio::spawn(async move {
-            if let Err(err) = start_web_server(config, migration_state_receiver, &server_key).await
-            {
-                panic!("issue: {}", err);
-            }
-        });
+        assert!(
+            start_web_server(config, migration_state_receiver, &server_key)
+                .await
+                .is_ok()
+        );
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let target_address = format!("127.0.0.1:{port}");
+        let target_address = format!("{LOCALHOST_IP}:{port}");
         let res = connect_to_web_server(&client_key, &target_address, expected_servert_key)
             .await
             .unwrap();
@@ -236,10 +235,9 @@ mod tests {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
-        let ip = "127.0.0.1";
         let port: u16 = PortSeed::MIGRATION_WEBSERVER_FAILURE_TEST.p2p_port(0);
         let config = WebUIConfig {
-            host: ip.to_string(),
+            host: LOCALHOST_IP.to_string(),
             port,
         };
         let (_migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
@@ -250,15 +248,13 @@ mod tests {
         });
 
         let expected_servert_key = server_key.verifying_key();
-        tokio::spawn(async move {
-            if let Err(err) = start_web_server(config, migration_state_receiver, &server_key).await
-            {
-                panic!("issue: {}", err);
-            }
-        });
+        assert!(
+            start_web_server(config, migration_state_receiver, &server_key)
+                .await
+                .is_ok()
+        );
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let target_address = format!("127.0.0.1:{port}");
+        let target_address = format!("{LOCALHOST_IP}:{port}");
         assert!(
             connect_to_web_server(&client_key, &target_address, expected_servert_key)
                 .await
