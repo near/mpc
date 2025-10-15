@@ -3,34 +3,70 @@ use std::{convert::Infallible, sync::Arc};
 use super::types::MigrationInfo;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
-use hyper::{body::to_bytes, service::service_fn, Body, Request, Response, StatusCode};
+use hyper::{
+    body::to_bytes, client::conn::SendRequest, service::service_fn, Body, Request, Response,
+    StatusCode,
+};
 use mpc_tls::tls::configure_tls;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
 use tokio_rustls::TlsAcceptor;
+use tokio_util::sync::CancellationToken;
 
-use crate::{config::WebUIConfig, migration_service::types::NodeBackupServiceInfo};
+use crate::{config::WebUIConfig, keyshare::Keyshare};
 
 #[derive(Clone)]
-struct WebServerState {
-    migration_state_receiver: watch::Receiver<MigrationInfo>,
+pub struct WebServerState {
+    import_keyshares_sender: watch::Sender<Vec<Keyshare>>,
+    export_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
 }
 
 #[allow(dead_code)]
-async fn handle(
+async fn handle_request(
     req: hyper::Request<Body>,
     state: Arc<WebServerState>,
 ) -> Result<hyper::Response<Body>, Infallible> {
     match (req.method().as_str(), req.uri().path()) {
         ("GET", "/hello") => Ok(Response::new(Body::from("Hello, world!"))),
-
-        ("GET", "/migrations") => Ok(Response::new(Body::from(format!(
-            "{:?}",
-            state.migration_state_receiver.borrow().clone()
-        )))),
-
+        ("GET", "/get_keyshares") => {
+            let keyshares = state.export_keyshares_receiver.borrow().clone();
+            let json = serde_json::to_string(&keyshares).unwrap_or_else(|_| "invalid".to_string());
+            let mut response = Response::new(Body::from(json));
+            response.headers_mut().insert(
+                hyper::header::CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("application/json"),
+            );
+            Ok(response)
+        }
+        ("PUT", "/set_keyshares") => {
+            let whole_body = hyper::body::to_bytes(req.into_body()).await;
+            match whole_body {
+                Ok(bytes) => match serde_json::from_slice::<Vec<Keyshare>>(&bytes) {
+                    Ok(new_keyshares) => {
+                        if state.import_keyshares_sender.send(new_keyshares).is_err() {
+                            let msg = "keyshares receiver channel is closed".to_string();
+                            tracing::error!(msg);
+                            Ok(Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(Body::from(msg))
+                                .unwrap())
+                        } else {
+                            Ok(Response::new(Body::from("Keyshares received.")))
+                        }
+                    }
+                    Err(err) => Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from(format!("Invalid Json: {err}")))
+                        .unwrap()),
+                },
+                Err(err) => Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from(format!("Failed to read body: {err}")))
+                    .unwrap()),
+            }
+        }
         _ => {
             let mut not_found = Response::new(Body::from("Not Found"));
             *not_found.status_mut() = StatusCode::NOT_FOUND;
@@ -39,45 +75,114 @@ async fn handle(
     }
 }
 
-#[allow(dead_code)]
-fn authenticate_backup_service(
-    migration_state_receiver: &watch::Receiver<MigrationInfo>,
-    client_public_key: VerifyingKey,
+async fn handle_stream(
+    tls_acceptor: TlsAcceptor,
+    tcp_stream: TcpStream,
+    state: Arc<WebServerState>,
+    expected_peer: ExpectedPeerInfo,
 ) -> anyhow::Result<()> {
-    let expected_pk: VerifyingKey = match migration_state_receiver
-        .borrow()
-        .clone()
-        .backup_service_info
-    {
-        Some(backup_service_info) => {
-            let service =
-                NodeBackupServiceInfo::from_contract(backup_service_info).context("failed")?;
-            service.p2p_key
-        }
-        None => {
-            anyhow::bail!("no backup service registered.");
-        }
-    };
+    tracing::info!("Handle connection");
+    let stream = tls_acceptor.accept(tcp_stream).await?;
 
-    if client_public_key != expected_pk {
+    let Some(expected_pk) = expected_peer.expected_pk else {
+        anyhow::bail!("not accepting connections without a Backup service info");
+    };
+    authenticate_peer(&stream.get_ref().1, &expected_pk)?;
+    tracing::info!(
+        "TLS handshake complete, backup service authenticated and encrypted channel established."
+    );
+    let http_protocol = hyper::server::conn::Http::new();
+
+    tokio::select! {
+        res = http_protocol.serve_connection(
+            stream,
+            service_fn(move |req| handle_request(req, state.clone())),
+        ) => {
+            match res {
+                Ok(_) => tracing::info!("connection closed gracefully"),
+                Err(err) => tracing::error!("error serving connection: {err:?}"),
+            }
+        }
+
+        _ = expected_peer.cancelled.cancelled() => {
+            tracing::info!("dropping connection due to cancellation (change in migration info or cancellatin of web server)");
+        }
+    }
+    anyhow::Ok(())
+}
+
+#[derive(Clone)]
+struct ExpectedPeerInfo {
+    expected_pk: Option<VerifyingKey>,
+    cancelled: CancellationToken,
+}
+
+impl ExpectedPeerInfo {
+    pub fn from_migration(migration_info: MigrationInfo, cancelled: CancellationToken) -> Self {
+        let expected_pk = migration_info.get_pk_backup_service();
+        Self {
+            expected_pk,
+            cancelled,
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn authenticate_peer(
+    common_state: &rustls::CommonState,
+    expected_peer_public_key: &VerifyingKey,
+) -> anyhow::Result<()> {
+    let peer_public_key = mpc_tls::tls::extract_public_key(common_state)?;
+
+    if peer_public_key != *expected_peer_public_key {
         tracing::info!(
-            ?expected_pk,
-            ?client_public_key,
+            ?expected_peer_public_key,
+            ?peer_public_key,
             "closing connection, public key mismatch"
         );
         anyhow::bail!("closing connection, public key mismatch");
     }
-    tracing::info!(
-        "TLS handshake complete, backup service authenticated and encrypted channel established."
-    );
+    tracing::info!("TLS handshake complete, peer authenticated and encrypted channel established.");
     Ok(())
+}
+
+async fn spawn_expected_peer_info_monitoring(
+    cancellation_token: CancellationToken,
+    mut migration_state_receiver: watch::Receiver<MigrationInfo>,
+) -> watch::Receiver<ExpectedPeerInfo> {
+    let current_info = migration_state_receiver.borrow_and_update().clone();
+    let mut info_cancelled = cancellation_token.child_token();
+    let (sender, receiver) = watch::channel(ExpectedPeerInfo::from_migration(
+        current_info,
+        info_cancelled.clone(),
+    ));
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => { return Ok(()); }
+                res = migration_state_receiver.changed() => {
+                    info_cancelled.cancel();
+                    if res.is_err() {
+                        tracing::info!("migration state sender dropped, cancelling peer info and exiting");
+                        return anyhow::Ok(());
+                    };
+                    let current_info = migration_state_receiver.borrow_and_update().clone();
+                    info_cancelled = cancellation_token.child_token();
+                    sender.send(ExpectedPeerInfo::from_migration(current_info, info_cancelled.clone()))?;
+                },
+            }
+        }
+    });
+    return receiver;
 }
 
 #[allow(dead_code)]
 pub async fn start_web_server(
+    web_server_state: Arc<WebServerState>,
     config: WebUIConfig,
     migration_state_receiver: watch::Receiver<MigrationInfo>,
     p2p_private_key: &ed25519_dalek::SigningKey,
+    cancellation_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let (server_config, _client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
@@ -87,11 +192,13 @@ pub async fn start_web_server(
         "Attempting to bind web server to host",
     );
 
-    let state = Arc::new(WebServerState {
-        migration_state_receiver: migration_state_receiver.clone(),
-    });
-    let bind_address = format!("{}:{}", config.host, config.port);
+    let mut expected_peer_info_receiver = spawn_expected_peer_info_monitoring(
+        cancellation_token.child_token(),
+        migration_state_receiver,
+    )
+    .await;
 
+    let bind_address = format!("{}:{}", config.host, config.port);
     tracing::info!(address = %bind_address,"Binding to address");
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
@@ -99,26 +206,15 @@ pub async fn start_web_server(
     tokio::spawn(async move {
         tracing::info!("Handle incoming connections");
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-            let migration_state_receiver_clone = migration_state_receiver.clone();
+            let expected_peer = expected_peer_info_receiver.borrow_and_update().clone();
             let tls_acceptor = tls_acceptor.clone();
-            let state_clone = state.clone();
-            tokio::spawn(async move {
-                tracing::info!("Handle connection");
-                let stream = tls_acceptor.accept(tcp_stream).await?;
-                let client_public_key = mpc_tls::tls::extract_public_key(stream.get_ref().1)?;
-                authenticate_backup_service(&migration_state_receiver_clone, client_public_key)?;
-                tracing::info!("TLS handshake complete, backup service authenticated and encrypted channel established.");
-                if let Err(err) = hyper::server::conn::Http::new()
-                    .serve_connection(
-                        stream,
-                        service_fn(move |req| handle(req, state_clone.clone())),
-                    )
-                    .await
-                {
-                    tracing::error!("Error serving connection: {err}");
-                }
-                anyhow::Ok(())
-            });
+            let state_clone = web_server_state.clone();
+            tokio::spawn(handle_stream(
+                tls_acceptor,
+                tcp_stream,
+                state_clone,
+                expected_peer,
+            ));
         }
     });
 
@@ -132,7 +228,7 @@ pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
     target_address: &str,
     expected_server_key: VerifyingKey,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<SendRequest<Body>> {
     let (_server_config, client_config) = configure_tls(p2p_private_key)?;
     let conn = TcpStream::connect(target_address)
         .await
@@ -142,34 +238,30 @@ pub async fn connect_to_web_server(
         .await
         .context("TLS connect")?;
 
-    let public_key = mpc_tls::tls::extract_public_key(tls_conn.get_ref().1)?;
-    if public_key != expected_server_key {
-        tracing::info!(
-            ?expected_server_key,
-            ?public_key,
-            "closing connection, public key mismatch"
-        );
-        anyhow::bail!("closing connection, public key mismatch");
-    }
+    authenticate_peer(tls_conn.get_ref().1, &expected_server_key)?;
 
     tracing::info!(
         "TLS handshake complete, backup service authenticated and encrypted channel established."
     );
 
-    let (mut request_sender, connection) = hyper::client::conn::handshake(tls_conn)
+    let (request_sender, connection) = hyper::client::conn::handshake(tls_conn)
         .await
         .context("failed to perform HTTP handshake")?;
 
-    // Run the connection driver in the background
+    // Run the connection driver in the background.
     tokio::spawn(async move {
         if let Err(err) = connection.await {
             tracing::error!("Connection error: {err}");
         }
     });
 
+    Ok(request_sender)
+}
+
+async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyhow::Result<String> {
     let req = Request::builder()
         .method("GET")
-        .uri("https://example/hello") // doesn’t matter, server matches on path only
+        .uri("http://example/hello") // doesn’t matter, server matches on path only
         .body(hyper::Body::empty())?;
 
     let response = request_sender.send_request(req).await?;
@@ -177,23 +269,29 @@ pub async fn connect_to_web_server(
     let body_str = String::from_utf8_lossy(&body_bytes);
 
     tracing::info!("Response: {}", body_str);
-
     Ok(body_str.to_string())
 }
 
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
     use tokio::sync::watch;
+    use tokio_util::sync::CancellationToken;
 
+    use crate::keyshare::Keyshare;
+    use crate::migration_service::web::{
+        connect_to_web_server, make_hello_request, start_web_server,
+    };
     use crate::{
         config::WebUIConfig, migration_service::types::MigrationInfo, p2p::testing::PortSeed,
     };
 
-    use super::{connect_to_web_server, start_web_server};
+    use super::WebServerState;
 
     const LOCALHOST_IP: &str = "127.0.0.1";
 
@@ -202,7 +300,11 @@ mod tests {
         server_key: SigningKey,
         target_address: String,
         migration_state_sender: watch::Sender<MigrationInfo>,
+        web_server_state: Arc<WebServerState>,
+        import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
+        export_keyshares_sender: watch::Sender<Vec<Keyshare>>,
     }
+
     async fn setup(port_seed: PortSeed) -> TestSetup {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
@@ -218,17 +320,30 @@ mod tests {
             }),
             active_migration: false,
         });
-        assert!(
-            start_web_server(config, migration_state_receiver, &server_key)
-                .await
-                .is_ok()
-        );
+        let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
+        let (export_keyshares_sender, export_keyshares_receiver) = watch::channel(vec![]);
+        let web_server_state = Arc::new(WebServerState {
+            import_keyshares_sender,
+            export_keyshares_receiver,
+        });
+        assert!(start_web_server(
+            web_server_state.clone(),
+            config,
+            migration_state_receiver,
+            &server_key,
+            CancellationToken::new()
+        )
+        .await
+        .is_ok());
         let target_address = format!("{LOCALHOST_IP}:{port}");
         TestSetup {
             client_key,
             server_key,
             target_address,
             migration_state_sender,
+            web_server_state,
+            import_keyshares_receiver,
+            export_keyshares_sender,
         }
     }
 
@@ -236,13 +351,14 @@ mod tests {
     async fn test_web_success() {
         let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST).await;
 
-        let res = connect_to_web_server(
+        let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
             test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
+        let res = make_hello_request(&mut send_request).await.unwrap();
 
         println!("received: {}", res);
         assert_eq!("Hello, world!", res);
@@ -262,12 +378,18 @@ mod tests {
             .send(wrong_backup_service_info)
             .unwrap();
 
-        assert!(connect_to_web_server(
+        // the handshake will still pass. it is only after we try to send data that we realize the
+        // server closed the connection.
+        let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
             test_setup.server_key.verifying_key(),
         )
         .await
-        .is_err());
+        .unwrap();
+
+        let res = make_hello_request(&mut send_request).await;
+        print!("{:?}", res);
+        assert!(res.is_err());
     }
 }

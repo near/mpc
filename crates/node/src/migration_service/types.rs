@@ -35,6 +35,19 @@ pub struct MigrationInfo {
     pub active_migration: bool,
 }
 
+impl MigrationInfo {
+    pub fn get_pk_backup_service(self) -> Option<VerifyingKey> {
+        self.backup_service_info
+            .and_then(|info| match NodeBackupServiceInfo::from_contract(info) {
+                Ok(service) => Some(service.p2p_key),
+                Err(err) => {
+                    tracing::warn!("could not convert backup service info: {}", err);
+                    None
+                }
+            })
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct OnboardingTask {
     pub job: OnboardingJob,
