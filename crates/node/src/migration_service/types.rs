@@ -29,6 +29,7 @@ impl NodeBackupServiceInfo {
         Ok(Self { p2p_key })
     }
 }
+
 #[derive(PartialEq, Debug, Clone, Serialize)]
 pub struct MigrationInfo {
     pub backup_service_info: Option<BackupServiceInfo>,
@@ -162,9 +163,28 @@ pub mod tests {
         config,
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
         providers::PublicKeyConversion,
+        trait_extensions::convert_to_contract_dto::TryIntoNodeType,
     };
 
     use super::{MigrationInfo, OnboardingJob};
+
+    #[test]
+    fn test_migration_get_pk_backup_service() {
+        let empty = MigrationInfo {
+            backup_service_info: None,
+            active_migration: true,
+        };
+        assert!(empty.get_pk_backup_service().is_none());
+
+        let public_key = bogus_ed25519_public_key();
+        let pk_converted = public_key.clone().try_into_node_type().unwrap();
+        let backup_service_info = Some(BackupServiceInfo { public_key });
+        let populated = MigrationInfo {
+            backup_service_info,
+            active_migration: true,
+        };
+        assert_eq!(populated.get_pk_backup_service(), Some(pk_converted))
+    }
 
     #[test]
     fn test_migration_status_constructor_empty() {

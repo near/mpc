@@ -16,36 +16,6 @@ use crate::{
 
 use super::types::{ExpectedPeerInfo, WebServerState};
 
-async fn spawn_expected_peer_info_monitoring(
-    cancellation_token: CancellationToken,
-    mut migration_state_receiver: watch::Receiver<MigrationInfo>,
-) -> watch::Receiver<ExpectedPeerInfo> {
-    let current_info = migration_state_receiver.borrow_and_update().clone();
-    let mut info_cancelled = cancellation_token.child_token();
-    let (sender, receiver) = watch::channel(ExpectedPeerInfo::from_migration(
-        current_info,
-        info_cancelled.clone(),
-    ));
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => { return Ok(()); }
-                res = migration_state_receiver.changed() => {
-                    info_cancelled.cancel();
-                    if res.is_err() {
-                        tracing::info!("migration state sender dropped, cancelling peer info and exiting");
-                        return anyhow::Ok(());
-                    };
-                    let current_info = migration_state_receiver.borrow_and_update().clone();
-                    info_cancelled = cancellation_token.child_token();
-                    sender.send(ExpectedPeerInfo::from_migration(current_info, info_cancelled.clone()))?;
-                },
-            }
-        }
-    });
-    receiver
-}
-
 pub async fn start_web_server(
     web_server_state: Arc<WebServerState>,
     config: WebUIConfig,
@@ -89,6 +59,72 @@ pub async fn start_web_server(
 
     tracing::info!(address = %bind_address,"Successfully bound to address");
     Ok(())
+}
+
+async fn handle_stream(
+    tls_acceptor: TlsAcceptor,
+    tcp_stream: TcpStream,
+    state: Arc<WebServerState>,
+    expected_peer: ExpectedPeerInfo,
+) -> anyhow::Result<()> {
+    tracing::info!("Handle connection");
+    let stream = tls_acceptor.accept(tcp_stream).await?;
+
+    let Some(expected_pk) = expected_peer.expected_pk else {
+        anyhow::bail!("not accepting connections without a Backup service info");
+    };
+    authenticate_peer(stream.get_ref().1, &expected_pk)?;
+    tracing::info!(
+        "TLS handshake complete, backup service authenticated and encrypted channel established."
+    );
+    let http_protocol = hyper::server::conn::Http::new();
+
+    tokio::select! {
+        res = http_protocol.serve_connection(
+            stream,
+            service_fn(move |req| handle_request(req, state.clone())),
+        ) => {
+            match res {
+                Ok(_) => tracing::info!("connection closed gracefully"),
+                Err(err) => tracing::error!("error serving connection: {err:?}"),
+            }
+        }
+
+        _ = expected_peer.cancelled.cancelled() => {
+            tracing::info!("dropping connection due to cancellation (change in migration info or cancellatin of web server)");
+        }
+    }
+    anyhow::Ok(())
+}
+
+async fn spawn_expected_peer_info_monitoring(
+    cancellation_token: CancellationToken,
+    mut migration_state_receiver: watch::Receiver<MigrationInfo>,
+) -> watch::Receiver<ExpectedPeerInfo> {
+    let current_info = migration_state_receiver.borrow_and_update().clone();
+    let mut info_cancelled = cancellation_token.child_token();
+    let (sender, receiver) = watch::channel(ExpectedPeerInfo::from_migration(
+        current_info,
+        info_cancelled.clone(),
+    ));
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => { return Ok(()); }
+                res = migration_state_receiver.changed() => {
+                    info_cancelled.cancel();
+                    if res.is_err() {
+                        tracing::info!("migration state sender dropped, cancelling peer info and exiting");
+                        return anyhow::Ok(());
+                    };
+                    let current_info = migration_state_receiver.borrow_and_update().clone();
+                    info_cancelled = cancellation_token.child_token();
+                    sender.send(ExpectedPeerInfo::from_migration(current_info, info_cancelled.clone()))?;
+                },
+            }
+        }
+    });
+    receiver
 }
 
 async fn handle_request(
@@ -142,38 +178,63 @@ async fn handle_request(
     }
 }
 
-async fn handle_stream(
-    tls_acceptor: TlsAcceptor,
-    tcp_stream: TcpStream,
-    state: Arc<WebServerState>,
-    expected_peer: ExpectedPeerInfo,
-) -> anyhow::Result<()> {
-    tracing::info!("Handle connection");
-    let stream = tls_acceptor.accept(tcp_stream).await?;
-
-    let Some(expected_pk) = expected_peer.expected_pk else {
-        anyhow::bail!("not accepting connections without a Backup service info");
+#[cfg(test)]
+mod tests {
+    use crate::{
+        migration_service::{
+            types::MigrationInfo, web::server::spawn_expected_peer_info_monitoring,
+        },
+        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
     };
-    authenticate_peer(stream.get_ref().1, &expected_pk)?;
-    tracing::info!(
-        "TLS handshake complete, backup service authenticated and encrypted channel established."
-    );
-    let http_protocol = hyper::server::conn::Http::new();
 
-    tokio::select! {
-        res = http_protocol.serve_connection(
-            stream,
-            service_fn(move |req| handle_request(req, state.clone())),
-        ) => {
-            match res {
-                Ok(_) => tracing::info!("connection closed gracefully"),
-                Err(err) => tracing::error!("error serving connection: {err:?}"),
-            }
-        }
+    use ed25519_dalek::SigningKey;
+    use mpc_contract::node_migrations::BackupServiceInfo;
+    use std::time::Duration;
+    use tokio::sync::watch;
+    use tokio_util::sync::CancellationToken;
 
-        _ = expected_peer.cancelled.cancelled() => {
-            tracing::info!("dropping connection due to cancellation (change in migration info or cancellatin of web server)");
+    fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
+        MigrationInfo {
+            backup_service_info: Some(BackupServiceInfo {
+                public_key: key.verifying_key().into_contract_interface_type(),
+            }),
+            active_migration: true,
         }
     }
-    anyhow::Ok(())
+    #[tokio::test]
+    async fn test_spawn_expected_peer_info_monitoring_updates() {
+        let key1 = SigningKey::generate(&mut rand::thread_rng());
+        let migration_info1 = make_migration_info_with_key(&key1);
+
+        let (migration_info_sender, migration_info_receiver) = watch::channel(migration_info1);
+        let cancellation = CancellationToken::new();
+
+        let expected_peer_rx =
+            spawn_expected_peer_info_monitoring(cancellation.clone(), migration_info_receiver)
+                .await;
+
+        let initial = expected_peer_rx.borrow().clone();
+        let expected = Some(key1.verifying_key());
+        assert_eq!(initial.expected_pk, expected,);
+        assert!(!initial.cancelled.is_cancelled());
+
+        let key2 = SigningKey::generate(&mut rand::thread_rng());
+        let migration_info2 = make_migration_info_with_key(&key2);
+
+        // Send an updated migration info
+        migration_info_sender.send(migration_info2.clone()).unwrap();
+
+        // wait for cancellation
+        initial.cancelled.cancelled().await;
+
+        let updated = expected_peer_rx.borrow().clone();
+        let expected = Some(key2.verifying_key());
+        assert_eq!(updated.expected_pk, expected,);
+
+        // Cancel the parent token
+        cancellation.cancel();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        updated.cancelled.cancelled().await;
+    }
 }

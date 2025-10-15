@@ -177,4 +177,30 @@ mod tests {
             .clone();
         assert_eq!(keyset_builder.keyshares().to_vec(), received);
     }
+
+    #[tokio::test]
+    async fn test_cancellation_if_migration_info_changes() {
+        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO).await;
+
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let res = make_hello_request(&mut send_request).await.unwrap();
+        assert_eq!("Hello, world!", res);
+        let wrong_backup_service_info = MigrationInfo {
+            backup_service_info: Some(BackupServiceInfo {
+                public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
+            }),
+            active_migration: false,
+        };
+        test_setup
+            .migration_state_sender
+            .send(wrong_backup_service_info)
+            .unwrap();
+        assert!(make_hello_request(&mut send_request).await.is_err());
+    }
 }
