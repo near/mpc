@@ -11,8 +11,9 @@ use crate::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
-        GcpPermanentKeyStorageConfig, KeyStorageConfig,
+        GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
+    migration_service::onboarding::onboard,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
@@ -438,12 +439,26 @@ impl StartCmd {
             }
         });
 
+        // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085)
+        let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
+        let mut keyshare_storage: KeyshareStorage = key_storage_config.create().await?;
+        onboard(
+            indexer_api.contract_state_receiver.clone(),
+            indexer_api.my_migration_info_receiver.clone(),
+            config.my_near_account_id.clone(),
+            tls_public_key,
+            indexer_api.txn_sender.clone(),
+            &mut keyshare_storage,
+            keyshare_receiver,
+        )
+        .await?;
+
         let coordinator = Coordinator {
             clock: Clock::real(),
             config_file: config,
             secrets,
             secret_db,
-            key_storage_config,
+            keyshare_storage: keyshare_storage.into(),
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,

@@ -1,15 +1,17 @@
 use super::IndexerState;
-use crate::config::{ParticipantInfo, ParticipantsConfig};
+use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
 use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
+use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
     key_state::{KeyEventId, KeyForDomain, Keyset},
     thresholds::ThresholdParameters,
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
+use near_sdk::AccountId;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -130,6 +132,40 @@ pub enum ContractState {
     Running(ContractRunningState),
 }
 
+#[cfg(test)]
+impl ContractState {
+    pub fn change_participant_pk(
+        &mut self,
+        account_id: &AccountId,
+        new_p2p_public_key: VerifyingKey,
+    ) {
+        match self {
+            ContractState::Invalid => panic!("invalid contract state"),
+            ContractState::Initializing(init) => {
+                init.participants
+                    .change_participant_pk(account_id, new_p2p_public_key)
+                    .expect("require participant");
+            }
+            ContractState::Running(running) => {
+                if let Some(resharing) = running.resharing_state.as_mut() {
+                    resharing
+                        .new_participants
+                        .change_participant_pk(account_id, new_p2p_public_key)
+                        .expect("require participant");
+                    let _ = running
+                        .participants
+                        .change_participant_pk(account_id, new_p2p_public_key);
+                } else {
+                    running
+                        .participants
+                        .change_participant_pk(account_id, new_p2p_public_key)
+                        .expect("require participant");
+                }
+            }
+        }
+    }
+}
+
 impl ContractState {
     pub fn from_contract_state(
         state: &ProtocolContractState,
@@ -190,6 +226,32 @@ impl ContractState {
                 })
             }
         })
+    }
+
+    /// Returns the participation status of the given node in the current contract state.
+    ///
+    /// Determines whether the node is active or inactive based on its account ID and P2P public key
+    /// During a resharing, any participants that are not part of the prospective epochs will be
+    /// considered inactive.
+    pub fn node_status(
+        &self,
+        account_id: &AccountId,
+        p2p_public_key: &VerifyingKey,
+    ) -> ParticipantStatus {
+        let participant_set = match self {
+            ContractState::Invalid => {
+                return ParticipantStatus::Inactive;
+            }
+            ContractState::Initializing(initializing) => &initializing.participants,
+            ContractState::Running(running) => {
+                if let Some(resharing) = &running.resharing_state {
+                    &resharing.new_participants
+                } else {
+                    &running.participants
+                }
+            }
+        };
+        participant_set.participant_status(account_id, p2p_public_key)
     }
 }
 
@@ -301,6 +363,30 @@ pub fn convert_participant_infos(
     })
 }
 
+#[cfg(test)]
+pub mod test_utils {
+
+    use crate::config::ParticipantInfo;
+
+    use super::ContractState;
+
+    impl ContractState {
+        /// returns the participants of the current or prospective epoch
+        pub fn get_current_or_prospective_participants(&self) -> Vec<ParticipantInfo> {
+            match &self {
+                ContractState::Invalid => vec![],
+                ContractState::Initializing(initializing) => {
+                    initializing.participants.participants.clone()
+                }
+                ContractState::Running(running) => running
+                    .resharing_state
+                    .clone()
+                    .map(|resharing| resharing.new_participants.participants.clone())
+                    .unwrap_or(running.participants.participants.clone()),
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::{indexer::participants::convert_participant_infos, providers::PublicKeyConversion};
