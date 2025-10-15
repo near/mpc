@@ -1,4 +1,7 @@
-use crate::{ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository}, types};
+use crate::{
+    ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository},
+    types,
+};
 
 pub struct DummySecretsStorage {}
 
