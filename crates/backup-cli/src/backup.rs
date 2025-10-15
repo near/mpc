@@ -27,7 +27,6 @@ pub async fn run_command(args: cli::Args) {
 }
 
 pub async fn generate_keypair(secrets_storage: &impl ports::SecretsRepository) {
-    // TODO: Implement
     let private_key = crate::types::PrivateKey {};
     secrets_storage
         .store_private_key(&private_key)
