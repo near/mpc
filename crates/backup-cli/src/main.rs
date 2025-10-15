@@ -1,24 +1,9 @@
-use backup_cli::adapters;
-use backup_cli::{backup::BackupService, cli};
+use backup_cli::backup::run_command;
+use backup_cli::cli;
 use clap::Parser as _;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = cli::Args::parse();
-
-    let secret_storage = adapters::DummySecretsStorage {};
-    let key_shares_storage = adapters::DummyKeyshareStorage {};
-    let mpc_p2p_client = adapters::DummyP2PClient {};
-    let mpc_contract = adapters::DummyContractInterface {};
-
-    let backup_service: BackupService<
-        adapters::DummySecretsStorage,
-        adapters::DummyKeyshareStorage,
-        adapters::DummyP2PClient,
-        _,
-    > = BackupService::new(
-        secret_storage,
-        key_shares_storage,
-        mpc_p2p_client,
-        mpc_contract,
-    );
+    run_command(args).await;
 }

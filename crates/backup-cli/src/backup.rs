@@ -1,4 +1,30 @@
+use crate::adapters;
+use crate::cli;
 use crate::ports;
+
+pub async fn run_command(args: cli::Args) {
+    match args.command {
+        cli::Command::GenerateKeys(_args) => {
+            let secrets_storage = adapters::DummySecretsStorage {};
+            generate_keypair(&secrets_storage).await;
+        }
+        cli::Command::Register(_args) => {
+            let secrets_storage = adapters::DummySecretsStorage {};
+            let mpc_contract = adapters::DummyContractInterface {};
+            register_backup_service(&secrets_storage, &mpc_contract).await;
+        }
+        cli::Command::GetKeyshares(_args) => {
+            let mpc_p2p_client = adapters::DummyP2PClient {};
+            let key_shares_storage = adapters::DummyKeyshareStorage {};
+            get_keyshares(&mpc_p2p_client, &key_shares_storage).await;
+        }
+        cli::Command::PutKeyshares(_args) => {
+            let mpc_p2p_client = adapters::DummyP2PClient {};
+            let key_shares_storage = adapters::DummyKeyshareStorage {};
+            put_keyshares(&mpc_p2p_client, &key_shares_storage).await;
+        }
+    }
+}
 
 pub async fn generate_keypair(secrets_storage: &impl ports::SecretsRepository) {
     // TODO: Implement

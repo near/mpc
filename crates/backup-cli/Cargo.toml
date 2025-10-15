@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 clap = { workspace = true }
 anyhow = { workspace = true }
+tokio = { workspace = true }

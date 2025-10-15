@@ -2,7 +2,7 @@
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Args {
     #[clap(subcommand)]
-    command: Command,
+    pub command: Command,
 }
 
 #[derive(clap::Subcommand, Debug)]
