@@ -951,7 +951,7 @@ pub async fn call_contract_key_generation<const N: usize>(
     let account_with_lowest_participant_id = &accounts[0];
     let mut private_key_shares = vec![];
 
-    for domain in domains_to_add {
+    for (domain_counter, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
             check_call_success(
                 account
@@ -968,7 +968,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
         match state {
             ProtocolContractState::Initializing(state) => {
-                assert_eq!(state.domains.domains().len(), domain.id.0 as usize + 1);
+                assert_eq!(state.domains.domains().len(), domain_counter + 1);
             }
             _ => panic!("should be in initializing state"),
         };
