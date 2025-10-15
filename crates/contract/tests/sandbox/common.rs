@@ -315,7 +315,7 @@ pub async fn init_with_candidates(
     (worker, contract, accounts)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SharedSecretKey {
     Secp256k1(ts_ecdsa::KeygenOutput),
     Ed25519(eddsa::KeygenOutput),
@@ -951,6 +951,15 @@ pub async fn call_contract_key_generation<const N: usize>(
     let account_with_lowest_participant_id = &accounts[0];
     let mut private_key_shares = vec![];
 
+    let existing_domains = {
+        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+        match state {
+            ProtocolContractState::Initializing(state) => state.domains.domains().len(),
+            ProtocolContractState::Running(state) => state.domains.domains().len(),
+            _ => 0,
+        }
+    };
+
     for (domain_counter, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
             check_call_success(
@@ -968,7 +977,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
         match state {
             ProtocolContractState::Initializing(state) => {
-                assert_eq!(state.domains.domains().len(), domain_counter + 1);
+                assert_eq!(state.domains.domains().len(), existing_domains + domain_counter + 1);
             }
             _ => panic!("should be in initializing state"),
         };
@@ -1041,6 +1050,8 @@ pub struct PendingCKDRequest {
 
 pub struct InjectedContractState {
     pub pending_sign_requests: Vec<PendingSignRequest>,
+    pub added_domains: Vec<DomainConfig>,
+    pub shared_secret_keys: Vec<SharedSecretKey>
 }
 
 /// Adds dummy state to a contract (threshold proposal, domains, sign requests)
@@ -1053,7 +1064,7 @@ pub async fn execute_key_generation_and_add_random_state(
     contract: &Contract,
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
-) -> (InjectedContractState, Vec<DomainConfig>) {
+) -> InjectedContractState {
     const EPOCH_ID: u64 = 0;
 
     // 1. Submit a threshold proposal (raise threshold to 3).
@@ -1094,12 +1105,11 @@ pub async fn execute_key_generation_and_add_random_state(
     let (pending_sign_requests, _) =
         make_and_submit_requests(&domains_to_add, &shared_secret_keys, contract, worker, rng).await;
 
-    (
-        InjectedContractState {
-            pending_sign_requests,
-        },
-        domains_to_add.to_vec(),
-    )
+    InjectedContractState {
+        pending_sign_requests,
+        added_domains: domains_to_add.to_vec(),
+        shared_secret_keys: shared_secret_keys.to_vec(),
+    }
 }
 
 fn generate_random_request_payloads(n: usize, rng: &mut impl CryptoRngCore) -> String {
