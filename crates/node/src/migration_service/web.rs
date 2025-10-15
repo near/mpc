@@ -258,10 +258,12 @@ pub async fn connect_to_web_server(
     Ok(request_sender)
 }
 
+/// server matches on path only
+const BOGUS_URL: &str = "http://example";
 async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyhow::Result<String> {
     let req = Request::builder()
         .method("GET")
-        .uri("http://example/hello") // doesn’t matter, server matches on path only
+        .uri(format!("{}/hello", BOGUS_URL))
         .body(hyper::Body::empty())?;
 
     let response = request_sender.send_request(req).await?;
@@ -270,6 +272,73 @@ async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyhow::R
 
     tracing::info!("Response: {}", body_str);
     Ok(body_str.to_string())
+}
+
+async fn make_keyshare_get_request(
+    request_sender: &mut SendRequest<Body>,
+) -> anyhow::Result<Vec<Keyshare>> {
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("{}/get_keyshares", BOGUS_URL))
+        .body(hyper::Body::empty())?;
+
+    let response = request_sender.send_request(req).await?;
+    // Check HTTP status
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_bytes = to_bytes(response.into_body())
+            .await
+            .context("failed to read error body")?;
+        let body_str = String::from_utf8_lossy(&body_bytes);
+        anyhow::bail!("server returned {}: {}", status, body_str);
+    }
+
+    // Collect the response body
+    let body_bytes = to_bytes(response.into_body())
+        .await
+        .context("failed to read body")?;
+
+    // Parse JSON into Vec<Keyshare>
+    let keyshares: Vec<Keyshare> =
+        serde_json::from_slice(&body_bytes).context("failed to parse JSON keyshares")?;
+
+    tracing::debug!("Received keyshares: {:?}", keyshares);
+
+    Ok(keyshares)
+}
+
+async fn make_set_keyshares_request(
+    request_sender: &mut SendRequest<Body>,
+    keyshares: Vec<Keyshare>,
+) -> anyhow::Result<()> {
+    let json = serde_json::to_string(&keyshares)?;
+
+    let req = Request::builder()
+        .method("PUT")
+        .uri(format!("{}/set_keyshares", BOGUS_URL))
+        .header(hyper::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json))?;
+    let response = request_sender.send_request(req).await?;
+
+    // Check status code
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_bytes = to_bytes(response.into_body())
+            .await
+            .context("failed to read error body")?;
+        let body_str = String::from_utf8_lossy(&body_bytes);
+        anyhow::bail!("server returned {}: {}", status, body_str);
+    }
+
+    // Optionally read response body (the server sends "Keyshares received.")
+    let body_bytes = to_bytes(response.into_body())
+        .await
+        .context("failed to read response body")?;
+    let body_str = String::from_utf8_lossy(&body_bytes);
+
+    tracing::info!("Server response: {}", body_str);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -283,9 +352,11 @@ mod tests {
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
 
+    use crate::keyshare::test_utils::KeysetBuilder;
     use crate::keyshare::Keyshare;
     use crate::migration_service::web::{
-        connect_to_web_server, make_hello_request, start_web_server,
+        connect_to_web_server, make_hello_request, make_keyshare_get_request,
+        make_set_keyshares_request, start_web_server,
     };
     use crate::{
         config::WebUIConfig, migration_service::types::MigrationInfo, p2p::testing::PortSeed,
@@ -300,7 +371,6 @@ mod tests {
         server_key: SigningKey,
         target_address: String,
         migration_state_sender: watch::Sender<MigrationInfo>,
-        web_server_state: Arc<WebServerState>,
         import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
         export_keyshares_sender: watch::Sender<Vec<Keyshare>>,
     }
@@ -341,14 +411,13 @@ mod tests {
             server_key,
             target_address,
             migration_state_sender,
-            web_server_state,
             import_keyshares_receiver,
             export_keyshares_sender,
         }
     }
 
     #[tokio::test]
-    async fn test_web_success() {
+    async fn test_web_success_hello_world() {
         let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST).await;
 
         let mut send_request = connect_to_web_server(
@@ -391,5 +460,63 @@ mod tests {
         let res = make_hello_request(&mut send_request).await;
         print!("{:?}", res);
         assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_web_success_get_keyshares() {
+        let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_KEYSHARES).await;
+
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+
+        println!("received: {:?}", res);
+        let expected: Vec<Keyshare> = Vec::new();
+        assert_eq!(expected, res);
+
+        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        test_setup
+            .export_keyshares_sender
+            .send(keyset_builder.keyshares().to_vec())
+            .unwrap();
+        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+        assert_eq!(keyset_builder.keyshares().to_vec(), res);
+    }
+
+    #[tokio::test]
+    async fn test_web_success_set_keyshares() {
+        let mut test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_KEYSHARES).await;
+
+        let mut send_request = connect_to_web_server(
+            &test_setup.client_key,
+            &test_setup.target_address,
+            test_setup.server_key.verifying_key(),
+        )
+        .await
+        .unwrap();
+
+        let received = test_setup
+            .import_keyshares_receiver
+            .borrow_and_update()
+            .clone();
+        let expected: Vec<Keyshare> = Vec::new();
+        assert_eq!(expected, received);
+
+        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares().to_vec())
+            .await
+            .unwrap();
+
+        let received = test_setup
+            .import_keyshares_receiver
+            .borrow_and_update()
+            .clone();
+        print!("received: {:?}", received);
+        assert_eq!(keyset_builder.keyshares().to_vec(), received);
     }
 }

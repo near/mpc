@@ -553,8 +553,8 @@ pub mod testing {
         pub const RECOVERY_TEST: Self = Self(10);
         pub const ONBOARDING_TEST: Self = Self(11);
         pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self(12);
-
         pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_KEYSHARES: Self = Self(12);
     }
 
     pub fn generate_test_p2p_configs(
