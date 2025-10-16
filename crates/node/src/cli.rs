@@ -243,6 +243,8 @@ impl StartCmd {
             &home_dir,
             config.number_of_responder_keys,
         )?;
+
+        // TODO (#1296)
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
         // Load secrets from configuration and persistent storage

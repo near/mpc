@@ -438,7 +438,8 @@ impl MpcContract {
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
-        //self.tee_state.assert_caller_is_attested_node();
+        self.tee_state.assert_caller_is_attested_node();
+        
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
