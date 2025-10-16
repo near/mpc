@@ -340,7 +340,7 @@ impl KeyshareStorage {
                 .load_keyshare(key_id)
                 .await?
                 .or_else(|| backup.iter().find(|share| share.key_id == key_id).cloned())
-                .ok_or_else(|| anyhow::anyhow!("Missing keyshare {:?}", key_id))?;
+                .ok_or_else(|| anyhow::anyhow!("missing keyshare {:?}", key_id))?;
             new_keyshares.push(keyshare);
         }
 
