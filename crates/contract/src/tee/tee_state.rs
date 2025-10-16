@@ -343,7 +343,7 @@ impl TeeState {
     pub fn is_caller_an_attested_node(&self) -> bool {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
-        //let predecessor = env::predecessor_account_id(); //TODO check what is better predecessor or signer
+        //let predecessor = env::predecessor_account_id(); //TODO (#1288)  check what is better predecessor or signer
 
         // Check if caller matches an attested node
         let result = self.participants_attestations.values().any(|(node_id, _)| {
