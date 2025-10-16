@@ -221,7 +221,6 @@ async fn upgrade_preserves_state_and_requests(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
-    //TODO: need to add attested_account to the function parameters
     for pending in injected_contract_state.pending_sign_requests {
         submit_signature_response(
             &pending.signature_request,
