@@ -14,7 +14,7 @@ mod tests {
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
 
-    use crate::keyshare::{Keyshare, test_utils::KeysetBuilder};
+    use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
