@@ -233,8 +233,6 @@ mod tests {
 
         // Cancel the parent token
         cancellation.cancel();
-        tokio::time::sleep(Duration::from_millis(20)).await;
-
         updated.cancelled.cancelled().await;
     }
 }
