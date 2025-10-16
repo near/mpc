@@ -194,6 +194,8 @@ async fn upgrade_preserves_state_and_requests(
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
+    let attested_account = &accounts[0];
+
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
         participants,
@@ -219,12 +221,12 @@ async fn upgrade_preserves_state_and_requests(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
-
     for pending in injected_contract_state.pending_sign_requests {
         submit_signature_response(
             &pending.signature_request,
             &pending.signature_response,
             &contract,
+            attested_account,
         )
         .await
         .unwrap();
@@ -308,6 +310,7 @@ async fn upgrade_allows_new_request_types(
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+    let attested_account = &accounts[0];
 
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
@@ -386,6 +389,7 @@ async fn upgrade_allows_new_request_types(
             &pending.signature_request,
             &pending.signature_response,
             &contract,
+            attested_account,
         )
         .await
         .unwrap();
@@ -400,9 +404,14 @@ async fn upgrade_allows_new_request_types(
     }
 
     for pending in pending_ckd_requests {
-        submit_ckd_response(&pending.ckd_request, &pending.ckd_response, &contract)
-            .await
-            .unwrap();
+        submit_ckd_response(
+            &pending.ckd_request,
+            &pending.ckd_response,
+            &contract,
+            attested_account,
+        )
+        .await
+        .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
         let returned: CKDResponse = execution.json().unwrap();

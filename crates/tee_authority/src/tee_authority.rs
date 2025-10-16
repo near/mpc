@@ -223,9 +223,10 @@ mod tests {
         },
     };
 
-    use test_utils::attestation::p2p_tls_key;
     #[cfg(feature = "external-services-tests")]
     use test_utils::attestation::quote;
+
+    use test_utils::attestation::{account_key, p2p_tls_key};
 
     extern crate std;
 
@@ -283,7 +284,8 @@ mod tests {
         #[values(true, false)] quote_verification_result: bool,
     ) {
         let tls_key = p2p_tls_key();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key));
+        let account_key = account_key();
+        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));

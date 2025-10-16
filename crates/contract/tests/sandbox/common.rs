@@ -34,6 +34,7 @@ use mpc_contract::{
     primitives::signature::{Payload, SignRequestArgs},
 };
 use near_sdk::{log, Gas};
+
 use near_workspaces::{
     network::Sandbox,
     operations::TransactionStatus,
@@ -81,7 +82,7 @@ pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11315);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11450);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -602,10 +603,11 @@ pub async fn submit_signature_response(
     respond_req: &SignatureRequest,
     respond_resp: &SignatureResponse,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond")
+    // Call `respond` as if we are an attested_account
+    let respond = attested_account
+        .call(contract.id(), "respond")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -622,10 +624,11 @@ pub async fn submit_ckd_response(
     respond_req: &CKDRequest,
     respond_resp: &CKDResponse,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond_ckd")
+    // Call `respond` as if we are an attested_account
+    let respond = attested_account
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp
@@ -643,13 +646,14 @@ pub async fn sign_and_validate(
     request: &SignRequestArgs,
     respond: Option<(&SignatureRequest, &SignatureResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = submit_sign_request(account, request, contract).await?;
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        submit_signature_response(respond_req, respond_resp, contract).await?;
+        submit_signature_response(respond_req, respond_resp, contract, attested_account).await?;
     }
 
     let execution = status.await?;
@@ -703,12 +707,11 @@ pub async fn derive_confidential_key_and_validate(
     request: &CKDRequestArgs,
     respond: Option<(&CKDRequest, &CKDResponse)>,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
     let status = account
         .call(contract.id(), "request_app_private_key")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
+        .args_json(serde_json::json!({ "request": request }))
         .deposit(NearToken::from_yoctonear(1))
         .max_gas()
         .transact_async()
@@ -718,9 +721,8 @@ pub async fn derive_confidential_key_and_validate(
 
     if let Some((respond_req, respond_resp)) = respond {
         assert!(account.id() == &respond_req.app_id);
-        // Call `respond_ckd` as if we are the MPC network itself.
-        let respond = contract
-            .call("respond_ckd")
+        let respond = attested_account
+            .call(contract.id(), "respond_ckd")
             .args_json(serde_json::json!({
                 "request": respond_req,
                 "response": respond_resp
@@ -743,7 +745,6 @@ pub async fn derive_confidential_key_and_validate(
             "Returned ckd request does not match"
         );
     }
-
     Ok(())
 }
 

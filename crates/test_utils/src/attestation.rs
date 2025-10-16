@@ -46,14 +46,27 @@ pub fn quote() -> QuoteBytes {
 }
 
 pub fn p2p_tls_key() -> [u8; 32] {
-    let key_file = include_str!("../assets/near_p2p_public_key.pub");
-    let public_key: contract_interface::types::Ed25519PublicKey =
-        key_file.parse().expect("File contains a valid public key");
-    *public_key.as_bytes()
+    parse_key(include_str!("../assets/near_p2p_public_key.pub"))
+}
+
+pub fn account_key() -> [u8; 32] {
+    parse_key(include_str!("../assets/near_account_public_key.pub"))
+}
+
+fn parse_key(key_file: &str) -> [u8; 32] {
+    *key_file
+        .parse::<contract_interface::types::Ed25519PublicKey>()
+        .expect("File contains a valid public key")
+        .as_bytes()
 }
 
 pub fn near_p2p_tls_key() -> near_sdk::PublicKey {
     let key_file = include_str!("../assets/near_p2p_public_key.pub");
+    key_file.parse().expect("File contains a valid public key")
+}
+
+pub fn near_account_key() -> near_sdk::PublicKey {
+    let key_file = include_str!("../assets/near_account_public_key.pub");
     key_file.parse().expect("File contains a valid public key")
 }
 

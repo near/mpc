@@ -95,13 +95,16 @@ impl TestSetup {
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
-
+    /// Returns the list of NodeIds for all participants
+    /// Note that the account_public_key field in NodeId is None.
+    /// This is because NodeId is used in contexts where account_public_key is not needed. (only TLS key is needed)
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
             .map(|(account_id, _, participant_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: participant_info.sign_pk.clone(),
+                account_public_key: None,
             })
             .collect()
     }
@@ -155,7 +158,7 @@ fn test_participant_kickout_after_expiration() {
 
     let mut setup = TestSetup::new(PARTICIPANT_COUNT, THRESHOLD, None);
 
-    assert_eq!(setup.contract.get_tee_accounts().len(), 0);
+    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Submit valid attestations for first 2 participants
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
@@ -167,6 +170,7 @@ fn test_participant_kickout_after_expiration() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
 
@@ -184,6 +188,7 @@ fn test_participant_kickout_after_expiration() {
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&third_node, expiring_attestation);
@@ -197,6 +202,10 @@ fn test_participant_kickout_after_expiration() {
         .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
+    // verify_tee() need to be called by a participant
+    testing_env!(create_context_for_participant(
+        &participant_nodes[0].account_id
+    ));
     assert!(setup.contract.verify_tee().unwrap());
 
     let resharing_state = match setup.contract.state() {
@@ -231,12 +240,13 @@ fn test_participant_kickout_after_expiration() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should be in Running state after resharing"),
     };
-
     const EXPECTED_PARTICIPANT_COUNT: usize = PARTICIPANT_COUNT - 1;
+
     assert_eq!(
         final_running_state.parameters.participants().len(),
         EXPECTED_PARTICIPANT_COUNT
     );
+
     // Before clean_tee_status() cleanup, we still have old TEE accounts
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 }
@@ -266,53 +276,48 @@ fn test_clean_tee_status_removes_non_participants() {
         .map(|(account_id, _, participant_info)| NodeId {
             account_id,
             tls_public_key: participant_info.sign_pk,
+            account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();
-
     for node_id in &participant_nodes {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
     // Add TEE account for someone who is NOT a current participant
-    // (simulates leftover data from a participant who was removed during resharing)
     let removed_participant_node = NodeId {
         account_id: "removed.participant.near".parse().unwrap(),
         tls_public_key: bogus_ed25519_near_public_key(),
+        account_public_key: Some(bogus_ed25519_near_public_key()),
     };
 
     setup.submit_attestation_for_node(&removed_participant_node, valid_attestation);
 
     // Verify initial state: 2 participants but 3 TEE accounts
     const INITIAL_TEE_ACCOUNTS: usize = PARTICIPANT_COUNT + 1; // 2 current + 1 stale
-    assert_eq!(
-        setup.contract.get_tee_accounts().len(),
-        INITIAL_TEE_ACCOUNTS
-    );
+    let tee_accounts_before = setup.contract.get_tee_accounts().len();
+    assert_eq!(tee_accounts_before, INITIAL_TEE_ACCOUNTS);
 
     let running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should be in Running state"),
     };
-    assert_eq!(
-        running_state.parameters.participants().len(),
-        PARTICIPANT_COUNT
-    );
+    let participant_count = running_state.parameters.participants().len();
+    assert_eq!(participant_count, PARTICIPANT_COUNT);
 
     // Test cleanup: should remove TEE account for non-participant
     setup.contract.clean_tee_status().unwrap();
 
     // Verify cleanup worked: TEE accounts reduced to match participant count
-    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
+    let tee_accounts_after = setup.contract.get_tee_accounts().len();
+    assert_eq!(tee_accounts_after, PARTICIPANT_COUNT);
 
     // State should remain Running with same participant count
     let final_running_state = match setup.contract.state() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    assert_eq!(
-        final_running_state.parameters.participants().len(),
-        PARTICIPANT_COUNT
-    );
+    let final_participant_count = final_running_state.parameters.participants().len();
+    assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 
 /// **Test for grace-period expiry of older code hashes**

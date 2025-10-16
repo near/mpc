@@ -204,12 +204,16 @@ impl Participants {
         }
     }
 
+    /// Returns the set of [`NodeId`]s corresponding to the participants.
+    /// Note that the `account_public_key` field in [`NodeId`] is `None`.
+    /// This is because [`NodeId`] is used in contexts where `account_public_key` is not needed (only TLS key is needed).  
     pub fn get_node_ids(&self) -> BTreeSet<NodeId> {
         self.participants()
             .iter()
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
+                account_public_key: None,
             })
             .collect()
     }

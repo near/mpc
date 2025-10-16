@@ -399,9 +399,12 @@ pub struct RespondConfig {
 
 impl RespondConfig {
     pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
+        // TODO(#1296). cleanup.
+        // updated as part PR #1270 as temporary solution.
+        // using main account for responding.
         Self {
-            account_id: config.near_responder_account_id.clone(),
-            access_keys: secrets.near_responder_keys.clone(),
+            account_id: config.my_near_account_id.clone(),
+            access_keys: vec![secrets.near_signer_key.clone()],
         }
     }
 }

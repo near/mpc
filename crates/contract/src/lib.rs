@@ -39,6 +39,7 @@ use errors::{
     DomainError, InvalidParameters, InvalidState, PublicKeyError, RespondError, TeeError,
 };
 use k256::elliptic_curve::PrimeField;
+
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
@@ -434,7 +435,10 @@ impl MpcContract {
         response: SignatureResponse,
     ) -> Result<(), Error> {
         let signer = env::signer_account_id();
+
         log!("respond: signer={}, request={:?}", &signer, &request);
+
+        self.tee_state.assert_caller_is_attested_node();
 
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -516,6 +520,8 @@ impl MpcContract {
         let signer = env::signer_account_id();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
+        self.tee_state.assert_caller_is_attested_node();
+
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
@@ -563,10 +569,12 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        // Verify the TEE quote and Docker image for the proposed participant
+        // Verify the TEE quote (including TLS and account keys) and Docker image for the proposed participant
+        let account_key_dto = account_key.clone().try_into_dto_type()?;
         let status = self.tee_state.verify_proposed_participant_attestation(
             &proposed_participant_attestation,
             tls_public_key.clone(),
+            account_key_dto,
             tee_upgrade_deadline_duration,
         );
 
@@ -580,6 +588,7 @@ impl MpcContract {
             NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: tls_public_key.into_contract_type(),
+                account_public_key: Some(account_key),
             },
             proposed_participant_attestation,
         );
@@ -615,12 +624,14 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<Option<dtos::Attestation>, Error> {
+        let tls_public_key = tls_public_key.into_contract_type();
+
         Ok(self
             .tee_state
             .participants_attestations
             .iter()
-            .find(|(node_id, _)| node_id.tls_public_key == tls_public_key.into_contract_type())
-            .map(|(_, attestation)| attestation.clone().into_dto_type()))
+            .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
+            .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -650,7 +661,6 @@ impl MpcContract {
             .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
 
         let proposed_participants = proposal.participants();
-
         match validation_result {
             TeeValidationResult::Full => {
                 if let Some(new_state) = self
@@ -707,6 +717,9 @@ impl MpcContract {
     #[handle_result]
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
+
+        self.tee_state.assert_caller_is_attested_node();
+
         self.protocol_state
             .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
@@ -739,6 +752,8 @@ impl MpcContract {
             public_key,
         );
 
+        self.tee_state.assert_caller_is_attested_node();
+
         let extended_key =
             public_key
                 .try_into()
@@ -761,6 +776,8 @@ impl MpcContract {
             "start_reshare_instance: signer={}",
             env::signer_account_id()
         );
+
+        self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
@@ -786,6 +803,7 @@ impl MpcContract {
             key_event_id,
         );
 
+        self.tee_state.assert_caller_is_attested_node();
         let resharing_concluded =
             if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
                 // Resharing has concluded, transition to running state
@@ -863,6 +881,7 @@ impl MpcContract {
             env::signer_account_id()
         );
 
+        self.tee_state.assert_caller_is_attested_node();
         self.protocol_state
             .vote_abort_key_event_instance(key_event_id)
     }
@@ -1010,6 +1029,8 @@ impl MpcContract {
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
         log!("verify_tee: signer={}", env::signer_account_id());
+        // Caller must be a participant (node or operator).
+        self.voter_or_panic();
         let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
@@ -1159,6 +1180,9 @@ impl MpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
+        let initial_participants = parameters.participants();
+        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+
         Ok(MpcContract {
             config: Config::from(init_config),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
@@ -1167,7 +1191,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: Default::default(),
-            tee_state: Default::default(),
+            tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
         })
@@ -1448,6 +1472,7 @@ impl MpcContract {
         // ensure that this node has a valid TEE quote
         let node_id = NodeId {
             account_id: account_id.clone(),
+            account_public_key: Some(expected_destination_node.signer_account_pk.clone()),
             tls_public_key: expected_destination_node
                 .destination_node_info
                 .sign_pk
@@ -1638,6 +1663,28 @@ mod tests {
         (context, contract, sk)
     }
 
+    /// Temporarily sets the testing environment so that calls appear
+    /// to come from an attested MPC node registered in the contract's `tee_state`.
+    /// Returns the `AccountId` of the node used.
+    pub fn with_attested_context(contract: &MpcContract) -> near_sdk::AccountId {
+        let (_account_id, (node_id, _)) = contract
+            .tee_state
+            .participants_attestations
+            .iter()
+            .next()
+            .expect("No attested participants in tee_state");
+
+        // Build a new simulated environment with this node as caller
+        let mut ctx_builder = VMContextBuilder::new();
+        ctx_builder
+            .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_id(node_id.account_id.clone())
+            .attached_deposit(NearToken::from_yoctonear(1));
+
+        testing_env!(ctx_builder.build());
+        node_id.account_id.clone()
+    }
+
     fn test_signature_common(success: bool, legacy_v1_api: bool) {
         let (context, mut contract, secret_key) =
             basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
@@ -1699,6 +1746,8 @@ mod tests {
                 recovery_id.to_byte(),
             ))
         };
+
+        with_attested_context(&contract);
 
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
@@ -1779,6 +1828,8 @@ mod tests {
             big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
             big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
         };
+
+        with_attested_context(&contract);
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
@@ -2436,6 +2487,7 @@ mod tests {
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone().into_contract_type(),
+                    account_public_key: Some(self.signer_account_pk.clone()),
                 },
                 valid_participant_attestation,
             );
