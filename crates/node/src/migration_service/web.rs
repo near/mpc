@@ -11,10 +11,14 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
-    use tokio::sync::watch;
+    use tempfile::TempDir;
+    use tokio::sync::{watch, RwLock};
     use tokio_util::sync::CancellationToken;
 
+    use crate::keyshare::tests::generate_key_storage;
+    use crate::keyshare::KeyshareStorage;
     use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
+    use crate::migration_service::onboarding::wait_for_and_import_keyshares;
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
@@ -31,8 +35,10 @@ mod tests {
         server_key: SigningKey,
         target_address: String,
         migration_state_sender: watch::Sender<MigrationInfo>,
+        import_keyshares_sender: watch::Sender<Vec<Keyshare>>,
         import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
-        export_keyshares_sender: watch::Sender<Vec<Keyshare>>,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
+        _tmpdir: TempDir,
     }
 
     async fn setup(port_seed: PortSeed) -> TestSetup {
@@ -50,11 +56,14 @@ mod tests {
             }),
             active_migration: false,
         });
+
+        let (storage, _tmpdir) = generate_key_storage().await;
+        let keyshare_storage = Arc::new(RwLock::new(storage));
+
         let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
-        let (export_keyshares_sender, export_keyshares_receiver) = watch::channel(vec![]);
         let web_server_state = Arc::new(WebServerState {
-            import_keyshares_sender,
-            export_keyshares_receiver,
+            import_keyshares_sender: import_keyshares_sender.clone(),
+            keyshare_storage: keyshare_storage.clone(),
         });
         assert!(start_web_server(
             web_server_state.clone(),
@@ -71,8 +80,10 @@ mod tests {
             server_key,
             target_address,
             migration_state_sender,
+            import_keyshares_sender,
             import_keyshares_receiver,
-            export_keyshares_sender,
+            keyshare_storage,
+            _tmpdir,
         }
     }
 
@@ -119,6 +130,25 @@ mod tests {
         assert!(res.is_err());
     }
 
+    fn wait_for_keyshare(
+        builder: KeysetBuilder,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
+        keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
+    ) {
+        let cancel_import = CancellationToken::new();
+        let contract_keyset = builder.keyset();
+        tokio::spawn(async move {
+            wait_for_and_import_keyshares(
+                &contract_keyset,
+                &mut *keyshare_storage.write().await,
+                keyshare_receiver,
+                cancel_import,
+            )
+            .await
+            .unwrap();
+        });
+    }
+
     #[tokio::test]
     async fn test_web_success_get_keyshares() {
         let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES).await;
@@ -130,17 +160,28 @@ mod tests {
         )
         .await
         .unwrap();
-        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+        let res = make_keyshare_get_request(&mut send_request, &KeysetBuilder::new(1).keyset())
+            .await
+            .unwrap();
 
         let expected: Vec<Keyshare> = Vec::new();
         assert_eq!(expected, res);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
+
+        wait_for_keyshare(
+            keyset_builder.clone(),
+            test_setup.keyshare_storage,
+            test_setup.import_keyshares_receiver,
+        );
+
         test_setup
-            .export_keyshares_sender
+            .import_keyshares_sender
             .send(keyset_builder.keyshares().to_vec())
             .unwrap();
-        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+        let res = make_keyshare_get_request(&mut send_request, &keyset_builder.keyset())
+            .await
+            .unwrap();
         assert_eq!(keyset_builder.keyshares().to_vec(), res);
     }
 

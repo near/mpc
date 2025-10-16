@@ -203,18 +203,11 @@ impl KeyshareStorage {
             .await?;
         Ok(())
     }
-    /// Ensures that the given keyset is in permanent key storage, and then returns them. The order
-    /// the keys are given and returned are both in increasing order of DomainId.
-    ///
-    /// Since this is only expected to be called when we already know which attempt to use, this
-    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID.
-    /// (We could also delete attempts in the same epoch ID but this is not necessary from a
-    /// security perspective, since the same epoch ID corresponds to the same set of participants
-    /// and the threshold value.)
-    pub async fn load_keyset(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
+
+    async fn _get_keyshares(&self, keyset: &Keyset) -> anyhow::Result<(Vec<Keyshare>, bool)> {
         let existing_keyshares = self._load_prefix_from_permanent(keyset).await?;
         if existing_keyshares.len() == keyset.domains.len() {
-            return Ok(existing_keyshares);
+            return Ok((existing_keyshares, false));
         }
 
         let mut new_keyshares = existing_keyshares;
@@ -227,14 +220,32 @@ impl KeyshareStorage {
                 .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
             new_keyshares.push(keyshare);
         }
+        Ok((new_keyshares, true))
+    }
 
-        self._store_new_permanent_keyset_data_delete_temporary(
-            keyset.epoch_id,
-            new_keyshares.clone(),
-        )
-        .await?;
-
+    /// Ensures that the given keyset is in permanent key storage, and then returns them. The order
+    /// the keys are given and returned are both in increasing order of DomainId.
+    ///
+    /// Since this is only expected to be called when we already know which attempt to use, this
+    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID.
+    /// (We could also delete attempts in the same epoch ID but this is not necessary from a
+    /// security perspective, since the same epoch ID corresponds to the same set of participants
+    /// and the threshold value.)
+    pub async fn load_keyset(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
+        let (new_keyshares, changed) = self._get_keyshares(keyset).await?;
+        if changed {
+            self._store_new_permanent_keyset_data_delete_temporary(
+                keyset.epoch_id,
+                new_keyshares.clone(),
+            )
+            .await?;
+        }
         Ok(new_keyshares)
+    }
+
+    /// Given a keyset, get the corresponding Keyshares
+    pub async fn get_keyshares(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
+        Ok(self._get_keyshares(keyset).await?.0)
     }
 
     /// Helper function to verify that the keyshares we have from permanent storage is a prefix
@@ -440,6 +451,7 @@ pub mod tests {
         )
     }
 
+    // When using this function, tempdir must not be dropped, else the folder is erased
     pub async fn generate_key_storage() -> (KeyshareStorage, TempDir) {
         let (storage_config, tempdir) = generate_key_storage_config();
         (storage_config.create().await.unwrap(), tempdir)
@@ -620,7 +632,7 @@ pub mod tests {
         assert_eq!(&loaded4, &keyset.keyshares());
     }
 
-    async fn populate_permanent_keystore(
+    pub async fn populate_permanent_keystore(
         keyshare: Keyshare,
         keyset: &mut KeysetBuilder,
         storage: &KeyshareStorage,
@@ -958,5 +970,23 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(&loaded, &expected_keyset.keyshares());
+    }
+
+    /// Get keyshares for a given keyset
+    #[tokio::test]
+    async fn test_get_keyshares() {
+        let epoch_id = 1;
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let mut keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
+        let (storage, _tempdir) = generate_key_storage().await;
+        populate_permanent_keystore(key_1.clone(), &mut keyset, &storage).await;
+        let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0]).keyset();
+
+        assert!(storage.get_keyshares(&keyset0).await.is_err());
+
+        let keyset1 = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone()]).keyset();
+
+        assert_eq!(storage.get_keyshares(&keyset1).await.unwrap(), vec![key_1]);
     }
 }
