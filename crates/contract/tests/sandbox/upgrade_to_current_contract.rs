@@ -405,9 +405,14 @@ async fn upgrade_allows_new_request_types(
     }
 
     for pending in pending_ckd_requests {
-        submit_ckd_response(&pending.ckd_request, &pending.ckd_response, &contract, attested_account)
-            .await
-            .unwrap();
+        submit_ckd_response(
+            &pending.ckd_request,
+            &pending.ckd_response,
+            &contract,
+            attested_account,
+        )
+        .await
+        .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
         let returned: CKDResponse = execution.json().unwrap();
