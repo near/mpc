@@ -8,6 +8,7 @@ use elliptic_curve::{
     bigint::U256,
     ops::{Invert, Reduce},
     point::AffineCoordinates,
+    scalar::IsHigh,
     sec1::ToEncodedPoint,
     PrimeField,
 };
@@ -63,6 +64,10 @@ impl Signature {
     pub fn verify(&self, public_key: &AffinePoint, msg_hash: &Scalar) -> bool {
         let r: Scalar = x_coordinate(&self.big_r);
         if r.is_zero().into() || self.s.is_zero().into() {
+            return false;
+        }
+        // Check if s has been normalized
+        if self.s.is_high().into() {
             return false;
         }
         // tested earlier is not zero, so inversion will not raise an error and unwrap cannot panic
@@ -134,6 +139,8 @@ impl RerandomizationArguments {
 
         // concatenate all the bytes
         let mut concatenation = Vec::new();
+        // 1 byte counter, used in the unlikely case that the hash result is 0
+        concatenation.extend_from_slice(&[0u8, 1]);
         concatenation.extend_from_slice(encoded_pk);
         concatenation.extend_from_slice(encoded_msg_hash);
         concatenation.extend_from_slice(encoded_big_r);
@@ -148,10 +155,9 @@ impl RerandomizationArguments {
         let mut delta = Scalar::ZERO;
         // If the randomness created is 0 then we want to generate a new randomness
         while bool::from(delta.is_zero()) {
-            // Generate randomization out of HKDF(entropy, pk, msg_hash, big_r, participants, nonce)
+            // Generate randomization out of HKDF(counter, entropy, pk, msg_hash, big_r, participants, )
             // where entropy is a public but unpredictable random string.
-            // The nonce is a succession of appended ones of growing length depending on the number of times
-            // we enter into this loop
+            // The counter depends on the number of times we enter into this loop
             let mut okm = [0u8; 32];
 
             hk.expand(&concatenation, &mut okm)
@@ -163,8 +169,8 @@ impl RerandomizationArguments {
                 // probability is negligible: in the order of 1/2^224
                 Scalar::ZERO,
             );
-            // append an extra 0 at the end of the concatenation every time delta is zero
-            concatenation.extend_from_slice(&[0u8, 1]);
+            // Increment the counter, the probability that this overflows is astronomically low
+            concatenation[0] += 1;
         }
         Ok(delta)
     }
