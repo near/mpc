@@ -6,7 +6,6 @@ pub mod types;
 
 #[cfg(test)]
 mod tests {
-
     use std::sync::Arc;
 
     use ed25519_dalek::SigningKey;
@@ -15,14 +14,12 @@ mod tests {
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
 
-    use crate::keyshare::test_utils::KeysetBuilder;
-    use crate::keyshare::Keyshare;
+    use crate::keyshare::{Keyshare, test_utils::KeysetBuilder};
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
     };
-    use crate::migration_service::web::server::start_web_server;
-    use crate::migration_service::web::types::WebServerState;
+    use crate::migration_service::web::{server::start_web_server, types::WebServerState};
     use crate::{
         config::WebUIConfig, migration_service::types::MigrationInfo, p2p::testing::PortSeed,
     };

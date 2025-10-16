@@ -19,8 +19,8 @@ pub struct NodeBackupServiceInfo {
 }
 
 impl NodeBackupServiceInfo {
-    pub fn from_contract(value: BackupServiceInfo) -> anyhow::Result<Self> {
-        let p2p_key = match value.public_key.try_into_node_type() {
+    pub fn from_contract(info: BackupServiceInfo) -> anyhow::Result<Self> {
+        let p2p_key = match info.public_key.try_into_node_type() {
             Ok(res) => res,
             Err(err) => {
                 anyhow::bail!("can't convert key: {}", err);

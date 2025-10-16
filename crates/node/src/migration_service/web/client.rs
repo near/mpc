@@ -12,7 +12,7 @@ use crate::{keyshare::Keyshare, migration_service::web::authentication::authenti
 /// Connects to the web server, performs the TLS handshake and returns the connection.
 pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
-    target_address: &str,
+    target_address: impl tokio::net::ToSocketAddrs,
     expected_server_key: VerifyingKey,
 ) -> anyhow::Result<SendRequest<Body>> {
     let (_server_config, client_config) = configure_tls(p2p_private_key)?;

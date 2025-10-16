@@ -28,7 +28,7 @@ pub async fn start_web_server(
     tracing::info!(
         host = %config.host,
         port = %config.port,
-        "Attempting to bind web server to host",
+        "attempting to bind web server to host",
     );
 
     let mut expected_peer_info_receiver = spawn_expected_peer_info_monitoring(
@@ -38,12 +38,12 @@ pub async fn start_web_server(
     .await;
 
     let bind_address = format!("{}:{}", config.host, config.port);
-    tracing::info!(address = %bind_address,"Binding to address");
+    tracing::info!(address = %bind_address, "binding to address");
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
     let tcp_listener = TcpListener::bind(&bind_address).await?;
     tokio::spawn(async move {
-        tracing::info!("Handle incoming connections");
+        tracing::info!("handle incoming connections");
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
             let expected_peer = expected_peer_info_receiver.borrow_and_update().clone();
             let tls_acceptor = tls_acceptor.clone();
@@ -57,7 +57,7 @@ pub async fn start_web_server(
         }
     });
 
-    tracing::info!(address = %bind_address,"Successfully bound to address");
+    tracing::info!(address = %bind_address, "Successfully bound to address");
     Ok(())
 }
 
@@ -75,7 +75,7 @@ async fn handle_stream(
     };
     authenticate_peer(stream.get_ref().1, &expected_pk)?;
     tracing::info!(
-        "TLS handshake complete, backup service authenticated and encrypted channel established."
+        "TLS handshake complete, backup service authenticated and encrypted channel established"
     );
     let http_protocol = hyper::server::conn::Http::new();
 
@@ -91,7 +91,7 @@ async fn handle_stream(
         }
 
         _ = expected_peer.cancelled.cancelled() => {
-            tracing::info!("dropping connection due to cancellation (change in migration info or cancellatin of web server)");
+            tracing::info!("dropping connection due to cancellation (change in migration info or cancellation of web server)");
         }
     }
     anyhow::Ok(())
@@ -215,7 +215,7 @@ mod tests {
 
         let initial = expected_peer_rx.borrow().clone();
         let expected = Some(key1.verifying_key());
-        assert_eq!(initial.expected_pk, expected,);
+        assert_eq!(initial.expected_pk, expected);
         assert!(!initial.cancelled.is_cancelled());
 
         let key2 = SigningKey::generate(&mut rand::thread_rng());
@@ -228,8 +228,8 @@ mod tests {
         initial.cancelled.cancelled().await;
 
         let updated = expected_peer_rx.borrow().clone();
-        let expected = Some(key2.verifying_key());
-        assert_eq!(updated.expected_pk, expected,);
+        let expected_pk = Some(key2.verifying_key());
+        assert_eq!(updated.expected_pk, expected_pk);
 
         // Cancel the parent token
         cancellation.cancel();

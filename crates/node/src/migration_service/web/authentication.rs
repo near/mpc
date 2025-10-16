@@ -33,9 +33,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_authenticate_peer() {
-        let server_key = SigningKey::generate(&mut rand::thread_rng());
-        let client_key = SigningKey::generate(&mut rand::thread_rng());
-        let other_pk = SigningKey::generate(&mut rand::thread_rng()).verifying_key();
+        use rand::SeedableRng as _;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let server_key = SigningKey::generate(&mut rng);
+        let client_key = SigningKey::generate(&mut rng);
+        let other_pk = SigningKey::generate(&mut rng).verifying_key();
 
         let (server_config, _) = configure_tls(&server_key).unwrap();
         let (_, client_config) = configure_tls(&client_key).unwrap();
