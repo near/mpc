@@ -311,7 +311,7 @@ impl KeyshareStorage {
     /// * `Ok(())` if the backup was successfully imported and stored permanently.
     /// * `Err(anyhow::Error)` if any validation or storage step fails.
     pub async fn import_backup(
-        // while technically not required to be mut, we must not call read functions in parallel
+        // while technically not required to be mut, we must not call write functions in parallel
         &mut self,
         backup: Vec<Keyshare>,
         contract_keyset: &Keyset,
