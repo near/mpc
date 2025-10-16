@@ -1224,7 +1224,7 @@ dependencies = [
  "serde_with",
  "sha2",
  "sha3",
- "test_utils",
+ "test-utils",
  "thiserror 2.0.16",
  "tracing",
 ]
@@ -2146,6 +2146,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
+name = "contract-history"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.5.1",
+ "clap",
+ "reqwest 0.12.23",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "contract-interface"
 version = "0.1.0"
 dependencies = [
@@ -2157,19 +2170,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.16",
-]
-
-[[package]]
-name = "contract_history"
-version = "0.1.0"
-dependencies = [
- "bs58 0.5.1",
- "clap",
- "reqwest 0.12.23",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
 ]
 
 [[package]]
@@ -4982,8 +4982,8 @@ dependencies = [
  "assert_matches",
  "attestation",
  "borsh",
+ "contract-history",
  "contract-interface",
- "contract_history",
  "curve25519-dalek",
  "derive_more 2.0.1",
  "digest 0.10.7",
@@ -5008,7 +5008,7 @@ dependencies = [
  "sha2",
  "sha3",
  "signature",
- "test_utils",
+ "test-utils",
  "thiserror 2.0.16",
  "threshold-signatures",
  "tokio",
@@ -5090,7 +5090,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha3",
- "tee_authority",
+ "tee-authority",
  "tempfile",
  "thiserror 2.0.16",
  "threshold-signatures",
@@ -9777,7 +9777,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df7f62577c25e07834649fc3b39fafdc597c0a3527dc1c60129201ccfcbaa50c"
 
 [[package]]
-name = "tee_authority"
+name = "tee-authority"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -9791,7 +9791,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "test_utils",
+ "test-utils",
  "tokio",
  "tracing",
 ]
@@ -9848,7 +9848,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "test_utils"
+name = "test-utils"
 version = "0.1.0"
 dependencies = [
  "attestation",
