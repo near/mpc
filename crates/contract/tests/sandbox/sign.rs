@@ -24,8 +24,6 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Secp256k1]).await;
     let attested_account = &mpc_nodes[0];
 
-    let predecessor_id = contract.id();
-
     let path = "test";
 
     let alice = worker.dev_create_account().await.unwrap();
@@ -426,7 +424,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Ed25519]).await;
     let attested_account = &mpc_nodes[0];
-    let predecessor_id = contract.id();
 
     let path = "test";
 
@@ -485,6 +482,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         &request,
         Some((&respond_req, &respond_resp)),
         &contract,
+        attested_account,
     )
     .await?;
     sign_and_validate(

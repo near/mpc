@@ -253,8 +253,9 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Bls12381]).await;
-    
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let attested_account = &mpc_nodes[0];
+
     let alice = worker.dev_create_account().await?;
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();

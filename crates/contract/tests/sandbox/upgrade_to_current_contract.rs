@@ -194,7 +194,8 @@ async fn upgrade_preserves_state_and_requests(
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
 
-<<<<<<< HEAD
+    let attested_account = &accounts[0];
+
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
         participants,
@@ -203,12 +204,6 @@ async fn upgrade_preserves_state_and_requests(
         &mut OsRng,
     )
     .await;
-=======
-    let attested_account = &accounts[0];
-
-    let injected_contract_state =
-        execute_key_generation_and_add_random_state(&accounts, participants, &contract).await;
->>>>>>> 5353cd0 (feat: Add public key enforcement feature)
 
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -316,6 +311,7 @@ async fn upgrade_allows_new_request_types(
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+    let attested_account = &accounts[0];
 
     let injected_contract_state = execute_key_generation_and_add_random_state(
         &accounts,
@@ -394,6 +390,7 @@ async fn upgrade_allows_new_request_types(
             &pending.signature_request,
             &pending.signature_response,
             &contract,
+            attested_account,
         )
         .await
         .unwrap();
