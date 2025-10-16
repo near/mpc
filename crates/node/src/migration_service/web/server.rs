@@ -189,7 +189,6 @@ mod tests {
 
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
-    use std::time::Duration;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
 
