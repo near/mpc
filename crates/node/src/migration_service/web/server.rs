@@ -139,7 +139,12 @@ async fn handle_request(
             match whole_body {
                 Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
                     Ok(keyset) => {
-                        let Ok(keyshares) = state.keyshare_storage.read().await.get_keyshares(&keyset).await
+                        let Ok(keyshares) = state
+                            .keyshare_storage
+                            .read()
+                            .await
+                            .get_keyshares(&keyset)
+                            .await
                         else {
                             return Ok(Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)

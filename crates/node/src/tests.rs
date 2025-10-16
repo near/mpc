@@ -269,7 +269,10 @@ pub struct OneNodeTestConfig {
     keyshares_sender: watch::Sender<Vec<Keyshare>>,
 }
 
-pub fn make_key_storage_config(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> KeyStorageConfig {
+pub fn make_key_storage_config(
+    home_dir: PathBuf,
+    local_encryption_key: [u8; 16],
+) -> KeyStorageConfig {
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
