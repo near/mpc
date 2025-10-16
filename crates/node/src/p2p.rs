@@ -552,6 +552,11 @@ pub mod testing {
         pub const FAULTY_STUCK_INDEXER_TEST: Self = Self(9);
         pub const RECOVERY_TEST: Self = Self(10);
         pub const ONBOARDING_TEST: Self = Self(11);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self(12);
+        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self(14);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self(15);
+        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self(16);
     }
 
     pub fn generate_test_p2p_configs(

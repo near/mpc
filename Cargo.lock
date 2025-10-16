@@ -5065,6 +5065,7 @@ dependencies = [
  "gcloud-sdk",
  "hex",
  "humantime",
+ "hyper 0.14.32",
  "itertools 0.12.1",
  "k256",
  "lru 0.12.5",
