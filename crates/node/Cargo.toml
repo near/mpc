@@ -56,7 +56,7 @@ node-types = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 itertools = { workspace = true }
-hyper = {workspace = true}
+hyper = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
