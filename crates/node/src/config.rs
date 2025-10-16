@@ -406,10 +406,6 @@ impl RespondConfig {
             account_id: config.my_near_account_id.clone(),
             access_keys: vec![secrets.near_signer_key.clone()],
         }
-        /*Self {
-            account_id: config.near_responder_account_id.clone(),
-            access_keys: secrets.near_responder_keys.clone(),
-        }*/
     }
 }
 

@@ -14,8 +14,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{env, near, store::IterableMap, AccountId};
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::{collections::HashSet, time::Duration};
 
 #[near(serializers=[borsh, json])]
@@ -180,7 +179,6 @@ impl TeeState {
             None => [0u8; 32], // TODO(#823): remove this fallback once all nodes must have account_public_key
         };
 
-        // Prepare expected report data
         let expected_report_data = ReportData::new(*tls_public_key.as_bytes(), account_key_bytes);
 
         // Verify the attestation quote
