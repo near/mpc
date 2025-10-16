@@ -100,20 +100,20 @@ fn run_sign_with_rerandomization(
             .expect("Couldn't construct k256 point"),
     );
 
-    let pk = public_key.to_element().to_affine();
     let big_r = participants_presign[0].1.big_r;
     let participants = participants_presign
         .iter()
         .map(|(p, _)| *p)
         .collect::<Vec<Participant>>();
+
+    let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
     let rerand_args = RerandomizationArguments::new(
-        pk,
+        derived_pk.to_affine(),
         msg_hash,
         big_r,
         ParticipantList::new(&participants).unwrap(),
         entropy,
     );
-    let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
 
     let rerand_participants_presign = participants_presign
         .iter()

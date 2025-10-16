@@ -70,7 +70,6 @@ pub fn run_sign_with_rerandomization(
     let mut entropy: [u8; 32] = [0u8; 32];
     OsRng.fill_bytes(&mut entropy);
 
-    let pk = public_key.to_affine();
     let big_r = participants_presign[0].1.big_r;
     let participants = ParticipantList::new(
         &participants_presign
@@ -80,10 +79,15 @@ pub fn run_sign_with_rerandomization(
     )
     .unwrap();
     let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
-    let rerand_args =
-        RerandomizationArguments::new(pk, msg_hash_bytes, big_r, participants, entropy);
     let public_key = frost_core::VerifyingKey::new(public_key);
     let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
+    let rerand_args = RerandomizationArguments::new(
+        derived_pk.to_affine(),
+        msg_hash_bytes,
+        big_r,
+        participants,
+        entropy,
+    );
 
     let rerand_participants_presign = participants_presign
         .iter()

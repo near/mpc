@@ -80,10 +80,11 @@ The inputs to this phase are:
 3) A "fresh" public source of entropy $\rho$
 4) A tweak $\epsilon$ used during key derivation
 5) The message hash $h= H(m)$
+6) The derived public key $Y = X + \texttt{tweak} \cdot G$
 
 **Rerandomization & Key Derivation:**
 
-1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(X, h, R, \rho)$
+1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(Y, h, R, \rho)$
 2. Each $P_i$ rerandomizes the following elements:
 
     * $R  \gets R^\delta$
@@ -91,11 +92,13 @@ The inputs to this phase are:
     * $\beta_i \gets (\beta_i + c_i \cdot \epsilon) \cdot \delta^{-1}$
 
 **Round 1:**
+
 1. Each $P_i$ computes its signature share $s_i \gets \alpha_i * h + \beta_i \cdot R_\mathsf{x} + e_i$ where $R_\mathsf{x}$ is the x coordinate of $R$.
-1. Each $P_i$ linearizes its signature share $s_i \gets \lambda(\mathcal{P}_2)_i s_i$.
-2. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
+2. Each $P_i$ linearizes its signature share $s_i \gets \lambda(\mathcal{P}_2)_i s_i$.
+3. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
 
 **Round 1 (Coordinator):**
+
 3. $\bullet$ The coordinator waits to receive $s_j$ from every other party.
 4. The coordinator sums the received elements $s \gets \sum_j s_j$.
 5. $\blacktriangle$ The coordinator *asserts* that $s\neq 0$
