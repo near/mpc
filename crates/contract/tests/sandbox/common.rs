@@ -624,10 +624,11 @@ pub async fn submit_ckd_response(
     respond_req: &CKDRequest,
     respond_resp: &CKDResponse,
     contract: &Contract,
+    attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are the MPC network itself.
-    let respond = contract
-        .call("respond_ckd")
+    // Call `respond` as if we are an attested_account
+    let respond = attested_account
+        .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
             "request": respond_req,
             "response": respond_resp

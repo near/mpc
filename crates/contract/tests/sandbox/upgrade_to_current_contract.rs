@@ -405,7 +405,7 @@ async fn upgrade_allows_new_request_types(
     }
 
     for pending in pending_ckd_requests {
-        submit_ckd_response(&pending.ckd_request, &pending.ckd_response, &contract)
+        submit_ckd_response(&pending.ckd_request, &pending.ckd_response, &contract, attested_account)
             .await
             .unwrap();
 
