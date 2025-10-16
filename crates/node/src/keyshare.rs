@@ -361,7 +361,7 @@ impl KeyshareStorage {
                     }
                 })
                 .collect();
-            anyhow::bail!("Corrupted backup or corrupted keystore. Found a mismatch between secret shares for key_ids: {:?}.", inconsistent_shares);
+            anyhow::bail!("corrupted backup or corrupted keystore: found a mismatch between secret shares for key_ids: {:?}.", inconsistent_shares);
         }
 
         self._store_new_permanent_keyset_data_delete_temporary(
