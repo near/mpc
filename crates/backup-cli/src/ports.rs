@@ -1,17 +1,21 @@
-use std::future::Future;
+use std::{future::Future, path::Path};
+
+use ed25519_dalek::VerifyingKey;
 
 use crate::types;
 
 pub trait SecretsRepository {
     type Error: std::fmt::Debug;
 
-    fn store_private_key(
+    fn store_secrets(
         &self,
-        private_key: &types::PrivateKey,
+        home_dir: &Path,
+        secrets: &types::PersistentSecrets,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    fn load_private_key(
+    fn load_secrets(
         &self,
-    ) -> impl Future<Output = Result<types::PrivateKey, Self::Error>> + Send;
+        home_dir: &Path,
+    ) -> impl Future<Output = Result<types::PersistentSecrets, Self::Error>> + Send;
 }
 
 pub trait KeyShareRepository {
@@ -41,6 +45,6 @@ pub trait ContractInterface {
 
     fn register_backup_data(
         &self,
-        public_key: &types::PublicKey,
+        public_key: &VerifyingKey,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }

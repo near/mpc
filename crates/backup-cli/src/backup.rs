@@ -1,17 +1,25 @@
+use std::path::Path;
+use std::path::PathBuf;
+
+use ed25519_dalek::SigningKey;
+
 use crate::adapters;
 use crate::cli;
 use crate::ports;
+use crate::types::PersistentSecrets;
 
 pub async fn run_command(args: cli::Args) {
     match args.command {
-        cli::Command::GenerateKeys(_args) => {
-            let secrets_storage = adapters::DummySecretsStorage {};
-            generate_keypair(&secrets_storage).await;
+        cli::Command::GenerateKeys(_) => {
+            let home_dir = PathBuf::from(args.home_dir);
+            let secrets_storage = adapters::LocalSecretsStorage {};
+            generate_secrets(home_dir.as_path(), &secrets_storage).await;
         }
-        cli::Command::Register(_args) => {
-            let secrets_storage = adapters::DummySecretsStorage {};
+        cli::Command::Register(_command_args) => {
+            let home_dir = PathBuf::from(args.home_dir);
+            let secrets_storage = adapters::LocalSecretsStorage {};
             let mpc_contract = adapters::DummyContractInterface {};
-            register_backup_service(&secrets_storage, &mpc_contract).await;
+            register_backup_service(home_dir.as_path(), &secrets_storage, &mpc_contract).await;
         }
         cli::Command::GetKeyshares(_args) => {
             let mpc_p2p_client = adapters::DummyP2PClient {};
@@ -26,24 +34,31 @@ pub async fn run_command(args: cli::Args) {
     }
 }
 
-pub async fn generate_keypair(secrets_storage: &impl ports::SecretsRepository) {
-    let private_key = crate::types::PrivateKey {};
+pub async fn generate_secrets(home_dir: &Path, secrets_storage: &impl ports::SecretsRepository) {
+    let mut os_rng = rand::rngs::OsRng;
+    let p2p_private_key = SigningKey::generate(&mut os_rng);
+    let near_signer_key = SigningKey::generate(&mut os_rng);
+    let persistent_secrets = PersistentSecrets {
+        p2p_private_key,
+        near_signer_key,
+    };
     secrets_storage
-        .store_private_key(&private_key)
+        .store_secrets(home_dir, &persistent_secrets)
         .await
         .expect("fail to store private key");
 }
 
 /// Put backup service data to the smart contract
 pub async fn register_backup_service(
+    home_dir: &Path,
     secrets_storage: &impl ports::SecretsRepository,
     mpc_contract: &impl ports::ContractInterface,
 ) {
-    let public_key = secrets_storage
-        .load_private_key()
+    let secrets = secrets_storage
+        .load_secrets(home_dir)
         .await
-        .expect("fail to load private key")
-        .public_key();
+        .expect("fail to load private key");
+    let public_key = secrets.p2p_private_key.verifying_key();
     mpc_contract
         .register_backup_data(&public_key)
         .await

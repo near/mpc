@@ -1,6 +1,8 @@
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Args {
+    #[arg(long, env("BACKUP_HOME_DIR"))]
+    pub home_dir: String,
     #[clap(subcommand)]
     pub command: Command,
 }
@@ -14,7 +16,8 @@ pub enum Command {
 }
 
 #[derive(clap::Args, Debug)]
-pub struct GenerateKeysArgs {}
+pub struct GenerateKeysArgs {
+}
 
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {

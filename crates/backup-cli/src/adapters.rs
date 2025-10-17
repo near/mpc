@@ -1,19 +1,54 @@
+use std::path::Path;
+
+use ed25519_dalek::VerifyingKey;
+
 use crate::{
     ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository},
-    types,
+    types::{self, PersistentSecrets},
 };
 
-pub struct DummySecretsStorage {}
+pub struct LocalSecretsStorage {}
 
-impl SecretsRepository for DummySecretsStorage {
+impl LocalSecretsStorage {
+    const SECRETS_FILE_NAME: &'static str = "secrets.json";
+}
+
+impl SecretsRepository for LocalSecretsStorage {
     type Error = String;
 
-    async fn store_private_key(&self, _private_key: &types::PrivateKey) -> Result<(), Self::Error> {
+    async fn store_secrets(
+        &self,
+        home_dir: &Path,
+        secrets: &types::PersistentSecrets,
+    ) -> Result<(), Self::Error> {
+        if !home_dir.exists() {
+            std::fs::create_dir_all(home_dir)
+                .map_err(|err| format!("Could not create dir: {err}"))?;
+        }
+        let path = home_dir.join(Self::SECRETS_FILE_NAME);
+        if path.exists() {
+            return Err("secrets.json already exists. Refusing to overwrite.".to_string());
+        }
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&secrets)
+                .map_err(|err| format!("Could not convert secrets to json: {err}"))?,
+        )
+        .map_err(|err| format!("Could not write secrets file: {err}"))?;
         Ok(())
     }
 
-    async fn load_private_key(&self) -> Result<types::PrivateKey, Self::Error> {
-        Ok(types::PrivateKey {})
+    async fn load_secrets(&self, home_dir: &Path) -> Result<types::PersistentSecrets, Self::Error> {
+        let file_path = home_dir.join(Self::SECRETS_FILE_NAME);
+        if file_path.exists() {
+            let str = std::fs::read_to_string(&file_path)
+                .map_err(|err| format!("Could not read file: {err}"))?;
+            let secrets: PersistentSecrets = serde_json::from_str(&str)
+                .map_err(|err| format!("Could not get secrets from json: {err}"))?;
+            Ok(secrets)
+        } else {
+            Err(format!("File not found: {file_path:?}"))
+        }
     }
 }
 
@@ -50,10 +85,7 @@ pub struct DummyContractInterface {}
 impl ContractInterface for DummyContractInterface {
     type Error = String;
 
-    async fn register_backup_data(
-        &self,
-        _public_key: &types::PublicKey,
-    ) -> Result<(), Self::Error> {
+    async fn register_backup_data(&self, _public_key: &VerifyingKey) -> Result<(), Self::Error> {
         Ok(())
     }
 }
