@@ -14,7 +14,7 @@ use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 use threshold_signatures::{ecdsa, eddsa, keygen, ParticipantList};
 
-use tokio::sync::watch;
+use tokio::sync::{watch, RwLock};
 
 use crate::config::{
     CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
@@ -287,7 +287,7 @@ pub async fn get_keyshares(
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    keystore.update_permanent_keyshares(keyset).await
+    keystore.get_keyshares(keyset).await
 }
 
 impl OneNodeTestConfig {
@@ -323,17 +323,19 @@ impl OneNodeTestConfig {
                     .persistent_secrets
                     .p2p_private_key
                     .verifying_key();
-                let mut keystore = key_storage_config
-                    .create()
-                    .await
-                    .expect("require keystore for integration tests");
+                let keystore = Arc::new(RwLock::new(
+                    key_storage_config
+                        .create()
+                        .await
+                        .expect("require keystore for integration tests"),
+                ));
                 onboard(
                     self.indexer.contract_state_receiver.clone(),
                     self.indexer.my_migration_info_receiver.clone(),
                     self.config.my_near_account_id.clone(),
                     tls_public_key,
                     self.indexer.txn_sender.clone(),
-                    &mut keystore,
+                    keystore,
                     self.keyshares_receiver,
                 )
                 .await
@@ -344,7 +346,8 @@ impl OneNodeTestConfig {
                     config_file: self.config,
                     secrets: self.secrets,
                     secret_db,
-                    keyshare_storage: key_storage_config.create().await.unwrap().into(),
+                    keyshare_storage: RwLock::new(key_storage_config.create().await.unwrap())
+                        .into(),
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,

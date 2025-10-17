@@ -37,7 +37,7 @@ use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
     DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
 };
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -452,14 +452,15 @@ impl StartCmd {
 
         // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085)
         let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
-        let mut keyshare_storage: KeyshareStorage = key_storage_config.create().await?;
+        let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
+            RwLock::new(key_storage_config.create().await?).into();
         onboard(
             indexer_api.contract_state_receiver.clone(),
             indexer_api.my_migration_info_receiver.clone(),
             config.my_near_account_id.clone(),
             tls_public_key,
             indexer_api.txn_sender.clone(),
-            &mut keyshare_storage,
+            keyshare_storage.clone(),
             keyshare_receiver,
         )
         .await?;
@@ -469,7 +470,7 @@ impl StartCmd {
             config_file: config,
             secrets,
             secret_db,
-            keyshare_storage: keyshare_storage.into(),
+            keyshare_storage,
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,

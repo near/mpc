@@ -26,7 +26,7 @@ use mpc_contract::primitives::key_state::{KeyEventId, KeyForDomain, Keyset};
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::frost_ed25519;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, RwLock};
 use tokio::time::timeout;
 use tracing::{error, info};
 
@@ -38,7 +38,7 @@ use tracing::{error, info};
 /// - votes for the generated public key.
 pub async fn keygen_computation_inner(
     channel: NetworkTaskChannel,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     generated_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
@@ -47,6 +47,8 @@ pub async fn keygen_computation_inner(
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
+        .write()
+        .await
         .start_generating_key(&generated_keys, key_id)
         .await?;
     tracing::info!(
@@ -101,7 +103,7 @@ pub async fn keygen_computation_inner(
 async fn keygen_computation(
     mut contract_key_event_id: watch::Receiver<ContractKeyEventInstance>,
     channel: NetworkTaskChannel,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
     threshold: usize,
@@ -155,7 +157,7 @@ pub struct ResharingArgs {
 /// of same domain as `key_id`.
 async fn resharing_computation_inner(
     channel: NetworkTaskChannel,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     reshared_keys: Vec<KeyForDomain>,
     key_id: KeyEventId,
@@ -164,6 +166,8 @@ async fn resharing_computation_inner(
 ) -> anyhow::Result<()> {
     anyhow::ensure!(key_id.domain_id == domain.id, "Domain mismatch");
     let keyshare_handle = keyshare_storage
+        .write()
+        .await
         .start_resharing_key(&reshared_keys, key_id)
         .await?;
     tracing::info!(
@@ -289,7 +293,7 @@ async fn resharing_computation_inner(
 async fn resharing_computation(
     mut contract_key_event_id: watch::Receiver<ContractKeyEventInstance>,
     channel: NetworkTaskChannel,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     chain_txn_sender: impl TransactionSender,
     key_id: KeyEventId,
     args: Arc<ResharingArgs>,
@@ -370,7 +374,7 @@ const MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE: Duration = Duration:
 /// contract state transitions out of the key generation state.
 pub async fn keygen_leader(
     client: Arc<MeshNetworkClient>,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
     threshold: usize,
@@ -453,7 +457,7 @@ pub async fn keygen_leader(
 /// See `keygen_leader` for more details that are in common.
 pub async fn keygen_follower(
     mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
     threshold: usize,
@@ -495,7 +499,7 @@ pub async fn keygen_follower(
 /// See `keygen_leader` for more details that are in common.
 pub async fn resharing_leader(
     client: Arc<MeshNetworkClient>,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender,
     args: Arc<ResharingArgs>,
@@ -583,7 +587,7 @@ pub async fn resharing_leader(
 /// See `keygen_leader` for more details that are in common.
 pub async fn resharing_follower(
     mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-    keyshare_storage: Arc<KeyshareStorage>,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
     chain_txn_sender: impl TransactionSender + 'static,
     args: Arc<ResharingArgs>,

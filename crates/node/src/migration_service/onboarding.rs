@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use backon::{ExponentialBuilder, Retryable};
@@ -6,7 +6,7 @@ use ed25519_dalek::VerifyingKey;
 use futures::TryFutureExt;
 use mpc_contract::primitives::key_state::Keyset;
 use near_sdk::AccountId;
-use tokio::sync::watch;
+use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -31,7 +31,7 @@ pub async fn onboard(
     my_near_account_id: AccountId,
     tls_public_key: VerifyingKey,
     tx_sender: impl TransactionSender,
-    keyshare_storage: &mut KeyshareStorage,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
 ) -> anyhow::Result<()> {
     tracing::info!(?my_near_account_id, "starting onboarding");
@@ -63,7 +63,7 @@ pub async fn onboard(
                 tracing::info!(?my_near_account_id, "execute onboarding");
                 let res = execute_onboarding(
                     importing_keyset.clone(),
-                    keyshare_storage,
+                    keyshare_storage.clone(),
                     keyshare_receiver.clone(),
                     tx_sender.clone(),
                     cancellation_token.clone(),
@@ -184,13 +184,15 @@ async fn retry_conclude_onboarding(
 /// **Not cancellation-safe!** Needs to be cancelled via `cancel_import_token`
 async fn execute_onboarding(
     importing_keyset: Keyset,
-    keyshare_storage: &mut KeyshareStorage,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
     tx_sender: impl TransactionSender,
     cancel_import_token: CancellationToken,
 ) -> anyhow::Result<()> {
     if keyshare_storage
-        .update_permanent_keyshares(&importing_keyset)
+        .read()
+        .await
+        .get_keyshares(&importing_keyset)
         .await
         .is_err()
     {
@@ -238,7 +240,7 @@ const KEYSHARE_SENDER_CLOSED_MSG: &str = "keyshare sender closed";
 /// This function is **not cancellation-safe** and must be canceled via `cancel_import`.
 async fn wait_for_and_import_keyshares(
     contract_keyset: &Keyset,
-    keyshare_storage: &mut KeyshareStorage,
+    keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     mut keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
     cancel_import: CancellationToken,
 ) -> anyhow::Result<()> {
@@ -247,6 +249,8 @@ async fn wait_for_and_import_keyshares(
         let received_keyshares = keyshare_receiver.borrow_and_update().clone();
         if !received_keyshares.is_empty() {
             match keyshare_storage
+                .write()
+                .await
                 .import_backup(received_keyshares, contract_keyset)
                 .await
             {
@@ -275,9 +279,12 @@ async fn wait_for_and_import_keyshares(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
-    use tokio::{sync::watch, time::timeout};
+    use tokio::{
+        sync::{watch, RwLock},
+        time::timeout,
+    };
     use tokio_util::sync::CancellationToken;
 
     use crate::{
@@ -331,7 +338,7 @@ mod tests {
         // sanity check
         assert_ne!(wrong_builder.keyset(), contract_keyset);
 
-        let mut keyshare_storage = config.create().await.unwrap();
+        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
 
         let res = tokio::spawn(async move {
             wait_for_log(START_IMPORT_LOOP_MSG.into()).await;
@@ -342,7 +349,7 @@ mod tests {
         });
         wait_for_and_import_keyshares(
             &contract_keyset,
-            &mut keyshare_storage,
+            keyshare_storage.clone(),
             keyshare_receiver,
             cancel_import,
         )
@@ -351,7 +358,9 @@ mod tests {
 
         res.await.unwrap();
         let found = keyshare_storage
-            .update_permanent_keyshares(&contract_keyset)
+            .read()
+            .await
+            .get_keyshares(&contract_keyset)
             .await
             .unwrap();
         assert_eq!(found, builder.keyshares().to_vec());
@@ -366,10 +375,10 @@ mod tests {
         let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
         cancel_import.cancel();
-        let mut keyshare_storage = config.create().await.unwrap();
+        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
         wait_for_and_import_keyshares(
             &contract_keyset,
-            &mut keyshare_storage,
+            keyshare_storage,
             keyshare_receiver,
             cancel_import,
         )
@@ -390,10 +399,10 @@ mod tests {
             keyshare_receiver
         };
         let contract_keyset = builder.keyset();
-        let mut keyshare_storage = config.create().await.unwrap();
+        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
         let res = wait_for_and_import_keyshares(
             &contract_keyset,
-            &mut keyshare_storage,
+            keyshare_storage,
             keyshare_receiver,
             cancel_import,
         )
