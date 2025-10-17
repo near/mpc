@@ -111,7 +111,7 @@ where
 mod tests {
     use std::io::Cursor;
 
-    use rand::rngs::OsRng;
+    use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -128,7 +128,8 @@ mod tests {
     #[tokio::test]
     async fn json_secrets_storage__should_be_able_to_load_stored_secrets() {
         // Given
-        let test_secrets = dummy_persistent_secrets();
+        let mut rng = StdRng::seed_from_u64(123);
+        let test_secrets = types::PersistentSecrets::generate(&mut rng);
         let secrets_storage = shared_vector_storage().await;
 
         // When
@@ -145,9 +146,5 @@ mod tests {
 
     async fn shared_vector_storage() -> SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
         SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::new(Vec::new()).await
-    }
-
-    fn dummy_persistent_secrets() -> types::PersistentSecrets {
-        types::PersistentSecrets::generate(&mut OsRng)
     }
 }
