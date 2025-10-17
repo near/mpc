@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use contract_interface::types::Ed25519PublicKey;
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
@@ -21,9 +24,24 @@ impl KeyShareRepository for DummyKeyshareStorage {
     }
 }
 
-pub struct DummyP2PClient {}
+pub struct MpcP2PClient {
+    mpc_node_url: String,
+    mpc_node_p2p_key: VerifyingKey,
+}
 
-impl P2PClient for DummyP2PClient {
+impl MpcP2PClient {
+    pub fn new(mpc_node_url: String, mpc_node_p2p_key: String) -> Self {
+        let mpc_node_p2p_key =
+            Ed25519PublicKey::from_str(&mpc_node_p2p_key).expect("Invalid mpc_node_p2p_key value");
+        let mpc_node_p2p_key = VerifyingKey::from_bytes(mpc_node_p2p_key.as_bytes()).unwrap();
+        Self {
+            mpc_node_url,
+            mpc_node_p2p_key,
+        }
+    }
+}
+
+impl P2PClient for MpcP2PClient {
     type Error = String;
 
     async fn get_key_shares(&self) -> Result<types::KeyShares, Self::Error> {

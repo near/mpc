@@ -30,13 +30,13 @@ pub async fn run_command(args: cli::Args) {
             let mpc_contract = adapters::DummyContractInterface {};
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }
-        cli::Command::GetKeyshares(_args) => {
-            let mpc_p2p_client = adapters::DummyP2PClient {};
+        cli::Command::GetKeyshares(subcommand_args) => {
+            let mpc_p2p_client = adapters::MpcP2PClient::new(subcommand_args.mpc_node_url, subcommand_args.mpc_node_p2p_key);
             let key_shares_storage = adapters::DummyKeyshareStorage {};
             get_keyshares(&mpc_p2p_client, &key_shares_storage).await;
         }
-        cli::Command::PutKeyshares(_args) => {
-            let mpc_p2p_client = adapters::DummyP2PClient {};
+        cli::Command::PutKeyshares(subcommand_args) => {
+            let mpc_p2p_client = adapters::MpcP2PClient::new(subcommand_args.mpc_node_url, subcommand_args.mpc_node_p2p_key);
             let key_shares_storage = adapters::DummyKeyshareStorage {};
             put_keyshares(&mpc_p2p_client, &key_shares_storage).await;
         }

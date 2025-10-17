@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+contract-interface = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
+mpc-tls = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }
