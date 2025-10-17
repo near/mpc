@@ -13,13 +13,13 @@ pub async fn run_command(args: cli::Args) {
         cli::Command::GenerateKeys(_) => {
             let home_dir = PathBuf::from(args.home_dir);
             let secrets_storage = adapters::LocalSecretsStorage {};
-            generate_secrets(home_dir.as_path(), &secrets_storage).await;
+            generate_secrets(&secrets_storage).await;
         }
         cli::Command::Register(_command_args) => {
             let home_dir = PathBuf::from(args.home_dir);
             let secrets_storage = adapters::LocalSecretsStorage {};
             let mpc_contract = adapters::DummyContractInterface {};
-            register_backup_service(home_dir.as_path(), &secrets_storage, &mpc_contract).await;
+            register_backup_service(&secrets_storage, &mpc_contract).await;
         }
         cli::Command::GetKeyshares(_args) => {
             let mpc_p2p_client = adapters::DummyP2PClient {};
@@ -34,7 +34,7 @@ pub async fn run_command(args: cli::Args) {
     }
 }
 
-pub async fn generate_secrets(home_dir: &Path, secrets_storage: &impl ports::SecretsRepository) {
+pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
     let mut os_rng = rand::rngs::OsRng;
     let p2p_private_key = SigningKey::generate(&mut os_rng);
     let near_signer_key = SigningKey::generate(&mut os_rng);
@@ -43,19 +43,18 @@ pub async fn generate_secrets(home_dir: &Path, secrets_storage: &impl ports::Sec
         near_signer_key,
     };
     secrets_storage
-        .store_secrets(home_dir, &persistent_secrets)
+        .store_secrets(&persistent_secrets)
         .await
         .expect("fail to store private key");
 }
 
 /// Put backup service data to the smart contract
 pub async fn register_backup_service(
-    home_dir: &Path,
     secrets_storage: &impl ports::SecretsRepository,
     mpc_contract: &impl ports::ContractInterface,
 ) {
     let secrets = secrets_storage
-        .load_secrets(home_dir)
+        .load_secrets()
         .await
         .expect("fail to load private key");
     let public_key = secrets.p2p_private_key.verifying_key();

@@ -9,12 +9,10 @@ pub trait SecretsRepository {
 
     fn store_secrets(
         &self,
-        home_dir: &Path,
         secrets: &types::PersistentSecrets,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     fn load_secrets(
         &self,
-        home_dir: &Path,
     ) -> impl Future<Output = Result<types::PersistentSecrets, Self::Error>> + Send;
 }
 

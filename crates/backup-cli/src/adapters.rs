@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ed25519_dalek::VerifyingKey;
 
@@ -6,6 +6,8 @@ use crate::{
     ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository},
     types::{self, PersistentSecrets},
 };
+
+pub mod secrets_storage;
 
 pub struct LocalSecretsStorage {}
 
@@ -16,13 +18,10 @@ impl LocalSecretsStorage {
 impl SecretsRepository for LocalSecretsStorage {
     type Error = String;
 
-    async fn store_secrets(
-        &self,
-        home_dir: &Path,
-        secrets: &types::PersistentSecrets,
-    ) -> Result<(), Self::Error> {
+    async fn store_secrets(&self, secrets: &types::PersistentSecrets) -> Result<(), Self::Error> {
+        let home_dir: PathBuf = "/".into();
         if !home_dir.exists() {
-            std::fs::create_dir_all(home_dir)
+            std::fs::create_dir_all(&home_dir)
                 .map_err(|err| format!("Could not create dir: {err}"))?;
         }
         let path = home_dir.join(Self::SECRETS_FILE_NAME);
@@ -38,7 +37,8 @@ impl SecretsRepository for LocalSecretsStorage {
         Ok(())
     }
 
-    async fn load_secrets(&self, home_dir: &Path) -> Result<types::PersistentSecrets, Self::Error> {
+    async fn load_secrets(&self) -> Result<types::PersistentSecrets, Self::Error> {
+        let home_dir: PathBuf = "/".into();
         let file_path = home_dir.join(Self::SECRETS_FILE_NAME);
         if file_path.exists() {
             let str = std::fs::read_to_string(&file_path)
