@@ -91,6 +91,11 @@ pub struct KeyshareStorage {
     permanent: PermanentKeyStorage,
 }
 
+enum LoadedKeyset {
+    Permanent(Vec<Keyshare>),
+    PermanentAndTemporary(Vec<Keyshare>),
+}
+
 impl KeyshareStorage {
     /// Before generating a key, we must call `ensure_can_generate_key` to check that we are able
     /// to generate that key and use it afterwards. This requires:
@@ -204,10 +209,13 @@ impl KeyshareStorage {
         Ok(())
     }
 
-    async fn _get_keyshares(&self, keyset: &Keyset) -> anyhow::Result<(Vec<Keyshare>, bool)> {
+    async fn _load_keyshares_from_permanent_or_temporary(
+        &self,
+        keyset: &Keyset,
+    ) -> anyhow::Result<LoadedKeyset> {
         let existing_keyshares = self._load_prefix_from_permanent(keyset).await?;
         if existing_keyshares.len() == keyset.domains.len() {
-            return Ok((existing_keyshares, false));
+            return Ok(LoadedKeyset::Permanent(existing_keyshares));
         }
 
         let mut new_keyshares = existing_keyshares;
@@ -220,7 +228,7 @@ impl KeyshareStorage {
                 .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
             new_keyshares.push(keyshare);
         }
-        Ok((new_keyshares, true))
+        Ok(LoadedKeyset::PermanentAndTemporary(new_keyshares))
     }
 
     /// Ensures that the given keyset is in permanent key storage, and then returns them. The order
@@ -231,21 +239,32 @@ impl KeyshareStorage {
     /// (We could also delete attempts in the same epoch ID but this is not necessary from a
     /// security perspective, since the same epoch ID corresponds to the same set of participants
     /// and the threshold value.)
-    pub async fn load_keyset(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
-        let (new_keyshares, changed) = self._get_keyshares(keyset).await?;
-        if changed {
-            self._store_new_permanent_keyset_data_delete_temporary(
-                keyset.epoch_id,
-                new_keyshares.clone(),
-            )
-            .await?;
+    pub async fn update_permanent_keyshares(
+        &self,
+        keyset: &Keyset,
+    ) -> anyhow::Result<Vec<Keyshare>> {
+        match self
+            ._load_keyshares_from_permanent_or_temporary(keyset)
+            .await?
+        {
+            LoadedKeyset::Permanent(keyshares) => Ok(keyshares),
+            LoadedKeyset::PermanentAndTemporary(keyshares) => {
+                self._store_new_permanent_keyset_data_delete_temporary(
+                    keyset.epoch_id,
+                    keyshares.clone(),
+                )
+                .await?;
+                Ok(keyshares)
+            }
         }
-        Ok(new_keyshares)
     }
 
     /// Given a keyset, get the corresponding Keyshares
     pub async fn get_keyshares(&self, keyset: &Keyset) -> anyhow::Result<Vec<Keyshare>> {
-        Ok(self._get_keyshares(keyset).await?.0)
+        match self._load_keyshares_from_permanent_or_temporary(keyset).await?{
+            LoadedKeyset::Permanent(keyshares) => Ok(keyshares),
+            LoadedKeyset::PermanentAndTemporary(keyshares) => Ok(keyshares),
+        }
     }
 
     /// Helper function to verify that the keyshares we have from permanent storage is a prefix
@@ -464,7 +483,7 @@ pub mod tests {
         let mut keyset = KeysetBuilder::new(0);
 
         // Load an empty keyset; this should succeed.
-        let loaded0 = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded0 = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert!(&loaded0.is_empty());
 
         // Store some keyshares.
@@ -523,7 +542,7 @@ pub mod tests {
         }
 
         // Finalize two keys from epoch 0.
-        let loaded1 = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded1 = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded1, &keyset.keyshares());
 
         // Load a conflicting keyset; this should fail.
@@ -532,12 +551,12 @@ pub mod tests {
             &[key_1_epoch_0_non_final.clone(), key_2_epoch_0_final.clone()],
         );
         assert!(storage
-            .load_keyset(&conflicting_keyset.keyset())
+            .update_permanent_keyshares(&conflicting_keyset.keyset())
             .await
             .is_err());
 
         // Load the same keyset again; this should succeed.
-        let loaded1 = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded1 = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded1, &keyset.keyshares());
 
         // Store some more keyshares as part of resharing, for epoch 1.
@@ -607,16 +626,16 @@ pub mod tests {
             // Check that finalizing an invalid key is not possible
             let mut invalid_keyset = keyset.clone();
             invalid_keyset.add_keyshare(key_2_epoch_1_invalid);
-            assert!(storage.load_keyset(&keyset.keyset()).await.is_err());
+            assert!(storage.update_permanent_keyshares(&keyset.keyset()).await.is_err());
         }
         keyset.add_keyshare(key_2_epoch_1.clone());
 
         // Finalize two keys from epoch 1.
-        let loaded3 = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded3 = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded3, &keyset.keyshares());
 
         // Cannot load the old keyset anymore.
-        assert!(storage.load_keyset(&old_keyset.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&old_keyset.keyset()).await.is_err());
 
         // Add another key to the same epoch via key generation; this is fine.
         let key_3_epoch_1 = generate_dummy_keyshare(1, 3, 1);
@@ -628,7 +647,7 @@ pub mod tests {
             .await
             .unwrap();
         keyset.add_keyshare(key_3_epoch_1.clone());
-        let loaded4 = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded4 = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded4, &keyset.keyshares());
     }
 
@@ -645,7 +664,7 @@ pub mod tests {
             .await
             .unwrap();
         keyset.add_keyshare(keyshare.clone());
-        let loaded = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded, &keyset.keyshares());
     }
 
@@ -663,7 +682,7 @@ pub mod tests {
             .await
             .is_ok());
 
-        let loaded = storage.load_keyset(&keyset.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&keyset.keyset()).await.unwrap();
         assert_eq!(&loaded, &keyset.keyshares());
     }
 
@@ -687,7 +706,7 @@ pub mod tests {
             .await;
         assert!(res.is_ok());
 
-        let loaded = storage.load_keyset(&full_keyset.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&full_keyset.keyset()).await.unwrap();
         assert_eq!(&loaded, &full_keyset.keyshares());
     }
 
@@ -717,7 +736,7 @@ pub mod tests {
             .await;
         assert!(res.is_err());
 
-        let loaded = storage.load_keyset(&expected.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&expected.keyset()).await.unwrap();
         assert_eq!(&loaded, &expected.keyshares());
     }
 
@@ -745,7 +764,7 @@ pub mod tests {
             .await
             .is_ok());
 
-        let loaded = storage.load_keyset(&expected.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&expected.keyset()).await.unwrap();
         assert_eq!(&loaded, &expected.keyshares());
     }
 
@@ -781,10 +800,10 @@ pub mod tests {
             .await
             .is_err());
 
-        assert!(storage.load_keyset(&keyset_1.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&keyset_1.keyset()).await.is_err());
 
         let loaded = storage
-            .load_keyset(&expected_keyset.keyset())
+            .update_permanent_keyshares(&expected_keyset.keyset())
             .await
             .unwrap();
         assert_eq!(&loaded, &expected_keyset.keyshares());
@@ -830,7 +849,7 @@ pub mod tests {
             .await
             .is_ok());
 
-        let loaded = storage.load_keyset(&current_keyset.keyset()).await.unwrap();
+        let loaded = storage.update_permanent_keyshares(&current_keyset.keyset()).await.unwrap();
         assert_eq!(&loaded, &current_keyset.keyshares());
     }
 
@@ -855,9 +874,9 @@ pub mod tests {
             .await
             .is_err());
 
-        assert!(storage.load_keyset(&dummy_keyset.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&dummy_keyset.keyset()).await.is_err());
         let loaded = storage
-            .load_keyset(&previous_keyset.keyset())
+            .update_permanent_keyshares(&previous_keyset.keyset())
             .await
             .unwrap();
         assert_eq!(&loaded, &previous_keyset.keyshares());
@@ -866,7 +885,7 @@ pub mod tests {
     async fn assert_no_keyshares_for_epoch(epoch_id: u64, keyshare_storage: &KeyshareStorage) {
         let empty_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
         let loaded = keyshare_storage
-            .load_keyset(&empty_keyset.keyset())
+            .update_permanent_keyshares(&empty_keyset.keyset())
             .await
             .unwrap();
         assert_eq!(&loaded, &empty_keyset.keyshares());
@@ -888,7 +907,7 @@ pub mod tests {
             .import_backup(keyset.keyshares().to_vec(), &dummy_keyset.keyset())
             .await
             .is_err());
-        assert!(storage.load_keyset(&keyset.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&keyset.keyset()).await.is_err());
 
         assert_no_keyshares_for_epoch(epoch_id, &storage).await;
     }
@@ -911,7 +930,7 @@ pub mod tests {
             .await
             .is_err());
 
-        assert!(storage.load_keyset(&partial_keyset.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&partial_keyset.keyset()).await.is_err());
 
         assert_no_keyshares_for_epoch(epoch_id, &storage).await;
     }
@@ -934,7 +953,7 @@ pub mod tests {
             .await
             .is_err());
 
-        assert!(storage.load_keyset(&partial_keyset.keyset()).await.is_err());
+        assert!(storage.update_permanent_keyshares(&partial_keyset.keyset()).await.is_err());
         assert_no_keyshares_for_epoch(epoch_id, &storage).await;
     }
 
@@ -962,11 +981,11 @@ pub mod tests {
             .is_err());
 
         assert!(storage_2
-            .load_keyset(&partial_keyset.keyset())
+            .update_permanent_keyshares(&partial_keyset.keyset())
             .await
             .is_err());
         let loaded = storage_2
-            .load_keyset(&expected_keyset.keyset())
+            .update_permanent_keyshares(&expected_keyset.keyset())
             .await
             .unwrap();
         assert_eq!(&loaded, &expected_keyset.keyshares());

@@ -452,7 +452,7 @@ where
                     return Ok(MpcJobResult::HaltUntilInterrupted);
                 };
 
-                let keyshares = match keyshare_storage.load_keyset(&running_state.keyset).await {
+                let keyshares = match keyshare_storage.update_permanent_keyshares(&running_state.keyset).await {
                     Ok(keyshares) => keyshares,
                     Err(e) => {
                         tracing::error!(
@@ -598,7 +598,7 @@ where
             .iter()
             .any(|p| p.near_account_id == config_file.my_near_account_id);
         let existing_keyshares = if was_participant_last_epoch {
-            let keyshares = match keyshare_storage.load_keyset(&previous_keyset).await {
+            let keyshares = match keyshare_storage.update_permanent_keyshares(&previous_keyset).await {
                 Ok(x) => x,
                 Err(e) => {
                     tracing::error!(
@@ -612,7 +612,7 @@ where
             Some(keyshares)
         } else {
             info!("Not participant in last epoch.");
-            if keyshare_storage.load_keyset(&previous_keyset).await.is_ok() {
+            if keyshare_storage.update_permanent_keyshares(&previous_keyset).await.is_ok() {
                 tracing::warn!("We should not have the previous keyshares when we were not a participant last epoch");
             }
             None
