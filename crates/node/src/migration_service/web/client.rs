@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
 use hyper::{body::to_bytes, client::conn::SendRequest, Body, Request};
+use mpc_contract::primitives::key_state::Keyset;
 use mpc_tls::tls::configure_tls;
 use tokio::net::TcpStream;
 
@@ -62,11 +63,13 @@ pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyho
 
 pub async fn make_keyshare_get_request(
     request_sender: &mut SendRequest<Body>,
+    keyset: &Keyset,
 ) -> anyhow::Result<Vec<Keyshare>> {
+    let params = serde_json::json!(keyset);
     let req = Request::builder()
         .method("GET")
         .uri(format!("{}/get_keyshares", BOGUS_URL))
-        .body(hyper::Body::empty())?;
+        .body(hyper::Body::from(params.to_string()))?;
 
     let response = request_sender.send_request(req).await?;
     // Check HTTP status
