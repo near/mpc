@@ -190,7 +190,7 @@ async fn execute_onboarding(
     cancel_import_token: CancellationToken,
 ) -> anyhow::Result<()> {
     if keyshare_storage
-        .load_keyset(&importing_keyset)
+        .update_permanent_keyshares(&importing_keyset)
         .await
         .is_err()
     {
@@ -351,7 +351,7 @@ mod tests {
 
         res.await.unwrap();
         let found = keyshare_storage
-            .load_keyset(&contract_keyset)
+            .update_permanent_keyshares(&contract_keyset)
             .await
             .unwrap();
         assert_eq!(found, builder.keyshares().to_vec());

@@ -1,6 +1,7 @@
 use std::{convert::Infallible, sync::Arc};
 
 use hyper::{service::service_fn, Body, Response, StatusCode};
+use mpc_contract::primitives::key_state::Keyset;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -134,14 +135,51 @@ async fn handle_request(
     match (req.method().as_str(), req.uri().path()) {
         ("GET", "/hello") => Ok(Response::new(Body::from("Hello, world!"))),
         ("GET", "/get_keyshares") => {
-            let keyshares = state.export_keyshares_receiver.borrow().clone();
-            let json = serde_json::to_string(&keyshares).unwrap_or_else(|_| "invalid".to_string());
-            let mut response = Response::new(Body::from(json));
-            response.headers_mut().insert(
-                hyper::header::CONTENT_TYPE,
-                hyper::header::HeaderValue::from_static("application/json"),
-            );
-            Ok(response)
+            let whole_body = hyper::body::to_bytes(req.into_body()).await;
+            match whole_body {
+                Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
+                    Ok(keyset) => {
+                        let keyshares = match state
+                            .keyshare_storage
+                            .read()
+                            .await
+                            .get_keyshares(&keyset)
+                            .await
+                        {
+                            Ok(keyshares) => keyshares,
+                            Err(err) => {
+                                let msg = err.to_string();
+                                tracing::error!(msg);
+                                return Ok(Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from("Failed to get keyshares"))
+                                    .unwrap());
+                            }
+                        };
+
+                        let keyshares_json =
+                            serde_json::to_string(&keyshares).unwrap_or_else(|err| {
+                                let msg = err.to_string();
+                                tracing::error!(msg);
+                                "invalid keyshares".to_string()
+                            });
+                        let mut response = Response::new(Body::from(keyshares_json));
+                        response.headers_mut().insert(
+                            hyper::header::CONTENT_TYPE,
+                            hyper::header::HeaderValue::from_static("application/json"),
+                        );
+                        Ok(response)
+                    }
+                    Err(err) => Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from(format!("Invalid keyset: {err}")))
+                        .unwrap()),
+                },
+                Err(err) => Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from(format!("Failed to read body: {err}")))
+                    .unwrap()),
+            }
         }
         ("PUT", "/set_keyshares") => {
             let whole_body = hyper::body::to_bytes(req.into_body()).await;

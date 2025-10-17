@@ -269,7 +269,10 @@ pub struct OneNodeTestConfig {
     keyshares_sender: watch::Sender<Vec<Keyshare>>,
 }
 
-fn make_key_storage_config(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> KeyStorageConfig {
+pub fn make_key_storage_config(
+    home_dir: PathBuf,
+    local_encryption_key: [u8; 16],
+) -> KeyStorageConfig {
     KeyStorageConfig {
         home_dir,
         local_encryption_key,
@@ -284,7 +287,7 @@ pub async fn get_keyshares(
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
     let keystore = key_storage_config.create().await.unwrap();
-    keystore.load_keyset(keyset).await
+    keystore.update_permanent_keyshares(keyset).await
 }
 
 impl OneNodeTestConfig {

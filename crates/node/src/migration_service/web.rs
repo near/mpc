@@ -11,9 +11,12 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
-    use tokio::sync::watch;
+    use tempfile::TempDir;
+    use tokio::sync::{watch, RwLock};
     use tokio_util::sync::CancellationToken;
 
+    use crate::keyshare::tests::generate_key_storage;
+    use crate::keyshare::KeyshareStorage;
     use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
@@ -32,7 +35,8 @@ mod tests {
         target_address: String,
         migration_state_sender: watch::Sender<MigrationInfo>,
         import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
-        export_keyshares_sender: watch::Sender<Vec<Keyshare>>,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
+        _tmpdir: TempDir,
     }
 
     async fn setup(port_seed: PortSeed) -> TestSetup {
@@ -50,11 +54,14 @@ mod tests {
             }),
             active_migration: false,
         });
+
+        let (storage, _tmpdir) = generate_key_storage().await;
+        let keyshare_storage = Arc::new(RwLock::new(storage));
+
         let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
-        let (export_keyshares_sender, export_keyshares_receiver) = watch::channel(vec![]);
         let web_server_state = Arc::new(WebServerState {
-            import_keyshares_sender,
-            export_keyshares_receiver,
+            import_keyshares_sender: import_keyshares_sender.clone(),
+            keyshare_storage: keyshare_storage.clone(),
         });
         assert!(start_web_server(
             web_server_state.clone(),
@@ -72,7 +79,8 @@ mod tests {
             target_address,
             migration_state_sender,
             import_keyshares_receiver,
-            export_keyshares_sender,
+            keyshare_storage,
+            _tmpdir,
         }
     }
 
@@ -130,17 +138,28 @@ mod tests {
         )
         .await
         .unwrap();
-        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+        let res = make_keyshare_get_request(&mut send_request, &KeysetBuilder::new(1).keyset())
+            .await
+            .unwrap();
 
         let expected: Vec<Keyshare> = Vec::new();
         assert_eq!(expected, res);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
+
         test_setup
-            .export_keyshares_sender
-            .send(keyset_builder.keyshares().to_vec())
+            .keyshare_storage
+            .write()
+            .await
+            .import_backup(
+                keyset_builder.keyshares().to_vec(),
+                &keyset_builder.keyset(),
+            )
+            .await
             .unwrap();
-        let res = make_keyshare_get_request(&mut send_request).await.unwrap();
+        let res = make_keyshare_get_request(&mut send_request, &keyset_builder.keyset())
+            .await
+            .unwrap();
         assert_eq!(keyset_builder.keyshares().to_vec(), res);
     }
 
