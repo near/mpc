@@ -10,16 +10,23 @@ use crate::{ports::SecretsRepository, types};
 
 pub struct SharedJsonSecretsStorage<D>(Arc<Mutex<JsonSecretsStorage<D>>>);
 
+const SECRETS_FILE_NAME: &str = "secrets.json";
+
 impl SharedJsonSecretsStorage<File> {
     pub async fn open_write(storage_path: &Path) -> Self {
+        if !storage_path.exists() {
+            std::fs::create_dir_all(storage_path).expect("Could not create dir: {err}");
+        }
+        let file_path = storage_path.join(SECRETS_FILE_NAME);
         Self(Arc::new(Mutex::new(
-            JsonSecretsStorage::<File>::open_write(storage_path).await,
+            JsonSecretsStorage::<File>::open_write(file_path.as_path()).await,
         )))
     }
 
     pub async fn open_read(storage_path: &Path) -> Self {
+        let file_path = storage_path.join(SECRETS_FILE_NAME);
         Self(Arc::new(Mutex::new(
-            JsonSecretsStorage::<File>::open_read(storage_path).await,
+            JsonSecretsStorage::<File>::open_read(file_path.as_path()).await,
         )))
     }
 }
@@ -59,10 +66,6 @@ where
             .write_all(&encoded_secrets)
             .await
             .expect("Could not write to destination");
-        self.destination
-            .flush()
-            .await
-            .expect("Could not flush destination");
     }
 }
 
