@@ -236,7 +236,7 @@ const KEYSHARE_SENDER_CLOSED_MSG: &str = "keyshare sender closed";
 /// Returns `Err` only if the channel closed.
 ///
 /// This function is **not cancellation-safe** and must be canceled via `cancel_import`.
-pub async fn wait_for_and_import_keyshares(
+async fn wait_for_and_import_keyshares(
     contract_keyset: &Keyset,
     keyshare_storage: &mut KeyshareStorage,
     mut keyshare_receiver: watch::Receiver<Vec<Keyshare>>,
