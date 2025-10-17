@@ -1503,7 +1503,6 @@ name = "backup-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "contract-interface",
  "ed25519-dalek",
  "rand 0.8.5",
  "serde",
