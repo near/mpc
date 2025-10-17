@@ -8,9 +8,9 @@ use tokio::{
 
 use crate::{ports::SecretsRepository, types};
 
-pub struct SharedJsonSecretsStorage<D>(Arc<Mutex<JsonSecretsStorage<D>>>);
-
 const SECRETS_FILE_NAME: &str = "secrets.json";
+
+pub struct SharedJsonSecretsStorage<D>(Arc<Mutex<JsonSecretsStorage<D>>>);
 
 impl SharedJsonSecretsStorage<File> {
     pub async fn open_write(storage_path: &Path) -> Self {
@@ -116,15 +116,7 @@ mod tests {
     use super::*;
 
     impl SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
-        pub async fn open_write(vector_storage: Vec<u8>) -> Self {
-            Self(Arc::new(Mutex::new(
-                JsonSecretsStorage::<Cursor<Vec<u8>>> {
-                    destination: Cursor::new(vector_storage),
-                },
-            )))
-        }
-
-        pub async fn open_read(vector_storage: Vec<u8>) -> Self {
+        pub async fn new(vector_storage: Vec<u8>) -> Self {
             Self(Arc::new(Mutex::new(
                 JsonSecretsStorage::<Cursor<Vec<u8>>> {
                     destination: Cursor::new(vector_storage),
@@ -152,7 +144,7 @@ mod tests {
     }
 
     async fn shared_vector_storage() -> SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
-        SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::open_write(Vec::new()).await
+        SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::new(Vec::new()).await
     }
 
     fn dummy_persistent_secrets() -> types::PersistentSecrets {
