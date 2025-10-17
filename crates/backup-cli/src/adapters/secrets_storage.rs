@@ -12,6 +12,10 @@ const SECRETS_FILE_NAME: &str = "secrets.json";
 
 pub struct SharedJsonSecretsStorage<D>(Arc<Mutex<JsonSecretsStorage<D>>>);
 
+pub struct JsonSecretsStorage<D> {
+    destination: D,
+}
+
 impl SharedJsonSecretsStorage<File> {
     pub async fn open_write(storage_path: &Path) -> Self {
         if !storage_path.exists() {
@@ -29,10 +33,6 @@ impl SharedJsonSecretsStorage<File> {
             JsonSecretsStorage::<File>::open_read(file_path.as_path()).await,
         )))
     }
-}
-
-pub struct JsonSecretsStorage<D> {
-    destination: D,
 }
 
 impl JsonSecretsStorage<File> {
