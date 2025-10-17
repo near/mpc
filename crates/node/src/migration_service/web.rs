@@ -13,7 +13,6 @@ mod tests {
     use rand::rngs::OsRng;
     use tempfile::TempDir;
     use tokio::sync::{watch, RwLock};
-    use tokio_util::sync::CancellationToken;
 
     use crate::keyshare::tests::generate_key_storage;
     use crate::keyshare::KeyshareStorage;
@@ -43,7 +42,7 @@ mod tests {
         let client_key = SigningKey::generate(&mut OsRng);
         let server_key = SigningKey::generate(&mut OsRng);
 
-        let port: u16 = port_seed.p2p_port(0);
+        let port: u16 = port_seed.migration_web_port(0);
         let config = WebUIConfig {
             host: LOCALHOST_IP.to_string(),
             port,
@@ -68,7 +67,6 @@ mod tests {
             config,
             migration_state_receiver,
             &server_key,
-            CancellationToken::new()
         )
         .await
         .is_ok());

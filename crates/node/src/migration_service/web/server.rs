@@ -22,7 +22,6 @@ pub async fn start_web_server(
     config: WebUIConfig,
     migration_state_receiver: watch::Receiver<MigrationInfo>,
     p2p_private_key: &ed25519_dalek::SigningKey,
-    cancellation_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let (server_config, _client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
@@ -32,11 +31,8 @@ pub async fn start_web_server(
         "attempting to bind web server to host",
     );
 
-    let mut expected_peer_info_receiver = spawn_expected_peer_info_monitoring(
-        cancellation_token.child_token(),
-        migration_state_receiver,
-    )
-    .await;
+    let mut expected_peer_info_receiver =
+        spawn_expected_peer_info_monitoring(migration_state_receiver).await;
 
     let bind_address = format!("{}:{}", config.host, config.port);
     tracing::info!(address = %bind_address, "binding to address");
@@ -74,7 +70,8 @@ async fn handle_stream(
     let Some(expected_pk) = expected_peer.expected_pk else {
         anyhow::bail!("not accepting connections without a Backup service info");
     };
-    authenticate_peer(stream.get_ref().1, &expected_pk)?;
+    authenticate_peer(stream.get_ref().1, &expected_pk)
+        .inspect_err(|err| tracing::error!(?err, "error authenticating client"))?;
     tracing::info!(
         "TLS handshake complete, backup service authenticated and encrypted channel established"
     );
@@ -90,7 +87,6 @@ async fn handle_stream(
                 Err(err) => tracing::error!("error serving connection: {err:?}"),
             }
         }
-
         _ = expected_peer.cancelled.cancelled() => {
             tracing::info!("dropping connection due to cancellation (change in migration info or cancellation of web server)");
         }
@@ -99,30 +95,26 @@ async fn handle_stream(
 }
 
 async fn spawn_expected_peer_info_monitoring(
-    cancellation_token: CancellationToken,
     mut migration_state_receiver: watch::Receiver<MigrationInfo>,
 ) -> watch::Receiver<ExpectedPeerInfo> {
     let current_info = migration_state_receiver.borrow_and_update().clone();
-    let mut info_cancelled = cancellation_token.child_token();
     let (sender, receiver) = watch::channel(ExpectedPeerInfo::from_migration(
         current_info,
-        info_cancelled.clone(),
+        CancellationToken::new(),
     ));
     tokio::spawn(async move {
         loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => { return Ok(()); }
-                res = migration_state_receiver.changed() => {
-                    info_cancelled.cancel();
-                    if res.is_err() {
-                        tracing::info!("migration state sender dropped, cancelling peer info and exiting");
-                        return anyhow::Ok(());
-                    };
-                    let current_info = migration_state_receiver.borrow_and_update().clone();
-                    info_cancelled = cancellation_token.child_token();
-                    sender.send(ExpectedPeerInfo::from_migration(current_info, info_cancelled.clone()))?;
-                },
-            }
+            let res = migration_state_receiver.changed().await;
+            sender.borrow().cancelled.cancel();
+            if res.is_err() {
+                tracing::info!("migration state sender dropped, cancelling peer info and exiting");
+                return anyhow::Ok(());
+            };
+            let current_info = migration_state_receiver.borrow_and_update().clone();
+            sender.send(ExpectedPeerInfo::from_migration(
+                current_info,
+                CancellationToken::new(),
+            ))?;
         }
     });
     receiver
@@ -135,6 +127,7 @@ async fn handle_request(
     match (req.method().as_str(), req.uri().path()) {
         ("GET", "/hello") => Ok(Response::new(Body::from("Hello, world!"))),
         ("GET", "/get_keyshares") => {
+            tracing::info!("received get_keyshares request");
             let whole_body = hyper::body::to_bytes(req.into_body()).await;
             match whole_body {
                 Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
@@ -170,15 +163,21 @@ async fn handle_request(
                         );
                         Ok(response)
                     }
-                    Err(err) => Ok(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::from(format!("Invalid keyset: {err}")))
-                        .unwrap()),
+                    Err(err) => {
+                        tracing::error!(?err, "received invalid keyset");
+                        Ok(Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::from(format!("Invalid keyset: {err}")))
+                            .unwrap())
+                    }
                 },
-                Err(err) => Ok(Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from(format!("Failed to read body: {err}")))
-                    .unwrap()),
+                Err(err) => {
+                    tracing::error!(?err, "failed to read body");
+                    Ok(Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body(Body::from(format!("Failed to read body: {err}")))
+                        .unwrap())
+                }
             }
         }
         ("PUT", "/set_keyshares") => {
@@ -228,7 +227,6 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use tokio::sync::watch;
-    use tokio_util::sync::CancellationToken;
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
         MigrationInfo {
@@ -244,11 +242,7 @@ mod tests {
         let migration_info1 = make_migration_info_with_key(&key1);
 
         let (migration_info_sender, migration_info_receiver) = watch::channel(migration_info1);
-        let cancellation = CancellationToken::new();
-
-        let expected_peer_rx =
-            spawn_expected_peer_info_monitoring(cancellation.clone(), migration_info_receiver)
-                .await;
+        let expected_peer_rx = spawn_expected_peer_info_monitoring(migration_info_receiver).await;
 
         let initial = expected_peer_rx.borrow().clone();
         let expected = Some(key1.verifying_key());
@@ -268,8 +262,8 @@ mod tests {
         let expected_pk = Some(key2.verifying_key());
         assert_eq!(updated.expected_pk, expected_pk);
 
-        // Cancel the parent token
-        cancellation.cancel();
+        // Ensure the info is cancelled if the sender is dropped
+        drop(migration_info_sender);
         updated.cancelled.cancelled().await;
     }
 }

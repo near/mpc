@@ -535,6 +535,12 @@ pub mod testing {
                 .unwrap()
         }
 
+        pub fn migration_web_port(&self, node_index: usize) -> u16 {
+            (30000_usize + self.0 as usize * 100 + node_index)
+                .try_into()
+                .unwrap()
+        }
+
         pub const CLI_FOR_PYTEST: Self = Self(0);
     }
 
