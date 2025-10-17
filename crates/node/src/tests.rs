@@ -13,6 +13,7 @@ use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::protocol::{run_protocol, Participant, Protocol};
 use threshold_signatures::{ecdsa, eddsa, keygen, ParticipantList};
+use tokio_util::sync::CancellationToken;
 
 use tokio::sync::{watch, RwLock};
 
@@ -26,6 +27,7 @@ use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
+use crate::migration_service;
 use crate::migration_service::onboarding::onboard;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 use crate::primitives::ParticipantId;
@@ -263,10 +265,6 @@ pub struct OneNodeTestConfig {
     indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
-    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
-    keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
-    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
-    keyshares_sender: watch::Sender<Vec<Keyshare>>,
 }
 
 pub fn make_key_storage_config(
@@ -329,6 +327,28 @@ impl OneNodeTestConfig {
                         .await
                         .expect("require keystore for integration tests"),
                 ));
+
+                let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
+
+                let web_server_state = migration_service::web::types::WebServerState {
+                    import_keyshares_sender,
+                    keyshare_storage: keystore.clone(),
+                };
+                // todo: change function signature. No neeed for Arc.
+                // also: no need for cancellation token
+                // todo: web ui config from config file
+                let web_ui_config = WebUIConfig {
+                    host: "127.0.0.1".to_string(),
+                    port: 1523,
+                };
+                migration_service::web::server::start_web_server(
+                    web_server_state.into(),
+                    web_ui_config,
+                    self.indexer.my_migration_info_receiver.clone(),
+                    &self.secrets.persistent_secrets.p2p_private_key,
+                    CancellationToken::new(),
+                )
+                .await?;
                 onboard(
                     self.indexer.contract_state_receiver.clone(),
                     self.indexer.my_migration_info_receiver.clone(),
@@ -336,7 +356,7 @@ impl OneNodeTestConfig {
                     tls_public_key,
                     self.indexer.txn_sender.clone(),
                     keystore,
-                    self.keyshares_receiver,
+                    import_keyshares_receiver,
                 )
                 .await
                 .expect("onboarding failed");

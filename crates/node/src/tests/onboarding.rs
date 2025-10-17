@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::config::{NodeStatus, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
+use crate::migration_service;
 use crate::p2p::testing::PortSeed;
 use crate::providers::PublicKeyConversion;
 use crate::tests::DEFAULT_BLOCK_TIME;
@@ -51,8 +52,8 @@ async fn test_onboarding() {
     let mut initial_participants = setup.participants.clone();
     let onboarding_participant = initial_participants.participants.pop().unwrap();
 
-    let onboarding_participant_keyshare_sender =
-        setup.configs.last().unwrap().keyshares_sender.clone();
+    //let onboarding_participant_keyshare_sender =
+    //    setup.configs.last().unwrap().keyshares_sender.clone();
     let destination_node_info = participant_info_from_config(&onboarding_participant);
     let destination_node = {
         let signer_account_pk = setup
@@ -127,6 +128,7 @@ async fn test_onboarding() {
         contract.migration_service.set_backup_service_info(
             onboarding_participant.near_account_id.clone(),
             BackupServiceInfo {
+                // todo: store secret key. need it for http request
                 public_key: bogus_ed25519_public_key(),
             },
         );
@@ -146,8 +148,16 @@ async fn test_onboarding() {
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
             .await
             .unwrap();
-        onboarding_participant_keyshare_sender
-            .send(keyshares)
+        // todo: make a HTTP request
+        let mut request_sender = migration_service::web::client::connect_to_web_server(
+            p2p_private_key,
+            target_address,
+            expected_server_key,
+        )
+        .await
+        .unwrap();
+        migration_service::web::client::make_set_keyshares_request(&mut request_sender, keyshares)
+            .await
             .unwrap();
     }
     tracing::info!("Sent keyshares");

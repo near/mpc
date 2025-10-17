@@ -13,7 +13,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
-    migration_service::onboarding::onboard,
+    migration_service::{self, onboarding::onboard},
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
@@ -451,9 +451,30 @@ impl StartCmd {
         });
 
         // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085)
-        let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
+        let (import_keyshares_sender, import_keyshares_receiver) =
+            tokio::sync::watch::channel(vec![]);
         let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
             RwLock::new(key_storage_config.create().await?).into();
+
+        let web_server_state = migration_service::web::types::WebServerState {
+            import_keyshares_sender,
+            keyshare_storage: keyshare_storage.clone(),
+        };
+        // todo: change function signature. No neeed for Arc.
+        // also: no need for cancellation token
+        // todo: web ui config from config file
+        let web_ui_config = WebUIConfig {
+            host: "127.0.0.1".to_string(),
+            port: 1523,
+        };
+        migration_service::web::server::start_web_server(
+            web_server_state.into(),
+            web_ui_config,
+            indexer_api.my_migration_info_receiver.clone(),
+            &secrets.persistent_secrets.p2p_private_key,
+            CancellationToken::new(),
+        )
+        .await?;
         onboard(
             indexer_api.contract_state_receiver.clone(),
             indexer_api.my_migration_info_receiver.clone(),
@@ -461,7 +482,7 @@ impl StartCmd {
             tls_public_key,
             indexer_api.txn_sender.clone(),
             keyshare_storage.clone(),
-            keyshare_receiver,
+            import_keyshares_receiver,
         )
         .await?;
 
