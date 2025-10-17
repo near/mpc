@@ -1,27 +1,25 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use tokio::{
     fs::File,
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt},
     sync::Mutex,
 };
 
 use crate::{ports::SecretsRepository, types};
 
-const SECRETS_FILE_NAME: &'static str = "secrets.json";
-
 pub struct SharedJsonSecretsStorage<D>(Arc<Mutex<JsonSecretsStorage<D>>>);
 
 impl SharedJsonSecretsStorage<File> {
-    pub async fn open_write() -> Self {
+    pub async fn open_write(storage_path: &Path) -> Self {
         Self(Arc::new(Mutex::new(
-            JsonSecretsStorage::<File>::open_write().await,
+            JsonSecretsStorage::<File>::open_write(storage_path).await,
         )))
     }
 
-    pub async fn open_read() -> Self {
+    pub async fn open_read(storage_path: &Path) -> Self {
         Self(Arc::new(Mutex::new(
-            JsonSecretsStorage::<File>::open_read().await,
+            JsonSecretsStorage::<File>::open_read(storage_path).await,
         )))
     }
 }
@@ -31,14 +29,16 @@ pub struct JsonSecretsStorage<D> {
 }
 
 impl JsonSecretsStorage<File> {
-    pub async fn open_write() -> Self {
-        let destination = File::create_new(SECRETS_FILE_NAME).await.expect("Error");
+    pub async fn open_write(storage_path: &Path) -> Self {
+        let destination = File::create_new(storage_path)
+            .await
+            .expect("Error creating file");
 
         Self { destination }
     }
 
-    pub async fn open_read() -> Self {
-        let destination = File::open(SECRETS_FILE_NAME).await.expect("Error");
+    pub async fn open_read(storage_path: &Path) -> Self {
+        let destination = File::open(storage_path).await.expect("Error opening file");
 
         Self { destination }
     }
@@ -46,36 +46,48 @@ impl JsonSecretsStorage<File> {
 
 impl<W> JsonSecretsStorage<W>
 where
-    W: AsyncWrite + Unpin,
+    W: AsyncWrite + Unpin + AsyncSeek,
 {
     pub async fn store_secrets(&mut self, secrets: &types::PersistentSecrets) {
-        let encoded_secrets = serde_json::to_vec(&secrets).expect("TODO");
-        (&mut self.destination)
+        let encoded_secrets =
+            serde_json::to_vec(&secrets).expect("Could not convert secrets to vec");
+        self.destination
+            .seek(std::io::SeekFrom::Start(0))
+            .await
+            .expect("Could not seek to start");
+        self.destination
             .write_all(&encoded_secrets)
             .await
-            .expect("TODO");
+            .expect("Could not write to destination");
+        self.destination
+            .flush()
+            .await
+            .expect("Could not flush destination");
     }
 }
 
 impl<R> JsonSecretsStorage<R>
 where
-    R: AsyncRead + Unpin,
+    R: AsyncRead + Unpin + AsyncSeek,
 {
     pub async fn load_secrets(&mut self) -> types::PersistentSecrets {
         let mut buffer = Vec::new();
         self.destination
+            .seek(std::io::SeekFrom::Start(0))
+            .await
+            .expect("Could not seek to start");
+        self.destination
             .read_to_end(&mut buffer)
             .await
-            .expect("TODO");
-
-        serde_json::from_slice(&buffer).expect("TODO")
+            .expect("Could not read destination");
+        serde_json::from_slice(&buffer).expect("Could not read secrets from json")
     }
 }
 
 impl<D> SecretsRepository for SharedJsonSecretsStorage<D>
 where
-    D: AsyncRead + Unpin,
-    D: AsyncWrite + Unpin,
+    D: AsyncRead + Unpin + AsyncSeek,
+    D: AsyncWrite + Unpin + AsyncSeek,
     D: Send,
 {
     type Error = String;
@@ -87,8 +99,8 @@ where
     }
 
     async fn load_secrets(&self) -> Result<types::PersistentSecrets, Self::Error> {
-        todo!()
-    } // TODO
+        Ok(self.0.lock().await.load_secrets().await)
+    }
 }
 
 #[cfg(test)]
@@ -96,13 +108,33 @@ where
 mod tests {
     use std::io::Cursor;
 
+    use rand::rngs::OsRng;
+
     use super::*;
+
+    impl SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
+        pub async fn open_write(vector_storage: Vec<u8>) -> Self {
+            Self(Arc::new(Mutex::new(
+                JsonSecretsStorage::<Cursor<Vec<u8>>> {
+                    destination: Cursor::new(vector_storage),
+                },
+            )))
+        }
+
+        pub async fn open_read(vector_storage: Vec<u8>) -> Self {
+            Self(Arc::new(Mutex::new(
+                JsonSecretsStorage::<Cursor<Vec<u8>>> {
+                    destination: Cursor::new(vector_storage),
+                },
+            )))
+        }
+    }
 
     #[tokio::test]
     async fn json_secrets_storage__should_be_able_to_load_stored_secrets() {
         // Given
         let test_secrets = dummy_persistent_secrets();
-        let secrets_storage = shared_vector_storage();
+        let secrets_storage = shared_vector_storage().await;
 
         // When
         secrets_storage
@@ -116,19 +148,11 @@ mod tests {
         assert_eq!(test_secrets, loaded);
     }
 
-    #[tokio::test]
-    async fn storing_secrets_example() {
-        let my_generated_secrets = dummy_persistent_secrets();
-
-        let storage = SharedJsonSecretsStorage::<File>::open_write().await;
-        storage.store_secrets(&my_generated_secrets);
-    }
-
-    fn shared_vector_storage() -> SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
-        todo!();
+    async fn shared_vector_storage() -> SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
+        SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::open_write(Vec::new()).await
     }
 
     fn dummy_persistent_secrets() -> types::PersistentSecrets {
-        todo!();
+        types::PersistentSecrets::generate(&mut OsRng)
     }
 }

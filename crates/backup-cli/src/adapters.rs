@@ -1,56 +1,11 @@
-use std::path::{Path, PathBuf};
-
 use ed25519_dalek::VerifyingKey;
 
 use crate::{
-    ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository},
-    types::{self, PersistentSecrets},
+    ports::{ContractInterface, KeyShareRepository, P2PClient},
+    types,
 };
 
 pub mod secrets_storage;
-
-pub struct LocalSecretsStorage {}
-
-impl LocalSecretsStorage {
-    const SECRETS_FILE_NAME: &'static str = "secrets.json";
-}
-
-impl SecretsRepository for LocalSecretsStorage {
-    type Error = String;
-
-    async fn store_secrets(&self, secrets: &types::PersistentSecrets) -> Result<(), Self::Error> {
-        let home_dir: PathBuf = "/".into();
-        if !home_dir.exists() {
-            std::fs::create_dir_all(&home_dir)
-                .map_err(|err| format!("Could not create dir: {err}"))?;
-        }
-        let path = home_dir.join(Self::SECRETS_FILE_NAME);
-        if path.exists() {
-            return Err("secrets.json already exists. Refusing to overwrite.".to_string());
-        }
-        std::fs::write(
-            &path,
-            serde_json::to_vec(&secrets)
-                .map_err(|err| format!("Could not convert secrets to json: {err}"))?,
-        )
-        .map_err(|err| format!("Could not write secrets file: {err}"))?;
-        Ok(())
-    }
-
-    async fn load_secrets(&self) -> Result<types::PersistentSecrets, Self::Error> {
-        let home_dir: PathBuf = "/".into();
-        let file_path = home_dir.join(Self::SECRETS_FILE_NAME);
-        if file_path.exists() {
-            let str = std::fs::read_to_string(&file_path)
-                .map_err(|err| format!("Could not read file: {err}"))?;
-            let secrets: PersistentSecrets = serde_json::from_str(&str)
-                .map_err(|err| format!("Could not get secrets from json: {err}"))?;
-            Ok(secrets)
-        } else {
-            Err(format!("File not found: {file_path:?}"))
-        }
-    }
-}
 
 pub struct DummyKeyshareStorage {}
 

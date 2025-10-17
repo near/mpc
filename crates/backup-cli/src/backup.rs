@@ -1,7 +1,6 @@
-use std::path::Path;
+use rand_core::OsRng;
 use std::path::PathBuf;
-
-use ed25519_dalek::SigningKey;
+use tokio::fs::File;
 
 use crate::adapters;
 use crate::cli;
@@ -12,12 +11,20 @@ pub async fn run_command(args: cli::Args) {
     match args.command {
         cli::Command::GenerateKeys(_) => {
             let home_dir = PathBuf::from(args.home_dir);
-            let secrets_storage = adapters::LocalSecretsStorage {};
+            let secrets_storage =
+                adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_write(
+                    home_dir.as_path(),
+                )
+                .await;
             generate_secrets(&secrets_storage).await;
         }
         cli::Command::Register(_command_args) => {
             let home_dir = PathBuf::from(args.home_dir);
-            let secrets_storage = adapters::LocalSecretsStorage {};
+            let secrets_storage =
+                adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_read(
+                    home_dir.as_path(),
+                )
+                .await;
             let mpc_contract = adapters::DummyContractInterface {};
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }
@@ -35,13 +42,7 @@ pub async fn run_command(args: cli::Args) {
 }
 
 pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
-    let mut os_rng = rand::rngs::OsRng;
-    let p2p_private_key = SigningKey::generate(&mut os_rng);
-    let near_signer_key = SigningKey::generate(&mut os_rng);
-    let persistent_secrets = PersistentSecrets {
-        p2p_private_key,
-        near_signer_key,
-    };
+    let persistent_secrets = PersistentSecrets::generate(&mut OsRng);
     secrets_storage
         .store_secrets(&persistent_secrets)
         .await

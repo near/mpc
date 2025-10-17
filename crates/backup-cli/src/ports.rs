@@ -1,4 +1,4 @@
-use std::{future::Future, path::Path};
+use std::future::Future;
 
 use ed25519_dalek::VerifyingKey;
 
