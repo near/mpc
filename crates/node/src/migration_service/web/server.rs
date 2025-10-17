@@ -139,21 +139,31 @@ async fn handle_request(
             match whole_body {
                 Ok(bytes) => match serde_json::from_slice::<Keyset>(&bytes) {
                     Ok(keyset) => {
-                        let Ok(keyshares) = state
+                        let keyshares = match state
                             .keyshare_storage
                             .read()
                             .await
                             .get_keyshares(&keyset)
                             .await
-                        else {
-                            return Ok(Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from("Failed to get keyshares"))
-                                .unwrap());
+                        {
+                            Ok(keyshares) => keyshares,
+                            Err(err) => {
+                                let msg = err.to_string();
+                                tracing::error!(msg);
+                                return Ok(Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from("Failed to get keyshares"))
+                                    .unwrap());
+                            }
                         };
-                        let json = serde_json::to_string(&keyshares)
-                            .unwrap_or_else(|_| "invalid".to_string());
-                        let mut response = Response::new(Body::from(json));
+
+                        let keyshares_json =
+                            serde_json::to_string(&keyshares).unwrap_or_else(|err| {
+                                let msg = err.to_string();
+                                tracing::error!(msg);
+                                "invalid keyshares".to_string()
+                            });
+                        let mut response = Response::new(Body::from(keyshares_json));
                         response.headers_mut().insert(
                             hyper::header::CONTENT_TYPE,
                             hyper::header::HeaderValue::from_static("application/json"),
