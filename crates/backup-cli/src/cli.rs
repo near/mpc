@@ -16,8 +16,7 @@ pub enum Command {
 }
 
 #[derive(clap::Args, Debug)]
-pub struct GenerateKeysArgs {
-}
+pub struct GenerateKeysArgs {}
 
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
