@@ -1,21 +1,11 @@
+use ed25519_dalek::VerifyingKey;
+
 use crate::{
-    ports::{ContractInterface, KeyShareRepository, P2PClient, SecretsRepository},
+    ports::{ContractInterface, KeyShareRepository, P2PClient},
     types,
 };
 
-pub struct DummySecretsStorage {}
-
-impl SecretsRepository for DummySecretsStorage {
-    type Error = String;
-
-    async fn store_private_key(&self, _private_key: &types::PrivateKey) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    async fn load_private_key(&self) -> Result<types::PrivateKey, Self::Error> {
-        Ok(types::PrivateKey {})
-    }
-}
+pub mod secrets_storage;
 
 pub struct DummyKeyshareStorage {}
 
@@ -50,10 +40,7 @@ pub struct DummyContractInterface {}
 impl ContractInterface for DummyContractInterface {
     type Error = String;
 
-    async fn register_backup_data(
-        &self,
-        _public_key: &types::PublicKey,
-    ) -> Result<(), Self::Error> {
+    async fn register_backup_data(&self, _public_key: &VerifyingKey) -> Result<(), Self::Error> {
         Ok(())
     }
 }
