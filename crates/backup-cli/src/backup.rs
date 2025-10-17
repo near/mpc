@@ -15,7 +15,8 @@ pub async fn run_command(args: cli::Args) {
                 adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_write(
                     home_dir.as_path(),
                 )
-                .await;
+                .await
+                .expect("failed to create secrets storage");
             generate_secrets(&secrets_storage).await;
         }
         cli::Command::Register(_command_args) => {
@@ -24,7 +25,8 @@ pub async fn run_command(args: cli::Args) {
                 adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_read(
                     home_dir.as_path(),
                 )
-                .await;
+                .await
+                .expect("failed to create secrets storage");
             let mpc_contract = adapters::DummyContractInterface {};
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }
