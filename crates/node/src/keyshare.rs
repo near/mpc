@@ -1048,7 +1048,6 @@ pub mod tests {
         assert_eq!(&loaded, &expected_keyset.keyshares());
     }
 
-    /// Get keyshares for a given keyset
     #[tokio::test]
     async fn test_get_keyshares() {
         let epoch_id = 1;
@@ -1064,5 +1063,102 @@ pub mod tests {
         let keyset1 = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone()]).keyset();
 
         assert_eq!(storage.get_keyshares(&keyset1).await.unwrap(), vec![key_1]);
+    }
+
+    #[tokio::test]
+    async fn test_get_keyshare_from_temporary() {
+        let epoch_id = 1;
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let (storage, _tempdir) = generate_key_storage().await;
+        storage
+            .start_generating_key(&[], key_0.key_id)
+            .await
+            .unwrap()
+            .commit_keyshare(key_0.clone())
+            .await
+            .unwrap();
+
+        let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone()]).keyset();
+
+        // At this point keyset0 must be in temporary storage
+        assert_eq!(
+            storage.get_keyshares(&keyset0).await.unwrap(),
+            vec![key_0.clone()]
+        );
+
+        // Now we move keyset0 to permanent storage
+        let loaded1 = storage.update_permanent_keyshares(&keyset0).await.unwrap();
+        assert_eq!(&loaded1, &vec![key_0]);
+    }
+
+    #[tokio::test]
+    async fn test_get_keyshare_does_not_mutate_state() {
+        let epoch_id = 1;
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_1 = generate_dummy_keyshare(epoch_id, 2, 1);
+        let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone()]);
+        let keyset1 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone(), key_1.clone()]);
+        let keyset2 = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_0.clone()]);
+        let (storage, _tempdir) = generate_key_storage().await;
+        storage
+            .start_generating_key(&[], key_0.key_id)
+            .await
+            .unwrap()
+            .commit_keyshare(key_0.clone())
+            .await
+            .unwrap();
+        storage
+            .start_generating_key(&keyset0.generated(), key_1.key_id)
+            .await
+            .unwrap()
+            .commit_keyshare(key_1.clone())
+            .await
+            .unwrap();
+        storage
+            .update_permanent_keyshares(&keyset0.keyset())
+            .await
+            .unwrap();
+
+        let key_shares_permanent_storage =
+            storage.permanent.load().await.unwrap().unwrap().keyshares;
+        let key_share_in_temporary_storage = storage
+            .temporary
+            .load_keyshare(key_1.key_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Get correct keyshares from permanent
+        assert_eq!(
+            storage.get_keyshares(&keyset0.keyset()).await.unwrap(),
+            vec![key_0.clone()]
+        );
+        // Get correct keyshares from permanent and temporary
+        assert_eq!(
+            storage.get_keyshares(&keyset1.keyset()).await.unwrap(),
+            vec![key_0.clone(), key_1.clone()]
+        );
+        // A call that fails
+        assert!(storage.get_keyshares(&keyset2.keyset()).await.is_err());
+
+        let final_key_shares_permanent_storage =
+            storage.permanent.load().await.unwrap().unwrap().keyshares;
+        let final_key_share_in_temporary_storage = storage
+            .temporary
+            .load_keyshare(key_1.key_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Permanent storage did not change
+        assert_eq!(
+            final_key_shares_permanent_storage,
+            key_shares_permanent_storage
+        );
+        // This key remains in temporary storage
+        assert_eq!(
+            final_key_share_in_temporary_storage,
+            key_share_in_temporary_storage
+        );
     }
 }
