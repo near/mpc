@@ -16,6 +16,9 @@ pub struct JsonSecretsStorage<D> {
     destination: D,
 }
 
+#[derive(thiserror::Error)]
+pub enum Error {}
+
 impl SharedJsonSecretsStorage<File> {
     pub async fn open_write(storage_path: &Path) -> Self {
         if !storage_path.exists() {
