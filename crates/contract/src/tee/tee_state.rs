@@ -338,30 +338,51 @@ impl TeeState {
             .get(tls_public_key)
             .map(|(node_id, _)| node_id.clone())
     }
-    pub fn is_caller_an_attested_node(&self) -> bool {
+    /// Returns true if the caller has at least one participant entry
+    /// whose TLS key matches an attested node belonging to the caller account.
+    ///
+    /// Handles multiple participants per account and supports legacy mock nodes.
+    pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
-        //let predecessor = env::predecessor_account_id(); //TODO (#1288)  check what is better predecessor or signer
 
-        // Check if caller matches an attested node
-        let result = self.participants_attestations.values().any(|(node_id, _)| {
-            match &node_id.account_public_key {
-                Some(pk) => pk == &signer_pk,
-                None => {
-                    // TODO (#823) Legacy fallback for mock nodes (no account_public_key) -remove when TEE is enforced
-                    node_id.account_id == signer_id
+        // find all participant entries that belong to the caller
+        for (account_id, _pid, participant_info) in participants.participants().iter() {
+            if account_id != &signer_id {
+                continue;
+            }
+
+            // Step 2: lookup attestation by TLS key (sign_pk)
+            if let Some((node_id, _attestation)) = self
+                .participants_attestations
+                .get(&participant_info.sign_pk)
+            {
+                // Sanity check: attestation entry must belong to same account
+                if node_id.account_id != signer_id {
+                    continue;
+                }
+
+                match &node_id.account_public_key {
+                    Some(pk) if pk == &signer_pk => {
+                        return true;
+                    }
+                    None => {
+                        // TODO (#823) Legacy fallback for mock nodes (no account_public_key) - remove when TEE is enforced
+                        return true;
+                    }
+                    _ => continue,
                 }
             }
-        });
+        }
 
-        result
+        false
     }
 
-    /// Panics if the caller is not an attested MPC node
-    pub fn assert_caller_is_attested_node(&self) {
+    /// Panics if the caller is not both a participant and attested.
+    pub fn assert_caller_is_attested_participant(&self, participants: &Participants) {
         assert!(
-            self.is_caller_an_attested_node(),
-            "Caller is not an attested MPC node"
+            self.is_caller_an_attested_participant(participants),
+            "Caller must be an attested participant"
         );
     }
 }
