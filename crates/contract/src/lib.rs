@@ -553,12 +553,13 @@ impl MpcContract {
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
 
-        let account_id = env::signer_account_id();
+        //let account_id = env::signer_account_id();
+        let predecessor_account_id = env::predecessor_account_id();
         let account_key = env::signer_account_pk();
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
-            account_id,
+            predecessor_account_id,
             proposed_participant_attestation,
             account_key
         );
@@ -587,7 +588,7 @@ impl MpcContract {
         // Add the participant information to the contract state
         let is_new_attestation = self.tee_state.add_participant(
             NodeId {
-                account_id: account_id.clone(),
+                account_id: predecessor_account_id.clone(),
                 tls_public_key: tls_public_key.into_contract_type(),
                 account_public_key: Some(account_key),
             },
@@ -612,7 +613,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id).transfer(diff);
+                    Promise::new(predecessor_account_id).transfer(diff);
                 }
             }
         }
@@ -1313,7 +1314,8 @@ impl MpcContract {
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
-        let voter = env::signer_account_id();
+        //let voter = env::signer_account_id();
+        let voter = env::predecessor_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1372,7 +1374,7 @@ impl MpcContract {
         Option<BackupServiceInfo>,
         Option<DestinationNodeInfo>,
     ) {
-        let account_id = env::signer_account_id();
+        let account_id = env::signer_account_id(); // or predecessor_account_id()?
         log!("my_migration_info: signer={:?}", account_id,);
         self.node_migrations.get_for_account(&account_id)
     }
@@ -1395,7 +1397,7 @@ impl MpcContract {
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = env::signer_account_id(); // or predecessor_account_id()?
         log!(
             "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
@@ -1430,7 +1432,7 @@ impl MpcContract {
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
         // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
-        let account_id = env::signer_account_id();
+        let account_id = env::signer_account_id(); // or predecessor_account_id()?
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
             account_id,
@@ -1467,7 +1469,7 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = env::signer_account_id(); // or predecessor_account_id()?
         let signer_pk = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",

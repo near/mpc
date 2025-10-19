@@ -344,7 +344,8 @@ impl TeeState {
     /// Handles multiple participants per account and supports legacy mock nodes.
     pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
         let signer_pk = env::signer_account_pk();
-        let signer_id = env::signer_account_id();
+        //let signer_id = env::signer_account_id();
+        let signer_id = env::predecessor_account_id();
 
         // find all participant entries that belong to the caller
         for (account_id, _pid, participant_info) in participants.participants().iter() {
