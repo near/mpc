@@ -1502,6 +1502,7 @@ dependencies = [
 name = "backup-cli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "contract-interface",
  "ed25519-dalek",

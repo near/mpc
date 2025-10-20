@@ -538,7 +538,7 @@ pub mod testing {
         pub const CLI_FOR_PYTEST: Self = Self(0);
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-utils"))]
     impl PortSeed {
         // Each place that passes a PortSeed in should define a unique one here.
         pub const P2P_BASIC_TEST: Self = Self(1);
@@ -557,6 +557,8 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self(14);
         pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self(15);
         pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self(16);
+        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self(17);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self(18);
     }
 
     pub fn generate_test_p2p_configs(

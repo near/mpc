@@ -1,6 +1,6 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
-use crate::tests::TestGenerators;
+use crate::test_utils::TestGenerators;
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use threshold_signatures::ecdsa::KeygenOutput;

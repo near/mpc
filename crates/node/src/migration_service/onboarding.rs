@@ -290,7 +290,7 @@ mod tests {
     use crate::{
         config::tests::gen_participant,
         indexer::participants::ContractState,
-        keyshare::{test_utils::KeysetBuilder, tests::generate_key_storage_config},
+        keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
         migration_service::{
             onboarding::{
                 wait_for_and_import_keyshares, IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG,

@@ -178,7 +178,7 @@ mod tests {
     };
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-        use crate::tests::TestGenerators;
+        use crate::test_utils::TestGenerators;
         let x = TestGenerators::new(4, 3)
             .make_eddsa_keygens()
             .values()
