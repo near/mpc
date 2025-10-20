@@ -56,6 +56,7 @@ impl JsonSecretsStorage<File> {
         let file_path = storage_path.as_ref().join(SECRETS_FILE_NAME);
         let destination = File::options()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(file_path)
             .await
