@@ -121,6 +121,7 @@ impl TestSetup {
 fn create_context_for_participant(account_id: &AccountId) -> VMContext {
     VMContextBuilder::new()
         .signer_account_id(account_id.clone())
+        .predecessor_account_id(account_id.clone())
         .block_timestamp(near_sdk::env::block_timestamp())
         .build()
 }
