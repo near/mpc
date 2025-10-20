@@ -2,10 +2,20 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use std::str::FromStr;
 
 use contract_interface::types as contract_types;
-use mpc_contract::primitives::key_state::{EpochId, Keyset};
+use mpc_contract::{primitives::key_state::Keyset, state::ProtocolContractState};
 use mpc_node::migration_service::web::client;
 
 use crate::{ports, types};
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("failed to get domain registry: {0}")]
+    DomainRegistry(mpc_contract::errors::Error),
+
+    #[error("Incorrect contract state")]
+    ContractState,
+}
+
 pub struct MpcP2PClient {
     mpc_node_url: String,
     mpc_node_p2p_key: VerifyingKey,
@@ -30,9 +40,12 @@ impl MpcP2PClient {
 }
 
 impl ports::P2PClient for MpcP2PClient {
-    type Error = String;
+    type Error = Error;
 
-    async fn get_keyshares(&self) -> Result<types::KeyShares, Self::Error> {
+    async fn get_keyshares(
+        &self,
+        contract_state: &ProtocolContractState,
+    ) -> Result<types::KeyShares, Self::Error> {
         let mut send_request = client::connect_to_web_server(
             &self.p2p_private_key,
             &self.mpc_node_url,
@@ -40,11 +53,20 @@ impl ports::P2PClient for MpcP2PClient {
         )
         .await
         .unwrap();
-        let epoch_id = EpochId::new(1);
-        let keyshares =
-            client::make_keyshare_get_request(&mut send_request, &Keyset::new(epoch_id, vec![]))
-                .await
-                .unwrap();
+
+        let keyset = match contract_state {
+            ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => {
+                return Err(Error::ContractState);
+            }
+            ProtocolContractState::Initializing(state) => {
+                Keyset::new(state.epoch_id, state.generated_keys.clone())
+            }
+            ProtocolContractState::Running(state) => state.keyset.clone(),
+        };
+
+        let keyshares = client::make_keyshare_get_request(&mut send_request, &keyset)
+            .await
+            .unwrap();
         Ok(types::KeyShares(keyshares))
     }
 

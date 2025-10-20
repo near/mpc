@@ -28,7 +28,7 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let mpc_contract = adapters::DummyContractInterface {};
+            let mpc_contract = adapters::contract_interface::SimpleContractInterface::new(home_dir);
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }
         cli::Command::GetKeyshares(subcommand_args) => {
@@ -46,7 +46,8 @@ pub async fn run_command(args: cli::Args) {
                 p2p_private_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
-            get_keyshares(&mpc_p2p_client, &key_shares_storage).await;
+            let mpc_contract = adapters::contract_interface::SimpleContractInterface::new(home_dir);
+            get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract).await;
         }
         cli::Command::PutKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
@@ -99,9 +100,14 @@ pub async fn register_backup_service(
 pub async fn get_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
+    mpc_contract: &impl ports::ContractInterface,
 ) {
+    let contract_state = mpc_contract
+        .get_contract_state()
+        .await
+        .expect("Could not get contract state");
     let keyshare = mpc_p2p_client
-        .get_keyshares()
+        .get_keyshares(&contract_state)
         .await
         .expect("fail to get key shares");
     keyshares_storage
