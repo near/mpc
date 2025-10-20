@@ -1337,7 +1337,6 @@ impl MpcContract {
     /// - The protocol is not active (e.g., NotInitialized)
     /// - The caller is not attested or not in the relevant participants set
     pub fn assert_caller_is_attested_participant_and_protocol_active(&self) {
-        // Select participants based on the current protocol state
         let participants = match &self.protocol_state {
             ProtocolContractState::Initializing(state) => {
                 state.generating_key.proposed_parameters().participants()
@@ -1351,7 +1350,6 @@ impl MpcContract {
             }
         };
 
-        // Ensure the caller is attested and part of the selected participants set
         if !self
             .tee_state
             .is_caller_an_attested_participant(participants)
@@ -2093,7 +2091,7 @@ mod tests {
 
         // 2. Submit valid attestations for legitimate participants
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
-        
+
         // 3. Create outsider account and submit attestation as that caller
         let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
 
