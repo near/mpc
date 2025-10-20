@@ -25,7 +25,7 @@ const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 const GET_TEE_ATTESTATION_METHOD_NAME: &str = "get_attestation";
 
-pub trait TransactionSender: Clone + Send + Sync {
+pub(crate) trait TransactionSender: Clone + Send + Sync {
     fn send(
         &self,
         transaction: ChainSendTransactionRequest,

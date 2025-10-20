@@ -19,20 +19,20 @@ pub trait SecretsRepository {
 pub trait KeyShareRepository {
     type Error: std::fmt::Debug;
 
-    fn store_key_shares(
+    fn store_keyshares(
         &self,
         key_shares: &types::KeyShares,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn load_key_shares(&self)
+    fn load_keyshares(&self)
     -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
 }
 
 pub trait P2PClient {
     type Error: std::fmt::Debug;
 
-    fn get_key_shares(&self) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
-    fn put_key_shares(
+    fn get_keyshares(&self) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
+    fn put_keyshares(
         &self,
         key_shares: &types::KeyShares,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;

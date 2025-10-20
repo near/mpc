@@ -25,7 +25,7 @@ use crate::{
 /// runs onboarding tasks as needed.
 ///
 /// Returns `Ok(())` when this node is an active participant in the current epoch.
-pub async fn onboard(
+pub(crate) async fn onboard(
     contract_state_receiver: watch::Receiver<ContractState>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     my_near_account_id: AccountId,

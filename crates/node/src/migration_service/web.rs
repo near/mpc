@@ -91,7 +91,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -118,7 +118,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -134,7 +134,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -170,7 +170,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(expected, received);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
-        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares().to_vec())
+        make_set_keyshares_request(&mut send_request, &keyset_builder.keyshares().to_vec())
             .await
             .unwrap();
 
@@ -201,7 +201,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();

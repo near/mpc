@@ -53,7 +53,7 @@ mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
 ] }
 mpc-tls = { path = "crates/tls" }
-
+mpc-node = { path = "crates/node" }
 
 actix = "0.13.0"
 aes-gcm = "0.10.3"
