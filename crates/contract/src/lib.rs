@@ -2107,6 +2107,116 @@ mod tests {
         contract.assert_caller_is_attested_participant_and_protocol_active();
     }
 
+    #[test]
+    fn test_respond_ckd_fails_for_attested_non_participant() {
+        use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken};
+        use std::panic;
+
+        // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+
+        // Submit valid attestations for all participants (so contract is in Running state)
+        // 2. Extract participants list (we have 4 by default)
+        let participants = match &contract.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
+            _ => panic!("Contract should be in Running state"),
+        };
+
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        // --- Step 2: Create a valid CKD request by a legitimate participant ---
+        let app_public_key: dtos::Bls12381G1PublicKey =
+            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                .parse()
+                .unwrap();
+        let request = CKDRequestArgs {
+            app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key.clone(),
+            context.predecessor_account_id.clone(),
+            request.domain_id,
+        );
+
+        // Legit participant makes the CKD request
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(context.predecessor_account_id.clone())
+            .predecessor_account_id(context.predecessor_account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract.request_app_private_key(request);
+        assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
+
+        // --- Step 3: Attested outsider (not a participant) joins ---
+        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+        let tls_key = bogus_ed25519_near_public_key();
+        let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
+
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract
+            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
+            .unwrap();
+
+        // --- Step 4: Verify that a participant can still respond successfully ---
+        with_attested_context(&contract); // sets env to a real attested participant
+
+        let valid_response = CKDResponse {
+            big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
+            big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
+        };
+
+        // This should succeed (attested participant)
+        contract
+            .respond_ckd(ckd_request.clone(), valid_response.clone())
+            .expect("Participant should be allowed to respond_ckd");
+
+        // --- Step 5: Now switch to attested outsider and verify it panics ---
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+
+        let outsider_response = CKDResponse {
+            big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
+            big_c: dtos::Bls12381G1PublicKey([4u8; 48]),
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract
+                .respond_ckd(ckd_request.clone(), outsider_response)
+                .unwrap();
+        }));
+
+        assert!(
+            result.is_err(),
+            "Expected panic from attested non-participant"
+        );
+
+        if let Err(err) = result {
+            if let Some(msg) = err.downcast_ref::<&str>() {
+                assert!(
+                    msg.contains("Caller must be an attested participant"),
+                    "Unexpected panic message: {}",
+                    msg
+                );
+            } else if let Some(msg) = err.downcast_ref::<String>() {
+                assert!(
+                    msg.contains("Caller must be an attested participant"),
+                    "Unexpected panic message: {}",
+                    msg
+                );
+            } else {
+                panic!("Unexpected panic payload type");
+            }
+        }
+    }
+
     impl MpcContract {
         pub fn new_from_protocol_sate(protocol_state: ProtocolContractState) -> Self {
             MpcContract {

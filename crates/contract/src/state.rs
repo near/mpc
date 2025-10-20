@@ -9,7 +9,8 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
-    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Participants},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
+    participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
