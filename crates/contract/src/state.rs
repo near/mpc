@@ -9,7 +9,7 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
-    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Participants},
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
@@ -211,6 +211,30 @@ impl ProtocolContractState {
             }
         };
         Ok(())
+    }
+    /// Returns a reference to the relevant `Participants` list
+    /// based on the current protocol phase.
+    ///
+    /// - `Initializing` → uses proposed participants from generating_key
+    /// - `Running` → uses current active participants
+    /// - `Resharing` → uses new participants from resharing proposal
+    ///
+    /// Panics if called when `NotInitialized`.
+    pub fn active_participants(&self) -> &Participants {
+        match self {
+            ProtocolContractState::Initializing(state) => {
+                state.generating_key.proposed_parameters().participants()
+            }
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Resharing(state) => {
+                state.resharing_key.proposed_parameters().participants()
+            }
+            ProtocolContractState::NotInitialized => {
+                panic!(
+                    "Protocol must be Initializing, Running, or Resharing to access active participants"
+                );
+            }
+        }
     }
 
     pub fn is_existing_or_prospective_participant(

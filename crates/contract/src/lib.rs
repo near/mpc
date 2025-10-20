@@ -1337,18 +1337,7 @@ impl MpcContract {
     /// - The protocol is not active (e.g., NotInitialized)
     /// - The caller is not attested or not in the relevant participants set
     pub fn assert_caller_is_attested_participant_and_protocol_active(&self) {
-        let participants = match &self.protocol_state {
-            ProtocolContractState::Initializing(state) => {
-                state.generating_key.proposed_parameters().participants()
-            }
-            ProtocolContractState::Running(state) => state.parameters.participants(),
-            ProtocolContractState::Resharing(state) => {
-                state.resharing_key.proposed_parameters().participants()
-            }
-            ProtocolContractState::NotInitialized => {
-                panic!("Protocol must be Initializing, Running, or Resharing to perform this operation");
-            }
-        };
+        let participants = self.protocol_state.active_participants();
 
         if !self
             .tee_state
