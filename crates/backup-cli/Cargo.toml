@@ -10,7 +10,6 @@ clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-contract = { workspace = true, features = ["dev-utils"] }
 mpc-node = { workspace = true }
-mpc-tls = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }
