@@ -153,7 +153,7 @@ mod tests {
         // Given
         let mut rng = StdRng::seed_from_u64(123);
         let test_secrets = types::PersistentSecrets::generate(&mut rng);
-        let secrets_storage = shared_vector_storage().await;
+        let secrets_storage = SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::new(Vec::new()).await;
 
         // When
         secrets_storage
@@ -165,9 +165,5 @@ mod tests {
 
         // Then
         assert_eq!(test_secrets, loaded);
-    }
-
-    async fn shared_vector_storage() -> SharedJsonSecretsStorage<Cursor<Vec<u8>>> {
-        SharedJsonSecretsStorage::<Cursor<Vec<u8>>>::new(Vec::new()).await
     }
 }
