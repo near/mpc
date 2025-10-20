@@ -110,7 +110,7 @@ impl KeyshareStorage {
     /// Returns a handle to the keyshare storage, which must be used to commit the keyshare before
     /// the corresponding vote_pk call is made on the contract.
     pub async fn start_generating_key(
-        &self,
+        &mut self,
         already_generated_keys: &[KeyForDomain],
         key_id_to_generate: KeyEventId,
     ) -> anyhow::Result<PendingKeyshareStorageHandle> {
@@ -153,7 +153,7 @@ impl KeyshareStorage {
     /// Returns a handle to the keyshare storage, which must be used to commit the keyshare before
     /// the corresponding vote_reshared call is made on the contract.
     pub async fn start_resharing_key(
-        &self,
+        &mut self,
         already_reshared_keys: &[KeyForDomain],
         key_id_to_generate: KeyEventId,
     ) -> anyhow::Result<PendingKeyshareStorageHandle> {
@@ -197,7 +197,7 @@ impl KeyshareStorage {
     }
 
     async fn _store_new_permanent_keyset_data_delete_temporary(
-        &self,
+        &mut self,
         epoch_id: EpochId,
         keyshares: Vec<Keyshare>,
     ) -> anyhow::Result<()> {
@@ -240,7 +240,7 @@ impl KeyshareStorage {
     /// security perspective, since the same epoch ID corresponds to the same set of participants
     /// and the threshold value.)
     pub async fn update_permanent_keyshares(
-        &self,
+        &mut self,
         keyset: &Keyset,
     ) -> anyhow::Result<Vec<Keyshare>> {
         match self
@@ -481,7 +481,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_key_storage() {
-        let (storage, _tempdir) = generate_key_storage().await;
+        let (mut storage, _tempdir) = generate_key_storage().await;
 
         let mut keyset = KeysetBuilder::new(0);
 
@@ -678,7 +678,7 @@ pub mod tests {
     pub async fn populate_permanent_keystore(
         keyshare: Keyshare,
         keyset: &mut KeysetBuilder,
-        storage: &KeyshareStorage,
+        storage: &mut KeyshareStorage,
     ) {
         storage
             .start_generating_key(&keyset.generated(), keyshare.key_id)
@@ -729,7 +729,7 @@ pub mod tests {
         {
             // populate the permanent keystore with the first key, but not the second
             let mut partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
-            populate_permanent_keystore(key_1, &mut partial_keyset, &storage).await;
+            populate_permanent_keystore(key_1, &mut partial_keyset, &mut storage).await;
         }
         let res = storage
             .import_backup(full_keyset.keyshares().to_vec(), &full_keyset.keyset())
@@ -762,7 +762,7 @@ pub mod tests {
         // populate the key storage with the alternate keyshare
         let (mut storage, _tempdir) = generate_key_storage().await;
         let mut expected = KeysetBuilder::from_keyshares(epoch_id, &[]);
-        populate_permanent_keystore(alternate_keyshare, &mut expected, &storage).await;
+        populate_permanent_keystore(alternate_keyshare, &mut expected, &mut storage).await;
 
         let res = storage
             .import_backup(keyset.keyshares().to_vec(), &keyset.keyset())
@@ -881,7 +881,7 @@ pub mod tests {
 
         // Populate a valid keyshare for previous epoch in permanent storage.
         let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
-        populate_permanent_keystore(previous_key_1, &mut previous_keyset, &storage).await;
+        populate_permanent_keystore(previous_key_1, &mut previous_keyset, &mut storage).await;
 
         assert!(storage
             .import_backup(
@@ -908,7 +908,7 @@ pub mod tests {
         let (mut storage, _tempdir) = generate_key_storage().await;
         let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
         let prevous_key = generate_dummy_keyshare(previous_epoch, 1, 8);
-        populate_permanent_keystore(prevous_key, &mut previous_keyset, &storage).await;
+        populate_permanent_keystore(prevous_key, &mut previous_keyset, &mut storage).await;
 
         let epoch_id = 1;
         let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0);
@@ -933,7 +933,7 @@ pub mod tests {
     async fn assert_no_keyshares_for_epoch(epoch_id: u64, keyshare_storage: &KeyshareStorage) {
         let empty_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
         let loaded = keyshare_storage
-            .update_permanent_keyshares(&empty_keyset.keyset())
+            .get_keyshares(&empty_keyset.keyset())
             .await
             .unwrap();
         assert_eq!(&loaded, &empty_keyset.keyshares());
@@ -1023,9 +1023,9 @@ pub mod tests {
         let (mut storage_2, _tempdir) = generate_key_storage().await;
 
         let key = generate_dummy_keyshare(epoch_id, 1, 0);
-        populate_permanent_keystore(key.clone(), &mut expected_keyset, &storage_2).await;
+        populate_permanent_keystore(key.clone(), &mut expected_keyset, &mut storage_2).await;
         let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
-        populate_permanent_keystore(key_2, &mut expected_keyset, &storage_2).await;
+        populate_permanent_keystore(key_2, &mut expected_keyset, &mut storage_2).await;
 
         let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
 
@@ -1054,8 +1054,8 @@ pub mod tests {
         let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
         let key_1 = generate_dummy_keyshare(epoch_id, 2, 3);
         let mut keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
-        let (storage, _tempdir) = generate_key_storage().await;
-        populate_permanent_keystore(key_1.clone(), &mut keyset, &storage).await;
+        let (mut storage, _tempdir) = generate_key_storage().await;
+        populate_permanent_keystore(key_1.clone(), &mut keyset, &mut storage).await;
         let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0]).keyset();
 
         assert!(storage.get_keyshares(&keyset0).await.is_err());
@@ -1069,7 +1069,7 @@ pub mod tests {
     async fn test_get_keyshare_from_temporary() {
         let epoch_id = 1;
         let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let (storage, _tempdir) = generate_key_storage().await;
+        let (mut storage, _tempdir) = generate_key_storage().await;
         storage
             .start_generating_key(&[], key_0.key_id)
             .await
@@ -1099,7 +1099,7 @@ pub mod tests {
         let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone()]);
         let keyset1 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone(), key_1.clone()]);
         let keyset2 = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_0.clone()]);
-        let (storage, _tempdir) = generate_key_storage().await;
+        let (mut storage, _tempdir) = generate_key_storage().await;
         storage
             .start_generating_key(&[], key_0.key_id)
             .await

@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -53,7 +53,7 @@ pub struct Coordinator<TransactionSender> {
     /// Storage for triples, presignatures, signing requests.
     pub secret_db: Arc<SecretDB>,
     /// Storage for keyshares.
-    pub keyshare_storage: Arc<KeyshareStorage>,
+    pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
     pub indexer: IndexerAPI<TransactionSender>,
 
@@ -253,7 +253,7 @@ where
     async fn run_initialization(
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: Arc<KeyshareStorage>,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         participants: ParticipantsConfig,
         chain_txn_sender: TransactionSender,
         key_event_receiver: watch::Receiver<ContractKeyEventInstance>,
@@ -307,7 +307,7 @@ where
         secret_db: Arc<SecretDB>,
         secrets: SecretsConfig,
         config_file: ConfigFile,
-        keyshare_storage: Arc<KeyshareStorage>,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
@@ -453,6 +453,8 @@ where
                 };
 
                 let keyshares = match keyshare_storage
+                    .write()
+                    .await
                     .update_permanent_keyshares(&running_state.keyset)
                     .await
                 {
@@ -584,7 +586,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn run_key_resharing(
         config_file: &ConfigFile,
-        keyshare_storage: Arc<KeyshareStorage>,
+        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         current_running_state: ContractRunningState,
         mpc_config: &MpcConfig,
         network_client: Arc<MeshNetworkClient>,
@@ -602,6 +604,8 @@ where
             .any(|p| p.near_account_id == config_file.my_near_account_id);
         let existing_keyshares = if was_participant_last_epoch {
             let keyshares = match keyshare_storage
+                .write()
+                .await
                 .update_permanent_keyshares(&previous_keyset)
                 .await
             {
@@ -619,6 +623,8 @@ where
         } else {
             info!("Not participant in last epoch.");
             if keyshare_storage
+                .write()
+                .await
                 .update_permanent_keyshares(&previous_keyset)
                 .await
                 .is_ok()
