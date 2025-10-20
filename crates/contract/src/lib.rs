@@ -2082,6 +2082,44 @@ mod tests {
         );
     }
 
+    #[test]
+    #[should_panic(expected = "Caller must be an attested participant")]
+    fn test_attested_but_not_participant_panics() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+
+        // 1. Setup contract with 3 participants (threshold = 2)
+        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        // 2. Submit valid attestations for legitimate participants
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+        
+        // 3. Create outsider account and submit attestation as that caller
+        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+
+        let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
+        let dto_public_key = fake_tls_pk.clone().try_into_dto_type().unwrap();
+
+        // build fake attestation
+        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // simulate outsider calling submit_participant_info
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(ctx);
+
+        // outsider can still submit attestation
+        contract
+            .submit_participant_info(valid_attestation, dto_public_key)
+            .expect("Outsider attestation submission should succeed");
+
+        // 4. Outsider now attested, but not participant → should panic
+        contract.assert_caller_is_attested_participant_and_protocol_active();
+    }
+
     impl MpcContract {
         pub fn new_from_protocol_sate(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
