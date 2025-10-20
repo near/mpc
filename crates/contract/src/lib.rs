@@ -53,6 +53,7 @@ use primitives::{
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
+
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::MpcDockerImageHash,
@@ -438,7 +439,7 @@ impl MpcContract {
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
 
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
@@ -520,8 +521,6 @@ impl MpcContract {
         let signer = env::signer_account_id();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
-        self.tee_state.assert_caller_is_attested_node();
-
         if !self.protocol_state.is_running_or_resharing() {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         }
@@ -529,6 +528,8 @@ impl MpcContract {
         if !self.accept_requests {
             return Err(TeeError::TeeValidationFailed.into());
         }
+
+        self.assert_caller_is_attested_participant_and_protocol_active();
 
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
@@ -718,7 +719,7 @@ impl MpcContract {
     pub fn start_keygen_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         log!("start_keygen_instance: signer={}", env::signer_account_id(),);
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
 
         self.protocol_state
             .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
@@ -752,7 +753,7 @@ impl MpcContract {
             public_key,
         );
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
 
         let extended_key =
             public_key
@@ -777,7 +778,7 @@ impl MpcContract {
             env::signer_account_id()
         );
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
         self.protocol_state
             .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
@@ -803,7 +804,8 @@ impl MpcContract {
             key_event_id,
         );
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
         let resharing_concluded =
             if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
                 // Resharing has concluded, transition to running state
@@ -881,7 +883,8 @@ impl MpcContract {
             env::signer_account_id()
         );
 
-        self.tee_state.assert_caller_is_attested_node();
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
         self.protocol_state
             .vote_abort_key_event_instance(key_event_id)
     }
@@ -1320,6 +1323,27 @@ impl MpcContract {
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
+        }
+    }
+    /// Ensures that the caller is an attested participant
+    /// in the currently active protocol phase.
+    ///
+    /// Active phases:
+    /// - `Initializing` → uses proposed participants from generating_key
+    /// - `Running` → uses current active participants
+    /// - `Resharing` → uses new participants from resharing proposal
+    ///
+    /// Panics if:
+    /// - The protocol is not active (e.g., NotInitialized)
+    /// - The caller is not attested or not in the relevant participants set
+    pub fn assert_caller_is_attested_participant_and_protocol_active(&self) {
+        let participants = self.protocol_state.active_participants();
+
+        if !self
+            .tee_state
+            .is_caller_an_attested_participant(participants)
+        {
+            panic!("Caller must be an attested participant");
         }
     }
 }
@@ -2043,6 +2067,148 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be an attested participant")]
+    fn test_attested_but_not_participant_panics() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+
+        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+
+        let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
+        let dto_public_key = fake_tls_pk.clone().try_into_dto_type().unwrap();
+
+        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // use outsider account to call submit_participant_info
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(ctx);
+
+        contract
+            .submit_participant_info(valid_attestation, dto_public_key)
+            .expect("Outsider attestation submission should succeed");
+
+        contract.assert_caller_is_attested_participant_and_protocol_active();
+    }
+
+    #[test]
+    fn test_respond_ckd_fails_for_attested_non_participant() {
+        use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken};
+        use std::panic;
+
+        // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+
+        // Submit valid attestations for all participants (so contract is in Running state)
+        // 2. Extract participants list (we have 4 by default)
+        let participants = match &contract.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
+            _ => panic!("Contract should be in Running state"),
+        };
+
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        // --- Step 2: Create a valid CKD request by a legitimate participant ---
+        let app_public_key: dtos::Bls12381G1PublicKey =
+            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                .parse()
+                .unwrap();
+        let request = CKDRequestArgs {
+            app_public_key: app_public_key.clone(),
+            domain_id: DomainId::default(),
+        };
+        let ckd_request = CKDRequest::new(
+            app_public_key.clone(),
+            context.predecessor_account_id.clone(),
+            request.domain_id,
+        );
+
+        // Legit participant makes the CKD request
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(context.predecessor_account_id.clone())
+            .predecessor_account_id(context.predecessor_account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract.request_app_private_key(request);
+        assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
+
+        // --- Step 3: Attested outsider (not a participant) joins ---
+        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+        let tls_key = bogus_ed25519_near_public_key();
+        let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
+
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract
+            .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
+            .unwrap();
+
+        // --- Step 4: Verify that a participant can still respond successfully ---
+        with_attested_context(&contract); // sets env to a real attested participant
+
+        let valid_response = CKDResponse {
+            big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
+            big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
+        };
+
+        // This should succeed (attested participant)
+        contract
+            .respond_ckd(ckd_request.clone(), valid_response.clone())
+            .expect("Participant should be allowed to respond_ckd");
+
+        // --- Step 5: Now switch to attested outsider and verify it panics ---
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+
+        let outsider_response = CKDResponse {
+            big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
+            big_c: dtos::Bls12381G1PublicKey([4u8; 48]),
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract
+                .respond_ckd(ckd_request.clone(), outsider_response)
+                .unwrap();
+        }));
+
+        assert!(
+            result.is_err(),
+            "Expected panic from attested non-participant"
+        );
+
+        if let Err(err) = result {
+            if let Some(msg) = err.downcast_ref::<&str>() {
+                assert!(
+                    msg.contains("Caller must be an attested participant"),
+                    "Unexpected panic message: {}",
+                    msg
+                );
+            } else if let Some(msg) = err.downcast_ref::<String>() {
+                assert!(
+                    msg.contains("Caller must be an attested participant"),
+                    "Unexpected panic message: {}",
+                    msg
+                );
+            } else {
+                panic!("Unexpected panic payload type");
+            }
+        }
     }
 
     impl MpcContract {
