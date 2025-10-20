@@ -5,4 +5,10 @@ edition = "2024"
 
 [dependencies]
 clap = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
