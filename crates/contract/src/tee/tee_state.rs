@@ -346,36 +346,22 @@ impl TeeState {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id();
 
-        // find all participant entries that belong to the caller
-        for (account_id, _pid, participant_info) in participants.participants().iter() {
-            if account_id != &signer_id {
-                continue;
-            }
-
-            // Step 2: lookup attestation by TLS key (sign_pk)
-            if let Some((node_id, _attestation)) = self
-                .participants_attestations
-                .get(&participant_info.sign_pk)
-            {
-                // Sanity check: attestation entry must belong to same account
-                if node_id.account_id != signer_id {
-                    continue;
-                }
-
-                match &node_id.account_public_key {
-                    Some(pk) if pk == &signer_pk => {
-                        return true;
+        match participants.info(&signer_id) {
+            None => false,
+            Some(info) => {
+                match self.participants_attestations.get(&info.sign_pk) {
+                    None => false,
+                    Some((node_id, _attestation)) => {
+                        node_id.account_id == signer_id
+                            && node_id
+                                .account_public_key
+                                .as_ref()
+                                .map(|pk| pk == &signer_pk)
+                                .unwrap_or(true) // TODO (#823) Legacy fallback for mock nodes
                     }
-                    None => {
-                        // TODO (#823) Legacy fallback for mock nodes (no account_public_key) - remove when TEE is enforced
-                        return true;
-                    }
-                    _ => continue,
                 }
             }
         }
-
-        false
     }
 
     /// Panics if the caller is not both a participant and attested.
