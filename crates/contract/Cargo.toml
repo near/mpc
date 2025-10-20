@@ -5,9 +5,6 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/near/mpc"
 
-[lib]
-crate-type = ["cdylib", "lib"]
-
 # fields to configure build with WASM reproducibility, according to specs
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
@@ -37,55 +34,11 @@ container_build_command = [
     "--no-embed-abi",
 ]
 
-[dependencies]
-anyhow = { workspace = true }
-curve25519-dalek = { workspace = true }
-borsh = { workspace = true }
-derive_more = { workspace = true, features = ["from"] }
-near-sdk = { workspace = true }
-rand = { workspace = true, optional = true }
-serde = { workspace = true }
-serde_with = { workspace = true }
-serde_json = { workspace = true }
-schemars = { workspace = true }
-k256 = { workspace = true, features = [
-    "sha256",
-    "ecdsa",
-    "serde",
-    "arithmetic",
-    "expose-field",
-] }
-mpc-primitives = { workspace = true }
-contract-interface = { workspace = true }
-attestation = { workspace = true }
-near-account-id = { workspace = true }
-thiserror = { workspace = true }
-sha3 = { workspace = true }
-hex = { workspace = true, features = [] }
-threshold-signatures = { workspace = true, optional = true }
-elliptic-curve = { workspace = true, optional = true }
+[package.metadata.cargo-shear]
+ignored = ["schemars"]
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { workspace = true, features = ["custom"] }
-
-
-[dev-dependencies]
-assert_matches = { workspace = true }
-rand = { workspace = true }
-rand_core = { workspace = true }
-tokio = { workspace = true }
-sha2 = { workspace = true }
-test_utils = { workspace = true }
-contract_history = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils"] }
-ecdsa = { workspace = true }
-signature = { workspace = true }
-digest = { workspace = true }
-near-workspaces = { workspace = true }
-threshold-signatures = { workspace = true }
-fs2 = { workspace = true }
-rstest = { workspace = true }
-elliptic-curve = { workspace = true }
+[lib]
+crate-type = ["cdylib", "lib"]
 
 [features]
 test-utils = ["rand", "threshold-signatures", "elliptic-curve"]
@@ -100,5 +53,51 @@ abi = [
 # if it appears under wasm32 target, it will break compilation too.
 __abi-generate = ["near-sdk/__abi-generate"]
 
-[package.metadata.cargo-shear]
-ignored = ["schemars"]
+[dependencies]
+anyhow = { workspace = true }
+attestation = { workspace = true }
+borsh = { workspace = true }
+contract-interface = { workspace = true }
+curve25519-dalek = { workspace = true }
+derive_more = { workspace = true, features = ["from"] }
+elliptic-curve = { workspace = true, optional = true }
+hex = { workspace = true, features = [] }
+k256 = { workspace = true, features = [
+    "sha256",
+    "ecdsa",
+    "serde",
+    "arithmetic",
+    "expose-field",
+] }
+mpc-primitives = { workspace = true }
+near-account-id = { workspace = true }
+near-sdk = { workspace = true }
+rand = { workspace = true, optional = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+sha3 = { workspace = true }
+thiserror = { workspace = true }
+threshold-signatures = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["custom"] }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+contract_history = { workspace = true }
+digest = { workspace = true }
+ecdsa = { workspace = true }
+elliptic-curve = { workspace = true }
+fs2 = { workspace = true }
+mpc-contract = { workspace = true, features = ["test-utils"] }
+near-workspaces = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+rstest = { workspace = true }
+sha2 = { workspace = true }
+signature = { workspace = true }
+test_utils = { workspace = true }
+threshold-signatures = { workspace = true }
+tokio = { workspace = true }

@@ -2,6 +2,9 @@
 name = "mpc-primitives"
 edition = "2024"
 
+[package.metadata.cargo-shear]
+ignored = ["schemars"]
+
 [features]
 abi = ["borsh/unstable__schema", "schemars"]
 
@@ -15,8 +18,5 @@ serde = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 rand = { workspace = true }
-
-[package.metadata.cargo-shear]
-ignored = ["schemars"]
+serde_json = { workspace = true }
