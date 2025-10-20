@@ -1,7 +1,13 @@
 use ed25519_dalek::SigningKey;
+use ed25519_dalek::VerifyingKey;
 use rand_core::OsRng;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tokio::fs::File;
+
+use contract_interface::types as contract_types;
+use mpc_contract::primitives::key_state::Keyset;
+use mpc_contract::state::ProtocolContractState;
 
 use crate::adapters;
 use crate::cli;
@@ -40,9 +46,10 @@ pub async fn run_command(args: cli::Args) {
                 .await
                 .expect("failed to create secrets storage");
             let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
+            let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
-                subcommand_args.mpc_node_p2p_key,
+                mpc_node_p2p_key,
                 p2p_private_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
@@ -58,9 +65,10 @@ pub async fn run_command(args: cli::Args) {
                 .await
                 .expect("failed to create secrets storage");
             let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
+            let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
-                subcommand_args.mpc_node_p2p_key,
+                mpc_node_p2p_key,
                 p2p_private_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
@@ -106,8 +114,9 @@ pub async fn get_keyshares(
         .get_contract_state()
         .await
         .expect("Could not get contract state");
+    let keyset = get_keyset_from_contract_state(&contract_state);
     let keyshare = mpc_p2p_client
-        .get_keyshares(&contract_state)
+        .get_keyshares(&keyset)
         .await
         .expect("fail to get key shares");
     keyshares_storage
@@ -128,4 +137,22 @@ pub async fn put_keyshares(
         .put_keyshares(&key_shares)
         .await
         .expect("fail to put key shares");
+}
+
+fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
+    let mpc_node_p2p_key = contract_types::Ed25519PublicKey::from_str(mpc_node_p2p_key)
+        .expect("Invalid mpc_node_p2p_key value");
+    VerifyingKey::from_bytes(mpc_node_p2p_key.as_bytes()).expect("Invalid mpc_node_p2p_key value")
+}
+
+fn get_keyset_from_contract_state(contract_state: &ProtocolContractState) -> Keyset {
+    match contract_state {
+        ProtocolContractState::NotInitialized | ProtocolContractState::Resharing(_) => {
+            panic!("keyset not available in current contract state")
+        }
+        ProtocolContractState::Initializing(state) => {
+            Keyset::new(state.epoch_id, state.generated_keys.clone())
+        }
+        ProtocolContractState::Running(state) => state.keyset.clone(),
+    }
 }

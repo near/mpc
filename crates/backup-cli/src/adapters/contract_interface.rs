@@ -54,3 +54,28 @@ impl ContractInterface for SimpleContractInterface {
         serde_json::from_slice(&buffer).map_err(Error::JsonDeserialization)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use mpc_contract::primitives::thresholds::Threshold;
+
+    use crate::{adapters::contract_interface::SimpleContractInterface, ports::ContractInterface};
+
+    pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
+    #[tokio::test]
+    async fn test_get_contract_state() {
+        // Given
+        let storage_path = PathBuf::from(TEST_CONTRACT_STATE_PATH);
+        let contract_interface = SimpleContractInterface::new(storage_path);
+
+        // When
+        let contract_state = contract_interface.get_contract_state().await.unwrap();
+
+        // Then
+        assert_eq!(contract_state.name(), "Running");
+        assert_eq!(contract_state.threshold().unwrap(), Threshold::new(7));
+        assert_eq!(contract_state.domain_registry().unwrap().domains().len(), 2);
+    }
+}

@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::state::ProtocolContractState;
+use mpc_contract::{primitives::key_state::Keyset, state::ProtocolContractState};
 
 use crate::types;
 
@@ -33,7 +33,7 @@ pub trait P2PClient {
 
     fn get_keyshares(
         &self,
-        contract_state: &ProtocolContractState,
+        keyset: &Keyset,
     ) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
     fn put_keyshares(
         &self,
