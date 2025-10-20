@@ -344,8 +344,8 @@ impl TeeState {
     /// Handles multiple participants per account and supports legacy mock nodes.
     pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
         let signer_pk = env::signer_account_pk();
-        //let signer_id = env::signer_account_id();
-        let signer_id = env::predecessor_account_id();
+        let signer_id = env::signer_account_id();
+        let predecessor_id = env::predecessor_account_id();
 
         // find all participant entries that belong to the caller
         for (account_id, _pid, participant_info) in participants.participants().iter() {
@@ -380,7 +380,16 @@ impl TeeState {
     }
 
     /// Panics if the caller is not both a participant and attested.
+    /// Also checks that the signer and predecessor accounts match.
     pub fn assert_caller_is_attested_participant(&self, participants: &Participants) {
+        let signer_id = env::signer_account_id();
+        let predecessor_id = env::predecessor_account_id();
+
+        assert_eq!(
+            signer_id, predecessor_id,
+            "Caller must be the signer account (signer: {}, predecessor: {})",
+            signer_id, predecessor_id
+        );
         assert!(
             self.is_caller_an_attested_participant(participants),
             "Caller must be an attested participant"
