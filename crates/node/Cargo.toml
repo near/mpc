@@ -8,7 +8,6 @@ license = "MIT"
 actix = { workspace = true }
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
-assert_matches = { workspace = true, optional = true}
 async-trait = { workspace = true }
 attestation = { workspace = true }
 axum = { workspace = true }
@@ -73,4 +72,4 @@ built = { version = "0.8", features = ["git2", "chrono"] }
 
 [features]
 network-hardship-simulation = []
-test-utils = ["assert_matches"]
+test-utils = []
