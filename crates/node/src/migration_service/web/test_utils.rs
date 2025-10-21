@@ -5,7 +5,6 @@ use mpc_contract::node_migrations::BackupServiceInfo;
 use rand::rngs::OsRng;
 use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::WebUIConfig,
@@ -33,7 +32,7 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
-    let port: u16 = port_seed.p2p_port(0);
+    let port: u16 = port_seed.migration_web_port(0);
     let config = WebUIConfig {
         host: LOCALHOST_IP.to_string(),
         port,
@@ -58,7 +57,6 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
         config,
         migration_state_receiver,
         &server_key,
-        CancellationToken::new()
     )
     .await
     .is_ok());

@@ -13,9 +13,10 @@ use crate::{keyshare::Keyshare, migration_service::web::authentication::authenti
 /// Connects to the web server, performs the TLS handshake and returns the connection.
 pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
-    target_address: impl tokio::net::ToSocketAddrs,
+    target_address: impl tokio::net::ToSocketAddrs + std::fmt::Debug,
     expected_server_key: &VerifyingKey,
 ) -> anyhow::Result<SendRequest<Body>> {
+    tracing::info!(?target_address, "connecting on ");
     let (_server_config, client_config) = configure_tls(p2p_private_key)?;
     let conn = TcpStream::connect(target_address)
         .await
@@ -28,7 +29,7 @@ pub async fn connect_to_web_server(
     authenticate_peer(tls_conn.get_ref().1, expected_server_key)?;
 
     tracing::info!(
-        "TLS handshake complete, backup service authenticated and encrypted channel established."
+        "TLS handshake complete, mpc node authenticated and encrypted channel established."
     );
 
     let (request_sender, connection) = hyper::client::conn::handshake(tls_conn)
@@ -69,9 +70,13 @@ pub async fn make_keyshare_get_request(
     let req = Request::builder()
         .method("GET")
         .uri(format!("{}/get_keyshares", BOGUS_URL))
-        .body(hyper::Body::from(params.to_string()))?;
+        .body(hyper::Body::from(params.to_string()))
+        .inspect_err(|err| tracing::error!(?err, "building request failed"))?;
 
-    let response = request_sender.send_request(req).await?;
+    let response = request_sender
+        .send_request(req)
+        .await
+        .inspect_err(|err| tracing::error!(?err, "sending request failed"))?;
     // Check HTTP status
     if !response.status().is_success() {
         let status = response.status();
@@ -85,7 +90,7 @@ pub async fn make_keyshare_get_request(
     // Collect the response body
     let body_bytes = to_bytes(response.into_body())
         .await
-        .context("failed to read body")?;
+        .inspect_err(|err| tracing::error!(?err, "failed to read body"))?;
 
     // Parse JSON into Vec<Keyshare>
     let keyshares: Vec<Keyshare> =
@@ -100,6 +105,7 @@ pub async fn make_set_keyshares_request(
     request_sender: &mut SendRequest<Body>,
     keyshares: &[Keyshare],
 ) -> anyhow::Result<()> {
+    tracing::info!("making set keyshares request");
     let json = serde_json::to_string(keyshares)?;
 
     let req = Request::builder()
@@ -107,7 +113,10 @@ pub async fn make_set_keyshares_request(
         .uri(format!("{}/set_keyshares", BOGUS_URL))
         .header(hyper::header::CONTENT_TYPE, "application/json")
         .body(Body::from(json))?;
-    let response = request_sender.send_request(req).await?;
+    let response = request_sender
+        .send_request(req)
+        .await
+        .inspect_err(|err| tracing::error!(?err, "error"))?;
 
     // Check status code
     if !response.status().is_success() {

@@ -13,7 +13,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
-    migration_service::onboarding::onboard,
+    migration_service::spawn_recovery_server_and_run_onboarding,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
@@ -450,18 +450,17 @@ impl StartCmd {
             }
         });
 
-        // todo: keyshare sender logic [#1085](https://github.com/near/mpc/issues/1085)
-        let (_keyshare_sender, keyshare_receiver) = tokio::sync::watch::channel(vec![]);
         let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
             RwLock::new(key_storage_config.create().await?).into();
-        onboard(
-            indexer_api.contract_state_receiver.clone(),
-            indexer_api.my_migration_info_receiver.clone(),
+
+        spawn_recovery_server_and_run_onboarding(
+            config.migration_web_ui.clone(),
+            &secrets.persistent_secrets.p2p_private_key,
             config.my_near_account_id.clone(),
-            tls_public_key,
-            indexer_api.txn_sender.clone(),
             keyshare_storage.clone(),
-            keyshare_receiver,
+            indexer_api.my_migration_info_receiver.clone(),
+            indexer_api.contract_state_receiver.clone(),
+            indexer_api.txn_sender.clone(),
         )
         .await?;
 
@@ -608,6 +607,10 @@ impl Cli {
             web_ui: WebUIConfig {
                 host: "127.0.0.1".to_owned(),
                 port: PortSeed::CLI_FOR_PYTEST.web_port(index),
+            },
+            migration_web_ui: WebUIConfig {
+                host: "127.0.0.1".to_owned(),
+                port: PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
             },
             indexer: IndexerConfig {
                 validate_genesis: true,

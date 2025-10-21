@@ -181,7 +181,7 @@ pub struct ConcludeNodeMigrationArgs {
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
-pub(crate) enum ChainSendTransactionRequest {
+pub enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
     CKDRespond(ChainCKDRespondArgs),
     VotePk(ChainVotePkArgs),

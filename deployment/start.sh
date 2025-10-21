@@ -13,7 +13,7 @@ initialize_near_node() {
 }
 
 update_near_node_config() {
-      python3 <<EOF
+    python3 <<EOF
 import json;
 config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
@@ -44,6 +44,9 @@ number_of_responder_keys: 50
 web_ui:
   host: 0.0.0.0
   port: 8080
+migration_web_ui:
+  host: 0.0.0.0
+  port: 8079
 triple:
   concurrency: 2
   desired_triples_to_buffer: 1000000
@@ -69,17 +72,17 @@ EOF
 }
 
 update_mpc_config() {
-  # Use sed to replace placeholder values
-  sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
-  sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
+    # Use sed to replace placeholder values
+    sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
+    sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
 
-  if [ -n "$MPC_RESPONDER_ID" ]; then
-      responder_id="$MPC_RESPONDER_ID"
+    if [ -n "$MPC_RESPONDER_ID" ]; then
+        responder_id="$MPC_RESPONDER_ID"
     else
-      echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-      responder_id="$MPC_ACCOUNT_ID"
-  fi
-  sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
+        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
+        responder_id="$MPC_ACCOUNT_ID"
+    fi
+    sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
 }
 
 # Check and initialize Near node config if needed
@@ -93,7 +96,6 @@ fi
 # Update the Near node config with the MPC ENV variables values
 update_near_node_config && echo "Near node config updated"
 
-
 # Check and initialize MPC config if needed
 if [ -r "$MPC_NODE_CONFIG_FILE" ]; then
     echo "MPC node is already initialized."
@@ -103,7 +105,6 @@ else
 fi
 
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
-
 
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
     echo "You must provide MPC_SECRET_STORE_KEY in env variable"

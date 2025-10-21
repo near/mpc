@@ -1,8 +1,10 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::config::{NodeStatus, ParticipantStatus};
+use crate::config::{NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
+use crate::migration_service;
 use crate::p2p::testing::PortSeed;
 use crate::providers::PublicKeyConversion;
 use crate::tests::DEFAULT_BLOCK_TIME;
@@ -11,12 +13,53 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use mpc_contract::primitives::test_utils::bogus_ed25519_public_key;
 use mpc_contract::state::ProtocolContractState;
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
+use rand::rngs::OsRng;
+
+use super::OneNodeTestConfig;
+
+struct MigrationTestNodeInfo {
+    participant_info: ParticipantInfo,
+    home_dir: PathBuf,
+    storage_key: [u8; 16],
+    migration_service_addr: String,
+    p2p_public_key: VerifyingKey,
+    near_signer_key: VerifyingKey,
+}
+
+impl MigrationTestNodeInfo {
+    pub fn new(config: &OneNodeTestConfig, participant_info: ParticipantInfo) -> Self {
+        let migration_service_addr = {
+            let migration_web_ui = &config.config.migration_web_ui;
+            format!("{}:{}", migration_web_ui.host, migration_web_ui.port)
+        };
+
+        let p2p_public_key = config
+            .secrets
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key();
+        let near_signer_key = config
+            .secrets
+            .persistent_secrets
+            .near_signer_key
+            .verifying_key();
+        Self {
+            participant_info,
+            home_dir: config.home_dir.clone(),
+            storage_key: config.secrets.local_storage_aes_key,
+            migration_service_addr,
+            p2p_public_key,
+            near_signer_key,
+        }
+    }
+}
 
 /// Runs a cluster of 3 nodes, but with only 2 participants.
 /// Two nodes of the cluster are assigned the same account id.
@@ -44,33 +87,22 @@ async fn test_onboarding() {
         DEFAULT_BLOCK_TIME,
     );
 
-    let home_dir_first = setup.configs.first().unwrap().home_dir.clone();
-    let local_encryption_key_first = setup.configs.first().unwrap().secrets.local_storage_aes_key;
+    const PARTING_NODE_ID: usize = 0;
+    const DESTINATION_NODE_ID: usize = NUM_PARTICIPANTS;
+    let all_participants = setup.participants.participants.clone();
+    let leaving_node = MigrationTestNodeInfo::new(
+        setup.get_config(PARTING_NODE_ID).unwrap(),
+        all_participants.get(PARTING_NODE_ID).unwrap().clone(),
+    );
 
+    let onboarding_node = MigrationTestNodeInfo::new(
+        setup.get_config(DESTINATION_NODE_ID).unwrap(),
+        all_participants.get(DESTINATION_NODE_ID).unwrap().clone(),
+    );
+    let destination_node_info = participant_info_from_config(&onboarding_node.participant_info);
     // Initialize the contract with the first two nodes
     let mut initial_participants = setup.participants.clone();
-    let onboarding_participant = initial_participants.participants.pop().unwrap();
-
-    let onboarding_participant_keyshare_sender =
-        setup.configs.last().unwrap().keyshares_sender.clone();
-    let destination_node_info = participant_info_from_config(&onboarding_participant);
-    let destination_node = {
-        let signer_account_pk = setup
-            .configs
-            .last()
-            .unwrap()
-            .secrets
-            .persistent_secrets
-            .near_signer_key
-            .verifying_key()
-            .to_near_sdk_public_key()
-            .unwrap();
-
-        DestinationNodeInfo {
-            signer_account_pk,
-            destination_node_info: destination_node_info.clone(),
-        }
-    };
+    initial_participants.participants.pop();
 
     let domain = DomainConfig {
         id: DomainId(0),
@@ -98,9 +130,6 @@ async fn test_onboarding() {
         .await
         .expect("timout waiting for running state");
 
-    tracing::info!("we are in running state");
-
-    // Sanity check.
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
@@ -110,57 +139,118 @@ async fn test_onboarding() {
     .await
     .is_some());
 
-    let ProtocolContractState::Running(running) = setup.indexer.contract_mut().await.state.clone()
-    else {
-        panic!("expect running")
-    };
-    let found_init_partcipants = running.parameters.participants();
-    let init_participant_info = found_init_partcipants
-        .info(&onboarding_participant.near_account_id)
-        .unwrap();
-
-    tracing::info!("Starting onboarding test - setting backup info");
     {
-        // smart contract changes
+        tracing::info!("sanity checking test setup");
+        let ProtocolContractState::Running(running) =
+            setup.indexer.contract_mut().await.state.clone()
+        else {
+            panic!("expect running")
+        };
+        let found_init_partcipants = running.parameters.participants();
+        let init_participant_info = found_init_partcipants
+            .info(&onboarding_node.participant_info.near_account_id)
+            .unwrap();
+
+        let expected_info = participant_info_from_config(&leaving_node.participant_info);
+        assert_eq!(init_participant_info, &expected_info);
+        assert_ne!(init_participant_info, &destination_node_info);
+    }
+
+    let backup_service_key = SigningKey::generate(&mut OsRng);
+    {
+        tracing::info!("Setting backup and destination node info");
         let mut contract = setup.indexer.contract_mut().await;
         assert!(matches!(&contract.state, ProtocolContractState::Running(_)));
+        let backup_service_info = BackupServiceInfo {
+            public_key: backup_service_key
+                .verifying_key()
+                .into_contract_interface_type(),
+        };
         contract.migration_service.set_backup_service_info(
-            onboarding_participant.near_account_id.clone(),
-            BackupServiceInfo {
-                public_key: bogus_ed25519_public_key(),
-            },
+            onboarding_node.participant_info.near_account_id.clone(),
+            backup_service_info,
         );
         contract.migration_service.set_destination_node_info(
-            onboarding_participant.near_account_id.clone(),
-            destination_node,
+            onboarding_node.participant_info.near_account_id.clone(),
+            DestinationNodeInfo {
+                signer_account_pk: onboarding_node
+                    .near_signer_key
+                    .to_near_sdk_public_key()
+                    .unwrap(),
+                destination_node_info: destination_node_info.clone(),
+            },
         );
     }
 
-    tracing::info!("Starting onboarding test - sending keyshares");
-    {
+    setup
+        .indexer
+        .wait_for_migration_state(
+            |state| {
+                state
+                    .get(&onboarding_node.participant_info.near_account_id)
+                    .is_some_and(|(backup_service_info, destination_node_info)| {
+                        backup_service_info.is_some() && destination_node_info.is_some()
+                    })
+            },
+            Duration::from_secs(60),
+        )
+        .await
+        .unwrap();
+
+    let keyset = {
         let ProtocolContractState::Running(running) = &setup.indexer.contract_mut().await.state
         else {
             panic!("expect running");
         };
-        let keyset = &running.keyset;
-        let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, keyset)
+        running.keyset.clone()
+    };
+    let received_keyshares = {
+        tracing::info!("Fetching keyshares from parting node.");
+        let mut request_sender = migration_service::web::client::connect_to_web_server(
+            &backup_service_key,
+            leaving_node.migration_service_addr,
+            &leaving_node.p2p_public_key,
+        )
+        .await
+        .unwrap();
+        let keyshares =
+            migration_service::web::client::make_keyshare_get_request(&mut request_sender, &keyset)
+                .await
+                .unwrap();
+        let expected = get_keyshares(leaving_node.home_dir, leaving_node.storage_key, &keyset)
             .await
             .unwrap();
-        onboarding_participant_keyshare_sender
-            .send(keyshares)
-            .unwrap();
-    }
-    tracing::info!("Sent keyshares");
+        assert_eq!(keyshares, expected);
+        tracing::info!("Received keyshares from parting node.");
+        keyshares
+    };
 
-    // wait for contract state change
+    {
+        tracing::info!("Sending keyshares to onboarding node");
+        let mut request_sender = migration_service::web::client::connect_to_web_server(
+            &backup_service_key,
+            onboarding_node.migration_service_addr.clone(),
+            &onboarding_node.p2p_public_key,
+        )
+        .await
+        .unwrap();
+        migration_service::web::client::make_set_keyshares_request(
+            &mut request_sender,
+            &received_keyshares.clone(),
+        )
+        .await
+        .unwrap();
+        tracing::info!("Sent keyshares to onboarding node");
+    }
+
     setup
         .indexer
         .wait_for_contract_state(
             |state| {
                 matches!(
                     state.node_status(
-                        &onboarding_participant.near_account_id,
-                        &onboarding_participant.p2p_public_key
+                        &onboarding_node.participant_info.near_account_id,
+                        &onboarding_node.p2p_public_key
                     ),
                     ParticipantStatus::Active(NodeStatus::Active)
                 )
@@ -168,25 +258,35 @@ async fn test_onboarding() {
             Duration::from_secs(60),
         )
         .await
+        .expect("onboarding must succeed");
+    {
+        tracing::info!("verifying keyshares on disk match expected value");
+        let found = get_keyshares(
+            onboarding_node.home_dir,
+            onboarding_node.storage_key,
+            &keyset,
+        )
+        .await
         .unwrap();
+        assert_eq!(received_keyshares, found);
+    }
 
     let ProtocolContractState::Running(running) = setup.indexer.contract_mut().await.state.clone()
     else {
         panic!("expect running")
     };
 
+    tracing::info!("checking participant info is correct");
     let found_partcipants = running.parameters.participants();
     let current_participant_info = found_partcipants
-        .info(&onboarding_participant.near_account_id)
+        .info(&onboarding_node.participant_info.near_account_id)
         .unwrap();
     assert_eq!(*current_participant_info, destination_node_info);
-    assert_ne!(current_participant_info, init_participant_info);
 
-    // as a precaution, disable the first node
+    tracing::info!("disabling departed node");
     setup.indexer.disable(0.into()).await;
 
-    // Sanity check. Since we are in full-threshold, we have confirmation that the new node is up
-    // and running.
+    tracing::info!("sending signature requests as a sanity check");
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user1",

@@ -15,7 +15,7 @@ use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
-use crate::migration_service::onboarding::onboard;
+use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 
 use crate::tests::common::MockTransactionSender;
@@ -58,10 +58,6 @@ pub struct OneNodeTestConfig {
     indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
-    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
-    keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
-    // todo: remove and use web-endpoint with [#1085](https://github.com/near/mpc/issues/1085)?
-    keyshares_sender: watch::Sender<Vec<Keyshare>>,
 }
 
 pub fn make_key_storage_config(
@@ -113,28 +109,24 @@ impl OneNodeTestConfig {
                 let secret_db = SecretDB::new(&self.home_dir, self.secrets.local_storage_aes_key)?;
                 let key_storage_config =
                     make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
-                let tls_public_key = self
-                    .secrets
-                    .persistent_secrets
-                    .p2p_private_key
-                    .verifying_key();
                 let keystore = Arc::new(RwLock::new(
                     key_storage_config
                         .create()
                         .await
                         .expect("require keystore for integration tests"),
                 ));
-                onboard(
-                    self.indexer.contract_state_receiver.clone(),
-                    self.indexer.my_migration_info_receiver.clone(),
+
+                spawn_recovery_server_and_run_onboarding(
+                    self.config.migration_web_ui.clone(),
+                    &self.secrets.persistent_secrets.p2p_private_key,
                     self.config.my_near_account_id.clone(),
-                    tls_public_key,
+                    keystore.clone(),
+                    self.indexer.my_migration_info_receiver.clone(),
+                    self.indexer.contract_state_receiver.clone(),
                     self.indexer.txn_sender.clone(),
-                    keystore,
-                    self.keyshares_receiver,
                 )
                 .await
-                .expect("onboarding failed");
+                .unwrap();
 
                 let coordinator = Coordinator {
                     clock: self.clock,
@@ -219,6 +211,10 @@ impl IntegrationTestSetup {
                     port: port_seed.web_port(i),
                 },
                 number_of_responder_keys: 0,
+                migration_web_ui: WebUIConfig {
+                    host: "0.0.0.0".to_string(),
+                    port: port_seed.migration_web_port(i),
+                },
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {
@@ -233,7 +229,6 @@ impl IntegrationTestSetup {
                 participant_accounts[i].clone(),
                 p2p_key.verifying_key(),
             );
-            let (keyshares_sender, keyshares_receiver) = watch::channel(vec![]);
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
                 config,
@@ -242,8 +237,6 @@ impl IntegrationTestSetup {
                 indexer: indexer_api,
                 _indexer_task: task,
                 currently_running_job_name,
-                keyshares_sender,
-                keyshares_receiver,
             });
         }
         IntegrationTestSetup {
@@ -251,6 +244,10 @@ impl IntegrationTestSetup {
             configs,
             participants,
         }
+    }
+
+    pub fn get_config(&self, node_index: usize) -> Option<&OneNodeTestConfig> {
+        self.configs.get(node_index)
     }
 }
 /// Request a signature from the indexer and wait for the response.

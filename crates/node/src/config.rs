@@ -144,6 +144,7 @@ pub struct ConfigFile {
     pub number_of_responder_keys: usize,
 
     pub web_ui: WebUIConfig,
+    pub migration_web_ui: WebUIConfig,
     pub indexer: IndexerConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,
