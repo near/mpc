@@ -882,18 +882,14 @@ impl FakeIndexerManager {
         )
     }
 
-    pub async fn wait_for_migration_state(
-        &mut self,
-        f: impl Fn(&ContractMigrationInfo) -> bool,
+    async fn wait_for_state<T: Clone>(
+        mut receiver: tokio::sync::broadcast::Receiver<T>,
+        f: impl Fn(&T) -> bool,
         timeout_duration: tokio::time::Duration,
     ) -> anyhow::Result<()> {
-        let mut state_change_receiver = self.core_migration_change_sender.subscribe();
         tokio::time::timeout(timeout_duration, async {
             loop {
-                let state: ContractMigrationInfo = state_change_receiver
-                    .recv()
-                    .await
-                    .context("State change sender was dropped")?;
+                let state: T = receiver.recv().await.context("sender was dropped")?;
                 if f(&state) {
                     break;
                 }
@@ -905,28 +901,23 @@ impl FakeIndexerManager {
         Ok(())
     }
 
+    pub async fn wait_for_migration_state(
+        &mut self,
+        f: impl Fn(&ContractMigrationInfo) -> bool,
+        timeout_duration: tokio::time::Duration,
+    ) -> anyhow::Result<()> {
+        let state_change_receiver = self.core_migration_change_sender.subscribe();
+        FakeIndexerManager::wait_for_state(state_change_receiver, f, timeout_duration).await
+    }
+
     /// Waits for the contract state to satisfy the given predicate.
     pub async fn wait_for_contract_state(
         &mut self,
         f: impl Fn(&ContractState) -> bool,
         timeout_duration: tokio::time::Duration,
     ) -> anyhow::Result<()> {
-        let mut state_change_receiver = self.core_state_change_sender.subscribe();
-        tokio::time::timeout(timeout_duration, async {
-            loop {
-                let state: ContractState = state_change_receiver
-                    .recv()
-                    .await
-                    .context("State change sender was dropped")?;
-                if f(&state) {
-                    break;
-                }
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-        .await
-        .context("Timed out while waiting for contract state")??;
-        Ok(())
+        let state_change_receiver = self.core_state_change_sender.subscribe();
+        FakeIndexerManager::wait_for_state(state_change_receiver, f, timeout_duration).await
     }
 
     /// Disables a node, in order to test resilience to node failures.

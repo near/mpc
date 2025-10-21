@@ -16,7 +16,7 @@ pub mod onboarding;
 pub mod types;
 pub mod web;
 
-pub async fn spawn_recovery_server_run_onboarding(
+pub async fn spawn_recovery_server_and_run_onboarding(
     migration_web_ui: WebUIConfig,
     p2p_private_key: &SigningKey,
     my_near_account_id: AccountId,

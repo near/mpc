@@ -15,7 +15,7 @@ use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
-use crate::migration_service::spawn_recovery_server_run_onboarding;
+use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 
 use crate::tests::common::MockTransactionSender;
@@ -116,7 +116,7 @@ impl OneNodeTestConfig {
                         .expect("require keystore for integration tests"),
                 ));
 
-                spawn_recovery_server_run_onboarding(
+                spawn_recovery_server_and_run_onboarding(
                     self.config.migration_web_ui.clone(),
                     &self.secrets.persistent_secrets.p2p_private_key,
                     self.config.my_near_account_id.clone(),

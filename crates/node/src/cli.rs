@@ -13,7 +13,7 @@ use crate::{
         permanent::{PermanentKeyStorage, PermanentKeyStorageBackend, PermanentKeyshareData},
         GcpPermanentKeyStorageConfig, KeyStorageConfig, KeyshareStorage,
     },
-    migration_service::spawn_recovery_server_run_onboarding,
+    migration_service::spawn_recovery_server_and_run_onboarding,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
@@ -453,7 +453,7 @@ impl StartCmd {
         let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
             RwLock::new(key_storage_config.create().await?).into();
 
-        spawn_recovery_server_run_onboarding(
+        spawn_recovery_server_and_run_onboarding(
             config.migration_web_ui.clone(),
             &secrets.persistent_secrets.p2p_private_key,
             config.my_near_account_id.clone(),
