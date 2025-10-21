@@ -1,7 +1,6 @@
 use ed25519_dalek::SigningKey;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
-pub struct KeyShares {}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PersistentSecrets {

@@ -286,7 +286,7 @@ mod tests_many {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracing::init_logging;
     use crate::tracking;
     use futures::{stream, StreamExt};

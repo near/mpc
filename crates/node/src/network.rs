@@ -947,7 +947,7 @@ mod tests {
     use crate::network::testing::{new_test_transports, run_test_clients};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::EcdsaTaskId;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -1141,7 +1141,7 @@ mod fault_handling_tests {
     use crate::network::testing::run_test_clients;
     use crate::primitives::{ParticipantId, UniqueId};
     use crate::providers::EcdsaTaskId;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;

@@ -99,7 +99,7 @@ mod tests {
     use crate::primitives::ParticipantId;
     use crate::providers::ecdsa::key_resharing::KeyResharingComputation;
     use crate::providers::ecdsa::EcdsaTaskId;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};

@@ -2,87 +2,24 @@
 pub mod authentication;
 pub mod client;
 pub mod server;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 pub mod types;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
-    use tempfile::TempDir;
-    use tokio::sync::{watch, RwLock};
-    use tokio_util::sync::CancellationToken;
 
-    use crate::keyshare::tests::generate_key_storage;
-    use crate::keyshare::KeyshareStorage;
+    use super::test_utils::setup;
     use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
     use crate::migration_service::web::client::{
         connect_to_web_server, make_hello_request, make_keyshare_get_request,
         make_set_keyshares_request,
     };
-    use crate::migration_service::web::{server::start_web_server, types::WebServerState};
-    use crate::{
-        config::WebUIConfig, migration_service::types::MigrationInfo, p2p::testing::PortSeed,
-    };
-
-    const LOCALHOST_IP: &str = "127.0.0.1";
-
-    struct TestSetup {
-        client_key: SigningKey,
-        server_key: SigningKey,
-        target_address: String,
-        migration_state_sender: watch::Sender<MigrationInfo>,
-        import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
-        keyshare_storage: Arc<RwLock<KeyshareStorage>>,
-        _tmpdir: TempDir,
-    }
-
-    async fn setup(port_seed: PortSeed) -> TestSetup {
-        let client_key = SigningKey::generate(&mut OsRng);
-        let server_key = SigningKey::generate(&mut OsRng);
-
-        let port: u16 = port_seed.p2p_port(0);
-        let config = WebUIConfig {
-            host: LOCALHOST_IP.to_string(),
-            port,
-        };
-        let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
-            backup_service_info: Some(BackupServiceInfo {
-                public_key: client_key.verifying_key().to_bytes().into(),
-            }),
-            active_migration: false,
-        });
-
-        let (storage, _tmpdir) = generate_key_storage().await;
-        let keyshare_storage = Arc::new(RwLock::new(storage));
-
-        let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
-        let web_server_state = Arc::new(WebServerState {
-            import_keyshares_sender: import_keyshares_sender.clone(),
-            keyshare_storage: keyshare_storage.clone(),
-        });
-        assert!(start_web_server(
-            web_server_state.clone(),
-            config,
-            migration_state_receiver,
-            &server_key,
-            CancellationToken::new()
-        )
-        .await
-        .is_ok());
-        let target_address = format!("{LOCALHOST_IP}:{port}");
-        TestSetup {
-            client_key,
-            server_key,
-            target_address,
-            migration_state_sender,
-            import_keyshares_receiver,
-            keyshare_storage,
-            _tmpdir,
-        }
-    }
+    use crate::{migration_service::types::MigrationInfo, p2p::testing::PortSeed};
 
     #[tokio::test]
     async fn test_web_success_hello_world() {
@@ -91,7 +28,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -118,7 +55,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -134,7 +71,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -170,7 +107,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();
@@ -183,7 +120,7 @@ mod tests {
         assert_eq!(expected, received);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
-        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares().to_vec())
+        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares())
             .await
             .unwrap();
 
@@ -201,7 +138,7 @@ mod tests {
         let mut send_request = connect_to_web_server(
             &test_setup.client_key,
             &test_setup.target_address,
-            test_setup.server_key.verifying_key(),
+            &test_setup.server_key.verifying_key(),
         )
         .await
         .unwrap();

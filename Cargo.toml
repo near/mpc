@@ -26,6 +26,7 @@ contract_history = { path = "crates/contract_history" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
 ] }
+mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 node-types = { path = "crates/node-types" }

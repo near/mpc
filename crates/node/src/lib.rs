@@ -27,12 +27,12 @@ mod coordinator;
 mod db;
 mod indexer;
 mod key_events;
-mod keyshare;
+pub mod keyshare;
 pub mod metrics;
-mod migration_service;
+pub mod migration_service;
 mod mpc_client;
 mod network;
-mod p2p;
+pub mod p2p;
 pub mod primitives;
 mod protocol;
 mod protocol_version;
@@ -48,5 +48,7 @@ pub mod web;
 pub(crate) mod trait_extensions;
 
 mod tee;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 #[cfg(test)]
 mod tests;

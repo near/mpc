@@ -62,7 +62,7 @@ mod tests {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::providers::eddsa::key_generation::KeyGenerationComputation;
     use crate::providers::eddsa::EddsaTaskId;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};

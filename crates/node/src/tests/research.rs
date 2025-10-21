@@ -1,4 +1,4 @@
-use crate::tests::TestGenerators;
+use crate::test_utils::TestGenerators;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
 use rand::rngs::OsRng;
