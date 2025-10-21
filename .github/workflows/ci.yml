@@ -291,3 +291,24 @@ jobs:
         run: cargo binstall --no-confirm cargo-shear
 
       - run: cargo shear
+
+  cargo-sort-check:
+    name: "Cargo.toml sort check"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install cargo-sort
+        run: cargo binstall --no-confirm cargo-sort@^2
+
+      - name: Check Cargo.toml sorting (strict)
+        run: |
+          cargo sort --check --check-format --workspace --grouped
