@@ -2,6 +2,7 @@ use std::future::Future;
 
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::{primitives::key_state::Keyset, state::ProtocolContractState};
+use mpc_node::keyshare::Keyshare;
 
 use crate::types;
 
@@ -22,10 +23,10 @@ pub trait KeyShareRepository {
 
     fn store_keyshares(
         &self,
-        key_shares: &types::KeyShares,
+        key_shares: &[Keyshare],
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn load_keyshares(&self) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
+    fn load_keyshares(&self) -> impl Future<Output = Result<Vec<Keyshare>, Self::Error>> + Send;
 }
 
 pub trait P2PClient {
@@ -34,10 +35,10 @@ pub trait P2PClient {
     fn get_keyshares(
         &self,
         keyset: &Keyset,
-    ) -> impl Future<Output = Result<types::KeyShares, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<Keyshare>, Self::Error>> + Send;
     fn put_keyshares(
         &self,
-        key_shares: &types::KeyShares,
+        key_shares: &[Keyshare],
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 

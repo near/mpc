@@ -1,8 +1,8 @@
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::primitives::key_state::Keyset;
-use mpc_node::migration_service::web::client;
+use mpc_node::{keyshare::Keyshare, migration_service::web::client};
 
-use crate::{ports, types};
+use crate::ports;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -39,7 +39,7 @@ impl MpcP2PClient {
 impl ports::P2PClient for MpcP2PClient {
     type Error = Error;
 
-    async fn get_keyshares(&self, keyset: &Keyset) -> Result<types::KeyShares, Self::Error> {
+    async fn get_keyshares(&self, keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
         let mut send_request = client::connect_to_web_server(
             &self.p2p_private_key,
             &self.mpc_node_url,
@@ -51,10 +51,10 @@ impl ports::P2PClient for MpcP2PClient {
         let keyshares = client::make_keyshare_get_request(&mut send_request, keyset)
             .await
             .map_err(Error::GetRequest)?;
-        Ok(types::KeyShares(keyshares))
+        Ok(keyshares)
     }
 
-    async fn put_keyshares(&self, keyshares: &types::KeyShares) -> Result<(), Self::Error> {
+    async fn put_keyshares(&self, keyshares: &[Keyshare]) -> Result<(), Self::Error> {
         let mut send_request = client::connect_to_web_server(
             &self.p2p_private_key,
             &self.mpc_node_url,
@@ -62,7 +62,7 @@ impl ports::P2PClient for MpcP2PClient {
         )
         .await
         .map_err(Error::ServerConnection)?;
-        client::make_set_keyshares_request(&mut send_request, &keyshares.0)
+        client::make_set_keyshares_request(&mut send_request, keyshares)
             .await
             .map_err(Error::GetRequest)?;
         Ok(())
@@ -76,7 +76,6 @@ mod tests {
 
     use crate::adapters::p2p_client::MpcP2PClient;
     use crate::ports::P2PClient;
-    use crate::types::KeyShares;
     use mpc_node::keyshare::test_utils::KeysetBuilder;
 
     #[tokio::test]
@@ -110,7 +109,7 @@ mod tests {
             .get_keyshares(&keyset)
             .await
             .unwrap();
-        assert_eq!(keyshares.0, expected_keyshares);
+        assert_eq!(keyshares, expected_keyshares);
     }
 
     #[tokio::test]
@@ -126,10 +125,7 @@ mod tests {
         let keyshares = keyset_builder.keyshares().to_vec();
 
         // When
-        client
-            .put_keyshares(&KeyShares(keyshares.clone()))
-            .await
-            .unwrap();
+        client.put_keyshares(&keyshares).await.unwrap();
 
         // Then
         let expected_keyshares = test_setup

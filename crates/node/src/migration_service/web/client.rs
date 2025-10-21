@@ -98,7 +98,7 @@ pub async fn make_keyshare_get_request(
 
 pub async fn make_set_keyshares_request(
     request_sender: &mut SendRequest<Body>,
-    keyshares: &Vec<Keyshare>,
+    keyshares: &[Keyshare],
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(keyshares)?;
 

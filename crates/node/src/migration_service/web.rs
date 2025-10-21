@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(expected, received);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
-        make_set_keyshares_request(&mut send_request, &keyset_builder.keyshares().to_vec())
+        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares())
             .await
             .unwrap();
 
