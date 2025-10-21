@@ -209,7 +209,7 @@ async fn test_onboarding() {
         let mut request_sender = migration_service::web::client::connect_to_web_server(
             &backup_service_key,
             leaving_node.migration_service_addr,
-            leaving_node.p2p_public_key,
+            &leaving_node.p2p_public_key,
         )
         .await
         .unwrap();
@@ -230,13 +230,13 @@ async fn test_onboarding() {
         let mut request_sender = migration_service::web::client::connect_to_web_server(
             &backup_service_key,
             onboarding_node.migration_service_addr.clone(),
-            onboarding_node.p2p_public_key,
+            &onboarding_node.p2p_public_key,
         )
         .await
         .unwrap();
         migration_service::web::client::make_set_keyshares_request(
             &mut request_sender,
-            received_keyshares.clone(),
+            &received_keyshares.clone(),
         )
         .await
         .unwrap();

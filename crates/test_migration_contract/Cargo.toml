@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[package.metadata.cargo-shear]
+ignored = ["borsh"]
+
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-near-sdk = { workspace = true }
 borsh = { workspace = true }
-
-[package.metadata.cargo-shear]
-ignored = ["borsh"]
+near-sdk = { workspace = true }

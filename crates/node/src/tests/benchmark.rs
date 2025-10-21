@@ -1,4 +1,4 @@
-use super::TestGenerators;
+use crate::test_utils::TestGenerators;
 use k256::elliptic_curve::Field;
 use k256::Scalar;
 

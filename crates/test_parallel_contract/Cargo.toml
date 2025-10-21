@@ -4,24 +4,22 @@ version = "0.2.0"
 edition = "2021"
 license = "MIT"
 
+[package.metadata.cargo-shear]
+ignored = ["getrandom", "borsh", "serde"]
+
 [lib]
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
+blstrs = { workspace = true }
 borsh = { workspace = true }
+contract-interface = { workspace = true }
+elliptic-curve = { workspace = true }
+hex = { workspace = true }
 near-sdk = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-hex = { workspace = true }
-blstrs = { workspace = true }
-elliptic-curve = { workspace = true }
-contract-interface = { workspace = true }
-
 
 # k256 won't compile without settings the custom rand flag for `getrandom`
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.12", features = ["custom"] }
-
-
-[package.metadata.cargo-shear]
-ignored = ["getrandom", "borsh", "serde"]

@@ -545,7 +545,7 @@ mod tests {
         MAX_LATENCY_BEFORE_EXPECTING_TRANSACTION_TO_FINALIZE,
     };
     use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
-    use crate::tests::TestGenerators;
+    use crate::test_utils::TestGenerators;
     use crate::tracing::init_logging;
     use crate::types::{CKDRequest, SignatureRequest};
     use mpc_contract::primitives::domain::DomainId;

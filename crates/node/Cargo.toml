@@ -4,6 +4,10 @@ version = "2.2.0-rc.1"
 edition = "2021"
 license = "MIT"
 
+[features]
+network-hardship-simulation = []
+test-utils = []
+
 [dependencies]
 actix = { workspace = true }
 aes-gcm = { workspace = true }
@@ -13,19 +17,30 @@ attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
 borsh = { workspace = true }
-threshold-signatures = { workspace = true }
 clap = { workspace = true }
-derive_more = { workspace = true }
 contract-interface = { workspace = true }
+derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 humantime = { workspace = true }
+hyper = { workspace = true }
+itertools = { workspace = true }
 k256 = { workspace = true }
 lru = { workspace = true }
+mpc-contract = { workspace = true }
+mpc-tls = { workspace = true }
+near-client = { workspace = true }
+near-config-utils = { workspace = true }
+near-crypto = { workspace = true }
+near-indexer = { workspace = true }
+near-indexer-primitives = { workspace = true }
+near-o11y = { workspace = true }
 near-sdk = { workspace = true }
+near-time = { workspace = true }
+node-types = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rocksdb = { workspace = true }
@@ -37,38 +52,24 @@ sha3 = { workspace = true }
 tee_authority = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+threshold-signatures = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
-near-indexer = { workspace = true }
-near-indexer-primitives = { workspace = true }
-near-client = { workspace = true }
-near-config-utils = { workspace = true }
-near-crypto = { workspace = true }
-near-o11y = { workspace = true }
-near-time = { workspace = true }
-node-types = { workspace = true }
-mpc-contract = { workspace = true }
-mpc-tls = { workspace = true }
-itertools = { workspace = true }
-hyper = { workspace = true }
-
-[dev-dependencies]
-assert_matches = { workspace = true }
-serial_test = { workspace = true }
-itertools = { workspace = true }
-mpc-contract = { workspace = true, features = ["test-utils"] }
-mockall = { workspace = true }
-rstest = { workspace = true }
-tracing-test = { workspace = true }
 
 [build-dependencies]
 built = { version = "0.8", features = ["git2", "chrono"] }
 
-[features]
-network-hardship-simulation = []
+[dev-dependencies]
+assert_matches = { workspace = true }
+itertools = { workspace = true }
+mockall = { workspace = true }
+mpc-contract = { workspace = true, features = ["test-utils"] }
+rstest = { workspace = true }
+serial_test = { workspace = true }
+tracing-test = { workspace = true }

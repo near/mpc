@@ -14,7 +14,7 @@ use crate::{keyshare::Keyshare, migration_service::web::authentication::authenti
 pub async fn connect_to_web_server(
     p2p_private_key: &ed25519_dalek::SigningKey,
     target_address: impl tokio::net::ToSocketAddrs + std::fmt::Debug,
-    expected_server_key: VerifyingKey,
+    expected_server_key: &VerifyingKey,
 ) -> anyhow::Result<SendRequest<Body>> {
     tracing::info!(?target_address, "connecting on ");
     let (_server_config, client_config) = configure_tls(p2p_private_key)?;
@@ -26,7 +26,7 @@ pub async fn connect_to_web_server(
         .await
         .context("TLS connect")?;
 
-    authenticate_peer(tls_conn.get_ref().1, &expected_server_key)?;
+    authenticate_peer(tls_conn.get_ref().1, expected_server_key)?;
 
     tracing::info!(
         "TLS handshake complete, mpc node authenticated and encrypted channel established."
@@ -103,10 +103,10 @@ pub async fn make_keyshare_get_request(
 
 pub async fn make_set_keyshares_request(
     request_sender: &mut SendRequest<Body>,
-    keyshares: Vec<Keyshare>,
+    keyshares: &[Keyshare],
 ) -> anyhow::Result<()> {
     tracing::info!("making set keyshares request");
-    let json = serde_json::to_string(&keyshares)?;
+    let json = serde_json::to_string(keyshares)?;
 
     let req = Request::builder()
         .method("PUT")

@@ -7,6 +7,9 @@ edition = "2024"
 name = "export_contracts"
 path = "src/bin/export_contracts.rs"
 
+[features]
+external-services-tests = []
+
 [dependencies]
 clap.workspace = true
 
@@ -17,6 +20,3 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
-
-[features]
-external-services-tests = []

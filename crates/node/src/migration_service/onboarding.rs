@@ -25,7 +25,7 @@ use crate::{
 /// runs onboarding tasks as needed.
 ///
 /// Returns `Ok(())` when this node is an active participant in the current epoch.
-pub async fn onboard(
+pub(crate) async fn onboard(
     contract_state_receiver: watch::Receiver<ContractState>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
     my_near_account_id: AccountId,
@@ -290,7 +290,7 @@ mod tests {
     use crate::{
         config::tests::gen_participant,
         indexer::participants::ContractState,
-        keyshare::{test_utils::KeysetBuilder, tests::generate_key_storage_config},
+        keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
         migration_service::{
             onboarding::{
                 wait_for_and_import_keyshares, IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG,

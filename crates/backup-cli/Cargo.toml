@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = { workspace = true }
 clap = { workspace = true }
+contract-interface = { workspace = true }
 ed25519-dalek = { workspace = true }
+mpc-contract = { workspace = true, features = ["dev-utils"] }
+mpc-node = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+mpc-node = { workspace = true, features = ["test-utils"] }

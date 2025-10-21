@@ -3,7 +3,7 @@ mod gcp;
 pub mod local;
 pub mod permanent;
 mod temporary;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
@@ -445,39 +445,40 @@ impl KeyStorageConfig {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
+    let tempdir = tempfile::tempdir().unwrap();
+    let home_dir = tempdir.path().to_path_buf();
+    let local_encryption_key = [3; 16];
+    (
+        KeyStorageConfig {
+            home_dir,
+            local_encryption_key,
+            gcp: None,
+        },
+        tempdir,
+    )
+}
+
+// When using this function, tempdir must not be dropped, else the folder is erased
+#[cfg(any(test, feature = "test-utils"))]
+pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
+    let (storage_config, tempdir) = generate_key_storage_config();
+    (storage_config.create().await.unwrap(), tempdir)
+}
+
 #[cfg(test)]
 pub mod tests {
     use mpc_contract::primitives::{
         domain::DomainId,
         key_state::{AttemptId, EpochId, KeyEventId},
     };
-    use tempfile::TempDir;
 
-    use super::{KeyStorageConfig, KeyshareStorage};
+    use super::{generate_key_storage, KeyshareStorage};
     use crate::keyshare::{
         test_utils::{generate_dummy_keyshare, generate_dummy_keyshares, KeysetBuilder},
         Keyshare,
     };
-
-    pub fn generate_key_storage_config() -> (KeyStorageConfig, TempDir) {
-        let tempdir = tempfile::tempdir().unwrap();
-        let home_dir = tempdir.path().to_path_buf();
-        let local_encryption_key = [3; 16];
-        (
-            KeyStorageConfig {
-                home_dir,
-                local_encryption_key,
-                gcp: None,
-            },
-            tempdir,
-        )
-    }
-
-    // When using this function, tempdir must not be dropped, else the folder is erased
-    pub async fn generate_key_storage() -> (KeyshareStorage, TempDir) {
-        let (storage_config, tempdir) = generate_key_storage_config();
-        (storage_config.create().await.unwrap(), tempdir)
-    }
 
     #[tokio::test]
     async fn test_key_storage() {

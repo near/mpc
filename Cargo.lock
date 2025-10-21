@@ -1502,8 +1502,12 @@ dependencies = [
 name = "backup-cli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
+ "contract-interface",
  "ed25519-dalek",
+ "mpc-contract",
+ "mpc-node",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "serde",

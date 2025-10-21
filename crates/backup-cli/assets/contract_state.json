@@ -1,0 +1,168 @@
+{
+  "Running": {
+    "domains": {
+      "domains": [
+        {
+          "id": 0,
+          "scheme": "Secp256k1"
+        },
+        {
+          "id": 1,
+          "scheme": "Ed25519"
+        }
+      ],
+      "next_domain_id": 2
+    },
+    "keyset": {
+      "epoch_id": 4,
+      "domains": [
+        {
+          "domain_id": 0,
+          "key": {
+            "Secp256k1": {
+              "near_public_key": "secp256k1:3tFRbMqmoa6AAALMrEFAYCEoHcqKxeW38YptwowBVBtXK1vo36HDbUWuR6EZmoK4JcH6HDkNMGGqP1ouV7VZUWya"
+            }
+          },
+          "attempt": 240
+        },
+        {
+          "domain_id": 1,
+          "key": {
+            "Ed25519": {
+              "near_public_key_compressed": "ed25519:G9hwngxWNKdmqMCmU1Yt6LPhFpayJeKFxyAV1HqMNLtF",
+              "edwards_point": [
+                225,
+                26,
+                63,
+                32,
+                184,
+                108,
+                201,
+                78,
+                91,
+                117,
+                55,
+                216,
+                102,
+                209,
+                196,
+                106,
+                227,
+                228,
+                26,
+                70,
+                161,
+                208,
+                143,
+                122,
+                234,
+                22,
+                150,
+                164,
+                165,
+                0,
+                191,
+                208
+              ]
+            }
+          },
+          "attempt": 0
+        }
+      ]
+    },
+    "parameters": {
+      "participants": {
+        "next_id": 12,
+        "participants": [
+          [
+            "blacksandtech.near",
+            0,
+            {
+              "url": "https://multichain-mainnet-0.near.blksnd.xyz",
+              "sign_pk": "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2"
+            }
+          ],
+          [
+            "lifted-mainnet.near",
+            3,
+            {
+              "url": "https://near-mpc.liftedinit.org",
+              "sign_pk": "ed25519:JBjY7yjbfQ51na3bStPPYMyfModUTFHco5xUNEem3uu6"
+            }
+          ],
+          [
+            "mpc-lgns.near",
+            4,
+            {
+              "url": "https://near.mpc.lgns.net",
+              "sign_pk": "ed25519:EFW6528i4iU1XK3Q53r6kyHEjjA7puJLhHLH3mG1YRZd"
+            }
+          ],
+          [
+            "multichain-mainnet-aurora.near",
+            5,
+            {
+              "url": "https://multichain-mainnet.aurora.dev",
+              "sign_pk": "ed25519:9QAvLjfjDX7GYwJaT7Wzz9bjS4NzniaXukx8vYKaZZLG"
+            }
+          ],
+          [
+            "n1-multichain.near",
+            8,
+            {
+              "url": "https://multichain-mainnet-0.nearone.org",
+              "sign_pk": "ed25519:8kjdkEUAD7kXc5aCYJdcSwNQESanvpbqSm325o7uSUQH"
+            }
+          ],
+          [
+            "near-mpc-staking4all-01.near",
+            6,
+            {
+              "url": "https://multichain-mainnet-0.staking4all.org",
+              "sign_pk": "ed25519:2CbEnbBQ9RA2oocc9a89Eck5d9ighfL7FGiEkMyQ7YB9"
+            }
+          ],
+          [
+            "nodemonster.near",
+            7,
+            {
+              "url": "https://near.node.monster",
+              "sign_pk": "ed25519:9mix9iNfMMtSAhzgHCisnjMJtiofn8cFkprgUTkRtPN"
+            }
+          ],
+          [
+            "chain-signatures-hot.near",
+            9,
+            {
+              "url": "http://chain-signature-mainnet.hotdao.ai",
+              "sign_pk": "ed25519:6DRZqoWxdYiKEhmF391pdC8L4VUXY1S5AMHYBsVHSyYm"
+            }
+          ],
+          [
+            "everstake-mpc-1.near",
+            10,
+            {
+              "url": "http://nearmpc-mainnet.everstake.one",
+              "sign_pk": "ed25519:3TJzrbiwgZeTEDHk3yZqCFvAzYs9xfYEkUcpx2dMD7Qq"
+            }
+          ],
+          [
+            "stakin-mpc.near",
+            11,
+            {
+              "url": "http://near-mpc-mainnet-1.stakin-nodes.com",
+              "sign_pk": "ed25519:9WiRNJ8Ci1RxfjdyGVdZHxUt5JJBgbfK87bZzgMd7ec4"
+            }
+          ]
+        ]
+      },
+      "threshold": 7
+    },
+    "parameters_votes": {
+      "proposal_by_account": {}
+    },
+    "add_domains_votes": {
+      "proposal_by_account": {}
+    }
+  }
+}

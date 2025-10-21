@@ -17,7 +17,7 @@ use crate::{
 
 use super::types::{ExpectedPeerInfo, WebServerState};
 
-pub async fn start_web_server(
+pub(crate) async fn start_web_server(
     web_server_state: Arc<WebServerState>,
     config: WebUIConfig,
     migration_state_receiver: watch::Receiver<MigrationInfo>,
