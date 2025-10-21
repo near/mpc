@@ -53,7 +53,7 @@ impl MigrationTestNodeInfo {
         Self {
             participant_info,
             home_dir: config.home_dir.clone(),
-            storage_key: config.secrets.local_storage_aes_key.clone(),
+            storage_key: config.secrets.local_storage_aes_key,
             migration_service_addr,
             p2p_public_key,
             near_signer_key,
