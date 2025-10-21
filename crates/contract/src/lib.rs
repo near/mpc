@@ -553,7 +553,7 @@ impl MpcContract {
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
 
-        let account_id = env::signer_account_id();
+        let account_id = env::predecessor_account_id();
         let account_key = env::signer_account_pk();
 
         log!(
@@ -1313,7 +1313,7 @@ impl MpcContract {
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
-        let voter = env::signer_account_id();
+        let voter = env::predecessor_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1336,8 +1336,18 @@ impl MpcContract {
     /// Panics if:
     /// - The protocol is not active (e.g., NotInitialized)
     /// - The caller is not attested or not in the relevant participants set
-    pub fn assert_caller_is_attested_participant_and_protocol_active(&self) {
+    /// - The caller is not the signer account
+    fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
+
+        let signer_id = env::signer_account_id();
+        let predecessor_id = env::predecessor_account_id();
+
+        assert_eq!(
+            signer_id, predecessor_id,
+            "Caller must be the signer account (signer: {}, predecessor: {})",
+            signer_id, predecessor_id
+        );
 
         if !self
             .tee_state
