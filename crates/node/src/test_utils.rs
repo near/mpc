@@ -1,3 +1,4 @@
+// TODO(#1318) this utilities should be moved to the threshold_signatures repo
 /// Convenient test utilities to generate keys, triples, presignatures, and signatures.
 use k256::elliptic_curve::PrimeField;
 use k256::{AffinePoint, Scalar};
