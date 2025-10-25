@@ -41,7 +41,9 @@ jobs:
           cargo fmt -- --check
 
       - name: Install cargo-nextest
-        run: cargo install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.106
 
       - name: Run cargo-nextest
         run: cargo nextest run --locked --all-features --cargo-profile test-release
@@ -63,7 +65,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install cargo-nextest
-        run: cargo install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.106
       - name: Generate code coverage
         run: cargo llvm-cov nextest --cargo-profile test-release --all-features --workspace --codecov --output-path codecov.json
       - name: Upload coverage to Codecov
@@ -72,4 +76,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: codecov.json
           fail_ci_if_error: false
-
