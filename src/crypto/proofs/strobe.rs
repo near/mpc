@@ -1,33 +1,47 @@
 //! Fully imported from zkcrypto/merlin project specifically from
 //! <https://github.com/zkcrypto/merlin/blob/main/src/strobe.rs>
 //! except for the test cases to prevent importing `strobe_rs` crate into the project
+//! Modified to avoid using unsafe code
 
 //! Minimal implementation of (parts of) Strobe.
 
-use core::ops::{Deref, DerefMut};
-
+use derive_more::{Deref, DerefMut};
 use zeroize::Zeroize;
 
 use crate::crypto::constants::{FLAG_A, FLAG_C, FLAG_I, FLAG_K, FLAG_M, FLAG_T, STROBE_R};
 
-fn transmute_state(st: &mut AlignedKeccakState) -> &mut [u64; 25] {
-    unsafe { &mut *std::ptr::from_mut::<AlignedKeccakState>(st).cast::<[u64; 25]>() }
+fn transmute_state(st: &KeccakState) -> [u64; 25] {
+    let mut result = [0u64; 25];
+    for (i, resulti) in result.iter_mut().enumerate() {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&st[8 * i..8 * i + 8]);
+        *resulti = u64::from_le_bytes(bytes);
+    }
+    result
 }
 
-/// This is a wrapper around 200-byte buffer that's always 8-byte aligned
-/// to make pointers to it safely convertible to pointers to [u64; 25]
-/// (since u64 words must be 8-byte aligned)
-#[derive(Clone, Zeroize)]
+fn untransmute_state(transmuted_state: [u64; 25], state: &mut KeccakState) {
+    for (i, ti) in transmuted_state.iter().enumerate() {
+        state[8 * i..8 * i + 8].copy_from_slice(&ti.to_le_bytes());
+    }
+}
+
+fn keccak_f1600_wrapper(state: &mut KeccakState) {
+    let mut transmuted_state = transmute_state(state);
+    keccak::f1600(&mut transmuted_state);
+    untransmute_state(transmuted_state, state);
+}
+
+#[derive(Clone, Zeroize, Deref, DerefMut)]
 #[zeroize(drop)]
-#[repr(align(8))]
-struct AlignedKeccakState([u8; 200]);
+struct KeccakState([u8; 200]);
 
 /// A Strobe context for the 128-bit security level.
 ///
 /// Only `meta-AD`, `AD`, `KEY`, and `PRF` operations are supported.
 #[derive(Clone, Zeroize)]
 pub struct Strobe128 {
-    state: AlignedKeccakState,
+    state: KeccakState,
     pos: u8,
     pos_begin: u8,
     cur_flags: u8,
@@ -43,11 +57,10 @@ impl ::core::fmt::Debug for Strobe128 {
 impl Strobe128 {
     pub fn new(protocol_label: &[u8]) -> Self {
         let initial_state = {
-            let mut st = AlignedKeccakState([0u8; 200]);
+            let mut st = KeccakState([0u8; 200]);
             st[0..6].copy_from_slice(&[1, STROBE_R + 2, 1, 0, 1, 96]);
             st[6..18].copy_from_slice(b"STROBEv1.0.2");
-            keccak::f1600(transmute_state(&mut st));
-
+            keccak_f1600_wrapper(&mut st);
             st
         };
 
@@ -89,7 +102,7 @@ impl Strobe128 {
         self.state[self.pos as usize] ^= self.pos_begin;
         self.state[(self.pos + 1) as usize] ^= 0x04;
         self.state[(STROBE_R + 1) as usize] ^= 0x80;
-        keccak::f1600(transmute_state(&mut self.state));
+        keccak_f1600_wrapper(&mut self.state);
         self.pos = 0;
         self.pos_begin = 0;
     }
@@ -155,19 +168,5 @@ impl Strobe128 {
         if force_f && self.pos != 0 {
             self.run_f();
         }
-    }
-}
-
-impl Deref for AlignedKeccakState {
-    type Target = [u8; 200];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for AlignedKeccakState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
