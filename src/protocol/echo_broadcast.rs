@@ -163,6 +163,10 @@ where
 
         is_simulated_vote = false;
 
+        if sid >= n {
+            continue;
+        }
+
         match vote.clone() {
             // Receive send vote then echo to everybody
             MessageType::Send(data) => {
@@ -546,6 +550,64 @@ mod test {
         for (_, vec_b) in &result {
             let false_count = vec_b.iter().filter(|&&b| !b).count();
             assert_eq!(false_count, 0);
+        }
+    }
+
+    async fn do_broadcast_dishonest_consume_bad_sid(
+        mut chan: SharedChannel,
+        participants: ParticipantList,
+        me: Participant,
+    ) -> Result<Vec<bool>, ProtocolError> {
+        let wait_broadcast = chan.next_waitpoint();
+
+        // Maliciously craft a message with a bad sid
+        let bad_sid = participants.len(); // This is out of bounds
+        let vote = MessageType::Send(true);
+
+        // Send this malicious message to all other participants
+        chan.send_many(wait_broadcast, &(&bad_sid, &vote))?;
+
+        // The malicious node should also participate honestly to not stall the protocol for other reasons.
+        let send_vote = reliable_broadcast_send(&chan, wait_broadcast, &participants, me, false)?;
+        let vote_list =
+            reliable_broadcast_receive_all(&chan, wait_broadcast, &participants, me, send_vote)
+                .await?;
+        let vote_list = vote_list.into_vec_or_none().unwrap();
+        Ok(vote_list)
+    }
+
+    #[test]
+    fn test_malicious_sid_ignored() {
+        let honest_participants = generate_participants(3);
+        let dishonest_participant = Participant::from(3u32);
+        let honest_votes = vec![true, true, true];
+
+        // The broadcast_dishonest function returns a Result.
+        // If the protocol panics, the test will fail.
+        // If it returns Ok, it means the protocol completed.
+        let result = broadcast_dishonest(
+            &honest_participants,
+            dishonest_participant,
+            &honest_votes,
+            do_broadcast_dishonest_consume_bad_sid,
+        );
+
+        // We expect the protocol to complete successfully.
+        assert!(result.is_ok());
+
+        let final_votes = result.unwrap();
+        // The final votes should not be affected by the malicious message.
+
+        // All participants should have the same view of the votes.
+        for (p, v) in final_votes {
+            let v_expected = vec![true, true, true, false];
+            if p == dishonest_participant {
+                // The dishonest participant might have a different view of its own vote
+                // depending on when it processes its own message.
+                // The important part is that it doesn't panic and that honest nodes agree.
+            } else {
+                assert_eq!(v, v_expected);
+            }
         }
     }
 }
