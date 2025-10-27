@@ -85,6 +85,98 @@ update_mpc_config() {
     sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
 }
 
+generate_secrets_json() {
+    local secrets_file="$MPC_HOME_DIR/secrets.json"
+    
+    # Skip if secrets.json already exists
+    if [ -f "$secrets_file" ]; then
+        echo "secrets.json already exists, skipping generation"
+        return 0
+    fi
+    
+    # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
+    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
+            echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
+            export MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
+        fi
+    else
+        echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
+    fi
+
+    # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
+    if [ -z "${MPC_ACCOUNT_SK}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
+            echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
+            export MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
+        fi
+    else
+        echo "Using provided MPC_ACCOUNT_SK from environment"
+    fi
+    
+    # Only generate secrets.json if we have the required keys
+    if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
+        echo "Generating secrets.json from provided keys..."
+        python3 <<EOF
+import json
+import sys
+
+def hex_to_byte_array(hex_string):
+    """Convert a hex string to a JSON byte array."""
+    # Remove any whitespace and potential '0x' prefix
+    hex_string = hex_string.strip().replace('0x', '')
+    
+    # Convert hex string to bytes
+    try:
+        byte_data = bytes.fromhex(hex_string)
+    except ValueError as e:
+        print(f"Error converting hex string: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Ed25519 keys should be 32 bytes
+    if len(byte_data) != 32:
+        print(f"Warning: Key length is {len(byte_data)} bytes, expected 32 bytes", file=sys.stderr)
+    
+    return list(byte_data)
+
+# Get the keys from environment variables
+p2p_key_hex = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_hex = "${MPC_ACCOUNT_SK}"
+
+if not p2p_key_hex or not account_sk_hex:
+    print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
+    sys.exit(1)
+
+# Convert hex keys to byte arrays
+p2p_key_bytes = hex_to_byte_array(p2p_key_hex)
+account_sk_bytes = hex_to_byte_array(account_sk_hex)
+
+# Create the secrets structure
+# Note: near_responder_keys is initialized with one key (the same as near_signer_key)
+# This matches the number_of_responder_keys: 50 in config, but we only have one key from env
+secrets = {
+    "p2p_private_key": p2p_key_bytes,
+    "near_signer_key": account_sk_bytes,
+    "near_responder_keys": [account_sk_bytes]
+}
+
+# Write to secrets.json
+with open("$secrets_file", 'w') as f:
+    json.dump(secrets, f, indent=2)
+
+print("secrets.json generated successfully")
+EOF
+        if [ $? -eq 0 ]; then
+            echo "secrets.json created at $secrets_file"
+        else
+            echo "Failed to generate secrets.json" >&2
+            return 1
+        fi
+    else
+        echo "Skipping secrets.json generation - MPC_P2P_PRIVATE_KEY and/or MPC_ACCOUNT_SK not available"
+    fi
+}
+
 # Check and initialize Near node config if needed
 if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
@@ -105,6 +197,9 @@ else
 fi
 
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
+
+# Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
+generate_secrets_json
 
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
     echo "You must provide MPC_SECRET_STORE_KEY in env variable"
