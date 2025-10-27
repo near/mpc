@@ -28,9 +28,10 @@ pub fn deal(
     let b = Secp256K1ScalarField::random(&mut *rng);
     let c = a * b;
 
-    let f_a = Polynomial::generate_polynomial(Some(a), threshold - 1, rng)?;
-    let f_b = Polynomial::generate_polynomial(Some(b), threshold - 1, rng)?;
-    let f_c = Polynomial::generate_polynomial(Some(c), threshold - 1, rng)?;
+    let degree = threshold.checked_sub(1).unwrap();
+    let f_a = Polynomial::generate_polynomial(Some(a), degree, rng)?;
+    let f_b = Polynomial::generate_polynomial(Some(b), degree, rng)?;
+    let f_c = Polynomial::generate_polynomial(Some(c), degree, rng)?;
 
     let mut shares = Vec::with_capacity(participants.len());
     let mut participants_owned = Vec::with_capacity(participants.len());

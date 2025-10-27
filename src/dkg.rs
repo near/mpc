@@ -361,8 +361,10 @@ async fn do_keyshare<C: Ciphersuite>(
     let session_id = domain_separate_hash(domain_separator, &session_ids)?;
     domain_separator += 1;
     // the degree of the polynomial is threshold - 1
-    let secret_coefficients =
-        Polynomial::<C>::generate_polynomial(Some(secret), threshold - 1, rng)?;
+    let degree = threshold
+        .checked_sub(1)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+    let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
 
     // Compute the multiplication of every coefficient of p with the generator G
     let coefficient_commitment = generate_coefficient_commitment::<C>(&secret_coefficients)?;
@@ -546,6 +548,9 @@ pub fn assert_keygen_invariants(
             threshold,
             max: participants.len(),
         });
+    }
+    if threshold < 1 {
+        return Err(InitializationError::ThresholdTooSmall { threshold, min: 1 });
     }
 
     // ensure uniqueness of participants in the participant list

@@ -71,6 +71,9 @@ pub enum ProtocolError {
     #[error("this should never happen, please report upstream")]
     Unreachable,
 
+    #[error("integer overflow")]
+    IntegerOverflow,
+
     // catch-all for foreign errors
     #[error("{0}")]
     Other(String),

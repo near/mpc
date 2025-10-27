@@ -55,7 +55,15 @@ impl<C: Ciphersuite> Polynomial<C> {
         degree: usize,
         rng: &mut impl CryptoRngCore,
     ) -> Result<Self, ProtocolError> {
-        let poly_size = degree + 1;
+        // @dev why not usize::MAX? https://github.com/near/threshold-signatures/pull/163#discussion_r2447505305
+        // Allocations must fit within isize range.
+        // This check conservatively prevents allocations beyond isize::MAX.
+        if degree >= isize::MAX as usize {
+            return Err(ProtocolError::IntegerOverflow);
+        }
+        let poly_size = degree
+            .checked_add(1)
+            .ok_or(ProtocolError::IntegerOverflow)?;
         let mut coefficients = Vec::with_capacity(poly_size);
         // insert the secret share if exists
         let secret = secret.unwrap_or_else(|| <C::Group as Group>::Field::random(rng));
@@ -1305,5 +1313,17 @@ mod test {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_generate_polynomial_overflow() {
+        let mut rng = OsRng;
+        // Test with a degree that would cause an overflow in `degree + 1`
+        let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
+        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+
+        // Test with a degree that is at the boundary of isize::MAX
+        let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
+        assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
     }
 }

@@ -49,8 +49,8 @@ pub fn presign(
     // this complex way prevents overflowing
     if args
         .threshold
-        .saturating_mul(2)
-        .checked_add(1)
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
         .ok_or_else(|| {
             InitializationError::BadParameters(
                 "2*threshold+1 must be less than usize::MAX".to_string(),
@@ -92,14 +92,17 @@ async fn do_presign(
     let threshold = args.threshold;
     // Round 0
 
+    let degree = threshold
+        .checked_mul(2)
+        .ok_or(ProtocolError::IntegerOverflow)?;
     let polynomials = [
         // degree t random secret shares where t is the max number of malicious parties
         Polynomial::generate_polynomial(None, threshold, rng)?, // fk
         Polynomial::generate_polynomial(None, threshold, rng)?, // fa
         // degree 2t zero secret shares where t is the max number of malicious parties
-        zero_secret_polynomial(2 * threshold, rng)?, // fb
-        zero_secret_polynomial(2 * threshold, rng)?, // fd
-        zero_secret_polynomial(2 * threshold, rng)?, // fe
+        zero_secret_polynomial(degree, rng)?, // fb
+        zero_secret_polynomial(degree, rng)?, // fd
+        zero_secret_polynomial(degree, rng)?, // fe
     ];
 
     // send polynomial evaluations to participants

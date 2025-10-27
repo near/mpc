@@ -190,18 +190,13 @@ mod test {
         // This sum would annihilate all the fb shares which make them useless in our case.
         let fk = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
         let fa = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
-        let fd = Polynomial::generate_polynomial(
-            Some(Secp256K1ScalarField::zero()),
-            2 * max_malicious,
-            &mut OsRng,
-        )
-        .unwrap();
-        let fe = Polynomial::generate_polynomial(
-            Some(Secp256K1ScalarField::zero()),
-            2 * max_malicious,
-            &mut OsRng,
-        )
-        .unwrap();
+        let degree = 2usize.checked_mul(max_malicious).unwrap();
+        let fd =
+            Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, &mut OsRng)
+                .unwrap();
+        let fe =
+            Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, &mut OsRng)
+                .unwrap();
 
         // computing k, R, Rx
         let k = fk.eval_at_zero().unwrap().0;

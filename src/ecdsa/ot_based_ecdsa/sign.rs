@@ -189,21 +189,22 @@ mod test {
 
     #[test]
     fn test_sign_without_rerandomization() {
-        let threshold = 2;
+        let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let degree = threshold.checked_sub(1).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = ProjectivePoint::GENERATOR * x;
 
-        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let g = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
 
         let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng).unwrap();
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut OsRng).unwrap();
 
         let participants = generate_participants(2);
 
@@ -226,21 +227,22 @@ mod test {
 
     #[test]
     fn test_sign_with_rerandomization() {
-        let threshold = 2;
+        let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
-        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let degree = threshold.checked_sub(1).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
 
-        let g = Polynomial::generate_polynomial(None, threshold - 1, &mut OsRng).unwrap();
+        let g = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
 
         let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), threshold - 1, &mut OsRng).unwrap();
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut OsRng).unwrap();
 
         let participants = generate_participants(2);
 

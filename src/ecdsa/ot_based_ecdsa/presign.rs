@@ -203,8 +203,9 @@ mod test {
     #[test]
     fn test_presign() {
         let participants = generate_participants(4);
-        let original_threshold = 2;
-        let f = Polynomial::generate_polynomial(None, original_threshold - 1, &mut OsRng).unwrap();
+        let original_threshold: usize = 2;
+        let degree = original_threshold.checked_sub(1).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
 
         let threshold = 2;

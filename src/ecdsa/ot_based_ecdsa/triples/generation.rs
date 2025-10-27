@@ -88,13 +88,20 @@ async fn do_generation(
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
 
+    let degree1 = threshold
+        .checked_sub(1)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+    let degree2 = threshold
+        .checked_sub(2)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+
     // Spec 1.2
-    let e = Polynomial::generate_polynomial(None, threshold - 1, &mut rng)?;
-    let f = Polynomial::generate_polynomial(None, threshold - 1, &mut rng)?;
+    let e = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
+    let f = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
     // Spec 1.3
     // We will generate a poly of degree threshold - 2 then later extend it with identity.
     // This is to prevent serialization from failing
-    let mut l = Polynomial::generate_polynomial(None, threshold - 2, &mut rng)?;
+    let mut l = Polynomial::generate_polynomial(None, degree2, &mut rng)?;
 
     // Spec 1.4
     let big_e_i = e.commit_polynomial()?;
@@ -513,11 +520,18 @@ async fn do_generation_many<const N: usize>(
     let mut big_f_i_v = vec![];
     let mut big_l_i_v = vec![];
 
+    let degree1 = threshold
+        .checked_sub(1)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+    let degree2 = threshold
+        .checked_sub(2)
+        .ok_or(ProtocolError::IntegerOverflow)?;
+
     for _ in 0..N {
         // Spec 1.2
-        let e = Polynomial::generate_polynomial(None, threshold - 1, &mut rng)?;
-        let f = Polynomial::generate_polynomial(None, threshold - 1, &mut rng)?;
-        let l = Polynomial::generate_polynomial(None, threshold - 2, &mut rng)?;
+        let e = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
+        let f = Polynomial::generate_polynomial(None, degree1, &mut rng)?;
+        let l = Polynomial::generate_polynomial(None, degree2, &mut rng)?;
 
         // Spec 1.4
         let big_e_i = e.commit_polynomial()?;
@@ -1073,6 +1087,9 @@ pub fn generate_triple(
             max: participants.len(),
         });
     }
+    if threshold < 2 {
+        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
+    }
 
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
@@ -1100,6 +1117,9 @@ pub fn generate_triple_many<const N: usize>(
             threshold,
             max: participants.len(),
         });
+    }
+    if threshold < 2 {
+        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
     }
 
     let participants =
