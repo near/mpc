@@ -1503,11 +1503,17 @@ name = "backup-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bs58 0.5.1",
  "clap",
  "contract-interface",
  "ed25519-dalek",
+ "hex",
  "mpc-contract",
  "mpc-node",
+ "near-crypto 2.9.0",
+ "near-jsonrpc-client 0.15.1",
+ "near-primitives 0.28.0",
+ "near-workspaces",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "serde",

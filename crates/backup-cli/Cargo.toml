@@ -5,11 +5,17 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 contract-interface = { workspace = true }
 ed25519-dalek = { workspace = true }
+hex = { workspace = true }
 mpc-contract = { workspace = true, features = ["dev-utils"] }
 mpc-node = { workspace = true }
+near-jsonrpc-client = { workspace = true }
+near-crypto = { workspace = true }
+near-primitives = { workspace = true }
+near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }

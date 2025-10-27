@@ -1371,12 +1371,13 @@ impl MpcContract {
         self.node_migrations.get_all()
     }
 
-    /// Registers or updates the backup service information for the caller account.  
+    /// Registers or updates the backup service information for the caller account.
     ///
-    /// The caller (`signer_account_id`) must be an existing or prospective participant.  
-    /// Otherwise, the transaction will fail.  
+    /// The caller (`signer_account_id`) must be an existing or prospective participant.
+    /// Otherwise, the transaction will fail.
+    ///
     /// # Notes
-    /// - A deposit requirement may be added in the future.  
+    /// - A deposit requirement may be added in the future.
     #[handle_result]
     pub fn register_backup_service(
         &mut self,
@@ -1392,7 +1393,7 @@ impl MpcContract {
             .protocol_state
             .is_existing_or_prospective_participant(&account_id)?
         {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent or prospective participants and not eligible to store backup service information", account_id)));
+            return Err(errors::InvalidState::NotParticipant.message(format!("account: {} is not in the set of curent or prospective participants and not eligible to store backup service information", account_id)));
         }
         self.node_migrations
             .set_backup_service_info(account_id, backup_service_info);
