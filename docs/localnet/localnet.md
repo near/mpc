@@ -24,11 +24,11 @@ git submodule update --init --recursive --force
 ```
 
 ```shell
-cargo install --path libs/nearcore/neard
+cargo install --path libs/nearcore/neard --locked
 ```
 
 ```shell
-cargo install --path crates/node
+cargo install --path crates/node --locked
 ```
 
 ## Compile the signer contract
@@ -186,6 +186,9 @@ number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: 8081
+migration_web_ui:
+  host: localhost
+  port: 8079
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
@@ -237,6 +240,9 @@ number_of_responder_keys: 1
 web_ui:
   host: localhost
   port: 8082
+migration_web_ui:
+  host: localhost
+  port: 8079
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
@@ -273,11 +279,14 @@ mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --
 ```
 
 Notes:
+
 - `8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0` is just an arbitrary hash.
 - If you get the following error:
-  ```
+
+  ```console
   HostError(GuestPanic { panic_msg: "Calling default not allowed." })
   ```
+
   you can safely ignore it — it disappears once the contract is initialized (tracking issue: https://github.com/near/mpc/issues/1280).
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the frodo and sam MPC indexers connect to it.
