@@ -89,7 +89,9 @@ pub type SignatureOption = Option<Signature>;
 /// Following [GS21] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
 /// be public, freshly generated, and unpredictable.
 pub struct RerandomizationArguments {
+    // Preferable (but non-binding) the master public key
     pub pk: AffinePoint,
+    pub tweak: Tweak,
     pub msg_hash: [u8; 32],
     pub big_r: AffinePoint,
     pub participants: ParticipantList,
@@ -111,6 +113,7 @@ impl RerandomizationArguments {
 
     pub fn new(
         pk: AffinePoint,
+        tweak: Tweak,
         msg_hash: [u8; 32],
         big_r: AffinePoint,
         participants: ParticipantList,
@@ -118,6 +121,7 @@ impl RerandomizationArguments {
     ) -> Self {
         Self {
             pk,
+            tweak,
             msg_hash,
             big_r,
             participants,
@@ -125,7 +129,7 @@ impl RerandomizationArguments {
         }
     }
 
-    /// Derives a random string from the public key, message hash, presignature R,
+    /// Derives a random string from the public key, tweak, message hash, presignature R,
     /// set of participants and the entropy.
     ///
     /// Outputs a random string computed as HKDF(entropy, pk, hash, R, participants)
@@ -133,6 +137,7 @@ impl RerandomizationArguments {
         // create a string containing (pk, msg_hash, big_r, sorted(participants))
         let pk_encoded_point = self.pk.to_encoded_point(true);
         let encoded_pk: &[u8] = pk_encoded_point.as_bytes();
+        let encoded_tweak: &[u8] = &<Secp256K1ScalarField as Field>::serialize(&self.tweak.value());
         let encoded_msg_hash: &[u8] = &self.msg_hash;
         let big_r_encoded_point = self.big_r.to_encoded_point(true);
         let encoded_big_r: &[u8] = big_r_encoded_point.as_bytes();
@@ -142,6 +147,7 @@ impl RerandomizationArguments {
         // 1 byte counter, used in the unlikely case that the hash result is 0
         concatenation.extend_from_slice(&[0u8, 1]);
         concatenation.extend_from_slice(encoded_pk);
+        concatenation.extend_from_slice(encoded_tweak);
         concatenation.extend_from_slice(encoded_msg_hash);
         concatenation.extend_from_slice(encoded_big_r);
         // Append each ParticipantId's
@@ -237,8 +243,7 @@ mod test {
     }
 
     #[test]
-    #[allow(non_snake_case)]
-    fn keygen_output__should_be_serializable() {
+    fn keygen_output_should_be_serializable() {
         // Given
         let mut rng = MockCryptoRng::new([1; 8]);
         let signing_key = FrostSigningKey::<C>::new(&mut rng);
@@ -266,6 +271,7 @@ mod test {
     ) -> (RerandomizationArguments, Scalar) {
         let sk = SigningKey::random(&mut OsRng);
         let pk = *VerifyingKey::from(sk).as_affine();
+        let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
         let (_, big_r) = <C>::generate_nonce(&mut OsRng);
         let big_r = big_r.to_affine();
 
@@ -275,7 +281,7 @@ mod test {
         let participants = generate_participants_with_random_ids(num_participants, rng);
         let participants = ParticipantList::new(&participants).unwrap();
 
-        let args = RerandomizationArguments::new(pk, msg_hash, big_r, participants, entropy);
+        let args = RerandomizationArguments::new(pk, tweak, msg_hash, big_r, participants, entropy);
         let delta = args.derive_randomness().unwrap();
         (args, delta)
     }
@@ -288,6 +294,17 @@ mod test {
         // different pk
         let (_, pk) = <C>::generate_nonce(&mut rng);
         args.pk = pk.to_affine();
+        let delta_prime = args.derive_randomness().unwrap();
+        assert_ne!(delta, delta_prime);
+    }
+
+    #[test]
+    fn test_different_tweak() {
+        let num_participants = 10;
+        let mut rng = OsRng;
+        let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
+        // different pk
+        args.tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
         let delta_prime = args.derive_randomness().unwrap();
         assert_ne!(delta, delta_prime);
     }

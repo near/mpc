@@ -80,7 +80,7 @@ The inputs to this phase are:
 5) The message hash $h= H(m)$
 
 **Rerandomization & Key Derivation:**
-1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(X, h, R, \rho)$
+1. Each $P_i$ derives a randomness $\delta \gets \mathsf{HKDF}(X, \epsilon, h, R, \rho)$
 2. Each $P_i$ rerandomizes the following elements:
 
     * $R  \gets R^\delta$

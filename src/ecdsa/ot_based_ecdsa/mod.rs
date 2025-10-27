@@ -54,7 +54,7 @@ pub struct RerandomizedPresignOutput {
 }
 
 impl RerandomizedPresignOutput {
-    pub fn new(
+    pub fn rerandomize_presign(
         presignature: &PresignOutput,
         tweak: &Tweak,
         args: &RerandomizationArguments,

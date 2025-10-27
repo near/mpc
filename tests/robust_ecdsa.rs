@@ -109,6 +109,7 @@ fn run_sign_with_rerandomization(
     let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
     let rerand_args = RerandomizationArguments::new(
         derived_pk.to_affine(),
+        tweak,
         msg_hash,
         big_r,
         ParticipantList::new(&participants).unwrap(),
