@@ -123,6 +123,30 @@ generate_secrets_json() {
 import json
 import sys
 
+# Base58 alphabet used by Bitcoin/NEAR
+BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+def base58_decode(encoded):
+    """Decode a base58-encoded string to bytes."""
+    decoded_int = 0
+    for char in encoded:
+        decoded_int = decoded_int * 58 + BASE58_ALPHABET.index(char)
+    
+    # Convert integer to bytes
+    decoded_bytes = []
+    while decoded_int > 0:
+        decoded_bytes.insert(0, decoded_int & 0xff)
+        decoded_int >>= 8
+    
+    # Add leading zero bytes
+    for char in encoded:
+        if char == BASE58_ALPHABET[0]:
+            decoded_bytes.insert(0, 0)
+        else:
+            break
+    
+    return bytes(decoded_bytes)
+
 def hex_to_byte_array(hex_string):
     """Convert a hex string to a JSON byte array."""
     # Remove any whitespace and potential '0x' prefix
@@ -141,17 +165,45 @@ def hex_to_byte_array(hex_string):
     
     return list(byte_data)
 
-# Get the keys from environment variables
-p2p_key_hex = "${MPC_P2P_PRIVATE_KEY}"
-account_sk_hex = "${MPC_ACCOUNT_SK}"
+def parse_key(key_string):
+    """Parse a key that can be in hex or NEAR format (ed25519:base58)."""
+    key_string = key_string.strip()
+    
+    # Check if it's in NEAR format (ed25519:base58_encoded_key)
+    if key_string.startswith('ed25519:'):
+        # Extract the base58 part
+        base58_part = key_string.split(':', 1)[1]
+        try:
+            # Decode base58 to bytes
+            decoded = base58_decode(base58_part)
+            # NEAR SecretKey format is 64 bytes (32 bytes secret key + 32 bytes public key)
+            # We only need the first 32 bytes (the secret key part)
+            if len(decoded) == 64:
+                byte_data = decoded[:32]
+            elif len(decoded) == 32:
+                byte_data = decoded
+            else:
+                print(f"Warning: Unexpected key length {len(decoded)} bytes after base58 decode", file=sys.stderr)
+                byte_data = decoded
+            return list(byte_data)
+        except Exception as e:
+            print(f"Error decoding base58 key: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Assume it's hex format
+        return hex_to_byte_array(key_string)
 
-if not p2p_key_hex or not account_sk_hex:
+# Get the keys from environment variables
+p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_str = "${MPC_ACCOUNT_SK}"
+
+if not p2p_key_str or not account_sk_str:
     print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
     sys.exit(1)
 
-# Convert hex keys to byte arrays
-p2p_key_bytes = hex_to_byte_array(p2p_key_hex)
-account_sk_bytes = hex_to_byte_array(account_sk_hex)
+# Parse keys (handles both hex and ed25519:base58 formats)
+p2p_key_bytes = parse_key(p2p_key_str)
+account_sk_bytes = parse_key(account_sk_str)
 
 # Create the secrets structure
 # Note: near_responder_keys is initialized with one key (the same as near_signer_key)
