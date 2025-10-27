@@ -1,3 +1,5 @@
+use near_primitives::types::AccountId;
+
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Args {
@@ -29,7 +31,7 @@ pub enum Network {
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
     #[arg(long, env)]
-    pub mpc_contract_name: String,
+    pub mpc_contract_account_id: AccountId,
     #[arg(long, env)]
     pub near_network: Network,
 }

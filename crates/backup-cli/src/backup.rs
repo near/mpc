@@ -1,6 +1,8 @@
 use contract_interface::types as contract_types;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::BackupServiceInfo;
+use near_primitives::types::AccountId;
+use near_workspaces::types::SecretKey;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
@@ -36,7 +38,7 @@ pub async fn run_command(args: cli::Args) {
                 .await
                 .expect("fail to load secrets");
             register_backup_service(
-                &command_args.mpc_contract_name,
+                &command_args.mpc_contract_account_id,
                 &command_args.near_network,
                 secrets.p2p_private_key.verifying_key(),
                 &secrets.near_signer_key,
@@ -98,7 +100,7 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
 }
 
 pub async fn register_backup_service(
-    contract_account_id: &str,
+    contract_account_id: &AccountId,
     network: &Network,
     p2p_public_key: VerifyingKey,
     signer_key: &SigningKey,
@@ -109,7 +111,7 @@ pub async fn register_backup_service(
 
     let signer = {
         let secret_key_b58 = bs58::encode(signer_key.to_bytes()).into_string();
-        near_workspaces::types::SecretKey::from_str(&format!("ed25519:{}", secret_key_b58))
+        SecretKey::from_str(&format!("ed25519:{}", secret_key_b58))
             .expect("Failed to create secret key")
     };
 
@@ -138,19 +140,14 @@ pub async fn register_backup_service(
 
 async fn call_register_on_network<T: near_workspaces::Network + 'static>(
     worker: near_workspaces::Worker<T>,
-    signer_account_id: near_workspaces::types::AccountId,
-    signer: near_workspaces::types::SecretKey,
-    contract_account_id: &str,
+    signer_account_id: AccountId,
+    signer: SecretKey,
+    contract_account_id: &AccountId,
     backup_service_info: BackupServiceInfo,
 ) {
     let account = near_workspaces::Account::from_secret_key(signer_account_id, signer, &worker);
     account
-        .call(
-            &contract_account_id
-                .parse()
-                .expect("Invalid contract account ID"),
-            "register_backup_service",
-        )
+        .call(contract_account_id, "register_backup_service")
         .args_json(serde_json::json!({
             "backup_service_info": backup_service_info,
         }))
