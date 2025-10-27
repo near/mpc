@@ -18,12 +18,21 @@ pub enum Command {
 #[derive(clap::Args, Debug)]
 pub struct GenerateKeysArgs {}
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+#[clap(rename_all = "lowercase")]
+pub enum Network {
+    Testnet,
+    Mainnet,
+    Sandbox,
+    Localnet,
+}
+
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
     #[arg(long, env)]
     pub mpc_contract_name: String,
     #[arg(long, env)]
-    pub near_network: String,
+    pub near_network: Network,
 }
 
 #[derive(clap::Args, Debug)]
