@@ -115,8 +115,16 @@ pub async fn register_backup_service(
             .expect("Failed to create secret key")
     };
 
-    let account_id_hex = hex::encode(signer_key.verifying_key().as_bytes());
-    let signer_account_id = account_id_hex.parse().expect("Invalid signer account ID");
+    // Create NEAR implicit account ID from the public key.
+    // Implicit accounts are 64-char hex strings derived from ED25519 public keys.
+    // See: https://docs.near.org/concepts/protocol/account-id#implicit-address
+    //
+    // Note: We use manual hex encoding instead of near_primitives::utils::derive_near_implicit_account_id
+    // because the workspace has incompatible versions of near-primitives (0.28.0 from crates.io vs 2.9.0 from git).
+    let signer_account_id = {
+        let account_id_hex = hex::encode(signer_key.verifying_key().as_bytes());
+        account_id_hex.parse().expect("Invalid signer account ID")
+    };
 
     macro_rules! connect_and_call {
         ($network:expr) => {
