@@ -98,7 +98,8 @@ generate_secrets_json() {
     if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
         if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
             echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
-            export MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
+            MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
+            export MPC_P2P_PRIVATE_KEY
         fi
     else
         echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
@@ -108,7 +109,8 @@ generate_secrets_json() {
     if [ -z "${MPC_ACCOUNT_SK}" ]; then
         if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
             echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
-            export MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
+            MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
+            export MPC_ACCOUNT_SK
         fi
     else
         echo "Using provided MPC_ACCOUNT_SK from environment"
@@ -117,7 +119,7 @@ generate_secrets_json() {
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
-        python3 <<EOF
+        if python3 <<EOF
 import json
 import sys
 
@@ -166,7 +168,7 @@ with open("$secrets_file", 'w') as f:
 
 print("secrets.json generated successfully")
 EOF
-        if [ $? -eq 0 ]; then
+        then
             echo "secrets.json created at $secrets_file"
         else
             echo "Failed to generate secrets.json" >&2
