@@ -289,7 +289,7 @@ jobs:
       - name: Install cargo-shear
         uses: taiki-e/install-action@v2
         with:
-          tool: shear@1.6.0
+          tool: cargo-shear@1.6.0
 
       - run: cargo shear
 
