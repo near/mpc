@@ -24,7 +24,6 @@ pub enum Network {
     Testnet,
     Mainnet,
     Sandbox,
-    Localnet,
 }
 
 #[derive(clap::Args, Debug)]
