@@ -128,24 +128,33 @@ BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 
 def base58_decode(encoded):
     """Decode a base58-encoded string to bytes."""
+    # Validate all characters are in the alphabet
+    for char in encoded:
+        if char not in BASE58_ALPHABET:
+            raise ValueError(f"Invalid base58 character: {char}")
+    
+    # Decode base58 to integer
     decoded_int = 0
     for char in encoded:
         decoded_int = decoded_int * 58 + BASE58_ALPHABET.index(char)
     
-    # Convert integer to bytes
+    # Convert integer to bytes (append to list for efficiency, then reverse)
     decoded_bytes = []
     while decoded_int > 0:
-        decoded_bytes.insert(0, decoded_int & 0xff)
+        decoded_bytes.append(decoded_int & 0xff)
         decoded_int >>= 8
+    decoded_bytes.reverse()
     
-    # Add leading zero bytes
+    # Count and add leading zero bytes (represented by '1' in base58)
+    num_leading_zeros = 0
     for char in encoded:
-        if char == BASE58_ALPHABET[0]:
-            decoded_bytes.insert(0, 0)
+        if char == '1':
+            num_leading_zeros += 1
         else:
             break
     
-    return bytes(decoded_bytes)
+    # Prepend leading zeros
+    return bytes([0] * num_leading_zeros + decoded_bytes)
 
 def hex_to_byte_array(hex_string):
     """Convert a hex string to a JSON byte array."""
