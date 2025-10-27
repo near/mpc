@@ -1138,8 +1138,8 @@ mod test {
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
         participants::Participant,
         participants::ParticipantList,
-        protocol::{run_protocol, Protocol},
-        test::generate_participants,
+        protocol::Protocol,
+        test::{generate_participants, run_protocol},
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};

@@ -137,13 +137,13 @@ pub async fn mta_receiver(
 mod test {
     use super::*;
     use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
-    use crate::protocol::internal::Comms;
     use k256::Scalar;
     use rand_core::{OsRng, RngCore};
 
     use crate::errors::ProtocolError;
     use crate::participants::Participant;
-    use crate::protocol::{internal::make_protocol, test::run_two_party_protocol};
+    use crate::protocol::internal::{make_protocol, Comms};
+    use crate::test::run_two_party_protocol;
 
     /// Run the multiplicative to additive protocol
     fn run_mta(

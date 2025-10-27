@@ -224,14 +224,11 @@ mod test {
 
     use crate::{
         crypto::hash::hash,
+        ecdsa::ot_based_ecdsa::triples::multiplication::{multiplication, multiplication_many},
         participants::ParticipantList,
-        protocol::{internal::make_protocol, run_protocol},
-        test::{generate_participants, GenProtocol},
+        protocol::internal::{make_protocol, Comms},
+        test::{generate_participants, run_protocol, GenProtocol},
     };
-
-    use super::multiplication;
-    use crate::ecdsa::ot_based_ecdsa::triples::multiplication::multiplication_many;
-    use crate::protocol::internal::Comms;
 
     #[test]
     fn test_multiplication() {

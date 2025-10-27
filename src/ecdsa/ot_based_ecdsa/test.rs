@@ -5,10 +5,10 @@ use super::{
     PresignArguments, PresignOutput,
 };
 use crate::participants::Participant;
-use crate::protocol::{run_protocol, Protocol};
+use crate::protocol::Protocol;
 use crate::test::{
     assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
-    one_coordinator_output, run_keygen, run_refresh, run_reshare,
+    one_coordinator_output, run_keygen, run_protocol, run_refresh, run_reshare,
 };
 use crate::{
     crypto::hash::test::scalar_hash_secp256k1, ecdsa::ot_based_ecdsa::RerandomizedPresignOutput,

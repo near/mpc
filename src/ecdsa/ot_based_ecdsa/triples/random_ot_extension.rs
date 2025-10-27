@@ -202,10 +202,8 @@ mod test {
         ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot,
         errors::ProtocolError,
         participants::Participant,
-        protocol::{
-            internal::{make_protocol, Comms},
-            test::run_two_party_protocol,
-        },
+        protocol::internal::{make_protocol, Comms},
+        test::run_two_party_protocol,
     };
 
     use super::*;

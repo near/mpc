@@ -3,16 +3,13 @@ mod common;
 use rand_core::OsRng;
 
 use common::{choose_coordinator_at_random, generate_participants, run_keygen};
-use threshold_signatures::{
-    confidential_key_derivation::{
-        ciphersuite::{verify_signature, Field, G1Projective, Group},
-        protocol::ckd,
-        AppId, CKDOutputOption,
-    },
-    protocol::run_protocol,
+use threshold_signatures::confidential_key_derivation::{
+    ciphersuite::{verify_signature, Field, G1Projective, Group},
+    protocol::ckd,
+    AppId, CKDOutputOption,
 };
 
-use crate::common::GenProtocol;
+use crate::common::{run_protocol, GenProtocol};
 type C = threshold_signatures::confidential_key_derivation::BLS12381SHA256;
 type Scalar = threshold_signatures::Scalar<C>;
 

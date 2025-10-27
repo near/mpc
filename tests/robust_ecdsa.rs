@@ -17,14 +17,13 @@ use threshold_signatures::{
     },
     frost_secp256k1::VerifyingKey,
     participants::Participant,
-    protocol::run_protocol,
     Element, ParticipantList,
 };
 
 // TODO: This is required to use Scalar::from_repr
 use elliptic_curve::ff::PrimeField;
 
-use crate::common::GenProtocol;
+use crate::common::{run_protocol, GenProtocol};
 
 type C = Secp256K1Sha256;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;

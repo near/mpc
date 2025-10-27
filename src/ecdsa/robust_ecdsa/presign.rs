@@ -357,8 +357,8 @@ mod test {
     use super::*;
     use rand_core::OsRng;
 
-    use crate::test::GenProtocol;
-    use crate::{ecdsa::KeygenOutput, protocol::run_protocol, test::generate_participants};
+    use crate::ecdsa::KeygenOutput;
+    use crate::test::{generate_participants, run_protocol, GenProtocol};
     use frost_secp256k1::keys::PublicKeyPackage;
     use frost_secp256k1::VerifyingKey;
 
