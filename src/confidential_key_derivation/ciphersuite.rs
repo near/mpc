@@ -1,7 +1,9 @@
 use crate::confidential_key_derivation::{ElementG1, Signature, VerifyingKey};
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 use crate::crypto::constants::NEAR_CKD_DOMAIN;
+use blstrs::{G1Affine, G2Affine};
 use digest::{consts::U48, generic_array::GenericArray};
+use elliptic_curve::group::prime::PrimeCurveAffine;
 use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd, FromOkm};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
@@ -212,18 +214,28 @@ impl frost_core::Group for BLS12381G1Group {
     }
 }
 
+/// BLS signature verification
+/// following the standard in <https://www.ietf.org/archive/id/draft-irtf-cfrg-bls-signature-05.html#name-coreverify>
 pub fn verify_signature(
     verifying_key: &VerifyingKey,
     msg: &[u8],
     signature: &Signature,
 ) -> Result<(), frost_core::Error<BLS12381SHA256>> {
+    let element1: G1Affine = signature.into();
+    if (!element1.is_on_curve() | !element1.is_torsion_free() | element1.is_identity()).into() {
+        return Err(frost_core::Error::InvalidSignature);
+    }
+    let element2: G2Affine = verifying_key.to_element().into();
+    if (!element2.is_on_curve() | !element2.is_torsion_free() | element2.is_identity()).into() {
+        return Err(frost_core::Error::MalformedVerifyingKey);
+    }
+
     let base1 = hash_to_curve(msg).into();
-    let element1 = verifying_key.to_element().into();
     let base2 =
         <<BLS12381SHA256 as frost_core::Ciphersuite>::Group as frost_core::Group>::generator()
             .into();
-    let element2 = signature.into();
-    if blstrs::pairing(&base1, &element1) == blstrs::pairing(&element2, &base2) {
+
+    if blstrs::pairing(&base1, &element2).eq(&blstrs::pairing(&element1, &base2)) {
         Ok(())
     } else {
         Err(frost_core::Error::InvalidSignature)
@@ -345,6 +357,27 @@ mod tests {
         let sigma = hm * x;
 
         assert!(verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).is_ok());
+    }
+
+    #[test]
+    fn test_verify_signature_invalid() {
+        let x = Scalar::random(OsRng);
+        let g2 = ElementG2::generator();
+        let g2x = g2 * Scalar::ZERO;
+        let hm = hash_to_curve(b"hello world");
+        let sigma = hm * x;
+
+        assert_eq!(
+            verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).unwrap_err(),
+            frost_core::Error::MalformedVerifyingKey
+        );
+
+        let g2x = g2 * x;
+        let sigma = hm * Scalar::ZERO;
+        assert_eq!(
+            verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).unwrap_err(),
+            frost_core::Error::InvalidSignature
+        );
     }
 
     #[test]
