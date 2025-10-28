@@ -553,15 +553,8 @@ impl MpcContract {
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
 
-        let account_id = env::predecessor_account_id();
-        let signer_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
-
-        assert_eq!(
-            signer_id, account_id,
-            "Caller must be the signer account (signer: {}, predecessor: {})",
-            signer_id, account_id
-        );
+        let account_id = self.assert_caller_is_signer();
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
@@ -1347,6 +1340,19 @@ impl MpcContract {
     fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
 
+        self.assert_caller_is_signer();
+
+        if !self
+            .tee_state
+            .is_caller_an_attested_participant(participants)
+        {
+            panic!("Caller must be an attested participant");
+        }
+    }
+
+    /// Ensures the current call originates from the signer account itself.
+    /// Panics if `signer_account_id` and `predecessor_account_id` differ.
+    fn assert_caller_is_signer(&self) -> near_sdk::AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
 
@@ -1356,12 +1362,7 @@ impl MpcContract {
             signer_id, predecessor_id
         );
 
-        if !self
-            .tee_state
-            .is_caller_an_attested_participant(participants)
-        {
-            panic!("Caller must be an attested participant");
-        }
+        signer_id
     }
 }
 
@@ -1399,7 +1400,7 @@ impl MpcContract {
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = self.assert_caller_is_signer();
         log!(
             "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
@@ -1471,7 +1472,7 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = self.assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
