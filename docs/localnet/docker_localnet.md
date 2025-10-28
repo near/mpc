@@ -23,5 +23,5 @@ Creating frodo and sam accounts as per localnet guide. Now going directly to sta
 Frodo's node:
 
 ```shell
-docker run -v /tmp/frodo:/data --env-file docs/localnet/docker_envs/frodo.env mpc-node
+docker run --name mpc-node -v /tmp/frodo:/data --env-file docs/localnet/docker_envs/frodo.env mpc-node
 ```

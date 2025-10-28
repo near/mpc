@@ -215,19 +215,19 @@
     "enable_statistics": false,
     "enable_statistics_export": true,
     "max_open_files": 10000,
-    "col_state_cache_size": "536.9 MB",
-    "col_flat_state_cache_size": "134.2 MB",
-    "block_size": "16.4 KB",
+    "col_state_cache_size": 536870912,
+    "col_flat_state_cache_size": 134217728,
+    "block_size": 16384,
     "trie_cache": {
-      "default_max_bytes": "500.0 MB",
+      "default_max_bytes": 500000000,
       "per_shard_max_bytes": {
-        "s1.v3": "50.0 MB",
-        "s5.v3": "3.0 GB"
+        "s5.v3": 3000000000,
+        "s1.v3": 50000000
       },
       "shard_cache_deletions_queue_capacity": 100000
     },
     "view_trie_cache": {
-      "default_max_bytes": "50.0 MB",
+      "default_max_bytes": 50000000,
       "per_shard_max_bytes": {},
       "shard_cache_deletions_queue_capacity": 100000
     },
@@ -272,7 +272,7 @@
   },
   "transaction_pool_size_limit": 100000000,
   "resharding_config": {
-    "batch_size": "500.0 KB",
+    "batch_size": 500000,
     "batch_delay": {
       "secs": 0,
       "nanos": 5000000
@@ -297,7 +297,7 @@
     "nanos": 200000000
   },
   "orphan_state_witness_pool_size": 25,
-  "orphan_state_witness_max_size": "40.0 MB",
+  "orphan_state_witness_max_size": 40000000,
   "max_loaded_contracts": 256,
   "save_latest_witnesses": false,
   "transaction_request_handler_threads": 4

@@ -1,6 +1,6 @@
 {
-  "protocol_version": 80,
-  "genesis_time": "2025-10-28T12:25:20.420842185Z",
+  "protocol_version": 81,
+  "genesis_time": "2025-10-28T17:50:46.895503491Z",
   "chain_id": "mpc-localnet",
   "genesis_height": 0,
   "num_block_producer_seats": 50,
@@ -38,7 +38,7 @@
   "validators": [
     {
       "account_id": "test.near",
-      "public_key": "ed25519:BTZu8FZSj6Hkpd9qSZ7eHeKQMTdYodGdgM2LV6bB4oih",
+      "public_key": "ed25519:7E9jtdHWcn4eVZQPiHMCUMVVnMEvGeSG3HPVasisWooU",
       "amount": "50000000000000000000000000000000"
     }
   ],
@@ -49,7 +49,7 @@
   ],
   "max_inflation_rate": [
     1,
-    20
+    40
   ],
   "total_supply": "2050000000000000000000000000000000",
   "num_blocks_per_year": 31536000,
@@ -101,7 +101,7 @@
     {
       "AccessKey": {
         "account_id": "test.near",
-        "public_key": "ed25519:BTZu8FZSj6Hkpd9qSZ7eHeKQMTdYodGdgM2LV6bB4oih",
+        "public_key": "ed25519:7E9jtdHWcn4eVZQPiHMCUMVVnMEvGeSG3HPVasisWooU",
         "access_key": {
           "nonce": 0,
           "permission": "FullAccess"
