@@ -1,4 +1,5 @@
 use near_primitives::types::AccountId;
+use url::Url;
 
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -20,12 +21,34 @@ pub enum Command {
 #[derive(clap::Args, Debug)]
 pub struct GenerateKeysArgs {}
 
-#[derive(clap::ValueEnum, Clone, Debug)]
-#[clap(rename_all = "lowercase")]
+#[derive(Clone, Debug)]
 pub enum Network {
     Testnet,
     Mainnet,
     Sandbox,
+    Localnet(Url),
+}
+
+impl std::str::FromStr for Network {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "testnet" => Ok(Network::Testnet),
+            "mainnet" => Ok(Network::Mainnet),
+            "sandbox" => Ok(Network::Sandbox),
+            s if s.starts_with("localnet ") => {
+                let url_str = s.strip_prefix("localnet ").unwrap();
+                Url::parse(url_str)
+                    .map(Network::Localnet)
+                    .map_err(|e| format!("Invalid URL for localnet: {}", e))
+            }
+            _ => Err(format!(
+                "Invalid network: '{}'. Must be one of: testnet, mainnet, sandbox, or 'localnet <url>'",
+                s
+            )),
+        }
+    }
 }
 
 #[derive(clap::Args, Debug)]

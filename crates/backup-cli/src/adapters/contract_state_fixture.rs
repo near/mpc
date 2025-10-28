@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::ports::ContractInterface;
+use crate::ports::ContractStateReader;
 
 const CONTRACT_STATE_FILENAME: &str = "contract_state.json";
 
@@ -38,13 +37,8 @@ impl ContractStateFixture {
     }
 }
 
-impl ContractInterface for ContractStateFixture {
+impl ContractStateReader for ContractStateFixture {
     type Error = Error;
-
-    async fn register_backup_data(&self, _public_key: &VerifyingKey) -> Result<(), Self::Error> {
-        // TODO(https://github.com/near/mpc/issues/1290)
-        unimplemented!()
-    }
 
     async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
         let mut destination = File::open(self.contract_state_path.as_path())
@@ -80,7 +74,9 @@ mod tests {
 
     use mpc_contract::primitives::thresholds::Threshold;
 
-    use crate::{adapters::contract_interface::ContractStateFixture, ports::ContractInterface};
+    use crate::{
+        adapters::contract_state_fixture::ContractStateFixture, ports::ContractStateReader,
+    };
 
     pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
     #[tokio::test]

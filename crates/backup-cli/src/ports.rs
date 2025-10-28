@@ -42,15 +42,19 @@ pub trait P2PClient {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait ContractInterface {
+pub trait ContractStateReader {
+    type Error: std::fmt::Debug;
+
+    fn get_contract_state(
+        &self,
+    ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
+}
+
+pub trait RegisterBackupData {
     type Error: std::fmt::Debug;
 
     fn register_backup_data(
         &self,
         public_key: &VerifyingKey,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    fn get_contract_state(
-        &self,
-    ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
 }

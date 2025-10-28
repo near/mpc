@@ -2,7 +2,8 @@ use mpc_node::keyshare::Keyshare;
 
 use crate::ports::KeyShareRepository;
 
-pub mod contract_interface;
+pub mod contract_state_fixture;
+pub mod near_contract;
 pub mod p2p_client;
 pub mod secrets_storage;
 
