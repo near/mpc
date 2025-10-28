@@ -98,7 +98,9 @@ def create_mpc_function_call_access_key_action(
         allowance=allowance,
     )
 
+
 ED25519_PREFIX = "ed25519"
+
 
 # Output is deserializable into the rust type near_sdk::SecretKey
 def serialize_key(key: bytes) -> str:
@@ -108,7 +110,7 @@ def serialize_key(key: bytes) -> str:
 
 def deserialize_key(account_id: str, key: str) -> Key:
     assert key.startswith(f"{ED25519_PREFIX}:")
-    key_bytes = base58.b58decode(key[len(ED25519_PREFIX) + 1:])
+    key_bytes = base58.b58decode(key[len(ED25519_PREFIX) + 1 :])
     assert len(key_bytes) == 64
     signing_key = SigningKey(key_bytes[:32])
     return Key.from_keypair(account_id, signing_key)
