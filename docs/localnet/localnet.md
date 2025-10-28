@@ -161,7 +161,7 @@ Now we're ready to initialize the nodes.
 This commands creates a directory with some initial config for Frodo's node.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@localhost:3030"
+mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24567"
 ```
 
 However, currently the command creates an invalid genesis file.
@@ -171,11 +171,10 @@ We need to copy the genesis file from `mpc-localnet`.
 cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-frodo/genesis.json
 ```
 
-Now we must update Frodo's to point to correct port for boot nodes as it's currently pointing to localnet's RPC port.
-Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
+Now we must set unique ports for Frodo's RPC interface and indexer. Make sure the `RPC_PORT` and `INDEXER_PORT` is free. The value of these ports are arbitrary, and can be any other port.
 
 ```shell
-RPC_PORT=3031 BOOT_NODE_PORT=24567 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "0.0.0.0:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
+RPC_PORT=3031 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
 ```
 
 Now we must update Frodo's `validator_key.json` to match the `account_id` field to the right account.
@@ -225,7 +224,7 @@ EOF
 Now we can do the same steps for Sam.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@localhost:3030"
+mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24567"
 ```
 
 ```shell
@@ -233,7 +232,7 @@ cp ~/.near/mpc-localnet/genesis.json ~/.near/mpc-sam/genesis.json
 ```
 
 ```shell
-RPC_PORT=3032 BOOT_NODE_PORT=24567 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .network.boot_nodes = (.network.boot_nodes | sub("localhost:[0-9]+"; "0.0.0.0:" + env.BOOT_NODE_PORT)) | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-sam/config.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/config.json
+RPC_PORT=3032 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-sam/config.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/config.json
 ```
 
 ```shell
