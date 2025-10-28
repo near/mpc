@@ -18,6 +18,9 @@ initialize_near_node() {
 
         # boot_nodes must be filled in or else the node will not have any peers.
         ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --genesis "$EMBEDDED_GENESIS" --boot-nodes "$NEAR_BOOT_NODES"
+
+        # The init command generates a modified genesis file for some reason, so we must hard-copy the original one.
+        cp "$EMBEDDED_GENESIS" "$1/genesis.json"
     else
         echo "Downloading genesis file"
         # boot_nodes must be filled in or else the node will not have any peers.
