@@ -54,6 +54,14 @@ To run a local NEAR network, first create the configuration with the following c
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
+However, if you want to run with the MPC node docker image you need to copy
+the embedded node configuration from `$(pwd)/deployment/localnet`.
+Otherwise, feel free to skip this step.
+
+```shell
+cp -r $(pwd)/deployment/localnet ~/.near/mpc-localnet
+```
+
 This will set up the configuration in the `~/.near/mpc-localnet` directory.
 
 Next, start a single validator node for this network with this command.
