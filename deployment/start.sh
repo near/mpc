@@ -8,8 +8,21 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    # boot_nodes must be filled in or else the node will not have any peers.
-    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    if [ "$MPC_ENV" = "mpc-localnet" ]; then
+        EMBEDDED_GENESIS="/app/localnet-genesis.json"
+        if [ ! -f "$EMBEDDED_GENESIS" ]; then
+            echo "ERROR: Embedded localnet genesis file not found at $EMBEDDED_GENESIS"
+            exit 1
+        fi
+        echo "Using embedded localnet genesis file"
+
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --genesis "$EMBEDDED_GENESIS" --boot-nodes "$NEAR_BOOT_NODES"
+    else
+        echo "Downloading genesis file"
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    fi
 }
 
 update_near_node_config() {

@@ -18,4 +18,6 @@ WORKDIR /app
 COPY target/reproducible/mpc-node mpc-node
 # The chmod part is also necessary for reproducibility
 COPY --chmod=0755 deployment/start.sh /app/start.sh
+# Copy embedded localnet genesis file
+COPY deployment/localnet-genesis.json /app/localnet-genesis.json
 CMD [ "/app/start.sh" ]
