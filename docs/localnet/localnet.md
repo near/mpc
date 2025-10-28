@@ -59,7 +59,7 @@ the embedded node configuration from `$(pwd)/deployment/localnet`.
 Otherwise, feel free to skip this step.
 
 ```shell
-cp -r $(pwd)/deployment/localnet ~/.near/mpc-localnet
+cp -rf $(pwd)/deployment/localnet/. ~/.near/mpc-localnet
 ```
 
 This will set up the configuration in the `~/.near/mpc-localnet` directory.
