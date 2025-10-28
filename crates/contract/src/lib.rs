@@ -554,7 +554,14 @@ impl MpcContract {
             proposed_participant_attestation.into_contract_type();
 
         let account_id = env::predecessor_account_id();
+        let signer_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
+
+        assert_eq!(
+            signer_id, account_id,
+            "Caller must be the signer account (signer: {}, predecessor: {})",
+            signer_id, account_id
+        );
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
@@ -1945,6 +1952,7 @@ mod tests {
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);

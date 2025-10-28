@@ -344,7 +344,7 @@ impl TeeState {
     /// Handles multiple participants per account and supports legacy mock nodes.
     pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
         let signer_pk = env::signer_account_pk();
-        let signer_id = env::predecessor_account_id();
+        let signer_id = env::signer_account_id();
 
         match participants.info(&signer_id) {
             None => false,
@@ -363,8 +363,6 @@ impl TeeState {
             }
         }
     }
-
-    
 }
 
 #[cfg(test)]
