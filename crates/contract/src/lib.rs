@@ -1320,6 +1320,7 @@ impl MpcContract {
 
     /// Get our own account id as a voter. If we are not a participant, panic.
     fn voter_or_panic(&self) -> AccountId {
+        //TODO barak I don't think this method does what is it expected to
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
@@ -1719,8 +1720,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .predecessor_account_id(node_id.account_id.clone())
             .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1920,6 +1921,7 @@ mod tests {
 
         let context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -1986,6 +1988,7 @@ mod tests {
     ) -> Result<(), crate::errors::Error> {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
