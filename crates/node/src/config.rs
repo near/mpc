@@ -2,6 +2,7 @@ use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_indexer_primitives::types::{AccountId, Finality};
+use near_sdk::bs58;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
@@ -309,8 +310,20 @@ impl SecretsConfig {
 /// from outside.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistentSecrets {
+    #[serde(
+        serialize_with = "serialize_signing_key",
+        deserialize_with = "deserialize_signing_key"
+    )]
     pub p2p_private_key: SigningKey,
+    #[serde(
+        serialize_with = "serialize_signing_key",
+        deserialize_with = "deserialize_signing_key"
+    )]
     pub near_signer_key: SigningKey,
+    #[serde(
+        serialize_with = "serialize_signing_key_vec",
+        deserialize_with = "deserialize_signing_key_vec"
+    )]
     pub near_responder_keys: Vec<SigningKey>,
 }
 
@@ -384,6 +397,78 @@ impl PersistentSecrets {
 
         Ok(secrets)
     }
+}
+
+const ED25519_PREFIX: &str = "ed25519";
+
+fn serialize_signing_key<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let bytes = key.to_keypair_bytes(); // e.g., &[u8]
+    let str = [ED25519_PREFIX, ":", &bs58::encode(bytes).into_string()].concat();
+    serializer.serialize_str(&str)
+}
+
+fn deserialize_signing_key<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let str: String = serde::Deserialize::deserialize(deserializer)?;
+    let Some((ED25519_PREFIX, encoded_key)) = &str.split_once(":") else {
+        return Err(serde::de::Error::custom(format!(
+            "Key must start with '{ED25519_PREFIX}:' prefix"
+        )));
+    };
+
+    let bytes: [u8; 64] = bs58::decode(encoded_key)
+        .into_vec()
+        .map_err(serde::de::Error::custom)?
+        .try_into()
+        .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
+
+    SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
+}
+
+pub fn serialize_signing_key_vec<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let bs58_strings: Vec<String> = keys
+        .iter()
+        .map(|key| {
+            format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.to_keypair_bytes()).into_string()
+            )
+        })
+        .collect();
+    bs58_strings.serialize(serializer)
+}
+
+pub fn deserialize_signing_key_vec<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
+    bs58_strings
+        .into_iter()
+        .map(|bs58_str| {
+            let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
+                return Err(serde::de::Error::custom(
+                    "Key must start with 'ed25519:' prefix",
+                ));
+            };
+
+            let bytes: [u8; 64] = bs58::decode(encoded_key)
+                .into_vec()
+                .map_err(serde::de::Error::custom)?
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
+
+            SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
+        })
+        .collect()
 }
 
 /// Credentials of the near account used to submit signature responses.
