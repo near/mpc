@@ -21,6 +21,10 @@ initialize_near_node() {
 
         # The init command generates a modified genesis file for some reason, so we must hard-copy the original one.
         cp "$EMBEDDED_GENESIS" "$1/genesis.json"
+
+        # Additionally, the init command will generate a `validator_key.json`
+        # file which we can simply remove.
+        rm "$1/validator_key.json"
     else
         echo "Downloading genesis file"
         # boot_nodes must be filled in or else the node will not have any peers.

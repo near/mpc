@@ -177,10 +177,10 @@ Now we must set unique ports for Frodo's RPC interface and indexer. Make sure th
 RPC_PORT=3031 INDEXER_PORT=24568 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PORT | .rpc.addr = "0.0.0.0:" + env.RPC_PORT' ~/.near/mpc-frodo/config.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/config.json
 ```
 
-Now we must update Frodo's `validator_key.json` to match the `account_id` field to the right account.
+Since this is not a validator node, we can remove `validator_key.json`
 
 ```shell
-jq '.account_id = "frodo.test.near"' ~/.near/mpc-frodo/validator_key.json > ~/.near/mpc-frodo/temp.json && mv ~/.near/mpc-frodo/temp.json ~/.near/mpc-frodo/validator_key.json
+rm ~/.near/mpc-frodo/validator_key.json
 ```
 
 Next we'll create a `config.yaml` for the MPC-indexer:
@@ -236,7 +236,7 @@ RPC_PORT=3032 INDEXER_PORT=24569 jq '.network.addr = "0.0.0.0:" + env.INDEXER_PO
 ```
 
 ```shell
-jq '.account_id = "sam.test.near"' ~/.near/mpc-sam/validator_key.json > ~/.near/mpc-sam/temp.json && mv ~/.near/mpc-sam/temp.json ~/.near/mpc-sam/validator_key.json
+rm ~/.near/mpc-sam/validator_key.json
 ```
 
 ```shell
