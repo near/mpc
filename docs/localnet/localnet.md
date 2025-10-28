@@ -249,7 +249,7 @@ web_ui:
   port: 8082
 migration_web_ui:
   host: localhost
-  port: 8079
+  port: 8078
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
