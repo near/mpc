@@ -81,10 +81,14 @@ indexer:
   sync_mode: Latest
   concurrency: 1
   mpc_contract_id: $MPC_CONTRACT_ID
-  port_override: 80
   finality: optimistic
 cores: 12
 EOF
+
+    # Add port_override for non-localnet environments
+    if [ "$MPC_ENV" != "mpc-localnet" ]; then
+        sed -i '/mpc_contract_id:/a\  port_override: 80' "$1"
+    fi
 }
 
 update_mpc_config() {
