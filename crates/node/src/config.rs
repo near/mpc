@@ -2,7 +2,6 @@ use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_indexer_primitives::types::{AccountId, Finality};
-use near_sdk::bs58;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
