@@ -1,7 +1,8 @@
 use contract_interface::types as contract_types;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::BackupServiceInfo;
-use near_primitives::types::AccountId;
+use near_crypto::{ED25519SecretKey, SecretKey as NearSecretKey};
+use near_primitives::{types::AccountId, utils::derive_near_implicit_account_id};
 use near_workspaces::types::SecretKey;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
@@ -40,7 +41,7 @@ pub async fn run_command(args: cli::Args) {
             register_backup_service(
                 &command_args.mpc_contract_account_id,
                 &command_args.near_network,
-                secrets.p2p_private_key.verifying_key(),
+                &secrets.p2p_private_key.verifying_key(),
                 &secrets.near_signer_key,
             )
             .await;
@@ -102,29 +103,15 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
 pub async fn register_backup_service(
     contract_account_id: &AccountId,
     network: &Network,
-    p2p_public_key: VerifyingKey,
+    p2p_public_key: &VerifyingKey,
     signer_key: &SigningKey,
 ) {
     let backup_service_info = BackupServiceInfo {
         public_key: contract_types::Ed25519PublicKey::from(*p2p_public_key.as_bytes()),
     };
 
-    let signer = {
-        let secret_key_b58 = bs58::encode(signer_key.to_bytes()).into_string();
-        SecretKey::from_str(&format!("ed25519:{}", secret_key_b58))
-            .expect("Failed to create secret key")
-    };
-
-    // Create NEAR implicit account ID from the public key.
-    // Implicit accounts are 64-char hex strings derived from ED25519 public keys.
-    // See: https://docs.near.org/concepts/protocol/account-id#implicit-address
-    //
-    // Note: We use manual hex encoding instead of near_primitives::utils::derive_near_implicit_account_id
-    // because the workspace has incompatible versions of near-primitives (0.28.0 from crates.io vs 2.9.0 from git).
-    let signer_account_id = {
-        let account_id_hex = hex::encode(signer_key.verifying_key().as_bytes());
-        account_id_hex.parse().expect("Invalid signer account ID")
-    };
+    let signer = signing_key_to_near_secret_key(signer_key);
+    let signer_account_id = derive_implicit_account_id(signer_key);
 
     macro_rules! connect_and_call {
         ($network:expr) => {
@@ -162,7 +149,7 @@ async fn call_register_on_network<T: near_workspaces::Network + 'static>(
         .max_gas()
         .transact()
         .await
-        .expect("fail to register backup data")
+        .expect("failed to register backup data")
         .into_result()
         .expect("transaction execution failed");
 }
@@ -175,7 +162,7 @@ pub async fn get_keyshares(
     let contract_state = mpc_contract
         .get_contract_state()
         .await
-        .expect("Could not get contract state");
+        .expect("could not get contract state");
     let keyset =
         get_keyset_from_contract_state(&contract_state).expect("failed to compute current keyset");
     let keyshare = mpc_p2p_client
@@ -204,6 +191,57 @@ pub async fn put_keyshares(
 
 fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
     let mpc_node_p2p_key = contract_types::Ed25519PublicKey::from_str(mpc_node_p2p_key)
-        .expect("Invalid mpc_node_p2p_key value");
+        .expect("invalid mpc_node_p2p_key value");
     VerifyingKey::from_bytes(mpc_node_p2p_key.as_bytes()).expect("Invalid mpc_node_p2p_key value")
+}
+
+fn signing_key_to_near_secret_key(signer_key: &SigningKey) -> SecretKey {
+    SecretKey::from_str(
+        &NearSecretKey::ED25519(ED25519SecretKey(signer_key.to_keypair_bytes())).to_string(),
+    )
+    .expect("failed to create secret key")
+}
+
+fn derive_implicit_account_id(signer_key: &SigningKey) -> AccountId {
+    derive_near_implicit_account_id(&(*signer_key.verifying_key().as_bytes()).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_derive_implicit_account_id() {
+        // Given
+        let signing_key = SigningKey::from_bytes(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ]);
+
+        // When
+        let account_id = derive_implicit_account_id(&signing_key);
+
+        // Then
+        let expected_public_key_hex = hex::encode(signing_key.verifying_key().as_bytes());
+        assert_eq!(account_id.as_str(), expected_public_key_hex);
+        assert_eq!(account_id.as_str().len(), 64);
+    }
+
+    #[test]
+    fn test_signing_key_to_near_secret_key() {
+        // Given
+        let signing_key = SigningKey::from_bytes(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ]);
+
+        // When
+        let near_secret_key = signing_key_to_near_secret_key(&signing_key);
+
+        // Then
+        let secret_key_str = near_secret_key.to_string();
+        assert!(secret_key_str.starts_with("ed25519:"));
+        let parsed = SecretKey::from_str(&secret_key_str).unwrap();
+        assert_eq!(parsed, near_secret_key);
+    }
 }

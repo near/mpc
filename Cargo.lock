@@ -1510,6 +1510,7 @@ dependencies = [
  "hex",
  "mpc-contract",
  "mpc-node",
+ "near-crypto 2.9.0",
  "near-primitives 0.28.0",
  "near-workspaces",
  "rand 0.8.5",
