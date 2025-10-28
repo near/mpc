@@ -25,3 +25,5 @@ Frodo's node:
 ```shell
 docker run --name mpc-node -v /tmp/frodo:/data --env-file docs/localnet/docker_envs/frodo.env mpc-node
 ```
+
+Great success!!! The dockerfile seems to have connected :)
