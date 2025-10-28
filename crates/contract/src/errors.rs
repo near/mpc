@@ -122,6 +122,8 @@ pub enum InvalidParameters {
     InvalidAppPublicKey,
     #[error("The provided TLS key is not valid.")]
     InvalidTlsPublicKey,
+    #[error("Caller is not the signer account.")]
+    CallerNotSigner,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

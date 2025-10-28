@@ -85,6 +85,7 @@ impl TestSetup {
         testing_env!(VMContextBuilder::new()
             .block_timestamp(timestamp)
             .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .build());
     }
 

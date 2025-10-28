@@ -435,7 +435,7 @@ impl MpcContract {
         request: SignatureRequest,
         response: SignatureResponse,
     ) -> Result<(), Error> {
-        let signer = env::signer_account_id();
+        let signer = self.assert_caller_is_signer();
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
@@ -518,7 +518,7 @@ impl MpcContract {
 
     #[handle_result]
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
-        let signer = env::signer_account_id();
+        let signer = self.assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
         if !self.protocol_state.is_running_or_resharing() {
@@ -1313,14 +1313,25 @@ impl MpcContract {
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
-        let voter = env::predecessor_account_id();
+        if !self.caller_is_signer() {
+            return Err(InvalidParameters::CallerNotSigner.into());
+        }
+        let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
 
+    /// Returns true if the caller is the signer account.
+    fn caller_is_signer(&self) -> bool {
+        let signer = env::signer_account_id();
+        let predecessor = env::predecessor_account_id();
+        signer == predecessor
+    }
+
     /// Get our own account id as a voter. If we are not a participant, panic.
+    /// also ensures that the caller is the signer account.
     fn voter_or_panic(&self) -> AccountId {
-        //TODO barak I don't think this method does what is it expected to
+        self.assert_caller_is_signer();
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
@@ -1436,7 +1447,9 @@ impl MpcContract {
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
         // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
-        let account_id = env::signer_account_id();
+
+        let account_id = self.assert_caller_is_signer();
+
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
             account_id,
