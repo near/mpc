@@ -8,8 +8,28 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    # boot_nodes must be filled in or else the node will not have any peers.
-    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    if [ "$MPC_ENV" = "mpc-localnet" ]; then
+        EMBEDDED_GENESIS="/app/localnet-genesis.json"
+        if [ ! -f "$EMBEDDED_GENESIS" ]; then
+            echo "ERROR: Embedded localnet genesis file not found at $EMBEDDED_GENESIS"
+            exit 1
+        fi
+        echo "Using embedded localnet genesis file"
+
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --genesis "$EMBEDDED_GENESIS" --boot-nodes "$NEAR_BOOT_NODES"
+
+        # The init command generates a modified genesis file for some reason, so we must hard-copy the original one.
+        cp "$EMBEDDED_GENESIS" "$1/genesis.json"
+
+        # Additionally, the init command will generate a `validator_key.json`
+        # file which we can simply remove.
+        rm "$1/validator_key.json"
+    else
+        echo "Downloading genesis file"
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    fi
 }
 
 update_near_node_config() {
@@ -24,6 +44,31 @@ config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_thres
 # Track whichever shard the contract account is on.
 config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
 json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
+EOF
+}
+
+create_secrets_json_file() {
+    python3 <<EOF
+import json;
+
+p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_str = "${MPC_ACCOUNT_SK}"
+
+if not p2p_key_str or not account_sk_str:
+    print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
+    sys.exit(1)
+
+secrets = {
+    "p2p_private_key": p2p_key_str,
+    "near_signer_key": account_sk_str,
+    "near_responder_keys": [account_sk_str]
+}
+
+# Write to secrets.json
+with open("$secrets_file", 'w') as f:
+    json.dump(secrets, f, indent=2)
+
+print("secrets.json generated successfully")
 EOF
 }
 
@@ -65,10 +110,14 @@ indexer:
   sync_mode: Latest
   concurrency: 1
   mpc_contract_id: $MPC_CONTRACT_ID
-  port_override: 80
   finality: optimistic
 cores: 12
 EOF
+
+    # Add port_override for non-localnet environments
+    if [ "$MPC_ENV" != "mpc-localnet" ]; then
+        sed -i '/mpc_contract_id:/a\  port_override: 80' "$1"
+    fi
 }
 
 update_mpc_config() {
@@ -83,6 +132,52 @@ update_mpc_config() {
         responder_id="$MPC_ACCOUNT_ID"
     fi
     sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
+}
+
+generate_secrets_json() {
+    local secrets_file="$MPC_HOME_DIR/secrets.json"
+    
+    # Skip if secrets.json already exists
+    if [ -f "$secrets_file" ]; then
+        echo "secrets.json already exists, skipping generation"
+        return 0
+    fi
+    
+    # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
+    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
+            echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
+            MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
+            export MPC_P2P_PRIVATE_KEY
+        fi
+    else
+        echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
+    fi
+
+    # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
+    if [ -z "${MPC_ACCOUNT_SK}" ]; then
+        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
+            echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
+            MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
+            export MPC_ACCOUNT_SK
+        fi
+    else
+        echo "Using provided MPC_ACCOUNT_SK from environment"
+    fi
+    
+    # Only generate secrets.json if we have the required keys
+    if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
+        echo "Generating secrets.json from provided keys..."
+        if create_secrets_json_file
+        then
+            echo "secrets.json created at $secrets_file"
+        else
+            echo "Failed to generate secrets.json" >&2
+            return 1
+        fi
+    else
+        echo "Skipping secrets.json generation - MPC_P2P_PRIVATE_KEY and/or MPC_ACCOUNT_SK not available"
+    fi
 }
 
 # Check and initialize Near node config if needed
@@ -105,6 +200,9 @@ else
 fi
 
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
+
+# Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
+generate_secrets_json
 
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
     echo "You must provide MPC_SECRET_STORE_KEY in env variable"

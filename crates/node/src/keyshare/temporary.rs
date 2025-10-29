@@ -2,7 +2,6 @@ use super::Keyshare;
 use crate::db::{decrypt, encrypt};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId};
-use sha3::digest::generic_array::GenericArray;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -72,7 +71,7 @@ impl TemporaryKeyStorage {
         }
 
         let data = tokio::fs::read(&path).await?;
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.local_encryption_key));
+        let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
         let decrypted = decrypt(&cipher, &data)?;
         let keyshare: Keyshare = serde_json::from_slice(&decrypted)?;
         if keyshare.key_id != key_id {
@@ -136,7 +135,7 @@ impl PendingKeyshareStorageHandle {
             keyshare.key_id
         );
         let data = serde_json::to_vec(&keyshare)?;
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.local_encryption_key));
+        let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
         let encrypted = encrypt(&cipher, &data);
 
         let mut file = tokio::fs::File::create_new(&self.path).await?;

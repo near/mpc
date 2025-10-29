@@ -14,7 +14,7 @@ use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_core::Scalar;
 use threshold_signatures::frost_ed25519::VerifyingKey;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, Signature};
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 use tokio::time::timeout;
 
 impl EddsaSignatureProvider {

@@ -1,0 +1,304 @@
+{
+  "genesis_file": "genesis.json",
+  "genesis_records_file": null,
+  "validator_key_file": "validator_key.json",
+  "node_key_file": "node_key.json",
+  "rpc": {
+    "addr": "0.0.0.0:3030",
+    "prometheus_addr": null,
+    "cors_allowed_origins": [
+      "*"
+    ],
+    "polling_config": {
+      "polling_interval": {
+        "secs": 0,
+        "nanos": 500000000
+      },
+      "polling_timeout": {
+        "secs": 10,
+        "nanos": 0
+      }
+    },
+    "limits_config": {
+      "json_payload_max_size": 10485760
+    },
+    "enable_debug_rpc": false,
+    "experimental_debug_pages_src_path": null
+  },
+  "telemetry": {
+    "endpoints": [],
+    "reporting_interval": {
+      "secs": 10,
+      "nanos": 0
+    }
+  },
+  "network": {
+    "addr": "0.0.0.0:24566",
+    "boot_nodes": "",
+    "whitelist_nodes": "",
+    "max_num_peers": 40,
+    "minimum_outbound_peers": 5,
+    "ideal_connections_lo": 30,
+    "ideal_connections_hi": 35,
+    "so_recv_buffer_size": 1000000,
+    "so_send_buffer_size": 1000000,
+    "peer_recent_time_window": {
+      "secs": 600,
+      "nanos": 0
+    },
+    "safe_set_size": 20,
+    "archival_peer_connections_lower_bound": 10,
+    "handshake_timeout": {
+      "secs": 20,
+      "nanos": 0
+    },
+    "skip_sync_wait": true,
+    "ban_window": {
+      "secs": 10800,
+      "nanos": 0
+    },
+    "blacklist": [],
+    "ttl_account_id_router": {
+      "secs": 3600,
+      "nanos": 0
+    },
+    "peer_stats_period": {
+      "secs": 5,
+      "nanos": 0
+    },
+    "monitor_peers_max_period": {
+      "secs": 60,
+      "nanos": 0
+    },
+    "peer_states_cache_size": 1000,
+    "snapshot_hosts_cache_size": 1000,
+    "peer_expiration_duration": {
+      "secs": 604800,
+      "nanos": 0
+    },
+    "public_addrs": [],
+    "allow_private_ip_in_public_addrs": false,
+    "trusted_stun_servers": [
+      "stun.l.google.com:19302",
+      "stun1.l.google.com:19302",
+      "stun2.l.google.com:19302",
+      "stun3.l.google.com:19302",
+      "stun4.l.google.com:19302"
+    ],
+    "experimental": {
+      "inbound_disabled": false,
+      "connect_only_to_boot_nodes": false,
+      "skip_sending_tombstones_seconds": 0,
+      "tier1_enable_inbound": true,
+      "tier1_enable_outbound": true,
+      "tier1_connect_interval": {
+        "secs": 60,
+        "nanos": 0
+      },
+      "tier1_new_connections_per_attempt": 50,
+      "network_config_overrides": {
+        "connect_to_reliable_peers_on_startup": null,
+        "max_send_peers": null,
+        "routed_message_ttl": null,
+        "max_routes_to_store": null,
+        "highest_peer_horizon": null,
+        "push_info_period_millis": null,
+        "outbound_disabled": null,
+        "accounts_data_broadcast_rate_limit_burst": null,
+        "accounts_data_broadcast_rate_limit_qps": null,
+        "routing_table_update_rate_limit_burst": null,
+        "routing_table_update_rate_limit_qps": null,
+        "received_messages_rate_limits": null
+      }
+    }
+  },
+  "consensus": {
+    "min_num_peers": 3,
+    "block_production_tracking_delay": {
+      "secs": 0,
+      "nanos": 10000000
+    },
+    "min_block_production_delay": {
+      "secs": 0,
+      "nanos": 600000000
+    },
+    "max_block_production_delay": {
+      "secs": 2,
+      "nanos": 0
+    },
+    "max_block_wait_delay": {
+      "secs": 6,
+      "nanos": 0
+    },
+    "chunk_wait_mult": [
+      1,
+      3
+    ],
+    "produce_empty_blocks": true,
+    "block_fetch_horizon": 50,
+    "block_header_fetch_horizon": 50,
+    "catchup_step_period": {
+      "secs": 0,
+      "nanos": 100000000
+    },
+    "chunk_request_retry_period": {
+      "secs": 0,
+      "nanos": 400000000
+    },
+    "header_sync_initial_timeout": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "header_sync_progress_timeout": {
+      "secs": 2,
+      "nanos": 0
+    },
+    "header_sync_stall_ban_timeout": {
+      "secs": 120,
+      "nanos": 0
+    },
+    "state_sync_external_timeout": {
+      "secs": 60,
+      "nanos": 0
+    },
+    "state_sync_p2p_timeout": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "state_sync_retry_backoff": {
+      "secs": 1,
+      "nanos": 0
+    },
+    "state_sync_external_backoff": {
+      "secs": 60,
+      "nanos": 0
+    },
+    "header_sync_expected_height_per_second": 10,
+    "sync_check_period": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "sync_step_period": {
+      "secs": 0,
+      "nanos": 10000000
+    },
+    "doomslug_step_period": {
+      "secs": 0,
+      "nanos": 10000000
+    },
+    "sync_height_threshold": 1,
+    "sync_max_block_requests": 10
+  },
+  "tracked_shards_config": "AllShards",
+  "log_summary_style": "colored",
+  "log_summary_period": {
+    "secs": 10,
+    "nanos": 0
+  },
+  "enable_multiline_logging": true,
+  "gc_blocks_limit": 2,
+  "gc_fork_clean_step": 100,
+  "gc_num_epochs_to_keep": 5,
+  "gc_step_period": {
+    "secs": 1,
+    "nanos": 0
+  },
+  "view_client_threads": 4,
+  "view_client_throttle_period": {
+    "secs": 30,
+    "nanos": 0
+  },
+  "view_client_num_state_requests_per_throttle_period": 30,
+  "trie_viewer_state_size_limit": 50000,
+  "store": {
+    "path": null,
+    "enable_statistics": false,
+    "enable_statistics_export": true,
+    "max_open_files": 10000,
+    "col_state_cache_size": 536870912,
+    "col_flat_state_cache_size": 134217728,
+    "block_size": 16384,
+    "trie_cache": {
+      "default_max_bytes": 500000000,
+      "per_shard_max_bytes": {
+        "s5.v3": 3000000000,
+        "s1.v3": 50000000
+      },
+      "shard_cache_deletions_queue_capacity": 100000
+    },
+    "view_trie_cache": {
+      "default_max_bytes": 50000000,
+      "per_shard_max_bytes": {},
+      "shard_cache_deletions_queue_capacity": 100000
+    },
+    "enable_receipt_prefetching": true,
+    "sweat_prefetch_receivers": [
+      "token.sweat",
+      "vfinal.token.sweat.testnet"
+    ],
+    "sweat_prefetch_senders": [
+      "oracle.sweat",
+      "sweat_the_oracle.testnet"
+    ],
+    "claim_sweat_prefetch_config": [
+      {
+        "receiver": "claim.sweat",
+        "sender": "token.sweat",
+        "method_name": "record_batch_for_hold"
+      }
+    ],
+    "kaiching_prefetch_config": [
+      {
+        "receiver": "earn.kaiching",
+        "sender": "wallet.kaiching",
+        "method_name": "ft_on_transfer"
+      }
+    ],
+    "load_mem_tries_for_shards": [],
+    "load_mem_tries_for_tracked_shards": false,
+    "state_snapshot_config": {
+      "state_snapshot_type": "Enabled"
+    }
+  },
+  "state_sync_enabled": true,
+  "epoch_sync": {
+    "disable_epoch_sync_for_bootstrapping": false,
+    "ignore_epoch_sync_network_requests": false,
+    "epoch_sync_horizon": 216000,
+    "timeout_for_epoch_sync": {
+      "secs": 60,
+      "nanos": 0
+    }
+  },
+  "transaction_pool_size_limit": 100000000,
+  "resharding_config": {
+    "batch_size": 500000,
+    "batch_delay": {
+      "secs": 0,
+      "nanos": 5000000
+    },
+    "retry_delay": {
+      "secs": 10,
+      "nanos": 0
+    },
+    "initial_delay": {
+      "secs": 0,
+      "nanos": 0
+    },
+    "max_poll_time": {
+      "secs": 7200,
+      "nanos": 0
+    },
+    "catch_up_blocks": 20
+  },
+  "tx_routing_height_horizon": 4,
+  "produce_chunk_add_transactions_time_limit": {
+    "secs": 0,
+    "nanos": 200000000
+  },
+  "orphan_state_witness_pool_size": 25,
+  "orphan_state_witness_max_size": 40000000,
+  "max_loaded_contracts": 256,
+  "save_latest_witnesses": false,
+  "transaction_request_handler_threads": 4
+}

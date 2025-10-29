@@ -6,7 +6,8 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
 use threshold_signatures::ecdsa::RerandomizationArguments;
-use threshold_signatures::protocol::{Participant, Protocol};
+use threshold_signatures::participants::Participant;
+use threshold_signatures::protocol::Protocol;
 use threshold_signatures::ParticipantList;
 
 #[derive(Debug, Serialize)]
@@ -310,27 +311,30 @@ fn signature_network_research_best_case() {
         let tweak = Scalar::from_repr(tweak.into()).unwrap();
         let tweak = threshold_signatures::Tweak::new(tweak);
 
-        let public_key = tweak
-            .derive_verifying_key(&keygens[&participants[i]].public_key)
-            .to_element()
-            .to_affine();
+        let public_key = keygens[&participants[i]].public_key;
 
         let rerand_args = RerandomizationArguments::new(
-            public_key,
+            public_key.to_element().to_affine(),
+            tweak,
             msg_hash_bytes,
             presign_out.big_r,
             ParticipantList::new(&participants).unwrap(),
             entropy,
         );
         let rerandomized_presignature =
-            RerandomizedPresignOutput::new(&presign_out, &tweak, &rerand_args).unwrap();
+            RerandomizedPresignOutput::rerandomize_presign(&presign_out, &tweak, &rerand_args)
+                .unwrap();
+        let derived_public_key = tweak
+            .derive_verifying_key(&public_key)
+            .to_element()
+            .to_affine();
 
         protocols.push(
             threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
                 &participants,
                 leader,
                 participants[i],
-                public_key,
+                derived_public_key,
                 rerandomized_presignature,
                 msg_hash,
             )

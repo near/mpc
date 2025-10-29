@@ -7,7 +7,7 @@ use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
