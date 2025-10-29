@@ -16,7 +16,7 @@ use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignOutput, RerandomizedPresignOutput};
 use threshold_signatures::ecdsa::{RerandomizationArguments, Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
@@ -145,33 +145,37 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .into_option()
             .context("Couldn't construct k256 point")?;
 
-        let public_key = tweak
+        let derived_public_key = tweak
             .derive_verifying_key(&self.keygen_out.public_key)
             .to_element()
             .to_affine();
         let participants = ParticipantList::new(&cs_participants).unwrap();
 
         let rerand_args = RerandomizationArguments::new(
-            public_key,
+            self.keygen_out.public_key.to_element().to_affine(),
+            tweak,
             self.msg_hash,
             self.presign_out.big_r,
             participants,
             self.entropy,
         );
-        let rerandomized_presignature =
-            RerandomizedPresignOutput::new(&self.presign_out, &tweak, &rerand_args)?;
+        let rerandomized_presignature = RerandomizedPresignOutput::rerandomize_presign(
+            &self.presign_out,
+            &tweak,
+            &rerand_args,
+        )?;
 
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
-            public_key,
+            derived_public_key,
             rerandomized_presignature,
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature = run_protocol("sign", channel, protocol).await?;
-        Ok((signature, VerifyingKey::new(public_key.into())))
+        Ok((signature, VerifyingKey::new(derived_public_key.into())))
     }
 
     fn leader_waits_for_success(&self) -> bool {

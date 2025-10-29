@@ -8,7 +8,7 @@ use rand::rngs::OsRng;
 use threshold_signatures::confidential_key_derivation::KeygenOutput;
 use threshold_signatures::confidential_key_derivation::SigningShare;
 use threshold_signatures::confidential_key_derivation::{VerifyingKey, BLS12381SHA256};
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl CKDProvider {
     pub(super) async fn run_key_resharing_client_internal(
@@ -107,7 +107,7 @@ mod tests {
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::frost_core::Group;
-    use threshold_signatures::protocol::Participant;
+    use threshold_signatures::participants::Participant;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 

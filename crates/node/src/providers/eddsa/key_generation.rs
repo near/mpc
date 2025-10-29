@@ -5,7 +5,7 @@ use crate::providers::eddsa::EddsaSignatureProvider;
 use rand::rngs::OsRng;
 use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(

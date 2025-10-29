@@ -5,7 +5,7 @@ use crate::providers::ckd::CKDProvider;
 use rand::rngs::OsRng;
 use threshold_signatures::confidential_key_derivation::KeygenOutput;
 use threshold_signatures::confidential_key_derivation::BLS12381SHA256;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl CKDProvider {
     pub(super) async fn run_key_generation_client_internal(
@@ -69,7 +69,7 @@ mod tests {
     use std::sync::Arc;
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
     use threshold_signatures::frost_core::Group;
-    use threshold_signatures::protocol::Participant;
+    use threshold_signatures::participants::Participant;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 

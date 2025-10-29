@@ -21,7 +21,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput
 use threshold_signatures::ecdsa::ot_based_ecdsa::{
     presign::presign, PresignArguments, PresignOutput,
 };
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
 

@@ -6,7 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 /// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
 /// The ID shall be globally unique across all participants and across time.
