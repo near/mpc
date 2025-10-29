@@ -53,10 +53,19 @@ impl std::str::FromStr for Network {
 
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
+    /// MPC contract account ID
     #[arg(long, env)]
     pub mpc_contract_account_id: AccountId,
+    
+    /// Network to connect to: testnet, mainnet, sandbox, or "localnet <url>"
     #[arg(long, env)]
     pub near_network: Network,
+    
+    /// Named account that will sign the registration transaction.
+    /// Note: The public key derived from near_signer_key (in secrets file) must be added
+    /// as an access key to this account before calling this command.
+    #[arg(long, env)]
+    pub signer_account_id: AccountId,
 }
 
 #[derive(clap::Args, Debug)]

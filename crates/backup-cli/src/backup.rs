@@ -31,14 +31,15 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
+            let secrets = secrets_storage
+                .load_secrets()
+                .await
+                .expect("fail to load secrets");
             let mpc_contract = near_contract::NearContractAdapter::new(
                 command_args.mpc_contract_account_id,
                 command_args.near_network,
-                secrets_storage
-                    .load_secrets()
-                    .await
-                    .expect("fail to load secrets")
-                    .near_signer_key,
+                command_args.signer_account_id,
+                secrets.near_signer_key,
             );
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }

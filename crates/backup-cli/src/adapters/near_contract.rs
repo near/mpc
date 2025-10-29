@@ -2,7 +2,7 @@ use contract_interface::types as contract_types;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::BackupServiceInfo;
 use near_crypto::{ED25519SecretKey, SecretKey as NearSecretKey};
-use near_primitives::{types::AccountId, utils::derive_near_implicit_account_id};
+use near_primitives::types::AccountId;
 use near_workspaces::types::SecretKey;
 use std::str::FromStr;
 
@@ -24,14 +24,21 @@ pub enum Error {
 pub struct NearContractAdapter {
     contract_account_id: AccountId,
     network: Network,
+    signer_account_id: AccountId,
     signer_key: SigningKey,
 }
 
 impl NearContractAdapter {
-    pub fn new(contract_account_id: AccountId, network: Network, signer_key: SigningKey) -> Self {
+    pub fn new(
+        contract_account_id: AccountId,
+        network: Network,
+        signer_account_id: AccountId,
+        signer_key: SigningKey,
+    ) -> Self {
         Self {
             contract_account_id,
             network,
+            signer_account_id,
             signer_key,
         }
     }
@@ -41,18 +48,24 @@ impl RegisterBackupData for NearContractAdapter {
     type Error = Error;
 
     async fn register_backup_data(&self, public_key: &VerifyingKey) -> Result<(), Self::Error> {
+        let public_key_bytes = public_key.as_bytes();
         let backup_service_info = BackupServiceInfo {
-            public_key: contract_types::Ed25519PublicKey::from(*public_key.as_bytes()),
+            public_key: contract_types::Ed25519PublicKey::from(*public_key_bytes),
         };
 
+        let public_key_base58 = bs58::encode(public_key_bytes).into_string();
+        tracing::info!(
+            "Registering backup service public key: ed25519:{}",
+            public_key_base58
+        );
+
         let signer = signing_key_to_near_secret_key(&self.signer_key);
-        let signer_account_id = derive_implicit_account_id(&self.signer_key);
 
         macro_rules! register_on_network {
             ($network:expr) => {
                 call_register_on_network(
                     $network.await?,
-                    signer_account_id,
+                    self.signer_account_id.clone(),
                     signer,
                     &self.contract_account_id,
                     backup_service_info,
@@ -102,31 +115,10 @@ fn signing_key_to_near_secret_key(signer_key: &SigningKey) -> SecretKey {
     .expect("failed to create secret key")
 }
 
-fn derive_implicit_account_id(signer_key: &SigningKey) -> AccountId {
-    derive_near_implicit_account_id(&(*signer_key.verifying_key().as_bytes()).into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
-
-    #[test]
-    fn test_derive_implicit_account_id() {
-        // Given
-        let signing_key = SigningKey::from_bytes(&[
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32,
-        ]);
-
-        // When
-        let account_id = derive_implicit_account_id(&signing_key);
-
-        // Then
-        let expected_public_key_hex = hex::encode(signing_key.verifying_key().as_bytes());
-        assert_eq!(account_id.as_str(), expected_public_key_hex);
-        assert_eq!(account_id.as_str().len(), 64);
-    }
 
     #[test]
     fn test_signing_key_to_near_secret_key() {
