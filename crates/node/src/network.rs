@@ -947,13 +947,14 @@ mod tests {
     use crate::network::testing::{new_test_transports, run_test_clients};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::EcdsaTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
+    use threshold_signatures::test::TestGenerators;
     use tokio::sync::mpsc;
 
     /// Just some big prime number
@@ -962,9 +963,12 @@ mod tests {
     #[tokio::test]
     async fn test_network_basic() {
         start_root_task_with_periodic_dump(async move {
-            run_test_clients(TestGenerators::new(4, 3).participant_ids(), run_test_client)
-                .await
-                .unwrap();
+            run_test_clients(
+                into_participant_ids(&TestGenerators::new(4, 3)),
+                run_test_client,
+            )
+            .await
+            .unwrap();
         })
         .await;
     }
@@ -1105,7 +1109,7 @@ mod tests {
     ) {
         let num_participants = 4;
         let participant_ids =
-            TestGenerators::new(num_participants, num_participants).participant_ids();
+            into_participant_ids(&TestGenerators::new(num_participants, num_participants));
         let transports = new_test_transports(participant_ids.clone());
         let indexer_heights = {
             let heights = participant_ids
@@ -1141,10 +1145,11 @@ mod fault_handling_tests {
     use crate::network::testing::run_test_clients;
     use crate::primitives::{ParticipantId, UniqueId};
     use crate::providers::EcdsaTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;
+    use threshold_signatures::test::TestGenerators;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
@@ -1167,7 +1172,7 @@ mod fault_handling_tests {
             let test_case = Arc::new(test_case);
             start_root_task_with_periodic_dump(async move {
                 run_test_clients(
-                    TestGenerators::new_contiguous_participant_ids(4, 3).participant_ids(),
+                    into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3)),
                     move |client, channel_receiver| {
                         let test_case = test_case.clone();
                         async move {

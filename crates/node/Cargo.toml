@@ -74,3 +74,4 @@ mpc-contract = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 tracing-test = { workspace = true }
+threshold-signatures = { workspace = true, features = ["test-utils"] }

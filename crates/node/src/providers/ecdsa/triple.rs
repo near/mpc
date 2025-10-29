@@ -286,12 +286,13 @@ mod tests_many {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{MpcTaskId, UniqueId};
     use crate::providers::ecdsa::EcdsaTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracing::init_logging;
     use crate::tracking;
     use futures::{stream, StreamExt};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use threshold_signatures::test::TestGenerators;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;
@@ -305,7 +306,7 @@ mod tests_many {
         init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
-                TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD).participant_ids(),
+                into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD)),
                 run_triple_gen_client,
             )
             .await

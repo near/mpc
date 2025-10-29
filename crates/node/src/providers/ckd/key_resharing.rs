@@ -101,13 +101,14 @@ mod tests {
     use crate::primitives::ParticipantId;
     use crate::providers::ckd::key_resharing::KeyResharingComputation;
     use crate::providers::ckd::CKDTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
+    use threshold_signatures::test::TestGenerators;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
@@ -117,8 +118,8 @@ mod tests {
         const NUM_PARTICIPANTS: usize = 4;
         let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
         let keygens = gen.make_ckd_keygens();
-        let old_participants = gen.participant_ids();
-        let mut new_participants = gen.participant_ids();
+        let old_participants = into_participant_ids(&gen);
+        let mut new_participants = into_participant_ids(&gen);
         new_participants.push(ParticipantId::from_raw(rand::random()));
 
         let key_resharing_client_runner =

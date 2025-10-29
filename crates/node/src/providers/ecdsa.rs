@@ -302,7 +302,7 @@ mod tests {
     };
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-        use crate::test_utils::TestGenerators;
+        use threshold_signatures::test::TestGenerators;
         let x = TestGenerators::new(4, 3)
             .make_ecdsa_keygens()
             .values()

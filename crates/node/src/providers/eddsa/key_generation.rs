@@ -62,19 +62,20 @@ mod tests {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::providers::eddsa::key_generation::KeyGenerationComputation;
     use crate::providers::eddsa::EddsaTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
     use threshold_signatures::eddsa::KeygenOutput;
+    use threshold_signatures::test::TestGenerators;
     use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn eddsa_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                TestGenerators::new(4, 3).participant_ids(),
+                into_participant_ids(&TestGenerators::new(4, 3)),
                 run_keygen_client,
             )
             .await

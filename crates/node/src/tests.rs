@@ -18,6 +18,7 @@ use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
 
+use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
@@ -411,6 +412,16 @@ pub async fn request_ckd_and_await_response(
             }
         }
     }
+}
+
+pub fn into_participant_ids(
+    test_generator: &threshold_signatures::test::TestGenerators,
+) -> Vec<ParticipantId> {
+    test_generator
+        .participants
+        .iter()
+        .map(|p| (*p).into())
+        .collect()
 }
 
 #[test]
