@@ -5,7 +5,7 @@ Brain dump right now, might clean this up for reproducibility.
 # Step 1: Build docker images
 
 ```shell
-deployment/build-images.sh
+deployment/build-images.sh --node
 ```
 
 # Step 2: Start localnet
