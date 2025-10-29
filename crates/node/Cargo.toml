@@ -17,6 +17,7 @@ attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
 borsh = { workspace = true }
+bs58 = { workspace = true }
 clap = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }
