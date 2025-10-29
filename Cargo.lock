@@ -1470,7 +1470,6 @@ dependencies = [
  "clap",
  "contract-interface",
  "ed25519-dalek",
- "hex",
  "mpc-contract",
  "mpc-node",
  "near-crypto 2.9.0",
