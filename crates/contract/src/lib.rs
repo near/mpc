@@ -2105,6 +2105,44 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn test_submit_participant_info_panics_if_predecessor_differs() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+
+        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        let (participant_id, _, participant_info) = participants
+            .participants()
+            .first()
+            .expect("at least one participant")
+            .clone();
+
+        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // ❌ Case: signer != predecessor — should panic
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(participant_id.clone())
+            .predecessor_account_id("outsider.near".parse().unwrap())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(ctx);
+
+        contract
+            .submit_participant_info(
+                valid_attestation,
+                participant_info
+                    .sign_pk
+                    .clone()
+                    .try_into_dto_type()
+                    .unwrap(),
+            )
+            .expect("Expected panic if predecessor != signer");
+    }
+
+    #[test]
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
         use near_sdk::test_utils::VMContextBuilder;
