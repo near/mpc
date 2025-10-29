@@ -307,10 +307,22 @@ impl SecretsConfig {
 /// Secrets that are stored on disk. They are generated on the first run.
 /// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
 /// from outside.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PersistentSecrets {
+    #[serde(
+        serialize_with = "serialize_signing_key",
+        deserialize_with = "deserialize_signing_key"
+    )]
     pub p2p_private_key: SigningKey,
+    #[serde(
+        serialize_with = "serialize_signing_key",
+        deserialize_with = "deserialize_signing_key"
+    )]
     pub near_signer_key: SigningKey,
+    #[serde(
+        serialize_with = "serialize_signing_key_vec",
+        deserialize_with = "deserialize_signing_key_vec"
+    )]
     pub near_responder_keys: Vec<SigningKey>,
 }
 
@@ -386,6 +398,78 @@ impl PersistentSecrets {
     }
 }
 
+const ED25519_PREFIX: &str = "ed25519";
+
+fn serialize_signing_key<S>(key: &SigningKey, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let bytes = key.to_keypair_bytes(); // e.g., &[u8]
+    let str = [ED25519_PREFIX, ":", &bs58::encode(bytes).into_string()].concat();
+    serializer.serialize_str(&str)
+}
+
+fn deserialize_signing_key<'de, D>(deserializer: D) -> Result<SigningKey, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let str: String = serde::Deserialize::deserialize(deserializer)?;
+    let Some((ED25519_PREFIX, encoded_key)) = &str.split_once(":") else {
+        return Err(serde::de::Error::custom(format!(
+            "Key must start with '{ED25519_PREFIX}:' prefix"
+        )));
+    };
+
+    let bytes: [u8; 64] = bs58::decode(encoded_key)
+        .into_vec()
+        .map_err(serde::de::Error::custom)?
+        .try_into()
+        .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
+
+    SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
+}
+
+pub fn serialize_signing_key_vec<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let bs58_strings: Vec<String> = keys
+        .iter()
+        .map(|key| {
+            format!(
+                "{ED25519_PREFIX}:{}",
+                bs58::encode(key.to_keypair_bytes()).into_string()
+            )
+        })
+        .collect();
+    bs58_strings.serialize(serializer)
+}
+
+pub fn deserialize_signing_key_vec<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
+    bs58_strings
+        .into_iter()
+        .map(|bs58_str| {
+            let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
+                return Err(serde::de::Error::custom(
+                    "Key must start with 'ed25519:' prefix",
+                ));
+            };
+
+            let bytes: [u8; 64] = bs58::decode(encoded_key)
+                .into_vec()
+                .map_err(serde::de::Error::custom)?
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
+
+            SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
+        })
+        .collect()
+}
+
 /// Credentials of the near account used to submit signature responses.
 /// It is recommended to use a separate dedicated account for this purpose.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -430,8 +514,9 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 #[cfg(test)]
 pub mod tests {
     use assert_matches::assert_matches;
+    use k256::ecdsa::signature::SignerMut;
     use mpc_contract::primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id};
-    use rand::{distributions::Alphanumeric, Rng, RngCore};
+    use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
 
     use crate::providers::PublicKeyConversion;
 
@@ -507,5 +592,37 @@ pub mod tests {
             ),
             ParticipantStatus::Active(NodeStatus::Idle)
         );
+    }
+
+    #[test]
+    fn test_permanent_secrets_serialization() {
+        let secrets = PersistentSecrets {
+            p2p_private_key: SigningKey::generate(&mut OsRng),
+            near_signer_key: SigningKey::generate(&mut OsRng),
+            near_responder_keys: vec![SigningKey::generate(&mut OsRng); 8],
+        };
+        let secrets_str = serde_json::to_string(&secrets).unwrap();
+
+        let secrets_copy = serde_json::from_str(&secrets_str).unwrap();
+
+        assert_eq!(secrets, secrets_copy);
+    }
+
+    #[test]
+    fn test_permanent_secrets_serialization_fixed_values() {
+        let p2p_private_key = "ed25519:561CCDGTqnGrfJcsYwcuRgvU6JCiJnt2GGVpKfkkFcH21o1he4NorPPiyQxPp92VNxygmTRDhFcfQchV7RTYsdHh";
+        let near_signer_key = "ed25519:3FsgibEEmmMfqojDH5676T93fLPbiFG75QGuNxrhsAKcJuFcaBTAy481uWiPnopmFsTLWAVbULtUuEaXBEKiE57f";
+        let near_responder_keys1 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
+        let near_responder_keys2 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
+        let secrets_str = format!("{{\"p2p_private_key\":\"{p2p_private_key}\",\"near_signer_key\":\"{near_signer_key}\",\"near_responder_keys\":[\"{near_responder_keys1}\",\"{near_responder_keys2}\"]}}");
+
+        let mut secrets: PersistentSecrets = serde_json::from_str(&secrets_str).unwrap();
+
+        let msg = b"hello world";
+        let signature = secrets.near_signer_key.try_sign(msg).unwrap();
+        assert!(secrets.near_signer_key.verify(msg, &signature).is_ok());
+
+        let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
+        assert_eq!(secrets_str, secrets_str_copy);
     }
 }
