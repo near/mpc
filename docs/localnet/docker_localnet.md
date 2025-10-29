@@ -35,9 +35,12 @@ docker run --name sam-mpc-node -v /tmp/sam:/data -p 3001:3001 -p 8082:8080 --env
 Great success!!! The dockerfiles seems have connected :)
 
 # Step 4:
-Add access keys and initialize the contract.
+Add access keys and initialize the contract as per the localnet guide.
+Before creating the initialize args, make sure to set the following
+MPC host instead of localhost.
 
 ```shell
 export MPC_HOST=172.17.0.1
 ```
 
+Now you should be able to add a domain and request a signature as per the original localnet guide.
