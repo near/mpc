@@ -1020,7 +1020,7 @@ impl MpcContract {
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {
-        log!("get_tee_accounts: signer={}", env::signer_account_id());
+        log!("get_tee_accounts");
         self.tee_state.get_tee_accounts()
     }
 
