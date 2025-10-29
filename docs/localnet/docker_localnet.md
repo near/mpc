@@ -32,4 +32,4 @@ docker run --name frodo-mpc-node -v /tmp/frodo:/data --env-file docs/localnet/do
 docker run --name sam-mpc-node -v /tmp/sam:/data --env-file docs/localnet/docker_envs/sam.env mpc-node
 ```
 
-Great success!!! The dockerfile seems to have connected :)
+Great success!!! The dockerfiles seems have connected :)
