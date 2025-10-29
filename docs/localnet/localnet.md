@@ -340,6 +340,7 @@ The first step to achieve this is to get their public keys.
 ```shell
 export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
 export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
+export MPC_HOST=localhost
 ```
 
 With these set, we can prepare the arguments for the init call.

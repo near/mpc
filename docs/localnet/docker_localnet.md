@@ -33,3 +33,11 @@ docker run --name sam-mpc-node -v /tmp/sam:/data -p 3001:3001 -p 8082:8080 --env
 ```
 
 Great success!!! The dockerfiles seems have connected :)
+
+# Step 4:
+Add access keys and initialize the contract.
+
+```shell
+export MPC_HOST=172.17.0.1
+```
+
