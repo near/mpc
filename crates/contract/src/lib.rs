@@ -435,7 +435,7 @@ impl MpcContract {
         request: SignatureRequest,
         response: SignatureResponse,
     ) -> Result<(), Error> {
-        let signer = env::signer_account_id();
+        let signer = self.assert_caller_is_signer();
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
@@ -518,7 +518,7 @@ impl MpcContract {
 
     #[handle_result]
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
-        let signer = env::signer_account_id();
+        let signer = self.assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
         if !self.protocol_state.is_running_or_resharing() {
@@ -553,8 +553,8 @@ impl MpcContract {
         let proposed_participant_attestation =
             proposed_participant_attestation.into_contract_type();
 
-        let account_id = env::signer_account_id();
         let account_key = env::signer_account_pk();
+        let account_id = self.assert_caller_is_signer();
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
@@ -1313,13 +1313,25 @@ impl MpcContract {
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
+        if !self.caller_is_signer() {
+            return Err(InvalidParameters::CallerNotSigner.into());
+        }
         let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
 
+    /// Returns true if the caller is the signer account.
+    fn caller_is_signer(&self) -> bool {
+        let signer = env::signer_account_id();
+        let predecessor = env::predecessor_account_id();
+        signer == predecessor
+    }
+
     /// Get our own account id as a voter. If we are not a participant, panic.
+    /// also ensures that the caller is the signer account.
     fn voter_or_panic(&self) -> AccountId {
+        self.assert_caller_is_signer();
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
@@ -1336,8 +1348,11 @@ impl MpcContract {
     /// Panics if:
     /// - The protocol is not active (e.g., NotInitialized)
     /// - The caller is not attested or not in the relevant participants set
-    pub fn assert_caller_is_attested_participant_and_protocol_active(&self) {
+    /// - The caller is not the signer account
+    fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
+
+        self.assert_caller_is_signer();
 
         if !self
             .tee_state
@@ -1345,6 +1360,21 @@ impl MpcContract {
         {
             panic!("Caller must be an attested participant");
         }
+    }
+
+    /// Ensures the current call originates from the signer account itself.
+    /// Panics if `signer_account_id` and `predecessor_account_id` differ.
+    fn assert_caller_is_signer(&self) -> near_sdk::AccountId {
+        let signer_id = env::signer_account_id();
+        let predecessor_id = env::predecessor_account_id();
+
+        assert_eq!(
+            signer_id, predecessor_id,
+            "Caller must be the signer account (signer: {}, predecessor: {})",
+            signer_id, predecessor_id
+        );
+
+        signer_id
     }
 }
 
@@ -1382,7 +1412,7 @@ impl MpcContract {
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = self.assert_caller_is_signer();
         log!(
             "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
@@ -1417,7 +1447,9 @@ impl MpcContract {
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
         // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
-        let account_id = env::signer_account_id();
+
+        let account_id = self.assert_caller_is_signer();
+
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
             account_id,
@@ -1454,7 +1486,7 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = env::signer_account_id();
+        let account_id = self.assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
@@ -1701,8 +1733,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .predecessor_account_id(node_id.account_id.clone())
             .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1902,6 +1934,7 @@ mod tests {
 
         let context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -1935,6 +1968,7 @@ mod tests {
 
         let participant_context = VMContextBuilder::new()
             .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -1967,6 +2001,7 @@ mod tests {
     ) -> Result<(), crate::errors::Error> {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2067,6 +2102,44 @@ mod tests {
             result.is_ok(),
             "Should succeed when participants have Valid or None TEE status (invalid attestations rejected)"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn test_submit_participant_info_panics_if_predecessor_differs() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+
+        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+
+        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+
+        let (participant_id, _, participant_info) = participants
+            .participants()
+            .first()
+            .expect("at least one participant")
+            .clone();
+
+        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // ❌ Case: signer != predecessor — should panic
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(participant_id.clone())
+            .predecessor_account_id("outsider.near".parse().unwrap())
+            .attached_deposit(NearToken::from_near(1))
+            .build();
+        testing_env!(ctx);
+
+        contract
+            .submit_participant_info(
+                valid_attestation,
+                participant_info
+                    .sign_pk
+                    .clone()
+                    .try_into_dto_type()
+                    .unwrap(),
+            )
+            .expect("Expected panic if predecessor != signer");
     }
 
     #[test]

@@ -363,14 +363,6 @@ impl TeeState {
             }
         }
     }
-
-    /// Panics if the caller is not both a participant and attested.
-    pub fn assert_caller_is_attested_participant(&self, participants: &Participants) {
-        assert!(
-            self.is_caller_an_attested_participant(participants),
-            "Caller must be an attested participant"
-        );
-    }
 }
 
 #[cfg(test)]
