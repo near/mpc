@@ -1787,7 +1787,7 @@ mod tests {
             .unwrap();
         let (r, s) = signature.split_bytes();
         let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(s.as_slice());
+        bytes.copy_from_slice(s.as_ref());
         let signature_response = if success {
             SignatureResponse::Secp256k1(k256_types::Signature::new(
                 AffinePoint::decompact(&r).unwrap(),

@@ -1,4 +1,3 @@
-use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
 use rocksdb::IteratorMode;
@@ -57,7 +56,7 @@ impl Display for DBCol {
 pub fn encrypt(cipher: &Aes128Gcm, plaintext: &[u8]) -> Vec<u8> {
     let nonce = aes_gcm::Aes128Gcm::generate_nonce(&mut rand::thread_rng());
     let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
-    [nonce.as_slice(), &ciphertext].concat()
+    [nonce.as_ref(), ciphertext.as_slice()].concat()
 }
 
 /// Decrypts a single value with AES-GCM.
@@ -69,14 +68,14 @@ pub fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>>
     let nonce = &ciphertext[..NONCE_LEN];
     let ciphertext = &ciphertext[NONCE_LEN..];
     let data = cipher
-        .decrypt(GenericArray::from_slice(nonce), ciphertext)
+        .decrypt(nonce.into(), ciphertext)
         .map_err(|_| anyhow::anyhow!("decryption failed"))?;
     Ok(data)
 }
 
 impl SecretDB {
     pub fn new(path: &Path, encryption_key: [u8; 16]) -> anyhow::Result<Arc<Self>> {
-        let cipher = AesGcm::new(GenericArray::from_slice(&encryption_key));
+        let cipher = AesGcm::new(&encryption_key.into());
         let mut options = rocksdb::Options::default();
         options.create_if_missing(true);
         options.create_missing_column_families(true);
@@ -195,7 +194,7 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt() {
         let key = [1; 16];
-        let cipher = AesGcm::new(GenericArray::from_slice(&key));
+        let cipher = AesGcm::new(&key.into());
         let plaintext = b"hello world";
         let ciphertext = encrypt(&cipher, plaintext);
         let decrypted = decrypt(&cipher, &ciphertext).unwrap();
@@ -206,7 +205,7 @@ mod tests {
             assert!(decrypt(&cipher, &corrupted).is_err());
         }
         let incorrect_key = [2; 16];
-        let cipher = AesGcm::new(GenericArray::from_slice(&incorrect_key));
+        let cipher = AesGcm::new(&incorrect_key.into());
         assert!(decrypt(&cipher, &ciphertext).is_err());
     }
 

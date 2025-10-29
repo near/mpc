@@ -2,7 +2,6 @@ use super::permanent::PermanentKeyStorageBackend;
 use crate::db;
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
-use sha3::digest::generic_array::GenericArray;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
@@ -35,13 +34,13 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
         let data = tokio::fs::read(&keyfile)
             .await
             .context("Failed to read key file")?;
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.encryption_key));
+        let cipher = Aes128Gcm::new(&self.encryption_key.into());
         let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt key file")?;
         Ok(Some(decrypted))
     }
 
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()> {
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.encryption_key));
+        let cipher = Aes128Gcm::new(&self.encryption_key.into());
         let encrypted = db::encrypt(&cipher, data);
         // Write the new permanent keyshare to a separate file, and then create a link to it.
         // That way, we don't lose any keys if we somehow mess up.
