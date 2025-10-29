@@ -8,8 +8,28 @@ MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
 initialize_near_node() {
-    # boot_nodes must be filled in or else the node will not have any peers.
-    ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    if [ "$MPC_ENV" = "mpc-localnet" ]; then
+        EMBEDDED_GENESIS="/app/localnet-genesis.json"
+        if [ ! -f "$EMBEDDED_GENESIS" ]; then
+            echo "ERROR: Embedded localnet genesis file not found at $EMBEDDED_GENESIS"
+            exit 1
+        fi
+        echo "Using embedded localnet genesis file"
+
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --genesis "$EMBEDDED_GENESIS" --boot-nodes "$NEAR_BOOT_NODES"
+
+        # The init command generates a modified genesis file for some reason, so we must hard-copy the original one.
+        cp "$EMBEDDED_GENESIS" "$1/genesis.json"
+
+        # Additionally, the init command will generate a `validator_key.json`
+        # file which we can simply remove.
+        rm "$1/validator_key.json"
+    else
+        echo "Downloading genesis file"
+        # boot_nodes must be filled in or else the node will not have any peers.
+        ./mpc-node init --dir "$1" --chain-id "$MPC_ENV" --download-genesis --download-config --boot-nodes "$NEAR_BOOT_NODES"
+    fi
 }
 
 update_near_node_config() {
@@ -90,10 +110,14 @@ indexer:
   sync_mode: Latest
   concurrency: 1
   mpc_contract_id: $MPC_CONTRACT_ID
-  port_override: 80
   finality: optimistic
 cores: 12
 EOF
+
+    # Add port_override for non-localnet environments
+    if [ "$MPC_ENV" != "mpc-localnet" ]; then
+        sed -i '/mpc_contract_id:/a\  port_override: 80' "$1"
+    fi
 }
 
 update_mpc_config() {
