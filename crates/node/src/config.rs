@@ -307,7 +307,7 @@ impl SecretsConfig {
 /// Secrets that are stored on disk. They are generated on the first run.
 /// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
 /// from outside.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PersistentSecrets {
     #[serde(
         serialize_with = "serialize_signing_key",
@@ -515,7 +515,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 pub mod tests {
     use assert_matches::assert_matches;
     use mpc_contract::primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id};
-    use rand::{distributions::Alphanumeric, Rng, RngCore};
+    use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
 
     use crate::providers::PublicKeyConversion;
 
@@ -591,5 +591,19 @@ pub mod tests {
             ),
             ParticipantStatus::Active(NodeStatus::Idle)
         );
+    }
+
+    #[test]
+    fn test_permanent_secrets_serialization() {
+        let secrets = PersistentSecrets {
+            p2p_private_key: SigningKey::generate(&mut OsRng),
+            near_signer_key: SigningKey::generate(&mut OsRng),
+            near_responder_keys: vec![SigningKey::generate(&mut OsRng); 8],
+        };
+        let secrets_str = serde_json::to_string(&secrets).unwrap();
+
+        let secrets_copy = serde_json::from_str(&secrets_str).unwrap();
+
+        assert_eq!(secrets, secrets_copy);
     }
 }
