@@ -54,9 +54,11 @@ To run a local NEAR network, first create the configuration with the following c
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
-However, if you want to run with the MPC node docker image you need to copy
-the embedded node configuration from `$(pwd)/deployment/localnet`.
-Otherwise, feel free to skip this step.
+Now, copy the the embedded node configuration from `$(pwd)/deployment/localnet`.
+This ensures two things:
+
+1. We have a consistent genesis configuration with the MPC nodes when running in docker.
+2. The neard port is 24566 instead of 24567.
 
 ```shell
 cp -rf $(pwd)/deployment/localnet/. ~/.near/mpc-localnet

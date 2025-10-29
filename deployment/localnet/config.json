@@ -33,7 +33,7 @@
     }
   },
   "network": {
-    "addr": "0.0.0.0:24567",
+    "addr": "0.0.0.0:24566",
     "boot_nodes": "",
     "whitelist_nodes": "",
     "max_num_peers": 40,
