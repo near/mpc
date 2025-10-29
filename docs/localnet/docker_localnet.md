@@ -9,16 +9,18 @@ deployment/build-images.sh
 ```
 
 # Step 2: Start localnet
-```shell
-neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
-```
+Follow the normal localnet guide to start a neard instance,
+create the relevant accounts and deoploy the contract.
 
+Note: Make sure to copy the checked-in localnet configuration before starting neard.
+Otherwise the neard node will have a different genesis configuration.
 ```shell
 cp -rf $(pwd)/deployment/localnet/. ~/.near/mpc-localnet
 ```
 
 # Step 3:
-Creating frodo and sam accounts as per localnet guide. Now going directly to starting their nodes.
+Assuming you've created the frodo and sam accounts as per localnet guide.
+We can now start their nodes in docker.
 
 Frodo's node:
 
