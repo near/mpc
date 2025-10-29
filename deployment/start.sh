@@ -27,6 +27,31 @@ json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
 
+create_secrets_json_file() {
+    python3 <<EOF
+import json;
+
+p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_str = "${MPC_ACCOUNT_SK}"
+
+if not p2p_key_str or not account_sk_str:
+    print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
+    sys.exit(1)
+
+secrets = {
+    "p2p_private_key": p2p_key_str,
+    "near_signer_key": account_sk_str,
+    "near_responder_keys": [account_sk_str]
+}
+
+# Write to secrets.json
+with open("$secrets_file", 'w') as f:
+    json.dump(secrets, f, indent=2)
+
+print("secrets.json generated successfully")
+EOF
+}
+
 initialize_mpc_config() {
 
     if [ -n "$MPC_RESPONDER_ID" ]; then
@@ -119,116 +144,7 @@ generate_secrets_json() {
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
-        if python3 <<EOF
-import json
-import sys
-
-# Base58 alphabet used by Bitcoin/NEAR
-BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-def base58_decode(encoded):
-    """Decode a base58-encoded string to bytes."""
-    # Validate all characters are in the alphabet
-    for char in encoded:
-        if char not in BASE58_ALPHABET:
-            raise ValueError(f"Invalid base58 character: {char}")
-    
-    # Decode base58 to integer
-    decoded_int = 0
-    for char in encoded:
-        decoded_int = decoded_int * 58 + BASE58_ALPHABET.index(char)
-    
-    # Convert integer to bytes (append to list for efficiency, then reverse)
-    decoded_bytes = []
-    while decoded_int > 0:
-        decoded_bytes.append(decoded_int & 0xff)
-        decoded_int >>= 8
-    decoded_bytes.reverse()
-    
-    # Count and add leading zero bytes (represented by '1' in base58)
-    num_leading_zeros = 0
-    for char in encoded:
-        if char == '1':
-            num_leading_zeros += 1
-        else:
-            break
-    
-    # Prepend leading zeros
-    return bytes([0] * num_leading_zeros + decoded_bytes)
-
-def hex_to_byte_array(hex_string):
-    """Convert a hex string to a JSON byte array."""
-    # Remove any whitespace and potential '0x' prefix
-    hex_string = hex_string.strip().replace('0x', '')
-    
-    # Convert hex string to bytes
-    try:
-        byte_data = bytes.fromhex(hex_string)
-    except ValueError as e:
-        print(f"Error converting hex string: {e}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Ed25519 keys should be 32 bytes
-    if len(byte_data) != 32:
-        print(f"Warning: Key length is {len(byte_data)} bytes, expected 32 bytes", file=sys.stderr)
-    
-    return list(byte_data)
-
-def parse_key(key_string):
-    """Parse a key that can be in hex or NEAR format (ed25519:base58)."""
-    key_string = key_string.strip()
-    
-    # Check if it's in NEAR format (ed25519:base58_encoded_key)
-    if key_string.startswith('ed25519:'):
-        # Extract the base58 part
-        base58_part = key_string.split(':', 1)[1]
-        try:
-            # Decode base58 to bytes
-            decoded = base58_decode(base58_part)
-            # NEAR SecretKey format is 64 bytes (32 bytes secret key + 32 bytes public key)
-            # We only need the first 32 bytes (the secret key part)
-            if len(decoded) == 64:
-                byte_data = decoded[:32]
-            elif len(decoded) == 32:
-                byte_data = decoded
-            else:
-                print(f"Warning: Unexpected key length {len(decoded)} bytes after base58 decode", file=sys.stderr)
-                byte_data = decoded
-            return list(byte_data)
-        except Exception as e:
-            print(f"Error decoding base58 key: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        # Assume it's hex format
-        return hex_to_byte_array(key_string)
-
-# Get the keys from environment variables
-p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
-account_sk_str = "${MPC_ACCOUNT_SK}"
-
-if not p2p_key_str or not account_sk_str:
-    print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
-    sys.exit(1)
-
-# Parse keys (handles both hex and ed25519:base58 formats)
-p2p_key_bytes = parse_key(p2p_key_str)
-account_sk_bytes = parse_key(account_sk_str)
-
-# Create the secrets structure
-# Note: near_responder_keys is initialized with one key (the same as near_signer_key)
-# This matches the number_of_responder_keys: 50 in config, but we only have one key from env
-secrets = {
-    "p2p_private_key": p2p_key_bytes,
-    "near_signer_key": account_sk_bytes,
-    "near_responder_keys": [account_sk_bytes]
-}
-
-# Write to secrets.json
-with open("$secrets_file", 'w') as f:
-    json.dump(secrets, f, indent=2)
-
-print("secrets.json generated successfully")
-EOF
+        if create_secrets_json_file
         then
             echo "secrets.json created at $secrets_file"
         else
