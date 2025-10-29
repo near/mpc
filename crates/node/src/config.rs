@@ -514,6 +514,7 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 #[cfg(test)]
 pub mod tests {
     use assert_matches::assert_matches;
+    use k256::ecdsa::signature::SignerMut;
     use mpc_contract::primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id};
     use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
 
@@ -605,5 +606,23 @@ pub mod tests {
         let secrets_copy = serde_json::from_str(&secrets_str).unwrap();
 
         assert_eq!(secrets, secrets_copy);
+    }
+
+    #[test]
+    fn test_permanent_secrets_serialization_fixed_values() {
+        let p2p_private_key = "ed25519:561CCDGTqnGrfJcsYwcuRgvU6JCiJnt2GGVpKfkkFcH21o1he4NorPPiyQxPp92VNxygmTRDhFcfQchV7RTYsdHh";
+        let near_signer_key = "ed25519:3FsgibEEmmMfqojDH5676T93fLPbiFG75QGuNxrhsAKcJuFcaBTAy481uWiPnopmFsTLWAVbULtUuEaXBEKiE57f";
+        let near_responder_keys1 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
+        let near_responder_keys2 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
+        let secrets_str = format!("{{\"p2p_private_key\":\"{p2p_private_key}\",\"near_signer_key\":\"{near_signer_key}\",\"near_responder_keys\":[\"{near_responder_keys1}\",\"{near_responder_keys2}\"]}}");
+
+        let mut secrets: PersistentSecrets = serde_json::from_str(&secrets_str).unwrap();
+
+        let msg = b"hello world";
+        let signature = secrets.near_signer_key.try_sign(msg).unwrap();
+        assert!(secrets.near_signer_key.verify(msg, &signature).is_ok());
+
+        let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
+        assert_eq!(secrets_str, secrets_str_copy);
     }
 }
