@@ -17,7 +17,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
 

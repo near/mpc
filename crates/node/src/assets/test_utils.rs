@@ -64,7 +64,7 @@ pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
     let g = Polynomial::generate_polynomial(None, 2 - 1, &mut OsRng).unwrap();
     let scalar = g.eval_at_zero().unwrap().0;
     let affine_point = (ProjectivePoint::GENERATOR * scalar.invert().unwrap()).to_affine();
-    let cait_sith_participants: Vec<threshold_signatures::protocol::Participant> =
+    let cait_sith_participants: Vec<threshold_signatures::participants::Participant> =
         participants.iter().map(|p| p.raw().into()).collect();
     let triple_pub = TriplePub {
         big_a: affine_point,

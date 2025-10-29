@@ -6,7 +6,7 @@ use near_sdk::AccountId;
 use rand::rngs::OsRng;
 use threshold_signatures::{
     confidential_key_derivation::{protocol::ckd, ElementG1, KeygenOutput, VerifyingKey},
-    protocol::Participant,
+    participants::Participant,
 };
 use tokio::time::timeout;
 

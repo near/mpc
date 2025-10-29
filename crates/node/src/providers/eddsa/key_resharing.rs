@@ -8,7 +8,7 @@ use rand::rngs::OsRng;
 use threshold_signatures::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(

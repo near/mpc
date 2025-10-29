@@ -4,7 +4,7 @@ use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, KeygenOutput};
 use rand::rngs::OsRng;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
-use threshold_signatures::protocol::Participant;
+use threshold_signatures::participants::Participant;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn run_key_generation_client_internal(
