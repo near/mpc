@@ -66,12 +66,6 @@ The build script is located at `deployment/build-images.sh` and must be run from
 ./deployment/build-images.sh --launcher
 ```
 
-**Build and push to registry**:
-```bash
-./deployment/build-images.sh --push
-```
-Note: The `--push` flag requires Docker to be logged in to the registry. You can combine it with `--node` or `--launcher` flags.
-
 The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.
 
 ### Releases
