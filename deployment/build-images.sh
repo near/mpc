@@ -70,10 +70,10 @@ if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
 fi
 
 DOCKERFILE_NODE=deployment/Dockerfile-node
-: "${NODE_IMAGE_NAME:=mpc-node:latest}"
+: "${NODE_IMAGE_NAME:=mpc-node}"
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
-: "${LAUNCHER_IMAGE_NAME:=mpc-launcher:latest}"
+: "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
 SOURCE_DATE_EPOCH=0
@@ -134,7 +134,7 @@ if $USE_PUSH; then
     if $USE_LAUNCHER; then
         temp_dir=$(mktemp -d)
         echo "using $temp_dir"
-        skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME dir:$temp_dir
+        skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
         skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
     fi
 
