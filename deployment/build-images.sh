@@ -76,7 +76,7 @@ DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
 
 
-SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+SOURCE_DATE_EPOCH=0
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
 
 # This might be necessary to fix reproducibility with old docker versions where
