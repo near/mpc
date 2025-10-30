@@ -82,9 +82,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install skopeo
-        uses: warjiang/setup-skopeo@main
-        with:
-            version: v1.20.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo runc
 
       - name: Build launcher docker image and verify its hash
         shell: bash

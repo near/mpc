@@ -33,9 +33,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
       - name: Install skopeo
-        uses: warjiang/setup-skopeo@main
-        with:
-            version: v1.20.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo runc
 
       - name: Build and publish images
         shell: bash
