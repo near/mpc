@@ -6,6 +6,10 @@ use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
 
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
+/// TCB info JSON file containing measurement values.
+const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
+    include_str!("../../assets/launcher_docker_compose.yaml.template");
+
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
 /// a code hash to add.
 #[near(serializers=[borsh, json])]
@@ -150,8 +154,9 @@ impl AllowedDockerImageHashes {
     pub fn get_docker_compose_hash(
         mpc_docker_image_hash: MpcDockerImageHash,
     ) -> LauncherDockerComposeHash {
-        let filled_yaml = format!("version: '3.8'\n\nservices:\n  launcher:\n    image: barakeinavnear/launcher@sha256:1ea7571baf18bd052359abd2a1f269e7836f9bad2270eb55fc9475aa327f8d96\n\n # isuse #531: TODO (security): Replace with a specific image digest\n    container_name: launcher\n\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:{}\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume",
-            mpc_docker_image_hash.as_hex()
+        let filled_yaml = LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE.replace(
+            "{{DEFAULT_IMAGE_DIGEST_HASH}}",
+            &mpc_docker_image_hash.as_hex(),
         );
         let hash = sha256(filled_yaml.as_bytes());
         assert!(
