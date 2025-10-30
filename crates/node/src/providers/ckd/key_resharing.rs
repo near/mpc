@@ -108,7 +108,7 @@ mod tests {
     use std::sync::Arc;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 

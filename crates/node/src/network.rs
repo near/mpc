@@ -954,7 +954,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
 
     /// Just some big prime number
@@ -1149,7 +1149,7 @@ mod fault_handling_tests {
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 

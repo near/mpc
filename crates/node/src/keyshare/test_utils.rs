@@ -3,7 +3,7 @@ use super::{Keyshare, KeyshareData};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
 use threshold_signatures::ecdsa::KeygenOutput;
-use threshold_signatures::test::TestGenerators;
+use threshold_signatures::test_utils::TestGenerators;
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
     KeyEventId::new(

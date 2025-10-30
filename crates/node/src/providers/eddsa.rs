@@ -178,7 +178,7 @@ mod tests {
     };
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-        use threshold_signatures::test::TestGenerators;
+        use threshold_signatures::test_utils::TestGenerators;
         let x = TestGenerators::new(4, 3)
             .make_eddsa_keygens()
             .values()

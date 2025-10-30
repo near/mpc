@@ -554,7 +554,7 @@ mod tests {
     use near_time::{Duration, FakeClock};
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
 
     /// Generates a ckd request for testing, brute-forcing the ckd ID until the leader
     /// selection order starts with the given.

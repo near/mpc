@@ -7,7 +7,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, Rerandomized
 use threshold_signatures::ecdsa::RerandomizationArguments;
 use threshold_signatures::participants::Participant;
 use threshold_signatures::protocol::Protocol;
-use threshold_signatures::test::TestGenerators;
+use threshold_signatures::test_utils::TestGenerators;
 use threshold_signatures::ParticipantList;
 
 #[derive(Debug, Serialize)]

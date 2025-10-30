@@ -104,7 +104,7 @@ mod tests {
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
 
     #[tokio::test]

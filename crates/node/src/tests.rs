@@ -415,7 +415,7 @@ pub async fn request_ckd_and_await_response(
 }
 
 pub fn into_participant_ids(
-    test_generator: &threshold_signatures::test::TestGenerators,
+    test_generator: &threshold_signatures::test_utils::TestGenerators,
 ) -> Vec<ParticipantId> {
     test_generator
         .participants

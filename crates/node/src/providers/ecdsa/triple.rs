@@ -292,7 +292,7 @@ mod tests_many {
     use futures::{stream, StreamExt};
     use std::collections::HashMap;
     use std::sync::Arc;
-    use threshold_signatures::test::TestGenerators;
+    use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
 
     const NUM_PARTICIPANTS: usize = 4;

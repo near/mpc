@@ -1,6 +1,6 @@
 use k256::elliptic_curve::Field;
 use k256::Scalar;
-use threshold_signatures::test::TestGenerators;
+use threshold_signatures::test_utils::TestGenerators;
 
 #[test]
 fn benchmark_single_threaded_presignature_generation() {
