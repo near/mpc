@@ -4,7 +4,7 @@ pub mod sign;
 mod test;
 
 use crate::{
-    ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar, Tweak},
+    ecdsa::{AffinePoint, KeygenOutput, RerandomizationArguments, Scalar},
     errors::ProtocolError,
 };
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,6 @@ pub struct RerandomizedPresignOutput {
 impl RerandomizedPresignOutput {
     pub fn rerandomize_presign(
         presignature: &PresignOutput,
-        tweak: &Tweak,
         args: &RerandomizationArguments,
     ) -> Result<Self, ProtocolError> {
         if presignature.big_r != args.big_r {
@@ -71,7 +70,8 @@ impl RerandomizedPresignOutput {
         let rerandomized_alpha = presignature.alpha * inv_delta;
 
         // (beta + c*tweak) * delta^{-1}
-        let rerandomized_beta = (presignature.beta + presignature.c * tweak.value()) * inv_delta;
+        let rerandomized_beta =
+            (presignature.beta + presignature.c * args.tweak.value()) * inv_delta;
 
         Ok(Self {
             big_r: rerandomized_big_r.into(),

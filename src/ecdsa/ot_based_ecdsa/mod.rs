@@ -7,7 +7,7 @@ mod test;
 
 use crate::ecdsa::{
     ot_based_ecdsa::triples::{TriplePub, TripleShare},
-    AffinePoint, KeygenOutput, RerandomizationArguments, Scalar, Tweak,
+    AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
 };
 use crate::errors::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,6 @@ pub struct RerandomizedPresignOutput {
 impl RerandomizedPresignOutput {
     pub fn rerandomize_presign(
         presignature: &PresignOutput,
-        tweak: &Tweak,
         args: &RerandomizationArguments,
     ) -> Result<Self, ProtocolError> {
         if presignature.big_r != args.big_r {
@@ -74,7 +73,8 @@ impl RerandomizedPresignOutput {
         let rerandomized_big_r = presignature.big_r * delta;
 
         //  (sigma + tweak * k) * delta^{-1}
-        let rerandomized_sigma = (presignature.sigma + tweak.value() * presignature.k) * inv_delta;
+        let rerandomized_sigma =
+            (presignature.sigma + args.tweak.value() * presignature.k) * inv_delta;
 
         // k * delta^{-1}
         let rerandomized_k = presignature.k * inv_delta;

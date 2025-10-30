@@ -547,7 +547,6 @@ impl TestGenerators {
             let rerandomized_presignature =
                 ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::rerandomize_presign(
                     &presign_out,
-                    &tweak,
                     &rerand_args,
                 )
                 .unwrap();
