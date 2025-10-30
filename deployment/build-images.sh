@@ -132,8 +132,10 @@ if $USE_PUSH; then
     short_hash=$(git rev-parse --short HEAD)
 
     if $USE_LAUNCHER; then
-        docker tag $LAUNCHER_IMAGE_NAME nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
-        docker push nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+        temp_dir=$(mktemp -d)
+        echo "using $temp_dir"
+        skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME dir:$temp_dir
+        skopeo copy --preserve-digests dir:/tmp/$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
     fi
 
     if $USE_NODE; then

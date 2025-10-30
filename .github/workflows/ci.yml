@@ -81,22 +81,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build launcher docker image and verify its hash
+      - name: Install dependencies
         run: |
-          ./deployment/build-images.sh --launcher
-          image_hash=$(docker inspect mpc-launcher | jq -r .[0].Id)
-          # notice that any change to crates/contract/assets/launcher_docker_compose.yaml.template needs to be reflected here
-          published_image=$(sed -n '5p' crates/contract/assets/launcher_docker_compose.yaml.template | grep -o ': .*' | cut -c 2-)
-          docker pull $published_image
-          expected_image_hash=$(docker inspect $published_image | jq -r .[0].Id)
-          if [ "${image_hash}" == "${expected_image_hash}" ]; then
-            echo "Launcher docker image hash verified"
-          else
-            echo "Launcher docker image hash verification failed"
-            echo "Got: ${image_hash}"
-            echo "Expected: ${expected_image_hash}"
-            exit 1
-          fi
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Build launcher docker image and verify its hash
+        shell: bash
+        run: |
+          ./scripts/build-and-verify-launcher-docker-image.sh
 
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
