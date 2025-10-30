@@ -70,10 +70,10 @@ if [ ! "$(pwd)" = "$(git rev-parse --show-toplevel)" ]; then
 fi
 
 DOCKERFILE_NODE=deployment/Dockerfile-node
-: "${NODE_IMAGE_NAME:=mpc-node}"
+: "${NODE_IMAGE_NAME:=mpc-node:latest}"
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
-: "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
+: "${LAUNCHER_IMAGE_NAME:=mpc-launcher:latest}"
 
 
 SOURCE_DATE_EPOCH=0
