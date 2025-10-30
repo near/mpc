@@ -70,6 +70,34 @@ jobs:
 
           echo "✅ Container started successfully"
 
+  docker-launcher-build-and-verify:
+    name: "Build MPC Launcher Docker image and verify"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build launcher docker image and verify its hash
+        run: |
+          ./deployment/build-images.sh --launcher
+          image_hash=$(docker inspect mpc-launcher | jq -r .[0].Id)
+          # notice that any change to crates/contract/assets/launcher_docker_compose.yaml.template needs to be reflected here
+          published_image=$(sed -n '5p' crates/contract/assets/launcher_docker_compose.yaml.template | grep -o ': .*' | cut -c 2-)
+          docker pull $published_image
+          expected_image_hash=$(docker inspect $published_image | jq -r .[0].Id)
+          if [ "${image_hash}" == "${expected_image_hash}" ]; then
+            echo "Launcher docker image hash verified"
+          else
+            echo "Launcher docker image hash verification failed"
+            echo "Got: ${image_hash}"
+            echo "Expected: ${expected_image_hash}"
+            exit 1
+          fi
+
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
     runs-on: warp-ubuntu-2204-x64-8x
