@@ -1,13 +1,13 @@
 use contract_interface::types as contract_types;
-use ed25519_dalek::VerifyingKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use near_crypto::SecretKey as NearSecretKey;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
 
 use crate::{
     adapters::{self, contract_state_fixture::get_keyset_from_contract_state, near_contract},
-    cli,
-    ports::{self, SecretsRepository},
+    cli, ports,
     types::PersistentSecrets,
 };
 
@@ -31,15 +31,13 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let secrets = secrets_storage
-                .load_secrets()
-                .await
-                .expect("fail to load secrets");
+            let operator_signer_key = parse_operator_key(&command_args.signer_secret_key.0)
+                .expect("failed to parse operator signer key");
             let mpc_contract = near_contract::NearContractAdapter::new(
                 command_args.mpc_contract_account_id,
                 command_args.near_network,
                 command_args.signer_account_id,
-                secrets.near_signer_key,
+                operator_signer_key,
             );
             register_backup_service(&secrets_storage, &mpc_contract).await;
         }
@@ -96,6 +94,15 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
         .store_secrets(&persistent_secrets)
         .await
         .expect("fail to store private key");
+}
+
+fn parse_operator_key(private_key_str: &str) -> Result<SigningKey, Box<dyn std::error::Error>> {
+    let near_key = NearSecretKey::from_str(private_key_str)?;
+    let key_bytes = match near_key {
+        NearSecretKey::ED25519(ed25519_key) => ed25519_key.0,
+        _ => return Err("only ed25519 keys are supported".into()),
+    };
+    Ok(SigningKey::from_keypair_bytes(&key_bytes)?)
 }
 
 pub async fn register_backup_service(

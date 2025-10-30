@@ -51,6 +51,29 @@ impl std::str::FromStr for Network {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NearSecretKeyString(pub String);
+
+impl std::str::FromStr for NearSecretKeyString {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.starts_with("ed25519:") {
+            return Err(format!(
+                "Invalid NEAR secret key format. Must start with 'ed25519:', got: {}",
+                s
+            ));
+        }
+
+        let key_part = s.strip_prefix("ed25519:").unwrap();
+        if key_part.is_empty() {
+            return Err("NEAR secret key cannot be empty after 'ed25519:' prefix".to_string());
+        }
+
+        Ok(NearSecretKeyString(s.to_string()))
+    }
+}
+
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
     /// MPC contract account ID
@@ -61,11 +84,16 @@ pub struct RegisterArgs {
     #[arg(long, env)]
     pub near_network: Network,
 
-    /// Named account that will sign the registration transaction.
-    /// Note: The public key derived from near_signer_key (in secrets file) must be added
-    /// as an access key to this account before calling this command.
+    /// Named account that will sign the registration transaction (e.g., sam.test.near).
+    /// This is the operator's account that has permission to register backup services.
     #[arg(long, env)]
     pub signer_account_id: AccountId,
+
+    /// Operator's NEAR secret key in the format: ed25519:...
+    /// This key must have permission to sign transactions for the signer_account_id.
+    /// Example: ed25519:38sDEfkYcDuJpspMf8RaYB7eCgUV5V6wSAdQYR8wuB4pKsDqamKJYNpqzzZNc6MSRgyYxCK12e5kTJ7vnWm3KZbv
+    #[arg(long, env)]
+    pub signer_secret_key: NearSecretKeyString,
 }
 
 #[derive(clap::Args, Debug)]
