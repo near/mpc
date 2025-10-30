@@ -40,8 +40,6 @@ This project supports reproducible builds for both the node and launcher Docker 
 - `docker` with buildx support
 - `jq`
 - `git`
-- `find`
-- `touch`
 
 **Additional requirements for building the node image**:
 - `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
