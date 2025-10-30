@@ -199,7 +199,7 @@ mod test {
     use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
     use rand_core::OsRng;
 
-    use crate::test::MockCryptoRng;
+    use crate::test_utils::MockCryptoRng;
 
     use super::*;
     use frost_secp256k1::Secp256K1Sha256;

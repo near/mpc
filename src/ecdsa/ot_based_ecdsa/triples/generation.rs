@@ -1139,7 +1139,7 @@ mod test {
         participants::Participant,
         participants::ParticipantList,
         protocol::Protocol,
-        test::{generate_participants, run_protocol},
+        test_utils::{generate_participants, run_protocol},
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};

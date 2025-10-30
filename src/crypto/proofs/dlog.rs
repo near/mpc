@@ -131,7 +131,7 @@ mod test {
     use rand_core::OsRng;
 
     use super::*;
-    use crate::test::MockCryptoRng;
+    use crate::test_utils::MockCryptoRng;
     use frost_secp256k1::Secp256K1Sha256;
     use k256::{ProjectivePoint, Scalar};
 

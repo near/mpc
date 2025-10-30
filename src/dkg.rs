@@ -659,8 +659,8 @@ pub mod test {
     use super::domain_separate_hash;
     use crate::crypto::ciphersuite::Ciphersuite;
     use crate::participants::{Participant, ParticipantList};
-    use crate::test::generate_participants;
-    use crate::test::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
+    use crate::test_utils::generate_participants;
+    use crate::test_utils::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
     use frost_core::{Field, Group};
 
     #[test]

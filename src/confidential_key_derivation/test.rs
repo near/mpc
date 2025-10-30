@@ -1,6 +1,6 @@
 type C = crate::confidential_key_derivation::ciphersuite::BLS12381SHA256;
 
-use crate::test::generate_participants;
+use crate::test_utils::generate_participants;
 
 #[test]
 fn test_keygen() {

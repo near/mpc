@@ -55,7 +55,7 @@ pub enum ProtocolError {
     #[error("the constructed signing key is null")]
     MalformedSigningKey,
 
-    #[cfg(test)]
+    #[cfg(feature = "test-utils")]
     #[error("Expected exactly one output that belongs only to the coordinator")]
     MismatchCoordinatorOutput,
 

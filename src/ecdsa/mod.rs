@@ -184,11 +184,11 @@ impl RerandomizationArguments {
 
 #[cfg(test)]
 mod test {
-    use crate::test::generate_participants;
-    use crate::test::MockCryptoRng;
+    use crate::test_utils::generate_participants;
+    use crate::test_utils::MockCryptoRng;
 
     use super::*;
-    use crate::test::generate_participants_with_random_ids;
+    use crate::test_utils::generate_participants_with_random_ids;
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
 
     use frost_core::{

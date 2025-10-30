@@ -1,7 +1,9 @@
 use crate::crypto::hash::HashOutput;
 use crate::eddsa::{sign::sign, KeygenOutput, SignatureOption};
 use crate::participants::{Participant, ParticipantList};
-use crate::test::{generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng};
+use crate::test_utils::{
+    generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng,
+};
 
 use frost_core::keys::SigningShare;
 use frost_core::VerifyingKey as FrostVerifyingKey;

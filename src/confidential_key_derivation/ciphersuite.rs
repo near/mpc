@@ -314,7 +314,7 @@ mod tests {
             ciphersuite::{hash_to_curve, BLS12381SHA256},
             ElementG2,
         },
-        test::check_common_traits_for_type,
+        test_utils::check_common_traits_for_type,
     };
 
     #[test]

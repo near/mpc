@@ -181,7 +181,7 @@ fn compute_signature_share(
 mod test {
     use super::*;
     use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
-    use crate::test::{one_coordinator_output, run_protocol, GenProtocol};
+    use crate::test_utils::{one_coordinator_output, run_protocol, GenProtocol};
     use rand::Rng;
 
     #[test]

@@ -203,7 +203,7 @@ mod test {
         errors::ProtocolError,
         participants::Participant,
         protocol::internal::{make_protocol, Comms},
-        test::run_two_party_protocol,
+        test_utils::run_two_party_protocol,
     };
 
     use super::*;

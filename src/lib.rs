@@ -5,8 +5,8 @@ pub mod confidential_key_derivation;
 pub mod ecdsa;
 pub mod eddsa;
 pub mod errors;
-#[cfg(test)]
-mod test;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 // TODO: We should probably no expose the full modules, but only the types
 // that make sense for our library

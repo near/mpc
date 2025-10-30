@@ -10,7 +10,7 @@ use crate::ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField};
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::internal::{make_protocol, Comms};
-use crate::test::run_two_party_protocol;
+use crate::test_utils::run_two_party_protocol;
 
 /// Create a new triple from scratch.
 ///

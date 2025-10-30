@@ -332,7 +332,7 @@ impl<'a> ParticipantCounter<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test::generate_participants;
+    use crate::test_utils::generate_participants;
 
     #[test]
     fn test_get_index_participant_error() {

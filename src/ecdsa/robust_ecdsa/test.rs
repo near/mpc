@@ -10,7 +10,7 @@ use crate::ecdsa::{
 };
 use crate::participants::Participant;
 use crate::protocol::Protocol;
-use crate::test::{
+use crate::test_utils::{
     assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
     one_coordinator_output, run_keygen, run_protocol, run_refresh, run_reshare, GenOutput,
     GenProtocol,
@@ -35,7 +35,7 @@ pub fn run_sign_without_rerandomization(
     let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
-    let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
+    let result = crate::test_utils::run_sign::<Secp256K1Sha256, _, _, _>(
         participants_presign.to_vec(),
         coordinator,
         public_key,
@@ -104,7 +104,7 @@ pub fn run_sign_with_rerandomization(
     let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
-    let result = crate::test::run_sign::<Secp256K1Sha256, _, _, _>(
+    let result = crate::test_utils::run_sign::<Secp256K1Sha256, _, _, _>(
         rerand_participants_presign,
         coordinator,
         derived_pk,
