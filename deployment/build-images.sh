@@ -135,7 +135,7 @@ if $USE_PUSH; then
         temp_dir=$(mktemp -d)
         echo "using $temp_dir"
         skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME dir:$temp_dir
-        skopeo copy --preserve-digests dir:/tmp/$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
     fi
 
     if $USE_NODE; then
