@@ -30,6 +30,50 @@ This repository uses `rust-toolchain.toml` files, as some code sections may requ
 
 For more information, refer to the [Rustup book on overrides](https://rust-lang.github.io/rustup/overrides.html).
 
+### Reproducible Builds
+
+This project supports reproducible builds for both the node and launcher Docker images. Reproducible builds ensure that the same source code always produces identical binaries, which is important for security and verification purposes.
+
+#### Prerequisites
+
+**Common requirements** (for both node and launcher):
+- `docker` with buildx support
+- `jq`
+- `git`
+- `find`
+- `touch`
+
+**Additional requirements for building the node image**:
+- `repro-env` - Tool for reproducible build environments ([install here](https://github.com/kpcyrd/repro-env))
+- `podman`
+
+#### Building Images
+
+The build script is located at `deployment/build-images.sh` and must be run from the project root directory.
+
+**Build both node and launcher images** (default behavior):
+```bash
+./deployment/build-images.sh
+```
+
+**Build only the node image**:
+```bash
+./deployment/build-images.sh --node
+```
+
+**Build only the launcher image**:
+```bash
+./deployment/build-images.sh --launcher
+```
+
+**Build and push to registry**:
+```bash
+./deployment/build-images.sh --push
+```
+Note: The `--push` flag requires Docker to be logged in to the registry. You can combine it with `--node` or `--launcher` flags.
+
+The script will output the image hashes and other build information, which can be used to verify the reproducibility of the build.
+
 ### Releases
 
 This project follows a standard release process with semantic versioning. Each release includes both the MPC node binary and the chain signatures contract as a single bundle.
