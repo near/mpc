@@ -72,7 +72,7 @@ jobs:
 
   docker-launcher-build-and-verify:
     name: "Build MPC Launcher Docker image and verify"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -84,8 +84,7 @@ jobs:
       - name: Install skopeo
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo runc
-          sudo systemctl start containerd
+          sudo apt-get install -y skopeo
 
       - name: Build launcher docker image and verify its hash
         shell: bash
