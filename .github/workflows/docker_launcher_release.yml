@@ -32,10 +32,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
+      - name: Install skopeo
+        uses: warjiang/setup-skopeo@latest
+        with:
+            version: latest
 
       - name: Build and publish images
         shell: bash
