@@ -163,7 +163,7 @@ Now we're ready to initialize the nodes.
 This commands creates a directory with some initial config for Frodo's node.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24567"
+mpc-node init --dir ~/.near/mpc-frodo --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24566"
 ```
 
 However, currently the command creates an invalid genesis file.
@@ -226,7 +226,7 @@ EOF
 Now we can do the same steps for Sam.
 
 ```shell
-mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24567"
+mpc-node init --dir ~/.near/mpc-sam --chain-id mpc-localnet --genesis ~/.near/mpc-localnet/genesis.json --boot-nodes "$NODE_PUBKEY@0.0.0.0:24566"
 ```
 
 ```shell
