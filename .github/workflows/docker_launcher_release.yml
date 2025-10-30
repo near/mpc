@@ -36,6 +36,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo runc
+          sudo systemctl start docker
 
       - name: Build and publish images
         shell: bash
