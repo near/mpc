@@ -152,6 +152,23 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     Ok(())
 }
 
+#[tokio::test]
+async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() -> Result<()> {
+    let (_worker, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
+    let allowed_mpc_image_digest =
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+    let res = accounts
+        .first()
+        .unwrap()
+        .call(contract.id(), "vote_code_hash")
+        .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
+        .transact()
+        .await?;
+    assert!(res.is_success());
+    Ok(())
+}
+
 async fn get_allowed_hashes(contract: &Contract) -> Result<Vec<MpcDockerImageHash>> {
     Ok(contract
         .call("allowed_code_hashes")
@@ -360,8 +377,9 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let hashes = [hash_1, hash_2, hash_3];
 
     for (i, current_hash) in hashes.iter().enumerate() {
-        vote_for_hash(participant_account_1, &contract, current_hash).await?;
-        vote_for_hash(participant_account_2, &contract, current_hash).await?;
+        let hash = MpcDockerImageHash::from(*current_hash);
+        vote_for_hash(participant_account_1, &contract, &hash).await?;
+        vote_for_hash(participant_account_2, &contract, &hash).await?;
 
         let previous_and_current_approved_hashes = &hashes[..=i];
 
