@@ -1,12 +1,11 @@
 use contract_interface::types as contract_types;
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_crypto::SecretKey as NearSecretKey;
+use ed25519_dalek::VerifyingKey;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
 
 use crate::{
-    adapters::{self, contract_state_fixture::get_keyset_from_contract_state, near_contract},
+    adapters::{self, contract_state_fixture::get_keyset_from_contract_state},
     cli, ports,
     types::PersistentSecrets,
 };
@@ -31,15 +30,14 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let operator_signer_key = parse_operator_key(&command_args.signer_secret_key.0)
-                .expect("failed to parse operator signer key");
-            let mpc_contract = near_contract::NearContractAdapter::new(
-                command_args.mpc_contract_account_id,
-                command_args.near_network,
-                command_args.signer_account_id,
-                operator_signer_key,
-            );
-            register_backup_service(&secrets_storage, &mpc_contract).await;
+
+            print_register_command(
+                &secrets_storage,
+                &command_args.near_network,
+                &command_args.mpc_contract_account_id,
+                &command_args.signer_account_id,
+            )
+            .await;
         }
         cli::Command::GetKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
@@ -96,28 +94,34 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
         .expect("fail to store private key");
 }
 
-fn parse_operator_key(private_key_str: &str) -> Result<SigningKey, Box<dyn std::error::Error>> {
-    let near_key = NearSecretKey::from_str(private_key_str)?;
-    let key_bytes = match near_key {
-        NearSecretKey::ED25519(ed25519_key) => ed25519_key.0,
-        _ => return Err("only ed25519 keys are supported".into()),
-    };
-    Ok(SigningKey::from_keypair_bytes(&key_bytes)?)
-}
-
-pub async fn register_backup_service(
+async fn print_register_command(
     secrets_storage: &impl ports::SecretsRepository,
-    mpc_contract: &impl ports::RegisterBackupData,
+    near_network: &str,
+    mpc_contract_account_id: &near_primitives::types::AccountId,
+    signer_account_id: &near_primitives::types::AccountId,
 ) {
     let secrets = secrets_storage
         .load_secrets()
         .await
         .expect("fail to load secrets");
 
-    mpc_contract
-        .register_backup_data(&secrets.p2p_private_key.verifying_key())
-        .await
-        .expect("failed to register backup data");
+    let public_key_bytes = secrets.p2p_private_key.verifying_key().to_bytes();
+    let public_key = contract_types::Ed25519PublicKey::from(public_key_bytes);
+    let public_key_str = String::from(&public_key);
+
+    println!(
+        r#"near contract call-function as-transaction \
+  {} \
+  register_backup_service \
+  json-args '{{"backup_service_info":{{"public_key":"{}"}}}}' \
+  prepaid-gas '300.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as {} \
+  network-config {} \
+  sign-with-keychain \
+  send"#,
+        mpc_contract_account_id, public_key_str, signer_account_id, near_network
+    );
 }
 
 pub async fn get_keyshares(

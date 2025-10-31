@@ -1,6 +1,5 @@
 use std::future::Future;
 
-use ed25519_dalek::VerifyingKey;
 use mpc_contract::{primitives::key_state::Keyset, state::ProtocolContractState};
 use mpc_node::keyshare::Keyshare;
 
@@ -48,13 +47,4 @@ pub trait ContractStateReader {
     fn get_contract_state(
         &self,
     ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
-}
-
-pub trait RegisterBackupData {
-    type Error: std::fmt::Debug;
-
-    fn register_backup_data(
-        &self,
-        public_key: &VerifyingKey,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }

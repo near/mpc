@@ -21,7 +21,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-url = { workspace = true }
 
 [dev-dependencies]
 mpc-node = { workspace = true, features = ["test-utils"] }
