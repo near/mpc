@@ -50,7 +50,7 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             let p2p_private_key = ports::SecretsRepository::load_secrets(&secrets_storage)
                 .await
-                .expect("fail to load secrets")
+                .expect("failed to load secrets")
                 .p2p_private_key;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
@@ -73,7 +73,7 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             let p2p_private_key = ports::SecretsRepository::load_secrets(&secrets_storage)
                 .await
-                .expect("fail to load secrets")
+                .expect("failed to load secrets")
                 .p2p_private_key;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
@@ -104,7 +104,7 @@ async fn print_register_command(
     let secrets = secrets_storage
         .load_secrets()
         .await
-        .expect("fail to load secrets");
+        .expect("failed to load secrets");
 
     let public_key_bytes = secrets.p2p_private_key.verifying_key().to_bytes();
     let public_key = contract_types::Ed25519PublicKey::from(public_key_bytes);
