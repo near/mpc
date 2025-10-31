@@ -1068,20 +1068,13 @@ Vote Command using NEAR CLI:
   send
 ```
 
-The **IMAGE_HASH** argument must be provided as a JSON array of 32 numbers, where each number is a byte (0–255) of the SHA-256 digest.
+The **IMAGE_HASH** argument must be provided as an SHA-256 hex digest.
 
 For example, for the digest
 
 ````bash
-4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
+IMAGE_HASH=4b08c2745a33aa28503e86e33547cc5a564abbb13ed73755937ded1429358c9d
 ````
-
-the corresponding `IMAGE_HASH` is:
-
-````bash
-IMAGE_HASH="[75, 8, 194, 116, 90, 51, 170, 40, 80, 62, 134, 227, 53, 71, 204, 90,
- 86, 74, 187, 177, 62, 215, 55, 85, 147, 125, 237, 20, 41, 53, 140, 157]"
- ````
 
 TBD [#908](https://github.com/near/mpc/issues/908) Add here voting procedure.
 
