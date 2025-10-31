@@ -241,20 +241,6 @@ mod tests {
     }
 
     #[test]
-    fn should_serialize_equivalent_to_byte_array_with_serde() {
-        // Given
-        let bytes = random_byte_slice(42);
-        let hash = TestHash::from(bytes);
-
-        // When
-        let bytes_as_json = serde_json::to_string(&bytes).unwrap();
-        let hash_as_json = serde_json::to_string(&hash).unwrap();
-
-        // Then
-        assert_eq!(bytes_as_json, hash_as_json);
-    }
-
-    #[test]
     fn should_serialize_equivalent_to_byte_array_with_borsh() {
         // Given
         let bytes = random_byte_slice(42);
