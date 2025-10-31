@@ -132,8 +132,13 @@ if $USE_PUSH; then
     short_hash=$(git rev-parse --short HEAD)
 
     if $USE_LAUNCHER; then
-        docker tag $LAUNCHER_IMAGE_NAME nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
-        docker push nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+        temp_dir=$(mktemp -d)
+        echo "using $temp_dir"
+        # This compresses the built image to a local directory, which implicitly computes the manifest
+        # digest in $temp_dir/manifest.json
+        skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
+        # Then we publish the image from the directory, making sure the manifest digest does not change
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
     fi
 
     if $USE_NODE; then
