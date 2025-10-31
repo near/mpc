@@ -48,7 +48,5 @@ pub mod web;
 pub(crate) mod trait_extensions;
 
 mod tee;
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_utils;
 #[cfg(test)]
 mod tests;

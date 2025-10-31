@@ -62,7 +62,7 @@ mod tests {
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::providers::ckd::key_generation::KeyGenerationComputation;
     use crate::providers::ckd::CKDTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -70,13 +70,14 @@ mod tests {
     use threshold_signatures::confidential_key_derivation::KeygenOutput;
     use threshold_signatures::frost_core::Group;
     use threshold_signatures::participants::Participant;
+    use threshold_signatures::test_utils::TestGenerators;
     use threshold_signatures::{confidential_key_derivation as ckd, ParticipantList};
     use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn ckd_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
-            let participants_ids = TestGenerators::new(4, 3).participant_ids();
+            let participants_ids = into_participant_ids(&TestGenerators::new(4, 3));
             let results = run_test_clients(
                 participants_ids.clone(),
                 run_keygen_client,

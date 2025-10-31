@@ -70,6 +70,27 @@ jobs:
 
           echo "✅ Container started successfully"
 
+  docker-launcher-build-and-verify:
+    name: "Build MPC Launcher Docker image and verify"
+    runs-on: warp-ubuntu-2404-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Build launcher docker image and verify its hash
+        shell: bash
+        run: |
+          ./scripts/build-and-verify-launcher-docker-image.sh
+
   clippy-mpc-node:
     name: "MPC Node: clippy and format"
     runs-on: warp-ubuntu-2204-x64-8x
