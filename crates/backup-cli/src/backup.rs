@@ -1,5 +1,6 @@
 use contract_interface::types as contract_types;
 use ed25519_dalek::VerifyingKey;
+use near_primitives::types::AccountId;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
@@ -97,8 +98,8 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
 async fn print_register_command(
     secrets_storage: &impl ports::SecretsRepository,
     near_network: &str,
-    mpc_contract_account_id: &near_primitives::types::AccountId,
-    signer_account_id: &near_primitives::types::AccountId,
+    mpc_contract_account_id: &AccountId,
+    signer_account_id: &AccountId,
 ) {
     let secrets = secrets_storage
         .load_secrets()
