@@ -99,11 +99,12 @@ mod tests {
     use crate::primitives::ParticipantId;
     use crate::providers::ecdsa::key_resharing::KeyResharingComputation;
     use crate::providers::ecdsa::EcdsaTaskId;
-    use crate::test_utils::TestGenerators;
+    use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
+    use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -113,8 +114,8 @@ mod tests {
         let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
         let keygens = gen.make_ecdsa_keygens();
         let pubkey = keygens.iter().next().unwrap().1.public_key;
-        let old_participants = gen.participant_ids();
-        let mut new_participants = gen.participant_ids();
+        let old_participants = into_participant_ids(&gen);
+        let mut new_participants = into_participant_ids(&gen);
         new_participants.push(ParticipantId::from_raw(rand::random()));
 
         let key_resharing_client_runner =
