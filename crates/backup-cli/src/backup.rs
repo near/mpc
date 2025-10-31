@@ -1,5 +1,5 @@
 use contract_interface::types as contract_types;
-use ed25519_dalek::VerifyingKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_primitives::types::AccountId;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
@@ -48,10 +48,7 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let p2p_private_key = ports::SecretsRepository::load_secrets(&secrets_storage)
-                .await
-                .expect("failed to load secrets")
-                .p2p_private_key;
+            let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
@@ -71,10 +68,7 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let p2p_private_key = ports::SecretsRepository::load_secrets(&secrets_storage)
-                .await
-                .expect("failed to load secrets")
-                .p2p_private_key;
+            let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
@@ -95,6 +89,14 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
         .expect("fail to store private key");
 }
 
+async fn get_p2p_private_key(secrets_storage: &impl ports::SecretsRepository) -> SigningKey {
+    let secrets = secrets_storage
+        .load_secrets()
+        .await
+        .expect("failed to load private key");
+    secrets.p2p_private_key
+}
+
 async fn print_register_command(
     secrets_storage: &impl ports::SecretsRepository,
     near_network: &str,
@@ -110,6 +112,7 @@ async fn print_register_command(
     let public_key = contract_types::Ed25519PublicKey::from(public_key_bytes);
     let public_key_str = String::from(&public_key);
 
+    println!("Run the following command to register your backup service:\n");
     println!(
         r#"near contract call-function as-transaction \
   {} \
