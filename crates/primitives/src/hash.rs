@@ -2,12 +2,14 @@ use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::marker::PhantomData;
 use derive_more::{AsRef, Deref, Into};
+use serde_with::serde_as;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(::schemars::JsonSchema),
     derive(::borsh::BorshSchema)
 )]
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -29,6 +31,7 @@ pub struct Hash32<T> {
     #[deref]
     #[as_ref]
     #[into]
+    #[serde_as(as = "serde_with::hex::Hex")]
     bytes: [u8; 32],
     #[into(skip)]
     _marker: PhantomData<T>,
@@ -98,6 +101,7 @@ pub type LauncherDockerComposeHash = Hash32<Compose>;
 mod tests {
     use super::*;
 
+    use alloc::format;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     struct TestMarker;
@@ -269,5 +273,19 @@ mod tests {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
         bytes
+    }
+
+    #[test]
+    fn test_mpc_docker_image_hash_hex_serialization() {
+        // Given
+        let expected_hex = "\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\"";
+
+        // When
+        let hash: MpcDockerImageHash = serde_json::from_str(expected_hex).unwrap();
+        let serialized_hex = serde_json::to_string(&hash).unwrap();
+
+        // Then
+        assert_eq!(format!("\"{}\"", hash.as_hex()), expected_hex);
+        assert_eq!(serialized_hex, expected_hex);
     }
 }
