@@ -33,6 +33,7 @@ use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
 };
+use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
 
 use near_workspaces::{
@@ -1210,7 +1211,7 @@ pub async fn make_and_submit_requests(
 pub async fn vote_for_hash(
     account: &Account,
     contract: &Contract,
-    image_hash: &[u8; 32],
+    image_hash: &MpcDockerImageHash,
 ) -> anyhow::Result<()> {
     check_call_success(
         account
