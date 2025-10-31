@@ -528,3 +528,35 @@ pub fn make_protocol<T: Send>(
 ) -> impl Protocol<Output = T> {
     ProtocolExecutor::new(comms, fut)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::participants::Participant;
+
+    #[test]
+    #[allow(clippy::significant_drop_tightening)]
+    fn attacker_can_fill_message_buffer_with_unused_waitpoints() {
+        let comms = Comms::new();
+        let attacker = Participant::from(99_u32);
+        let attack_count = 512_u64;
+
+        for i in 0..attack_count {
+            let header =
+                MessageHeader::new(ChannelTag::root_shared()).with_waitpoint(1_000_000 + i);
+            let mut message = header.to_bytes().to_vec();
+            message.extend_from_slice(&i.to_le_bytes());
+
+            // Attacker injects messages for waitpoints the honest code never polls.
+            comms.push_message(attacker, message);
+        }
+
+        let messages = comms
+            .incoming
+            .messages
+            .lock()
+            .expect("lock should not fail");
+
+        assert!(messages.len() == usize::try_from(attack_count).unwrap());
+    }
+}
