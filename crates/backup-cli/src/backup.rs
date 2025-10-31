@@ -1,17 +1,15 @@
-use ed25519_dalek::SigningKey;
-use ed25519_dalek::VerifyingKey;
+use contract_interface::types as contract_types;
+use ed25519_dalek::{SigningKey, VerifyingKey};
+use near_primitives::types::AccountId;
 use rand_core::OsRng;
-use std::path::PathBuf;
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 use tokio::fs::File;
 
-use contract_interface::types as contract_types;
-
-use crate::adapters;
-use crate::adapters::contract_interface::get_keyset_from_contract_state;
-use crate::cli;
-use crate::ports;
-use crate::types::PersistentSecrets;
+use crate::{
+    adapters::{self, contract_state_fixture::get_keyset_from_contract_state},
+    cli, ports,
+    types::PersistentSecrets,
+};
 
 pub async fn run_command(args: cli::Args) {
     match args.command {
@@ -25,7 +23,7 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             generate_secrets(&secrets_storage).await;
         }
-        cli::Command::Register(_command_args) => {
+        cli::Command::Register(command_args) => {
             let home_dir = PathBuf::from(args.home_dir);
             let secrets_storage =
                 adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_read(
@@ -33,8 +31,14 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let mpc_contract = adapters::contract_interface::ContractStateFixture::new(home_dir);
-            register_backup_service(&secrets_storage, &mpc_contract).await;
+
+            print_register_command(
+                &secrets_storage,
+                &command_args.near_network,
+                &command_args.mpc_contract_account_id,
+                &command_args.signer_account_id,
+            )
+            .await;
         }
         cli::Command::GetKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
@@ -52,7 +56,8 @@ pub async fn run_command(args: cli::Args) {
                 p2p_private_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
-            let mpc_contract = adapters::contract_interface::ContractStateFixture::new(home_dir);
+            let mpc_contract =
+                adapters::contract_state_fixture::ContractStateFixture::new(home_dir);
             get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract).await;
         }
         cli::Command::PutKeyshares(subcommand_args) => {
@@ -88,31 +93,50 @@ async fn get_p2p_private_key(secrets_storage: &impl ports::SecretsRepository) ->
     let secrets = secrets_storage
         .load_secrets()
         .await
-        .expect("fail to load private key");
+        .expect("failed to load private key");
     secrets.p2p_private_key
 }
 
-/// Put backup service data to the smart contract
-pub async fn register_backup_service(
+async fn print_register_command(
     secrets_storage: &impl ports::SecretsRepository,
-    mpc_contract: &impl ports::ContractInterface,
+    near_network: &str,
+    mpc_contract_account_id: &AccountId,
+    signer_account_id: &AccountId,
 ) {
-    let public_key = get_p2p_private_key(secrets_storage).await.verifying_key();
-    mpc_contract
-        .register_backup_data(&public_key)
+    let secrets = secrets_storage
+        .load_secrets()
         .await
-        .expect("fail to register backup data");
+        .expect("failed to load secrets");
+
+    let public_key_bytes = secrets.p2p_private_key.verifying_key().to_bytes();
+    let public_key = contract_types::Ed25519PublicKey::from(public_key_bytes);
+    let public_key_str = String::from(&public_key);
+
+    println!("Run the following command to register your backup service:\n");
+    println!(
+        r#"near contract call-function as-transaction \
+  {} \
+  register_backup_service \
+  json-args '{{"backup_service_info":{{"public_key":"{}"}}}}' \
+  prepaid-gas '300.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as {} \
+  network-config {} \
+  sign-with-keychain \
+  send"#,
+        mpc_contract_account_id, public_key_str, signer_account_id, near_network
+    );
 }
 
 pub async fn get_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
-    mpc_contract: &impl ports::ContractInterface,
+    mpc_contract: &impl ports::ContractStateReader,
 ) {
     let contract_state = mpc_contract
         .get_contract_state()
         .await
-        .expect("Could not get contract state");
+        .expect("could not get contract state");
     let keyset =
         get_keyset_from_contract_state(&contract_state).expect("failed to compute current keyset");
     let keyshare = mpc_p2p_client
@@ -141,6 +165,6 @@ pub async fn put_keyshares(
 
 fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
     let mpc_node_p2p_key = contract_types::Ed25519PublicKey::from_str(mpc_node_p2p_key)
-        .expect("Invalid mpc_node_p2p_key value");
+        .expect("invalid mpc_node_p2p_key value");
     VerifyingKey::from_bytes(mpc_node_p2p_key.as_bytes()).expect("Invalid mpc_node_p2p_key value")
 }
