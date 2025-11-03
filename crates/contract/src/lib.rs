@@ -1952,7 +1952,7 @@ mod tests {
         participants: &Participants,
         participant_index: usize,
         is_valid: bool,
-    ) -> Result<(), crate::errors::Error> {
+    ) -> Result<(), Error> {
         let participants_list = participants.participants();
         let (account_id, _, participant_info) = &participants_list[participant_index];
         let attestation = if is_valid {
@@ -1999,7 +1999,7 @@ mod tests {
         first_participant_id: &AccountId,
         participants: Participants,
         threshold: Threshold,
-    ) -> Result<(), crate::errors::Error> {
+    ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
             .predecessor_account_id(first_participant_id.clone())
