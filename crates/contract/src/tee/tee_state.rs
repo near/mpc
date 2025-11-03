@@ -53,7 +53,7 @@ pub enum TeeQuoteStatus {
     /// TEE verification failed - either the quote verification failed,
     /// the Docker image verification failed, or both validations failed.
     /// The participant should not be trusted for TEE-dependent operations.
-    Invalid,
+    Invalid(String),
 }
 #[derive(Debug)]
 pub enum TeeValidationResult {
@@ -126,19 +126,15 @@ impl TeeState {
             *tls_public_key.as_bytes(),
             *account_public_key.as_bytes(),
         ));
-        let is_valid = attestation
-            .verify(
-                expected_report_data,
-                Self::current_time_seconds(),
-                &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-                &self.allowed_launcher_compose_hashes,
-            )
-            .is_ok();
 
-        if is_valid {
-            TeeQuoteStatus::Valid
-        } else {
-            TeeQuoteStatus::Invalid
+        match attestation.verify(
+            expected_report_data,
+            Self::current_time_seconds(),
+            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
+            &self.allowed_launcher_compose_hashes,
+        ) {
+            Ok(()) => TeeQuoteStatus::Valid,
+            Err(err) => TeeQuoteStatus::Invalid(err.to_string()),
         }
     }
 
@@ -154,13 +150,17 @@ impl TeeState {
 
         let participant_attestation = self.participants_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
-            return TeeQuoteStatus::Invalid;
+            return TeeQuoteStatus::Invalid("participant has no attestation".to_string());
         };
 
         // Convert TLS public key
         let tls_public_key = match node_id.tls_public_key.clone().try_into_dto_type() {
             Ok(value) => value,
-            Err(_) => return TeeQuoteStatus::Invalid,
+            Err(err) => {
+                return TeeQuoteStatus::Invalid(format!(
+                    "could not convert TLS pub key to DTO type: {err}"
+                ))
+            }
         };
 
         // Convert account public key if available
@@ -185,20 +185,14 @@ impl TeeState {
 
         // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();
-        let quote_result = participant_attestation
-            .1
-            .verify(
-                expected_report_data,
-                time_stamp_seconds,
-                &allowed_mpc_docker_image_hashes,
-                allowed_launcher_compose_hashes,
-            )
-            .is_ok();
-
-        if quote_result {
-            TeeQuoteStatus::Valid
-        } else {
-            TeeQuoteStatus::Invalid
+        match participant_attestation.1.verify(
+            expected_report_data,
+            time_stamp_seconds,
+            &allowed_mpc_docker_image_hashes,
+            allowed_launcher_compose_hashes,
+        ) {
+            Ok(()) => TeeQuoteStatus::Valid,
+            Err(err) => TeeQuoteStatus::Invalid(err.to_string()),
         }
     }
 

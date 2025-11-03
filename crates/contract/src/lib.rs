@@ -579,9 +579,9 @@ impl MpcContract {
             tee_upgrade_deadline_duration,
         );
 
-        if status == TeeQuoteStatus::Invalid {
+        if let TeeQuoteStatus::Invalid(reason) = status {
             return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message("TeeQuoteStatus is invalid".to_string()));
+                .message(format!("TeeQuoteStatus is invalid: {reason}")));
         }
 
         // Add the participant information to the contract state

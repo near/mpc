@@ -45,7 +45,7 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum VerificationError {
     #[error("could not parse embedded measurements: {0}")]
     EmbeddedMeasurementsParsing(MeasurementsError),
