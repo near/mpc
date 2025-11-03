@@ -41,6 +41,10 @@ pub struct DstackAttestation {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
 pub enum VerificationError {
+    #[error("TCB status `{0}` is not up to date")]
+    TcbStatusNotUpToDate(String),
+    #[error("ouststanding advisories reported: {0}")]
+    NonEmptyAdvisoryIds(String),
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -182,8 +186,7 @@ impl Attestation {
         };
 
         // Verify all attestation components
-        self.verify_tcb_status(&verification_result)
-            .to_result(|| VerificationError::Other)?;
+        self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)
             .to_result(|| VerificationError::Other)?;
         self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
@@ -274,7 +277,10 @@ impl Attestation {
     }
 
     /// Verifies TCB status and security advisories.
-    fn verify_tcb_status(&self, verification_result: &VerifiedReport) -> bool {
+    fn verify_tcb_status(
+        &self,
+        verification_result: &VerifiedReport,
+    ) -> Result<(), VerificationError> {
         // The "UpToDate" TCB status indicates that the measured platform components (CPU
         // microcode, firmware, etc.) match the latest known good values published by Intel
         // and do not require any updates or mitigations.
@@ -284,7 +290,15 @@ impl Attestation {
         // For a quote to be considered secure, there should be no outstanding advisories.
         let no_security_advisories = verification_result.advisory_ids.is_empty();
 
-        status_is_up_to_date && no_security_advisories
+        status_is_up_to_date.to_result(|| {
+            VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
+        })?;
+
+        no_security_advisories.to_result(|| {
+            VerificationError::NonEmptyAdvisoryIds(verification_result.advisory_ids.join(", "))
+        })?;
+
+        Ok(())
     }
 
     /// Verifies report data matches expected values.
