@@ -92,8 +92,6 @@ pub enum VerificationError {
     },
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
-    #[error("other error")]
-    Other,
 }
 
 impl fmt::Debug for DstackAttestation {
