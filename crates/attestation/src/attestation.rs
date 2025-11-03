@@ -70,6 +70,8 @@ pub enum VerificationError {
     AppComposeEventPayloadWrongSize(usize),
     #[error("app-compose event payload `{0}` is not a hex string")]
     AppComposeEventPayloadNotHex(String),
+    #[error("MPC image hash {0} is not in the allowed hashes list")]
+    MpcImageHashNotInAllowedHashesList(String),
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -217,8 +219,7 @@ impl Attestation {
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)?;
         self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)?;
-        self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
-            .or_err(|| VerificationError::Other)?;
+        self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)?;
         self.verify_launcher_compose_hash(
             &attestation.tcb_info,
             allowed_launcher_docker_compose_hashes,
@@ -418,22 +419,12 @@ impl Attestation {
             VerificationError::InvalidAppComposeConfig(tcb_info.app_compose.to_string())
         })?;
 
-        let mut events = tcb_info
-            .event_log
-            .iter()
-            .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
-
-        let Some(app_compose_event) = events.next() else {
-            return Err(VerificationError::MissingEvent("app_compose"));
-        };
+        let app_compose_event = tcb_info.get_single_event(COMPOSE_HASH_EVENT)?;
 
         Self::validate_app_compose_payload(
             &app_compose_event.event_payload,
             &tcb_info.app_compose,
         )?;
-
-        let single_repetition = events.next().is_none();
-        single_repetition.or_err(|| VerificationError::DuplicateEvent("app_compose"))?;
 
         Ok(())
     }
@@ -459,25 +450,13 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> Result<(), VerificationError> {
-        let mut events = tcb_info
-            .event_log
-            .iter()
-            .filter(|event| event.event == KEY_PROVIDER_EVENT && event.imr == RTMR3_INDEX);
-
-        let Some(key_provider_event) = events.next() else {
-            return Err(VerificationError::MissingEvent("sgx_digest"));
-        };
+        let key_provider_event = tcb_info.get_single_event(&KEY_PROVIDER_EVENT)?;
 
         compare_hex_hashes(
             "sgx_digest",
             &key_provider_event.digest,
             &hex::encode(expected_measurements.local_sgx_event_digest),
-        )?;
-
-        let single_repetition = events.next().is_none();
-        single_repetition.or_err(|| VerificationError::DuplicateEvent("sgx_digest"))?;
-
-        Ok(())
+        )
     }
 
     /// Verifies MPC node image hash is in allowed list.
@@ -486,24 +465,14 @@ impl Attestation {
         tcb_info: &TcbInfo,
         allowed_hashes: &[MpcDockerImageHash],
     ) -> Result<(), VerificationError> {
-        let mut mpc_image_hash_events = tcb_info
-            .event_log
+        let event = tcb_info.get_single_event(MPC_IMAGE_HASH_EVENT)?;
+
+        allowed_hashes
             .iter()
-            .filter(|event| event.event == MPC_IMAGE_HASH_EVENT && event.imr == RTMR3_INDEX);
-
-        let Some(mpc_image_hash_event) = mpc_image_hash_events.next() else {
-            return Err(VerificationError::MissingEvent("mpc_hash"));
-        };
-
-        let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
-            allowed_hashes
-                .iter()
-                .any(|hash| hash.as_hex() == *event.event_payload)
-        });
-        let single_repetition = mpc_image_hash_events.next().is_none();
-        single_repetition && digest_is_correct;
-
-        Ok(())
+            .any(|hash| hash.as_hex() == *event.event_payload)
+            .or_err(|| {
+                VerificationError::MpcImageHashNotInAllowedHashesList(event.event_payload.clone())
+            })
     }
 
     fn verify_launcher_compose_hash(
@@ -568,5 +537,28 @@ trait OrErr {
 impl OrErr for bool {
     fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error> {
         self.then_some(()).ok_or_else(err)
+    }
+}
+
+trait GetSingleEvent {
+    fn get_single_event(&self, event_name: &'static str) -> Result<&EventLog, VerificationError>;
+}
+
+impl GetSingleEvent for TcbInfo {
+    fn get_single_event(&self, event_name: &'static str) -> Result<&EventLog, VerificationError> {
+        let mut events = self
+            .event_log
+            .iter()
+            .filter(|event| event.event == event_name && event.imr == RTMR3_INDEX);
+
+        let Some(event) = events.next() else {
+            return Err(VerificationError::MissingEvent(event_name));
+        };
+
+        if events.next().is_some() {
+            Err(VerificationError::DuplicateEvent(event_name))
+        } else {
+            Ok(event)
+        }
     }
 }
