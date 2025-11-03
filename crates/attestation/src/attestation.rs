@@ -42,7 +42,7 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
@@ -57,7 +57,19 @@ pub enum VerificationError {
     #[error("invalid event type {0}")]
     InvalidEventType(u32),
     #[error("failed to decode event digest `{0}`")]
-    EventDecodeFailure(String),
+    EventDecoding(String),
+    #[error("failed to parse app compose JSON: {0}")]
+    AppComposeParsing(serde_json::Error),
+    #[error("no app compose event in event log")]
+    MissingAppComposeEvent,
+    #[error("duplicate app compose events in event log")]
+    DuplicateAppComposeEvents,
+    #[error("invalid app compose config: `{0}`")]
+    InvalidAppComposeConfig(String),
+    #[error("app-compose event payload had an unexpected size of {0}")]
+    AppComposeEventPayloadWrongSize(usize),
+    #[error("app-compose event payload `{0}` is not a hex string")]
+    AppComposeEventPayloadNotHex(String),
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -203,8 +215,7 @@ impl Attestation {
         self.verify_report_data(&expected_report_data, report_data)?;
         self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
-        self.verify_app_compose(&attestation.tcb_info)
-            .or_err(|| VerificationError::Other)?;
+        self.verify_app_compose(&attestation.tcb_info)?;
         self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
             .or_err(|| VerificationError::Other)?;
         self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
@@ -241,9 +252,7 @@ impl Attestation {
                         Ok(bytes) => bytes,
                         Err(e) => {
                             tracing::error!("Failed to decode hex string for: {:?}", e);
-                            return Err(VerificationError::EventDecodeFailure(
-                                event.digest.clone(),
-                            ));
+                            return Err(VerificationError::EventDecoding(event.digest.clone()));
                         }
                     };
                     let expected_digest =
@@ -266,13 +275,17 @@ impl Attestation {
         compare_hashes("event_log", &digest, &expected_digest)
     }
 
-    fn validate_app_compose_payload(expected_event_payload_hex: &str, app_compose: &str) -> bool {
+    fn validate_app_compose_payload(
+        expected_event_payload_hex: &str,
+        app_compose: &str,
+    ) -> Result<(), VerificationError> {
         let expected_payload = match hex::decode(expected_event_payload_hex) {
             Ok(bytes) => match <[u8; 32]>::try_from(bytes.as_slice()) {
                 Ok(expected_bytes) => expected_bytes,
                 Err(_) => {
-                    tracing::error!("Failed to convert decoded hex to [u8; 32] for ");
-                    return false;
+                    return Err(VerificationError::AppComposeEventPayloadWrongSize(
+                        bytes.len(),
+                    ));
                 }
             },
             Err(e) => {
@@ -280,13 +293,15 @@ impl Attestation {
                     "Failed to decode hex string for compose-hash event: {:?}",
                     e
                 );
-                return false;
+                return Err(VerificationError::AppComposeEventPayloadNotHex(
+                    expected_event_payload_hex.to_string(),
+                ));
             }
         };
 
         let app_compose_hash: [u8; 32] = Sha256::digest(app_compose.as_bytes()).into();
 
-        app_compose_hash == expected_payload
+        compare_hashes("app_compose_payload", &app_compose_hash, &expected_payload)
     }
 
     /// Verifies TCB status and security advisories.
@@ -396,27 +411,32 @@ impl Attestation {
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
     /// since it's (roughly) a hash of the unmeasured docker_compose_file, this is sufficient to
     /// prove its validity.
-    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> bool {
-        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-            Ok(compose) => compose,
-            Err(e) => {
-                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                return false;
-            }
-        };
+    fn verify_app_compose(&self, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
+        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
+            .map_err(VerificationError::AppComposeParsing)?;
+
+        Self::validate_app_compose_config(&app_compose).or_err(|| {
+            VerificationError::InvalidAppComposeConfig(tcb_info.app_compose.to_string())
+        })?;
 
         let mut events = tcb_info
             .event_log
             .iter()
             .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
-        let payload_is_correct = events.next().is_some_and(|event| {
-            event.event_payload == tcb_info.compose_hash
-                && Self::validate_app_compose_config(&app_compose)
-                && Self::validate_app_compose_payload(&event.event_payload, &tcb_info.app_compose)
-        });
+        let Some(app_compose_event) = events.next() else {
+            return Err(VerificationError::MissingAppComposeEvent);
+        };
+
+        Self::validate_app_compose_payload(
+            &app_compose_event.event_payload,
+            &tcb_info.app_compose,
+        )?;
+
         let single_repetition = events.next().is_none();
-        single_repetition && payload_is_correct
+        single_repetition.or_err(|| VerificationError::DuplicateAppComposeEvents)?;
+
+        Ok(())
     }
 
     /// Validates app compose configuration against expected security requirements.
