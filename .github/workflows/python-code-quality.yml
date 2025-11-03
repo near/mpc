@@ -6,22 +6,31 @@ on:
 
 jobs:
   ruff-formatter:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2204-x64-2x
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/ruff-action@v3
+      - uses: astral-sh/ruff-action@@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
         with:
           args: "format --diff --verbose --exclude libs/nearcore"
           src: "."
 
 
   ruff-linter:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2204-x64-2x
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/ruff-action@v3
+      - uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
         with:
           args: "check --diff --verbose --extend-exclude libs/nearcore"
           src: "."
+    
