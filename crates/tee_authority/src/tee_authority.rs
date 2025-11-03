@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(
             attestation
                 .verify(report_data, timestamp_s, &[], &[])
-                .is_ok(), // TODO: Match on result
+                .is_ok(),
             quote_verification_result
         );
     }

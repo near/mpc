@@ -45,7 +45,7 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum VerificationError {
     #[error("could not parse embedded measurements: {0}")]
     EmbeddedMeasurementsParsing(MeasurementsError),
@@ -68,7 +68,7 @@ pub enum VerificationError {
     #[error("failed to decode event digest `{0}`")]
     EventDecoding(String),
     #[error("failed to parse app compose JSON: {0}")]
-    AppComposeParsing(serde_json::Error),
+    AppComposeParsing(String),
     #[error("no {0} event in event log")]
     MissingEvent(&'static str),
     #[error("duplicate {0} events in event log")]
@@ -432,7 +432,7 @@ impl Attestation {
     /// prove its validity.
     fn verify_app_compose(&self, tcb_info: &TcbInfo) -> Result<(), VerificationError> {
         let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-            .map_err(VerificationError::AppComposeParsing)?;
+            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
 
         Self::validate_app_compose_config(&app_compose).or_err(|| {
             VerificationError::InvalidAppComposeConfig(tcb_info.app_compose.to_string())
@@ -500,7 +500,7 @@ impl Attestation {
         allowed_hashes: &[LauncherDockerComposeHash],
     ) -> Result<(), VerificationError> {
         let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-            .map_err(VerificationError::AppComposeParsing)?;
+            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
 
         let launcher_bytes: [u8; 32] =
             Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();

@@ -113,7 +113,7 @@ impl ExpectedMeasurements {
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MeasurementsError {
     #[error("no TD10 report")]
     NoTd10Report,
