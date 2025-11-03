@@ -49,6 +49,8 @@ pub struct DstackAttestation {
 pub enum VerificationError {
     #[error("could not parse embedded measurements: {0}")]
     EmbeddedMeasurementsParsing(MeasurementsError),
+    #[error("dcap verification failed: {0}")]
+    DcapVerification(String),
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
     #[error("ouststanding advisories reported: {0}")]
@@ -218,17 +220,12 @@ impl Attestation {
         let expected_measurements = ExpectedMeasurements::from_embedded_tcb_info()
             .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 
-        let verification_result = match dcap_qvl::verify::verify(
+        let verification_result = dcap_qvl::verify::verify(
             &attestation.quote,
             &attestation.collateral,
             timestamp_seconds,
-        ) {
-            Ok(result) => result,
-            Err(err) => {
-                tracing::error!("TEE quote verification failed: {:?}", err);
-                return Err(VerificationError::Other);
-            }
-        };
+        )
+        .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
         let Some(report_data) = verification_result.report.as_td10() else {
             tracing::error!(
