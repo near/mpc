@@ -23,9 +23,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
@@ -41,7 +43,7 @@ jobs:
           cargo fmt -- --check
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
           tool: nextest@0.9.106
 
@@ -54,25 +56,54 @@ jobs:
   ci-coverage:
     name: Coverage
     runs-on: warp-ubuntu-2204-x64-8x
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: cargo-llvm-cov@0.6.21
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
           tool: nextest@0.9.106
       - name: Generate code coverage
         run: cargo llvm-cov nextest --cargo-profile test-release --all-features --workspace --codecov --output-path codecov.json
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: codecov.json
           fail_ci_if_error: false
+  
+  zizmor-check:
+    name: "zizmor github actions check"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: zizmor@1.16.2
+
+
+      - name: Check github actions with zizmor
+        run: |
+          zizmor .github/
