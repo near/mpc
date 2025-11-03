@@ -2,7 +2,10 @@ use crate::{
     app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
     quote::QuoteBytes, report_data::ReportData,
 };
-use alloc::{format, string::String};
+use alloc::{
+    format,
+    string::{String, ToString},
+};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
@@ -45,8 +48,16 @@ pub enum VerificationError {
     TcbStatusNotUpToDate(String),
     #[error("ouststanding advisories reported: {0}")]
     NonEmptyAdvisoryIds(String),
-    #[error("report data doesn't match the expected value - got {got} expected {expected}")]
-    WrongReportData { got: String, expected: String },
+    #[error("wrong {name} hash (found {found} expected {expected})")]
+    WrongHash {
+        name: &'static str,
+        found: String,
+        expected: String,
+    },
+    #[error("invalid event type {0}")]
+    InvalidEventType(u32),
+    #[error("failed to decode event digest `{0}`")]
+    EventDecodeFailure(String),
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -190,10 +201,8 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
-        self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
-            .or_err(|| VerificationError::Other)?;
-        self.verify_rtmr3(report_data, &attestation.tcb_info)
-            .or_err(|| VerificationError::Other)?;
+        self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)?;
+        self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)
             .or_err(|| VerificationError::Other)?;
         self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
@@ -211,7 +220,10 @@ impl Attestation {
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
     /// digests are correct
-    fn verify_event_log_rtmr3(event_log: &[EventLog], expected_digest: [u8; 48]) -> bool {
+    fn verify_event_log_rtmr3(
+        event_log: &[EventLog],
+        expected_digest: [u8; 48],
+    ) -> Result<(), VerificationError> {
         let mut digest = [0u8; 48];
 
         let filtered_events = event_log.iter().filter(|e| e.imr == RTMR3_INDEX);
@@ -219,7 +231,7 @@ impl Attestation {
         for event in filtered_events {
             // In Dstack, all events measured in RTMR3 are of type DSTACK_EVENT_TYPE
             if event.event_type != DSTACK_EVENT_TYPE {
-                return false;
+                return Err(VerificationError::InvalidEventType(event.event_type));
             }
             let mut hasher = Sha384::new();
             hasher.update(digest);
@@ -229,14 +241,14 @@ impl Attestation {
                         Ok(bytes) => bytes,
                         Err(e) => {
                             tracing::error!("Failed to decode hex string for: {:?}", e);
-                            return false;
+                            return Err(VerificationError::EventDecodeFailure(
+                                event.digest.clone(),
+                            ));
                         }
                     };
                     let expected_digest =
                         Self::event_digest(event.event_type, &event.event, &payload_bytes);
-                    if decoded_digest != expected_digest {
-                        return false;
-                    }
+                    compare_hashes("event_digest", &decoded_digest, &expected_digest)?;
 
                     hasher.update(decoded_digest.as_slice())
                 }
@@ -251,7 +263,7 @@ impl Attestation {
             digest = hasher.finalize().into();
         }
 
-        digest == expected_digest
+        compare_hashes("event_log", &digest, &expected_digest)
     }
 
     fn validate_app_compose_payload(expected_event_payload_hex: &str, app_compose: &str) -> bool {
@@ -311,10 +323,7 @@ impl Attestation {
         // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
         // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
-        (expected.to_bytes() == actual.report_data).or_err(|| VerificationError::WrongReportData {
-            got: hex::encode(actual.report_data),
-            expected: hex::encode(expected.to_bytes()),
-        })
+        compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 
     /// Verifies static RTMRs match expected values.
@@ -323,25 +332,65 @@ impl Attestation {
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
-    ) -> bool {
+    ) -> Result<(), VerificationError> {
         // Check if the RTMRs match the expected values. To learn more about RTMRs and
         // their significance, refer to the TDX documentation:
         // - https://phala.network/posts/understanding-tdx-attestation-reports-a-developers-guide
         // - https://www.kernel.org/doc/Documentation/x86/tdx.rst
-        report_data.rt_mr0 == expected_measurements.rtmrs.rtmr0
-            && report_data.rt_mr1 == expected_measurements.rtmrs.rtmr1
-            && report_data.rt_mr2 == expected_measurements.rtmrs.rtmr2
-            && report_data.mr_td == expected_measurements.rtmrs.mrtd
-            && tcb_info.rtmr0 == hex::encode(expected_measurements.rtmrs.rtmr0)
-            && tcb_info.rtmr1 == hex::encode(expected_measurements.rtmrs.rtmr1)
-            && tcb_info.rtmr2 == hex::encode(expected_measurements.rtmrs.rtmr2)
-            && tcb_info.mrtd == hex::encode(expected_measurements.rtmrs.mrtd)
+        compare_hashes(
+            "rtmr0_report_data",
+            &report_data.rt_mr0,
+            &expected_measurements.rtmrs.rtmr0,
+        )?;
+        compare_hashes(
+            "rtmr1_report_data",
+            &report_data.rt_mr1,
+            &expected_measurements.rtmrs.rtmr1,
+        )?;
+        compare_hashes(
+            "rtmr2_report_data",
+            &report_data.rt_mr2,
+            &expected_measurements.rtmrs.rtmr2,
+        )?;
+        compare_hashes(
+            "mrtd_report_data",
+            &report_data.mr_td,
+            &expected_measurements.rtmrs.mrtd,
+        )?;
+
+        compare_hex_hashes(
+            "rtmr0_tcb_info",
+            &tcb_info.rtmr0,
+            &hex::encode(expected_measurements.rtmrs.rtmr0),
+        )?;
+        compare_hex_hashes(
+            "rtmr1_tcb_info",
+            &tcb_info.rtmr1,
+            &hex::encode(expected_measurements.rtmrs.rtmr1),
+        )?;
+        compare_hex_hashes(
+            "rtmr2_tcb_info",
+            &tcb_info.rtmr2,
+            &hex::encode(expected_measurements.rtmrs.rtmr2),
+        )?;
+        compare_hex_hashes(
+            "mtrd_tcb_info",
+            &tcb_info.mrtd,
+            &hex::encode(expected_measurements.rtmrs.mrtd),
+        )?;
+
+        Ok(())
     }
 
     /// Verifies RTMR3 by replaying event log.
-    fn verify_rtmr3(&self, report_data: &dcap_qvl::quote::TDReport10, tcb_info: &TcbInfo) -> bool {
-        tcb_info.rtmr3 == hex::encode(report_data.rt_mr3)
-            && Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
+    fn verify_rtmr3(
+        &self,
+        report_data: &dcap_qvl::quote::TDReport10,
+        tcb_info: &TcbInfo,
+    ) -> Result<(), VerificationError> {
+        compare_hex_hashes("rtmr3", &tcb_info.rtmr3, &hex::encode(report_data.rt_mr3))?;
+
+        Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
     }
 
     /// Verifies app compose configuration and hash. The compose-hash is measured into RTMR3, and
@@ -447,6 +496,30 @@ impl Attestation {
         hasher.update(payload);
         hasher.finalize().into()
     }
+}
+
+fn compare_hashes(
+    name: &'static str,
+    found: &[u8],
+    expected: &[u8],
+) -> Result<(), VerificationError> {
+    (found == expected).or_err(|| VerificationError::WrongHash {
+        name,
+        found: hex::encode(found),
+        expected: hex::encode(expected),
+    })
+}
+
+fn compare_hex_hashes<S: ToString + Eq>(
+    name: &'static str,
+    found: S,
+    expected: S,
+) -> Result<(), VerificationError> {
+    (found == expected).or_err(|| VerificationError::WrongHash {
+        name,
+        found: found.to_string(),
+        expected: expected.to_string(),
+    })
 }
 
 trait OrErr {
