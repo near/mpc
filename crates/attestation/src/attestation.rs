@@ -45,6 +45,8 @@ pub enum VerificationError {
     TcbStatusNotUpToDate(String),
     #[error("ouststanding advisories reported: {0}")]
     NonEmptyAdvisoryIds(String),
+    #[error("report data doesn't match the expected value - got {got} expected {expected}")]
+    WrongReportData { got: String, expected: String },
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -187,8 +189,7 @@ impl Attestation {
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
-        self.verify_report_data(&expected_report_data, report_data)
-            .or_err(|| VerificationError::Other)?;
+        self.verify_report_data(&expected_report_data, report_data)?;
         self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
             .or_err(|| VerificationError::Other)?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)
@@ -306,11 +307,14 @@ impl Attestation {
         &self,
         expected: &ReportData,
         actual: &dcap_qvl::quote::TDReport10,
-    ) -> bool {
+    ) -> Result<(), VerificationError> {
         // Check if sha384(tls_public_key) matches the hash in report_data. This check effectively
         // proves that tls_public_key was included in the quote's report_data by an app running
         // inside a TDX enclave.
-        expected.to_bytes() == actual.report_data
+        (expected.to_bytes() == actual.report_data).or_err(|| VerificationError::WrongReportData {
+            got: hex::encode(actual.report_data),
+            expected: hex::encode(expected.to_bytes()),
+        })
     }
 
     /// Verifies static RTMRs match expected values.
