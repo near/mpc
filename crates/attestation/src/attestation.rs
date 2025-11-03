@@ -230,7 +230,7 @@ impl Attestation {
         let report_data = verification_result
             .report
             .as_td10()
-            .ok_or_else(|| VerificationError::ReportNotTd10)?;
+            .ok_or(VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
@@ -469,7 +469,7 @@ impl Attestation {
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
     ) -> Result<(), VerificationError> {
-        let key_provider_event = tcb_info.get_single_event(&KEY_PROVIDER_EVENT)?;
+        let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
 
         compare_hex_hashes(
             "sgx_digest",
