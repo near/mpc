@@ -60,10 +60,10 @@ pub enum VerificationError {
     EventDecoding(String),
     #[error("failed to parse app compose JSON: {0}")]
     AppComposeParsing(serde_json::Error),
-    #[error("no app compose event in event log")]
-    MissingAppComposeEvent,
-    #[error("duplicate app compose events in event log")]
-    DuplicateAppComposeEvents,
+    #[error("no {0} event in event log")]
+    MissingEvent(&'static str),
+    #[error("duplicate {0} events in event log")]
+    DuplicateEvent(&'static str),
     #[error("invalid app compose config: `{0}`")]
     InvalidAppComposeConfig(String),
     #[error("app-compose event payload had an unexpected size of {0}")]
@@ -216,8 +216,7 @@ impl Attestation {
         self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)?;
-        self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
-            .or_err(|| VerificationError::Other)?;
+        self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)?;
         self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
             .or_err(|| VerificationError::Other)?;
         self.verify_launcher_compose_hash(
@@ -425,7 +424,7 @@ impl Attestation {
             .filter(|event| event.event == COMPOSE_HASH_EVENT && event.imr == RTMR3_INDEX);
 
         let Some(app_compose_event) = events.next() else {
-            return Err(VerificationError::MissingAppComposeEvent);
+            return Err(VerificationError::MissingEvent("app_compose"));
         };
 
         Self::validate_app_compose_payload(
@@ -434,7 +433,7 @@ impl Attestation {
         )?;
 
         let single_repetition = events.next().is_none();
-        single_repetition.or_err(|| VerificationError::DuplicateAppComposeEvents)?;
+        single_repetition.or_err(|| VerificationError::DuplicateEvent("app_compose"))?;
 
         Ok(())
     }
@@ -459,24 +458,42 @@ impl Attestation {
         &self,
         tcb_info: &TcbInfo,
         expected_measurements: &ExpectedMeasurements,
-    ) -> bool {
+    ) -> Result<(), VerificationError> {
         let mut events = tcb_info
             .event_log
             .iter()
             .filter(|event| event.event == KEY_PROVIDER_EVENT && event.imr == RTMR3_INDEX);
-        let digest_is_correct = events.next().is_some_and(|event| {
-            event.digest == hex::encode(expected_measurements.local_sgx_event_digest)
-        });
+
+        let Some(key_provider_event) = events.next() else {
+            return Err(VerificationError::MissingEvent("sgx_digest"));
+        };
+
+        compare_hex_hashes(
+            "sgx_digest",
+            &key_provider_event.digest,
+            &hex::encode(expected_measurements.local_sgx_event_digest),
+        )?;
+
         let single_repetition = events.next().is_none();
-        single_repetition && digest_is_correct
+        single_repetition.or_err(|| VerificationError::DuplicateEvent("sgx_digest"))?;
+
+        Ok(())
     }
 
     /// Verifies MPC node image hash is in allowed list.
-    fn verify_mpc_hash(&self, tcb_info: &TcbInfo, allowed_hashes: &[MpcDockerImageHash]) -> bool {
+    fn verify_mpc_hash(
+        &self,
+        tcb_info: &TcbInfo,
+        allowed_hashes: &[MpcDockerImageHash],
+    ) -> Result<(), VerificationError> {
         let mut mpc_image_hash_events = tcb_info
             .event_log
             .iter()
             .filter(|event| event.event == MPC_IMAGE_HASH_EVENT && event.imr == RTMR3_INDEX);
+
+        let Some(mpc_image_hash_event) = mpc_image_hash_events.next() else {
+            return Err(VerificationError::MissingEvent("mpc_hash"));
+        };
 
         let digest_is_correct = mpc_image_hash_events.next().is_some_and(|event| {
             allowed_hashes
@@ -484,7 +501,9 @@ impl Attestation {
                 .any(|hash| hash.as_hex() == *event.event_payload)
         });
         let single_repetition = mpc_image_hash_events.next().is_none();
-        single_repetition && digest_is_correct
+        single_repetition && digest_is_correct;
+
+        Ok(())
     }
 
     fn verify_launcher_compose_hash(
