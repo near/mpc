@@ -7,7 +7,7 @@ use alloc::{
     string::{String, ToString},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::fmt;
+use core::{fmt, ops::Deref as _};
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
@@ -72,6 +72,8 @@ pub enum VerificationError {
     AppComposeEventPayloadNotHex(String),
     #[error("MPC image hash {0} is not in the allowed hashes list")]
     MpcImageHashNotInAllowedHashesList(String),
+    #[error("Laumcher compose hash {0} is not in the allowed hashes list")]
+    LauncherComposeHashNotInAllowedHashesList(String),
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -223,8 +225,7 @@ impl Attestation {
         self.verify_launcher_compose_hash(
             &attestation.tcb_info,
             allowed_launcher_docker_compose_hashes,
-        )
-        .or_err(|| VerificationError::Other)?;
+        )?;
 
         Ok(())
     }
@@ -479,19 +480,21 @@ impl Attestation {
         &self,
         tcb_info: &TcbInfo,
         allowed_hashes: &[LauncherDockerComposeHash],
-    ) -> bool {
-        let app_compose: AppCompose = match serde_json::from_str(&tcb_info.app_compose) {
-            Ok(compose) => compose,
-            Err(e) => {
-                tracing::error!("Failed to parse app_compose JSON: {:?}", e);
-                return false;
-            }
-        };
+    ) -> Result<(), VerificationError> {
+        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
+            .map_err(VerificationError::AppComposeParsing)?;
+
         let launcher_bytes: [u8; 32] =
             Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
+
         allowed_hashes
             .iter()
-            .any(|hash| hash.as_hex() == hex::encode(launcher_bytes))
+            .any(|hash| hash.deref() == &launcher_bytes)
+            .or_err(|| {
+                VerificationError::LauncherComposeHashNotInAllowedHashesList(hex::encode(
+                    launcher_bytes,
+                ))
+            })
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
