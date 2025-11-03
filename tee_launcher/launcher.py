@@ -225,7 +225,7 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
         DSTACK_USER_CONFIG_MPC_IMAGE_TAGS, DEFAULT_MPC_IMAGE_TAG
     ).split(",")
     tags = [tag.strip() for tag in tags_values if tag.strip()]
-    logging.info(f"Using tags {tags} to find matching MPC docker image.")
+    logging.info(f"Using tags {tags} to find matching MPC node docker image.")
 
     image_name: str = dstack_config.get(
         DSTACK_USER_CONFIG_MPC_IMAGE_NAME, DEFAULT_MPC_IMAGE_NAME
