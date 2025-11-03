@@ -1,6 +1,9 @@
 use crate::{
-    app_compose::AppCompose, collateral::Collateral, measurements::ExpectedMeasurements,
-    quote::QuoteBytes, report_data::ReportData,
+    app_compose::AppCompose,
+    collateral::Collateral,
+    measurements::{ExpectedMeasurements, MeasurementsError},
+    quote::QuoteBytes,
+    report_data::ReportData,
 };
 use alloc::{
     format,
@@ -44,6 +47,8 @@ pub struct DstackAttestation {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
+    #[error("could not parse embedded measurements: {0}")]
+    EmbeddedMeasurementsParsing(MeasurementsError),
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
     #[error("ouststanding advisories reported: {0}")]
@@ -84,7 +89,7 @@ pub enum VerificationError {
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
     #[error("other error")]
-    Other, //TODO: Remove
+    Other,
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -210,10 +215,8 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> Result<(), VerificationError> {
-        let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
-            Ok(measurements) => measurements,
-            Err(_) => return Err(VerificationError::Other), // TODO
-        };
+        let expected_measurements = ExpectedMeasurements::from_embedded_tcb_info()
+            .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 
         let verification_result = match dcap_qvl::verify::verify(
             &attestation.quote,
