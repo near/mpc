@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Dict, Union
 import requests
-from subprocess import CompletedProcess, run
+from subprocess import CompletedProcess, run, check_output
 import sys
 import time
 import traceback
@@ -12,6 +12,8 @@ import re
 import ipaddress
 
 from requests.models import Response
+
+MPC_CONTAINER_NAME = "mpc_node"
 
 # The volume where this file resides is shared between launcher and app.
 # To avoid concurrent modifications, the launcher mounts the volume read-only!
@@ -141,6 +143,19 @@ def is_safe_port_mapping(mapping: str) -> bool:
     return not INVALID_HOST_ENTRY_PATTERN.search(mapping)
 
 
+def remove_existing_container():
+    """Stop and remove the MPC container if it exists."""
+    try:
+        containers = check_output(
+            ["docker", "ps", "-a", "--format", "{{.Names}}"], text=True
+        ).splitlines()
+        if MPC_CONTAINER_NAME in containers:
+            logging.info(f"Removing existing container: {MPC_CONTAINER_NAME}")
+            run(["docker", "rm", "-f", MPC_CONTAINER_NAME], check=False)
+    except Exception as e:
+        logging.warning(f"Failed to check/remove container {MPC_CONTAINER_NAME}: {e}")
+
+
 @dataclass(frozen=True)
 class ImageSpec:
     tags: list[str]
@@ -210,7 +225,7 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
         DSTACK_USER_CONFIG_MPC_IMAGE_TAGS, DEFAULT_MPC_IMAGE_TAG
     ).split(",")
     tags = [tag.strip() for tag in tags_values if tag.strip()]
-    logging.info(f"Using tags {tags} to find matching launcher image.")
+    logging.info(f"Using tags {tags} to find matching MPC docker image.")
 
     image_name: str = dstack_config.get(
         DSTACK_USER_CONFIG_MPC_IMAGE_NAME, DEFAULT_MPC_IMAGE_NAME
@@ -368,6 +383,8 @@ def main():
     user_env_file = "/tapp/.host-shared/.user-config"
     user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
     docker_cmd = build_docker_cmd(user_env, image_digest)
+
+    remove_existing_container()
     # logging.info("docker cmd %s", " ".join(docker_cmd))
     proc = run(docker_cmd)
 
@@ -557,7 +574,7 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "-v",
         "mpc-data:/data",
         "--name",
-        "mpc_node",
+        MPC_CONTAINER_NAME,
         "--detach",
         image_digest,
     ]
