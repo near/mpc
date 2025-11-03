@@ -39,6 +39,12 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error)]
+pub enum VerificationError {
+    #[error("other error")]
+    Other, //TODO: Remove
+}
+
 impl fmt::Debug for DstackAttestation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const MAX_BYTES: usize = 2048;
@@ -85,10 +91,10 @@ pub(crate) fn verify_mock_attestation(
     timestamp_seconds: u64,
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-) -> bool {
+) -> Result<(), VerificationError> {
     match mock_attestation {
-        MockAttestation::Valid => true,
-        MockAttestation::Invalid => false,
+        MockAttestation::Valid => Ok(()),
+        MockAttestation::Invalid => Err(VerificationError::Other),
         MockAttestation::WithConstraints {
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
@@ -105,9 +111,11 @@ pub(crate) fn verify_mock_attestation(
             let attestation_certificate_has_not_expired = expiry_time_stamp_seconds
                 .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
 
-            mpc_docker_image_hash_is_allowed
-                && launcher_docker_compose_hash_is_allowed
-                && attestation_certificate_has_not_expired
+            mpc_docker_image_hash_is_allowed.to_result(|| VerificationError::Other)?;
+            launcher_docker_compose_hash_is_allowed.to_result(|| VerificationError::Other)?;
+            attestation_certificate_has_not_expired.to_result(|| VerificationError::Other)?;
+
+            Ok(())
         }
     }
 }
@@ -119,7 +127,7 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    ) -> bool {
+    ) -> Result<(), VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
@@ -147,10 +155,10 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    ) -> bool {
+    ) -> Result<(), VerificationError> {
         let expected_measurements = match ExpectedMeasurements::from_embedded_tcb_info() {
             Ok(measurements) => measurements,
-            Err(_) => return false,
+            Err(_) => return Err(VerificationError::Other), // TODO
         };
 
         let verification_result = match dcap_qvl::verify::verify(
@@ -161,7 +169,7 @@ impl Attestation {
             Ok(result) => result,
             Err(err) => {
                 tracing::error!("TEE quote verification failed: {:?}", err);
-                return false;
+                return Err(VerificationError::Other);
             }
         };
 
@@ -170,21 +178,31 @@ impl Attestation {
                 "Expected TD10 report data, but got: {:?}",
                 verification_result.report
             );
-            return false;
+            return Err(VerificationError::Other);
         };
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)
-            && self.verify_report_data(&expected_report_data, report_data)
-            && self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
-            && self.verify_rtmr3(report_data, &attestation.tcb_info)
-            && self.verify_app_compose(&attestation.tcb_info)
-            && self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
-            && self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
-            && self.verify_launcher_compose_hash(
-                &attestation.tcb_info,
-                allowed_launcher_docker_compose_hashes,
-            )
+            .to_result(|| VerificationError::Other)?;
+        self.verify_report_data(&expected_report_data, report_data)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_rtmr3(report_data, &attestation.tcb_info)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_app_compose(&attestation.tcb_info)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
+            .to_result(|| VerificationError::Other)?;
+        self.verify_launcher_compose_hash(
+            &attestation.tcb_info,
+            allowed_launcher_docker_compose_hashes,
+        )
+        .to_result(|| VerificationError::Other)?;
+
+        Ok(())
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -410,5 +428,15 @@ impl Attestation {
         hasher.update(b":");
         hasher.update(payload);
         hasher.finalize().into()
+    }
+}
+
+trait ToResult {
+    fn to_result<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error>;
+}
+
+impl ToResult for bool {
+    fn to_result<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error> {
+        self.then_some(()).ok_or_else(err)
     }
 }

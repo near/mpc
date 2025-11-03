@@ -126,12 +126,14 @@ impl TeeState {
             *tls_public_key.as_bytes(),
             *account_public_key.as_bytes(),
         ));
-        let is_valid = attestation.verify(
-            expected_report_data,
-            Self::current_time_seconds(),
-            &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
-            &self.allowed_launcher_compose_hashes,
-        );
+        let is_valid = attestation
+            .verify(
+                expected_report_data,
+                Self::current_time_seconds(),
+                &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
+                &self.allowed_launcher_compose_hashes,
+            )
+            .is_ok();
 
         if is_valid {
             TeeQuoteStatus::Valid
@@ -183,12 +185,15 @@ impl TeeState {
 
         // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();
-        let quote_result = participant_attestation.1.verify(
-            expected_report_data,
-            time_stamp_seconds,
-            &allowed_mpc_docker_image_hashes,
-            allowed_launcher_compose_hashes,
-        );
+        let quote_result = participant_attestation
+            .1
+            .verify(
+                expected_report_data,
+                time_stamp_seconds,
+                &allowed_mpc_docker_image_hashes,
+                allowed_launcher_compose_hashes,
+            )
+            .is_ok();
 
         if quote_result {
             TeeQuoteStatus::Valid

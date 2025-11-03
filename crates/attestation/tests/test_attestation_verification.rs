@@ -23,7 +23,9 @@ fn test_mock_attestation_verify(
     let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
-        attestation.verify(report_data, timestamp_s, &[], &[],),
+        attestation
+            .verify(report_data, timestamp_s, &[], &[],)
+            .is_ok(), // TODO: Match on result
         expected_quote_verification_result
     );
 }
@@ -41,11 +43,13 @@ fn test_verify_method_signature() {
     let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();
     let allowed_launcher_compose_digest: LauncherDockerComposeHash = launcher_compose_digest();
 
-    let verification_result = attestation.verify(
-        report_data,
-        timestamp_s,
-        &[allowed_mpc_image_digest],
-        &[allowed_launcher_compose_digest],
-    );
+    let verification_result = attestation
+        .verify(
+            report_data,
+            timestamp_s,
+            &[allowed_mpc_image_digest],
+            &[allowed_launcher_compose_digest],
+        )
+        .is_ok(); // TODO: Match on result
     assert!(verification_result);
 }
