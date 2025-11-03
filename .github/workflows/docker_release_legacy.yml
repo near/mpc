@@ -47,13 +47,13 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0@v3
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
       - name: Build and push MPC Node Docker image to Docker Hub
-        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7@v6
+        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7
         with:
           context: .
           profile-name: "mpc-image-builder"

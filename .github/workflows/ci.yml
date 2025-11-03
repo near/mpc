@@ -27,7 +27,7 @@ jobs:
         run: cargo build -p mpc-node --profile reproducible --locked
 
       - name: Build MPC Docker image
-        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7@v6
+        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7
         with:
           context: .
           profile-name: "mpc-image-builder"
@@ -112,7 +112,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
@@ -144,7 +144,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
@@ -176,13 +176,13 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45@v2
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
           tool: nextest@0.9.106
 
@@ -211,7 +211,7 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
