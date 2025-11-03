@@ -51,6 +51,8 @@ pub enum VerificationError {
     EmbeddedMeasurementsParsing(MeasurementsError),
     #[error("dcap verification failed: {0}")]
     DcapVerification(String),
+    #[error("verification report is not TD10")]
+    ReportNotTd10,
     #[error("TCB status `{0}` is not up to date")]
     TcbStatusNotUpToDate(String),
     #[error("ouststanding advisories reported: {0}")]
@@ -227,13 +229,10 @@ impl Attestation {
         )
         .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
-        let Some(report_data) = verification_result.report.as_td10() else {
-            tracing::error!(
-                "Expected TD10 report data, but got: {:?}",
-                verification_result.report
-            );
-            return Err(VerificationError::Other);
-        };
+        let report_data = verification_result
+            .report
+            .as_td10()
+            .ok_or_else(|| VerificationError::ReportNotTd10)?;
 
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
