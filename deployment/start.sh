@@ -41,6 +41,10 @@ config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 config['store']['load_mem_tries_for_tracked_shards'] = True
 config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
+# For localnet, disable state sync as it's not needed
+if "$MPC_ENV" == "mpc-localnet":
+    config['state_sync_enabled'] = False
+
 # Track whichever shard the contract account is on.
 config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
 json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
