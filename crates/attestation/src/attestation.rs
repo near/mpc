@@ -72,8 +72,17 @@ pub enum VerificationError {
     AppComposeEventPayloadNotHex(String),
     #[error("MPC image hash {0} is not in the allowed hashes list")]
     MpcImageHashNotInAllowedHashesList(String),
-    #[error("Laumcher compose hash {0} is not in the allowed hashes list")]
+    #[error("launcher compose hash {0} is not in the allowed hashes list")]
     LauncherComposeHashNotInAllowedHashesList(String),
+    #[error(
+        "the attestation certificate with timestap {attestation_time} has expired since {expiry_time}"
+    )]
+    ExpiredCertificate {
+        attestation_time: u64,
+        expiry_time: u64,
+    },
+    #[error("the mock attestation is invalid per definition")]
+    InvalidMockAttestation,
     #[error("other error")]
     Other, //TODO: Remove
 }
@@ -127,26 +136,38 @@ pub(crate) fn verify_mock_attestation(
 ) -> Result<(), VerificationError> {
     match mock_attestation {
         MockAttestation::Valid => Ok(()),
-        MockAttestation::Invalid => Err(VerificationError::Other),
+        MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
         MockAttestation::WithConstraints {
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
-            expiry_time_stamp_seconds,
+            expiry_time_stamp_seconds: expiry_timestamp_seconds,
         } => {
-            let mpc_docker_image_hash_is_allowed = mpc_docker_image_hash
-                .as_ref()
-                .is_none_or(|hash| allowed_mpc_docker_image_hashes.contains(hash));
+            if let Some(hash) = mpc_docker_image_hash {
+                allowed_mpc_docker_image_hashes.contains(hash).or_err(|| {
+                    VerificationError::MpcImageHashNotInAllowedHashesList(hex::encode(
+                        hash.as_ref(),
+                    ))
+                })?;
+            };
 
-            let launcher_docker_compose_hash_is_allowed = launcher_docker_compose_hash
-                .as_ref()
-                .is_none_or(|hash| allowed_launcher_docker_compose_hashes.contains(hash));
+            if let Some(hash) = launcher_docker_compose_hash {
+                allowed_launcher_docker_compose_hashes
+                    .contains(hash)
+                    .or_err(|| {
+                        VerificationError::LauncherComposeHashNotInAllowedHashesList(hex::encode(
+                            hash.as_ref(),
+                        ))
+                    })?;
+            };
 
-            let attestation_certificate_has_not_expired = expiry_time_stamp_seconds
-                .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
-
-            mpc_docker_image_hash_is_allowed.or_err(|| VerificationError::Other)?;
-            launcher_docker_compose_hash_is_allowed.or_err(|| VerificationError::Other)?;
-            attestation_certificate_has_not_expired.or_err(|| VerificationError::Other)?;
+            if let Some(expiry_timestamp) = expiry_timestamp_seconds {
+                (timestamp_seconds < *expiry_timestamp).or_err(|| {
+                    VerificationError::ExpiredCertificate {
+                        attestation_time: timestamp_seconds,
+                        expiry_time: *expiry_timestamp,
+                    }
+                })?;
+            };
 
             Ok(())
         }
