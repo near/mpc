@@ -13,7 +13,7 @@ import ipaddress
 
 from requests.models import Response
 
-MPC_CONTAINER_NAME = "mpc_node"
+MPC_CONTAINER_NAME = "mpc-node"
 
 # The volume where this file resides is shared between launcher and app.
 # To avoid concurrent modifications, the launcher mounts the volume read-only!
