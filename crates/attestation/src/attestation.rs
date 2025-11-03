@@ -115,9 +115,9 @@ pub(crate) fn verify_mock_attestation(
             let attestation_certificate_has_not_expired = expiry_time_stamp_seconds
                 .is_none_or(|expiry_time| timestamp_seconds <= expiry_time);
 
-            mpc_docker_image_hash_is_allowed.to_result(|| VerificationError::Other)?;
-            launcher_docker_compose_hash_is_allowed.to_result(|| VerificationError::Other)?;
-            attestation_certificate_has_not_expired.to_result(|| VerificationError::Other)?;
+            mpc_docker_image_hash_is_allowed.or_err(|| VerificationError::Other)?;
+            launcher_docker_compose_hash_is_allowed.or_err(|| VerificationError::Other)?;
+            attestation_certificate_has_not_expired.or_err(|| VerificationError::Other)?;
 
             Ok(())
         }
@@ -188,22 +188,22 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_app_compose(&attestation.tcb_info)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)
-            .to_result(|| VerificationError::Other)?;
+            .or_err(|| VerificationError::Other)?;
         self.verify_launcher_compose_hash(
             &attestation.tcb_info,
             allowed_launcher_docker_compose_hashes,
         )
-        .to_result(|| VerificationError::Other)?;
+        .or_err(|| VerificationError::Other)?;
 
         Ok(())
     }
@@ -290,11 +290,11 @@ impl Attestation {
         // For a quote to be considered secure, there should be no outstanding advisories.
         let no_security_advisories = verification_result.advisory_ids.is_empty();
 
-        status_is_up_to_date.to_result(|| {
+        status_is_up_to_date.or_err(|| {
             VerificationError::TcbStatusNotUpToDate(verification_result.status.clone())
         })?;
 
-        no_security_advisories.to_result(|| {
+        no_security_advisories.or_err(|| {
             VerificationError::NonEmptyAdvisoryIds(verification_result.advisory_ids.join(", "))
         })?;
 
@@ -445,12 +445,12 @@ impl Attestation {
     }
 }
 
-trait ToResult {
-    fn to_result<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error>;
+trait OrErr {
+    fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error>;
 }
 
-impl ToResult for bool {
-    fn to_result<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error> {
+impl OrErr for bool {
+    fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error> {
         self.then_some(()).ok_or_else(err)
     }
 }
