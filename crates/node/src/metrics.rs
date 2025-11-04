@@ -307,8 +307,8 @@ pub fn init_build_info_metric() {
         let commit = crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown");
         let rustc_version = crate::built_info::RUSTC_VERSION;
         MPC_BUILD_INFO
-        .with_label_values(&[version, build_time, commit, rustc_version])
-        .set(1);
+            .with_label_values(&[version, build_time, commit, rustc_version])
+            .set(1);
     }
 }
 
