@@ -230,11 +230,13 @@ class Candidate:
         responder_keys: list[Key],
         p2p_public_key,
         url,
+        backup_key: bytes,
     ):
         self.signer_key = signer_key
         self.responder_keys = responder_keys
         self.p2p_public_key = p2p_public_key
         self.url = url
+        self.backup_key = backup_key
 
 
 def generate_mpc_configs(
@@ -284,7 +286,9 @@ def generate_mpc_configs(
         )
     ):
         near_account = participant["near_account_id"]
-        p2p_public_key = participant["p2p_public_key"]
+        p2p_public_key = participant[
+            "p2p_public_key"
+        ]  # note: this is not really how it is done in production...
         p2p_public_key_near_sdk_representation = serialize_key(p2p_public_key)
 
         my_addr = participant["address"]
@@ -301,12 +305,14 @@ def generate_mpc_configs(
         for key in participant_secrets["near_responder_keys"]:
             responder_keys.append(deserialize_key(responder_account_id, key))
 
+        backup_key = os.urandom(32)
         candidates.append(
             Candidate(
                 signer_key=signer_key,
                 responder_keys=responder_keys,
                 p2p_public_key=p2p_public_key_near_sdk_representation,
                 url=f"http://{my_addr}:{my_port}",
+                backup_key=backup_key,
             )
         )
     return candidates
@@ -378,7 +384,7 @@ def start_cluster_with_mpc(
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
     create_txs = []
     access_txs = []
-    mpc_nodes = []
+    mpc_nodes: List[MpcNode] = []
     pytest_keys_per_node = []
     for near_node, candidate in zip(observers, candidates):
         # add the nodes responder access key to the list
@@ -445,11 +451,12 @@ def start_cluster_with_mpc(
         access_txs.append(tx)
 
         mpc_node = MpcNode(
-            near_node,
-            candidate.signer_key,
-            candidate.url,
-            candidate.p2p_public_key,
-            pytest_signer_keys,
+            near_node=near_node,
+            signer_key=candidate.signer_key,
+            url=candidate.url,
+            p2p_public_key=candidate.p2p_public_key,
+            pytest_signer_keys=pytest_signer_keys,
+            backup_key=candidate.backup_key,
         )
         mpc_node.set_block_ingestion(True)
         mpc_nodes.append(mpc_node)

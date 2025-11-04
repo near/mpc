@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 pub mod authentication;
 pub mod client;
+pub mod encryption;
+pub mod serialization;
 pub mod server;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
@@ -75,9 +77,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let res = make_keyshare_get_request(&mut send_request, &KeysetBuilder::new(1).keyset())
-            .await
-            .unwrap();
+        let res = make_keyshare_get_request(
+            &mut send_request,
+            &KeysetBuilder::new(1).keyset(),
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
 
         let expected: Vec<Keyshare> = Vec::new();
         assert_eq!(expected, res);
@@ -94,9 +100,13 @@ mod tests {
             )
             .await
             .unwrap();
-        let res = make_keyshare_get_request(&mut send_request, &keyset_builder.keyset())
-            .await
-            .unwrap();
+        let res = make_keyshare_get_request(
+            &mut send_request,
+            &keyset_builder.keyset(),
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
         assert_eq!(keyset_builder.keyshares().to_vec(), res);
     }
 
@@ -120,9 +130,13 @@ mod tests {
         assert_eq!(expected, received);
 
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
-        make_set_keyshares_request(&mut send_request, keyset_builder.keyshares())
-            .await
-            .unwrap();
+        make_set_keyshares_request(
+            &mut send_request,
+            keyset_builder.keyshares(),
+            &test_setup.backup_encryption_key,
+        )
+        .await
+        .unwrap();
 
         let received = test_setup
             .import_keyshares_receiver

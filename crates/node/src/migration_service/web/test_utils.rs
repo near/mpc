@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use aes_gcm::{Aes256Gcm, KeyInit};
 use ed25519_dalek::SigningKey;
 use mpc_contract::node_migrations::BackupServiceInfo;
 use rand::rngs::OsRng;
@@ -19,6 +20,7 @@ use crate::{
 const LOCALHOST_IP: &str = "127.0.0.1";
 
 pub struct TestSetup {
+    pub backup_encryption_key: [u8; 32],
     pub client_key: SigningKey,
     pub server_key: SigningKey,
     pub target_address: String,
@@ -29,6 +31,7 @@ pub struct TestSetup {
 }
 
 pub async fn setup(port_seed: PortSeed) -> TestSetup {
+    let backup_encryption_key = Aes256Gcm::generate_key(OsRng);
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
@@ -51,6 +54,7 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
     let web_server_state = Arc::new(WebServerState {
         import_keyshares_sender: import_keyshares_sender.clone(),
         keyshare_storage: keyshare_storage.clone(),
+        backup_encryption_key: backup_encryption_key.into(),
     });
     assert!(start_web_server(
         web_server_state.clone(),
@@ -62,6 +66,7 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
     .is_ok());
     let target_address = format!("{LOCALHOST_IP}:{port}");
     TestSetup {
+        backup_encryption_key: backup_encryption_key.into(),
         client_key,
         server_key,
         target_address,

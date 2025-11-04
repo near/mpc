@@ -284,22 +284,33 @@ pub struct SecretsConfig {
     // e.g. you can not call `public_key` on the `ED25519SecretKey` type.
     pub persistent_secrets: PersistentSecrets,
     pub local_storage_aes_key: [u8; 16],
+    pub backup_encryption_key: [u8; 32],
+}
+
+pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N]> {
+    let decoded_key =
+        hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?;
+    decoded_key.as_slice().try_into().context(format!(
+        "Encryption key must be {} bytes ({} hex characters)",
+        N,
+        N * 2
+    ))
 }
 
 impl SecretsConfig {
     pub fn from_parts(
         local_storage_aes_key_hex: &str,
         persistent_secrets: PersistentSecrets,
+        backup_encryption_key_hex: &str,
     ) -> anyhow::Result<Self> {
-        let local_storage_aes_key = hex::decode(local_storage_aes_key_hex)
-            .context("Encryption key must be 32 hex characters")?;
-        let local_storage_aes_key: [u8; 16] = local_storage_aes_key
-            .as_slice()
-            .try_into()
-            .context("Encryption key must be 16 bytes (32 bytes hex)")?;
+        let local_storage_aes_key = hex_to_binary_key(local_storage_aes_key_hex)
+            .context("invalid local storage aes key hex")?;
+        let backup_encryption_key = hex_to_binary_key(backup_encryption_key_hex)
+            .context("invalid backup symmetric key hex")?;
         Ok(Self {
             persistent_secrets,
             local_storage_aes_key,
+            backup_encryption_key,
         })
     }
 }

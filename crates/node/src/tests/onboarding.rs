@@ -31,6 +31,7 @@ struct MigrationTestNodeInfo {
     migration_service_addr: String,
     p2p_public_key: VerifyingKey,
     near_signer_key: VerifyingKey,
+    backup_service_key: [u8; 32],
 }
 
 impl MigrationTestNodeInfo {
@@ -57,6 +58,7 @@ impl MigrationTestNodeInfo {
             migration_service_addr,
             p2p_public_key,
             near_signer_key,
+            backup_service_key: config.secrets.backup_encryption_key,
         }
     }
 }
@@ -213,10 +215,13 @@ async fn test_onboarding() {
         )
         .await
         .unwrap();
-        let keyshares =
-            migration_service::web::client::make_keyshare_get_request(&mut request_sender, &keyset)
-                .await
-                .unwrap();
+        let keyshares = migration_service::web::client::make_keyshare_get_request(
+            &mut request_sender,
+            &keyset,
+            &leaving_node.backup_service_key,
+        )
+        .await
+        .unwrap();
         let expected = get_keyshares(leaving_node.home_dir, leaving_node.storage_key, &keyset)
             .await
             .unwrap();
@@ -237,6 +242,7 @@ async fn test_onboarding() {
         migration_service::web::client::make_set_keyshares_request(
             &mut request_sender,
             &received_keyshares.clone(),
+            &onboarding_node.backup_service_key,
         )
         .await
         .unwrap();

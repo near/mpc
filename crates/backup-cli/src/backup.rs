@@ -50,10 +50,14 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
+            let backup_encryption_key =
+                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
+                    .expect("require valid hex key");
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
                 mpc_node_p2p_key,
                 p2p_private_key,
+                backup_encryption_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
             let mpc_contract =
@@ -70,10 +74,14 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
+            let backup_encryption_key =
+                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
+                    .expect("require valid hex key");
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
                 mpc_node_p2p_key,
                 p2p_private_key,
+                backup_encryption_key,
             );
             let key_shares_storage = adapters::DummyKeyshareStorage {};
             put_keyshares(&mpc_p2p_client, &key_shares_storage).await;

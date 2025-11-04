@@ -7,7 +7,13 @@ use mpc_contract::primitives::key_state::Keyset;
 use mpc_tls::tls::configure_tls;
 use tokio::net::TcpStream;
 
-use crate::{keyshare::Keyshare, migration_service::web::authentication::authenticate_peer};
+use crate::{
+    keyshare::Keyshare,
+    migration_service::web::{
+        authentication::authenticate_peer,
+        serialization::{decrypt_and_deserialize_keyshares, serialize_and_encrypt_keyshares},
+    },
+};
 
 #[allow(dead_code)]
 /// Connects to the web server, performs the TLS handshake and returns the connection.
@@ -65,6 +71,7 @@ pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyho
 pub async fn make_keyshare_get_request(
     request_sender: &mut SendRequest<Body>,
     keyset: &Keyset,
+    backup_encryption_key: &[u8; 32],
 ) -> anyhow::Result<Vec<Keyshare>> {
     let params = serde_json::json!(keyset);
     let req = Request::builder()
@@ -92,9 +99,8 @@ pub async fn make_keyshare_get_request(
         .await
         .inspect_err(|err| tracing::error!(?err, "failed to read body"))?;
 
-    // Parse JSON into Vec<Keyshare>
     let keyshares: Vec<Keyshare> =
-        serde_json::from_slice(&body_bytes).context("failed to parse JSON keyshares")?;
+        decrypt_and_deserialize_keyshares(&body_bytes, backup_encryption_key)?;
 
     tracing::debug!("Received keyshares: {:?}", keyshares);
 
@@ -104,15 +110,15 @@ pub async fn make_keyshare_get_request(
 pub async fn make_set_keyshares_request(
     request_sender: &mut SendRequest<Body>,
     keyshares: &[Keyshare],
+    backup_encryption_key: &[u8; 32],
 ) -> anyhow::Result<()> {
     tracing::info!("making set keyshares request");
-    let json = serde_json::to_string(keyshares)?;
-
+    let body = serialize_and_encrypt_keyshares(keyshares, backup_encryption_key)?;
     let req = Request::builder()
         .method("PUT")
         .uri(format!("{}/set_keyshares", BOGUS_URL))
         .header(hyper::header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json))?;
+        .body(Body::from(body))?;
     let response = request_sender
         .send_request(req)
         .await

@@ -50,6 +50,7 @@ class MpcNode(NearAccount):
         url,
         p2p_public_key,
         pytest_signer_keys: list[Key],
+        backup_key: bytes,
     ):
         super().__init__(near_node, signer_key, pytest_signer_keys)
         self.url = url
@@ -59,6 +60,7 @@ class MpcNode(NearAccount):
         self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
+        self.backup_key = backup_key
 
     def change_contract_id(self, new_contract_id: str):
         yaml = YAML()
@@ -120,6 +122,7 @@ class MpcNode(NearAccount):
             "MPC_SECRET_STORE_KEY": self.secret_store_key,
             "MPC_IMAGE_HASH": DUMMY_MPC_IMAGE_HASH,
             "MPC_LATEST_ALLOWED_HASH_FILE": "latest_allowed_hash.txt",
+            "BACKUP_ENCRYPTION_KEY_HEX": self.backup_key.hex(),
         }
         cmd = (
             MPC_BINARY_PATH,

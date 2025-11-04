@@ -20,6 +20,7 @@ pub struct MpcP2PClient {
     mpc_node_url: String,
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
+    backup_encryption_key: [u8; 32],
 }
 
 impl MpcP2PClient {
@@ -27,11 +28,13 @@ impl MpcP2PClient {
         mpc_node_url: String,
         mpc_node_p2p_key: VerifyingKey,
         p2p_private_key: SigningKey,
+        backup_encryption_key: [u8; 32],
     ) -> Self {
         Self {
             mpc_node_url,
             mpc_node_p2p_key,
             p2p_private_key,
+            backup_encryption_key,
         }
     }
 }
@@ -48,9 +51,13 @@ impl ports::P2PClient for MpcP2PClient {
         .await
         .map_err(Error::ServerConnection)?;
 
-        let keyshares = client::make_keyshare_get_request(&mut send_request, keyset)
-            .await
-            .map_err(Error::GetRequest)?;
+        let keyshares = client::make_keyshare_get_request(
+            &mut send_request,
+            keyset,
+            &self.backup_encryption_key,
+        )
+        .await
+        .map_err(Error::GetRequest)?;
         Ok(keyshares)
     }
 
@@ -62,9 +69,13 @@ impl ports::P2PClient for MpcP2PClient {
         )
         .await
         .map_err(Error::ServerConnection)?;
-        client::make_set_keyshares_request(&mut send_request, keyshares)
-            .await
-            .map_err(Error::GetRequest)?;
+        client::make_set_keyshares_request(
+            &mut send_request,
+            keyshares,
+            &self.backup_encryption_key,
+        )
+        .await
+        .map_err(Error::GetRequest)?;
         Ok(())
     }
 }
@@ -86,6 +97,7 @@ mod tests {
             test_setup.target_address,
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
+            test_setup.backup_encryption_key,
         );
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
         let keyset = keyset_builder.keyset();
@@ -120,6 +132,7 @@ mod tests {
             test_setup.target_address,
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
+            test_setup.backup_encryption_key,
         );
         let keyset_builder = KeysetBuilder::new_populated(0, 8);
         let keyshares = keyset_builder.keyshares().to_vec();

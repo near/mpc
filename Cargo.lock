@@ -5073,6 +5073,7 @@ dependencies = [
  "attestation",
  "axum 0.7.9",
  "backon",
+ "base64 0.22.1",
  "borsh",
  "bs58 0.5.1",
  "built",

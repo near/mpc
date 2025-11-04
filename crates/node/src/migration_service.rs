@@ -7,7 +7,7 @@ use tokio::sync::{watch, RwLock};
 use types::MigrationInfo;
 
 use crate::{
-    config::WebUIConfig,
+    config::{SecretsConfig, WebUIConfig},
     indexer::{participants::ContractState, tx_sender::TransactionSender},
     keyshare::KeyshareStorage,
 };
@@ -16,9 +16,23 @@ pub mod onboarding;
 pub mod types;
 pub mod web;
 
+pub struct MigrationSecrets {
+    pub backup_encryption_key: [u8; 32],
+    pub p2p_private_key: SigningKey,
+}
+
+impl From<&SecretsConfig> for MigrationSecrets {
+    fn from(value: &SecretsConfig) -> Self {
+        Self {
+            backup_encryption_key: value.backup_encryption_key,
+            p2p_private_key: value.persistent_secrets.p2p_private_key.clone(),
+        }
+    }
+}
+
 pub async fn spawn_recovery_server_and_run_onboarding(
     migration_web_ui: WebUIConfig,
-    p2p_private_key: &SigningKey,
+    migration_secrets: MigrationSecrets,
     my_near_account_id: AccountId,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     my_migration_info_receiver: watch::Receiver<MigrationInfo>,
@@ -29,20 +43,21 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     let web_server_state = web::types::WebServerState {
         import_keyshares_sender,
         keyshare_storage: keyshare_storage.clone(),
+        backup_encryption_key: migration_secrets.backup_encryption_key,
     };
 
     web::server::start_web_server(
         web_server_state.into(),
         migration_web_ui.clone(),
         my_migration_info_receiver.clone(),
-        p2p_private_key,
+        &migration_secrets.p2p_private_key,
     )
     .await?;
     onboard(
         contract_state_receiver,
         my_migration_info_receiver.clone(),
         my_near_account_id.clone(),
-        p2p_private_key.verifying_key(),
+        migration_secrets.p2p_private_key.verifying_key(),
         tx_sender,
         keyshare_storage.clone(),
         import_keyshares_receiver,
