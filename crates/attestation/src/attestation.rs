@@ -442,10 +442,7 @@ impl Attestation {
             &tcb_info.compose_hash,
         )?;
 
-        Self::validate_app_compose_payload(
-            &app_compose_event.event_payload,
-            &tcb_info.app_compose,
-        )
+        Self::validate_app_compose_payload(&app_compose_event.event_payload, &tcb_info.app_compose)
     }
 
     /// Validates app compose configuration against expected security requirements.
