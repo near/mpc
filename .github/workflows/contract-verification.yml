@@ -21,12 +21,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@v2
+        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
         with:
           cache-on-failure: true
           cache-all-crates: true
