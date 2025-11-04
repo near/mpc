@@ -51,10 +51,16 @@ impl SignRequestStorage {
         loop {
             let added_id = match rx.recv().await {
                 Ok(added_id) => added_id,
-                Err(e) => {
-                    metrics::SIGN_REQUEST_CHANNEL_FAILED.inc();
-                    return Err(anyhow::anyhow!("Error in sign_request channel recv, {}", e));
-                }
+                Err(e) => match e {
+                    broadcast::error::RecvError::Closed => {
+                        metrics::SIGN_REQUEST_CHANNEL_FAILED.inc();
+                        return Err(anyhow::anyhow!("Error in sign_request channel recv, {e}"));
+                    }
+                    broadcast::error::RecvError::Lagged(msg_n) => {
+                        tracing::info!("{msg_n} messages lagged during sign_request channel recv");
+                        continue;
+                    }
+                },
             };
             if added_id == id {
                 break;
@@ -111,10 +117,16 @@ impl CKDRequestStorage {
         loop {
             let added_id = match rx.recv().await {
                 Ok(added_id) => added_id,
-                Err(e) => {
-                    metrics::CKD_REQUEST_CHANNEL_FAILED.inc();
-                    return Err(anyhow::anyhow!("Error in ckd_request channel recv, {}", e));
-                }
+                Err(e) => match e {
+                    broadcast::error::RecvError::Closed => {
+                        metrics::CKD_REQUEST_CHANNEL_FAILED.inc();
+                        return Err(anyhow::anyhow!("Error in ckd_request channel recv, {e}"));
+                    }
+                    broadcast::error::RecvError::Lagged(msg_n) => {
+                        tracing::info!("{msg_n} messages lagged during ckd_request channel recv");
+                        continue;
+                    }
+                },
             };
             if added_id == id {
                 break;
