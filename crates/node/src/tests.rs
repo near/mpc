@@ -425,6 +425,7 @@ pub fn into_participant_ids(
 }
 
 #[test]
+#[cfg(not(feature = "reproducible"))]
 fn test_build_info_metric() {
     // Test that the build info metric can be initialized without panicking
     crate::metrics::init_build_info_metric();
@@ -460,6 +461,7 @@ fn test_build_info_metric_initialization() {
 }
 
 #[test]
+#[cfg(not(feature = "reproducible"))]
 fn test_build_info_metric_values() {
     // Test that the build info metric has the correct values
     crate::metrics::init_build_info_metric();
