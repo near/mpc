@@ -243,9 +243,7 @@ impl Attestation {
         self.verify_launcher_compose_hash(
             &attestation.tcb_info,
             allowed_launcher_docker_compose_hashes,
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -411,9 +409,7 @@ impl Attestation {
             "mtrd_tcb_info",
             &tcb_info.mrtd,
             &hex::encode(expected_measurements.rtmrs.mrtd),
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Verifies RTMR3 by replaying event log.
@@ -449,9 +445,7 @@ impl Attestation {
         Self::validate_app_compose_payload(
             &app_compose_event.event_payload,
             &tcb_info.app_compose,
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Validates app compose configuration against expected security requirements.
