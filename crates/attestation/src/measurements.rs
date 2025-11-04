@@ -113,11 +113,15 @@ impl ExpectedMeasurements {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MeasurementsError {
+    #[error("no TD10 report")]
     NoTd10Report,
+    #[error("invalid TCB info")]
     InvalidTcbInfo,
+    #[error("invalid hex value for {0}: {1}")]
     InvalidHexValue(String, String),
+    #[error("invalid length for {0}: {1}")]
     InvalidLength(String, usize),
 }
 

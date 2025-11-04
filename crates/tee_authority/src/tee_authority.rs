@@ -295,7 +295,9 @@ mod tests {
             .unwrap();
         let timestamp_s = 0u64;
         assert_eq!(
-            attestation.verify(report_data, timestamp_s, &[], &[]),
+            attestation
+                .verify(report_data, timestamp_s, &[], &[])
+                .is_ok(),
             quote_verification_result
         );
     }

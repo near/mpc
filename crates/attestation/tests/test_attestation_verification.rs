@@ -1,5 +1,5 @@
 use attestation::{
-    attestation::{Attestation, MockAttestation},
+    attestation::{Attestation, MockAttestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
@@ -9,11 +9,14 @@ use test_utils::attestation::{
 };
 
 #[rstest]
-#[case(MockAttestation::Valid, true)]
-#[case(MockAttestation::Invalid, false)]
+#[case(MockAttestation::Valid, Ok(()))]
+#[case(
+    MockAttestation::Invalid,
+    Err(VerificationError::InvalidMockAttestation)
+)]
 fn test_mock_attestation_verify(
     #[case] local_attestation: MockAttestation,
-    #[case] expected_quote_verification_result: bool,
+    #[case] expected_quote_verification_result: Result<(), VerificationError>,
 ) {
     let timestamp_s = 0u64;
     let tls_key = p2p_tls_key();
@@ -47,5 +50,5 @@ fn test_verify_method_signature() {
         &[allowed_mpc_image_digest],
         &[allowed_launcher_compose_digest],
     );
-    assert!(verification_result);
+    assert!(verification_result.is_ok());
 }
