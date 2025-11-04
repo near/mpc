@@ -24,16 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Build MPC Node binary
-        run: cargo build -p mpc-node --profile reproducible --locked
-
-      - name: Build MPC Docker image
-        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7
-        with:
-          context: .
-          profile-name: "mpc-image-builder"
-          file: deployment/Dockerfile-node
-          tags: test_image_tag_ci
-          load: true
+        run: ./deployment/build-images.sh --node
 
       - name: Check Docker image can initialize and start
         run: |
@@ -53,7 +44,7 @@ jobs:
           -e MPC_CONTRACT_ID=v1.signer_test \
           -e MPC_IMAGE_HASH=5ba283860c0efa3d4c3e08a76a2b77fab4725baad4f48504eac858e04af7fd64 \
           -e MPC_LATEST_ALLOWED_HASH_FILE=/tmp/image-digest.bin \
-          -e MPC_ENV=mainnet test_image_tag_ci)
+          -e MPC_ENV=mainnet mpc-node)
 
           if [ -z "$CONTAINER_ID" ]; then
             echo "❌ Failed to start container"

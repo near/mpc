@@ -114,7 +114,7 @@ if $USE_LAUNCHER; then
 fi
 
 if $USE_NODE; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --features reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
     build_reproducible_image $NODE_IMAGE_NAME $DOCKERFILE_NODE
     node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
