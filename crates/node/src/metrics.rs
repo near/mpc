@@ -300,14 +300,16 @@ pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| 
 /// Initialize the build info metric with current version information
 pub fn init_build_info_metric() {
     // Use compile-time constants from built crate
-    let version = crate::built_info::PKG_VERSION;
-    let build_time = crate::built_info::BUILT_TIME_UTC;
-    let commit = crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown");
-    let rustc_version = crate::built_info::RUSTC_VERSION;
-
-    MPC_BUILD_INFO
+    #[cfg(not(feature = "reproducible"))]
+    {
+        let version = crate::built_info::PKG_VERSION;
+        let build_time = crate::built_info::BUILT_TIME_UTC;
+        let commit = crate::built_info::GIT_COMMIT_HASH_SHORT.unwrap_or("unknown");
+        let rustc_version = crate::built_info::RUSTC_VERSION;
+        MPC_BUILD_INFO
         .with_label_values(&[version, build_time, commit, rustc_version])
         .set(1);
+    }
 }
 
 pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_LEADER: LazyLock<

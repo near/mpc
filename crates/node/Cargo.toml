@@ -6,6 +6,7 @@ license = "MIT"
 
 [features]
 network-hardship-simulation = []
+reproducible = []
 test-utils = []
 
 [dependencies]

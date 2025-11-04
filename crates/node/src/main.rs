@@ -5,6 +5,7 @@ fn main() -> anyhow::Result<()> {
     // Handle version flags before parsing CLI
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 && (args[1] == "--version" || args[1] == "-V") {
+        #[cfg(not(feature = "reproducible"))]
         println!("{}", *mpc_node::MPC_VERSION_STRING);
         return Ok(());
     }
