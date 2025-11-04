@@ -75,6 +75,12 @@ ALLOWED_ENV_VARS = {
     "RUST_BACKTRACE",  # Enables backtraces for Rust errors
     "RUST_LOG",  # Logging level for Rust code
     "MPC_RESPONDER_ID",  # Unique responder ID for MPC communication
+
+    # Workaround to allow MPC nodes to run against testnet
+    # since nearcore 2.9 was never deployed there.
+    # Set this to "now" to allow MPC nodes to sync with testnet 2.8.
+    # See #[1379](https://github.com/near/mpc/issues/1379) for more context.
+    "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE",
 }
 
 # Regex: hostnames must be alphanum + dash/dot, IPs must be valid IPv4
