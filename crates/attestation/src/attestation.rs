@@ -440,6 +440,12 @@ impl Attestation {
 
         let app_compose_event = tcb_info.get_single_event(COMPOSE_HASH_EVENT)?;
 
+        compare_hex_hashes(
+            "app_compose_event_hash",
+            &app_compose_event.event_payload,
+            &tcb_info.compose_hash,
+        )?;
+
         Self::validate_app_compose_payload(
             &app_compose_event.event_payload,
             &tcb_info.app_compose,
