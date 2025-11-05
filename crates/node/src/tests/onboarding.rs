@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::config::{NodeStatus, ParticipantInfo, ParticipantStatus};
+use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::migration_service;
@@ -31,7 +31,7 @@ struct MigrationTestNodeInfo {
     migration_service_addr: String,
     p2p_public_key: VerifyingKey,
     near_signer_key: VerifyingKey,
-    backup_service_key: [u8; 32],
+    backup_service_key: AesKey256,
 }
 
 impl MigrationTestNodeInfo {

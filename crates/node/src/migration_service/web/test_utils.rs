@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};
 
 use crate::{
-    config::WebUIConfig,
+    config::{AesKey256, WebUIConfig},
     keyshare::{generate_key_storage, Keyshare, KeyshareStorage},
     migration_service::{
         types::MigrationInfo,
@@ -20,7 +20,7 @@ use crate::{
 const LOCALHOST_IP: &str = "127.0.0.1";
 
 pub struct TestSetup {
-    pub backup_encryption_key: [u8; 32],
+    pub backup_encryption_key: AesKey256,
     pub client_key: SigningKey,
     pub server_key: SigningKey,
     pub target_address: String,

@@ -7,7 +7,7 @@ use tokio::sync::{watch, RwLock};
 use types::MigrationInfo;
 
 use crate::{
-    config::{SecretsConfig, WebUIConfig},
+    config::{AesKey256, SecretsConfig, WebUIConfig},
     indexer::{participants::ContractState, tx_sender::TransactionSender},
     keyshare::KeyshareStorage,
 };
@@ -17,7 +17,7 @@ pub mod types;
 pub mod web;
 
 pub struct MigrationSecrets {
-    pub backup_encryption_key: [u8; 32],
+    pub backup_encryption_key: AesKey256,
     pub p2p_private_key: SigningKey,
 }
 

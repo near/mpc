@@ -1,6 +1,6 @@
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::primitives::key_state::Keyset;
-use mpc_node::{keyshare::Keyshare, migration_service::web::client};
+use mpc_node::{config::AesKey256, keyshare::Keyshare, migration_service::web::client};
 
 use crate::ports;
 
@@ -20,7 +20,7 @@ pub struct MpcP2PClient {
     mpc_node_url: String,
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
-    backup_encryption_key: [u8; 32],
+    backup_encryption_key: AesKey256,
 }
 
 impl MpcP2PClient {
@@ -28,7 +28,7 @@ impl MpcP2PClient {
         mpc_node_url: String,
         mpc_node_p2p_key: VerifyingKey,
         p2p_private_key: SigningKey,
-        backup_encryption_key: [u8; 32],
+        backup_encryption_key: AesKey256,
     ) -> Self {
         Self {
             mpc_node_url,

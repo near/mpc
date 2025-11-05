@@ -8,6 +8,9 @@ use std::fs;
 
 use std::path::Path;
 
+pub type AesKey256 = [u8; 32];
+pub type AesKey128 = [u8; 16];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleConfig {
     pub concurrency: usize,
@@ -283,8 +286,8 @@ pub struct SecretsConfig {
     // Ed25519 keys. `near_crypto` API too rigid to store this exact enum type.
     // e.g. you can not call `public_key` on the `ED25519SecretKey` type.
     pub persistent_secrets: PersistentSecrets,
-    pub local_storage_aes_key: [u8; 16],
-    pub backup_encryption_key: [u8; 32],
+    pub local_storage_aes_key: AesKey128,
+    pub backup_encryption_key: AesKey256,
 }
 
 pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N]> {

@@ -8,6 +8,7 @@ use mpc_tls::tls::configure_tls;
 use tokio::net::TcpStream;
 
 use crate::{
+    config::AesKey256,
     keyshare::Keyshare,
     migration_service::web::{
         authentication::authenticate_peer,
@@ -71,7 +72,7 @@ pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyho
 pub async fn make_keyshare_get_request(
     request_sender: &mut SendRequest<Body>,
     keyset: &Keyset,
-    backup_encryption_key: &[u8; 32],
+    backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let params = serde_json::json!(keyset);
     let req = Request::builder()
@@ -110,7 +111,7 @@ pub async fn make_keyshare_get_request(
 pub async fn make_set_keyshares_request(
     request_sender: &mut SendRequest<Body>,
     keyshares: &[Keyshare],
-    backup_encryption_key: &[u8; 32],
+    backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<()> {
     tracing::info!("making set keyshares request");
     let body = serialize_and_encrypt_keyshares(keyshares, backup_encryption_key)?;

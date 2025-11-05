@@ -1,12 +1,13 @@
 use base64::Engine;
 
+use crate::config::AesKey256;
 use crate::keyshare::Keyshare;
 use crate::migration_service::web::encryption::decrypt_bytes;
 use crate::migration_service::web::encryption::encrypt_bytes;
 
 pub fn serialize_and_encrypt_keyshares(
     keyshares: &[Keyshare],
-    backup_encryption_key: &[u8; 32],
+    backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<String> {
     let keyshares_json = serde_json::to_string(&keyshares).inspect_err(|err| {
         let msg = err.to_string();
@@ -23,7 +24,7 @@ pub fn serialize_and_encrypt_keyshares(
 
 pub fn decrypt_and_deserialize_keyshares(
     base64_ciphertext: &[u8],
-    backup_encryption_key: &[u8; 32],
+    backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let nonce_and_cipher_bytes =
         base64::engine::general_purpose::STANDARD.decode(base64_ciphertext)?;
