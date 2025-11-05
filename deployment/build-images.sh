@@ -122,14 +122,23 @@ fi
 
 if $USE_PUSH; then
     # This assumes that docker is logged-in dockerhub registry with nearone user
-    branch_name=$(git branch --show-current)
 
-    # Set a default value if branch_name is empty
-    if [ -z "$branch_name" ]; then
-        branch_name="detached"
+    git_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+
+    if [ -n "$git_tag" ]; then
+        image_tag="$git_tag"
+        echo "Using Git tag: $git_tag"
+    else
+        branch_name=$(git branch --show-current)
+
+        if [ -z "$branch_name" ]; then
+            branch_name="detached"
+        fi
+
+        short_hash=$(git rev-parse --short HEAD)
+        image_tag="$branch_name-$short_hash"
+        echo "Using branch-hash tag: $image_tag"
     fi
-
-    short_hash=$(git rev-parse --short HEAD)
 
     if $USE_LAUNCHER; then
         temp_dir=$(mktemp -d)
@@ -138,12 +147,12 @@ if $USE_PUSH; then
         # digest in $temp_dir/manifest.json
         skopeo copy --all --dest-compress docker-daemon:$LAUNCHER_IMAGE_NAME:latest dir:$temp_dir
         # Then we publish the image from the directory, making sure the manifest digest does not change
-        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$branch_name-$short_hash
+        skopeo copy --preserve-digests dir:$temp_dir docker://docker.io/nearone/$LAUNCHER_IMAGE_NAME:$image_tag
     fi
 
     if $USE_NODE; then
-        docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$branch_name-$short_hash
-        docker push nearone/$NODE_IMAGE_NAME:$branch_name-$short_hash
+        docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$image_tag
+        docker push nearone/$NODE_IMAGE_NAME:$image_tag
     fi
 fi
 
@@ -156,4 +165,3 @@ fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
 fi
-

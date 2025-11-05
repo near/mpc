@@ -165,9 +165,9 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1380](https://github.com/near/mpc/pull/1380)(@netrome): *(launcher)* Allow passing through NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE env var (#1380)
 
-- : Send AES-256 encrypted secrets over mutual TLS instead of plaintext (#1376)
+- [#1376](https://github.com/near/mpc/pull/1376)(@kevindeforth): Send AES-256 encrypted secrets over mutual TLS instead of plaintext (#1376)
 
-- : Implement `KeyshareStorageAdapter` for keyshare persistence (1384)
+- [#1384](https://github.com/near/mpc/pull/1384)(@pbeza): Implement `KeyshareStorageAdapter` for keyshare persistence (#1384)
 
 
 ### 🐛 Bug Fixes
