@@ -145,7 +145,14 @@ All steps below assume the current user is `mpc` and the current directory is
 
 ```bash
 cat <<EOF > vmm.toml
-address = "unix:./vmm.sock"
+
+# Communication endpoint for the VMM:
+# - Use an IP and port when you want to access the VMM web UI from a browser (recommended)
+address = "127.0.0.1"
+port = 10000
+# - Or use a UNIX socket if you don’t need the web UI and prefer not to expose an IP/port
+#   address = "unix:./vmm.sock"
+
 reuse = true
 image_path = "./images"
 run_path = "./run/vm"
@@ -195,7 +202,7 @@ To run dstack-vmm, you can start it manually with:
 ./dstack-vmm -c vmm.toml
 ```
 
-When `dstack-vmm` is running, you should be able to access its web interface at port `9300`.
+When `dstack-vmm` is running, you should be able to access its web interface at port `10000`.
 
 However, for persistent operation, we recommend using the following systemd service:
 
@@ -233,14 +240,14 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 
 ---
 
-##### Guest OS Image
+##### Guest OS Image - Advance (optional) - build your own and/or verify measurements.    
 
 > **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes.  
 > The OS image is measured, and those measurements are hardcoded in the contract.
 
 The Guest OS image was already downloaded in step 4 of the installation process above using the specific version 0.5.4. This ensures compatibility and reproducibility across all MPC nodes.
 
-If you need to verify or re-download the image, you can use:
+If you need to verify or re-download or build the image, you can use:
 
 ```bash
 DSTACK_VERSION=0.5.4
@@ -358,6 +365,7 @@ Build `dstack-mr` docker image:
 cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
 ```
 
+Create a Dockerfile file, and add the content below to it.
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
@@ -449,9 +457,13 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
 2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
-   * On the DTX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
+   * On the DTX server,  run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
    > **Prerequisite:** Docker must be installed.
-
+   
+    ```bash
+    cd /opt/mpc/dstack/key-provider-build
+    ./run.sh
+    ```
 3. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
