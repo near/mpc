@@ -145,7 +145,16 @@ All steps below assume the current user is `mpc` and the current directory is
 
 ```bash
 cat <<EOF > vmm.toml
-address = "unix:./vmm.sock"
+
+# vmm.sock is a local UNIX socket used for supervisor–VMM communication
+# (use this when dstack components run on the same host)
+# address = "unix:./vmm.sock"
+
+# address and port define the HTTP interface for the web UI
+# (use these when you want to access the VMM from a browser or remote tools)
+address = "127.0.0.1"
+port = 10000
+
 reuse = true
 image_path = "./images"
 run_path = "./run/vm"
@@ -195,7 +204,7 @@ To run dstack-vmm, you can start it manually with:
 ./dstack-vmm -c vmm.toml
 ```
 
-When `dstack-vmm` is running, you should be able to access its web interface at port `9300`.
+When `dstack-vmm` is running, you should be able to access its web interface at port `10000`.
 
 However, for persistent operation, we recommend using the following systemd service:
 
