@@ -159,13 +159,25 @@ def test_invalid_env_key_is_ignored():
     assert "MPC_ACCOUNT_ID=safe" in cmd
 
 
-def test_prodocol_upgrade_override_is_allowed():
+def test_protocol_upgrade_override_is_allowed():
     env = {
         "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE": "now",
     }
     cmd = build_docker_cmd(env, "sha256:abc123")
 
     assert "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE=now" in " ".join(cmd)
+
+
+def test_mpc_backup_encryption_key_is_allowed():
+    env = {
+        "MPC_BACKUP_ENCRYPTION_KEY_HEX": "0000000000000000000000000000000000000000000000000000000000000000",
+    }
+    cmd = build_docker_cmd(env, "sha256:abc123")
+
+    assert (
+        "MPC_BACKUP_ENCRYPTION_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000"
+        in " ".join(cmd)
+    )
 
 
 def test_malformed_extra_host_is_ignored():
