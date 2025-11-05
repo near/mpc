@@ -1,8 +1,8 @@
 [package]
 name = "mpc-node"
-version = "2.2.0-rc.1"
 edition = "2021"
-license = "MIT"
+version = { workspace = true }
+license = { workspace = true }
 
 [features]
 network-hardship-simulation = []

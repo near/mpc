@@ -1,8 +1,8 @@
 [package]
 name = "mpc-devnet"
-version = "0.1.0"
+version = { workspace = true }
+license = { workspace = true }
 edition = "2021"
-license = "MIT"
 
 [dependencies]
 anyhow = { workspace = true }

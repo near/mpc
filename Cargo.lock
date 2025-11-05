@@ -1175,7 +1175,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attestation"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -1463,7 +1463,7 @@ dependencies = [
 
 [[package]]
 name = "backup-cli"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2161,7 +2161,7 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "contract-interface"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "borsh",
  "bs58 0.5.1",
@@ -2175,7 +2175,7 @@ dependencies = [
 
 [[package]]
 name = "contract_history"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "bs58 0.5.1",
  "clap",
@@ -4995,7 +4995,7 @@ checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 
 [[package]]
 name = "mpc-contract"
-version = "2.2.0-rc.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -5035,7 +5035,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "borsh",
@@ -5063,7 +5063,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "2.2.0-rc.1"
+version = "3.0.0"
 dependencies = [
  "actix",
  "aes-gcm",
@@ -5129,7 +5129,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-primitives"
-version = "0.0.0"
+version = "3.0.0"
 dependencies = [
  "borsh",
  "derive_more 2.0.1",
@@ -5143,7 +5143,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-tls"
-version = "0.0.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
@@ -6874,7 +6874,7 @@ dependencies = [
 
 [[package]]
 name = "node-types"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "attestation",
@@ -9793,7 +9793,7 @@ checksum = "df7f62577c25e07834649fc3b39fafdc597c0a3527dc1c60129201ccfcbaa50c"
 
 [[package]]
 name = "tee_authority"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "attestation",
@@ -9841,7 +9841,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-migration-contract"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "borsh",
  "near-sdk",
@@ -9849,7 +9849,7 @@ dependencies = [
 
 [[package]]
 name = "test-parallel-contract"
-version = "0.2.0"
+version = "3.0.0"
 dependencies = [
  "blstrs",
  "borsh",
@@ -9864,7 +9864,7 @@ dependencies = [
 
 [[package]]
 name = "test_utils"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "attestation",
  "contract-interface",

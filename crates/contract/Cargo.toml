@@ -1,8 +1,8 @@
 [package]
 name = "mpc-contract"
-version = "2.2.0-rc.1"
+version = { workspace = true }
+license = { workspace = true }
 edition = "2021"
-license = "MIT"
 repository = "https://github.com/near/mpc"
 
 # fields to configure build with WASM reproducibility, according to specs
