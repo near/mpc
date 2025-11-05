@@ -240,7 +240,7 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 
 ---
 
-##### Guest OS Image - Advance (optional) - build your own and/or verify measurements.    
+##### Guest OS Image - Advanced (optional) - build your own and/or verify measurements.    
 
 > **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes.  
 > The OS image is measured, and those measurements are hardcoded in the contract.
