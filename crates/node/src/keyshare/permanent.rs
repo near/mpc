@@ -36,7 +36,7 @@ impl PermanentKeyshareData {
         };
         if first.key_id.epoch_id != epoch_id {
             anyhow::bail!(
-                "Inconsistent epoch id. Keyshares are of epoch id {}, but epoch id is  {}",
+                "Inconsistent epoch id. Keyshares are of epoch id {}, but epoch id is {}",
                 first.key_id.epoch_id,
                 epoch_id
             );

@@ -1,5 +1,5 @@
 use contract_interface::types as contract_types;
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::VerifyingKey;
 use near_primitives::types::AccountId;
 use rand_core::OsRng;
 use std::{path::PathBuf, str::FromStr};
@@ -48,7 +48,11 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
+
+            let secrets = ports::SecretsRepository::load_secrets(&secrets_storage)
+                .await
+                .expect("failed to load secrets");
+
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let backup_encryption_key =
                 mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
@@ -56,10 +60,17 @@ pub async fn run_command(args: cli::Args) {
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
                 mpc_node_p2p_key,
-                p2p_private_key,
+                secrets.p2p_private_key,
                 backup_encryption_key,
             );
-            let key_shares_storage = adapters::DummyKeyshareStorage {};
+
+            let key_shares_storage = adapters::keyshare_storage::KeyshareStorageAdapter::new(
+                home_dir.clone(),
+                secrets.local_storage_aes_key,
+            )
+            .await
+            .expect("failed to create keyshare storage");
+
             let mpc_contract =
                 adapters::contract_state_fixture::ContractStateFixture::new(home_dir);
             get_keyshares(&mpc_p2p_client, &key_shares_storage, &mpc_contract).await;
@@ -72,7 +83,11 @@ pub async fn run_command(args: cli::Args) {
                 )
                 .await
                 .expect("failed to create secrets storage");
-            let p2p_private_key = get_p2p_private_key(&secrets_storage).await;
+
+            let secrets = ports::SecretsRepository::load_secrets(&secrets_storage)
+                .await
+                .expect("failed to load secrets");
+
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let backup_encryption_key =
                 mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
@@ -80,10 +95,17 @@ pub async fn run_command(args: cli::Args) {
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
                 subcommand_args.mpc_node_url,
                 mpc_node_p2p_key,
-                p2p_private_key,
+                secrets.p2p_private_key,
                 backup_encryption_key,
             );
-            let key_shares_storage = adapters::DummyKeyshareStorage {};
+
+            let key_shares_storage = adapters::keyshare_storage::KeyshareStorageAdapter::new(
+                home_dir,
+                secrets.local_storage_aes_key,
+            )
+            .await
+            .expect("failed to create keyshare storage");
+
             put_keyshares(&mpc_p2p_client, &key_shares_storage).await;
         }
     }
@@ -95,14 +117,6 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
         .store_secrets(&persistent_secrets)
         .await
         .expect("fail to store private key");
-}
-
-async fn get_p2p_private_key(secrets_storage: &impl ports::SecretsRepository) -> SigningKey {
-    let secrets = secrets_storage
-        .load_secrets()
-        .await
-        .expect("failed to load private key");
-    secrets.p2p_private_key
 }
 
 async fn print_register_command(
