@@ -456,7 +456,6 @@ impl Attestation {
             && app_compose.local_key_provider_enabled
             && app_compose.allowed_envs.is_empty()
             && app_compose.no_instance_id
-            && app_compose.secure_time == Some(true)
             && app_compose.pre_launch_script.is_none()
     }
 
@@ -577,6 +576,59 @@ impl GetSingleEvent for TcbInfo {
             Err(VerificationError::DuplicateEvent(event_name))
         } else {
             Ok(event)
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+
+    use alloc::{string::ToString, vec::Vec};
+
+    #[test]
+    fn validate_app_compose_config__succeeds_on_valid_app_compose() {
+        // Given
+        let app_compose = valid_app_compose();
+        // When
+        let result = Attestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(result)
+    }
+
+    #[test]
+    fn validate_app_compose_config__allows_insecure_time() {
+        // Given
+        let app_compose = AppCompose {
+            secure_time: Some(false),
+            ..valid_app_compose()
+        };
+        // When
+        let result = Attestation::validate_app_compose_config(&app_compose);
+
+        // Then
+        assert!(result)
+    }
+
+    fn valid_app_compose() -> AppCompose {
+        AppCompose {
+            manifest_version: 2,
+            name: "".to_string(),
+            runner: "docker-compose".to_string(),
+            docker_compose_file: "".to_string().into(),
+            kms_enabled: false,
+            tproxy_enabled: None,
+            gateway_enabled: Some(false),
+            public_logs: true,
+            public_sysinfo: true,
+            local_key_provider_enabled: true,
+            key_provider_id: None,
+            allowed_envs: Vec::new(),
+            no_instance_id: true,
+            secure_time: None,
+            pre_launch_script: None,
         }
     }
 }
