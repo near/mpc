@@ -159,6 +159,15 @@ def test_invalid_env_key_is_ignored():
     assert "MPC_ACCOUNT_ID=safe" in cmd
 
 
+def test_prodocol_upgrade_override_is_allowed():
+    env = {
+        "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE": "now",
+    }
+    cmd = build_docker_cmd(env, "sha256:abc123")
+
+    assert "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE=now" in " ".join(cmd)
+
+
 def test_malformed_extra_host_is_ignored():
     env = {
         "EXTRA_HOSTS": "badhostentry,no-colon,also--bad",
