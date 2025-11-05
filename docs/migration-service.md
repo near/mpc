@@ -1,13 +1,8 @@
 # Migration Service
 
 ## Overview
-A **t**rusted **e**xecution **e**nvironment (TEE) is an environment isolated from the operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
 
-The security guarantees provided by TEEs are attractive to the MPC network for two reasons:
-1. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
-2. They allow to relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
-
-TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
+TEEs (c.f. [TEE doc](docs/securing_mpc_with_tee_design_doc.md) for an introduction to TEEs) provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
 
 In the context of threshold cryptography, this poses the risk of losing the "signing quorum". If too few nodes remain operational, the protocol grinds to halt, in which case, no funds can be moved.
 
@@ -134,7 +129,9 @@ Now, nodes need to be able to recognize and re-establish a connection if the par
 Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_
 
 ##### Web Endpoints
-The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: [(#1088)](https://github.com/near/mpc/issues/1088))_.
+
+The **MPC node** exposes web endpoints that the backup service can use to submit requests. All communication takes place over **HTTPS with mutual TLS authentication** (implemented in [(#1283)]()). In addition, any secrets are expected to be encrypted using the **AES-256 symmetric encryption algorithm**.
+
 The exposed endpoints are:
 - GET /shares_backup - with an authentication header
     - Returns the encrypted shares, if a valid backup service is registered.
