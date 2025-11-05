@@ -6,7 +6,7 @@ license = "MIT"
 
 [features]
 network-hardship-simulation = []
-test-utils = []
+test-utils = ["threshold-signatures/test-utils"]
 
 [dependencies]
 actix = { workspace = true }
