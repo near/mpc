@@ -55,15 +55,19 @@ impl<C: Ciphersuite> Polynomial<C> {
         degree: usize,
         rng: &mut impl CryptoRngCore,
     ) -> Result<Self, ProtocolError> {
-        // @dev why not usize::MAX? https://github.com/near/threshold-signatures/pull/163#discussion_r2447505305
-        // Allocations must fit within isize range.
-        // This check conservatively prevents allocations beyond isize::MAX.
-        if degree >= isize::MAX as usize {
-            return Err(ProtocolError::IntegerOverflow);
-        }
         let poly_size = degree
             .checked_add(1)
             .ok_or(ProtocolError::IntegerOverflow)?;
+
+        let poly_alloc_size = poly_size
+            .checked_mul(Self::coefficient_size())
+            .ok_or(ProtocolError::IntegerOverflow)?;
+        // @dev why not usize::MAX? https://github.com/near/threshold-signatures/pull/163#discussion_r2447505305
+        // Allocations must fit within isize range.
+        if poly_alloc_size > isize::MAX as usize {
+            return Err(ProtocolError::IntegerOverflow);
+        }
+
         let mut coefficients = Vec::with_capacity(poly_size);
         // insert the secret share if exists
         let secret = secret.unwrap_or_else(|| <C::Group as Group>::Field::random(rng));
@@ -183,6 +187,10 @@ impl<C: Ciphersuite> Polynomial<C> {
         let mut coeffcommitment = vec![<C::Group as Group>::Field::zero()];
         coeffcommitment.extend(self.get_coefficients());
         Self::new(&coeffcommitment)
+    }
+
+    fn coefficient_size() -> usize {
+        core::mem::size_of::<<<C::Group as Group>::Field as Field>::Scalar>()
     }
 }
 
