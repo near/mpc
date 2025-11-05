@@ -1,8 +1,8 @@
 [package]
 name = "test-parallel-contract"
-version = "0.2.0"
+version = { workspace = true }
+license = { workspace = true }
 edition = "2021"
-license = "MIT"
 
 [package.metadata.cargo-shear]
 ignored = ["getrandom", "borsh", "serde"]
