@@ -154,6 +154,9 @@ pub struct StartCmd {
     /// TEE related configuration settings.
     #[command(flatten)]
     pub image_hash_config: MpcImageHashConfig,
+    /// Hex-encoded 32 byte AES key for backup encryption.
+    #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
+    pub backup_encryption_key_hex: String,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -248,8 +251,11 @@ impl StartCmd {
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
         // Load secrets from configuration and persistent storage
-        let secrets =
-            SecretsConfig::from_parts(&self.secret_store_key_hex, persistent_secrets.clone())?;
+        let secrets = SecretsConfig::from_parts(
+            &self.secret_store_key_hex,
+            persistent_secrets.clone(),
+            &self.backup_encryption_key_hex.clone(),
+        )?;
 
         // Generate attestation
         let tee_authority = TeeAuthority::try_from(self.tee_authority.clone())?;
@@ -455,7 +461,7 @@ impl StartCmd {
 
         spawn_recovery_server_and_run_onboarding(
             config.migration_web_ui.clone(),
-            &secrets.persistent_secrets.p2p_private_key,
+            (&secrets).into(),
             config.my_near_account_id.clone(),
             keyshare_storage.clone(),
             indexer_api.my_migration_info_receiver.clone(),

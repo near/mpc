@@ -1,3 +1,4 @@
+use aes_gcm::{Aes256Gcm, KeyInit};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
@@ -119,7 +120,7 @@ impl OneNodeTestConfig {
 
                 spawn_recovery_server_and_run_onboarding(
                     self.config.migration_web_ui.clone(),
-                    &self.secrets.persistent_secrets.p2p_private_key,
+                    (&self.secrets).into(),
                     self.config.my_near_account_id.clone(),
                     keystore.clone(),
                     self.indexer.my_migration_info_receiver.clone(),
@@ -224,6 +225,7 @@ impl IntegrationTestSetup {
                     near_responder_keys: vec![ed25519_dalek::SigningKey::generate(&mut OsRng)],
                 },
                 local_storage_aes_key: rand::random(),
+                backup_encryption_key: Aes256Gcm::generate_key(OsRng).into(),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
                 i.into(),

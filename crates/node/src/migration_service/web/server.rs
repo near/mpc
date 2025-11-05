@@ -11,11 +11,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::WebUIConfig,
-    keyshare::Keyshare,
-    migration_service::{types::MigrationInfo, web::authentication::authenticate_peer},
+    migration_service::{
+        types::MigrationInfo,
+        web::{authentication::authenticate_peer, serialization::serialize_and_encrypt_keyshares},
+    },
 };
 
-use super::types::{ExpectedPeerInfo, WebServerState};
+use super::{
+    serialization::decrypt_and_deserialize_keyshares,
+    types::{ExpectedPeerInfo, WebServerState},
+};
 
 pub(crate) async fn start_web_server(
     web_server_state: Arc<WebServerState>,
@@ -149,14 +154,15 @@ async fn handle_request(
                                     .unwrap());
                             }
                         };
-
-                        let keyshares_json =
-                            serde_json::to_string(&keyshares).unwrap_or_else(|err| {
-                                let msg = err.to_string();
-                                tracing::error!(msg);
-                                "invalid keyshares".to_string()
-                            });
-                        let mut response = Response::new(Body::from(keyshares_json));
+                        let resp = serialize_and_encrypt_keyshares(
+                            &keyshares,
+                            &state.backup_encryption_key,
+                        )
+                        .unwrap_or_else(|err| {
+                            tracing::error!(?err, "serializtion or encryption error");
+                            "internal error serializing or encrypting keyshares".to_string()
+                        });
+                        let mut response = Response::new(Body::from(resp));
                         response.headers_mut().insert(
                             hyper::header::CONTENT_TYPE,
                             hyper::header::HeaderValue::from_static("application/json"),
@@ -183,24 +189,26 @@ async fn handle_request(
         ("PUT", "/set_keyshares") => {
             let whole_body = hyper::body::to_bytes(req.into_body()).await;
             match whole_body {
-                Ok(bytes) => match serde_json::from_slice::<Vec<Keyshare>>(&bytes) {
-                    Ok(new_keyshares) => {
-                        if state.import_keyshares_sender.send(new_keyshares).is_err() {
-                            let msg = "keyshares receiver channel is closed".to_string();
-                            tracing::error!(msg);
-                            Ok(Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Body::from(msg))
-                                .unwrap())
-                        } else {
-                            Ok(Response::new(Body::from("Keyshares received.")))
+                Ok(bytes) => {
+                    match decrypt_and_deserialize_keyshares(&bytes, &state.backup_encryption_key) {
+                        Ok(new_keyshares) => {
+                            if state.import_keyshares_sender.send(new_keyshares).is_err() {
+                                let msg = "keyshares receiver channel is closed".to_string();
+                                tracing::error!(msg);
+                                Ok(Response::builder()
+                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::from(msg))
+                                    .unwrap())
+                            } else {
+                                Ok(Response::new(Body::from("Keyshares received.")))
+                            }
                         }
+                        Err(err) => Ok(Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::from(format!("Invalid Json or encryption: {err}")))
+                            .unwrap()),
                     }
-                    Err(err) => Ok(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::from(format!("Invalid Json: {err}")))
-                        .unwrap()),
-                },
+                }
                 Err(err) => Ok(Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body(Body::from(format!("Failed to read body: {err}")))

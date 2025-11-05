@@ -5,6 +5,7 @@ use tokio::sync::{watch, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    config::AesKey256,
     keyshare::{Keyshare, KeyshareStorage},
     migration_service::types::MigrationInfo,
 };
@@ -13,6 +14,7 @@ use crate::{
 pub(crate) struct WebServerState {
     pub import_keyshares_sender: watch::Sender<Vec<Keyshare>>,
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
+    pub backup_encryption_key: AesKey256,
 }
 
 #[derive(Clone)]

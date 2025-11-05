@@ -22,7 +22,7 @@ mod assets;
 mod async_testing;
 mod background;
 pub mod cli;
-mod config;
+pub mod config;
 mod coordinator;
 mod db;
 mod indexer;

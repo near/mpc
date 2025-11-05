@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
+base64 = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }

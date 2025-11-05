@@ -140,13 +140,13 @@ update_mpc_config() {
 
 generate_secrets_json() {
     local secrets_file="$MPC_HOME_DIR/secrets.json"
-    
+
     # Skip if secrets.json already exists
     if [ -f "$secrets_file" ]; then
         echo "secrets.json already exists, skipping generation"
         return 0
     fi
-    
+
     # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
     if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
         if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
@@ -168,12 +168,11 @@ generate_secrets_json() {
     else
         echo "Using provided MPC_ACCOUNT_SK from environment"
     fi
-    
+
     # Only generate secrets.json if we have the required keys
     if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
         echo "Generating secrets.json from provided keys..."
-        if create_secrets_json_file
-        then
+        if create_secrets_json_file; then
             echo "secrets.json created at $secrets_file"
         else
             echo "Failed to generate secrets.json" >&2
@@ -210,6 +209,10 @@ generate_secrets_json
 
 if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
     echo "You must provide MPC_SECRET_STORE_KEY in env variable"
+fi
+
+if [ -z "${BACKUP_ENCRYPTION_KEY}" ]; then
+    echo "You must provide BACKUP_ENCRYPTION_KEY in env variable"
 fi
 
 if [ -n "$DSTACK_ENDPOINT" ]; then
