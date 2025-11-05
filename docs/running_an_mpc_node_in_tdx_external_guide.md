@@ -146,14 +146,12 @@ All steps below assume the current user is `mpc` and the current directory is
 ```bash
 cat <<EOF > vmm.toml
 
-# vmm.sock is a local UNIX socket used for supervisor–VMM communication
-# (use this when dstack components run on the same host)
-# address = "unix:./vmm.sock"
-
-# address and port define the HTTP interface for the web UI
-# (use these when you want to access the VMM from a browser or remote tools)
+# Communication endpoint for the VMM:
+# - Use an IP and port when you want to access the VMM web UI from a browser (recommended)
 address = "127.0.0.1"
 port = 10000
+# - Or use a UNIX socket if you don’t need the web UI and prefer not to expose an IP/port
+#   address = "unix:./vmm.sock"
 
 reuse = true
 image_path = "./images"
