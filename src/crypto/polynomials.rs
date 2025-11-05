@@ -188,7 +188,7 @@ impl<C: Ciphersuite> Polynomial<C> {
 
 /******************* Polynomial Commitment *******************/
 /// Contains the commited coefficients of a polynomial i.e. coeff * G
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PolynomialCommitment<C: Ciphersuite> {
     /// The committed coefficients which are group elements
     /// (elliptic curve points)
@@ -364,22 +364,8 @@ impl<'de, C: Ciphersuite> Deserialize<'de> for PolynomialCommitment<C> {
         D: Deserializer<'de>,
     {
         let coefficients = Vec::<CoefficientCommitment<C>>::deserialize(deserializer)?;
-        if coefficients.is_empty() {
-            Err(serde::de::Error::custom("Polynomial must not be empty"))
-        } else {
-            // counts the number of successive identity elements on the highest
-            // degree coefficients and aborts if the committed polynomial is the identity
-            let is_identity = coefficients
-                .iter()
-                .rev()
-                .all(|x| x.value() == C::Group::identity());
-            if is_identity {
-                return Err(serde::de::Error::custom(
-                    "Polynomial must not be the identity",
-                ));
-            }
-            Ok(Self { coefficients })
-        }
+        Self::new(&coefficients)
+            .map_err(|err| serde::de::Error::custom(format!("ProtocolError: {err}")))
     }
 }
 
@@ -608,7 +594,7 @@ mod test {
     use frost_core::Field;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
-    use rand_core::{OsRng, RngCore};
+    use rand_core::{OsRng, RngCore, SeedableRng};
     type C = Secp256K1Sha256;
 
     #[test]
@@ -1325,5 +1311,23 @@ mod test {
         // Test with a degree that is at the boundary of isize::MAX
         let result = Polynomial::<C>::generate_polynomial(None, isize::MAX as usize, &mut rng);
         assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
+    }
+
+    #[test]
+    fn test_polynomial_commitment_serialization() {
+        // Given
+        let seed = [42u8; 32];
+        let mut rng = rand::rngs::StdRng::from_seed(seed);
+        let initial_poly = Polynomial::<C>::generate_polynomial(None, 6, &mut rng)
+            .unwrap()
+            .commit_polynomial()
+            .unwrap();
+
+        // When
+        let poly_json = serde_json::to_string(&initial_poly).unwrap();
+        let final_poly: PolynomialCommitment<C> = serde_json::from_str(&poly_json).unwrap();
+
+        // Then
+        assert_eq!(final_poly, initial_poly);
     }
 }
