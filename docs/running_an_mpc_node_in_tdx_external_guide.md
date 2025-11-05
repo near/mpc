@@ -365,7 +365,7 @@ Build `dstack-mr` docker image:
 cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
 ```
 
-Create a Dockerfile file, and add the content below to it.
+Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
