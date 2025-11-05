@@ -155,7 +155,7 @@ pub struct StartCmd {
     #[command(flatten)]
     pub image_hash_config: MpcImageHashConfig,
     /// Hex-encoded 32 byte AES key for backup encryption.
-    #[arg(env("BACKUP_ENCRYPTION_KEY_HEX"))]
+    #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
     pub backup_encryption_key_hex: String,
 }
 

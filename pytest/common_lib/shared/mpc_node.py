@@ -122,7 +122,7 @@ class MpcNode(NearAccount):
             "MPC_SECRET_STORE_KEY": self.secret_store_key,
             "MPC_IMAGE_HASH": DUMMY_MPC_IMAGE_HASH,
             "MPC_LATEST_ALLOWED_HASH_FILE": "latest_allowed_hash.txt",
-            "BACKUP_ENCRYPTION_KEY_HEX": self.backup_key.hex(),
+            "MPC_BACKUP_ENCRYPTION_KEY_HEX": self.backup_key.hex(),
         }
         cmd = (
             MPC_BINARY_PATH,
