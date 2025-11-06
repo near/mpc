@@ -1,8 +1,8 @@
 use crate::{
     config::{
-        load_config_file, BlockArgs, CKDConfig, ConfigFile, IndexerConfig, KeygenConfig,
-        PersistentSecrets, PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig,
-        SyncMode, TripleConfig, WebUIConfig,
+        generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
+        ConfigFile, IndexerConfig, KeygenConfig, PersistentSecrets, PresignatureConfig,
+        RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -156,7 +156,7 @@ pub struct StartCmd {
     pub image_hash_config: MpcImageHashConfig,
     /// Hex-encoded 32 byte AES key for backup encryption.
     #[arg(env("MPC_BACKUP_ENCRYPTION_KEY_HEX"))]
-    pub backup_encryption_key_hex: String,
+    pub backup_encryption_key_hex: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -250,11 +250,16 @@ impl StartCmd {
         // TODO (#1296)
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
+        let backup_encryption_key_hex = match &self.backup_encryption_key_hex {
+            Some(key) => key.clone(),
+            None => generate_and_write_backup_encryption_key_to_disk(&home_dir)?,
+        };
+
         // Load secrets from configuration and persistent storage
         let secrets = SecretsConfig::from_parts(
             &self.secret_store_key_hex,
             persistent_secrets.clone(),
-            &self.backup_encryption_key_hex.clone(),
+            &backup_encryption_key_hex,
         )?;
 
         // Generate attestation

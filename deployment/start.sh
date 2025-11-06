@@ -211,10 +211,6 @@ if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
     echo "You must provide MPC_SECRET_STORE_KEY in env variable"
 fi
 
-if [ -z "${BACKUP_ENCRYPTION_KEY}" ]; then
-    echo "You must provide BACKUP_ENCRYPTION_KEY in env variable"
-fi
-
 if [ -n "$DSTACK_ENDPOINT" ]; then
     tee_authority=dstack
 else
