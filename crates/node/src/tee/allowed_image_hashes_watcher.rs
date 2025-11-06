@@ -168,7 +168,7 @@ where
         let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
         let image_hash_storage = &mut self.image_hash_storage;
-        let Some(latest_allowed_image_hash) = allowed_image_hashes.first() else {
+        let Some(latest_allowed_image_hash) = allowed_image_hashes.last() else {
             tracing::warn!("Indexer provided an empty set of allowed TEE image hashes.");
             return Ok(());
         };

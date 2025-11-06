@@ -75,27 +75,27 @@ impl AllowedDockerImageHashes {
     /// Checks if a Docker image hash is still valid (not expired).
     fn valid_entries(&self, tee_upgrade_deadline_duration: Duration) -> Vec<AllowedMpcDockerImage> {
         let current_time = Timestamp::now();
-
-        self.allowed_tee_proposals
+        // get the index of the most recently enforced docker image
+        let cutoff_index = self
+            .allowed_tee_proposals
             .iter()
-            .enumerate()
-            .filter(|(i, _entry)| {
-                // The latest entry is always valid.
-                let Some(successor) = self.allowed_tee_proposals.get(i + 1) else {
-                    return true;
-                };
-                let Some(grace_period_deadline) =
-                    successor.added.checked_add(tee_upgrade_deadline_duration)
+            .rposition(|allowed_docker_image| {
+                let Some(grace_period_deadline) = allowed_docker_image
+                    .added
+                    .checked_add(tee_upgrade_deadline_duration)
                 else {
                     log!("Error: timestamp overflowed when calculating grace_period_deadline.");
-                    return false;
+                    return true;
                 };
-
-                current_time <= grace_period_deadline
+                // if the grace period for this docker hash is in the past, then older hashes are no longer accepted
+                grace_period_deadline < current_time
             })
-            .map(|(_i, entry)| entry)
-            .cloned()
-            .collect()
+            .unwrap_or(0);
+
+        self.allowed_tee_proposals
+            .get(cutoff_index..)
+            .unwrap_or(&[])
+            .to_vec()
     }
 
     /// Removes all expired code hashes and returns the number of removed entries.
@@ -137,7 +137,7 @@ impl AllowedDockerImageHashes {
             .iter()
             // strictly less, `<`, such that new entries take higher precedence
             // if two entries have the exact same time stamp.
-            .position(|entry| new_entry.added < entry.added)
+            .rposition(|entry| new_entry.added < entry.added)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         self.allowed_tee_proposals.insert(insert_index, new_entry);
