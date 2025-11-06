@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.0.1] - 2025-11-06
+
+### 🚀 Features
+
+- [#1401](https://github.com/near/mpc/pull/1401)(@pbeza): Add default behavior if `MPC_LATEST_ALLOWED_HASH_FILE` is not set (#1401)
+
+
+### 🐛 Bug Fixes
+
+- [#1396](https://github.com/near/mpc/pull/1396)(@gilcu3): Compute fresh attestations before submitting (#1396)
+
+- [#1403](https://github.com/near/mpc/pull/1403)(@kevindeforth): Node uses correct latest docker image hash (#1403)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1385](https://github.com/near/mpc/pull/1385)(@barakeinav1): Small operator guide fixes (#1385)
+
+- [#1398](https://github.com/near/mpc/pull/1398)(@kevindeforth): Generate backup encryption key if env var is not provided (#1398)
+
+- [#1397](https://github.com/near/mpc/pull/1397)(@netrome): Update nearcore to a modified 2.9 with testnet voting date set (#1397)
+
+
 ## [3.0.0] - 2025-11-05
 
 ### 🚀 Features
@@ -679,6 +702,10 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1344](https://github.com/near/mpc/pull/1344)(@gilcu3): Move test-utils to ts repo (#1344)
 
 - [#1378](https://github.com/near/mpc/pull/1378)(@gilcu3): Updated hard-coded TCB info for 3.0.0 release (#1378)
+
+- [#1383](https://github.com/near/mpc/pull/1383)(@netrome): Set crate versions to 3.0.0 and update changelog (#1383)
+
+- [#1388](https://github.com/near/mpc/pull/1388)(@netrome): Support publishing images from git tags (#1388)
 
 
 ### ◀️ Revert
