@@ -82,7 +82,8 @@ GIT_COMMIT_HASH=$(git rev-parse HEAD)
 # This might be necessary to fix reproducibility with old docker versions where
 # rewrite-timestamp is not working as expected
 # https://github.com/moby/buildkit/issues/4986
-find . \( -type f -o -type d \) -exec touch -d @"$SOURCE_DATE_EPOCH" {} +
+# Unix epoch 0 (1970-01-01 00:00:00 UTC) in touch -t format (works on both macOS and Linux)
+find . \( -type f -o -type d \) -exec touch -t 197001010000 {} +
 
 # Create our own builder (build env) to enable reproducible images
 
