@@ -240,14 +240,20 @@ Notice that some of the commands require `sudo`, so they cannot be run using the
 
 ---
 
-##### Guest OS Image
+##### Guest OS Image (optional)
 
-> **Important:** The guest OS image that runs inside the CVM must be exactly the same across all nodes.  
-> The OS image is measured, and those measurements are hardcoded in the contract.
+> **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.  
+> The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The Guest OS image was already downloaded in step 4 of the installation process above using the specific version 0.5.4. This ensures compatibility and reproducibility across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.4**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
-If you need to verify or re-download the image, you can use:
+If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
+
+---
+
+###### Option 1 — Re-download the pre-built image
+
+Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
 DSTACK_VERSION=0.5.4
@@ -257,9 +263,16 @@ tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-For alternative approaches or building from source, you can also:
+This ensures you are using the verified release image corresponding to version **0.5.4**.
 
-1. **Clone meta-dstack and checkout release `v0.5.4`:**
+---
+
+###### Option 2 — Build the image from source
+
+This method is intended for advanced users who wish to inspect, rebuild, or reproduce the image for verification purposes.
+
+1. **Clone and check out the exact release:**
+
    ```bash
    git clone https://github.com/Dstack-TEE/meta-dstack.git
    cd meta-dstack/
@@ -267,13 +280,20 @@ For alternative approaches or building from source, you can also:
    git submodule update --init --recursive
    ```
 
-2. **Then either download pre-built image or build yourself:**
-   * **Download pre-built (recommended, faster):** `./build.sh dl 0.5.4`
-   * **Build reproducible image (slower, ~1–2 hours):** `cd repro-build && ./repro-build.sh -n`
+2. **Choose one of the following actions:**
 
----
+   - **Download the pre-built image (recommended, faster):**
+     ```bash
+     ./build.sh dl 0.5.4
+     ```
 
-##### Verification Steps
+   - **Build a reproducible image from source (slower, ~1–2 hours):**
+     ```bash
+     cd repro-build && ./repro-build.sh -n
+     ```
+
+
+###### Verification Steps
 
 Run these commands from inside your image folder (e.g., `dstack-0.5.4`).
 
@@ -365,6 +385,7 @@ Build `dstack-mr` docker image:
 cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.4
 ```
 
+Create a Dockerfile file with the following contents:
 ```shell
 # Dockerfile
 FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
@@ -456,9 +477,13 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
 1. Follow the [canonical/tdx setup](#1-tdx-bare-metal-server-setup) if not already completed — especially step 9.1–2 (establishing an SGX PCCS: Provisioning Certification Caching Service).
 
 2. Deploy an instance of `gramine-sealing-key-provider` on the host machine.  
-   * On the DTX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
+   * On the TDX server, run the script [run.sh](https://github.com/Dstack-TEE/dstack/blob/master/key-provider-build/run.sh)  
    > **Prerequisite:** Docker must be installed.
-
+   
+    ```bash
+    cd /opt/mpc/dstack/key-provider-build
+    ./run.sh
+    ```
 3. To find the `mr_enclave` value of the SGX key provider, run:
 
    ```bash
