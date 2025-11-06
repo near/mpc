@@ -2,6 +2,7 @@ use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_indexer_primitives::types::{AccountId, Finality};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
@@ -298,6 +299,17 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
         N,
         N * 2
     ))
+}
+
+pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
+    tracing::info!("generating encryption key");
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+    let key_path = home_dir.join("backup_encryption_key.hex");
+    let key_hex = hex::encode(key);
+    std::fs::write(&key_path, &key_hex)?;
+    tracing::info!("wrote encryption key to disk {:?}", key_path);
+    Ok(key_hex)
 }
 
 impl SecretsConfig {
