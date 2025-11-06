@@ -191,15 +191,15 @@ pub struct MpcImageHashConfig {
     #[arg(
         long,
         env("MPC_IMAGE_HASH"),
-        help_heading = "hex representation of the hash of the image running."
+        help_heading = "Hex representation of the hash of the image running. Only required if running in TEE."
     )]
-    pub image_hash: String,
+    pub image_hash: Option<String>,
     #[arg(
         long,
         env("MPC_LATEST_ALLOWED_HASH_FILE"),
-        help_heading = "Path to the file which the mpc node will write the latest allowed hash to."
+        help_heading = "Path to the file which the mpc node will write the latest allowed hash to. If not set, assumes running outside of TEE and skips image hash monitoring."
     )]
-    pub latest_allowed_hash_file: PathBuf,
+    pub latest_allowed_hash_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -309,25 +309,30 @@ impl StartCmd {
         let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
         let cancellation_token = CancellationToken::new();
 
-        let image_hash_watcher_handle = {
-            let current_image_hash_bytes: [u8; 32] =
-                hex::decode(&self.image_hash_config.image_hash)
-                    .expect("The currently running image is a hex string.")
-                    .try_into()
-                    .expect("The currently running image hash hex representation is 32 bytes.");
+        let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) = (
+            &self.image_hash_config.image_hash,
+            &self.image_hash_config.latest_allowed_hash_file,
+        ) {
+            let current_image_hash_bytes: [u8; 32] = hex::decode(image_hash)
+                .expect("The currently running image is a hex string.")
+                .try_into()
+                .expect("The currently running image hash hex representation is 32 bytes.");
 
             let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
-            let image_hash_storage = AllowedImageHashesFile::from(
-                self.image_hash_config.latest_allowed_hash_file.clone(),
-            );
+            let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
 
-            root_runtime.spawn(monitor_allowed_image_hashes(
+            Some(root_runtime.spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
                 shutdown_signal_sender,
-            ))
+            )))
+        } else {
+            tracing::info!(
+                "MPC_IMAGE_HASH and/or MPC_LATEST_ALLOWED_HASH_FILE not set, skipping TEE image hash monitoring"
+            );
+            None
         };
 
         let root_future = self.create_root_future(
@@ -358,9 +363,9 @@ impl StartCmd {
         // Perform graceful shutdown
         cancellation_token.cancel();
 
-        {
+        if let Some(handle) = image_hash_watcher_handle {
             info!("Waiting for image hash watcher to gracefully exit.");
-            let exit_result = image_hash_watcher_handle.await;
+            let exit_result = handle.await;
             info!(?exit_result, "Image hash watcher exited.");
         }
 
