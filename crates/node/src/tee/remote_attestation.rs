@@ -96,11 +96,12 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     let account_sdk_public_key = *account_public_key.into_contract_interface_type().as_bytes();
     let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
 
-    let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
-
     loop {
         interval_ticker.tick().await;
 
+        let fresh_attestation = tee_authority
+            .generate_attestation(report_data.clone())
+            .await?;
         submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
             .await?;
     }
@@ -158,7 +159,6 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     let tls_sdk_public_key = *tls_public_key.as_bytes();
     let account_sdk_public_key = account_public_key.to_bytes();
     let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
-    let fresh_attestation = tee_authority.generate_attestation(report_data).await?;
 
     while tee_accounts_receiver.changed().await.is_ok() {
         let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
@@ -176,6 +176,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 "TEE attestation removed from contract, resubmitting"
             );
 
+            let fresh_attestation = tee_authority
+                .generate_attestation(report_data.clone())
+                .await?;
             submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
                 .await?;
         }
