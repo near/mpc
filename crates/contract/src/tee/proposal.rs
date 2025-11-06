@@ -137,7 +137,7 @@ impl AllowedDockerImageHashes {
             .iter()
             // strictly less, `<`, such that new entries take higher precedence
             // if two entries have the exact same time stamp.
-            .position(|entry| new_entry.added < entry.added)
+            .rposition(|entry| new_entry.added < entry.added)
             .unwrap_or(self.allowed_tee_proposals.len());
 
         self.allowed_tee_proposals.insert(insert_index, new_entry);
