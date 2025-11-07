@@ -13,6 +13,8 @@ use crate::indexer::{
 
 const ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(1);
+const ALLOWED_LAUNCHER_COMPOSE_REFRESH_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
 const TEE_ACCOUNTS_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
@@ -120,7 +122,7 @@ pub async fn monitor_allowed_launcher_compose_hashes(
     wait_for_full_sync(&indexer_state.client).await;
 
     loop {
-        tokio::time::sleep(ALLOWED_IMAGE_HASHES_REFRESH_INTERVAL).await;
+        tokio::time::sleep(ALLOWED_LAUNCHER_COMPOSE_REFRESH_INTERVAL).await;
         let allowed_image_hashes = fetch_allowed_launcher_compose_hashes().await;
         sender.send_if_modified(|previous_allowed_image_hashes| {
             if *previous_allowed_image_hashes != allowed_image_hashes {

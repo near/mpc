@@ -78,7 +78,8 @@ pub enum ExitError {
 }
 
 /// Creates a future that monitors the latest allowed image hashes in
-/// `allowed_hashes_in_contract` and writes them to the provided storage implementation `image_hash_storage`.
+/// `allowed_hashes_in_contract` and writes them to the provided storage implementation `image_hash_storage`
+/// and `allowed_hashes_in_contract`.
 ///
 /// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
 /// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error]
@@ -191,6 +192,15 @@ where
     }
 }
 
+/// Creates a future that monitors the latest allowed launcher compose hashes in
+/// `receiver_from_contract` and writes them to `allowed_hashes_in_contract`.
+///
+/// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
+/// - The provided `allowed_hashes_in_contract` channel is closed.
+///
+/// ### Cancellation Safety:
+/// This future is only cancel safe iff the provided storage implementation is cancel safe. To cancel this future
+/// gracefully please cancel the parent of the cancellation token that is passed as an argument, `cancellation_token`.
 pub async fn monitor_allowed_launcher_compose_hashes(
     cancellation_token: CancellationToken,
     allowed_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
@@ -276,6 +286,10 @@ mod tests {
 
     fn image_hash_1() -> MpcDockerImageHash {
         MpcDockerImageHash::from([1; 32])
+    }
+
+    fn launcher_compose_hash_1() -> LauncherDockerComposeHash {
+        LauncherDockerComposeHash::from([1; 32])
     }
 
     fn image_hash_2() -> MpcDockerImageHash {
@@ -447,6 +461,36 @@ mod tests {
             Arc::new(RwLock::new(vec![])),
             receiver,
             storage_mock,
+            sender_shutdown,
+        ));
+
+        let exit_reason = join_handle
+            .timeout(TEST_TIMEOUT_DURATION)
+            .await
+            .expect("Event loop responds exits within timeout.")
+            .unwrap();
+
+        assert_matches!(exit_reason, Err(ExitError::IndexerClosed));
+
+        assert_matches!(
+            receiver_shutdown.try_recv(),
+            Ok(()),
+            "Shutdown signal should be sent when running image is disallowed."
+        );
+    }
+
+    #[tokio::test]
+    async fn test_allowed_launcher_compose_watcher_is_closed() {
+        let cancellation_token = CancellationToken::new();
+        let (sender, receiver) = watch::channel(vec![launcher_compose_hash_1()]);
+        drop(sender);
+
+        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
+
+        let join_handle = tokio::spawn(monitor_allowed_launcher_compose_hashes(
+            cancellation_token,
+            Arc::new(RwLock::new(vec![])),
+            receiver,
             sender_shutdown,
         ));
 
