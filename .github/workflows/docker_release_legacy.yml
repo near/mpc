@@ -58,5 +58,5 @@ jobs:
           context: .
           profile-name: "mpc-image-builder"
           push: true
-          file: deployment/Dockerfile-gcp
+          file: deployment/Dockerfile-node
           tags: nearone/mpc-node-gcp:latest,nearone/mpc-node-gcp:${{ env.sanitized_ref }},nearone/mpc-node-gcp:${{ env.sanitized_ref }}-${{ env.sha_short }}
