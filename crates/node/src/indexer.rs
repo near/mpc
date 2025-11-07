@@ -2,7 +2,7 @@ use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::{proposal::MpcDockerImageHash, tee_state::NodeId};
+use mpc_contract::tee::{proposal::{LauncherDockerComposeHash, MpcDockerImageHash}, tee_state::NodeId};
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
@@ -76,8 +76,10 @@ pub struct IndexerAPI<TransactionSender> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
-    /// Watcher that keeps track of allowed [`AllowedDockerImageHash`]es on the contract.
+    /// Watcher that keeps track of allowed [`DockerImageHash`]es on the contract.
     pub allowed_docker_images_receiver: watch::Receiver<Vec<MpcDockerImageHash>>,
+    /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
+    pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     /// Watcher that tracks node IDs that have TEE attestations in the contract.
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 

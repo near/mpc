@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     indexer::{
@@ -8,15 +8,21 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
-use attestation::{attestation::Attestation, report_data::ReportData};
+use attestation::{
+    attestation::{Attestation, VerificationError},
+    report_data::ReportData,
+};
 use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use ed25519_dalek::VerifyingKey;
+use contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
-use mpc_contract::tee::tee_state::NodeId;
+use mpc_contract::tee::{
+    proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
+    tee_state::NodeId,
+};
 use near_sdk::AccountId;
-use tokio::sync::watch;
+use tokio::sync::{watch, RwLock};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -32,11 +38,11 @@ const BACKOFF_FACTOR: f32 = 1.5;
 pub async fn submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
-    tls_public_key: VerifyingKey,
+    tls_public_key: Ed25519PublicKey,
 ) -> anyhow::Result<()> {
     let submit_participant_info_args = SubmitParticipantInfoArgs {
         proposed_participant_attestation: attestation.into_contract_interface_type(),
-        tls_public_key: tls_public_key.into_contract_interface_type(),
+        tls_public_key,
     };
 
     let set_attestation = move || {
@@ -85,16 +91,69 @@ pub async fn submit_remote_attestation(
         .context("failed to submit attestation after multiple retry attempts")?
 }
 
+fn validate_remote_attestation(
+    attestation: &Attestation,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
+    allowed_docker_image_hashes: &[MpcDockerImageHash],
+    allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
+) -> Result<(), VerificationError> {
+    let expected_report_data =
+        ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    attestation.verify(
+        expected_report_data,
+        now,
+        allowed_docker_image_hashes,
+        allowed_launcher_compose_hashes,
+    )
+}
+
+pub async fn validate_and_submit_remote_attestation(
+    tx_sender: impl TransactionSender,
+    attestation: Attestation,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
+    allowed_image_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
+    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
+) -> anyhow::Result<()> {
+    let (allowed_image_hashes_in_contract, allowed_launcher_compose_hashes_in_contract) = {
+        (
+            allowed_image_hashes_in_contract.read().await.clone(),
+            allowed_launcher_compose_hashes_in_contract
+                .read()
+                .await
+                .clone(),
+        )
+    };
+    validate_remote_attestation(
+        &attestation,
+        tls_public_key.clone(),
+        account_public_key,
+        &allowed_image_hashes_in_contract,
+        &allowed_launcher_compose_hashes_in_contract,
+    )
+    .unwrap_or_else(|err| {
+        // We could also return here, but for the moment I am just logging the
+        // attestation failure error and letting the submission continue
+        tracing::warn!("Attestation is not valid: {err}");
+    });
+    submit_remote_attestation(tx_sender, attestation, tls_public_key).await
+}
+
 pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Tick>(
     tee_authority: TeeAuthority,
     tx_sender: T,
-    tls_public_key: VerifyingKey,
-    account_public_key: VerifyingKey,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
+    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
+    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let tls_sdk_public_key = *tls_public_key.into_contract_interface_type().as_bytes();
-    let account_sdk_public_key = *account_public_key.into_contract_interface_type().as_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
+    let report_data = ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
 
     loop {
         interval_ticker.tick().await;
@@ -102,8 +161,15 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
         let fresh_attestation = tee_authority
             .generate_attestation(report_data.clone())
             .await?;
-        submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
-            .await?;
+        validate_and_submit_remote_attestation(
+            tx_sender.clone(),
+            fresh_attestation.clone(),
+            tls_public_key.clone(),
+            account_public_key.clone(),
+            allowed_hashes_in_contract.clone(),
+            allowed_launcher_compose_hashes_in_contract.clone(),
+        )
+        .await?;
     }
 }
 
@@ -120,25 +186,29 @@ fn is_node_in_contract_tee_accounts(
 ///
 /// This function watches TEE account changes in the contract and resubmits attestations when
 /// the node's TEE attestation is no longer available.
+#[allow(clippy::too_many_arguments)]
 pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     node_account_id: AccountId,
     tee_authority: TeeAuthority,
     tx_sender: T,
-    tls_public_key: VerifyingKey,
-    account_public_key: VerifyingKey,
+    tls_public_key: Ed25519PublicKey,
+    account_public_key: Ed25519PublicKey,
+    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
+    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
+    // TODO: we should unify these conversions, will not be needed after https://github.com/near/mpc/issues/1246
     let node_id = NodeId {
         account_id: node_account_id.clone(),
         tls_public_key: near_sdk::PublicKey::from_parts(
             near_sdk::CurveType::ED25519,
-            tls_public_key.to_bytes().to_vec(),
+            tls_public_key.as_bytes().to_vec(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
         account_public_key: Some(
             near_sdk::PublicKey::from_parts(
                 near_sdk::CurveType::ED25519,
-                account_public_key.to_bytes().to_vec(),
+                account_public_key.as_bytes().to_vec(),
             )
             .map_err(|e| {
                 anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e)
@@ -156,9 +226,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let tls_sdk_public_key = *tls_public_key.as_bytes();
-    let account_sdk_public_key = account_public_key.to_bytes();
-    let report_data = ReportData::new(tls_sdk_public_key, account_sdk_public_key);
+    let report_data = ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
 
     while tee_accounts_receiver.changed().await.is_ok() {
         let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
@@ -179,8 +247,15 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             let fresh_attestation = tee_authority
                 .generate_attestation(report_data.clone())
                 .await?;
-            submit_remote_attestation(tx_sender.clone(), fresh_attestation.clone(), tls_public_key)
-                .await?;
+            validate_and_submit_remote_attestation(
+                tx_sender.clone(),
+                fresh_attestation.clone(),
+                tls_public_key.clone(),
+                account_public_key.clone(),
+                allowed_hashes_in_contract.clone(),
+                allowed_launcher_compose_hashes_in_contract.clone(),
+            )
+            .await?;
         }
 
         was_available = is_available;
@@ -311,13 +386,19 @@ mod tests {
         };
         let sender = MockSender::new(dummy_sender, dummy_node_id);
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_key = SigningKey::generate(&mut rng).verifying_key();
-        let account_key = SigningKey::generate(&mut rng).verifying_key();
+        let tls_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
         let handle = tokio::spawn(periodic_attestation_submission(
             tee_authority,
             sender.clone(),
             tls_key,
             account_key,
+            Arc::new(RwLock::new(vec![])),
+            Arc::new(RwLock::new(vec![])),
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
@@ -330,21 +411,25 @@ mod tests {
     async fn test_tee_attestation_removal_detection() {
         let node_account_id: AccountId = "test_node.near".parse().unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let tls_public_key = SigningKey::generate(&mut rng).verifying_key();
-        let account_public_key = SigningKey::generate(&mut rng).verifying_key();
+        let tls_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
 
         let node_id = NodeId {
             account_id: node_account_id.clone(),
             tls_public_key: near_sdk::PublicKey::from_parts(
                 near_sdk::CurveType::ED25519,
-                tls_public_key.to_bytes().to_vec(),
+                tls_public_key.as_bytes().to_vec(),
             )
             .unwrap(),
             account_public_key: Some(
                 near_sdk::PublicKey::from_parts(
                     near_sdk::CurveType::ED25519,
-                    account_public_key.to_bytes().to_vec(),
+                    account_public_key.as_bytes().to_vec(),
                 )
                 .unwrap(),
             ),
@@ -363,6 +448,8 @@ mod tests {
             mock_sender.clone(),
             tls_public_key,
             account_public_key,
+            Arc::new(RwLock::new(vec![])),
+            Arc::new(RwLock::new(vec![])),
             receiver,
         ));
 
