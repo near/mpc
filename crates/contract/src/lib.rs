@@ -1237,8 +1237,7 @@ impl MpcContract {
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
-        self.tee_state
-            .allowed_launcher_compose_hashes.clone()
+        self.tee_state.allowed_launcher_compose_hashes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {

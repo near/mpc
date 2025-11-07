@@ -7,7 +7,9 @@ use super::{IndexerAPI, IndexerState};
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
 use crate::indexer::balances::monitor_balance;
-use crate::indexer::tee::{monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts};
+use crate::indexer::tee::{
+    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
+};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
@@ -60,7 +62,8 @@ pub fn spawn_real_indexer(
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
-    let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) = watch::channel(vec![]);
+    let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
+        watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
 
     let my_near_account_id_clone = my_near_account_id.clone();

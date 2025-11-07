@@ -28,12 +28,7 @@ use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
 use std::{collections::BTreeMap, sync::Mutex};
-use std::{
-    path::PathBuf,
-    sync::OnceLock,
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, sync::OnceLock, time::Duration};
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
     DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
@@ -429,8 +424,16 @@ impl StartCmd {
             .set(root_task_handle.clone())
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
-        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key().into_contract_interface_type();
-        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key().into_contract_interface_type();
+        let tls_public_key = secrets
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_public_key = secrets
+            .persistent_secrets
+            .near_signer_key
+            .verifying_key()
+            .into_contract_interface_type();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
@@ -452,8 +455,12 @@ impl StartCmd {
             },
         };
 
-        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key.clone())
-            .await?;
+        submit_remote_attestation(
+            indexer_api.txn_sender.clone(),
+            attestation,
+            tls_public_key.clone(),
+        )
+        .await?;
 
         // Spawn periodic attestation submission task
         let tee_authority_clone = tee_authority.clone();

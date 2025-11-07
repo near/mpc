@@ -94,7 +94,12 @@ pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
     mpc_contract_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-    get_mpc_state(mpc_contract_id, client, ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT).await
+    get_mpc_state(
+        mpc_contract_id,
+        client,
+        ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT,
+    )
+    .await
 }
 
 pub(crate) async fn get_mpc_tee_accounts(

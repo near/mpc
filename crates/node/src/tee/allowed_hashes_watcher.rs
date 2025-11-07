@@ -1,12 +1,7 @@
 use derive_more::From;
 use itertools::Itertools;
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
-use std::{
-    future::Future,
-    io, panic,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{future::Future, io, panic, path::PathBuf, sync::Arc};
 use thiserror::Error;
 use tokio::{
     fs::OpenOptions,
@@ -14,8 +9,7 @@ use tokio::{
     select,
     sync::{
         mpsc::{self, error::TrySendError},
-        watch,
-        RwLock,
+        watch, RwLock,
     },
 };
 use tokio_util::sync::CancellationToken;

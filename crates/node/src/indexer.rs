@@ -2,7 +2,10 @@ use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::{proposal::{LauncherDockerComposeHash, MpcDockerImageHash}, tee_state::NodeId};
+use mpc_contract::tee::{
+    proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
+    tee_state::NodeId,
+};
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
