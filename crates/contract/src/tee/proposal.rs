@@ -7,7 +7,7 @@ use crate::primitives::{key_state::AuthenticatedParticipantId, time::Timestamp};
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
 /// TCB info JSON file containing measurement values.
-pub const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
+const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
 /// Tracks votes to add whitelisted TEE code hashes. Each participant can at any given time vote for
