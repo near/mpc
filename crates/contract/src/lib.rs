@@ -16,7 +16,10 @@ pub mod v0_state;
 
 mod dto_mapping;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
@@ -1250,6 +1253,10 @@ impl MpcContract {
     // contract version
     pub fn version(&self) -> String {
         env!("CARGO_PKG_VERSION").to_string()
+    }
+
+    pub fn proposed_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
+        self.proposed_updates.get_all()
     }
 
     /// Upon success, removes the signature from state and returns it.
