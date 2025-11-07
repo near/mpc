@@ -1,6 +1,11 @@
 [tasks.check-all]
 description = "Run all checks"
-dependencies = ["fmt", "check", "clippy", "test"]
+dependencies = ["fmt", "check", "clippy", "test", "deny"]
+
+[tasks.deny]
+description = "Run cargo deny"
+command = "cargo"
+args = ["deny", "--all-features", "check"]
 
 [tasks.check]
 command = "cargo"
@@ -8,7 +13,15 @@ args = ["check"]
 
 [tasks.clippy]
 command = "cargo"
-args = ["clippy", "--all-features", "--all-targets", "--locked", "--", "-D", "warnings"]
+args = [
+  "clippy",
+  "--all-features",
+  "--all-targets",
+  "--locked",
+  "--",
+  "-D",
+  "warnings",
+]
 
 [tasks.fmt]
 command = "cargo"
