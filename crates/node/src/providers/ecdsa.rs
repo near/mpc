@@ -3,7 +3,6 @@ pub mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
-use near_sdk::CurveType;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
 pub mod key_resharing;
@@ -15,15 +14,12 @@ use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::{PublicKeyConversion, SignatureProvider};
+use crate::providers::SignatureProvider;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 
 use crate::types::SignatureId;
-use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use k256::elliptic_curve::sec1::FromEncodedPoint as _;
-use k256::{AffinePoint, EncodedPoint};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use std::sync::Arc;
@@ -31,9 +27,6 @@ use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-
-#[cfg(test)]
-use k256::elliptic_curve::sec1::ToEncodedPoint as _;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -253,71 +246,6 @@ impl SignatureProvider for EcdsaSignatureProvider {
             task.await??;
         }
 
-        Ok(())
-    }
-}
-
-impl PublicKeyConversion for VerifyingKey {
-    #[cfg(test)]
-    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
-        let bytes = self.to_element().to_encoded_point(false).to_bytes();
-        anyhow::ensure!(bytes[0] == 0x04);
-
-        near_sdk::PublicKey::from_parts(CurveType::SECP256K1, bytes[1..65].to_vec())
-            .context("Failed to convert public key to near crypto type")
-    }
-
-    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        match public_key.curve_type() {
-            CurveType::SECP256K1 => {
-                // Skip first byte as it represents the curve type.
-                let key_data: [u8; 64] = public_key.as_bytes()[1..]
-                    .try_into()
-                    .context("Infallible. Key must be 64 bytes")?;
-
-                let mut bytes = [0u8; 65];
-                bytes[0] = 0x04;
-                bytes[1..65].copy_from_slice(&key_data);
-
-                let encoded_point = EncodedPoint::from_bytes(bytes)?;
-                let affine_point = AffinePoint::from_encoded_point(&encoded_point)
-                    .into_option()
-                    .ok_or(anyhow::anyhow!(
-                        "Failed to convert encoded point to affine point"
-                    ))?;
-                Ok(VerifyingKey::new(affine_point.into()))
-            }
-            _ => anyhow::bail!("Unsupported public key type"),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use threshold_signatures::frost_secp256k1;
-
-    use crate::{
-        providers::PublicKeyConversion,
-        trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
-    };
-    #[test]
-    fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
-        use threshold_signatures::test_utils::TestGenerators;
-        let x = TestGenerators::new(4, 3)
-            .make_ecdsa_keygens()
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        x.public_key.into_contract_interface_type();
-        Ok(())
-    }
-
-    #[test]
-    fn check_conversion_from_sdk() -> anyhow::Result<()> {
-        let near_sdk: near_sdk::PublicKey = "secp256k1:5TJSTQwYwe3MgTCep9DbLxLT6UjB6LFn3SStpBMgdfGjBopNjxL7mpNK92R6cdyByjz7vUQdRgtLiu9w84kopNqn"
-                .parse()?;
-        let _ = frost_secp256k1::VerifyingKey::from_near_sdk_public_key(&near_sdk)?;
         Ok(())
     }
 }
