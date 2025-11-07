@@ -219,7 +219,7 @@ mod tests {
     async fn test_latest_allowed_image_hash_is_written(
         #[case] allowed_images: Vec<MpcDockerImageHash>,
     ) {
-        let latest_allowed_image = allowed_images[0].clone();
+        let latest_allowed_image = allowed_images.last().unwrap().clone();
         let current_image = image_hash_1();
 
         let cancellation_token = CancellationToken::new();
