@@ -212,53 +212,49 @@ mod tests {
 
     /// Assert that the image with highest block height is always written to storage.
     #[rstest]
-    #[case(vec![image_hash_1(), image_hash_3(), image_hash_2()])]
-    #[case(vec![image_hash_3(), image_hash_1(), image_hash_2()])]
-    #[case(vec![image_hash_1(), image_hash_2(), image_hash_3()])]
     #[tokio::test]
-    async fn test_latest_allowed_image_hash_is_written(
-        #[case] allowed_images: Vec<MpcDockerImageHash>,
-    ) {
-        let latest_allowed_image = allowed_images.last().unwrap().clone();
-        let current_image = image_hash_1();
+    async fn test_latest_allowed_image_hash_is_written() {
+        let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
+        let most_recent_hash = allowed_images.last().unwrap().clone();
+        for current_hash in &allowed_images[..2] {
+            let cancellation_token = CancellationToken::new();
+            let (sender, receiver) = watch::channel(allowed_images.clone());
+            let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        let cancellation_token = CancellationToken::new();
-        let (sender, receiver) = watch::channel(allowed_images);
-        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
+            let write_is_called = Arc::new(Notify::new());
 
-        let write_is_called = Arc::new(Notify::new());
+            let mut storage_mock = MockAllowedImageHashesStorage::new();
+            {
+                let write_is_called = write_is_called.clone();
+                storage_mock
+                    .expect_set()
+                    .once()
+                    // Verify that the most recently allowed image hash is written
+                    .with(predicate::eq(most_recent_hash.clone()))
+                    .returning(move |_| {
+                        write_is_called.notify_one();
+                        Box::pin(async { Ok(()) })
+                    });
+            }
 
-        let mut storage_mock = MockAllowedImageHashesStorage::new();
-        {
-            let write_is_called = write_is_called.clone();
-            storage_mock
-                .expect_set()
-                .once()
-                // Verify that the latest allowed image is written
-                .with(predicate::eq(latest_allowed_image))
-                .returning(move |_| {
-                    write_is_called.notify_one();
-                    Box::pin(async { Ok(()) })
-                });
+            let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
+                cancellation_token.child_token(),
+                current_hash.clone(),
+                receiver,
+                storage_mock,
+                sender_shutdown,
+            ));
+
+            write_is_called.notified().await;
+
+            assert_matches!(
+                receiver_shutdown.try_recv(),
+                Err(TryRecvError::Empty),
+                "Shutdown signal was sent unexpectedly."
+            );
+            let event_loop_is_alive = !sender.is_closed();
+            assert!(event_loop_is_alive, "Event loop should be running.");
         }
-
-        let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
-            cancellation_token.child_token(),
-            current_image.clone(),
-            receiver,
-            storage_mock,
-            sender_shutdown,
-        ));
-
-        write_is_called.notified().await;
-
-        assert_matches!(
-            receiver_shutdown.try_recv(),
-            Err(TryRecvError::Empty),
-            "Shutdown signal was sent unexpectedly."
-        );
-        let event_loop_is_alive = !sender.is_closed();
-        assert!(event_loop_is_alive, "Event loop should be running.");
     }
 
     #[rstest]
