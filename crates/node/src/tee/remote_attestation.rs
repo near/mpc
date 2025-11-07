@@ -516,4 +516,60 @@ mod tests {
             "Expected no resubmission when monitoring service is stopped"
         );
     }
+
+    #[tokio::test]
+    async fn test_validate_remote_attestation_valid() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let tls_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
+        let report_data =
+            ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+        let attestation = tee_authority
+            .generate_attestation(report_data)
+            .await
+            .unwrap();
+        let allowed_docker_image_hashes = [MpcDockerImageHash::from([42u8; 32])];
+        let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
+        assert!(validate_remote_attestation(
+            &attestation,
+            tls_public_key,
+            account_public_key,
+            &allowed_docker_image_hashes,
+            &allowed_launcher_compose_hashes
+        )
+        .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_remote_attestation_invalid() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let tls_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_public_key = SigningKey::generate(&mut rng)
+            .verifying_key()
+            .into_contract_interface_type();
+        let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::new(false));
+        let report_data =
+            ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+        let attestation = tee_authority
+            .generate_attestation(report_data)
+            .await
+            .unwrap();
+        let allowed_docker_image_hashes = [MpcDockerImageHash::from([42u8; 32])];
+        let allowed_launcher_compose_hashes = [LauncherDockerComposeHash::from([42u8; 32])];
+        assert!(validate_remote_attestation(
+            &attestation,
+            tls_public_key,
+            account_public_key,
+            &allowed_docker_image_hashes,
+            &allowed_launcher_compose_hashes
+        )
+        .is_err());
+    }
 }
