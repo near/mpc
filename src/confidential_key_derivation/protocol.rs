@@ -188,12 +188,12 @@ mod test {
     fn test_hash2curve() {
         let app_id = b"Hello Near";
         let app_id_same = b"Hello Near";
-        let pt1 = hash_to_curve(&AppId::from(app_id));
-        let pt2 = hash_to_curve(&AppId::from(app_id_same));
+        let pt1 = hash_to_curve(&AppId::try_from(app_id).unwrap());
+        let pt2 = hash_to_curve(&AppId::try_from(app_id_same).unwrap());
         assert_eq!(pt1, pt2);
 
         let app_id = b"Hello Near!";
-        let pt2 = hash_to_curve(&AppId::from(app_id));
+        let pt2 = hash_to_curve(&AppId::try_from(app_id).unwrap());
         assert_ne!(pt1, pt2);
     }
 
@@ -202,7 +202,7 @@ mod test {
         let mut rng = rand::rngs::OsRng;
 
         // Create the app necessary items
-        let app_id = AppId::from(b"Near App");
+        let app_id = AppId::try_from(b"Near App").unwrap();
         let app_sk = Scalar::random(&mut rng);
         let app_pk = ElementG1::generator() * app_sk;
 

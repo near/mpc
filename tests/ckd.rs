@@ -18,7 +18,7 @@ fn test_ckd() {
     let mut rng = OsRng;
 
     // Create the app necessary items
-    let app_id = AppId::from(b"Near App");
+    let app_id = AppId::try_from(b"Near App").unwrap();
     let app_sk = Scalar::random(&mut rng);
     let app_pk = G1Projective::generator() * app_sk;
 
