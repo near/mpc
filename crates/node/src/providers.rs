@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
 pub trait SignatureProvider {
-    type PublicKey: PublicKeyConversion;
+    type PublicKey;
     type SecretShare;
     type KeygenOutput;
 
