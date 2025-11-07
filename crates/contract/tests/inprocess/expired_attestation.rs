@@ -322,6 +322,19 @@ fn test_clean_tee_status_removes_non_participants() {
     assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 
+macro_rules! assert_allowed_code_hashes {
+    ($test_setup:expr, $blocktime_ns:expr, $expected_value:expr $(,)?) => {{
+        set_system_time($blocktime_ns);
+        let res: Vec<[u8; 32]> = $test_setup
+            .contract
+            .allowed_code_hashes()
+            .iter()
+            .map(|hash| *hash.clone())
+            .collect();
+        assert_eq!(res, $expected_value);
+    }};
+}
+
 /// **Test for grace-period expiry of older code hashes**
 ///
 /// Verifies that when participants vote for a new image hash, the older
@@ -330,12 +343,12 @@ fn test_clean_tee_status_removes_non_participants() {
 /// after, only the latest remains.
 #[test]
 fn only_latest_hash_after_grace_period() {
-    const FIRST_ENTRY_TIME: u64 = NANOS_IN_SECOND; // 1s
-    const GRACE_PERIOD: u64 = 10 * NANOS_IN_SECOND; // 10s
-    const DELAY: u64 = 3 * NANOS_IN_SECOND; // 3s
+    const FIRST_ENTRY_TIME_NS: u64 = NANOS_IN_SECOND; // 1s
+    const SECOND_ENTRY_TIME_NS: u64 = 4 * NANOS_IN_SECOND; // 1s
+    const GRACE_PERIOD_NS: u64 = 10 * NANOS_IN_SECOND; // 10s
 
     let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD / NANOS_IN_SECOND),
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
     let mut setup = TestSetup::new(3, 2, Some(init_config));
@@ -343,22 +356,21 @@ fn only_latest_hash_after_grace_period() {
     let old_hash = [1; 32];
     let successor_hash = [2; 32];
 
-    setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME);
+    setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME_NS);
+    assert_allowed_code_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[old_hash]);
+    setup.vote_with_all_participants(successor_hash, SECOND_ENTRY_TIME_NS);
+    assert_allowed_code_hashes!(&setup, SECOND_ENTRY_TIME_NS, &[old_hash, successor_hash]);
 
-    let successor_vote_time = FIRST_ENTRY_TIME + DELAY;
-    setup.vote_with_all_participants(successor_hash, successor_vote_time);
-
-    // The grace period deadline should be defined in terms of the insertion time of the successor hash.
-    let deadline = successor_vote_time + GRACE_PERIOD;
-
-    // At grace deadline → both allowed
-    set_system_time(deadline);
-    let _: [_; 2] = setup.contract.allowed_code_hashes().try_into().unwrap();
-
-    // After grace → only latest
-    set_system_time(deadline + 1);
-    let remaining: [_; 1] = setup.contract.allowed_code_hashes().try_into().unwrap();
-    assert_eq!(*remaining[0], successor_hash);
+    assert_allowed_code_hashes!(
+        &setup,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS,
+        &[old_hash, successor_hash]
+    );
+    assert_allowed_code_hashes!(
+        &setup,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
+        &[successor_hash]
+    );
 }
 
 /// **Test for equal-timestamp precedence**
@@ -386,12 +398,9 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     for hash in hashes {
         setup.vote_with_all_participants(hash, INITIAL_TIME);
     }
-
+    assert_allowed_code_hashes!(&setup, INITIAL_TIME, &hashes);
     // Jump far in future
-    set_system_time(u64::MAX);
-
-    let [allowed] = setup.contract.allowed_code_hashes().try_into().unwrap();
-    assert_eq!(*allowed, hash_3);
+    assert_allowed_code_hashes!(&setup, u64::MAX, &[hash_3]);
 }
 
 /// **Test for successor-based grace periods**
@@ -401,13 +410,13 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
 /// Each hash expires individually once its successor’s grace period ends.
 #[test]
 fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
-    const FIRST_ENTRY_TIME_NANOS: u64 = NANOS_IN_SECOND;
-    const SECOND_ENTRY_DELAY_NANOS: u64 = 3 * NANOS_IN_SECOND;
-    const THIRD_ENTRY_DELAY_NANOS: u64 = 6 * NANOS_IN_SECOND;
-    const GRACE_PERIOD_NANOS: u64 = 10 * NANOS_IN_SECOND;
+    const FIRST_ENTRY_TIME_NS: u64 = NANOS_IN_SECOND;
+    const SECOND_ENTRY_TIME_NS: u64 = 4 * NANOS_IN_SECOND;
+    const THIRD_ENTRY_TIME_NS: u64 = 7 * NANOS_IN_SECOND;
+    const GRACE_PERIOD_TIME_NS: u64 = 10 * NANOS_IN_SECOND;
 
     let init_config = InitConfig {
-        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NANOS / NANOS_IN_SECOND),
+        tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_TIME_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
     let mut test_setup = TestSetup::new(3, 2, Some(init_config));
@@ -416,35 +425,37 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     let second_code_hash = [2; 32];
     let third_code_hash = [3; 32];
 
-    test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NANOS);
+    test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NS);
+    assert_allowed_code_hashes!(&test_setup, FIRST_ENTRY_TIME_NS, &[first_code_hash]);
 
-    let second_entry_time_nanos = FIRST_ENTRY_TIME_NANOS + SECOND_ENTRY_DELAY_NANOS;
-    test_setup.vote_with_all_participants(second_code_hash, second_entry_time_nanos);
-
-    let third_entry_time_nanos = FIRST_ENTRY_TIME_NANOS + THIRD_ENTRY_DELAY_NANOS;
-    test_setup.vote_with_all_participants(third_code_hash, third_entry_time_nanos);
-
-    // First code hash expires at successor’s deadline
-    let first_hash_deadline_nanos = second_entry_time_nanos + GRACE_PERIOD_NANOS;
-    set_system_time(first_hash_deadline_nanos + 1);
-    assert_eq!(
-        test_setup.contract.allowed_code_hashes(),
-        vec![second_code_hash.into(), third_code_hash.into()]
+    test_setup.vote_with_all_participants(second_code_hash, SECOND_ENTRY_TIME_NS);
+    assert_allowed_code_hashes!(
+        &test_setup,
+        SECOND_ENTRY_TIME_NS,
+        &[first_code_hash, second_code_hash]
     );
 
-    // Second code hash expires at its own successor’s deadline
-    let second_hash_deadline_nanos = third_entry_time_nanos + GRACE_PERIOD_NANOS;
-    set_system_time(second_hash_deadline_nanos);
-    assert_eq!(
-        test_setup.contract.allowed_code_hashes(),
-        vec![second_code_hash.into(), third_code_hash.into()]
+    test_setup.vote_with_all_participants(third_code_hash, THIRD_ENTRY_TIME_NS);
+    assert_allowed_code_hashes!(
+        &test_setup,
+        THIRD_ENTRY_TIME_NS,
+        &[first_code_hash, second_code_hash, third_code_hash]
     );
 
-    set_system_time(second_hash_deadline_nanos + 1);
-    assert_eq!(
-        test_setup.contract.allowed_code_hashes(),
-        vec![third_code_hash.into()]
+    assert_allowed_code_hashes!(
+        &test_setup,
+        SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
+        &[second_code_hash, third_code_hash]
     );
+
+    let expiration_second_hash = THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS;
+    assert_allowed_code_hashes!(
+        &test_setup,
+        expiration_second_hash,
+        &[second_code_hash, third_code_hash]
+    );
+
+    assert_allowed_code_hashes!(&test_setup, expiration_second_hash + 1, &[third_code_hash]);
 }
 
 /// **Test for indefinite validity of the latest hash**
@@ -468,11 +479,8 @@ fn latest_image_never_expires_if_its_not_superseded() {
         .vote_with_all_participants(only_image_code_hash, START_TIME_SECONDS * NANOS_IN_SECOND);
 
     // Even far in the future, latest remains allowed
-    set_system_time(u64::MAX);
-    let allowed_image_hashes = test_setup.contract.allowed_code_hashes();
 
-    assert_eq!(allowed_image_hashes.len(), 1);
-    assert_eq!(*allowed_image_hashes[0], only_image_code_hash);
+    assert_allowed_code_hashes!(&test_setup, u64::MAX, &[only_image_code_hash]);
 }
 
 /// **Test for nodes starting with old but valid image hashes during grace period**
@@ -539,17 +547,8 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     }
 
     // At T=10s: All three versions should be allowed (within grace periods)
-    let test_time_1 = deployment_times[2] + 3 * NANOS_IN_SECOND;
-    set_system_time(test_time_1);
-
-    let allowed_hashes: [_; 3] = test_setup
-        .contract
-        .allowed_code_hashes()
-        .try_into()
-        .unwrap();
-    let expected_hashes = [hash_v1.into(), hash_v2.into(), hash_v3.into()];
-
-    assert_eq!(allowed_hashes, expected_hashes);
+    let test_time_1 = deployment_times[0] + GRACE_PERIOD_NANOS;
+    assert_allowed_code_hashes!(&test_setup, test_time_1, &hashes);
 
     // Use existing participant nodes for testing different hash versions
     let node_ids = test_setup.get_participant_node_ids();
@@ -567,20 +566,9 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // +1s ensures we're testing *after* expiration occurs - at T=19s the hash is still valid,
     // but at T=20s it has expired and should be filtered out by allowed_code_hashes()
-    set_system_time(v1_expiry_time + NANOS_IN_SECOND); // T=20s
-
     // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
-    let allowed_after_v1_expiry: [_; 2] = test_setup
-        .contract
-        .allowed_code_hashes()
-        .try_into()
-        .unwrap();
-    let expected_after_v1_expiry = [hash_v2.into(), hash_v3.into()];
-
-    assert_eq!(
-        allowed_after_v1_expiry, expected_after_v1_expiry,
-        "Only hash_v2 and hash_v3 should remain valid at T=20s (hash_v1 expired)"
-    );
+    let expected_after_v1_expiry = [hash_v2, hash_v3];
+    assert_allowed_code_hashes!(&test_setup, v1_expiry_time + 1, &expected_after_v1_expiry);
 
     // Verify that submitting attestation with expired hash_v1 now fails
     let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
@@ -594,17 +582,13 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     // Only hash_v2 and hash_v3 should be valid for new nodes
     // Reuse existing node_ids (nodes 2 and 3 since hash_v1 expired)
     for (node, hash) in node_ids[1..].iter().zip(expected_after_v1_expiry.iter()) {
-        let late_attestation = TestSetup::create_attestation_with_hash_constraint(**hash);
+        let late_attestation = TestSetup::create_attestation_with_hash_constraint(*hash);
         test_setup.submit_attestation_for_node(node, late_attestation);
     }
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    set_system_time(v2_expiry_time + NANOS_IN_SECOND); // T=23s
-
-    let final_allowed_hashes = test_setup.contract.allowed_code_hashes();
-    assert_eq!(final_allowed_hashes.len(), 1, "Only hash_v3 should remain");
-    assert_eq!(*final_allowed_hashes[0], hash_v3);
+    assert_allowed_code_hashes!(&test_setup, v2_expiry_time + 1, &[hash_v3]);
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation

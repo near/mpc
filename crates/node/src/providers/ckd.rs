@@ -4,7 +4,6 @@ mod sign;
 
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_contract::primitives::{domain::DomainId, key_state::KeyEventId};
 use threshold_signatures::confidential_key_derivation::{
@@ -15,7 +14,7 @@ use crate::{
     config::{ConfigFile, MpcConfig, ParticipantsConfig},
     network::{MeshNetworkClient, NetworkTaskChannel},
     primitives::MpcTaskId,
-    providers::{PublicKeyConversion, SignatureProvider},
+    providers::SignatureProvider,
     storage::CKDRequestStorage,
     types::{CKDId, SignatureId},
 };
@@ -122,30 +121,5 @@ impl SignatureProvider for CKDProvider {
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
         Ok(())
-    }
-}
-
-impl PublicKeyConversion for VerifyingKey {
-    #[cfg(test)]
-    fn to_near_sdk_public_key(&self) -> anyhow::Result<near_sdk::PublicKey> {
-        let data = self.serialize()?;
-        let data: [u8; 32] = data
-            .try_into()
-            .or_else(|_| anyhow::bail!("Serialized public key is not 32 bytes."))?;
-
-        near_sdk::PublicKey::from_parts(near_sdk::CurveType::ED25519, data.to_vec())
-            .context("Infallible.")
-    }
-
-    fn from_near_sdk_public_key(public_key: &near_sdk::PublicKey) -> anyhow::Result<Self> {
-        let key_bytes = public_key.as_bytes();
-
-        // Skip first byte as it is reserved as an identifier for the curve type.
-        let key_data: [u8; 32] = key_bytes[1..]
-            .try_into()
-            .context("Invariant broken, public key must 32 bytes.")?;
-
-        VerifyingKey::deserialize(&key_data)
-            .context("Failed to convert SDK public key to ed25519_dalek::VerifyingKey")
     }
 }
