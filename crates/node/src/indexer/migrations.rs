@@ -253,7 +253,6 @@ mod tests {
         let (my_account, my_key) = test_account_and_key();
 
         // When: Processing a response where my account is added
-        let new_block_height: u64 = 200u64;
         let expected_backup_service = BackupServiceInfo {
             public_key: my_key.into_contract_interface_type(),
         };
@@ -262,6 +261,7 @@ mod tests {
             my_account.clone(),
             (Some(expected_backup_service.clone()), None),
         );
+        let new_block_height: u64 = 200u64;
         let new_response = (new_block_height, new_migration_info.clone());
 
         let updated = process_migration_response(
