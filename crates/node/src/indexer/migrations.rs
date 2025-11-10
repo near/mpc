@@ -132,7 +132,6 @@ mod tests {
         watch::Receiver<MigrationInfo>,
     );
 
-    /// Helper to create a mock migration info with a specific account
     fn create_migration_info_with_account(
         account_id: &str,
     ) -> (
