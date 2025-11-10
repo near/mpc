@@ -980,6 +980,17 @@ impl MpcContract {
         self.proposed_updates.into_dto_type()
     }
 
+    /// Removes an update vote by the caller
+    /// panics if the account is not in a running state or if the caller is not a participant
+    pub fn remove_update_vote(&mut self) {
+        log!("remove_update_vote: signer={}", env::signer_account_id(),);
+        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+        let voter = self.voter_or_panic();
+        self.proposed_updates.remove_vote(&voter);
+    }
+
     #[handle_result]
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         log!(
@@ -1652,6 +1663,7 @@ mod tests {
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
+    use rand::seq::SliceRandom;
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
     use sha2::{Digest, Sha256};
@@ -2882,25 +2894,25 @@ mod tests {
         expected_votes
     }
 
+    fn propose_and_vote_code(expected_update_id: u64, contract: &mut MpcContract) -> dtos::Update {
+        let code: [u8; 1000] = std::array::from_fn(|_| rand::random());
+        let hash = Sha256::digest(code);
+        let update = Update::Contract(code.into());
+        let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+        let expected_votes = propose_and_vote(contract, update, expected_update_id);
+        dtos::Update {
+            update_id: expected_update_id,
+            update_hash: expected_update_hash,
+            votes: expected_votes,
+        }
+    }
+
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
         let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
 
         assert_eq!(contract.proposed_updates(), dtos::ProposedUpdates(vec![]));
 
-        let code_update = {
-            // propose update
-            let code = [0u8; 1000];
-            let hash = Sha256::digest(code);
-            let update = Update::Contract(code.into());
-            let expected_update_hash = dtos::UpdateHash::Code(hash.into());
-            let expected_update_id = 0;
-            let expected_votes = propose_and_vote(&mut contract, update, expected_update_id);
-            dtos::Update {
-                update_id: expected_update_id,
-                update_hash: expected_update_hash,
-                votes: expected_votes,
-            }
-        };
+        let code_update = propose_and_vote_code(0, &mut contract);
 
         let config_update = {
             let update_config = Config {
@@ -2949,5 +2961,91 @@ mod tests {
         let protocol_contract_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
         test_proposed_updates_case_given_state(protocol_contract_state);
+    }
+
+    #[test]
+    pub fn test_remove_update_vote_running() {
+        let running_state = gen_running_state(2);
+        let participants = running_state.parameters.participants().clone();
+        let protocol_contract_state = ProtocolContractState::Running(running_state);
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let expected = propose_and_vote_code(0, &mut contract);
+        for (account_id, _, _) in participants.participants() {
+            contract
+                .proposed_updates
+                .vote(&UpdateId(0), account_id.clone());
+            let mut expected_with_participant_vote = expected.clone();
+            expected_with_participant_vote
+                .votes
+                .push(account_id.into_dto_type());
+            expected_with_participant_vote.votes.sort();
+            let mut res = contract.proposed_updates();
+            res.0.iter_mut().for_each(|update| update.votes.sort());
+            assert_eq!(
+                res,
+                dtos::ProposedUpdates(vec![expected_with_participant_vote])
+            );
+
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.as_v1_account_id())
+                .predecessor_account_id(account_id.as_v1_account_id())
+                .build());
+
+            contract.remove_update_vote();
+            let mut expected_without_participant_vote = expected.clone();
+            expected_without_participant_vote.votes.sort();
+            let mut res = contract.proposed_updates();
+            res.0.iter_mut().for_each(|update| update.votes.sort());
+            assert_eq!(
+                res,
+                dtos::ProposedUpdates(vec![expected_without_participant_vote])
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "not a voter")]
+    fn test_remove_update_vote_panics_if_non_voter() {
+        let running_state = gen_running_state(2);
+        let protocol_contract_state = ProtocolContractState::Running(running_state);
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let expected = propose_and_vote_code(0, &mut contract);
+
+        let mut rng = rand::thread_rng();
+        let account_id = expected.votes.choose(&mut rng).unwrap();
+        let account_id: AccountId = account_id.0.parse().unwrap();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
+
+        contract.remove_update_vote();
+    }
+
+    #[test]
+    #[should_panic(expected = "protocol must be in running state")]
+    pub fn test_remove_update_vote_resharing() {
+        let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let account_id = gen_account_id();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
+        contract.remove_update_vote();
+    }
+
+    #[test]
+    #[should_panic(expected = "protocol must be in running state")]
+    pub fn test_remove_update_vote_initializing() {
+        let protocol_contract_state =
+            ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let account_id = gen_account_id();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
+        contract.remove_update_vote();
     }
 }
