@@ -125,6 +125,13 @@ mod tests {
     use mpc_contract::node_migrations::BackupServiceInfo;
     use std::collections::BTreeMap;
 
+    type TestChannels = (
+        watch::Sender<(u64, ContractMigrationInfo)>,
+        watch::Receiver<(u64, ContractMigrationInfo)>,
+        watch::Sender<MigrationInfo>,
+        watch::Receiver<MigrationInfo>,
+    );
+
     /// Helper to create a mock migration info with a specific account
     fn create_migration_info_with_account(
         account_id: &str,
@@ -142,14 +149,7 @@ mod tests {
         (account, key)
     }
 
-    fn create_test_state(
-        initial_migration_info: ContractMigrationInfo,
-    ) -> (
-        watch::Sender<(u64, ContractMigrationInfo)>,
-        watch::Receiver<(u64, ContractMigrationInfo)>,
-        watch::Sender<MigrationInfo>,
-        watch::Receiver<MigrationInfo>,
-    ) {
+    fn create_test_state(initial_migration_info: ContractMigrationInfo) -> TestChannels {
         let initial_state = (100u64, initial_migration_info);
         let (contract_migration_sender, contract_migration_receiver) =
             watch::channel(initial_state);
