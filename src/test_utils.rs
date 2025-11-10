@@ -25,6 +25,13 @@ use crate::{keygen, refresh, reshare, Ciphersuite, Element, KeygenOutput, Scalar
 
 pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
 
+// +++++++++++++++++ General Utilities +++++++++++++++++ //
+pub fn random_32_bytes(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+    let mut bytes: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut bytes);
+    bytes
+}
+
 // +++++++++++++++++ Participants Utilities +++++++++++++++++ //
 /// Generates a vector of `number` participants, sorted by the participant id.
 /// The participants ids range from 0 to `number`-1

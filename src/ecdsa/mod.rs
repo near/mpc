@@ -184,11 +184,17 @@ impl RerandomizationArguments {
 
 #[cfg(test)]
 mod test {
-    use crate::test_utils::generate_participants;
-    use crate::test_utils::MockCryptoRng;
+    use crate::{
+        ecdsa::{
+            KeygenOutput, RerandomizationArguments, Scalar, Secp256K1Sha256, Signature, Tweak,
+        },
+        participants::ParticipantList,
+        test_utils::{
+            generate_participants, generate_participants_with_random_ids, random_32_bytes,
+            MockCryptoRng,
+        },
+    };
 
-    use super::*;
-    use crate::test_utils::generate_participants_with_random_ids;
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
 
     use frost_core::{
@@ -198,17 +204,11 @@ mod test {
 
     use k256::{
         ecdsa::{signature::Verifier, SigningKey, VerifyingKey},
-        ProjectivePoint, Scalar, Secp256k1,
+        ProjectivePoint, Secp256k1,
     };
     use rand_core::{CryptoRngCore, OsRng, RngCore};
     use sha2::{digest::FixedOutput, Digest, Sha256};
     type C = Secp256K1Sha256;
-
-    fn random_32_bytes(rng: &mut impl CryptoRngCore) -> [u8; 32] {
-        let mut bytes: [u8; 32] = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        bytes
-    }
 
     #[test]
     fn test_verify() {

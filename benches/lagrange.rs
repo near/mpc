@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{criterion_group, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use frost_core::Field;
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
 use rand_core::OsRng;
@@ -11,7 +11,7 @@ use threshold_signatures::{
 type C = Secp256K1Sha256;
 
 fn bench_lagrange_computation(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Lagrange Computation");
+    let mut group = c.benchmark_group("Lagrange");
 
     for degree in &[1u32, 100, 1_000] {
         let participants = (0..=*degree).map(Participant::from).collect::<Vec<_>>();
@@ -64,8 +64,8 @@ fn bench_lagrange_computation(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_inversion_vs_multiplication(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Inversion vs Multiplication");
+pub fn bench_inversion_vs_multiplication(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Inversion_vs_Multiplication");
 
     group.bench_function("single_inversion", |b| {
         b.iter(|| {
@@ -86,8 +86,6 @@ fn bench_inversion_vs_multiplication(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_lagrange_computation,
-    bench_inversion_vs_multiplication
-);
+criterion_group!(benches, bench_lagrange_computation);
+
+criterion_main!(benches);

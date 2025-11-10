@@ -54,15 +54,34 @@ actively_secure_robust_ecdsa = []
 test-utils = ["rand"]
 
 [dev-dependencies]
-criterion = "0.7.0"
+criterion = {version = "0.7.0", features = ["html_reports"]}
 bincode = { version = "2.0.1", features = ["serde"] }
 rand = { version = "0.8.5"}
 rand_core = { version = "0.6.4", features = ["getrandom"]}
 threshold-signatures = { path = ".", features = ["test-utils"] }
 
+
+[lib]
+bench = false
+
+
 [[bench]]
-name = "main"
+name = "lagrange"
 harness = false
+
+[[bench]]
+name = "inversion"
+harness = false
+
+[[bench]]
+name = "naive_robust_ecdsa"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "naive_ot_based_ecdsa"
+harness = false
+required-features = ["test-utils"]
 
 [profile.test-release]
 inherits = "release"

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use criterion::{criterion_group, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use frost_core::{Field, Group};
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
 use rand_core::OsRng;
@@ -7,7 +7,7 @@ use std::hint::black_box;
 use threshold_signatures::batch_invert;
 
 fn bench_inversion(c: &mut Criterion) {
-    let mut group = c.benchmark_group("inversion");
+    let mut group = c.benchmark_group("Single_vs_Batch_Inversion");
 
     group.measurement_time(std::time::Duration::from_secs(10));
 
@@ -16,7 +16,7 @@ fn bench_inversion(c: &mut Criterion) {
         .map(|_| Secp256K1ScalarField::random(&mut OsRng))
         .collect();
 
-    group.bench_function("individual inversion", |b| {
+    group.bench_function("single_inversion", |b| {
         b.iter(|| {
             black_box(values
                 .iter()
@@ -28,9 +28,33 @@ fn bench_inversion(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("batch inversion", |b| {
+    group.bench_function("batch_inversion", |b| {
         b.iter(|| black_box(batch_invert::<Secp256K1Sha256>(&values).unwrap()));
     });
 }
 
-criterion_group!(benches, bench_inversion);
+fn bench_inversion_vs_multiplication(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Inversion_vs_Multiplication");
+
+    group.bench_function("single_inversion", |b| {
+        b.iter(|| {
+            let value_to_invert = Secp256K1ScalarField::random(&mut OsRng);
+            black_box(value_to_invert.invert().unwrap());
+        });
+    });
+
+    group.bench_function("three_multiplications", |b| {
+        b.iter(|| {
+            let a = Secp256K1ScalarField::random(&mut OsRng);
+            let b = Secp256K1ScalarField::random(&mut OsRng);
+            let c = Secp256K1ScalarField::random(&mut OsRng);
+            black_box(a * b * c);
+        });
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_inversion, bench_inversion_vs_multiplication,);
+
+criterion_main!(benches);
