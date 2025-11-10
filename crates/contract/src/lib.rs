@@ -964,6 +964,15 @@ impl MpcContract {
 
         Ok(true)
     }
+    pub fn remove_update_vote(&mut self) {
+        log!("remove_update_vote: signer={}", env::signer_account_id(),);
+        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+        let voter = self.voter_or_panic();
+        self.proposed_updates.remove_vote(&voter);
+        // when you enter a resharing, do you clean the votes??
+    }
 
     #[handle_result]
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
