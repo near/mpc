@@ -120,7 +120,7 @@ pub(crate) async fn get_account_balance(
     account_id: AccountId,
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, f64)> {
-    tracing::info!("fetching account balance for {}", account_id);
+    tracing::debug!("fetching account balance for {}", account_id);
     let request = QueryRequest::ViewAccount { account_id };
     let query = near_client::Query {
         block_reference: types::BlockReference::Finality(types::Finality::Final),
