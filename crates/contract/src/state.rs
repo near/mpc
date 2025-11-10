@@ -81,6 +81,7 @@ impl ProtocolContractState {
         };
         state.start(key_event_id, key_event_timeout_blocks)
     }
+
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,

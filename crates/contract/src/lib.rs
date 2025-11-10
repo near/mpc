@@ -694,6 +694,7 @@ impl MpcContract {
                 )
             }
         }
+        // need to remove existing update votes!
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -809,16 +810,13 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        let resharing_concluded =
-            if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
-                // Resharing has concluded, transition to running state
-                self.protocol_state = new_state;
-                true
-            } else {
-                false
-            };
+        if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+            // Resharing has concluded, transition to running state
+            // clean update votes
+            self.proposed_updates
+                .keep_votes_for_participants(new_state.active_participants());
 
-        if resharing_concluded {
+            self.protocol_state = new_state;
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id()).function_call(
                 "clean_tee_status".to_string(),
@@ -929,6 +927,16 @@ impl MpcContract {
         }
 
         Ok(id)
+    }
+
+    pub fn remove_vote(&mut self) {
+        log!("remove_vote: signer={}", env::signer_account_id(),);
+        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+        let voter = self.voter_or_panic();
+        self.proposed_updates.remove_vote(&voter);
+        // when you enter a resharing, do you clean the votes??
     }
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
@@ -1256,7 +1264,7 @@ impl MpcContract {
     }
 
     pub fn proposed_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
-        self.proposed_updates.get_all()
+        self.proposed_updates.all_updates()
     }
 
     /// Upon success, removes the signature from state and returns it.

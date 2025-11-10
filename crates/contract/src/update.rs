@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use crate::config::Config;
+use crate::primitives::participants::Participants;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
@@ -131,13 +132,14 @@ impl ProposedUpdates {
         id
     }
 
-    pub fn get_all(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
+    pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
         self.entries
             .iter()
             .map(|(update_id, entry)| (*update_id, &entry.update, &entry.votes))
             .collect()
     }
 
+    // Removes any votes by [`AccountId`]
     pub fn remove_vote(&mut self, voter: &AccountId) {
         if let Some(previous_id) = self.vote_by_participant.remove(voter) {
             if let Some(entry) = self.entries.get_mut(&previous_id) {
@@ -148,7 +150,7 @@ impl ProposedUpdates {
         }
     }
 
-    /// Vote for the update with the given id.
+    /// Removes any pre-existing votes by `voter` and votes for the update with the given id.
     ///
     /// Returns Some(votes) if the given [`UpdateId`] exists, otherwise None.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
@@ -194,6 +196,23 @@ impl ProposedUpdates {
         }
         Some(promise)
     }
+
+    pub fn keep_votes_for_participants(&mut self, participants: &Participants) {
+        let to_remove: Vec<AccountId> = self
+            .vote_by_participant
+            .iter()
+            .filter_map(|(account_id, _)| {
+                if participants.is_participant(account_id) {
+                    None
+                } else {
+                    Some(account_id.clone())
+                }
+            })
+            .collect();
+        to_remove
+            .iter()
+            .map(|account_id| self.remove_vote(&account_id));
+    }
 }
 
 fn bytes_used(update: &Update) -> u128 {
@@ -236,7 +255,7 @@ mod tests {
         assert!(proposed_updates.vote_by_participant.is_empty());
         assert!(proposed_updates.entries.is_empty());
         assert_eq!(proposed_updates.id, 0.into());
-        assert_eq!(proposed_updates.get_all(), Vec::new());
+        assert_eq!(proposed_updates.all_updates(), Vec::new());
     }
 
     #[test]
@@ -261,9 +280,9 @@ mod tests {
         // assert update_id has been incremented
         assert_eq!(proposed_updates.id, 1.into());
 
-        // assert get_all() fetches the correct result
+        // assert all_updates() fetches the correct result
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![(extected_update_id, &update, &HashSet::new())]
         );
     }
@@ -278,7 +297,7 @@ mod tests {
         assert!(proposed_updates.vote_by_participant.is_empty());
         assert!(proposed_updates.entries.is_empty());
         assert_eq!(proposed_updates.id, 0.into());
-        assert_eq!(proposed_updates.get_all(), vec![]);
+        assert_eq!(proposed_updates.all_updates(), vec![]);
     }
 
     #[test]
@@ -304,7 +323,7 @@ mod tests {
             &update_id_0
         );
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![
                 (update_id_0, &update_0, &HashSet::from([account_id.clone()])),
                 (update_id_1, &update_1, &HashSet::from([]))
@@ -342,7 +361,7 @@ mod tests {
             &update_id_1
         );
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![
                 (update_id_0, &update_0, &HashSet::from([])),
                 (update_id_1, &update_1, &HashSet::from([account_id.clone()]))
@@ -371,12 +390,12 @@ mod tests {
             &update_id_0
         );
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![(update_id_0, &update_0, &HashSet::from([account_id.clone()])),]
         );
         proposed_updates.remove_vote(&account_id);
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![(update_id_0, &update_0, &HashSet::from([])),]
         );
         assert_eq!(proposed_updates.vote_by_participant.get(&account_id), None);
@@ -403,14 +422,14 @@ mod tests {
             &update_id_0
         );
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![(update_id_0, &update_0, &HashSet::from([account_id.clone()])),]
         );
         assert!(proposed_updates
             .vote(&100.into(), account_id.clone())
             .is_none());
         assert_eq!(
-            proposed_updates.get_all(),
+            proposed_updates.all_updates(),
             vec![(update_id_0, &update_0, &HashSet::from([])),]
         );
         assert_eq!(proposed_updates.vote_by_participant.get(&account_id), None);
