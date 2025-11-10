@@ -68,7 +68,6 @@ fn process_migration_response(
     my_near_account_id: &AccountId,
     my_p2p_public_key: &VerifyingKey,
 ) -> bool {
-    // Update the contract migration state channel if migration info changed
     let contract_updated = migration_state_sender.send_if_modified(|watched_state| {
         // Only compare the migration info, not the block height
         if watched_state.1 != response.1 {
@@ -80,7 +79,6 @@ fn process_migration_response(
         }
     });
 
-    // Update my migration state channel if my state changed
     let my_migration_state =
         MigrationInfo::from_contract_state(my_near_account_id, my_p2p_public_key, &response.1);
     let my_state_updated = my_migration_sender.send_if_modified(|watched_state| {
