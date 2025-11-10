@@ -1,7 +1,7 @@
 use derive_more::From;
 use itertools::Itertools;
-use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
-use std::{future::Future, io, panic, path::PathBuf, sync::Arc};
+use mpc_contract::tee::proposal::MpcDockerImageHash;
+use std::{future::Future, io, panic, path::PathBuf};
 use thiserror::Error;
 use tokio::{
     fs::OpenOptions,
@@ -9,7 +9,7 @@ use tokio::{
     select,
     sync::{
         mpsc::{self, error::TrySendError},
-        watch, RwLock,
+        watch,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -91,7 +91,6 @@ pub enum ExitError {
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
     current_image: MpcDockerImageHash,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
     receiver_from_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -102,7 +101,6 @@ where
     let manager: AllowedImageHashesWatcher<Storage> = AllowedImageHashesWatcher {
         image_hash_storage,
         cancellation_token,
-        allowed_hashes_in_contract,
         receiver_from_contract,
         current_image,
         shutdown_signal_sender,
@@ -113,7 +111,6 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
     receiver_from_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     current_image: MpcDockerImageHash,
     image_hash_storage: A,
@@ -186,89 +183,7 @@ where
             tracing::error!("Currently running node image not in set of allowed image hashes.");
         }
 
-        *self.allowed_hashes_in_contract.write().await = allowed_image_hashes;
-
         Ok(())
-    }
-}
-
-/// Creates a future that monitors the latest allowed launcher compose hashes in
-/// `receiver_from_contract` and writes them to `allowed_hashes_in_contract`.
-///
-/// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
-/// - The provided `allowed_hashes_in_contract` channel is closed.
-///
-/// ### Cancellation Safety:
-/// This future is only cancel safe iff the provided storage implementation is cancel safe. To cancel this future
-/// gracefully please cancel the parent of the cancellation token that is passed as an argument, `cancellation_token`.
-pub async fn monitor_allowed_launcher_compose_hashes(
-    cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
-    receiver_from_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    shutdown_signal_sender: mpsc::Sender<()>,
-) -> Result<(), ExitError> {
-    let manager: AllowedLauncherComposeHashesWatcher = AllowedLauncherComposeHashesWatcher {
-        cancellation_token,
-        allowed_hashes_in_contract,
-        receiver_from_contract,
-        shutdown_signal_sender,
-    };
-
-    manager.run_event_loop().await
-}
-
-struct AllowedLauncherComposeHashesWatcher {
-    cancellation_token: CancellationToken,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
-    receiver_from_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    shutdown_signal_sender: mpsc::Sender<()>,
-}
-
-impl AllowedLauncherComposeHashesWatcher {
-    async fn run_event_loop(mut self) -> Result<(), ExitError> {
-        // First value is marked as seen by default in `watch::Receiver` implementation
-        // Mark it changed to make sure we process the initial value in the select arm below.
-        self.receiver_from_contract.mark_changed();
-
-        loop {
-            select! {
-                _ = self.cancellation_token.cancelled() => {
-                    break Ok(());
-                }
-
-                watcher_result = self.receiver_from_contract.changed() => {
-                    if watcher_result.is_err() {
-                        break Err(ExitError::IndexerClosed);
-                    }
-
-                    self.handle_allowed_image_hashes_update().await?;
-                }
-            }
-        }
-    }
-    async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), io::Error> {
-        tracing::info!("Set of launcher compose hashes on contract has changed");
-        let allowed_launcher_compose_hashes =
-            self.receiver_from_contract.borrow_and_update().clone();
-
-        *self.allowed_hashes_in_contract.write().await = allowed_launcher_compose_hashes;
-
-        Ok(())
-    }
-}
-
-/// Send shutdown signal when watcher exits if
-/// it was not due to cancellation token being canceled
-impl Drop for AllowedLauncherComposeHashesWatcher {
-    fn drop(&mut self) {
-        let exiting_without_cancelled_token = !self.cancellation_token.is_cancelled();
-
-        if exiting_without_cancelled_token {
-            let sent_shutdown_signal = self.shutdown_signal_sender.try_send(());
-            if let Err(TrySendError::Closed(_)) = sent_shutdown_signal {
-                tracing::error!("Shutdown signal receiver closed.");
-            }
-        }
     }
 }
 
@@ -286,10 +201,6 @@ mod tests {
 
     fn image_hash_1() -> MpcDockerImageHash {
         MpcDockerImageHash::from([1; 32])
-    }
-
-    fn launcher_compose_hash_1() -> LauncherDockerComposeHash {
-        LauncherDockerComposeHash::from([1; 32])
     }
 
     fn image_hash_2() -> MpcDockerImageHash {
@@ -330,7 +241,6 @@ mod tests {
             let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 current_hash.clone(),
-                Arc::new(RwLock::new(vec![])),
                 receiver,
                 storage_mock,
                 sender_shutdown,
@@ -370,7 +280,6 @@ mod tests {
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
-            Arc::new(RwLock::new(vec![])),
             receiver,
             mock,
             sender_shutdown,
@@ -416,7 +325,6 @@ mod tests {
         let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
-            Arc::new(RwLock::new(vec![])),
             receiver,
             storage_mock,
             sender_shutdown,
@@ -454,39 +362,8 @@ mod tests {
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             image_hash_1(),
-            Arc::new(RwLock::new(vec![])),
             receiver,
             storage_mock,
-            sender_shutdown,
-        ));
-
-        let exit_reason = join_handle
-            .timeout(TEST_TIMEOUT_DURATION)
-            .await
-            .expect("Event loop responds exits within timeout.")
-            .unwrap();
-
-        assert_matches!(exit_reason, Err(ExitError::IndexerClosed));
-
-        assert_matches!(
-            receiver_shutdown.try_recv(),
-            Ok(()),
-            "Shutdown signal should be sent when running image is disallowed."
-        );
-    }
-
-    #[tokio::test]
-    async fn test_allowed_launcher_compose_watcher_is_closed() {
-        let cancellation_token = CancellationToken::new();
-        let (sender, receiver) = watch::channel(vec![launcher_compose_hash_1()]);
-        drop(sender);
-
-        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
-
-        let join_handle = tokio::spawn(monitor_allowed_launcher_compose_hashes(
-            cancellation_token,
-            Arc::new(RwLock::new(vec![])),
-            receiver,
             sender_shutdown,
         ));
 

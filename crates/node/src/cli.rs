@@ -15,7 +15,6 @@ use crate::{
     },
     migration_service::spawn_recovery_server_and_run_onboarding,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
-    tee::allowed_hashes_watcher::monitor_allowed_launcher_compose_hashes,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -23,7 +22,7 @@ use anyhow::{anyhow, Context};
 use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use mpc_contract::{state::ProtocolContractState, tee::proposal::LauncherDockerComposeHash};
+use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
@@ -307,10 +306,8 @@ impl StartCmd {
             *tls_public_key,
         );
 
-        let (shutdown_signal_sender_image, mut shutdown_signal_receiver_image) = mpsc::channel(1);
-        let cancellation_token_image = CancellationToken::new();
-
-        let allowed_image_hashes_in_contract = Arc::new(RwLock::new(vec![]));
+        let (shutdown_signal_sender, mut shutdown_signal_receiver) = mpsc::channel(1);
+        let cancellation_token = CancellationToken::new();
 
         let image_hash_watcher_handle = if let (Some(image_hash), Some(latest_allowed_hash_file)) = (
             &self.image_hash_config.image_hash,
@@ -321,39 +318,21 @@ impl StartCmd {
                 .try_into()
                 .expect("The currently running image hash hex representation is 32 bytes.");
 
-            let receiver_from_conntract = indexer_api.allowed_docker_images_receiver.clone();
+            let receiver_from_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
 
             Some(root_runtime.spawn(monitor_allowed_image_hashes(
-                cancellation_token_image.child_token(),
+                cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
-                allowed_image_hashes_in_contract.clone(),
-                receiver_from_conntract,
+                receiver_from_contract,
                 image_hash_storage,
-                shutdown_signal_sender_image,
+                shutdown_signal_sender.clone(),
             )))
         } else {
             tracing::info!(
                 "MPC_IMAGE_HASH and/or MPC_LATEST_ALLOWED_HASH_FILE not set, skipping TEE image hash monitoring"
             );
             None
-        };
-
-        let (shutdown_signal_sender_launcher, mut shutdown_signal_receiver_launcher) =
-            mpsc::channel(1);
-        let cancellation_token_launcher = CancellationToken::new();
-
-        let allowed_launcher_compose_hashes_in_contract = Arc::new(RwLock::new(vec![]));
-
-        let launcher_compose_watcher_handle = {
-            let receiver_from_conntract = indexer_api.allowed_launcher_compose_receiver.clone();
-
-            root_runtime.spawn(monitor_allowed_launcher_compose_hashes(
-                cancellation_token_launcher.child_token(),
-                allowed_launcher_compose_hashes_in_contract.clone(),
-                receiver_from_conntract,
-                shutdown_signal_sender_launcher,
-            ))
         };
 
         let root_future = self.create_root_future(
@@ -365,8 +344,6 @@ impl StartCmd {
             debug_request_sender,
             root_task_handle,
             tee_authority,
-            allowed_image_hashes_in_contract,
-            allowed_launcher_compose_hashes_in_contract,
         );
 
         let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -378,25 +355,19 @@ impl StartCmd {
             indexer_exit_response = indexer_exit_receiver => {
                 indexer_exit_response.context("Indexer thread dropped response channel.")?
             }
-            Some(()) = shutdown_signal_receiver_image.recv() => {
+            Some(()) = shutdown_signal_receiver.recv() => {
                 Err(anyhow!("TEE allowed image hashes watcher is sending shutdown signal."))
-            }
-            Some(()) = shutdown_signal_receiver_launcher.recv() => {
-                Err(anyhow!("TEE allowed launcher compose watcher is sending shutdown signal."))
             }
         };
 
         // Perform graceful shutdown
-        cancellation_token_image.cancel();
-        cancellation_token_launcher.cancel();
+        cancellation_token.cancel();
 
         if let Some(handle) = image_hash_watcher_handle {
             info!("Waiting for image hash watcher to gracefully exit.");
             let exit_result = handle.await;
             info!(?exit_result, "Image hash watcher exited.");
             info!("Waiting for launcher compose watcher to gracefully exit.");
-            let exit_result = launcher_compose_watcher_handle.await;
-            info!(?exit_result, "Launcher compose watcher exited.");
         }
 
         exit_reason
@@ -415,8 +386,6 @@ impl StartCmd {
         // Otherwise we would not write to the same cell/lock.
         root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
         tee_authority: TeeAuthority,
-        allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
-        allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
     ) -> anyhow::Result<()> {
         let root_task_handle = tracking::current_task();
 
@@ -467,17 +436,18 @@ impl StartCmd {
         let tx_sender_clone = indexer_api.txn_sender.clone();
         let tls_public_key_clone = tls_public_key.clone();
         let account_public_key_clone = account_public_key.clone();
-        let allowed_hashes_in_contract_clone = allowed_hashes_in_contract.clone();
-        let allowed_launcher_compose_hashes_in_contract_clone =
-            allowed_launcher_compose_hashes_in_contract.clone();
+        let allowed_docker_images_receiver_clone =
+            indexer_api.allowed_docker_images_receiver.clone();
+        let allowed_launcher_compose_receiver_clone =
+            indexer_api.allowed_launcher_compose_receiver.clone();
         tokio::spawn(async move {
             if let Err(e) = periodic_attestation_submission(
                 tee_authority_clone,
                 tx_sender_clone,
                 tls_public_key_clone,
                 account_public_key_clone,
-                allowed_hashes_in_contract_clone,
-                allowed_launcher_compose_hashes_in_contract_clone,
+                allowed_docker_images_receiver_clone,
+                allowed_launcher_compose_receiver_clone,
                 tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
             )
             .await
@@ -493,6 +463,10 @@ impl StartCmd {
         let tx_sender_clone = indexer_api.txn_sender.clone();
         let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
         let account_id_clone = config.my_near_account_id.clone();
+        let allowed_docker_images_receiver_clone =
+            indexer_api.allowed_docker_images_receiver.clone();
+        let allowed_launcher_compose_receiver_clone =
+            indexer_api.allowed_launcher_compose_receiver.clone();
         tokio::spawn(async move {
             if let Err(e) = monitor_attestation_removal(
                 account_id_clone,
@@ -500,8 +474,8 @@ impl StartCmd {
                 tx_sender_clone,
                 tls_public_key,
                 account_public_key,
-                allowed_hashes_in_contract,
-                allowed_launcher_compose_hashes_in_contract,
+                allowed_docker_images_receiver_clone,
+                allowed_launcher_compose_receiver_clone,
                 tee_accounts_receiver,
             )
             .await

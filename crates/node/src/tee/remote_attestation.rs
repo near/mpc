@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use crate::{
     indexer::{
@@ -22,7 +22,7 @@ use mpc_contract::tee::{
     tee_state::NodeId,
 };
 use near_sdk::AccountId;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::watch;
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -117,18 +117,13 @@ pub async fn validate_and_submit_remote_attestation(
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
-    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
 ) -> anyhow::Result<()> {
-    let (allowed_image_hashes_in_contract, allowed_launcher_compose_hashes_in_contract) = {
-        (
-            allowed_image_hashes_in_contract.read().await.clone(),
-            allowed_launcher_compose_hashes_in_contract
-                .read()
-                .await
-                .clone(),
-        )
-    };
+    let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
+    let allowed_launcher_compose_hashes_in_contract =
+        allowed_launcher_compose_hashes_in_contract.borrow().clone();
+
     validate_remote_attestation(
         &attestation,
         tls_public_key.clone(),
@@ -149,8 +144,8 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
-    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
     let report_data = ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
@@ -166,7 +161,7 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
             fresh_attestation.clone(),
             tls_public_key.clone(),
             account_public_key.clone(),
-            allowed_hashes_in_contract.clone(),
+            allowed_image_hashes_in_contract.clone(),
             allowed_launcher_compose_hashes_in_contract.clone(),
         )
         .await?;
@@ -193,8 +188,8 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     tx_sender: T,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_hashes_in_contract: Arc<RwLock<Vec<MpcDockerImageHash>>>,
-    allowed_launcher_compose_hashes_in_contract: Arc<RwLock<Vec<LauncherDockerComposeHash>>>,
+    allowed_image_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
     // TODO: we should unify these conversions, will not be needed after https://github.com/near/mpc/issues/1246
@@ -252,7 +247,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 fresh_attestation.clone(),
                 tls_public_key.clone(),
                 account_public_key.clone(),
-                allowed_hashes_in_contract.clone(),
+                allowed_image_hashes_in_contract.clone(),
                 allowed_launcher_compose_hashes_in_contract.clone(),
             )
             .await?;
@@ -392,13 +387,15 @@ mod tests {
         let account_key = SigningKey::generate(&mut rng)
             .verifying_key()
             .into_contract_interface_type();
+        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
+        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
         let handle = tokio::spawn(periodic_attestation_submission(
             tee_authority,
             sender.clone(),
             tls_key,
             account_key,
-            Arc::new(RwLock::new(vec![])),
-            Arc::new(RwLock::new(vec![])),
+            allowed_image_hashes_receiver,
+            allowed_launcher_compose_hashes_receiver,
             MockTicker::new(TEST_SUBMISSION_COUNT),
         ));
 
@@ -438,6 +435,8 @@ mod tests {
         // Create initial TEE accounts list including our node
         let initial_tee_accounts = vec![node_id.clone()];
         let (tee_accounts_sender, receiver) = watch::channel(initial_tee_accounts);
+        let (_, allowed_image_hashes_receiver) = watch::channel(vec![]);
+        let (_, allowed_launcher_compose_hashes_receiver) = watch::channel(vec![]);
 
         // Create mock sender with contract simulator built-in
         let mock_sender = MockSender::new(tee_accounts_sender.clone(), node_id.clone());
@@ -448,8 +447,8 @@ mod tests {
             mock_sender.clone(),
             tls_public_key,
             account_public_key,
-            Arc::new(RwLock::new(vec![])),
-            Arc::new(RwLock::new(vec![])),
+            allowed_image_hashes_receiver,
+            allowed_launcher_compose_hashes_receiver,
             receiver,
         ));
 
