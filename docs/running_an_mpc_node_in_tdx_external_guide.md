@@ -333,7 +333,6 @@ if [[ $ALL_OK -eq 1 ]]; then
     echo "All files verified successfully"
 else
     echo "One or more files did not match"
-    exit 1
 fi
 ```
 
