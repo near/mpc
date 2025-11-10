@@ -813,6 +813,7 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             // clean update votes
+            // this is kind of important
             self.proposed_updates
                 .keep_votes_for_participants(new_state.active_participants());
 
