@@ -25,7 +25,6 @@ const MIGRATION_INFO_REFRESH_INTERVAL: std::time::Duration = std::time::Duration
 /// The interval checking for new values is defined by [`MIGRATION_INFO_REFRESH_INTERVAL`]
 pub async fn monitor_migrations(
     indexer_state: Arc<IndexerState>,
-
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
     my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
@@ -46,35 +45,55 @@ pub async fn monitor_migrations(
                 interval.tick().await;
                 let response = fetch_migrations_once(indexer_state.clone()).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state {:?}", response);
-                migration_state_sender.send_if_modified(|watched_state| {
-                    // Only compare the migration info, not the block height
-                    if watched_state.1 != response.1 {
-                        tracing::info!("contract migration state changed: {:?}", response);
-                        *watched_state = response.clone();
-                        true
-                    } else {
-                        false
-                    }
-                });
-                let my_migration_state = MigrationInfo::from_contract_state(
+                process_migration_response(
+                    &response,
+                    &migration_state_sender,
+                    &sender,
                     &my_near_account_id,
                     &my_p2p_public_key,
-                    &response.1,
                 );
-                sender.send_if_modified(|watched_state| {
-                    if *watched_state != my_migration_state {
-                        tracing::info!("my migration state changed: {:?}", my_migration_state);
-                        *watched_state = my_migration_state;
-                        true
-                    } else {
-                        false
-                    }
-                });
             }
         }
     });
 
     receiver
+}
+
+/// Processes a single migration fetch response and updates the watch channels if needed.
+/// Returns true if any channel was updated, false otherwise.
+fn process_migration_response(
+    response: &(u64, ContractMigrationInfo),
+    migration_state_sender: &watch::Sender<(u64, ContractMigrationInfo)>,
+    my_migration_sender: &watch::Sender<MigrationInfo>,
+    my_near_account_id: &AccountId,
+    my_p2p_public_key: &VerifyingKey,
+) -> bool {
+    // Update the contract migration state channel if migration info changed
+    let contract_updated = migration_state_sender.send_if_modified(|watched_state| {
+        // Only compare the migration info, not the block height
+        if watched_state.1 != response.1 {
+            tracing::info!("contract migration state changed: {:?}", response);
+            *watched_state = response.clone();
+            true
+        } else {
+            false
+        }
+    });
+
+    // Update my migration state channel if my state changed
+    let my_migration_state =
+        MigrationInfo::from_contract_state(my_near_account_id, my_p2p_public_key, &response.1);
+    let my_state_updated = my_migration_sender.send_if_modified(|watched_state| {
+        if *watched_state != my_migration_state {
+            tracing::info!("my migration state changed: {:?}", my_migration_state);
+            *watched_state = my_migration_state;
+            true
+        } else {
+            false
+        }
+    });
+
+    contract_updated | my_state_updated
 }
 
 async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, ContractMigrationInfo) {
@@ -98,5 +117,206 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
                 tokio::time::sleep(MIGRATION_INFO_REFRESH_INTERVAL).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use contract_interface::types::Ed25519PublicKey;
+    use mpc_contract::node_migrations::BackupServiceInfo;
+    use std::collections::BTreeMap;
+
+    /// Helper to create a mock migration info with a specific account
+    fn create_migration_info_with_account(
+        account_id: &str,
+    ) -> (
+        AccountId,
+        (Option<BackupServiceInfo>, Option<DestinationNodeInfo>),
+    ) {
+        let account: AccountId = account_id.parse().unwrap();
+        (account, (None, None))
+    }
+
+    fn test_account_and_key() -> (AccountId, VerifyingKey) {
+        let account = "test.near".parse().unwrap();
+        let key = VerifyingKey::from_bytes(&[1u8; 32]).unwrap();
+        (account, key)
+    }
+
+    fn create_test_state(
+        initial_migration_info: ContractMigrationInfo,
+    ) -> (
+        watch::Sender<(u64, ContractMigrationInfo)>,
+        watch::Receiver<(u64, ContractMigrationInfo)>,
+        watch::Sender<MigrationInfo>,
+        watch::Receiver<MigrationInfo>,
+    ) {
+        let initial_state = (100u64, initial_migration_info);
+        let (contract_migration_sender, contract_migration_receiver) =
+            watch::channel(initial_state);
+
+        let initial_my_state = MigrationInfo {
+            backup_service_info: None,
+            active_migration: false,
+        };
+        let (my_migration_sender, my_migration_receiver) = watch::channel(initial_my_state);
+
+        (
+            contract_migration_sender,
+            contract_migration_receiver,
+            my_migration_sender,
+            my_migration_receiver,
+        )
+    }
+
+    #[test]
+    fn test_process_migration_response_does_not_update_on_block_height_change_only() {
+        // Given: Initial state with migration info
+        let migration_info: ContractMigrationInfo = BTreeMap::new();
+        let (
+            contract_migration_sender,
+            contract_migration_receiver,
+            my_migration_sender,
+            my_migration_receiver,
+        ) = create_test_state(migration_info.clone());
+        let (my_account, my_key) = test_account_and_key();
+
+        // When: Processing a response with same migration info but different block height
+        let new_response = (200u64, migration_info);
+        let updated = process_migration_response(
+            &new_response,
+            &contract_migration_sender,
+            &my_migration_sender,
+            &my_account,
+            &my_key,
+        );
+
+        // Then: No channels should be updated
+        assert!(!updated, "Should not update when only block height changes");
+        assert!(!contract_migration_receiver.has_changed().unwrap());
+        assert!(!my_migration_receiver.has_changed().unwrap());
+    }
+
+    #[test]
+    fn test_process_migration_response_updates_on_migration_info_change() {
+        // Given: Initial empty migration state
+        let empty_migration_info: ContractMigrationInfo = BTreeMap::new();
+        let (
+            contract_migration_sender,
+            mut contract_migration_receiver,
+            my_migration_sender,
+            my_migration_receiver,
+        ) = create_test_state(empty_migration_info);
+        let (my_account, my_key) = test_account_and_key();
+
+        // When: Processing a response with new migration info
+        let mut new_migration_info = BTreeMap::new();
+        let (account_id, migration_data) = create_migration_info_with_account("another.near");
+        new_migration_info.insert(account_id, migration_data);
+        let new_response = (200u64, new_migration_info.clone());
+
+        let updated = process_migration_response(
+            &new_response,
+            &contract_migration_sender,
+            &my_migration_sender,
+            &my_account,
+            &my_key,
+        );
+
+        // Then: Contract channel should be updated, but not my migration channel (since my account isn't in the migration)
+        assert!(updated, "Should update when migration info changes");
+        assert!(contract_migration_receiver.has_changed().unwrap());
+        assert!(
+            !my_migration_receiver.has_changed().unwrap(),
+            "My migration channel should not update when my account is not involved"
+        );
+
+        let contract_state = contract_migration_receiver.borrow_and_update();
+        assert_eq!(
+            contract_state.1, new_migration_info,
+            "Contract state should match new migration info"
+        );
+    }
+
+    #[test]
+    fn test_process_migration_response_updates_my_migration_when_i_am_added() {
+        // Given: Initial state without my account
+        let empty_migration_info: ContractMigrationInfo = BTreeMap::new();
+        let (
+            contract_migration_sender,
+            mut contract_migration_receiver,
+            my_migration_sender,
+            mut my_migration_receiver,
+        ) = create_test_state(empty_migration_info);
+        let (my_account, my_key) = test_account_and_key();
+
+        // When: Processing a response where my account is added
+        let expected_backup_service = BackupServiceInfo {
+            public_key: Ed25519PublicKey(my_key.to_bytes()),
+        };
+        let mut new_migration_info = BTreeMap::new();
+        new_migration_info.insert(
+            my_account.clone(),
+            (Some(expected_backup_service.clone()), None),
+        );
+        let new_response = (200u64, new_migration_info.clone());
+
+        let updated = process_migration_response(
+            &new_response,
+            &contract_migration_sender,
+            &my_migration_sender,
+            &my_account,
+            &my_key,
+        );
+
+        // Then: Both channels should be updated (contract state changed AND my account was added)
+        assert!(updated, "Should update when my account is added");
+        assert!(contract_migration_receiver.has_changed().unwrap());
+        assert!(my_migration_receiver.has_changed().unwrap());
+
+        let contract_state = contract_migration_receiver.borrow_and_update();
+        assert_eq!(contract_state.0, 200u64);
+        assert_eq!(contract_state.1, new_migration_info);
+
+        let my_state = my_migration_receiver.borrow_and_update();
+        assert_eq!(my_state.backup_service_info, Some(expected_backup_service));
+        assert!(!my_state.active_migration);
+    }
+
+    #[test]
+    fn test_process_migration_response_handles_multiple_sequential_updates() {
+        // Given: Initial empty state
+        let empty_migration_info: ContractMigrationInfo = BTreeMap::new();
+        let (
+            contract_migration_sender,
+            contract_migration_receiver,
+            my_migration_sender,
+            my_migration_receiver,
+        ) = create_test_state(empty_migration_info);
+        let (my_account, my_key) = test_account_and_key();
+
+        // When: Processing multiple responses with block height changes (no migration changes)
+        for block_height in 101..105 {
+            let response = (block_height, BTreeMap::new());
+            let updated = process_migration_response(
+                &response,
+                &contract_migration_sender,
+                &my_migration_sender,
+                &my_account,
+                &my_key,
+            );
+
+            // Then: Should not update on any block height-only change
+            assert!(
+                !updated,
+                "Should not update on block height {} when migration info unchanged",
+                block_height
+            );
+        }
+
+        // Verify no spurious updates occurred on either channel
+        assert!(!contract_migration_receiver.has_changed().unwrap());
+        assert!(!my_migration_receiver.has_changed().unwrap());
     }
 }
