@@ -47,7 +47,8 @@ pub async fn monitor_migrations(
                 let response = fetch_migrations_once(indexer_state.clone()).await;
                 tracing::debug!(target: "indexer", "fetched mpc migration state {:?}", response);
                 migration_state_sender.send_if_modified(|watched_state| {
-                    if *watched_state != response {
+                    // Only compare the migration info, not the block height
+                    if watched_state.1 != response.1 {
                         tracing::info!("contract migration state changed: {:?}", response);
                         *watched_state = response.clone();
                         true
