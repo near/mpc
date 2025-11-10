@@ -78,8 +78,7 @@ pub enum ExitError {
 }
 
 /// Creates a future that monitors the latest allowed image hashes in
-/// `allowed_hashes_in_contract` and writes them to the provided storage implementation `image_hash_storage`
-/// and `allowed_hashes_in_contract`.
+/// `allowed_hashes_in_contract` and writes them to the provided storage implementation `image_hash_storage`.
 ///
 /// The future will exit with an error and send a shutdown signal on the `shutdown_signal_sender` if:
 /// - The provided [AllowedImageHashesStorage::set] implementation returns an [io::Error]
@@ -91,7 +90,7 @@ pub enum ExitError {
 pub async fn monitor_allowed_image_hashes<Storage>(
     cancellation_token: CancellationToken,
     current_image: MpcDockerImageHash,
-    receiver_from_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     image_hash_storage: Storage,
     shutdown_signal_sender: mpsc::Sender<()>,
 ) -> Result<(), ExitError>
@@ -101,7 +100,7 @@ where
     let manager: AllowedImageHashesWatcher<Storage> = AllowedImageHashesWatcher {
         image_hash_storage,
         cancellation_token,
-        receiver_from_contract,
+        allowed_hashes_in_contract,
         current_image,
         shutdown_signal_sender,
     };
@@ -111,7 +110,7 @@ where
 
 struct AllowedImageHashesWatcher<A> {
     cancellation_token: CancellationToken,
-    receiver_from_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
+    allowed_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
     current_image: MpcDockerImageHash,
     image_hash_storage: A,
     shutdown_signal_sender: mpsc::Sender<()>,
@@ -139,7 +138,7 @@ where
     async fn run_event_loop(mut self) -> Result<(), ExitError> {
         // First value is marked as seen by default in `watch::Receiver` implementation
         // Mark it changed to make sure we process the initial value in the select arm below.
-        self.receiver_from_contract.mark_changed();
+        self.allowed_hashes_in_contract.mark_changed();
 
         loop {
             select! {
@@ -147,7 +146,7 @@ where
                     break Ok(());
                 }
 
-                watcher_result = self.receiver_from_contract.changed() => {
+                watcher_result = self.allowed_hashes_in_contract.changed() => {
                     if watcher_result.is_err() {
                         break Err(ExitError::IndexerClosed);
                     }
@@ -158,7 +157,7 @@ where
         }
     }
 
-    /// Handles an updated list of allowed image hashes in the `receiver_from_contract` watcher.
+    /// Handles an updated list of allowed image hashes in the `allowed_hashes_in_contract` watcher.
     /// The latest allowed image hash is written to the `image_hash_storage`.
     ///
     /// Returns an [io::Error] if the [AllowedImageHashesStorage::set] implementation fails.
@@ -166,7 +165,7 @@ where
         tracing::info!(
             "Set of allowed image hashes on contract has changed. Storing hashes to disk."
         );
-        let allowed_image_hashes = self.receiver_from_contract.borrow_and_update().clone();
+        let allowed_image_hashes = self.allowed_hashes_in_contract.borrow_and_update().clone();
 
         let image_hash_storage = &mut self.image_hash_storage;
         let Some(latest_allowed_image_hash) = allowed_image_hashes.last() else {

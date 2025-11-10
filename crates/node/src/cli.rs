@@ -318,13 +318,13 @@ impl StartCmd {
                 .try_into()
                 .expect("The currently running image hash hex representation is 32 bytes.");
 
-            let receiver_from_contract = indexer_api.allowed_docker_images_receiver.clone();
+            let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
             let image_hash_storage = AllowedImageHashesFile::from(latest_allowed_hash_file.clone());
 
             Some(root_runtime.spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 MpcDockerImageHash::from(current_image_hash_bytes),
-                receiver_from_contract,
+                allowed_hashes_in_contract,
                 image_hash_storage,
                 shutdown_signal_sender.clone(),
             )))
@@ -367,7 +367,6 @@ impl StartCmd {
             info!("Waiting for image hash watcher to gracefully exit.");
             let exit_result = handle.await;
             info!(?exit_result, "Image hash watcher exited.");
-            info!("Waiting for launcher compose watcher to gracefully exit.");
         }
 
         exit_reason
