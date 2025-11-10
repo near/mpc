@@ -120,8 +120,9 @@ async fn fetch_migrations_once(indexer_state: Arc<IndexerState>) -> (u64, Contra
 
 #[cfg(test)]
 mod tests {
+    use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
+
     use super::*;
-    use contract_interface::types::Ed25519PublicKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use std::collections::BTreeMap;
 
@@ -148,8 +149,11 @@ mod tests {
         (account, key)
     }
 
-    fn create_test_state(initial_migration_info: ContractMigrationInfo) -> TestChannels {
-        let initial_state = (100u64, initial_migration_info);
+    fn create_test_state(
+        initial_block_height: u64,
+        initial_migration_info: ContractMigrationInfo,
+    ) -> TestChannels {
+        let initial_state = (initial_block_height, initial_migration_info);
         let (contract_migration_sender, contract_migration_receiver) =
             watch::channel(initial_state);
 
@@ -176,7 +180,7 @@ mod tests {
             contract_migration_receiver,
             my_migration_sender,
             my_migration_receiver,
-        ) = create_test_state(migration_info.clone());
+        ) = create_test_state(100, migration_info.clone());
         let (my_account, my_key) = test_account_and_key();
 
         // When: Processing a response with same migration info but different block height
@@ -204,7 +208,7 @@ mod tests {
             mut contract_migration_receiver,
             my_migration_sender,
             my_migration_receiver,
-        ) = create_test_state(empty_migration_info);
+        ) = create_test_state(100, empty_migration_info);
         let (my_account, my_key) = test_account_and_key();
 
         // When: Processing a response with new migration info
@@ -245,19 +249,20 @@ mod tests {
             mut contract_migration_receiver,
             my_migration_sender,
             mut my_migration_receiver,
-        ) = create_test_state(empty_migration_info);
+        ) = create_test_state(100, empty_migration_info);
         let (my_account, my_key) = test_account_and_key();
 
         // When: Processing a response where my account is added
+        let new_block_height: u64 = 200u64;
         let expected_backup_service = BackupServiceInfo {
-            public_key: Ed25519PublicKey(my_key.to_bytes()),
+            public_key: my_key.into_contract_interface_type(),
         };
         let mut new_migration_info = BTreeMap::new();
         new_migration_info.insert(
             my_account.clone(),
             (Some(expected_backup_service.clone()), None),
         );
-        let new_response = (200u64, new_migration_info.clone());
+        let new_response = (new_block_height, new_migration_info.clone());
 
         let updated = process_migration_response(
             &new_response,
@@ -273,7 +278,7 @@ mod tests {
         assert!(my_migration_receiver.has_changed().unwrap());
 
         let contract_state = contract_migration_receiver.borrow_and_update();
-        assert_eq!(contract_state.0, 200u64);
+        assert_eq!(contract_state.0, new_block_height);
         assert_eq!(contract_state.1, new_migration_info);
 
         let my_state = my_migration_receiver.borrow_and_update();
@@ -290,7 +295,7 @@ mod tests {
             contract_migration_receiver,
             my_migration_sender,
             my_migration_receiver,
-        ) = create_test_state(empty_migration_info);
+        ) = create_test_state(100, empty_migration_info);
         let (my_account, my_key) = test_account_and_key();
 
         // When: Processing multiple responses with block height changes (no migration changes)
