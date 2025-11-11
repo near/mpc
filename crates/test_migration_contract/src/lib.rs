@@ -11,7 +11,7 @@ impl Contract {
     #[private]
     #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<Self, String> {
+    pub fn pub_migrate() -> Result<Self, String> {
         log_str("Migration called");
         Ok(Self {})
     }
