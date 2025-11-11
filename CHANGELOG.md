@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.0.2] - 2025-11-11
+
+### 🚀 Features
+
+- [#1412](https://github.com/near/mpc/pull/1412)(@gilcu3): Validate attestation before submission (#1412)
+
+
+### 🐛 Bug Fixes
+
+- [#1405](https://github.com/near/mpc/pull/1405)(@gilcu3): Test_latest_allowed_image_hash_is_written assuming wrong order (#1405)
+
+- [#1413](https://github.com/near/mpc/pull/1413)(@gilcu3): Remove wrong near_sdk::PublicKey conversions (#1413)
+
+- [#1414](https://github.com/near/mpc/pull/1414)(@pbeza): Disable state sync in `start.sh` for localnet (#1414)
+
+- [#1418](https://github.com/near/mpc/pull/1418)(@gilcu3): Path to store latest mpc node image hashes in devnet (#1418)
+
+- [#1426](https://github.com/near/mpc/pull/1426)(@barakeinav1): *(tee)* Add  prefix to written image digest for launcher compatibility (#1426)
+
+- [#1432](https://github.com/near/mpc/pull/1432)(@gilcu3): Enable user_views tests in the contract (#1432)
+
+- [#1436](https://github.com/near/mpc/pull/1436)(@gilcu3): Add pub_migrate function to get current contract migration unstuck (#1436)
+
+
+### 🧪 Testing
+
+- [#1406](https://github.com/near/mpc/pull/1406)(@kevindeforth): Improve unit tests (#1406)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1409](https://github.com/near/mpc/pull/1409)(@Copilot): Downgrade account balance fetch log to debug level (#1409)
+
+- [#1427](https://github.com/near/mpc/pull/1427)(@barakeinav1): Remove "exit 1" that could close ssh session (#1427)
+
+- [#1430](https://github.com/near/mpc/pull/1430)(@netrome): Bump protocol version (#1430)
+
+
 ## [3.0.1] - 2025-11-06
 
 ### 🚀 Features
@@ -26,6 +64,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1398](https://github.com/near/mpc/pull/1398)(@kevindeforth): Generate backup encryption key if env var is not provided (#1398)
 
 - [#1397](https://github.com/near/mpc/pull/1397)(@netrome): Update nearcore to a modified 2.9 with testnet voting date set (#1397)
+
+- [#1404](https://github.com/near/mpc/pull/1404)(@netrome): Update version and changelog for 3.0.1 release (#1404)
 
 
 ## [3.0.0] - 2025-11-05
