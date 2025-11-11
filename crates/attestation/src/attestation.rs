@@ -92,6 +92,10 @@ pub enum VerificationError {
     },
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
+    #[error("the allowed mpc image hashes list is empty")]
+    EmptyAllowedMpcImageHashesList,
+    #[error("the allowed mpc laucher compose hashes list is empty")]
+    EmptyAllowedMpcLauncherComposeHashesList,
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -150,6 +154,9 @@ pub(crate) fn verify_mock_attestation(
             expiry_time_stamp_seconds: expiry_timestamp_seconds,
         } => {
             if let Some(hash) = mpc_docker_image_hash {
+                if allowed_mpc_docker_image_hashes.is_empty() {
+                    return Err(VerificationError::EmptyAllowedMpcImageHashesList);
+                }
                 allowed_mpc_docker_image_hashes.contains(hash).or_err(|| {
                     VerificationError::MpcImageHashNotInAllowedHashesList(hex::encode(
                         hash.as_ref(),
@@ -158,6 +165,9 @@ pub(crate) fn verify_mock_attestation(
             };
 
             if let Some(hash) = launcher_docker_compose_hash {
+                if allowed_launcher_docker_compose_hashes.is_empty() {
+                    return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
+                }
                 allowed_launcher_docker_compose_hashes
                     .contains(hash)
                     .or_err(|| {
@@ -217,6 +227,13 @@ impl Attestation {
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> Result<(), VerificationError> {
+        if allowed_mpc_docker_image_hashes.is_empty() {
+            return Err(VerificationError::EmptyAllowedMpcImageHashesList);
+        }
+        if allowed_launcher_docker_compose_hashes.is_empty() {
+            return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
+        }
+
         let expected_measurements = ExpectedMeasurements::from_embedded_tcb_info()
             .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 

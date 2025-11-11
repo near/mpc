@@ -10,7 +10,7 @@ use mpc_contract::{
     primitives::{domain::SignatureScheme, test_utils::bogus_ed25519_public_key},
     state::ProtocolContractState,
 };
-use mpc_primitives::hash::MpcDockerImageHash;
+use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::{Account, Contract};
 use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
 
@@ -167,6 +167,18 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
         .await?;
     assert!(res.is_success());
     Ok(())
+}
+
+async fn get_allowed_launcher_compose_hashes(
+    contract: &Contract,
+) -> Result<Vec<LauncherDockerComposeHash>> {
+    Ok(contract
+        .call("allowed_launcher_compose_hashes")
+        .args_json(serde_json::json!(""))
+        .max_gas()
+        .transact()
+        .await?
+        .json::<Vec<LauncherDockerComposeHash>>()?)
 }
 
 async fn get_allowed_hashes(contract: &Contract) -> Result<Vec<MpcDockerImageHash>> {
@@ -552,4 +564,27 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         Some(second_attestation),
         "Expected the second attestation to overwrite the first for the same TLS key"
     );
+}
+
+#[tokio::test]
+async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
+    let (_, contract, accounts, _) = init_env(&[]).await;
+
+    let allowed_mpc_image_digest = image_digest();
+
+    assert_eq!(
+        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        0
+    );
+
+    for account in accounts {
+        vote_for_hash(&account, &contract, &allowed_mpc_image_digest).await?;
+    }
+
+    assert_eq!(
+        get_allowed_launcher_compose_hashes(&contract).await?.len(),
+        1
+    );
+
+    Ok(())
 }

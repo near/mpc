@@ -1,6 +1,7 @@
 use actix::Addr;
 use anyhow::bail;
 use mpc_contract::state::ProtocolContractState;
+use mpc_contract::tee::proposal::LauncherDockerComposeHash;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::tee::tee_state::NodeId;
 use near_client::ClientActor;
@@ -18,6 +19,7 @@ use super::migrations::ContractMigrationInfo;
 
 const INTERVAL: Duration = Duration::from_millis(500);
 const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
+const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = "allowed_launcher_compose_hashes";
 const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
 pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
@@ -83,9 +85,21 @@ pub(crate) async fn get_mpc_contract_state(
 
 pub(crate) async fn get_mpc_allowed_image_hashes(
     mpc_contract_id: AccountId,
-    client: &actix::Addr<near_client::ViewClientActor>,
+    client: actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-    get_mpc_state(mpc_contract_id, client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
+    get_mpc_state(mpc_contract_id, &client, ALLOWED_IMAGE_HASHES_ENDPOINT).await
+}
+
+pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
+    mpc_contract_id: AccountId,
+    client: actix::Addr<near_client::ViewClientActor>,
+) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
+    get_mpc_state(
+        mpc_contract_id,
+        &client,
+        ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT,
+    )
+    .await
 }
 
 pub(crate) async fn get_mpc_tee_accounts(

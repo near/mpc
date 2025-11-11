@@ -40,6 +40,7 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
@@ -1233,6 +1234,10 @@ impl MpcContract {
             .into_iter()
             .map(|allowed_image_hash| allowed_image_hash.image_hash)
             .collect()
+    }
+
+    pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.tee_state.allowed_launcher_compose_hashes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {
