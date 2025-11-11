@@ -53,7 +53,9 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             ?latest_allowed_image_hash,
             "Writing latest allowed image hash to disk."
         );
-        let image_hash = latest_allowed_image_hash.as_hex();
+
+        // Add the sha256: prefix before writing to disk (this is the format expected by launcher)
+        let image_hash = format!("sha256:{}", latest_allowed_image_hash.as_hex());
         file_handle.write_all(image_hash.as_bytes()).await?;
         file_handle.flush().await?;
 
