@@ -112,24 +112,24 @@ fn validate_remote_attestation(
     )
 }
 
+fn get_last_value_from_receiver<T: Clone>(receiver: &watch::Receiver<T>) -> anyhow::Result<T> {
+    Ok(receiver.borrow().clone())
+}
+
 pub async fn validate_and_submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
     account_public_key: Ed25519PublicKey,
-    allowed_image_hashes_in_contract: watch::Receiver<Vec<MpcDockerImageHash>>,
-    allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    allowed_docker_image_hashes: &[MpcDockerImageHash],
+    allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
 ) -> anyhow::Result<()> {
-    let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
-    let allowed_launcher_compose_hashes_in_contract =
-        allowed_launcher_compose_hashes_in_contract.borrow().clone();
-
     validate_remote_attestation(
         &attestation,
         tls_public_key.clone(),
         account_public_key,
-        &allowed_image_hashes_in_contract,
-        &allowed_launcher_compose_hashes_in_contract,
+        allowed_docker_image_hashes,
+        allowed_launcher_compose_hashes,
     )
     .unwrap_or_else(|err| {
         // We could also return here, but for the moment I am just logging the
@@ -156,13 +156,17 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
         let fresh_attestation = tee_authority
             .generate_attestation(report_data.clone())
             .await?;
+        let allowed_image_hashes_in_contract =
+            get_last_value_from_receiver(&allowed_image_hashes_in_contract)?;
+        let allowed_launcher_compose_hashes_in_contract =
+            get_last_value_from_receiver(&allowed_launcher_compose_hashes_in_contract)?;
         validate_and_submit_remote_attestation(
             tx_sender.clone(),
             fresh_attestation.clone(),
             tls_public_key.clone(),
             account_public_key.clone(),
-            allowed_image_hashes_in_contract.clone(),
-            allowed_launcher_compose_hashes_in_contract.clone(),
+            &allowed_image_hashes_in_contract,
+            &allowed_launcher_compose_hashes_in_contract,
         )
         .await?;
     }
@@ -242,13 +246,17 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             let fresh_attestation = tee_authority
                 .generate_attestation(report_data.clone())
                 .await?;
+            let allowed_image_hashes_in_contract =
+                get_last_value_from_receiver(&allowed_image_hashes_in_contract)?;
+            let allowed_launcher_compose_hashes_in_contract =
+                get_last_value_from_receiver(&allowed_launcher_compose_hashes_in_contract)?;
             validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
                 tls_public_key.clone(),
                 account_public_key.clone(),
-                allowed_image_hashes_in_contract.clone(),
-                allowed_launcher_compose_hashes_in_contract.clone(),
+                &allowed_image_hashes_in_contract,
+                &allowed_launcher_compose_hashes_in_contract,
             )
             .await?;
         }
