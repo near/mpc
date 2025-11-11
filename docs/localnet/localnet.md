@@ -315,8 +315,8 @@ can sign transaction that require authorization on the contract.
 First we can get the keys from the `public_data` endpoint:
 
 ```shell
-export FRODO_P2P_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_signer_public_key")
-export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_signer_public_key")
+export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r ".near_signer_public_key")
+export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r ".near_signer_public_key")
 
 export FRODO_RESPONDER_KEY=$(curl -s localhost:8081/public_data | jq -r ".near_responder_public_keys[0]")
 export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_responder_public_keys[0]")
@@ -325,10 +325,10 @@ export SAM_RESPONDER_KEY=$(curl -s localhost:8082/public_data | jq -r ".near_res
 Now we can add these keys to the appropriate NEAR accounts with the NEAR CLI.
 
 ```shell
-near account add-key frodo.test.near grant-full-access use-manually-provided-public-key "$FRODO_P2P_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key frodo.test.near grant-full-access use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
 near account add-key frodo.test.near grant-full-access use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
-near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_P2P_KEY" network-config mpc-localnet sign-with-keychain send
+near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
 near account add-key sam.test.near grant-full-access use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
@@ -338,8 +338,8 @@ We'll initialize the MPC contract with our two participants.
 The first step to achieve this is to get their public keys.
 
 ```shell
-export FRODO_PUBKEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
-export SAM_PUBKEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
+export FRODO_P2P_KEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
+export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
 export MPC_HOST=localhost
 ```
 
