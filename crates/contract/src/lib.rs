@@ -1209,7 +1209,14 @@ impl MpcContract {
     #[private]
     #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<Self, Error> {
+    pub fn migrate() -> Result<(), Error> {
+        log!("migrating contract: no-op");
+        Ok(())
+    }
+
+    #[init(ignore_state)]
+    #[handle_result]
+    pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
         if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
             return match contract {
