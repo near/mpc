@@ -1209,9 +1209,10 @@ impl MpcContract {
     #[private]
     #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<(), Error> {
+    pub fn migrate() -> Result<v0_state::VersionedMpcContract, Error> {
         log!("migrating contract: no-op");
-        Ok(())
+        env::state_read::<v0_state::VersionedMpcContract>()
+            .ok_or_else(|| InvalidState::ContractStateIsMissing.into())
     }
 
     #[init(ignore_state)]
