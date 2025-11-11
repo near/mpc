@@ -36,6 +36,8 @@ k256 = { version = "0.13.4", default-features = false, features = [
 ] }
 keccak = "0.1.5"
 rand = { version = "0.8.5", optional = true }
+# This one cannot be upgraded to remain compatible with rand_core (although used only in test cases)
+rand_chacha = {version = "0.3.1", optional = true}
 # This one cannot be upgraded to remain compatible with frost-core
 rand_core = { version = "0.6.4" }
 rmp-serde = "1.3.0"
@@ -51,7 +53,7 @@ zeroize = "1.8.2"
 [features]
 default = ["actively_secure_robust_ecdsa"]
 actively_secure_robust_ecdsa = []
-test-utils = ["rand"]
+test-utils = ["rand", "rand_chacha"]
 
 [dev-dependencies]
 criterion = {version = "0.7.0", features = ["html_reports"]}

@@ -1426,6 +1426,7 @@ dependencies = [
  "k256",
  "keccak",
  "rand",
+ "rand_chacha",
  "rand_core",
  "rmp-serde",
  "serde",
