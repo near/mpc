@@ -158,7 +158,7 @@ impl ProposedUpdates {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
                 promise = promise.deploy_contract(code).function_call(
-                    "migrate".into(),
+                    "pub_migrate".into(),
                     Vec::new(),
                     NearToken::from_near(0),
                     gas,
