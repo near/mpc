@@ -785,6 +785,17 @@ pub async fn propose_and_vote_contract_binary(
 
     let proposal_id: UpdateId = propose_update_execution.json().unwrap();
 
+    // Try calling into state and see if it works.
+    let state_request_execution = accounts[0]
+        .call(contract.id(), "state")
+        .transact()
+        .await
+        .expect("state request succeeds");
+
+    let _state: ProtocolContractState = state_request_execution
+        .json()
+        .expect("state is deserializable.");
+
     vote_update_till_completion(contract, accounts, &proposal_id).await;
 
     if extra_migrate_step {
@@ -796,17 +807,6 @@ pub async fn propose_and_vote_contract_binary(
             .into_result()
             .unwrap();
     }
-
-    // Try calling into state and see if it works.
-    let state_request_execution = accounts[0]
-        .call(contract.id(), "state")
-        .transact()
-        .await
-        .expect("state request succeeds");
-
-    let _state: ProtocolContractState = state_request_execution
-        .json()
-        .expect("state is deserializable.");
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
