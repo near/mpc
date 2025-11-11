@@ -112,10 +112,6 @@ fn validate_remote_attestation(
     )
 }
 
-fn get_last_value_from_receiver<T: Clone>(receiver: &watch::Receiver<T>) -> anyhow::Result<T> {
-    Ok(receiver.borrow().clone())
-}
-
 pub async fn validate_and_submit_remote_attestation(
     tx_sender: impl TransactionSender,
     attestation: Attestation,
@@ -124,14 +120,14 @@ pub async fn validate_and_submit_remote_attestation(
     allowed_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
 ) -> anyhow::Result<()> {
-    validate_remote_attestation(
+    let _ = validate_remote_attestation(
         &attestation,
         tls_public_key.clone(),
         account_public_key,
         allowed_docker_image_hashes,
         allowed_launcher_compose_hashes,
     )
-    .unwrap_or_else(|err| {
+    .inspect_err(|err| {
         // We could also return here, but for the moment I am just logging the
         // attestation failure error and letting the submission continue
         tracing::warn!("Attestation is not valid: {err}");
@@ -156,10 +152,9 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
         let fresh_attestation = tee_authority
             .generate_attestation(report_data.clone())
             .await?;
-        let allowed_image_hashes_in_contract =
-            get_last_value_from_receiver(&allowed_image_hashes_in_contract)?;
+        let allowed_image_hashes_in_contract = allowed_image_hashes_in_contract.borrow().clone();
         let allowed_launcher_compose_hashes_in_contract =
-            get_last_value_from_receiver(&allowed_launcher_compose_hashes_in_contract)?;
+            allowed_launcher_compose_hashes_in_contract.borrow().clone();
         validate_and_submit_remote_attestation(
             tx_sender.clone(),
             fresh_attestation.clone(),
@@ -247,9 +242,9 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
                 .generate_attestation(report_data.clone())
                 .await?;
             let allowed_image_hashes_in_contract =
-                get_last_value_from_receiver(&allowed_image_hashes_in_contract)?;
+                allowed_image_hashes_in_contract.borrow().clone();
             let allowed_launcher_compose_hashes_in_contract =
-                get_last_value_from_receiver(&allowed_launcher_compose_hashes_in_contract)?;
+                allowed_launcher_compose_hashes_in_contract.borrow().clone();
             validate_and_submit_remote_attestation(
                 tx_sender.clone(),
                 fresh_attestation.clone(),
