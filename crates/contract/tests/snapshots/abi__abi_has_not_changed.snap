@@ -1,6 +1,5 @@
 ---
 source: crates/contract/tests/abi.rs
-assertion_line: 48
 expression: abi
 ---
 {
@@ -38,6 +37,26 @@ expression: abi
       },
       {
         "name": "allowed_docker_image_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_launcher_compose_hashes",
         "kind": "view",
         "result": {
           "serialization_type": "json",
