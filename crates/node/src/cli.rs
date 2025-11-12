@@ -26,13 +26,8 @@ use mpc_contract::state::ProtocolContractState;
 use near_indexer_primitives::types::Finality;
 use near_sdk::AccountId;
 use near_time::Clock;
-use std::collections::BTreeMap;
-use std::{
-    path::PathBuf,
-    sync::OnceLock,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Mutex};
+use std::{path::PathBuf, sync::Arc, sync::OnceLock, time::Duration};
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
     DEFAULT_PHALA_TDX_QUOTE_UPLOAD_URL,
@@ -331,7 +326,7 @@ impl StartCmd {
                 MpcDockerImageHash::from(current_image_hash_bytes),
                 allowed_hashes_in_contract,
                 image_hash_storage,
-                shutdown_signal_sender,
+                shutdown_signal_sender.clone(),
             )))
         } else {
             tracing::info!(
@@ -397,8 +392,16 @@ impl StartCmd {
             .set(root_task_handle.clone())
             .map_err(|_| anyhow!("Root task handle was already set"))?;
 
-        let tls_public_key = secrets.persistent_secrets.p2p_private_key.verifying_key();
-        let account_public_key = secrets.persistent_secrets.near_signer_key.verifying_key();
+        let tls_public_key = secrets
+            .persistent_secrets
+            .p2p_private_key
+            .verifying_key()
+            .into_contract_interface_type();
+        let account_public_key = secrets
+            .persistent_secrets
+            .near_signer_key
+            .verifying_key()
+            .into_contract_interface_type();
 
         let secret_db = SecretDB::new(&home_dir.join("assets"), secrets.local_storage_aes_key)?;
 
@@ -420,18 +423,30 @@ impl StartCmd {
             },
         };
 
-        submit_remote_attestation(indexer_api.txn_sender.clone(), attestation, tls_public_key)
-            .await?;
+        submit_remote_attestation(
+            indexer_api.txn_sender.clone(),
+            attestation,
+            tls_public_key.clone(),
+        )
+        .await?;
 
         // Spawn periodic attestation submission task
-        let tx_sender_clone = indexer_api.txn_sender.clone();
         let tee_authority_clone = tee_authority.clone();
+        let tx_sender_clone = indexer_api.txn_sender.clone();
+        let tls_public_key_clone = tls_public_key.clone();
+        let account_public_key_clone = account_public_key.clone();
+        let allowed_docker_images_receiver_clone =
+            indexer_api.allowed_docker_images_receiver.clone();
+        let allowed_launcher_compose_receiver_clone =
+            indexer_api.allowed_launcher_compose_receiver.clone();
         tokio::spawn(async move {
             if let Err(e) = periodic_attestation_submission(
                 tee_authority_clone,
                 tx_sender_clone,
-                tls_public_key,
-                account_public_key,
+                tls_public_key_clone,
+                account_public_key_clone,
+                allowed_docker_images_receiver_clone,
+                allowed_launcher_compose_receiver_clone,
                 tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL),
             )
             .await
@@ -447,7 +462,10 @@ impl StartCmd {
         let tx_sender_clone = indexer_api.txn_sender.clone();
         let tee_accounts_receiver = indexer_api.attested_nodes_receiver.clone();
         let account_id_clone = config.my_near_account_id.clone();
-
+        let allowed_docker_images_receiver_clone =
+            indexer_api.allowed_docker_images_receiver.clone();
+        let allowed_launcher_compose_receiver_clone =
+            indexer_api.allowed_launcher_compose_receiver.clone();
         tokio::spawn(async move {
             if let Err(e) = monitor_attestation_removal(
                 account_id_clone,
@@ -455,6 +473,8 @@ impl StartCmd {
                 tx_sender_clone,
                 tls_public_key,
                 account_public_key,
+                allowed_docker_images_receiver_clone,
+                allowed_launcher_compose_receiver_clone,
                 tee_accounts_receiver,
             )
             .await

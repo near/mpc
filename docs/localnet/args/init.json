@@ -8,7 +8,7 @@
           "frodo.test.near",
           0,
           {
-            "sign_pk": "$FRODO_PUBKEY",
+            "sign_pk": "$FRODO_P2P_KEY",
             "url": "https://$MPC_HOST:3000"
           }
         ],
@@ -16,7 +16,7 @@
           "sam.test.near", 
           1,
           {
-            "sign_pk": "$SAM_PUBKEY",
+            "sign_pk": "$SAM_P2P_KEY",
             "url": "https://$MPC_HOST:3001"
           }
         ]

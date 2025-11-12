@@ -144,7 +144,7 @@ async fn export_terraform_vars(
             mpc_contract_signer: contract,
             ssd: mpc_setup.ssd,
             image_hash,
-            latest_allowed_hash_file: "/mnt/shared/image-digest.bin".to_string(), // should match value in launcher.py
+            latest_allowed_hash_file: "latest_hash.txt".to_string(),
         };
         serde_json::to_string_pretty(&terraform_file).unwrap()
     };

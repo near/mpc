@@ -40,6 +40,7 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
@@ -1209,7 +1210,15 @@ impl MpcContract {
     #[private]
     #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<Self, Error> {
+    pub fn migrate() -> Result<v0_state::VersionedMpcContract, Error> {
+        log!("migrating contract: no-op");
+        env::state_read::<v0_state::VersionedMpcContract>()
+            .ok_or_else(|| InvalidState::ContractStateIsMissing.into())
+    }
+
+    #[init(ignore_state)]
+    #[handle_result]
+    pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
         if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
             return match contract {
@@ -1233,6 +1242,10 @@ impl MpcContract {
             .into_iter()
             .map(|allowed_image_hash| allowed_image_hash.image_hash)
             .collect()
+    }
+
+    pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
+        self.tee_state.allowed_launcher_compose_hashes.clone()
     }
 
     pub fn get_pending_request(&self, request: &SignatureRequest) -> Option<YieldIndex> {

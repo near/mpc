@@ -31,7 +31,7 @@ The CLI can be installed using `cargo install`. Open a terminal in
 the devnet directory and run the following.
 
 ```shell
-cargo install --path .
+cargo install --path . --locked
 ```
 
 Once completed, you should have the `mpc-devnet` command available in your shell.

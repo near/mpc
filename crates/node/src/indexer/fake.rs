@@ -825,6 +825,8 @@ impl FakeIndexerManager {
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
         let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
             watch::channel(vec![]);
+        let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
+            watch::channel(vec![]);
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
@@ -842,6 +844,7 @@ impl FakeIndexerManager {
             )),
             txn_sender: mock_transaction_sender,
             allowed_docker_images_receiver,
+            allowed_launcher_compose_receiver,
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
         };

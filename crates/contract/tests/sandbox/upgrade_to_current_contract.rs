@@ -83,7 +83,11 @@ async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
 async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
-    contract.call("migrate").transact().await?.into_result()?;
+    contract
+        .call("pub_migrate")
+        .transact()
+        .await?
+        .into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 
@@ -161,7 +165,7 @@ async fn propose_upgrade_from_production_to_current_binary(
     let state_pre_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
 
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract(), true).await;
 
     let state_post_upgrade: ProtocolContractState =
         contract.view("state").await.unwrap().json().unwrap();
@@ -421,4 +425,23 @@ async fn upgrade_allows_new_request_types(
             "Returned ckd response does not match"
         );
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_nonexisting_function_allowed_launcher_compose_hashes(
+    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+) -> anyhow::Result<()> {
+    let worker = near_workspaces::sandbox().await?;
+
+    let contract = deploy_old(&worker, network).await?;
+    let call_result = contract
+        .view("allowed_launcher_compose_hashes")
+        .await
+        .unwrap_err();
+    let error_msg = format!("{:?}", call_result);
+    assert!(
+        error_msg.contains("wasm execution failed with error: MethodResolveError(MethodNotFound)")
+    );
+    Ok(())
 }
