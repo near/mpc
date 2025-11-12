@@ -61,8 +61,6 @@ async fn test_basic_cluster() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
-    tracing::info!("we are in initializing state");
-
     setup
         .indexer
         .wait_for_contract_state(
@@ -71,7 +69,6 @@ async fn test_basic_cluster() {
         )
         .await
         .expect("timeout waiting for keygen to complete");
-    tracing::info!("we are in running state");
 
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
