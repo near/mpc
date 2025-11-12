@@ -1,7 +1,8 @@
+use crate::indexer::participants::ContractState;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
     request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
-    DEFAULT_BLOCK_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    DEFAULT_BLOCK_TIME, DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -59,6 +60,15 @@ async fn test_basic_cluster() {
         .into_iter()
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
+
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+        )
+        .await
+        .expect("timeout waiting for keygen to complete");
 
     assert!(request_signature_and_await_response(
         &mut setup.indexer,

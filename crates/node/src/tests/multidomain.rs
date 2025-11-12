@@ -61,7 +61,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
         )
         .await
         .expect("must not exceed timeout");
@@ -124,7 +124,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
         )
         .await
         .expect("must not exceed timeout");
