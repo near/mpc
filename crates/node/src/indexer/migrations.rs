@@ -45,10 +45,14 @@ pub async fn monitor_migrations(
             loop {
                 interval.tick().await;
                 let response = fetch_migrations_once(indexer_state.clone()).await;
-                tracing::debug!(target: "indexer", "fetched mpc migration state {:?}", response);
+                tracing::debug!(target: "indexer", "fetched mpc migration state at block {}: {:?}", response.0, response.1);
+
                 migration_state_sender.send_if_modified(|watched_state| {
+                    let migration_info_changed = watched_state.1 != response.1;
                     if *watched_state != response {
-                        tracing::info!("contract migration state changed: {:?}", response);
+                        if migration_info_changed {
+                            tracing::info!("contract migration state changed: {:?}", response);
+                        }
                         *watched_state = response.clone();
                         true
                     } else {
