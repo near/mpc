@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.0.3] - 2025-11-12
+
+### 🐛 Bug Fixes
+
+- [#1441](https://github.com/near/mpc/pull/1441)(@pbeza): Reduce log noise in migration monitor task (#1441)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1434](https://github.com/near/mpc/pull/1434)(@barakeinav1): Fix key names in localnet guide (#1434)
+
+- [#1444](https://github.com/near/mpc/pull/1444)(@netrome): Bump nearcore to include 2.9.1 (#1444)
+
+
 ## [3.0.2] - 2025-11-11
 
 ### 🚀 Features
@@ -41,6 +55,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1427](https://github.com/near/mpc/pull/1427)(@barakeinav1): Remove "exit 1" that could close ssh session (#1427)
 
 - [#1430](https://github.com/near/mpc/pull/1430)(@netrome): Bump protocol version (#1430)
+
+- [#1439](https://github.com/near/mpc/pull/1439)(@netrome): Update version and changelog for 3.0.2 release (#1439)
 
 
 ## [3.0.1] - 2025-11-06
