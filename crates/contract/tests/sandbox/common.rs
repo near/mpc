@@ -810,7 +810,8 @@ pub async fn propose_and_vote_contract_binary(
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
-        *new_contract_binary, contract_binary_post_upgrade,
+        hash(new_contract_binary),
+        hash(&contract_binary_post_upgrade),
         "Code hash post upgrade is not matching the proposed binary."
     );
 }
@@ -1232,6 +1233,12 @@ pub async fn vote_for_hash(
             .await?,
     );
     Ok(())
+}
+
+fn hash(code: &[u8]) -> [u8; 32] {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(code);
+    hasher.finalize().into()
 }
 
 // These are temporary conversions to avoid breaking the contract API.

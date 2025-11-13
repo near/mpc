@@ -1208,25 +1208,28 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     #[private]
-    #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<v0_state::VersionedMpcContract, Error> {
+    pub fn migrate() {
         log!("migrating contract: no-op");
-        env::state_read::<v0_state::VersionedMpcContract>()
-            .ok_or_else(|| InvalidState::ContractStateIsMissing.into())
     }
 
     #[init(ignore_state)]
     #[handle_result]
     pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
-            return match contract {
-                v0_state::VersionedMpcContract::V1(x) => Ok(x.into()),
-                _ => env::panic_str("expected V1"),
-            };
+
+        match try_state_read::<v0_state::VersionedMpcContract>() {
+            Ok(Some(v0_state::VersionedMpcContract::V1(state))) => return Ok(state.into()),
+            Ok(Some(_)) => env::panic_str("expected V1"),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(_) => (), // Try read as "Self" instead
+        };
+
+        match try_state_read::<Self>() {
+            Ok(Some(state)) => Ok(state),
+            Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
-        Err(InvalidState::ContractStateIsMissing.into())
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -1595,6 +1598,12 @@ impl MpcContract {
         }
         Ok(())
     }
+}
+
+fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
+    env::storage_read(b"STATE")
+        .map(|data| T::try_from_slice(&data))
+        .transpose()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

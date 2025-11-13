@@ -54,7 +54,7 @@ def pytest_addoption(parser):
 def current_contracts():
     with tempfile.TemporaryDirectory() as tmpdir:
         subprocess.run(
-            ["cargo", "run", "--bin", "export_contracts", "--", "-t", tmpdir],
+            ["cargo", "run", "--bin", "copy_contracts", "--", "-t", tmpdir],
             cwd=git_root(),
             check=True,
             stdout=sys.stdout,
