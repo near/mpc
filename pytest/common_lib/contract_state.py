@@ -16,7 +16,7 @@ SignatureScheme = Literal["Secp256k1", "Ed25519", "Bls12381"]
 class KeyForDomain:
     domain_id: int
     attempt_id: int
-    key: str
+    key: dict
 
 
 @dataclass
