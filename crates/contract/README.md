@@ -1,4 +1,5 @@
 # MPC Contract
+
 This crate defines the **MPC Contract**, which governs the MPC network and allows any NEAR account to request signatures.
 
 ```text
@@ -19,6 +20,7 @@ Request signature.    │                │
 ```
 
 ## Live deployments
+
 The MPC contract is deployed on the [NEAR blockchain](https://nearblocks.io/address/v1.signer)
 and on the [NEAR testnet](https://testnet.nearblocks.io/address/v1.signer-prod.testnet).
 
@@ -42,7 +44,7 @@ The contract tracks the following information:
 - Node migrations.
 - Current set of keys managed by the MPC network (each key is associated to a unique `domain_id`).
 - Metadata related to trusted execution environments.
-- Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state).
+- Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state)).
 
 ## Usage
 
@@ -63,6 +65,7 @@ Submitting a signature request costs approximately 7 Tgas, but the contract requ
 #### Example
 
 _ECDSA Signature Request_
+
 ```Json
 {
   "request": {
@@ -76,6 +79,7 @@ _ECDSA Signature Request_
 ```
 
 _EDDSA Signature Request_
+
 ```Json
 {
   "request": {
@@ -99,10 +103,10 @@ Users can submit a ckd request to the MPC network via the
 
 The ckd request takes the following arguments:
 
-- `"app_public_key": "secp256k1:<base58 encoded point in curve>"`
-- `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to secp256k1.
+- `"app_public_key": "bls12381g1:<base58 encoded point in curve>"`
+- `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to bls12381.
 
-Note that `app_public_key` represents a valid point on curve Secp256k1.
+Note that `app_public_key` represents a valid point on curve BLS12381 (G1).
 
 Submitting a ckd request costs approximately 7 Tgas, but the contract requires
 that at least 10 Tgas are attached to the transaction.
@@ -114,7 +118,7 @@ _ckd request_
 ```Json
 {
   "request": {
-    "app_public_key": "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd",
+    "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
     "domain_id": 3
   }
 }
@@ -176,6 +180,10 @@ To generate a new threshold signature key, all participants must vote for it to 
     {
       "id":3,
       "scheme":"Ed25519"
+    },
+    {
+      "id":4,
+      "scheme":"Bls12381"
     }
   ]
 }
@@ -217,11 +225,18 @@ stateDiagram-v2
 
 #### SignRequestArgs (Latest version)
 
-The sign request takes the following arguments:
+The `sign` request takes the following arguments:
 
 - `path` (String): the derivation path.
 - `payload_v2`: either `{"Ecdsa": "<hex encoded 32 bytes>"}` or `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
 - `domain_id` (integer): the domain ID that identifies the key and signature scheme to use for signing.
+
+#### CKDRequestArgs (Latest version)
+
+The `request_app_private_key` request takes the following arguments:
+
+- `app_public_key` (String): the ephemeral public key to encrypt the generated confidential key
+- `domain_id` (integer): the domain ID that identifies the key and signature scheme to use to generate the confidential key
 
 #### SignRequestArgs (Legacy version for backwards compatibility with V1)
 
@@ -263,6 +278,7 @@ These functions require the caller to be a participant or candidate.
 | `clean_tee_status()`                                                       | Private endpoint. Cleans up TEE information for non-participants after resharing. Only callable by the contract itself via a promise.                                                              | `Result<(), Error>`      | TBD             | TBD                |
 
 ## Building the contract
+
 During development, it's recommended to build non-deterministically using [cargo-near](https://github.com/near/cargo-near).
 
 ```bash
