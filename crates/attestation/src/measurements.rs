@@ -1,15 +1,12 @@
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::cell::LazyCell;
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
 use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-
-/// TCB info JSON file containing measurement values.
-const TCB_INFO_STRING: &str = include_str!("../assets/tcb_info.json");
 
 /// The expected SHA-384 digest for the `local-sgx` event, not the event payload.
 ///
@@ -120,10 +117,7 @@ impl ExpectedMeasurements {
         // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
         let dev = parse_tcb_info(TCB_INFO_STRING_DEV)?;
 
-        let mut v: Vec<Self> = Vec::new();
-        v.push(prod);
-        v.push(dev);
-        Ok(v)
+        Ok(vec![prod, dev])
     }
 }
 

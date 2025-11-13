@@ -399,7 +399,7 @@ impl Attestation {
         }
 
         Err(VerificationError::WrongHash {
-            name: "expected_measurements".into(),
+            name: "expected_measurements",
             expected: "one of the embedded TCB info sets (prod or dev)".into(),
             found: "none matched".into(),
         })
