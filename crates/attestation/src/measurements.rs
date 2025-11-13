@@ -53,9 +53,6 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
-    /// Expected digest for the local SGX event.
-    #[serde_as(as = "Bytes")]
-    pub local_sgx_event_digest: [u8; 48],
     /// Expected version of the report data.
     pub report_data_version: ReportDataVersion,
 }
@@ -107,7 +104,6 @@ impl ExpectedMeasurements {
 
             Ok(ExpectedMeasurements {
                 rtmrs,
-                local_sgx_event_digest: EXPECTED_LOCAL_SGX_EVENT_DIGEST,
                 report_data_version: EXPECTED_REPORT_DATA_VERSION,
             })
         };
