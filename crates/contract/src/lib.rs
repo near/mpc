@@ -1217,16 +1217,19 @@ impl MpcContract {
     #[handle_result]
     pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
-            return match contract {
-                v0_state::VersionedMpcContract::V1(x) => Ok(x.into()),
-                _ => env::panic_str("expected V1"),
-            };
+
+        match try_state_read::<v0_state::VersionedMpcContract>() {
+            Ok(Some(v0_state::VersionedMpcContract::V1(state))) => return Ok(state.into()),
+            Ok(Some(_)) => env::panic_str("expected V1"),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(_) => (), // Try read as "Self" instead
+        };
+
+        match try_state_read::<Self>() {
+            Ok(Some(state)) => Ok(state),
+            Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
-        if let Some(contract) = env::state_read::<Self>() {
-            return Ok(contract);
-        }
-        Err(InvalidState::ContractStateIsMissing.into())
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -1595,6 +1598,12 @@ impl MpcContract {
         }
         Ok(())
     }
+}
+
+fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
+    env::storage_read(b"state")
+        .map(|data| T::try_from_slice(&data))
+        .transpose()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
