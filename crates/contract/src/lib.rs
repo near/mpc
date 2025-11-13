@@ -1208,9 +1208,11 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     #[private]
+    //#[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() {
-        log!("migrating contract: no-op");
+    pub fn migrate() { //-> Result<v0_state::VersionedMpcContract, Error> {
+                       //log!("migrating contract: no-op");
+                       //Ok(env::state_read::<v0_state::VersionedMpcContract>().unwrap())
     }
 
     #[init(ignore_state)]
@@ -1601,7 +1603,7 @@ impl MpcContract {
 }
 
 fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"state")
+    env::storage_read(b"STATE")
         .map(|data| T::try_from_slice(&data))
         .transpose()
 }
