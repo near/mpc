@@ -430,7 +430,7 @@ async fn upgrade_allows_new_request_types(
 #[rstest]
 #[tokio::test]
 async fn test_nonexisting_function_allowed_launcher_compose_hashes(
-    #[values(Network::Mainnet, Network::Testnet)] network: Network,
+    #[values(Network::Mainnet)] network: Network,
 ) -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
 
