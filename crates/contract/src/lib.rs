@@ -1208,12 +1208,9 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     #[private]
-    #[init(ignore_state)]
     #[handle_result]
-    pub fn migrate() -> Result<v0_state::VersionedMpcContract, Error> {
+    pub fn migrate() {
         log!("migrating contract: no-op");
-        env::state_read::<v0_state::VersionedMpcContract>()
-            .ok_or_else(|| InvalidState::ContractStateIsMissing.into())
     }
 
     #[init(ignore_state)]
