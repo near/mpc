@@ -235,6 +235,8 @@ MPC image hash ... is not in the allowed hashes list
 
 ### Vote Commands
 
+TODO: replace 5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c with latest hash.
+
 ```bash
 near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
   json-args '{"code_hash": "5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c"}' \
