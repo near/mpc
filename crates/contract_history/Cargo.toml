@@ -5,8 +5,8 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "export_contracts"
-path = "src/bin/export_contracts.rs"
+name = "copy_contracts"
+path = "src/bin/copy_contracts.rs"
 
 [features]
 external-services-tests = []
