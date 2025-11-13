@@ -1,10 +1,11 @@
 use crate::{
     app_compose::AppCompose,
     collateral::Collateral,
-    measurements::{ExpectedMeasurements, MeasurementsError},
+    measurements::{EXPECTED_LOCAL_SGX_EVENT_DIGEST, ExpectedMeasurements, MeasurementsError},
     quote::QuoteBytes,
     report_data::ReportData,
 };
+
 use alloc::{
     format,
     string::{String, ToString},
@@ -234,7 +235,7 @@ impl Attestation {
             return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
         }
 
-        let expected_measurements = ExpectedMeasurements::from_embedded_tcb_info()
+        let expected_measurements_list = ExpectedMeasurements::from_embedded_tcb_info()
             .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 
         let verification_result = dcap_qvl::verify::verify(
@@ -252,10 +253,15 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
-        self.verify_static_rtmrs(report_data, &attestation.tcb_info, &expected_measurements)?;
+        self.verify_any_static_rtmrs(
+            report_data,
+            &attestation.tcb_info,
+            &expected_measurements_list,
+        )?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)?;
-        self.verify_local_sgx_digest(&attestation.tcb_info, &expected_measurements)?;
+        self.verify_local_sgx_digest(&attestation.tcb_info, &EXPECTED_LOCAL_SGX_EVENT_DIGEST)?;
+
         self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)?;
         self.verify_launcher_compose_hash(
             &attestation.tcb_info,
@@ -375,6 +381,29 @@ impl Attestation {
         compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 
+    /// Try to verify static RTMRs against multiple expected measurement sets.
+    /// Returns `Ok(())` if any set matches; otherwise, returns a WrongHash error.
+    fn verify_any_static_rtmrs(
+        &self,
+        report_data: &dcap_qvl::quote::TDReport10,
+        tcb_info: &TcbInfo,
+        expected_measurements_list: &[ExpectedMeasurements],
+    ) -> Result<(), VerificationError> {
+        for expected in expected_measurements_list {
+            if self
+                .verify_static_rtmrs(report_data, tcb_info, expected)
+                .is_ok()
+            {
+                return Ok(()); // found a valid match
+            }
+        }
+
+        Err(VerificationError::WrongHash {
+            name: "expected_measurements".into(),
+            expected: "one of the embedded TCB info sets (prod or dev)".into(),
+            found: "none matched".into(),
+        })
+    }
     /// Verifies static RTMRs match expected values.
     fn verify_static_rtmrs(
         &self,
@@ -480,14 +509,14 @@ impl Attestation {
     fn verify_local_sgx_digest(
         &self,
         tcb_info: &TcbInfo,
-        expected_measurements: &ExpectedMeasurements,
+        expected_digest: &[u8; 48],
     ) -> Result<(), VerificationError> {
         let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
 
         compare_hex_hashes(
             "sgx_digest",
             &key_provider_event.digest,
-            &hex::encode(expected_measurements.local_sgx_event_digest),
+            &hex::encode(expected_digest),
         )
     }
 
