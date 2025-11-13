@@ -55,7 +55,7 @@ you will need the following files:
 #### Define the machine's external IP once  
 
 ```bash
-export MACHINE_IP=$(curl -s ifconfig.me)  # or use known IP for the machine
+export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
 #### Example `docker-compose.yml`
