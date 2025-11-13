@@ -1223,6 +1223,9 @@ impl MpcContract {
                 _ => env::panic_str("expected V1"),
             };
         }
+        if let Some(contract) = env::state_read::<Self>() {
+            return Ok(contract);
+        }
         Err(InvalidState::ContractStateIsMissing.into())
     }
 
