@@ -14,7 +14,7 @@ import tempfile
 from cluster import CONFIG_ENV_VAR
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from common_lib import constants, contracts, shared, contract_state
+from common_lib import constants, contracts
 
 
 @pytest.fixture(autouse=True, scope="function")
