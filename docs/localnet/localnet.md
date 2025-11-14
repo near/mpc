@@ -89,7 +89,7 @@ export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret
 
 ## 2. Deploy the MPC contract to the network
 
-Now we can deploy the MPC contract with NEAR CLI (that you can install from https://docs.near.org/tools/near-cli).
+Now we can deploy the MPC contract with NEAR CLI (that you can install from <https://docs.near.org/tools/near-cli>).
 First, add the mpc-localnet as a network connection in the CLI.
 
 To view existing connections and the location of your CLI config file use;
@@ -296,7 +296,7 @@ Notes:
   HostError(GuestPanic { panic_msg: "Calling default not allowed." })
   ```
 
-  you can safely ignore it — it disappears once the contract is initialized (tracking issue: https://github.com/near/mpc/issues/1280).
+  you can safely ignore it — it disappears once the contract is initialized ([tracking issue](https://github.com/near/mpc/issues/1280)).
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the frodo and sam MPC indexers connect to it.
 
@@ -379,11 +379,53 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 
 Now we should be able to request a signature from the network.
 
+### ECDSA request
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+If this worked, you should see a response like:
+
+```log
+INFO Function execution return value (printed to stdout):
+{
+  "big_r": {
+    "affine_point": "036080C3D1CC86EB785F8FBB3E216786D9A9ABAB30CB6D85FC7D5157BB3E8873C5"
+  },
+  "recovery_id": 1,
+  "s": {
+    "scalar": "28DC2AB7BC81EB919797FA932632B35B6C3E8B8C037B11EC5F4071F184B3165D"
+  },
+  "scheme": "Secp256k1"
+}
+```
+
+### edDSA request
+
 ```shell
 near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-If this worked, you should see a response like:
+```log
+INFO Function execution return value (printed to stdout):
+{
+  "big_r": {
+    "affine_point": "036080C3D1CC86EB785F8FBB3E216786D9A9ABAB30CB6D85FC7D5157BB3E8873C5"
+  },
+  "recovery_id": 1,
+  "s": {
+    "scalar": "28DC2AB7BC81EB919797FA932632B35B6C3E8B8C037B11EC5F4071F184B3165D"
+  },
+  "scheme": "Secp256k1"
+}
+```
+
+### CKD request
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
 
 ```log
 INFO Function execution return value (printed to stdout):
@@ -410,7 +452,7 @@ machine ready to produce signatures.
 near contract call-function as-transaction mpc-contract.test.near vote_cancel_keygen json-args '{"next_domain_id": 0}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-### Check allowed image hashes:
+### Check allowed image hashes
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
