@@ -14,7 +14,7 @@ import tempfile
 from cluster import CONFIG_ENV_VAR
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from common_lib import constants, contracts
+from common_lib import constants, contracts, shared, contract_state
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -150,6 +150,23 @@ def compile_parallel_contract(request):
         contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
     )
 
+@pytest.fixture(scope="session")
+def signing_cluster():
+    """
+    Spins up a cluster with three nodes, initializes the contract and adds domains. Returns the cluster in a running state.
+    """
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2,
+        2,
+        1,
+        contracts.load_mpc_contract(),
+    )
+    cluster.init_cluster(mpc_nodes, 2)
+    cluster.wait_for_state(contract_state.ProtocolState.RUNNING)
+
+    yield cluster
+
+    atexit._run_exitfuncs()
 
 def git_root() -> Path:
     git_repo = git.Repo(".", search_parent_directories=True)

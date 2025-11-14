@@ -76,11 +76,14 @@ def verify_bls_signature(
 
 def verify_ckd(
     app_id: bytes,
-    public_key: G2Point,
+    public_key: str,
     app_private_key: Scalar,
-    big_y: G1Point,
-    big_c: G1Point,
+    big_y: str,
+    big_c: str,
 ) -> bool:
+    public_key = b58decode_g2(public_key)
+    big_y = b58decode_g1(big_y)
+    big_c = b58decode_g1(big_c)
     # ElGammal decryption
     k = big_c - big_y * app_private_key
     return verify_bls_signature(public_key, app_id, k)
