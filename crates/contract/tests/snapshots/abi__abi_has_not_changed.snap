@@ -1,0 +1,2605 @@
+---
+source: crates/contract/tests/abi.rs
+expression: abi
+---
+{
+  "schema_version": "0.4.0",
+  "metadata": {
+    "name": "mpc-contract",
+    "version": "3.0.1",
+    "build": {
+      "compiler": "rustc 1.86.0",
+      "builder": "cargo-near cargo-near-build 0.9.0"
+    },
+    "wasm_hash": "[WASM_HASH]"
+  },
+  "body": {
+    "functions": [
+      {
+        "name": "allowed_code_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_docker_image_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_launcher_compose_hashes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      },
+      {
+        "name": "clean_tee_status",
+        "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "cleanup_orphaned_node_migrations",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "conclude_node_migration",
+        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a `Running` state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - `InvalidState::ProtocolStateNotRunning`: if protocol is not in `Running` state\n - `InvalidState::NotParticipant`: if caller is not a current participant\n - `NodeMigrationError::KeysetMismatch`: if provided keyset does not match the expected keyset\n - `NodeMigrationError::MigrationNotFound`: if no migration record exists for the caller\n - `NodeMigrationError::AccountPublicKeyMismatch`: if caller’s public key does not match the expected destination node\n - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "keyset",
+              "type_schema": {
+                "$ref": "#/definitions/Keyset"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "config",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Config"
+          }
+        }
+      },
+      {
+        "name": "contract_source_metadata",
+        "kind": "view"
+      },
+      {
+        "name": "derived_public_key",
+        "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "path",
+              "type_schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "predecessor",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            {
+              "name": "domain_id",
+              "type_schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DomainId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PublicKey"
+          }
+        }
+      },
+      {
+        "name": "fail_on_timeout",
+        "kind": "view",
+        "modifiers": [
+          "private"
+        ]
+      },
+      {
+        "name": "get_attestation",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "tls_public_key",
+              "type_schema": {
+                "$ref": "#/definitions/Ed25519PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Attestation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_pending_ckd_request",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/CKDRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_pending_request",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_tee_accounts",
+        "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/NodeId"
+            }
+          }
+        }
+      },
+      {
+        "name": "init",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "parameters",
+              "type_schema": {
+                "$ref": "#/definitions/ThresholdParameters"
+              }
+            },
+            {
+              "name": "init_config",
+              "type_schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/InitConfig"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "init_running",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "domains",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/DomainConfig"
+                }
+              }
+            },
+            {
+              "name": "next_domain_id",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            {
+              "name": "keyset",
+              "type_schema": {
+                "$ref": "#/definitions/Keyset"
+              }
+            },
+            {
+              "name": "parameters",
+              "type_schema": {
+                "$ref": "#/definitions/ThresholdParameters"
+              }
+            },
+            {
+              "name": "init_config",
+              "type_schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/InitConfig"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "latest_code_hash",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "maxItems": 32,
+            "minItems": 32
+          }
+        }
+      },
+      {
+        "name": "latest_key_version",
+        "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "signature_scheme",
+              "type_schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/SignatureScheme"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
+        "name": "migrate",
+        "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ]
+      },
+      {
+        "name": "migration_info",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": [
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/BackupServiceInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DestinationNodeInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
+          }
+        }
+      },
+      {
+        "name": "my_migration_info",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": [
+              {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/BackupServiceInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DestinationNodeInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 3,
+            "minItems": 3
+          }
+        }
+      },
+      {
+        "name": "propose_update",
+        "doc": " Propose update to either code or config, but not both of them at the same time.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "borsh",
+          "args": [
+            {
+              "name": "args",
+              "type_schema": {
+                "declaration": "ProposeUpdateArgs",
+                "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
+                  "Config": {
+                    "Struct": [
+                      [
+                        "key_event_timeout_blocks",
+                        "u64"
+                      ],
+                      [
+                        "tee_upgrade_deadline_duration_seconds",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "Option<Config>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "Config"
+                        ]
+                      ]
+                    }
+                  },
+                  "Option<Vec<u8>>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "Vec<u8>"
+                        ]
+                      ]
+                    }
+                  },
+                  "ProposeUpdateArgs": {
+                    "Struct": [
+                      [
+                        "code",
+                        "Option<Vec<u8>>"
+                      ],
+                      [
+                        "config",
+                        "Option<Config>"
+                      ]
+                    ]
+                  },
+                  "Vec<u8>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/UpdateId"
+          }
+        }
+      },
+      {
+        "name": "public_key",
+        "doc": " This is the root public key combined from all the public keys of the participants.\n The domain parameter specifies which domain we're querying the public key for;\n the default is the first domain.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "domain_id",
+              "type_schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/DomainId"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PublicKey"
+          }
+        }
+      },
+      {
+        "name": "register_backup_service",
+        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n # Notes\n - A deposit requirement may be added in the future.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "backup_service_info",
+              "type_schema": {
+                "$ref": "#/definitions/BackupServiceInfo"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "request_app_private_key",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/CKDRequestArgs"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "respond",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureRequest"
+              }
+            },
+            {
+              "name": "response",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "respond_ckd",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/CKDRequest"
+              }
+            },
+            {
+              "name": "response",
+              "type_schema": {
+                "$ref": "#/definitions/CKDResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "return_ck_and_clean_state_on_success",
+        "doc": " Upon success, removes the confidential key from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/CKDRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/CKDResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueCKDResponse"
+          }
+        }
+      },
+      {
+        "name": "return_signature_and_clean_state_on_success",
+        "doc": " Upon success, removes the signature from state and returns it.\n If the signature request times out, removes the signature request from state and panics to\n fail the original transaction",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/SignatureResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueSignatureResponse"
+          }
+        }
+      },
+      {
+        "name": "sign",
+        "doc": " `key_version` must be less than or equal to the value at `latest_key_version`\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/SignRequestArgs"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "start_keygen_instance",
+        "doc": " Starts a new attempt to generate a key for the current domain.\n This only succeeds if the signer is the leader (the participant with the lowest ID).",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "key_event_id",
+              "type_schema": {
+                "$ref": "#/definitions/KeyEventId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "start_node_migration",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a `Running` state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided [`DestinationNodeInfo`] is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  \n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n # Note:\n - might require a deposit",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "destination_node_info",
+              "type_schema": {
+                "$ref": "#/definitions/DestinationNodeInfo"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "start_reshare_instance",
+        "doc": " Starts a new attempt to reshare the key for the current domain.\n This only succeeds if the signer is the leader (the participant with the lowest ID).",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "key_event_id",
+              "type_schema": {
+                "$ref": "#/definitions/KeyEventId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "state",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ProtocolContractState"
+          }
+        }
+      },
+      {
+        "name": "submit_participant_info",
+        "doc": " (Prospective) Participants can submit their tee participant information through this\n endpoint.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "proposed_participant_attestation",
+              "type_schema": {
+                "$ref": "#/definitions/Attestation"
+              }
+            },
+            {
+              "name": "tls_public_key",
+              "type_schema": {
+                "$ref": "#/definitions/Ed25519PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "update_config",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "config",
+              "type_schema": {
+                "$ref": "#/definitions/Config"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "verify_tee",
+        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
+        "name": "version",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "vote_abort_key_event_instance",
+        "doc": " Casts a vote to abort the current key event instance. If succesful, the contract aborts the\n instance and a new instance with the next attempt_id can be started.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "key_event_id",
+              "type_schema": {
+                "$ref": "#/definitions/KeyEventId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_add_domains",
+        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "domains",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/DomainConfig"
+                }
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_cancel_keygen",
+        "doc": " Casts a vote to cancel key generation. Any keys that have already been generated\n are kept and we transition into Running state; remaining domains are permanently deleted.\n Deleted domain IDs cannot be reused again in future calls to vote_add_domains.\n\n A next_domain_id that matches that in the state's domains struct must be passed in. This is\n to prevent stale requests from accidentally cancelling a future key generation state.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "next_domain_id",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_cancel_resharing",
+        "doc": " Casts a vote to cancel the current key resharing. If a threshold number of unique\n votes are collected to cancel the resharing, the contract state will revert back to the\n previous running state.\n\n - This method is idempotent, meaning a single account can not make more than one vote.\n - Only nodes from the previous running state are allowed to vote.\n\n Return value:\n - [Ok] if the vote was successfully collected.\n - [Err] if:\n     - The signer is not a participant in the previous running state.\n     - The contract is not in a resharing state.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_code_hash",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "code_hash",
+              "type_schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "maxItems": 32,
+                "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_new_parameters",
+        "doc": " Propose a new set of parameters (participants and threshold) for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "prospective_epoch_id",
+              "type_schema": {
+                "$ref": "#/definitions/EpochId"
+              }
+            },
+            {
+              "name": "proposal",
+              "type_schema": {
+                "$ref": "#/definitions/ThresholdParameters"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_pk",
+        "doc": " Casts a vote for `public_key` for the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key generation\n    attempt (including if the attempt timed out), if the signer is not a participant, or if\n    the key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key generation attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - This vote is for a public key that disagrees from an earlier voted public key, causing\n      the attempt to abort; another call to `start` is then necessary.\n    - Everyone has now voted for the same public key; the state transitions into generating a\n      key for the next domain.\n    - Same as the last case, except that all domains have a generated key now, and the state\n      transitions into Running with the newly generated keys.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "key_event_id",
+              "type_schema": {
+                "$ref": "#/definitions/KeyEventId"
+              }
+            },
+            {
+              "name": "public_key",
+              "type_schema": {
+                "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_reshared",
+        "doc": " Casts a vote for the successful resharing of the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key resharing attempt\n    (including if the attempt timed out), if the signer is not a participant, or if the\n    key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key resharing attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - Everyone has now voted; the state transitions into resharing the key for the next\n      domain.\n    - Same as the last case, except that all domains' keys have been reshared now, and the\n      state transitions into Running with the newly reshared keys.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "key_event_id",
+              "type_schema": {
+                "$ref": "#/definitions/KeyEventId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_update",
+        "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns Ok(true) if the amount of voters surpassed the threshold and the update was\n executed. Returns Ok(false) if the amount of voters did not surpass the threshold.\n Returns Err if the update was not found or if the voter is not a participant in the\n protocol.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "id",
+              "type_schema": {
+                "$ref": "#/definitions/UpdateId"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
+        }
+      }
+    ],
+    "root_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "String",
+      "type": "string",
+      "definitions": {
+        "AddDomainsVotes": {
+          "description": "Tracks votes to add domains. Each participant can at any given time vote for a list of domains to add.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/DomainConfig"
+                }
+              }
+            }
+          }
+        },
+        "AttemptId": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "Attestation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Dstack"
+              ],
+              "properties": {
+                "Dstack": {
+                  "$ref": "#/definitions/DstackAttestation"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Mock"
+              ],
+              "properties": {
+                "Mock": {
+                  "$ref": "#/definitions/MockAttestation"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "AuthenticatedAccountId": {
+          "description": "This struct contains the account `env::signer_account_id()`, but is only constructible given a set of participants that include the signer, thus acting as a typesystem-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "type": "string"
+        },
+        "AuthenticatedParticipantId": {
+          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId"
+            }
+          ]
+        },
+        "BackupServiceInfo": {
+          "type": "object",
+          "required": [
+            "public_key"
+          ],
+          "properties": {
+            "public_key": {
+              "$ref": "#/definitions/Ed25519PublicKey"
+            }
+          }
+        },
+        "Bls12381G1PublicKey": {
+          "type": "string"
+        },
+        "Bls12381G2PublicKey": {
+          "type": "string"
+        },
+        "CKDRequest": {
+          "type": "object",
+          "required": [
+            "app_id",
+            "app_public_key",
+            "domain_id"
+          ],
+          "properties": {
+            "app_id": {
+              "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+              "type": "string"
+            },
+            "app_public_key": {
+              "description": "The app ephemeral public key",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Bls12381G1PublicKey"
+                }
+              ]
+            },
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            }
+          }
+        },
+        "CKDRequestArgs": {
+          "type": "object",
+          "required": [
+            "app_public_key",
+            "domain_id"
+          ],
+          "properties": {
+            "app_public_key": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            }
+          }
+        },
+        "CKDResponse": {
+          "type": "object",
+          "required": [
+            "big_c",
+            "big_y"
+          ],
+          "properties": {
+            "big_c": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "big_y": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            }
+          }
+        },
+        "Collateral": {
+          "type": "object",
+          "required": [
+            "pck_crl",
+            "pck_crl_issuer_chain",
+            "qe_identity",
+            "qe_identity_issuer_chain",
+            "qe_identity_signature",
+            "root_ca_crl",
+            "tcb_info",
+            "tcb_info_issuer_chain",
+            "tcb_info_signature"
+          ],
+          "properties": {
+            "pck_crl": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            },
+            "pck_crl_issuer_chain": {
+              "type": "string"
+            },
+            "qe_identity": {
+              "type": "string"
+            },
+            "qe_identity_issuer_chain": {
+              "type": "string"
+            },
+            "qe_identity_signature": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            },
+            "root_ca_crl": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            },
+            "tcb_info": {
+              "type": "string"
+            },
+            "tcb_info_issuer_chain": {
+              "type": "string"
+            },
+            "tcb_info_signature": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            }
+          }
+        },
+        "Config": {
+          "description": "Config for V2 of the contract.",
+          "type": "object",
+          "required": [
+            "key_event_timeout_blocks",
+            "tee_upgrade_deadline_duration_seconds"
+          ],
+          "properties": {
+            "key_event_timeout_blocks": {
+              "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tee_upgrade_deadline_duration_seconds": {
+              "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        "DestinationNodeInfo": {
+          "type": "object",
+          "required": [
+            "destination_node_info",
+            "signer_account_pk"
+          ],
+          "properties": {
+            "destination_node_info": {
+              "$ref": "#/definitions/ParticipantInfo"
+            },
+            "signer_account_pk": {
+              "description": "the public key used by the node to sign transactions to the contract this key is different from the TLS key called `sign_pk` and stored in `ParticipantInfo`.",
+              "type": "string"
+            }
+          }
+        },
+        "DomainConfig": {
+          "description": "Describes the configuration of a domain: the domain ID and the protocol it uses.",
+          "type": "object",
+          "required": [
+            "id",
+            "scheme"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "scheme": {
+              "$ref": "#/definitions/SignatureScheme"
+            }
+          }
+        },
+        "DomainId": {
+          "description": "Each domain corresponds to a specific root key in a specific signature scheme. There may be multiple domains per signature scheme. The domain ID uniquely identifies a domain.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "DomainRegistry": {
+          "description": "All the domains present in the contract, as well as the next domain ID which is kept to ensure that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to add domains but ultimately canceled that process.)",
+          "type": "object",
+          "required": [
+            "domains",
+            "next_domain_id"
+          ],
+          "properties": {
+            "domains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/DomainConfig"
+              }
+            },
+            "next_domain_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        "DstackAttestation": {
+          "type": "object",
+          "required": [
+            "collateral",
+            "quote",
+            "tcb_info"
+          ],
+          "properties": {
+            "collateral": {
+              "$ref": "#/definitions/Collateral"
+            },
+            "quote": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            },
+            "tcb_info": {
+              "$ref": "#/definitions/TcbInfo"
+            }
+          }
+        },
+        "Ed25519PublicKey": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
+        "EpochId": {
+          "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "EventLog": {
+          "description": "Represents an event log entry in the system",
+          "type": "object",
+          "required": [
+            "digest",
+            "event",
+            "event_payload",
+            "event_type",
+            "imr"
+          ],
+          "properties": {
+            "digest": {
+              "description": "The cryptographic digest of the event",
+              "type": "string"
+            },
+            "event": {
+              "description": "The type of event as a string",
+              "type": "string"
+            },
+            "event_payload": {
+              "description": "The payload data associated with the event",
+              "type": "string"
+            },
+            "event_type": {
+              "description": "The type of event being logged",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "imr": {
+              "description": "The index of the IMR (Integrity Measurement Register)",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        },
+        "InitConfig": {
+          "description": "Config for initializing V2 of the contract.",
+          "type": "object",
+          "properties": {
+            "key_event_timeout_blocks": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tee_upgrade_deadline_duration_seconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        "InitializingContractState": {
+          "description": "In this state, we generate a new key for each new domain. At any given point of time, we are generating the key of a single domain. After that, we move on to the next domain, or if there are no more domains, transition into the Running state.\n\nThis state is reached by calling vote_add_domains from the Running state by a threshold number of participants.\n\nWhile generating the key for a domain, the `generating_key` field internally handles multiple attempts as needed, only finishing when an attempt has succeeded.\n\nAdditionally, a threshold number of participants can vote to cancel this state; doing so will revert back to the Running state but deleting the domains for which we have not yet successfully generated a key. This can be useful if the current set of participants are no longer all online and we wish to perform a resharing before adding domains again.",
+          "type": "object",
+          "required": [
+            "cancel_votes",
+            "domains",
+            "epoch_id",
+            "generated_keys",
+            "generating_key"
+          ],
+          "properties": {
+            "cancel_votes": {
+              "description": "Votes that have been cast to cancel the key generation.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            },
+            "domains": {
+              "description": "All domains, including the already existing ones and the ones we're generating a new key for",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainRegistry"
+                }
+              ]
+            },
+            "epoch_id": {
+              "description": "The epoch ID; this is the same as the Epoch ID of the Running state we transitioned from.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/EpochId"
+                }
+              ]
+            },
+            "generated_keys": {
+              "description": "The key for each domain we have already generated a key for; this is in the same order as the domains in the DomainRegistry, except that it only has a prefix of the domains.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain"
+              }
+            },
+            "generating_key": {
+              "description": "The key generation state for the currently generating domain (the next domain after `generated_keys`).",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/KeyEvent"
+                }
+              ]
+            }
+          }
+        },
+        "KeyEvent": {
+          "description": "Maintains the state for the current key generation or resharing.",
+          "type": "object",
+          "required": [
+            "domain",
+            "epoch_id",
+            "next_attempt_id",
+            "parameters"
+          ],
+          "properties": {
+            "domain": {
+              "description": "The domain that we're generating or resharing the key for.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainConfig"
+                }
+              ]
+            },
+            "epoch_id": {
+              "description": "The epoch ID that we're generating or resharing keys for.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/EpochId"
+                }
+              ]
+            },
+            "instance": {
+              "description": "If exists, the current attempt to generate or reshare the key.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/KeyEventInstance"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "next_attempt_id": {
+              "description": "The ID of the next attempt to generate or reshare the key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AttemptId"
+                }
+              ]
+            },
+            "parameters": {
+              "description": "The participants and threshold that shall participate in the key event.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThresholdParameters"
+                }
+              ]
+            }
+          }
+        },
+        "KeyEventId": {
+          "description": "A unique identifier for a key event (generation or resharing): `epoch_id`: identifies the ThresholdParameters that this key is intended to function in. `domain_id`: the domain this key is intended for. `attempt_id`: identifies a particular attempt for this key event, in case multiple attempts yielded partially valid results. This is incremented for each attempt within the same epoch and domain.",
+          "type": "object",
+          "required": [
+            "attempt_id",
+            "domain_id",
+            "epoch_id"
+          ],
+          "properties": {
+            "attempt_id": {
+              "$ref": "#/definitions/AttemptId"
+            },
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "epoch_id": {
+              "$ref": "#/definitions/EpochId"
+            }
+          }
+        },
+        "KeyEventInstance": {
+          "description": "State for a single attempt at generating or resharing a key.",
+          "type": "object",
+          "required": [
+            "attempt_id",
+            "completed",
+            "expires_on",
+            "started_in"
+          ],
+          "properties": {
+            "attempt_id": {
+              "$ref": "#/definitions/AttemptId"
+            },
+            "completed": {
+              "description": "The participants that voted that they successfully completed the keygen or resharing.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            },
+            "expires_on": {
+              "description": "The block that this attempt expires on. To clarify off-by-one behavior: if the contract were called *on* or after this height, the attempt is considered no longer existent.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "public_key": {
+              "description": "The public key currently voted for. This is None iff no one has voted.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/PublicKeyExtended"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "started_in": {
+              "description": "The block in which KeyEvent::start() was called.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        "KeyForDomain": {
+          "description": "The identification of a specific distributed key, based on which a node would know exactly what keyshare it has corresponds to this distributed key. (A distributed key refers to a specific set of keyshares that nodes have which can be pieced together to form the secret key.)",
+          "type": "object",
+          "required": [
+            "attempt",
+            "domain_id",
+            "key"
+          ],
+          "properties": {
+            "attempt": {
+              "description": "The attempt ID that generated (initially or as a result of resharing) this distributed key. Nodes may have made multiple attempts to generate the distributed key, and this uniquely identifies which one should ultimately be used.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AttemptId"
+                }
+              ]
+            },
+            "domain_id": {
+              "description": "Identifies the domain this key is intended for.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
+            },
+            "key": {
+              "description": "Identifies the public key. Although technically redundant given that we have the AttemptId, we keep it here in the contract so that it can be verified against and queried.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/PublicKeyExtended"
+                }
+              ]
+            }
+          }
+        },
+        "Keyset": {
+          "description": "Represents a key for every domain in a specific epoch.",
+          "type": "object",
+          "required": [
+            "domains",
+            "epoch_id"
+          ],
+          "properties": {
+            "domains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain"
+              }
+            },
+            "epoch_id": {
+              "$ref": "#/definitions/EpochId"
+            }
+          }
+        },
+        "MockAttestation": {
+          "oneOf": [
+            {
+              "description": "Always pass validation",
+              "type": "string",
+              "enum": [
+                "Valid"
+              ]
+            },
+            {
+              "description": "Always fails validation",
+              "type": "string",
+              "enum": [
+                "Invalid"
+              ]
+            },
+            {
+              "description": "Pass validation depending on the set constraints",
+              "type": "object",
+              "required": [
+                "WithConstraints"
+              ],
+              "properties": {
+                "WithConstraints": {
+                  "type": "object",
+                  "properties": {
+                    "expiry_time_stamp_seconds": {
+                      "description": "Unix time stamp for when this attestation expires.",
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "format": "uint64",
+                      "minimum": 0.0
+                    },
+                    "launcher_docker_compose_hash": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "integer",
+                        "format": "uint8",
+                        "minimum": 0.0
+                      },
+                      "maxItems": 32,
+                      "minItems": 32
+                    },
+                    "mpc_docker_image_hash": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "integer",
+                        "format": "uint8",
+                        "minimum": 0.0
+                      },
+                      "maxItems": 32,
+                      "minItems": 32
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "NodeId": {
+          "type": "object",
+          "required": [
+            "account_id",
+            "tls_public_key"
+          ],
+          "properties": {
+            "account_id": {
+              "description": "Operator account",
+              "type": "string"
+            },
+            "account_public_key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tls_public_key": {
+              "description": "TLS public key, MUST BE of type Ed25519",
+              "type": "string"
+            }
+          }
+        },
+        "ParticipantId": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "ParticipantInfo": {
+          "type": "object",
+          "required": [
+            "sign_pk",
+            "url"
+          ],
+          "properties": {
+            "sign_pk": {
+              "description": "The public key used for verifying messages.",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "Participants": {
+          "type": "object",
+          "required": [
+            "next_id",
+            "participants"
+          ],
+          "properties": {
+            "next_id": {
+              "$ref": "#/definitions/ParticipantId"
+            },
+            "participants": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": [
+                  {
+                    "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/definitions/ParticipantId"
+                  },
+                  {
+                    "$ref": "#/definitions/ParticipantInfo"
+                  }
+                ],
+                "maxItems": 3,
+                "minItems": 3
+              }
+            }
+          }
+        },
+        "Payload": {
+          "description": "A signature payload; the right payload must be passed in for the curve. The json encoding for this payload converts the bytes to hex string.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Ecdsa"
+              ],
+              "properties": {
+                "Ecdsa": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Eddsa"
+              ],
+              "properties": {
+                "Eddsa": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "PromiseOrValueCKDResponse": {
+          "type": "object",
+          "required": [
+            "big_c",
+            "big_y"
+          ],
+          "properties": {
+            "big_c": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "big_y": {
+              "$ref": "#/definitions/Bls12381G1PublicKey"
+            }
+          }
+        },
+        "PromiseOrValueSignatureResponse": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "big_r",
+                "recovery_id",
+                "s",
+                "scheme"
+              ],
+              "properties": {
+                "big_r": {
+                  "$ref": "#/definitions/SerializableAffinePoint"
+                },
+                "recovery_id": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "s": {
+                  "$ref": "#/definitions/SerializableScalar"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Secp256k1"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "scheme",
+                "signature"
+              ],
+              "properties": {
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Ed25519"
+                  ]
+                },
+                "signature": {
+                  "$ref": "#/definitions/Signature"
+                }
+              }
+            }
+          ]
+        },
+        "ProtocolContractState": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "NotInitialized"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Initializing"
+              ],
+              "properties": {
+                "Initializing": {
+                  "$ref": "#/definitions/InitializingContractState"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Running"
+              ],
+              "properties": {
+                "Running": {
+                  "$ref": "#/definitions/RunningContractState"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Resharing"
+              ],
+              "properties": {
+                "Resharing": {
+                  "$ref": "#/definitions/ResharingContractState"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "PublicKey": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Secp256k1"
+              ],
+              "properties": {
+                "Secp256k1": {
+                  "$ref": "#/definitions/Secp256k1PublicKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Ed25519"
+              ],
+              "properties": {
+                "Ed25519": {
+                  "$ref": "#/definitions/Ed25519PublicKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bls12381"
+              ],
+              "properties": {
+                "Bls12381": {
+                  "$ref": "#/definitions/Bls12381G2PublicKey"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "PublicKeyExtended": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Secp256k1"
+              ],
+              "properties": {
+                "Secp256k1": {
+                  "type": "object",
+                  "required": [
+                    "near_public_key"
+                  ],
+                  "properties": {
+                    "near_public_key": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Ed25519"
+              ],
+              "properties": {
+                "Ed25519": {
+                  "type": "object",
+                  "required": [
+                    "edwards_point",
+                    "near_public_key_compressed"
+                  ],
+                  "properties": {
+                    "edwards_point": {
+                      "description": "Decompressed Edwards point used for curve arithmetic operations.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/SerializableEdwardsPoint"
+                        }
+                      ]
+                    },
+                    "near_public_key_compressed": {
+                      "description": "Serialized compressed Edwards-y point.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bls12381"
+              ],
+              "properties": {
+                "Bls12381": {
+                  "type": "object",
+                  "required": [
+                    "public_key"
+                  ],
+                  "properties": {
+                    "public_key": {
+                      "$ref": "#/definitions/PublicKey"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ResharingContractState": {
+          "description": "In this state, we reshare the key of every domain onto a new set of participants and threshold. Similar to key generation, we reshare the key of one domain at a time; when we finish resharing for one domain, we move on to the next or transition to the Running state.\n\nThis state is reached by calling vote_new_parameters from the Running state.\n\nThis state keeps the previous running state because: - The previous running state's ThresholdParameters are needed in order to facilitate the possible re-proposal of a new ThresholdParameters, in case the currently proposed set of participants are no longer all online. For tracking the votes we also use the same tracking structure in the running state. - The previous running state's keys are needed to copy the public keys. - We use the previous running state's DomainRegistry.",
+          "type": "object",
+          "required": [
+            "cancellation_requests",
+            "previous_running_state",
+            "reshared_keys",
+            "resharing_key"
+          ],
+          "properties": {
+            "cancellation_requests": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            },
+            "previous_running_state": {
+              "$ref": "#/definitions/RunningContractState"
+            },
+            "reshared_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain"
+              }
+            },
+            "resharing_key": {
+              "$ref": "#/definitions/KeyEvent"
+            }
+          }
+        },
+        "RunningContractState": {
+          "description": "In this state, the contract is ready to process signature requests.\n\nProposals can be submitted to modify the state: - vote_add_domains, upon threshold agreement, transitions into the Initializing state to generate keys for new domains. - vote_new_parameters, upon threshold agreement, transitions into the Resharing state to reshare keys for new participants and also change the threshold if desired.",
+          "type": "object",
+          "required": [
+            "add_domains_votes",
+            "domains",
+            "keyset",
+            "parameters",
+            "parameters_votes"
+          ],
+          "properties": {
+            "add_domains_votes": {
+              "description": "Votes for proposals to add new domains.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AddDomainsVotes"
+                }
+              ]
+            },
+            "domains": {
+              "description": "The domains for which we have a key ready for signature processing.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainRegistry"
+                }
+              ]
+            },
+            "keyset": {
+              "description": "The keys that are currently in use; for each domain provides an unique identifier for a distributed key, so that the nodes can identify which local keyshare to use.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Keyset"
+                }
+              ]
+            },
+            "parameters": {
+              "description": "The current participants and threshold.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThresholdParameters"
+                }
+              ]
+            },
+            "parameters_votes": {
+              "description": "Votes for proposals for a new set of participants and threshold.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ThresholdParametersVotes"
+                }
+              ]
+            },
+            "previously_cancelled_resharing_epoch_id": {
+              "description": "The previous epoch id for a resharing state that was cancelled. This epoch id is tracked, as the next time the state transitions to resharing, we can't reuse a previously cancelled epoch id.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/EpochId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "Secp256k1PublicKey": {
+          "type": "string"
+        },
+        "SerializableAffinePoint": {
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            }
+          }
+        },
+        "SerializableEdwardsPoint": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
+        "SerializableScalar": {
+          "type": "object",
+          "required": [
+            "scalar"
+          ],
+          "properties": {
+            "scalar": {
+              "type": "string"
+            }
+          }
+        },
+        "SignRequestArgs": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "domain_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key_version": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "path": {
+              "type": "string"
+            },
+            "payload": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            },
+            "payload_v2": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Payload"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "Signature": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
+        },
+        "SignatureRequest": {
+          "type": "object",
+          "required": [
+            "domain_id",
+            "payload",
+            "tweak"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "payload": {
+              "$ref": "#/definitions/Payload"
+            },
+            "tweak": {
+              "$ref": "#/definitions/Tweak"
+            }
+          }
+        },
+        "SignatureResponse": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "big_r",
+                "recovery_id",
+                "s",
+                "scheme"
+              ],
+              "properties": {
+                "big_r": {
+                  "$ref": "#/definitions/SerializableAffinePoint"
+                },
+                "recovery_id": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "s": {
+                  "$ref": "#/definitions/SerializableScalar"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Secp256k1"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "scheme",
+                "signature"
+              ],
+              "properties": {
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Ed25519"
+                  ]
+                },
+                "signature": {
+                  "$ref": "#/definitions/Signature"
+                }
+              }
+            }
+          ]
+        },
+        "SignatureScheme": {
+          "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
+          "type": "string",
+          "enum": [
+            "Secp256k1",
+            "Ed25519",
+            "Bls12381"
+          ]
+        },
+        "TcbInfo": {
+          "description": "Trusted Computing Base information structure",
+          "type": "object",
+          "required": [
+            "app_compose",
+            "compose_hash",
+            "device_id",
+            "event_log",
+            "mrtd",
+            "rtmr0",
+            "rtmr1",
+            "rtmr2",
+            "rtmr3"
+          ],
+          "properties": {
+            "app_compose": {
+              "description": "The app compose",
+              "type": "string"
+            },
+            "compose_hash": {
+              "description": "The hash of the compose configuration",
+              "type": "string"
+            },
+            "device_id": {
+              "description": "The device identifier",
+              "type": "string"
+            },
+            "event_log": {
+              "description": "The event log entries",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EventLog"
+              }
+            },
+            "mrtd": {
+              "description": "The measurement root of trust",
+              "type": "string"
+            },
+            "os_image_hash": {
+              "description": "The hash of the OS image. This is empty if the OS image is not measured by KMS.",
+              "default": "",
+              "type": "string"
+            },
+            "rtmr0": {
+              "description": "The value of RTMR0 (Runtime Measurement Register 0)",
+              "type": "string"
+            },
+            "rtmr1": {
+              "description": "The value of RTMR1 (Runtime Measurement Register 1)",
+              "type": "string"
+            },
+            "rtmr2": {
+              "description": "The value of RTMR2 (Runtime Measurement Register 2)",
+              "type": "string"
+            },
+            "rtmr3": {
+              "description": "The value of RTMR3 (Runtime Measurement Register 3)",
+              "type": "string"
+            }
+          }
+        },
+        "Threshold": {
+          "description": "Stores the cryptographic threshold for a distributed key. ``` use mpc_contract::primitives::thresholds::Threshold; let dt = Threshold::new(8); assert!(dt.value() == 8); ```",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "ThresholdParameters": {
+          "description": "Stores information about the threshold key parameters: - owners of key shares - cryptographic threshold",
+          "type": "object",
+          "required": [
+            "participants",
+            "threshold"
+          ],
+          "properties": {
+            "participants": {
+              "$ref": "#/definitions/Participants"
+            },
+            "threshold": {
+              "$ref": "#/definitions/Threshold"
+            }
+          }
+        },
+        "ThresholdParametersVotes": {
+          "description": "Tracks votes for ThresholdParameters (new participants and threshold). Each current participant can maintain one vote.",
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ThresholdParameters"
+              }
+            }
+          }
+        },
+        "Tweak": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
+        "UpdateId": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "YieldIndex": {
+          "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",
+          "type": "object",
+          "required": [
+            "data_id"
+          ],
+          "properties": {
+            "data_id": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
+        }
+      }
+    }
+  }
+}
