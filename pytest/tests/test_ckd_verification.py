@@ -11,11 +11,31 @@ Verifies that ckd responses are correct
 import sys
 import pathlib
 import pytest
+import atexit
 
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from common_lib import shared, ckd
+from common_lib import shared, ckd, contracts, contract_state
 from common_lib.constants import CKD_DEPOSIT
+
+
+@pytest.fixture(scope="module")
+def signing_cluster():
+    """
+    Spins up a cluster with three nodes, initializes the contract and adds domains. Returns the cluster in a running state.
+    """
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        2,
+        2,
+        1,
+        contracts.load_mpc_contract(),
+    )
+    cluster.init_cluster(mpc_nodes, 2)
+    cluster.wait_for_state(contract_state.ProtocolState.RUNNING)
+
+    yield cluster
+
+    atexit._run_exitfuncs()
 
 
 @pytest.mark.no_atexit_cleanup
