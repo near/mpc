@@ -61,9 +61,12 @@ def generate_app_public_key() -> Tuple[str, Scalar]:
     encoded_pk = b58encode_g1(public_key)
     return encoded_pk, private_key
 
+
 # These type conversions are only needed because py_arkworks_bls12381 does not support hash_to_curve
 # and blspy does not support multiplying a curve point by a scalar (needed for ELGammal decryption)
-def verify_bls_signature(public_key: G2Point, message: bytes, signature: G1Point) -> bool:
+def verify_bls_signature(
+    public_key: G2Point, message: bytes, signature: G1Point
+) -> bool:
     pk = G2Element.from_bytes(bytes(public_key.to_compressed_bytes()))
     sig = G1Element.from_bytes(bytes(signature.to_compressed_bytes()))
     # hash_to_curve
