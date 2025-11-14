@@ -428,7 +428,6 @@ INFO Function execution return value (printed to stdout):
 {
   "big_c": "bls12381g1:7f5iBmCQ5ZLM21rXEpNYf2ntzM1uAsNSMEKjuPGtGeoYvRpyAyBCrRLXmGZ5DoKMaX",
   "big_y": "bls12381g1:6MseQBW32YFqpP8RQr1XVAUkKqj5n1n89xwjMzZbnvEVQZro6hz4Uun1KrfzuZxYWE",
-  "scheme": "CKDResponse"
 }
 ```
 
