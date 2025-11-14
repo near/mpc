@@ -1,9 +1,6 @@
 {
-    "request": {
-        "path": "some_example_path",
-        "domain_id": 0,
-        "payload_v2": {
-            "Ecdsa": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21"
-        }
-    }
+  "request": {
+    "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
+    "domain_id": 2
+  }
 }
