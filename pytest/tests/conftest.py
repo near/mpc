@@ -150,6 +150,7 @@ def compile_parallel_contract(request):
         contracts.PARALLEL_CONTRACT_PACKAGE_NAME,
     )
 
+
 @pytest.fixture(scope="session")
 def signing_cluster():
     """
@@ -167,6 +168,7 @@ def signing_cluster():
     yield cluster
 
     atexit._run_exitfuncs()
+
 
 def git_root() -> Path:
     git_repo = git.Repo(".", search_parent_directories=True)

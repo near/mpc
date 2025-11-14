@@ -17,6 +17,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, ckd
 from common_lib.constants import CKD_DEPOSIT
 
+
 @pytest.mark.no_atexit_cleanup
 def test_ckd_request_lifecycle(signing_cluster: shared.MpcCluster):
     domains = signing_cluster.contract_state().get_running_domains()
