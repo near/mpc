@@ -1,0 +1,9 @@
+{
+    "request": {
+        "path": "some_example_path",
+        "domain_id": 1,
+        "payload_v2": {
+            "Eddsa": "521da91dc9bddb625bd0679d9e735def558761a34653624f5954f44bce6443a9"
+        }
+    }
+}

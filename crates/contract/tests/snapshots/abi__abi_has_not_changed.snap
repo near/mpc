@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.0.1",
+    "version": "3.0.3",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "cargo-near cargo-near-build 0.9.0"
@@ -424,9 +424,9 @@ expression: abi
       {
         "name": "migrate",
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
-        "kind": "call",
+        "kind": "view",
         "modifiers": [
-          "init"
+          "private"
         ]
       },
       {
@@ -607,6 +607,13 @@ expression: abi
             "$ref": "#/definitions/UpdateId"
           }
         }
+      },
+      {
+        "name": "pub_migrate",
+        "kind": "call",
+        "modifiers": [
+          "init"
+        ]
       },
       {
         "name": "public_key",
