@@ -1,4 +1,4 @@
-name: Docker Build and Publish MPC Node Image
+name: Release Node Docker Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -7,39 +7,54 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
-      build-ref:
-        default: 'main'
-        description: "The branch, tag or SHA to build node docker image from. Default to latest commit on main branch."
+      source-tag:
+        description: "Source image tag to retag for release (e.g., 'main-abc1234')"
+        required: true
         type: string
-    
+      release-tag:
+        description: "Release tag for the image (e.g., '3.0.4')"
+        required: true
+        type: string
+      repository:
+        description: "Target repository name (default: 'mpc-node')"
+        required: false
+        type: string
+        default: mpc-node
 
 jobs:
-  docker-image-build:
-    name: "Build and push node docker image"
-    runs-on: warp-ubuntu-2204-x64-8x
+  retag-node-image:
+    name: "Retag node image for release"
+    runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.build-ref }}
-          persist-credentials: false
-
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Install repro-env
+      - name: Install skopeo
         run: |
-          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
-          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
-          sudo install -m755 repro-env -t /usr/bin
+          sudo apt-get update
+          sudo apt-get install -y skopeo
 
-      - name: Build and publish images
-        shell: bash
+      - name: Verify source image exists
+        env:
+          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
         run: |
-          ./deployment/build-images.sh --node --push
+          if ! skopeo inspect docker://nearone/mpc-node:$SOURCE_TAG > /dev/null 2>&1; then
+            echo "❌ Source image nearone/mpc-node:$SOURCE_TAG does not exist"
+            exit 1
+          fi
+
+      - name: Retag image
+        env:
+          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
+          REPOSITORY: ${{ github.event.inputs.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+        run: |
+          skopeo copy \
+            docker://nearone/mpc-node:$SOURCE_TAG \
+            docker://nearone/$REPOSITORY:$RELEASE_TAG
