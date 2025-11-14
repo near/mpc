@@ -119,7 +119,7 @@ _ckd request_
 {
   "request": {
     "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
-    "domain_id": 3
+    "domain_id": 2
   }
 }
 ```
@@ -282,7 +282,7 @@ These functions require the caller to be a participant or candidate.
 During development, it's recommended to build non-deterministically using [cargo-near](https://github.com/near/cargo-near).
 
 ```bash
-cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
+cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
 ```
 
 The contract can also be built deterministically. This requires `docker` to be installed.

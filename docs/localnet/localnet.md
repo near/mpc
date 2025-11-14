@@ -36,7 +36,7 @@ cargo install --path crates/node --locked
 Build the contract from the repository root with:
 
 ```shell
-cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml
+cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
@@ -54,14 +54,14 @@ To run a local NEAR network, first create the configuration with the following c
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
-Now, copy the the embedded node configuration from `$(pwd)/deployment/localnet`.
+Now, copy the the embedded node configuration from `deployment/localnet`.
 This ensures two things:
 
 1. We have a consistent genesis configuration with the MPC nodes when running in docker.
 2. The neard port is 24566 instead of 24567.
 
 ```shell
-cp -rf $(pwd)/deployment/localnet/. ~/.near/mpc-localnet
+cp -rf deployment/localnet/. ~/.near/mpc-localnet
 ```
 
 This will set up the configuration in the `~/.near/mpc-localnet` directory.
@@ -89,7 +89,7 @@ export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret
 
 ## 2. Deploy the MPC contract to the network
 
-Now we can deploy the MPC contract with NEAR CLI (that you can install from https://docs.near.org/tools/near-cli).
+Now we can deploy the MPC contract with NEAR CLI (that you can install from <https://docs.near.org/tools/near-cli>).
 First, add the mpc-localnet as a network connection in the CLI.
 
 To view existing connections and the location of your CLI config file use;
@@ -296,7 +296,7 @@ Notes:
   HostError(GuestPanic { panic_msg: "Calling default not allowed." })
   ```
 
-  you can safely ignore it — it disappears once the contract is initialized (tracking issue: https://github.com/near/mpc/issues/1280).
+  you can safely ignore it — it disappears once the contract is initialized ([tracking issue](https://github.com/near/mpc/issues/1280)).
 
 In the shell where you ran the local near node, you should see the peer count change from 0 to 2 as the frodo and sam MPC indexers connect to it.
 
@@ -367,7 +367,7 @@ Now the contract should be initialized and both nodes are running.
 To verify that the network is working let's request a singature from it.
 To do this, we first need to add a domain.
 
-Let's have Frodo and Sam both vote to add a secp256k1 domain.
+Let's have Frodo and Sam both vote to add secp256k1, ed25519 and bls12381 domains.
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
@@ -379,8 +379,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_domai
 
 Now we should be able to request a signature from the network.
 
+### ECDSA request
+
 ```shell
-near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 If this worked, you should see a response like:
@@ -399,6 +401,36 @@ INFO Function execution return value (printed to stdout):
 }
 ```
 
+### edDSA request
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+```log
+INFO Function execution return value (printed to stdout): { 
+  "scheme": "Ed25519",
+  "signature": [ 37, 63, 224, 202, 221, 22, 31, 208, 134, 42, 206, 69, 44, 196,
+110, 57, 11, 185, 238, 164, 197, 97, 53, 86, 1, 173, 88, 162, 0, 200, 176, 135,
+139, 71, 210, 109, 157, 5, 20, 79, 213, 187, 180, 95, 225, 75, 62, 164, 176,
+229, 254, 11, 32, 111, 51, 109, 230, 202, 146, 132, 41, 51, 134, 10 ] 
+}
+```
+
+### CKD request
+
+```shell
+near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+```log
+INFO Function execution return value (printed to stdout):
+{
+  "big_c": "bls12381g1:7f5iBmCQ5ZLM21rXEpNYf2ntzM1uAsNSMEKjuPGtGeoYvRpyAyBCrRLXmGZ5DoKMaX",
+  "big_y": "bls12381g1:6MseQBW32YFqpP8RQr1XVAUkKqj5n1n89xwjMzZbnvEVQZro6hz4Uun1KrfzuZxYWE",
+}
+```
+
 Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
@@ -410,7 +442,7 @@ machine ready to produce signatures.
 near contract call-function as-transaction mpc-contract.test.near vote_cancel_keygen json-args '{"next_domain_id": 0}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-### Check allowed image hashes:
+### Check allowed image hashes
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send

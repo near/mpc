@@ -30,7 +30,6 @@ pub enum SignatureResponse {
     derive(::near_sdk::schemars::JsonSchema)
 )]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(tag = "scheme")]
 pub struct CKDResponse {
     pub big_y: dtos::Bls12381G1PublicKey,
     pub big_c: dtos::Bls12381G1PublicKey,
