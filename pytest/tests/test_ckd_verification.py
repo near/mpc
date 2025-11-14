@@ -10,15 +10,14 @@ Verifies that ckd responses are correct
 
 import sys
 import pathlib
-import time
 import pytest
 
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, ckd
 from common_lib.contracts import load_mpc_contract
-from common_lib.constants import TIMEOUT, CKD_DEPOSIT
-from common_lib.shared import metrics
+from common_lib.constants import CKD_DEPOSIT
+from common_lib.contract_state import ProtocolState
 
 
 @pytest.mark.parametrize("num_requests, num_respond_access_keys", [(2, 1)])
@@ -27,25 +26,7 @@ def test_ckd_request_lifecycle(num_requests, num_respond_access_keys):
         2, 2, num_respond_access_keys, load_mpc_contract()
     )
     cluster.init_cluster(mpc_nodes, 2, ["Bls12381"])
-
-    started = time.time()
-    while True:
-        time.sleep(1.0)
-        assert time.time() - started < TIMEOUT, "Waiting for account balances"
-        # check that the near balance metric works
-        responder_balances = cluster.get_float_metric_value(
-            metrics.FloatMetricName.MPC_NEAR_RESPONDER_BALANCE
-        )
-        print(f"responder_balances: {responder_balances}")
-        if not all([rb and rb > 0 for rb in responder_balances]):
-            continue
-        signer_balances = cluster.get_float_metric_value(
-            metrics.FloatMetricName.MPC_NEAR_SIGNER_BALANCE
-        )
-        print(f"signer_balances: {signer_balances}")
-        if not all([sb and sb > 0 for sb in signer_balances]):
-            continue
-        break
+    cluster.wait_for_state(ProtocolState.RUNNING)
 
     domain = cluster.contract_state().get_running_domains()[0]
     keyset = cluster.contract_state().keyset()
@@ -62,6 +43,7 @@ def test_ckd_request_lifecycle(num_requests, num_respond_access_keys):
             deposit=CKD_DEPOSIT,
         )
         account_id = cluster.request_node.account_id()
+
         tx_hash = cluster.request_node.send_tx(tx)["result"]
         res = cluster.request_node.get_tx(tx_hash)
         ck = ckd.assert_ckd_success(res)
