@@ -278,7 +278,9 @@ class ResharingProtocolState:
         for k in resharing_data["reshared_keys"]:
             reshared_keys_list.append(
                 KeyForDomain(
-                    domain_id=k["domain_id"], attempt_id=k["attempt"], key="placeholder"
+                    domain_id=k["domain_id"],
+                    attempt_id=k["attempt"],
+                    key={"placeholder": None},
                 )
             )
 
@@ -373,7 +375,9 @@ class InitializingProtocolState:
         for k in data["generated_keys"]:
             generated_keys_list.append(
                 KeyForDomain(
-                    domain_id=k["domain_id"], attempt_id=k["attempt"], key="placeholder"
+                    domain_id=k["domain_id"],
+                    attempt_id=k["attempt"],
+                    key={"placeholder": None},
                 )
             )
 
@@ -430,8 +434,10 @@ class InitializingProtocolState:
 class ContractState:
     def get_running_domains(self) -> List[Domain]:
         if self.state == ProtocolState.RUNNING:
+            assert isinstance(self.protocol_state, RunningProtocolState)
             return self.protocol_state.domains.domains
         elif self.state == ProtocolState.RESHARING:
+            assert isinstance(self.protocol_state, ResharingProtocolState)
             return self.protocol_state.previous_running_state.domains.domains
 
         assert False, "expected running state"
@@ -451,6 +457,7 @@ class ContractState:
 
     def keyset(self) -> Keyset | None:
         if self.state == ProtocolState.RUNNING:
+            assert isinstance(self.protocol_state, RunningProtocolState)
             return self.protocol_state.keyset
         return None
 
