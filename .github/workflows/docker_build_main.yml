@@ -42,5 +42,6 @@ jobs:
 
       - name: Build and push both images
         run: |
+          export NODE_IMAGE_NAME=mpc-node
           export LAUNCHER_IMAGE_NAME=mpc-launcher
           ./deployment/build-images.sh --node --launcher --push
