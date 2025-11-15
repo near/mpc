@@ -50,23 +50,6 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_collection_modifyitems(items):
-    """Modifies test items in place to ensure test classes run in a grouped by parent folder."""
-
-    def group_id(item):
-        # the first parent is the file, the second is the folder/package
-        item.parent.parent
-
-    groups = set(group_id(item) for item in items)
-
-    sorted_items = []
-    for group in sorted(groups):
-        for item in items:
-            if group_id(item) == group:
-                sorted_items += [item]
-    items[:] = sorted_items
-
-
 @pytest.fixture(scope="session")
 def current_contracts():
     with tempfile.TemporaryDirectory() as tmpdir:
