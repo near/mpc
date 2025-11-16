@@ -151,18 +151,43 @@ PORTS=8080:8080,24567:24567,13002:13002
 
 ### Node Startup
 
-You can start the nodes **manually** as described in the Operator Guide or automate it using helper scripts.
+You can start the nodes **manually** as described in the Operator Guide or start them using the script `deploy-launcher.sh` below.
 
-> 📝 *To-do:* Add startup script here.
 
-deploy 2 MPC node in CVM using the deployment script.
+Once all paths and configuration files (`*.env` and `*.conf`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
+
+### 1. Move into the `tee_launcher` Directory
 
 ```bash
-./deploy-launcher.sh --env-file frodo.env --base-path /mnt/data/barak/dstack
-
-./deploy-launcher.sh --env-file sam.env --base-path /mnt/data/barak/dstack
+cd tee_launcher
 ```
----
+
+### 2. Ensure the Script Is Executable
+
+```bash
+chmod +x deploy-launcher.sh
+```
+
+### 3. Start the Frodo MPC Node
+
+```bash
+./deploy-launcher.sh \
+  --env-file ../deployment/localnet/tee/frodo.env \
+  --base-path /mnt/data/barak/dstack \
+  --python-exec python3
+```
+
+### 4. Start the Sam MPC Node
+
+```bash
+./deploy-launcher.sh \
+  --env-file ../deployment/localnet/tee/sam.env \
+  --base-path /mnt/data/barak/dstack \
+  --python-exec python3
+```
+
+If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).  
+Your MPC nodes are now running inside TDX-backed CVMs and ready to participate in the network.
 
 ## Extracting Keys from MPC Nodes
 
