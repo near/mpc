@@ -336,5 +336,22 @@ near contract call-function as-transaction mpc-contract.test.near sign \
 
 ---
 
-## Troubleshooting:
+## Troubleshooting
+
+### NearD Dashboard
+
+When running a localnet, you can use the **NearD debug dashboard** to inspect the state of the chain and monitor your MPC nodes.
+
+#### Example
+
+In the example below (running on a machine with external IP **57.129.140.254**), the dashboard displays two MPC nodes — one fully synced and the other still catching up:
+
+**Dashboard URL:**
+```
+http://debug.nearone.org/57.129.140.254:3030/network_info/current
+```
+
+**Screenshot:**
+
+![NearD Dashboard](./attachments/dashboard.png)
 
