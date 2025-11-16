@@ -260,16 +260,24 @@ MPC image hash ... is not in the allowed hashes list
 
 ### Vote Commands
 
-TODO: replace 5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c with latest hash.
+### Vote Commands
+
+Set **CODE_HASH** to value you want to vote for.
+```bash
+export CODE_HASH=5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c
+```
 
 ```bash
+
+# Sam votes
 near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args '{"code_hash": "5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c"}' \
+  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 
+# Frodo votes
 near contract call-function as-transaction mpc-contract.test.near vote_code_hash \
-  json-args '{"code_hash": "5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c"}' \
+  json-args "{\"code_hash\": \"$CODE_HASH\"}" \
   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
