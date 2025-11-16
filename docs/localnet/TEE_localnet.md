@@ -293,7 +293,15 @@ Check the contract state again. The status should transition from **Running** �
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
 ```
 
+In the MPC node's logs you should see something like this:
+
+```bash
+2025-11-16T07:42:09.728557971Z 2025-11-16T07:42:09.728318Z  INFO mpc_node::p2p: Outgoing 1 --> 0 connected
+2025-11-16T07:42:09.855900011Z 2025-11-16T07:42:09.855671Z  INFO mpc_node::p2p: Incoming 1 <-- 0 connected
+```
+
 > 📝 *Note:* If the contract remains stuck in the *Initializing* state, your nodes may be unable to connect to each other.
+
 
 ---
 
@@ -306,26 +314,27 @@ near contract call-function as-transaction mpc-contract.test.near sign \
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
-**Expected Output (abbreviated):**
+**Expected Output:**
 
 ```
-INFO Function execution return value (printed to stdout):
+ INFO Function execution return value (printed to stdout):
 {
-  "big_r": { "affine_point": "0374F36883982994DBF529489881637538D8017ED95B6856D1C1BDF045C884CD46" },
-  "recovery_id": 1,
-  "s": { "scalar": "3D773C63B0F56EE737870428CA414EF7AA2271798581A28D310DA4F99E65FE8D" },
+  "big_r": {
+    "affine_point": "0266959C2F1A155D38FAB0B15A7E6FAD8DDEB857594FB2F1DFEF323E395949F8E2"
+  },
+  "recovery_id": 0,
+  "s": {
+    "scalar": "6C38CCEF118EA86F3A5DB5CC8703E9A2B5289FCD564D3224DC61E374B58ABB8C"
+  },
   "scheme": "Secp256k1"
 }
+ INFO
+
+ |    The "sign" call to <mpc-contract.test.near> on behalf of <frodo.test.near> succeeded.
 ```
 
-✅ **Success:** The transaction executed successfully and produced a valid signature.
 
 ---
 
-## Additional Suggestions
-
-- **Consistent Headings:** Use `##` for main steps and `###` for sub-steps to improve readability.  
-- **Grammar Fixes:** Corrected typos and improved flow.  
-- **TODO markers:** Left as `> 📝 To-do:` for easy follow-up.  
-- **Optional Enhancement:** Add a “Troubleshooting” section for attestation and Docker connectivity issues.
+## Troubleshooting:
 
