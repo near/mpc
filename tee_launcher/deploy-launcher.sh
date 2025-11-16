@@ -134,7 +134,7 @@ if [ -z "$pythonExec" ]; then
   pythonExec="python"
 fi
 
-CLI="$pythonExec $basePath/meta-dstack/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
+CLI="$pythonExec $basePath/vmm/src/vmm-cli.py --url $VMM_RPC"
 
 
 COMPOSE_TMP=$(mktemp)
