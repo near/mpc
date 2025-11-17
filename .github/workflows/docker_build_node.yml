@@ -1,4 +1,4 @@
-name: Build Docker Images on Main
+name: Build Docker Node Image
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,8 +12,8 @@ on:
 
 jobs:
   build-and-push-images:
-    name: "Build and push Docker images with commit hash"
-    runs-on: warp-ubuntu-2404-x64-8x
+    name: "Build and push Docker node image with commit hash"
+    runs-on: warp-ubuntu-2204-x64-8x
     permissions:
       contents: read
 
@@ -35,13 +35,7 @@ jobs:
           echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
           sudo install -m755 repro-env -t /usr/bin
 
-      - name: Install skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
-
-      - name: Build and push both images
+      - name: Build and push node image
         run: |
           export NODE_IMAGE_NAME=mpc-node
-          export LAUNCHER_IMAGE_NAME=mpc-launcher
-          ./deployment/build-images.sh --node --launcher --push
+          ./deployment/build-images.sh --node --push

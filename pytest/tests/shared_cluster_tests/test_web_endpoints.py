@@ -8,6 +8,9 @@ import sys
 import pathlib
 import time
 import requests
+import pytest
+
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 from common_lib.migration_state import (
     AccountEntry,
@@ -19,20 +22,14 @@ from common_lib.migration_state import (
 )
 from common_lib.shared.mpc_cluster import MpcCluster
 from common_lib.shared.mpc_node import MpcNode
-
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
-from common_lib.contracts import load_mpc_contract
 
 
-def test_web_endpoints():
-    number_nodes = 2
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, number_nodes, 1, load_mpc_contract()
-    )
-    cluster.init_cluster(participants=mpc_nodes, threshold=2)
-    cluster.send_and_await_signature_requests(1)
-    cluster.send_and_await_ckd_requests(1)
+@pytest.mark.no_atexit_cleanup
+def test_web_endpoints(shared_cluster: shared.MpcCluster):
+    number_nodes = len(shared_cluster.mpc_nodes)
+    shared_cluster.send_and_await_signature_requests(1)
+    shared_cluster.send_and_await_ckd_requests(1)
 
     # ports are hardcoded... they come from PortSeed::CLI_FOR_PYTEST.web_port(i)
 
@@ -63,7 +60,7 @@ def test_web_endpoints():
         response = requests.get(f"http://localhost:{port}/debug/contract")
         assert "Contract is in Running state" in response.text, response.text
 
-        verify_migration_endpoint(cluster, port, expected_migrations)
+        verify_migration_endpoint(shared_cluster, port, expected_migrations)
 
 
 def verify_migration_endpoint(
