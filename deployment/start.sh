@@ -202,6 +202,14 @@ else
     initialize_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node initialized"
 fi
 
+# Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
+if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
+  echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
+  export MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID)
+else
+  echo "Using provided MPC_SECRET_STORE_KEY from environment"
+fi
+
 update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
