@@ -400,8 +400,7 @@ For hard launch, the backup service is a standalone long-running application ins
 2. **Attestation Generation**: Generates and refreshes TEE attestations.
 3. **Contract Monitoring**: Maintains current view of MPC smart contract state.
 4. **Event Processing**: Monitors for migration events (`start_node_migration` calls).
-5. **Key Management**: Generates ephemeral X25519 keypairs for each transfer.
-6. **HTTP Server**: Exposes endpoints for health checks and metrics (optional).
+5. **HTTP Server**: Exposes endpoints for health checks and metrics (optional).
 
 **Operational Characteristics:**
 - **Always Running**: Unlike the soft-launch scripts, the hard-launch backup service runs 24/7. All backed-up keyshares are kept in memory only (not on disk), so it needs to re-fetch the secret shares after recovering, e.g. after a power loss.
@@ -428,7 +427,8 @@ Node operators are responsible for:
 
 
 #### Cryptography
-A pair-wise key establishment scheme can be leveraged to establish a symmetric key. A suitable implementation can be found in [libsodium](https://doc.libsodium.org/) and its rust wrapper [libsodium-rs](https://docs.rs/crate/libsodium-rs/latest). Specifically, the **key exchange protocol based on X25519** would be a good fit for the given set-up (c.f. [libsodium](https://doc.libsodium.org/key_exchange) and [libsodium-rs](https://docs.rs/libsodium-rs/latest/libsodium_rs/crypto_kx/index.html)).
+
+**Key Establishment:**
 
 The key establishment scheme requires that the node as well as the backup service have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically, for each backup generation or recovery, the node and the backup service generate ephemeral keys on the `Curve25519` and publish them on the MPC smart contract. The node and the backup service can then each run a key generation protocol using their private key and the public key of the other party. 
 
@@ -436,6 +436,27 @@ _Note: The curious reader might ask why this protocol does not simply use the NE
 - _those keys are meant for signature generation._
 - _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
 
+The migration service uses a defense-in-depth encryption approach with two layers:
+
+**Transport Layer (TLS 1.3):**
+
+- **Authentication**: Mutual TLS (mTLS) authenticates both parties using Ed25519 P2P keys registered in the contract
+- **Key Exchange**: TLS 1.3 handshake performs Elliptic Curve Diffie-Hellman Ephemeral (ECDHE) key exchange to derive ephemeral session keys
+- **Session Encryption**: Negotiated cipher suite
+- **Forward Secrecy**: Past sessions remain secure even if long-term Ed25519 keys are compromised (ephemeral keys discarded after session)
+- Implemented using `rustls` with TLS 1.3 only ([enforced](https://github.com/near/mpc/blob/9c34614e87280932da9d6cdc3cee8537b6443b7a/crates/tls/src/constants.rs#L11) via `&rustls::version::TLS13`)
+
+**Application Layer:**
+- **Encryption**: AES-256-GCM authenticated encryption ([implemented](https://github.com/near/mpc/blob/9c34614e87280932da9d6cdc3cee8537b6443b7a/crates/node/src/migration_service/web/encryption.rs#L10-L34) using `aes_gcm` crate)
+- **Key**: Static pre-shared symmetric key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable, 256-bit hex-encoded)
+- **Key Reuse**: Same key used for both backup and recovery operations (no key rotation)
+- **Purpose**: Defense-in-depth protection if either party has an incorrect blockchain view (prevents plaintext exposure to wrong peer)
+
+**Why Two Layers?**
+
+The additional application-layer encryption protects against a specific attack scenario: if either the MPC node or backup service has an incorrect/compromised view of the blockchain state, a malicious actor could potentially cause them to connect to a fake peer (by manipulating the contract state they see). With application-layer encryption, even in this scenario, the attacker would only obtain encrypted keyshares rather than plaintext secrets.
+
+This dual-encryption approach provides security even if the TLS layer is correctly established with the wrong peer due to blockchain state manipulation.
 
 #### Todo
 See [(#949)](https://github.com/near/mpc/issues/949)
