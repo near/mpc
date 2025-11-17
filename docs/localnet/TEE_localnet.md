@@ -260,8 +260,6 @@ MPC image hash ... is not in the allowed hashes list
 
 ### Vote Commands
 
-### Vote Commands
-
 Set **CODE_HASH** to value you want to vote for.
 ```bash
 export CODE_HASH=5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c
@@ -286,6 +284,12 @@ Verify the contract state:
 
 ```bash
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
+```
+
+Or view the allowed code hashes
+
+```bash
+near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Check That Valid Attestations Are Registered
