@@ -1,23 +1,24 @@
-FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+FROM rust:1.86 AS builder
+RUN apt-get update -y && apt-get install -y --no-install-recommends clang  # needed for rocksdb
 
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
+COPY .git .git
+COPY crates crates
+COPY Cargo.lock Cargo.lock
+COPY Cargo.toml Cargo.toml
+COPY rust-toolchain.toml rust-toolchain.toml
+COPY third-party-licenses third-party-licenses
 
-RUN \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
-    repro-sources-list.sh && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
-    : "Clean up for improving reproducibility" && \
-    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+RUN cargo build --locked --release
+
+FROM google/cloud-sdk:debian_component_based AS runtime
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /app
-COPY target/reproducible/mpc-node mpc-node
-# The chmod part is also necessary for reproducibility
-COPY --chmod=0755 deployment/start.sh /app/start.sh
-# Copy embedded localnet genesis file
-COPY --chmod=0755 deployment/localnet/genesis.json /app/localnet-genesis.json
-CMD [ "/app/start.sh" ]
+COPY --from=builder /app/target/release/mpc-node mpc-node
+COPY deployment/start.sh /app/start.sh
+RUN chmod +x /app/gcp-start.sh
+CMD [ "/app/gcp-start.sh" ]

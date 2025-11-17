@@ -114,10 +114,10 @@ if $USE_LAUNCHER; then
 fi
 
 if $USE_NODE; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
-    node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
+    # SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
+    # node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
     build_reproducible_image $NODE_IMAGE_NAME $DOCKERFILE_NODE
-    node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
+    # node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
 fi
 
 if $USE_PUSH; then
@@ -152,8 +152,8 @@ fi
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE_EPOCH"
 if $USE_NODE; then
-    echo "node binary hash: $node_binary_hash"
-    echo "node tee docker image hash: $node_image_hash"
+    # echo "node binary hash: $node_binary_hash"
+    # echo "node tee docker image hash: $node_image_hash"
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
