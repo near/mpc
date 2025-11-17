@@ -196,7 +196,7 @@ jobs:
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
 
-      - name: Install wasm-opt from crates.io
+      - name: Install wasm-opt
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
@@ -266,7 +266,7 @@ jobs:
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
 
-      - name: Install wasm-opt from crates.io
+      - name: Install wasm-opt
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
