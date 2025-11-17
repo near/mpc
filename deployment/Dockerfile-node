@@ -20,5 +20,5 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
 COPY --from=builder /app/target/release/mpc-node mpc-node
 COPY deployment/start.sh /app/start.sh
-RUN chmod +x /app/gcp-start.sh
-CMD [ "/app/gcp-start.sh" ]
+RUN chmod +x /app/start.sh
+CMD [ "/app/start.sh" ]
