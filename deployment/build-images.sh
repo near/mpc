@@ -154,6 +154,7 @@ echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE_EPOCH"
 if $USE_NODE; then
     # echo "node binary hash: $node_binary_hash"
     # echo "node tee docker image hash: $node_image_hash"
+    echo ""
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
