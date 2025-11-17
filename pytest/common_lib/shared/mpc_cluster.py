@@ -9,7 +9,12 @@ from common_lib import constants
 from common_lib import signature
 from common_lib import ckd
 from common_lib.constants import TGAS
-from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
+from common_lib.contract_state import (
+    ContractState,
+    ProtocolState,
+    SignatureScheme,
+    RunningProtocolState,
+)
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
     BackupServiceInfo,
@@ -209,6 +214,7 @@ class MpcCluster:
         self.nodes = nodes
         if assert_contract:
             contract_state = self.contract_state()
+            assert isinstance(contract_state.protocol_state, RunningProtocolState)
             assert len(
                 contract_state.protocol_state.parameters.participants.participants
             ) == len(self.mpc_nodes)
@@ -274,6 +280,7 @@ class MpcCluster:
         state = self.contract_state()
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
+        assert isinstance(state.protocol_state, RunningProtocolState)
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in schemes:
