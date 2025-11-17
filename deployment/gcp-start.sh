@@ -55,6 +55,50 @@ cores: 12
 EOF
 }
 
+create_secrets_json_file() {
+    python3 <<EOF
+import json;
+
+p2p_key_str = "${MPC_P2P_PRIVATE_KEY}"
+account_sk_str = "${MPC_ACCOUNT_SK}"
+
+if not p2p_key_str or not account_sk_str:
+    print("Error: MPC_P2P_PRIVATE_KEY and MPC_ACCOUNT_SK must be provided", file=sys.stderr)
+    sys.exit(1)
+
+secrets = {
+    "p2p_private_key": p2p_key_str,
+    "near_signer_key": account_sk_str,
+    "near_responder_keys": [account_sk_str]
+}
+
+# Write to secrets.json
+with open("$secrets_file", 'w') as f:
+    json.dump(secrets, f, indent=2)
+
+print("secrets.json generated successfully")
+EOF
+}
+
+generate_secrets_json() {
+    local secrets_file="$MPC_HOME_DIR/secrets.json"
+    
+    # Only generate secrets.json if we have the required keys
+    if [ -n "${MPC_P2P_PRIVATE_KEY}" ] && [ -n "${MPC_ACCOUNT_SK}" ]; then
+        echo "Generating secrets.json from provided keys..."
+        if create_secrets_json_file
+        then
+            echo "secrets.json created at $secrets_file"
+        else
+            echo "Failed to generate secrets.json" >&2
+            return 1
+        fi
+    else
+        echo "Skipping secrets.json generation - MPC_P2P_PRIVATE_KEY and/or MPC_ACCOUNT_SK not available"
+    fi
+}
+
+
 # Check and initialize Near node config if needed
 if [ -r "$NEAR_NODE_CONFIG_FILE" ]; then
     echo "Near node is already initialized"
@@ -95,6 +139,8 @@ else
   echo "Using provided MPC_ACCOUNT_SK from environment"
 fi
 
+# Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
+generate_secrets_json
 
 echo "Starting mpc node..."
 /app/mpc-node start

@@ -62,7 +62,9 @@ jobs:
           cd ../..
           
       - name: Install cargo-nextest
-        run: cargo install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.106
 
       - name: Install wasm-opt from crates.io
         run: |
