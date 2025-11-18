@@ -143,10 +143,10 @@ if $USE_PUSH; then
     if [ -z "$branch_name" ]; then
         branch_name="detached"
     fi
-    sanitizded_branch_name="${branch_name//\//-}"
+    sanitized_branch_name="${branch_name//\//-}"
 
     short_hash=$(git rev-parse --short HEAD)
-    image_tag="$sanitizded_branch_name-$short_hash"
+    image_tag="$sanitized_branch_name-$short_hash"
     echo "Using branch-hash tag: $image_tag"
 
     if $USE_LAUNCHER; then
