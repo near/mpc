@@ -176,10 +176,10 @@ if $USE_NODE || $USE_NODE_GCP; then
     echo "node binary hash: $node_binary_hash"
 fi
 if $USE_NODE; then
-    echo "node tee docker image hash: $node_image_hash"
+    echo "node docker image hash: $node_image_hash"
 fi
 if $USE_NODE_GCP; then
-    echo "node tee docker image hash: $node_gcp_image_hash"
+    echo "node gcp docker image hash: $node_gcp_image_hash"
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"
