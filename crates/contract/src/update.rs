@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(found, expected);
     }
 
-    /// Ensures that `ProposedUpdates::propose()`:
+    /// Ensures that [`ProposedUpdates::propose`]:
     /// - returns the [`UpdateId`] of the proposed update
     /// - inserst the [`UpdateEntry`] into the entries map
     /// - does **not** record a vote for the newly proposed update
@@ -465,7 +465,7 @@ mod tests {
     impl TryFrom<&ProposedUpdates> for TestUpdateVotes {
         type Error = anyhow::Error;
 
-        /// converts `ProposedUpdates` to `TestUpdateVotes`. Fails if `ProposedUpdates` has a n
+        /// converts `ProposedUpdates` to `TestUpdateVotes`. Fails if `ProposedUpdates` has an
         /// inconsistent state.
         fn try_from(value: &ProposedUpdates) -> anyhow::Result<Self> {
             let id = value.id.0;
