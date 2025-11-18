@@ -24,6 +24,8 @@ pub fn launcher_compose_digest() -> LauncherDockerComposeHash {
 }
 
 pub fn image_digest() -> MpcDockerImageHash {
+    
+
     let digest: [u8; 32] = hex::decode(TEST_MPC_IMAGE_DIGEST_HEX)
         .expect("File has valid hex encoding.")
         .try_into()
