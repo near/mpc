@@ -55,7 +55,6 @@ On a high-level, the migration service allows two workflows:
 Note that the migration service does not enable a _"Recovery"_ of the _entire_
 node, but only of the secret shares. The MPC node generates a few secrets that would still be unrecoverable, since no back-up exists (such as TLS keys or access keys for NEAR accounts). As such, _Recovery_ is just a special case of _Migration_, where the target host machine stays the same. TLS Key and access key of the node are still expected to change.
 
-
 #### Backup 
 
 ##### Soft Launch
@@ -249,7 +248,6 @@ For security reasons and to avoid edge cases and race conditions, the MPC networ
 
 Note that starting a migration workflow does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
 If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
-
 
 ## Implementation Details
 
