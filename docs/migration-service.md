@@ -29,13 +29,14 @@ Having keyshare backups outside of the TEE environment allows node operators not
 
 The migration service design supports both deployment phases with different security properties:
 
-**Soft Launch** is the initial deployment phase where the backup service runs as the [`backup-cli`] binary outside the TEE, relying on the node operator's operational security. This allows for easier debugging and operational flexibility during the early stages.
+**Soft Launch** is the initial deployment phase where the backup service runs as the [`backup-cli`][backup-cli] binary outside the TEE, relying on the node operator's operational security. This allows for easier debugging and operational flexibility during the early stages.
 
 **Hard Launch** is the future production deployment phase where the backup service runs as a long-running process inside its own TEE. The backup service must prove its correct execution through attestations verified by the smart contract, eliminating the need to trust the node operator's security practices.
 
 | Aspect | Soft Launch (Current) | Hard Launch (Planned) |
 |--------|-------------|-------------|
-| **Backup Service** | Manual scripts (`backup-cli`) | Long-running TEE process |
+| **Backup Service** | Manual scripts ([`backup-cli`][backup-cli]) | Long-running TEE process |
+| **Backup Storage** | Encrypted keyshares saved to disk | Encrypted keyshares kept in enclave's RAM only |
 | **Trust Model** | Node operator trusted | Attestation-verified TEE |
 | **Transport Encryption** | Mutual TLS (ephemeral keys via ECDHE) | Mutual TLS (ephemeral keys via ECDHE) |
 | **Application Encryption** | AES-256-GCM with static pre-shared key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` env var) | AES-256-GCM with static pre-shared key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` env var) |
@@ -57,7 +58,7 @@ To allow migration, a node operator will need to run a **backup service**. This 
 - to securely store the secret keys: on disk outside of the TEE for soft launch, and in a TEE's memory for hard launch;
 - to provide the secret keys to a newly set up node via an encrypted mTLS channel.
 
-For the soft launch, the node operator (assisted by a `backup-cli` script) can act as the backup service. For the hard launch, the backup service must run in its own TEE environment and must have a current view of the MPC smart contract on the NEAR blockchain.
+For the soft launch, the node operator (assisted by a [`backup-cli`][backup-cli] script) can act as the backup service. For the hard launch, the backup service must run in its own TEE environment and must have a current view of the MPC smart contract on the NEAR blockchain.
 
 For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
 
