@@ -2,28 +2,30 @@
 
 ## Overview
 
-A **T**rusted **E**xecution **E**nvironment ([TEE][tee]) is an environment isolated from the operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
+Near One is currently in the process of migrating the MPC nodes into a **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](docs/securing_mpc_with_tee_design_doc.md) for an introduction to TEEs and their benefits).
 
-The security guarantees provided by TEEs are attractive to the MPC network for two reasons:
-1. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret keyshares (used for threshold signing), collusion attacks after departure become infeasible. This applies to both the MPC node and the migration service that backs up these keyshares.
-2. They allow to relax the threat models (e.g. [honest-but-curious][adversary] instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
+Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
-TEEs provide their security guarantees by restricting how anything outside of the enclave can interact with the code and data inside. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
+- **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.  
+- **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneusly, the network risks losing its signing quorum, which could halt protocol operations.
 
-In the context of threshold cryptography, this poses the risk of losing the "signing quorum". If too few nodes remain operational, the protocol grinds to a halt, in which case no funds can be moved.
+This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving above problems:
 
-Therefore, Near-One will roll out its TEE implementation in two phases:
-- **Soft Launch**: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE (trust-based: relies on node operator's operational security to protect the backup).
-- **Hard Launch**: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE's memory, not permanently saved on disk (attestation-based: cryptographic verification ensures backup service executes approved code).
+1. **Operational resilience** — the migration service enables secure recovery of nodes in the event of hardware or system failure.  
+2. **Node migration** — the migration service allows node operators to move their MPC nodes into or between TEEs without resharing.
 
-As long as the secret shares of the MPC nodes are securely backed up outside of the TEEs in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures.
+Near-One will roll-out its TEE implementation in two phases:
+- **Soft Launch:**
+    - Some MPC nodes are running within TEEs.
+    - Their key shares are backed-up outside of the TEE through the Migration Service.
+    - The MPC contract does not formally enforce nodes to run inside a TEE.
+    - The migration service is used to move nodes into TEEs.
+- **Hard Launch:** 
+    - All MPC nodes are running within TEEs.
+    - Their key shares are backed-up inside another TEE through the Migration Service.
+    - The MPC contract kicks out any nodes that are not running inside a TEE.
+    - The migration service is used to move nodes between different TEEs (if required).
 
-Besides the existential risk, TEEs make it (without additional precautions) impossible for node operators to migrate their node to a different machine without entering a resharing procedure, which requires the explicit approval of all MPC participants.
-
-Having keyshare backups outside of the TEE environment allows node operators not only to recover from a catastrophic event, but also to migrate their nodes to new machines without going through a resharing process. In fact, disaster recovery is just a special case of the more general migration use case.
-
-[tee]: https://en.wikipedia.org/wiki/Trusted_execution_environment
-[adversary]: https://en.wikipedia.org/wiki/Adversary_(cryptography)
 
 ## Soft Launch vs Hard Launch Comparison
 
