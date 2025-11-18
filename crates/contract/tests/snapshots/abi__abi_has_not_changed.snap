@@ -1,12 +1,13 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 48
 expression: abi
 ---
 {
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.0.3",
+    "version": "3.0.4",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "cargo-near cargo-near-build 0.9.0"
