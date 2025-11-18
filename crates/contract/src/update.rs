@@ -474,7 +474,7 @@ mod tests {
             let entries: BTreeMap<u64, UpdateEntry> = value
                 .entries
                 .iter()
-                .map(|(id, entry)| (id.0.clone(), entry.clone()))
+                .map(|(id, entry)| (id.0, entry.clone()))
                 .collect();
 
             // Record all votes
