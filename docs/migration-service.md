@@ -55,7 +55,6 @@ On a high-level, the migration service allows two workflows:
 Note that the migration service does not enable a _"Recovery"_ of the _entire_
 node, but only of the secret shares. The MPC node generates a few secrets that would still be unrecoverable, since no back-up exists (such as TLS keys or access keys for NEAR accounts). As such, _Recovery_ is just a special case of _Migration_, where the target host machine stays the same. TLS Key and access key of the node are still expected to change.
 
-
 #### Backup 
 
 ##### Soft Launch
@@ -183,7 +182,7 @@ flowchart TD
       node information._"]
 
     BS@{ label: "**Backup Service**
-        _Stores encrypted backups of key shares.
+        _Stores encrypted backups of key shares. 
         Uniquely identified by a public key._" }
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
@@ -250,12 +249,11 @@ For security reasons and to avoid edge cases and race conditions, the MPC networ
 Note that starting a migration workflow does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
 If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
 
+## Implementation Details
 
-### Implementation Details
+### Node
 
-#### Node
-
-##### Node behavior
+#### Node behavior
 
 A node must only participate in the MPC protocol if it is in the set of active participants of the current running or resharing epoch. For this, the TLS key of a node acts as a unique identifier _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
 
@@ -264,7 +262,7 @@ Now, nodes need to be able to recognize and re-establish a connection if the par
 
 Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_.
 
-##### Web Endpoints
+#### Web Endpoints
 
 The **MPC node** exposes web endpoints over which the backup service can submit requests. These endpoints require mutual TLS authentication using the published P2P keys.
 
@@ -272,7 +270,7 @@ The exposed endpoints are:
 - **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
 - **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
-#### Contract
+### Contract
 
 The contract stores migration-related information in the `NodeMigrations` struct:
 
@@ -342,7 +340,7 @@ The backup service attestation verification would follow the same process as MPC
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
-##### Migration Methods
+#### Migration Methods
 
 The contract provides the following methods:
 
@@ -370,7 +368,7 @@ The contract provides the following methods:
 
 > **Hard Launch Extension (Planned):** For hard launch, `register_backup_service()` will require an `attestation` parameter and perform TEE verification similar to MPC nodes. The contract will verify the attestation validity, Docker image hash, and store the attestation before allowing backup operations. Backup services will need to refresh attestations before expiration.
 
-##### Migration Related Behavior
+#### Migration Related Behavior
 
 - The `OngoingNodeMigration` records are automatically cleared when the protocol transitions from `Running` state to `Resharing` or `Initializing` state, effectively cancelling any in-progress migrations.
 - **Future Enhancement**: It may be desirable for the contract to verify that calls to `conclude_node_migration()` come from the actual onboarding node by checking the transaction signer's public key _(see [(#1086)](https://github.com/near/mpc/issues/1086))_. This would prevent ill-behaved decommissioned nodes from making spurious migration calls. This would require:
@@ -379,13 +377,13 @@ The contract provides the following methods:
     - Including this public key in the TEE attestation
 
 
-#### Backup Service
+### Backup Service
 
-##### Soft Launch Implementation
+#### Soft Launch Implementation
 
 For the soft launch, the node operator and a few scripts (`backup-cli`) will act as the backup service. The operator runs these scripts manually on their own infrastructure.
 
-##### Hard Launch Implementation
+#### Hard Launch Implementation
 
 For hard launch, the backup service is a standalone long-running application inside its own TEE, physically separate from any MPC node TEE.
 
@@ -409,7 +407,7 @@ For hard launch, the backup service is a standalone long-running application ins
 - **Forward Secrecy**: Ephemeral keys ensure past sessions remain secure even if current keys compromised.
 - **Docker Image Verification**: Contract ensures only approved backup service code executes.
 
-#### Node Operator
+### Node Operator
 
 Node operators are responsible for:
 1. **Registering Backup Service**: Call `register_backup_service()` to store the backup service's public key in the contract
@@ -420,39 +418,8 @@ Node operators are responsible for:
 > **Hard Launch**: In hard launch, the backup service runs autonomously in a TEE and requires no manual intervention from operators beyond initial registration.
 
 
-#### Cryptography
 
-**Key Establishment:**
-
-The key establishment scheme requires that the node as well as the backup service have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically, for each backup generation or recovery, the node and the backup service generate ephemeral keys on the `Curve25519` and publish them on the MPC smart contract. The node and the backup service can then each run a key generation protocol using their private key and the public key of the other party. 
-
-_Note: The curious reader might ask why this protocol does not simply use the NEAR public/private key pairs associated to the MPC node and the backup service. The reason for this is is twofold:_
-- _those keys are meant for signature generation._
-- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
-
-The migration service uses a defense-in-depth encryption approach with two layers:
-
-**Transport Layer (TLS 1.3):**
-
-- **Authentication**: Mutual TLS (mTLS) authenticates both parties using Ed25519 P2P keys registered in the contract
-- **Key Exchange**: TLS 1.3 handshake performs Elliptic Curve Diffie-Hellman Ephemeral (ECDHE) key exchange to derive ephemeral session keys
-- **Session Encryption**: Negotiated cipher suite
-- **Forward Secrecy**: Past sessions remain secure even if long-term Ed25519 keys are compromised (ephemeral keys discarded after session)
-- Implemented using `rustls` with TLS 1.3 only ([enforced](https://github.com/near/mpc/blob/9c34614e87280932da9d6cdc3cee8537b6443b7a/crates/tls/src/constants.rs#L11) via `&rustls::version::TLS13`)
-
-**Application Layer:**
-- **Encryption**: AES-256-GCM authenticated encryption ([implemented](https://github.com/near/mpc/blob/9c34614e87280932da9d6cdc3cee8537b6443b7a/crates/node/src/migration_service/web/encryption.rs#L10-L34) using `aes_gcm` crate)
-- **Key**: Static pre-shared symmetric key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable, 256-bit hex-encoded)
-- **Key Reuse**: Same key used for both backup and recovery operations (no key rotation)
-- **Purpose**: Defense-in-depth protection if either party has an incorrect blockchain view (prevents plaintext exposure to wrong peer)
-
-**Why Two Layers?**
-
-The additional application-layer encryption protects against a specific attack scenario: if either the MPC node or backup service has an incorrect/compromised view of the blockchain state, a malicious actor could potentially cause them to connect to a fake peer (by manipulating the contract state they see). With application-layer encryption, even in this scenario, the attacker would only obtain encrypted keyshares rather than plaintext secrets.
-
-This dual-encryption approach provides security even if the TLS layer is correctly established with the wrong peer due to blockchain state manipulation.
-
-#### Todo
+### Todo
 See [(#949)](https://github.com/near/mpc/issues/949)
 - It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
 
