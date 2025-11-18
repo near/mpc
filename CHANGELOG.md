@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.0.4] - 2025-11-18
+
+### 🚀 Features
+
+- [#1428](https://github.com/near/mpc/pull/1428)(@barakeinav1): *(verification)* Allow RTMR2 to match production or dev measurements (#1428)
+
+- [#1438](https://github.com/near/mpc/pull/1438)(@gilcu3): Add support for abi snapshots (#1438)
+
+- [#1459](https://github.com/near/mpc/pull/1459)(@gilcu3): Add pytest with CKD private verification (#1459)
+
+- [#1468](https://github.com/near/mpc/pull/1468)(@gilcu3): Group compatible pytests to use shared cluster (#1468)
+
+
+### 🐛 Bug Fixes
+
+- [#1448](https://github.com/near/mpc/pull/1448)(@barakeinav1): *(localnet)* Ensure MPC node can sync after delay by updating neard retention policy (#1448)
+
+- [#1446](https://github.com/near/mpc/pull/1446)(@gilcu3): Align waiting time with number of added domains (#1446)
+
+- [#1463](https://github.com/near/mpc/pull/1463)(@gilcu3): Update snapshot after recent contract ABI changes (#1463)
+
+- [#1469](https://github.com/near/mpc/pull/1469)(@netrome): Separate build workflows for launcher and node (#1469)
+
+- [#1471](https://github.com/near/mpc/pull/1471)(@gilcu3): Make sure cargo-near is installed from binary release (#1471)
+
+- [#1480](https://github.com/near/mpc/pull/1480)(@gilcu3): Fetch mpc secret store key and add gcp image (#1480)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1451](https://github.com/near/mpc/pull/1451)(@gilcu3): Update testnet contract (#1451)
+
+- [#1454](https://github.com/near/mpc/pull/1454)(@gilcu3): Update contract readme wrt CKD (#1454)
+
+- [#1460](https://github.com/near/mpc/pull/1460)(@netrome): Improved docker workflows for node and launcher image (#1460)
+
+- [#1464](https://github.com/near/mpc/pull/1464)(@gilcu3): Extend localnet guide to include eddsa and ckd examples as well (#1464)
+
+
 ## [3.0.3] - 2025-11-12
 
 ### 🐛 Bug Fixes
@@ -17,6 +56,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1434](https://github.com/near/mpc/pull/1434)(@barakeinav1): Fix key names in localnet guide (#1434)
 
 - [#1444](https://github.com/near/mpc/pull/1444)(@netrome): Bump nearcore to include 2.9.1 (#1444)
+
+- [#1445](https://github.com/near/mpc/pull/1445)(@netrome): Bump crate versions to 3.0.3 and update changelog (#1445)
 
 
 ## [3.0.2] - 2025-11-11
