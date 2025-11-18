@@ -26,72 +26,54 @@ Near-One will roll-out its TEE implementation in two phases:
     - The MPC contract kicks out any nodes that are not running inside a TEE.
     - The migration service is used to move nodes between different TEEs (if required).
 
+## Migration Service Design
 
-## Soft Launch vs Hard Launch Comparison
+### System Components
 
-The migration service design supports both deployment phases with different security properties:
+The Migration Service enables secure backup and recovery of MPC node key shares. It involves four main components:
+- **MPC Node**
+  Runs the Multi-Party Computation protocol and holds the node’s secret key shares.  
+- **Node Operator** 
+  A person or entity responsible for an MPC node.
+- **Backup Service**
+  A separate process, running on a different machine than the MPC node. The backup service stores the encrypted key shares from the MPC node.
+  During the *soft launch*, this service is implemented as a simple CLI and manually triggered by the node operator.
+  For the *hard launch*, it will be a long-running program inside its own TEE, maintain an up-to-date view of the on-chain MPC contract and handle back-up and recovery processes in an automated manner. Each node operator must run their own back-up service.
+- **MPC Smart Contract**
+  Serves as the source of truth for protocol state and node information.  
+  It stores metadata about registered backup services and information about node migrations.
 
-**Soft Launch** is the initial deployment phase where the backup service runs as the [`backup-cli`][backup-cli] binary outside the TEE, relying on the node operator's operational security. This allows for easier debugging and operational flexibility during the early stages.
+Communication between the backup service and the MPC node takes place over **mutual TLS**. The MPC smart-contract, (i.e. the NEAR blockchain) is used as a public key infrastructure, that is, the MPC node and the backup service fetch the expected public key from the smart contract and authenticate their peer against the expected value.
+To protect against spoofing attacks, sensitive data is additonally encrypted via AES 256.
 
-**Hard Launch** is the future production deployment phase where the backup service runs as a long-running process inside its own TEE. The backup service must prove its correct execution through attestations verified by the smart contract, eliminating the need to trust the node operator's security practices.
+### Workflows
 
-| Aspect | Soft Launch (Current) | Hard Launch (Planned) |
-|--------|-------------|-------------|
-| **Backup Service** | Manual scripts ([`backup-cli`][backup-cli]) | Long-running TEE process |
-| **Backup Storage** | Encrypted keyshares saved to disk | Encrypted keyshares kept in enclave's RAM only |
-| **Trust Model** | Node operator trusted | Attestation-verified TEE |
-| **Transport Encryption** | Mutual TLS (ephemeral keys via ECDHE) | Mutual TLS (ephemeral keys via ECDHE) |
-| **Application Encryption** | AES-256-GCM with static pre-shared key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` env var) | AES-256-GCM with static pre-shared key (`MPC_BACKUP_ENCRYPTION_KEY_HEX` env var) |
-| **Attestation** | Not required | Required and verified by contract |
-| **Docker Image Verification** | No | Yes (via contract) |
-| **Automation** | Manual intervention required | Fully automated monitoring |
-| **Service Deployment** | Scripts run by operator | Dedicated automated TEE instance |
-| **Security Guarantees** | Operational security | Cryptographic and TEE guarantees |
-
-[backup-cli]: https://github.com/near/mpc/tree/main/crates/backup-cli
-
-## Migration of an MPC Node
-Migrating a node requires a procedure that allows an MPC node to:
+On a high-level, the migration service allows two workflows:
 - _Back-up_: securely back-up and store their secret shares in an external environment;
-- _Recover_: securely request the backup from the external environment and join the MPC network.
+- _Recovery/Migration_: securely request the backed-up secret shares from the external environment and import them into a new node.
 
-To allow migration, a node operator will need to run a **backup service**. This service is separate from the MPC node and should run on a different machine. Its responsibilities are:
-- to request an encrypted copy of the secret keys from the MPC node belonging to this node operator via an mTLS channel;
-- to securely store the secret keys: on disk outside of the TEE for soft launch, and in a TEE's memory for hard launch;
-- to provide the secret keys to a newly set up node via an encrypted mTLS channel.
+Note that the migration service does not enable a _"Recovery"_ of the _entire_
+node, but only of the secret shares. The MPC node generates a few secrets that would still be unrecoverable, since no back-up exists (such as TLS keys or access keys for NEAR accounts). As such, _Recovery_ is just a special case of _Migration_, where the target host machine stays the same. TLS Key and access key of the node are still expected to change.
 
-For the soft launch, the node operator (assisted by a [`backup-cli`][backup-cli] script) can act as the backup service. For the hard launch, the backup service must run in its own TEE environment and must have a current view of the MPC smart contract on the NEAR blockchain.
 
-For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
+#### Backup 
 
-Note that starting a migration does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
-If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
+##### Soft Launch
 
-### Backup Flow
-
-#### Soft Launch
-
-The MPC node provides an HTTP `GET /get_keyshares` endpoint for retrieving encrypted keyshares.
-
-When the node operator needs to back up keyshares:
-1. The node operator calls `register_backup_service()` to register the backup service's public key in the smart contract
-2. The node operator manually runs `backup-cli get-keyshares` with the MPC node's URL and public key
-3. The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys (the TLS handshake derives ephemeral symmetric keys for transport encryption)
-4. The MPC node verifies the backup service's public key is registered in the contract
-5. The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
-6. The MPC node returns the keyshares, which are encrypted at the application layer using a pre-shared static symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX`
-7. The `backup-cli` saves the encrypted keyshares to local storage
+1. The node operator calls `register_backup_service()` to register the backup service's public key in the smart contract. The node, running a NEAR client, has access to this ifnormation and uses it for the authentication in the following step.
+2. The node operator manually runs `backup-cli get-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggres the following:
+    - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
+    - The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
+    - The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
+    - The `backup-cli` saves the encrypted keyshares to local storage
 
 > **Note**: For soft launch, the operator must manually trigger the backup using the `backup-cli` tool. There is no automatic periodic backup.
-
-**Defense in Depth**: The additional application-layer encryption provides protection in case either the MPC node or backup service has an incorrect view of the blockchain state. Since both components fetch their communication partner's information from the smart contract, a compromised or out-of-sync nearcore node could potentially cause the MPC node to connect to a malicious backup service (or vice versa). With application-layer encryption, an attacker would only obtain encrypted keyshares rather than plaintext secrets, providing an extra layer of security beyond the TLS transport encryption _(implemented in [#1376](https://github.com/near/mpc/pull/1376), addressing [#1368](https://github.com/near/mpc/issues/1368))_.
 
 ```mermaid
 ---
 title: Backup Flow (Soft Launch)
 ---
 flowchart TD
-
     SC("
       **Smart Contract**
       _Source of truth for
@@ -116,42 +98,44 @@ flowchart TD
       **Node Operator**
       _Owner of the MPC node and Backup Service._
     ");
-
-    NO -->|"1. register backup service in smart contract"| SC;
-    BS -->|"2. read MPC node Public Key and address"| SC;
-    BS --> |"3. request encrypted keyshares (mTLS)"| MPC;
-    MPC -->|"4. read backup service Public Key"| SC;
-    MPC -->|"5. send encrypted key shares"| BS;
-
+    
+    NO -->|Provides symmetric encryption key| BS;
+    NO -->|Provides symmetric encryption key| MPC;
+    NO -->|1\. register backup service in smart contract| SC;
+    BS -->|2\. read MPC node Public Key and address| SC;
+    BS --> |3\. request encrypted key shares (mTLS + AES 256)| MPC;
+    MPC -->|4\. read backup service Public Key | SC;
+    MPC -->|5\. send encrypted key shares | BS;
     NO@{ shape: manual-input}
     SC@{ shape: db}
     BS@{ shape: proc}
     MPC@{ shape: proc}
 ```
 
-#### Hard Launch
 
-For hard launch, the backup flow is the same as soft launch but with additional TEE attestation verification steps. The backup service must prove it's running approved code in a TEE, and the MPC node verifies this attestation before sharing keyshares:
+##### Hard Launch
+For the hard-launch, above steps will not be run manually, but automatically:
+- the backup service runs a NEAR node and monitors the MPC smart contract;
+- the backup service compares the keyshares it has possession of with the key shares it is supposed to have possession of;
+- in case the backup service is missing key shares, it goes through steps 2a-2d above.
+Additionally, the MPC node will have to verify the attestation submitted by the backup-service.
 
 ```mermaid
 ---
 title: Backup Flow (Hard Launch with TEE Attestation)
 ---
 flowchart TD
-
     SC("
       **Smart Contract**
       _Source of truth for
       protocol state and
       node information._
     ");
-
     MPC("
       **MPC Node (TEE)**
       _Currently participating in the MPC network.
       Holds sensitive key shares_.
     ");
-
     BS("
       **Backup Service (TEE)**
       _Stores encrypted backups
@@ -171,19 +155,17 @@ flowchart TD
     BS@{shape: proc}
 ```
 
-### Recovery Flow
 
-#### Soft Launch
+#### Recovery/Migration
 
-The MPC node provides an HTTP `PUT /set_keyshares` endpoint to receive encrypted keyshares.
+##### Soft Launch
 
-When the node operator needs to recover a node:
 1. The node operator calls `start_node_migration()` with the new node's `ParticipantInfo` in the smart contract
-2. The node operator manually runs `backup-cli put-keyshares` with the new node's URL and public key
-3. The `backup-cli` establishes a mutually authenticated TLS connection with the new node using their P2P keys (the TLS handshake derives ephemeral symmetric keys for transport encryption)
-4. The `backup-cli` sends the keyshares over the TLS connection. The keyshares are encrypted at the application layer with the static pre-shared key `MPC_BACKUP_ENCRYPTION_KEY_HEX`
-5. The new node receives the doubly-encrypted keyshares (TLS + application layer), decrypts them, and imports them into local storage
-6. The new node calls `conclude_node_migration()` to finalize the migration
+2. The node operator manually runs `backup-cli put-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggres the following:
+    - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
+    - The `backup-cli` submits the AES-256 encrypted keyshares over the TLS connection to the nodes `PUT /set_keyshares` endpiont.
+    - The node encrypts the received keyshares with PUT `MPC_BACKUP_ENCRYPTION_KEY_HEX`
+    - The new node calls `conclude_node_migration()` to finalize the migration
 
 > **Note**: For soft launch, the operator must manually trigger the keyshare transfer using the `backup-cli` tool. There is no automatic contract monitoring.
 
@@ -201,16 +183,17 @@ flowchart TD
       node information._"]
 
     BS@{ label: "**Backup Service**
-        _Stores encrypted backups of key shares.
+        _Stores encrypted backups of key shares. 
         Uniquely identified by a public key._" }
-
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
-
-    NO -- "1. start onboarding for new node in smart contract" --> SC
-    BS -- "2. read MPC node Public Key and address" --> SC
-    BS -- "3. send encrypted key shares" --> MPC
-    MPC -- "4. resolve recovery and participate in the network" --> SC
+    
+    NO -->|Provides symmetric encryption key| BS;
+    NO -->|Provides symmetric encryption key| MPC;
+    NO -- "1\. start onboarding for new node in smart contract" --> SC
+    BS -- "2\. read MPC node Public Key and address" --> SC
+    BS -- "3\. send encrypted key shares" --> MPC
+    MPC -- "4\. resolve recovery and participate in the network" --> SC
 
     NO@{ shape: manual-input}
     SC@{ shape: db}
@@ -218,7 +201,7 @@ flowchart TD
     MPC@{ shape: proc}
 ```
 
-#### Hard Launch
+##### Hard Launch
 
 For the hard launch, the recovery flow is the same as in the soft launch, but more automated: the backup service monitors the contract state and initiates migrations automatically (e.g., by calling `conclude_node_migration`). The operator only needs to initiate the process by calling `start_node_migration`.
 
@@ -259,6 +242,14 @@ flowchart TD
     BS@{ shape: proc}
     MPC@{ shape: proc}
 ```
+
+### Operational Details and Constraints
+
+For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
+
+Note that starting a migration workflow does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
+If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
+
 
 ### Implementation Details
 
