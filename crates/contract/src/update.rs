@@ -149,6 +149,7 @@ impl ProposedUpdates {
         Some(&update_entry.votes)
     }
 
+    // todo [#1486](https://github.com/near/mpc/issues/1486): below function should have a unit test, as we rely on its cleanup mechanism during migration
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
@@ -217,10 +218,15 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 #[cfg(test)]
 mod tests {
     use crate::{
+<<<<<<< HEAD
         config::Config,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
         UPDATE_CONFIG_GAS,
+=======
+        primitives::test_utils::gen_account_id,
+        update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+>>>>>>> 01546526 (fix(contract):  fix ProposeUpdate vote method and add unit test (#1488))
     };
     use near_sdk::AccountId;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -235,7 +241,11 @@ mod tests {
         entries: BTreeMap<u64, UpdateEntry>,
     }
 
+<<<<<<< HEAD
     /// Ensure that the default [`ProposedUpdates`] struct is empty.
+=======
+    /// Ensure that the default struct is empty
+>>>>>>> 01546526 (fix(contract):  fix ProposeUpdate vote method and add unit test (#1488))
     #[test]
     fn test_proposed_updates_starts_empty() {
         let proposed_updates = ProposedUpdates::default();
@@ -275,7 +285,11 @@ mod tests {
         assert_eq!(found, expected);
     }
 
+<<<<<<< HEAD
     /// Asserts that voting for a non-existing [`UpdateId`] does not record a vote.
+=======
+    /// asserts that voting for a non-existing update id does not record a vote
+>>>>>>> 01546526 (fix(contract):  fix ProposeUpdate vote method and add unit test (#1488))
     #[test]
     fn test_proposed_updates_vote_update_empty() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -292,7 +306,11 @@ mod tests {
         assert_eq!(found, expected);
     }
 
+<<<<<<< HEAD
     /// Asserts that voting for a valid [`UpdateId`] is recorded.
+=======
+    /// asserts that voting for a valid update id is recorded
+>>>>>>> 01546526 (fix(contract):  fix ProposeUpdate vote method and add unit test (#1488))
     #[test]
     fn test_proposed_updates_vote_update_simple() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -338,7 +356,11 @@ mod tests {
         assert_eq!(found, expected);
     }
 
+<<<<<<< HEAD
     /// Asserts that [`ProposedUpdates::remove_vote`] removes the vote associated with the given [`AccountId`].
+=======
+    /// asserts that `remove_vote(account_id)` removes the vote associated to [`AccountId`]
+>>>>>>> 01546526 (fix(contract):  fix ProposeUpdate vote method and add unit test (#1488))
     #[test]
     fn test_proposed_updates_remove_vote() {
         let mut proposed_updates = ProposedUpdates::default();
