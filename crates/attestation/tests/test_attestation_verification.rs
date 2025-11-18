@@ -1,5 +1,3 @@
-use std::string;
-
 use attestation::{
     attestation::{Attestation, MockAttestation, VerificationError},
     report_data::{ReportData, ReportDataV1},
@@ -34,26 +32,16 @@ fn test_mock_attestation_verify(
 }
 
 #[test]
-#[ignore] // TODO(#1269): update quote from node
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
 
-    dbg!(&tls_key);
-    dbg!(&account_key);
-
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    dbg!(&report_data);
-
     let timestamp_s = 1755186041_u64;
-    dbg!(timestamp_s);
-    
+
     let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();
     let allowed_launcher_compose_digest: LauncherDockerComposeHash = launcher_compose_digest();
-
-    dbg!(&allowed_mpc_image_digest);
-    dbg!(&allowed_launcher_compose_digest);
 
     let verification_result = attestation.verify(
         report_data,
@@ -66,4 +54,3 @@ fn test_verify_method_signature() {
 
     assert!(verification_result.is_ok());
 }
-
