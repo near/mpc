@@ -8,7 +8,7 @@ services:
 
     environment:
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:a348eed6ec52f59a7e5f0f84406a3e3bea9d6d909eab6eaf692d4a8f4158a1a6
+      - DEFAULT_IMAGE_DIGEST=sha256:32a45e6abea84f85e0bfe151fe2b46b425c4f3ab3ecbfae90a5cca20a6202b7e
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
