@@ -183,7 +183,7 @@ flowchart TD
       node information._"]
 
     BS@{ label: "**Backup Service**
-        _Stores encrypted backups of key shares. 
+        _Stores encrypted backups of key shares.
         Uniquely identified by a public key._" }
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
