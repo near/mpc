@@ -1899,27 +1899,6 @@ dependencies = [
 
 [[package]]
 name = "cargo-near-build"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeeabf8f3443202828089b8b8e1561e54ad294978afcbc8a5e3095082903947a"
-dependencies = [
- "bon",
- "bs58 0.5.1",
- "camino",
- "cargo_metadata",
- "colored",
- "dunce",
- "eyre",
- "hex",
- "indenter",
- "pathdiff",
- "rustc_version 0.4.1",
- "sha2",
- "tracing",
-]
-
-[[package]]
-name = "cargo-near-build"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f5367d5aebc4391f4ce58d0eaa76e19a33ce9f676f28d9e828cc381f0c0b141"
@@ -5023,7 +5002,7 @@ dependencies = [
  "assert_matches",
  "attestation",
  "borsh",
- "cargo-near-build 0.9.0",
+ "cargo-near-build",
  "contract-interface",
  "contract_history",
  "curve25519-dalek",
@@ -6744,7 +6723,6 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bs58 0.5.1",
- "cargo-near-build 0.7.2",
  "chrono",
  "fs2",
  "json-patch",
