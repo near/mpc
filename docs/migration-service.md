@@ -366,7 +366,7 @@ The contract provides the following methods:
     - Can be called in any protocol state (`Running`, `Initializing`, or `Resharing`)
     - Returns an error if caller is not a current participant
 
-> **Hard Launch Extension (Planned):** For hard launch, `register_backup_service()` will require an `attestation` parameter and perform TEE verification similar to MPC nodes. The contract will verify the attestation validity, Docker image hash, and store the attestation before allowing backup operations. Backup services will need to refresh attestations before expiration.
+> **Hard Launch Extension (Planned):** For hard launch, `register_backup_service()` will require an `attestation` and `operator_account_pk` parameter. The contract will verify the attestation validity, Docker image hash, and that the `ReportData` includes both the TLS public key and operator's account public key (`SHA3-384(tls_public_key || operator_account_pk)`). This cryptographically binds the backup service TEE to the specific operator, preventing a malicious backup service from registering under a different operator's account. Backup services will need to refresh attestations before expiration.
 
 #### Migration Related Behavior
 
