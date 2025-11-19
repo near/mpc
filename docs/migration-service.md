@@ -17,7 +17,7 @@ This document outlines the design and implementation of a **Migration Service**,
 Near-One will roll-out its TEE implementation in two phases:
 - **Soft Launch:**
     - Some MPC nodes are running within TEEs.
-    - Their key shares are backed-up outside of the TEE through the Migration Service.
+    - Their key shares are backed-up outside of the TEE through the migration service.
     - The MPC contract does not formally enforce nodes to run inside a TEE.
     - The migration service is used to move nodes into TEEs.
 - **Hard Launch:** 
