@@ -405,7 +405,7 @@ For hard launch, the backup service is a standalone long-running application ins
 - **Attestation Proof**: Contract cryptographically verifies correct execution.
 - **No Operator Access**: Node operator cannot access decrypted keyshares.
 - **Forward Secrecy**: Ephemeral keys ensure past sessions remain secure even if current keys compromised.
-- **Docker Image Verification**: Contract ensures only approved backup service code executes.
+- **Docker Image Verification**: Contract maintains an allowlist of approved backup service Docker image hashes, enabling support for multiple versions during upgrades.
 
 ### Node Operator
 
