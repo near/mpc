@@ -2,7 +2,7 @@
 
 ## Overview
 
-Near One is currently in the process of migrating the MPC nodes into a **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](docs/securing_mpc_with_tee_design_doc.md) for an introduction to TEEs and their benefits).
+Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](./docs/securing_mpc_with_tee_design_doc.md) for an introduction to TEEs and their benefits).
 
 Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
