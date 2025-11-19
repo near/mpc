@@ -149,7 +149,6 @@ impl ProposedUpdates {
         Some(&update_entry.votes)
     }
 
-    // todo [#1486](https://github.com/near/mpc/issues/1486): below function should have a unit test, as we rely on its cleanup mechanism during migration
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
