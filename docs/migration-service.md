@@ -7,7 +7,7 @@ Near One is currently in the process of migrating the MPC nodes into **Trusted E
 Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
 - **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.  
-- **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneusly, the network risks losing its signing quorum, which could halt protocol operations.
+- **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneously, the network risks losing its signing quorum, which could halt protocol operations.
 
 This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving above problems:
 
