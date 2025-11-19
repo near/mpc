@@ -46,6 +46,10 @@ The contract tracks the following information:
 - Metadata related to trusted execution environments.
 - Current protocol state of the MPC network (see [Protocol State and Lifecycle](#protocol-state)).
 
+## Contract Updates
+
+Participants can propose and vote on contract updates (code or configuration changes). When an update receives sufficient votes and is executed (via the `vote_update` endpoint which calls `do_update` internally), all pending update proposals and votes are cleared as they are no longer be valid after the contract migration. The update ID counter is preserved across migrations as part of the contract state to avoid race conditions where multiple participants might propose updates with colliding IDs immediately after an upgrade.
+
 ## Usage
 
 ### Submitting a signature Request

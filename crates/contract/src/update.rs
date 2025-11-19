@@ -149,7 +149,6 @@ impl ProposedUpdates {
         Some(&update_entry.votes)
     }
 
-    // todo [#1486](https://github.com/near/mpc/issues/1486): below function should have a unit test, as we rely on its cleanup mechanism during migration
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
         let entry = self.entries.remove(id)?;
 
@@ -218,8 +217,10 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 #[cfg(test)]
 mod tests {
     use crate::{
+        config::Config,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+        UPDATE_CONFIG_GAS,
     };
     use near_sdk::AccountId;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -234,7 +235,7 @@ mod tests {
         entries: BTreeMap<u64, UpdateEntry>,
     }
 
-    /// Ensure that the default struct is empty
+    /// Ensure that the default [`ProposedUpdates`] struct is empty.
     #[test]
     fn test_proposed_updates_starts_empty() {
         let proposed_updates = ProposedUpdates::default();
@@ -274,7 +275,7 @@ mod tests {
         assert_eq!(found, expected);
     }
 
-    /// asserts that voting for a non-existing update id does not record a vote
+    /// Asserts that voting for a non-existing [`UpdateId`] does not record a vote.
     #[test]
     fn test_proposed_updates_vote_update_empty() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -291,7 +292,7 @@ mod tests {
         assert_eq!(found, expected);
     }
 
-    /// asserts that voting for a valid update id is recorded
+    /// Asserts that voting for a valid [`UpdateId`] is recorded.
     #[test]
     fn test_proposed_updates_vote_update_simple() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -337,7 +338,7 @@ mod tests {
         assert_eq!(found, expected);
     }
 
-    /// asserts that `remove_vote(account_id)` removes the vote associated to [`AccountId`]
+    /// Asserts that [`ProposedUpdates::remove_vote`] removes the vote associated with the given [`AccountId`].
     #[test]
     fn test_proposed_updates_remove_vote() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -459,6 +460,73 @@ mod tests {
 
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(found, expected);
+    }
+
+    /// Asserts that [`ProposedUpdates::do_update`] clears all entries and votes.
+    #[test]
+    fn test_proposed_updates_do_update_clears_all_state() {
+        // Given: multiple update proposals with votes from different accounts
+        let mut proposed_updates = ProposedUpdates::default();
+
+        let update_0 = Update::Contract([0; 1000].into());
+        let update_id_0 = proposed_updates.propose(update_0.clone());
+
+        let update_1 = Update::Contract([1; 1000].into());
+        let update_id_1 = proposed_updates.propose(update_1.clone());
+
+        let update_2 = Update::Config(Config::default());
+        let update_id_2 = proposed_updates.propose(update_2.clone());
+
+        let account_0 = gen_account_id();
+        let account_1 = gen_account_id();
+        let account_2 = gen_account_id();
+
+        proposed_updates.vote(&update_id_0, account_0.clone());
+        proposed_updates.vote(&update_id_1, account_1.clone());
+        proposed_updates.vote(&update_id_2, account_2.clone());
+
+        let before: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        let expected_before = TestUpdateVotes {
+            id: 3,
+            entries: BTreeMap::from([
+                (
+                    0,
+                    UpdateEntry {
+                        update: update_0.clone(),
+                        votes: HashSet::from([account_0.clone()]),
+                        bytes_used: bytes_used(&update_0),
+                    },
+                ),
+                (
+                    1,
+                    UpdateEntry {
+                        update: update_1.clone(),
+                        votes: HashSet::from([account_1.clone()]),
+                        bytes_used: bytes_used(&update_1),
+                    },
+                ),
+                (
+                    2,
+                    UpdateEntry {
+                        update: update_2.clone(),
+                        votes: HashSet::from([account_2.clone()]),
+                        bytes_used: bytes_used(&update_2),
+                    },
+                ),
+            ]),
+        };
+        assert_eq!(before, expected_before);
+
+        // When: executing an update
+        proposed_updates.do_update(&update_id_1, UPDATE_CONFIG_GAS);
+
+        // Then: all state is cleared (entries and votes)
+        let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        let expected_after = TestUpdateVotes {
+            id: 3,
+            entries: BTreeMap::new(),
+        };
+        assert_eq!(after, expected_after);
     }
 
     /// Helper function

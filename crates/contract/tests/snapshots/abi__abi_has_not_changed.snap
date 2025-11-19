@@ -1,6 +1,5 @@
 ---
 source: crates/contract/tests/abi.rs
-assertion_line: 48
 expression: abi
 ---
 {
@@ -10,7 +9,7 @@ expression: abi
     "version": "3.0.4",
     "build": {
       "compiler": "rustc 1.86.0",
-      "builder": "cargo-near cargo-near-build 0.9.0"
+      "builder": "[CARGO_NEAR_BUILD_VERSION]"
     },
     "wasm_hash": "[WASM_HASH]"
   },
@@ -1161,7 +1160,7 @@ expression: abi
       },
       {
         "name": "vote_update",
-        "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns Ok(true) if the amount of voters surpassed the threshold and the update was\n executed. Returns Ok(false) if the amount of voters did not surpass the threshold.\n Returns Err if the update was not found or if the voter is not a participant in the\n protocol.",
+        "doc": " Vote for a proposed update given the [`UpdateId`] of the update.\n\n Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was\n executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.\n Returns [`Error`] if the update was not found or if the voter is not a participant\n in the protocol.",
         "kind": "call",
         "params": {
           "serialization_type": "json",

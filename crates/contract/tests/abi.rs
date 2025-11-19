@@ -47,6 +47,7 @@ fn test_abi_has_not_changed() {
     let (_wasm, abi) = compile_project();
     insta::assert_json_snapshot!(abi,
         {
-        ".metadata.wasm_hash" => "[WASM_HASH]"
+        ".metadata.wasm_hash" => "[WASM_HASH]",
+        ".metadata.build.builder" => "[CARGO_NEAR_BUILD_VERSION]"
     });
 }
