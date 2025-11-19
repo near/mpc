@@ -38,8 +38,11 @@ Create two accounts for the MPC nodes (we’ll call them **Frodo** and **Sam**):
 
 ```bash
 near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+```
+
 ```bash
 near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+```
 
 ### Configuration Parameters
 
@@ -155,8 +158,7 @@ cd tee_launcher
 ```bash
 chmod +x deploy-launcher.sh
 ```
-
-#### 3. Start the Frodo MPC Node
+#### 3. Set your `BASE_PATH`
 
 Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
 
@@ -164,8 +166,11 @@ Example:
 `$BASE_PATH/vmm/src/vmm-cli.py` should exist.
 
 ```bash
-export BASE_PATH=/mnt/data/barak/dstack
+export BASE_PATH="dstask base path"
 ```
+
+
+#### 4. Start the Frodo MPC Node
 
 ```bash
 ./deploy-launcher.sh \
@@ -174,17 +179,7 @@ export BASE_PATH=/mnt/data/barak/dstack
   --python-exec python3
 ```
 
-#### 4. Start the Sam MPC Node
-
-```bash
-./deploy-launcher.sh \
-  --env-file ../deployment/localnet/tee/sam.env \
-  --base-path $BASE_PATH \
-  --python-exec python3
-```
-
-
-#### 4. Start the Sam MPC Node
+#### 5. Start the Sam MPC Node
 
 ```bash
 ./deploy-launcher.sh \
