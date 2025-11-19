@@ -9,7 +9,7 @@ expression: abi
     "version": "3.0.4",
     "build": {
       "compiler": "rustc 1.86.0",
-      "builder": "cargo-near cargo-near-build 0.7.2"
+      "builder": "[CARGO_NEAR_BUILD_VERSION]"
     },
     "wasm_hash": "[WASM_HASH]"
   },
