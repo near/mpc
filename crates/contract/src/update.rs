@@ -220,8 +220,9 @@ mod tests {
         config::Config,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+        UPDATE_CONFIG_GAS,
     };
-    use near_sdk::{AccountId, Gas};
+    use near_sdk::AccountId;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no
@@ -488,7 +489,7 @@ mod tests {
         assert_eq!(proposed_updates.vote_by_participant.len(), 3);
 
         // When: executing an update
-        proposed_updates.do_update(&update_id_1, Gas::from_tgas(200));
+        proposed_updates.do_update(&update_id_1, UPDATE_CONFIG_GAS);
 
         // Then: all state is cleared (entries and votes)
         assert_eq!(
