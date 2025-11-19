@@ -12,7 +12,7 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v0_state;
+pub mod v3_0_2_state;
 
 mod dto_mapping;
 
@@ -1212,13 +1212,10 @@ impl MpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
-        if let Some(contract) = env::state_read::<v0_state::VersionedMpcContract>() {
-            return match contract {
-                v0_state::VersionedMpcContract::V1(x) => Ok(x.into()),
-                _ => env::panic_str("expected V1"),
-            };
+        match env::state_read::<v3_0_2_state::MpcContract>() {
+            Some(contract) => Ok(contract.into()),
+            None => Err(InvalidState::ContractStateIsMissing.into()),
         }
-        Err(InvalidState::ContractStateIsMissing.into())
     }
 
     pub fn state(&self) -> &ProtocolContractState {
