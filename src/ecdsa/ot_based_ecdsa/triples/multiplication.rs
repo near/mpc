@@ -1,4 +1,6 @@
 use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
+use crate::ecdsa::ot_based_ecdsa::triples::bits::{BitVector, ChoiceVector, SEC_PARAM_64};
+use crate::ecdsa::ot_based_ecdsa::triples::random_ot_extension::random_ot_extension_sender_helper;
 use crate::{
     crypto::hash::{hash, HashOutput},
     ecdsa::{
@@ -14,31 +16,56 @@ use crate::{
     participants::{Participant, ParticipantList},
     protocol::internal::{Comms, PrivateChannel},
 };
+use futures::Future;
 use rand_core::CryptoRngCore;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use super::{
     batch_random_ot::{batch_random_ot_receiver, batch_random_ot_sender},
     mta::{mta_receiver, mta_sender},
     random_ot_extension::{
-        random_ot_extension_receiver, random_ot_extension_sender, RandomOtExtensionParams,
+        random_ot_extension_receiver, random_ot_extension_receiver_helper,
+        random_ot_extension_sender, RandomOtExtensionParams,
     },
 };
 use std::collections::VecDeque;
 
-pub async fn multiplication_sender(
+#[derive(derive_more::Constructor)]
+struct MultiplicationSenderRandomPackage {
+    delta: BitVector,
+    x: [Scalar; SEC_PARAM_64 * 64],
+    seed: [u8; 32],
+    delta0: Vec<Scalar>,
+    delta1: Vec<Scalar>,
+}
+
+impl MultiplicationSenderRandomPackage {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+        let (delta, x) = batch_random_ot_receiver_random_helper(rng);
+        let seed = random_ot_extension_sender_helper(rng);
+        // this is the `batch_size` from `multiplication_sender`
+        let batch_size = BITS + SECURITY_PARAMETER;
+        let delta0 = mta_sender_random_helper(batch_size, rng);
+        let delta1 = mta_sender_random_helper(batch_size, rng);
+        Self::new(delta, x, seed, delta0, delta1)
+    }
+}
+
+async fn multiplication_sender(
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    mut rng: impl CryptoRngCore + Send + 'static,
+    precomputed_values: MultiplicationSenderRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, x) = batch_random_ot_receiver_random_helper(&mut rng);
+    let (delta, x) = (precomputed_values.delta, precomputed_values.x);
     let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
+    let seed = precomputed_values.seed;
     let mut res0 = random_ot_extension_sender(
         chan.child(1),
         RandomOtExtensionParams {
@@ -47,15 +74,15 @@ pub async fn multiplication_sender(
         },
         delta,
         &k,
-        &mut rng,
+        seed,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let delta0 = mta_sender_random_helper(res0.len(), &mut rng);
+    let delta0 = precomputed_values.delta0;
     let task0 = mta_sender(chan.child(2), res0, *a_i, delta0);
-    let delta1 = mta_sender_random_helper(res1.len(), &mut rng);
+    let delta1 = precomputed_values.delta1;
     let task1 = mta_sender(chan.child(3), res1, *b_i, delta1);
 
     // Step 3
@@ -64,19 +91,40 @@ pub async fn multiplication_sender(
     Ok(gamma0? + gamma1?)
 }
 
-pub async fn multiplication_receiver(
+#[derive(derive_more::Constructor)]
+struct MultiplicationReceiverRandomPackage {
+    y: Scalar,
+    b: ChoiceVector,
+    seed0: [u8; 32],
+    seed1: [u8; 32],
+}
+
+impl MultiplicationReceiverRandomPackage {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+        let y = batch_random_ot_sender_helper(rng);
+        // This value must coincide with params.batch_size in `multiplication_receiver`
+        let batch_size = 2 * (BITS + SECURITY_PARAMETER);
+        let b = random_ot_extension_receiver_helper(batch_size, rng);
+        let seed0 = mta_receiver_random_helper(rng);
+        let seed1 = mta_receiver_random_helper(rng);
+        Self::new(y, b, seed0, seed1)
+    }
+}
+
+async fn multiplication_receiver(
     chan: PrivateChannel,
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    mut rng: impl CryptoRngCore + Send + 'static,
+    precomputed_package: MultiplicationReceiverRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let y = batch_random_ot_sender_helper(&mut rng);
+    let y = precomputed_package.y;
     let (k0, k1) = batch_random_ot_sender(chan.child(0), y).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
+    let b = precomputed_package.b;
     let mut res0 = random_ot_extension_receiver(
         chan.child(1),
         RandomOtExtensionParams {
@@ -85,15 +133,15 @@ pub async fn multiplication_receiver(
         },
         &k0,
         &k1,
-        &mut rng,
+        b,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let seed0 = mta_receiver_random_helper(&mut rng);
+    let seed0 = precomputed_package.seed0;
     let task0 = mta_receiver(chan.child(2), res0, *b_i, seed0);
-    let seed1 = mta_receiver_random_helper(&mut rng);
+    let seed1 = precomputed_package.seed1;
     let task1 = mta_receiver(chan.child(3), res1, *a_i, seed1);
 
     // Step 3
@@ -102,25 +150,46 @@ pub async fn multiplication_receiver(
     Ok(gamma0? + gamma1?)
 }
 
-pub async fn multiplication(
+pub(super) async fn multiplication(
     comms: Comms,
     sid: HashOutput,
     participants: ParticipantList,
     me: Participant,
     a_i: Scalar,
     b_i: Scalar,
-    rng: impl CryptoRngCore + Send + Copy + 'static,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Scalar, ProtocolError> {
     let mut tasks = Vec::with_capacity(participants.len() - 1);
     for p in participants.others(me) {
-        let fut = {
-            let chan = comms.private_channel(me, p);
-            async move {
-                if p < me {
-                    multiplication_sender(chan, sid.as_ref(), &a_i, &b_i, rng).await
-                } else {
-                    multiplication_receiver(chan, sid.as_ref(), &a_i, &b_i, rng).await
-                }
+        let chan = comms.private_channel(me, p);
+        let fut: Pin<Box<dyn Future<Output = _> + Send>> = {
+            if p < me {
+                let precomputed_sender_package =
+                    MultiplicationSenderRandomPackage::generate_random_package(rng);
+                Box::pin(async move {
+                    #[allow(clippy::large_futures)]
+                    multiplication_sender(
+                        chan,
+                        sid.as_ref(),
+                        &a_i,
+                        &b_i,
+                        precomputed_sender_package,
+                    )
+                    .await
+                })
+            } else {
+                let precomputed_receiver_package =
+                    MultiplicationReceiverRandomPackage::generate_random_package(rng);
+                Box::pin(async move {
+                    multiplication_receiver(
+                        chan,
+                        sid.as_ref(),
+                        &a_i,
+                        &b_i,
+                        precomputed_receiver_package,
+                    )
+                    .await
+                })
             }
         };
         tasks.push(fut);
@@ -132,14 +201,14 @@ pub async fn multiplication(
     Ok(out)
 }
 
-pub async fn multiplication_many<const N: usize>(
+pub(super) async fn multiplication_many<const N: usize>(
     comms: Comms,
     sid: Vec<HashOutput>,
     participants: ParticipantList,
     me: Participant,
     av_iv: Vec<Scalar>,
     bv_iv: Vec<Scalar>,
-    rng: impl CryptoRngCore + Send + Copy + 'static,
+    mut rng: impl CryptoRngCore,
 ) -> Result<Vec<Scalar>, ProtocolError> {
     if N == 0 {
         return Err(ProtocolError::AssertionFailed(
@@ -156,34 +225,40 @@ pub async fn multiplication_many<const N: usize>(
             let sid_arc = sid_arc.clone();
             let av_iv_arc = av_iv_arc.clone();
             let bv_iv_arc = bv_iv_arc.clone();
-            let fut = {
-                let chan = comms.private_channel(me, p).child(i as u64);
-                let order_key_other = hash(&(i, p))?;
-
-                async move {
-                    // Use a deterministic but random comparison function to decide who
-                    // is the sender and who is the receiver. This allows the batched
-                    // multiplication operation to put even networking load between the
-                    // participants.
-                    if order_key_other.as_ref() < order_key_me.as_ref() {
+            let chan = comms.private_channel(me, p).child(i as u64);
+            let order_key_other = hash(&(i, p))?;
+            let fut: Pin<Box<dyn Future<Output = _> + Send>> = {
+                // Use a deterministic but random comparison function to decide who
+                // is the sender and who is the receiver. This allows the batched
+                // multiplication operation to put even networking load between the
+                // participants.
+                if order_key_other.as_ref() < order_key_me.as_ref() {
+                    let precomputed_sender_package =
+                        MultiplicationSenderRandomPackage::generate_random_package(&mut rng);
+                    Box::pin(async move {
+                        #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
-                            rng,
+                            precomputed_sender_package,
                         )
                         .await
-                    } else {
+                    })
+                } else {
+                    let precomputed_receiver_package =
+                        MultiplicationReceiverRandomPackage::generate_random_package(&mut rng);
+                    Box::pin(async move {
                         multiplication_receiver(
                             chan,
                             sid_arc[i].as_ref(),
                             &av_iv_arc[i],
                             &bv_iv_arc[i],
-                            rng,
+                            precomputed_receiver_package,
                         )
                         .await
-                    }
+                    })
                 }
             };
             tasks.push(fut);
@@ -220,6 +295,7 @@ pub async fn multiplication_many<const N: usize>(
 #[cfg(test)]
 mod test {
     use k256::Scalar;
+    use rand::RngCore;
     use rand_core::OsRng;
 
     use crate::{
@@ -227,19 +303,20 @@ mod test {
         ecdsa::ot_based_ecdsa::triples::multiplication::{multiplication, multiplication_many},
         participants::ParticipantList,
         protocol::internal::{make_protocol, Comms},
-        test_utils::{generate_participants, run_protocol, GenProtocol},
+        test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
     };
 
     #[test]
     fn test_multiplication() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(3);
 
         let prep: Vec<_> = participants
             .iter()
             .map(|p| {
-                let a_i = Scalar::generate_biased(&mut OsRng);
-                let b_i = Scalar::generate_biased(&mut OsRng);
-                (p, a_i, b_i)
+                let a_i = Scalar::generate_biased(&mut rng);
+                let b_i = Scalar::generate_biased(&mut rng);
+                (*p, a_i, b_i)
             })
             .collect();
         let a = prep.iter().fold(Scalar::ZERO, |acc, (_, a_i, _)| acc + a_i);
@@ -251,19 +328,24 @@ mod test {
 
         for (p, a_i, b_i) in prep {
             let ctx = Comms::new();
-            let prot = make_protocol(
-                ctx.clone(),
-                multiplication(
-                    ctx,
-                    sid,
-                    ParticipantList::new(&participants).unwrap(),
-                    *p,
-                    a_i,
-                    b_i,
-                    OsRng,
-                ),
-            );
-            protocols.push((*p, Box::new(prot)));
+            let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+
+            let prot = make_protocol(ctx.clone(), {
+                let participants_clone = participants.clone();
+                async move {
+                    multiplication(
+                        ctx,
+                        sid,
+                        ParticipantList::new(&participants_clone).unwrap(),
+                        p,
+                        a_i,
+                        b_i,
+                        &mut rng_p,
+                    )
+                    .await
+                }
+            });
+            protocols.push((p, Box::new(prot)));
         }
 
         let result = run_protocol(protocols).unwrap();

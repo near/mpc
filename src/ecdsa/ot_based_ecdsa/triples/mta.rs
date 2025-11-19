@@ -26,7 +26,8 @@ impl MTAScalars {
     }
 }
 
-pub fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore) -> Vec<Scalar> {
+/// Generates the random values needed in `mta_sender`
+pub(super) fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore) -> Vec<Scalar> {
     (0..size)
         .map(|_| <<Secp256 as frost_core::Ciphersuite>::Group as Group>::Field::random(rng))
         .collect()
@@ -74,7 +75,8 @@ pub async fn mta_sender(
     Ok(-alpha)
 }
 
-pub fn mta_receiver_random_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+/// Generates the random values needed in `mta_receiver`
+pub(super) fn mta_receiver_random_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
     let mut seed = [0u8; 32];
     rng.fill_bytes(&mut seed);
     seed

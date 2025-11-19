@@ -83,7 +83,7 @@ async fn do_generation(
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
-    mut rng: impl CryptoRngCore + Send + Copy + 'static,
+    mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutput, ProtocolError> {
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
@@ -146,7 +146,7 @@ async fn do_generation(
             me,
             e0.0,
             f0.0,
-            rng,
+            &mut rng,
         )
     };
 
@@ -504,7 +504,7 @@ async fn do_generation_many<const N: usize>(
     participants: ParticipantList,
     me: Participant,
     threshold: usize,
-    mut rng: impl CryptoRngCore + Send + Copy + 'static,
+    mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
     assert!(N > 0);
 
@@ -611,7 +611,7 @@ async fn do_generation_many<const N: usize>(
             me,
             e0_v,
             f0_v,
-            rng,
+            &mut rng,
         )
     };
 
@@ -1073,7 +1073,7 @@ pub fn generate_triple(
     participants: &[Participant],
     me: Participant,
     threshold: usize,
-    rng: impl CryptoRngCore + Send + Copy + 'static,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -1104,7 +1104,7 @@ pub fn generate_triple_many<const N: usize>(
     participants: &[Participant],
     me: Participant,
     threshold: usize,
-    rng: impl CryptoRngCore + Send + Copy + 'static,
+    rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {

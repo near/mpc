@@ -53,6 +53,7 @@ fn hash(
 
 pub type BatchRandomOTOutputSender = (SquareBitMatrix, SquareBitMatrix);
 
+/// Generates the random values needed in `batch_random_ot_sender`
 pub fn batch_random_ot_sender_helper(rng: &mut impl CryptoRngCore) -> Scalar {
     Secp256K1ScalarField::random(rng)
 }
@@ -202,7 +203,8 @@ pub async fn batch_random_ot_sender_many<const N: usize>(
 
 pub type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
 
-pub fn batch_random_ot_receiver_random_helper(
+/// Generates the random values needed in `batch_random_ot_receiver`
+pub(super) fn batch_random_ot_receiver_random_helper(
     rng: &mut impl CryptoRngCore,
 ) -> (BitVector, [Scalar; SEC_PARAM_64 * 64]) {
     let random_delta = BitVector::random(rng);
@@ -215,7 +217,7 @@ pub fn batch_random_ot_receiver_random_helper(
 
 // Fixing this one breaks a test
 #[allow(clippy::large_types_passed_by_value)]
-pub async fn batch_random_ot_receiver(
+pub(super) async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
     delta: BitVector,
     x: [Scalar; SEC_PARAM_64 * 64],
