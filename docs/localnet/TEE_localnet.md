@@ -28,7 +28,7 @@ Note - You can use the instructions in **MPC Node Setup and Deployment** section
 
 ## Step 2: Spin Up the Localnet
 
-Follow the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/) up until (but not including) the **“Start MPC nodes”** section.
+Follow the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/localnet/localnet.md) up until (but not including) the **“Start MPC nodes”** section.
 
 ---
 
