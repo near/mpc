@@ -5,6 +5,7 @@ use near_sdk::near;
 const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
 /// Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 Days
+const CONTRACT_UPGRADE_TERRA_GAS_DEPOSIT: u64 = 300;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -15,6 +16,8 @@ pub struct Config {
     pub key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: u64,
+    /// Paid gas requirement for contract and config update transactions
+    pub contract_upgrade_terra_gas_deposit: u64,
 }
 
 impl Default for Config {
@@ -22,6 +25,7 @@ impl Default for Config {
         Self {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
             tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
+            contract_upgrade_terra_gas_deposit: CONTRACT_UPGRADE_TERRA_GAS_DEPOSIT,
         }
     }
 }
@@ -32,6 +36,7 @@ impl Default for Config {
 pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
+    pub vote_update_minimum_gas_attached_terra_gas: Option<u64>,
 }
 
 impl From<Option<InitConfig>> for Config {
@@ -48,9 +53,14 @@ impl From<Option<InitConfig>> for Config {
             .tee_upgrade_deadline_duration_seconds
             .unwrap_or(DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS);
 
+        let vote_update_minimum_gas_attached_terra_gas = init_config
+            .vote_update_minimum_gas_attached_terra_gas
+            .unwrap_or(CONTRACT_UPGRADE_TERRA_GAS_DEPOSIT);
+
         Config {
             key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_terra_gas_deposit: vote_update_minimum_gas_attached_terra_gas,
         }
     }
 }
@@ -71,6 +81,7 @@ mod tests {
         let config = Config {
             key_event_timeout_blocks: 2000,
             tee_upgrade_deadline_duration_seconds: 3333,
+            contract_upgrade_terra_gas_deposit: 120,
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: Config = serde_json::from_str(&json).unwrap();
@@ -82,6 +93,7 @@ mod tests {
         let init_config = InitConfig {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
+            vote_update_minimum_gas_attached_terra_gas: None,
         };
         let json = serde_json::to_string(&init_config).unwrap();
         let deserialized: InitConfig = serde_json::from_str(&json).unwrap();
@@ -93,6 +105,7 @@ mod tests {
         let init_config = InitConfig {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
+            vote_update_minimum_gas_attached_terra_gas: None,
         };
         let converted_config: Config = Some(init_config).into();
         let default_config = Config::default();

@@ -764,7 +764,6 @@ pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
-    extra_migrate_step: bool,
 ) {
     let propose_update_execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -797,16 +796,6 @@ pub async fn propose_and_vote_contract_binary(
         .expect("state is deserializable.");
 
     vote_update_till_completion(contract, accounts, &proposal_id).await;
-
-    if extra_migrate_step {
-        contract
-            .call("pub_migrate")
-            .transact()
-            .await
-            .unwrap()
-            .into_result()
-            .unwrap();
-    }
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
