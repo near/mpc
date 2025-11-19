@@ -9,7 +9,7 @@ Running MPC nodes inside TEEs significantly increases the security of the networ
 - **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.  
 - **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneously, the network risks losing its signing quorum, which could halt protocol operations.
 
-This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving above problems:
+This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving the above problems:
 
 1. **Operational resilience** — the migration service enables secure recovery of nodes in the event of hardware or system failure.  
 2. **Node migration** — the migration service allows node operators to move their MPC nodes into or between TEEs without resharing.
