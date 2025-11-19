@@ -115,7 +115,7 @@ flowchart TD
 ##### Hard Launch
 For the hard-launch, above steps will not be run manually, but automatically:
 - The backup service runs a NEAR node and monitors the MPC smart contract;
-- the backup service compares the keyshares it has possession of with the key shares it is supposed to have possession of;
+- The backup service compares the keyshares it has possession of with the key shares it is supposed to have possession of;
 - in case the backup service is missing key shares, it goes through steps 2a-2d above.
 Additionally, the MPC node will have to verify the attestation submitted by the backup-service.
 
