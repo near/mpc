@@ -177,7 +177,6 @@ mod tests {
     use test_utils::attestation::{account_key, p2p_tls_key, quote};
 
     #[test]
-    #[ignore] // TODO(#1269): update quote from node
     fn test_from_str_valid() {
         let valid_quote: Vec<u8> =
             serde_json::from_str(&serde_json::to_string(&quote()).unwrap()).unwrap();
