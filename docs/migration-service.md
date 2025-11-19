@@ -59,7 +59,7 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
 
 ##### Soft Launch
 
-1. The node operator calls `register_backup_service()` to register the backup service's public key in the smart contract. The node, running a NEAR client, has access to this information and uses it for the authentication in the following step.
+1. The node operator calls the contract method `register_backup_service()` to register the backup service's public key in the smart contract. The node, running a NEAR client, has access to this information and uses it for the authentication in the following step.
 2. The node operator manually runs `backup-cli get-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggers the following:
     - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
     - The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
