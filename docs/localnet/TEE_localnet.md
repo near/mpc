@@ -38,9 +38,8 @@ Create two accounts for the MPC nodes (we’ll call them **Frodo** and **Sam**):
 
 ```bash
 near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
-
+```bash
 near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
-```
 
 ### Configuration Parameters
 
