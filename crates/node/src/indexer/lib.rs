@@ -9,7 +9,7 @@ use near_client::Status;
 use near_indexer_primitives::types;
 use near_indexer_primitives::types::AccountId;
 use near_indexer_primitives::views::QueryRequest;
-use near_indexer_primitives::views::QueryResponseKind::{CallResult, ViewAccount};
+use near_indexer_primitives::views::QueryResponseKind::CallResult;
 use near_o11y::WithSpanContextExt;
 use serde::Deserialize;
 use std::time::Duration;
@@ -114,31 +114,4 @@ pub(crate) async fn get_mpc_migration_info(
     client: &actix::Addr<near_client::ViewClientActor>,
 ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
     get_mpc_state(mpc_contract_id, client, MIGRATION_INFO_ENDPOINT).await
-}
-
-pub(crate) async fn get_account_balance(
-    account_id: AccountId,
-    client: &actix::Addr<near_client::ViewClientActor>,
-) -> anyhow::Result<(u64, f64)> {
-    tracing::debug!("fetching account balance for {}", account_id);
-    let request = QueryRequest::ViewAccount { account_id };
-    let query = near_client::Query {
-        block_reference: types::BlockReference::Finality(types::Finality::Final),
-        request,
-    };
-    let response = client.send(query.with_span_context()).await??;
-    match response.kind {
-        ViewAccount(result) => {
-            const YOCTO_PER_NEAR: u128 = 10u128.pow(24);
-            let whole = (result.amount / YOCTO_PER_NEAR) as f64;
-            let fraction = (result.amount % YOCTO_PER_NEAR) as f64 / YOCTO_PER_NEAR as f64;
-            let balance = whole + fraction;
-            Ok((response.block_height, balance))
-        }
-        kind => {
-            let msg = "got unexpected response querying account balance";
-            tracing::warn!(?kind, msg);
-            anyhow::bail!("{}: {:?}", msg, kind)
-        }
-    }
 }

@@ -21,7 +21,7 @@ from common_lib.migration_state import (
     MigrationState,
     parse_migration_state,
 )
-from common_lib.shared.metrics import FloatMetricName, IntMetricName
+from common_lib.shared.metrics import IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
@@ -98,11 +98,6 @@ class MpcCluster:
 
     def mpc_contract_account(self):
         return self.contract_node.account_id()
-
-    def get_float_metric_value(
-        self, metric_name: FloatMetricName
-    ) -> List[Optional[float]]:
-        return [node.get_float_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
         return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
