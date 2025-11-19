@@ -14,7 +14,6 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
-pub mod balances;
 pub mod configs;
 pub mod handler;
 pub mod lib;

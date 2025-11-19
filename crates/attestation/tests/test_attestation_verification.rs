@@ -32,7 +32,7 @@ fn test_mock_attestation_verify(
 }
 
 #[test]
-#[ignore] // TODO(#1269): update quote from node
+#[ignore] // TODO(#1493): update quote from node
 fn test_verify_method_signature() {
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();

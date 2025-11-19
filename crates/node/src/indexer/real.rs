@@ -6,7 +6,6 @@ use super::{IndexerAPI, IndexerState};
 #[cfg(feature = "network-hardship-simulation")]
 use crate::config::load_listening_blocks_file;
 use crate::config::{IndexerConfig, RespondConfig};
-use crate::indexer::balances::monitor_balance;
 use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
@@ -117,13 +116,6 @@ pub fn spawn_real_indexer(
 
             actix::spawn(indexer_logger(
                 Arc::clone(&indexer_state.stats),
-                indexer_state.view_client.clone(),
-            ));
-
-            actix::spawn(monitor_balance(
-                my_near_account_id.clone(),
-                respond_config.account_id.clone(),
-                indexer_state.client.clone(),
                 indexer_state.view_client.clone(),
             ));
 

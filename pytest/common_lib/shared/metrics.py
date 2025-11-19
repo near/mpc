@@ -1,11 +1,6 @@
 from enum import Enum
 
 
-class FloatMetricName(str, Enum):
-    MPC_NEAR_RESPONDER_BALANCE = "mpc_near_responder_balance"
-    MPC_NEAR_SIGNER_BALANCE = "mpc_near_signer_balance"
-
-
 class IntMetricName(str, Enum):
     MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE = "mpc_owned_num_presignatures_available"
     MPC_OWNED_NUM_PRESIGNATURES_ONLINE = "mpc_owned_num_presignatures_online"
