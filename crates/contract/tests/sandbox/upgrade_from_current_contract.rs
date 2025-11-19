@@ -141,7 +141,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -272,7 +272,7 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
 
     for _ in 0..3 {
-        propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -390,5 +390,5 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&accounts, &contract, migration_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }
