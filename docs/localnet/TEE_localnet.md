@@ -158,7 +158,7 @@ cd tee_launcher
 ```bash
 chmod +x deploy-launcher.sh
 ```
-#### 3. Set your `BASE_PATH`
+#### 3. Set your env variables 
 
 Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
 
@@ -169,6 +169,14 @@ Example:
 export BASE_PATH="dstask base path"
 ```
 
+# Replace ${MACHINE_IP} inside the config files
+```bash
+sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/frodo.conf
+```
+
+```bash
+sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
+```
 
 #### 4. Start the Frodo MPC Node
 
