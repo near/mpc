@@ -68,7 +68,7 @@ services:
     container_name: launcher
     environment:
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c
+      - DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/dstack.sock:/var/run/dstack.sock
@@ -84,7 +84,6 @@ volumes:
   shared-volume:
     name: shared-volume
 ```
-
 
 
 #### Environment File (`.env` , `user.conf` )
@@ -110,7 +109,7 @@ RUST_LOG=info
 NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
 
 # Port forwarding
-PORTS=8080:8080,24567:24567,13001:13001
+PORTS=8080:8080,24566:24566,13001:13001
 ```
 
 
@@ -135,53 +134,62 @@ RUST_LOG=info
 NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
 
 # Port forwarding
-PORTS=8080:8080,24567:24567,13002:13002
+PORTS=8080:8080,24566:24566,13002:13002
 ```
-
-**Key Provider ID:**
-
-```
-1b7a49378403249b6986a907844cab0921eca32dd47e657f3c10311ccaeccf8b
-```
-
-> 💡 *Suggestion:* Consider extracting environment-specific variables (like `MPC_ACCOUNT_ID`, `PORTS`, and `MPC_HOME_DIR`) into per-node `.env` files for maintainability.
 
 ---
-
 ### Node Startup
 
-You can start the nodes **manually** as described in the Operator Guide or start them using the script `deploy-launcher.sh` below.
-
+You can start the nodes **manually** as described in the Operator Guide, or you can start them using the `deploy-launcher.sh` script as shown below.
 
 Once all paths and configuration files (`*.env` and `*.conf`) are prepared, you can launch each MPC node (Frodo and Sam) using the `deploy-launcher.sh` helper script.
 
-### 1. Move into the `tee_launcher` Directory
+#### 1. Move into the `tee_launcher` Directory
 
 ```bash
 cd tee_launcher
 ```
 
-### 2. Ensure the Script Is Executable
+#### 2. Ensure the Script Is Executable
 
 ```bash
 chmod +x deploy-launcher.sh
 ```
 
-### 3. Start the Frodo MPC Node
+#### 3. Start the Frodo MPC Node
+
+Set your `BASE_PATH` to the DStack directory that contains the `vmm` folder.
+
+Example:  
+`$BASE_PATH/vmm/src/vmm-cli.py` should exist.
+
+```bash
+export BASE_PATH=/mnt/data/barak/dstack
+```
 
 ```bash
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/frodo.env \
-  --base-path /mnt/data/barak/dstack \
+  --base-path $BASE_PATH \
   --python-exec python3
 ```
 
-### 4. Start the Sam MPC Node
+#### 4. Start the Sam MPC Node
 
 ```bash
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/sam.env \
-  --base-path /mnt/data/barak/dstack \
+  --base-path $BASE_PATH \
+  --python-exec python3
+```
+
+
+#### 4. Start the Sam MPC Node
+
+```bash
+./deploy-launcher.sh \
+  --env-file ../deployment/localnet/tee/sam.env \
+  --base-path $BASE_PATH \
   --python-exec python3
 ```
 
