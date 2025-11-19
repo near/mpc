@@ -1218,9 +1218,8 @@ impl MpcContract {
     pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v0_state::VersionedMpcContract>() {
-            Ok(Some(v0_state::VersionedMpcContract::V1(state))) => return Ok(state.into()),
-            Ok(Some(_)) => env::panic_str("expected V1"),
+        match try_state_read::<v0_state::MpcContractV1>() {
+            Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(_) => (), // Try read as "Self" instead
         };
