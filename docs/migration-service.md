@@ -160,7 +160,7 @@ flowchart TD
 ##### Soft Launch
 
 1. The node operator calls `start_node_migration()` with the new node's `ParticipantInfo` in the smart contract
-2. The node operator manually runs `backup-cli put-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggres the following:
+2. The node operator manually runs `backup-cli put-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggers the following:
     - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
     - The `backup-cli` submits the AES-256 encrypted keyshares over the TLS connection to the nodes `PUT /set_keyshares` endpoint.
     - The node encrypts the received keyshares with PUT `MPC_BACKUP_ENCRYPTION_KEY_HEX`
