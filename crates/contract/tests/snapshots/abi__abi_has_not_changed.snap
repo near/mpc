@@ -424,9 +424,9 @@ expression: abi
       {
         "name": "migrate",
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
-        "kind": "view",
+        "kind": "call",
         "modifiers": [
-          "private"
+          "init"
         ]
       },
       {
@@ -531,6 +531,10 @@ expression: abi
                       [
                         "tee_upgrade_deadline_duration_seconds",
                         "u64"
+                      ],
+                      [
+                        "contract_upgrade_terra_gas_deposit",
+                        "u64"
                       ]
                     ]
                   },
@@ -607,13 +611,6 @@ expression: abi
             "$ref": "#/definitions/UpdateId"
           }
         }
-      },
-      {
-        "name": "pub_migrate",
-        "kind": "call",
-        "modifiers": [
-          "init"
-        ]
       },
       {
         "name": "public_key",
@@ -1388,10 +1385,17 @@ expression: abi
           "description": "Config for V2 of the contract.",
           "type": "object",
           "required": [
+            "contract_upgrade_terra_gas_deposit",
             "key_event_timeout_blocks",
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
+            "contract_upgrade_terra_gas_deposit": {
+              "description": "Paid gas requirement for contract and config update transactions",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
               "type": "integer",
@@ -1555,6 +1559,14 @@ expression: abi
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "vote_update_minimum_gas_attached_terra_gas": {
               "type": [
                 "integer",
                 "null"
