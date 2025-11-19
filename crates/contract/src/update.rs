@@ -485,27 +485,21 @@ mod tests {
         proposed_updates.vote(&update_id_1, account_1.clone());
         proposed_updates.vote(&update_id_2, account_2.clone());
 
-        assert_eq!(proposed_updates.entries.len(), 3);
-        assert_eq!(proposed_updates.vote_by_participant.len(), 3);
+        let before: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(before.entries.len(), 3);
 
         // When: executing an update
         proposed_updates.do_update(&update_id_1, UPDATE_CONFIG_GAS);
 
         // Then: all state is cleared (entries and votes)
         assert_eq!(
-            proposed_updates.entries.len(),
-            0,
-            "All entries should be cleared"
-        );
-        assert_eq!(
             proposed_updates.vote_by_participant.len(),
             0,
             "All votes should be cleared"
         );
-        assert_eq!(
-            proposed_updates.id.0, 3,
-            "Update ID counter should be preserved"
-        );
+        let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(after.entries.len(), 0, "All entries should be cleared");
+        assert_eq!(after.id, 3, "Update ID counter should be preserved");
     }
 
     /// Helper function
