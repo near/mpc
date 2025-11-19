@@ -48,7 +48,7 @@ The contract tracks the following information:
 
 ## Contract Updates
 
-Participants can propose and vote on contract updates (code or configuration changes). When an update receives sufficient votes and is executed (via the `vote_update` endpoint which calls `do_update` internally), all pending update proposals and votes are cleared as they are no longer be valid after the contract migration. The update ID counter is preserved across migrations as part of the contract state.
+Participants can propose and vote on contract updates (code or configuration changes). When an update receives sufficient votes and is executed (via the `vote_update` endpoint which calls `do_update` internally), all pending update proposals and votes are cleared as they are no longer be valid after the contract migration. The update ID counter is preserved across migrations as part of the contract state to avoid race conditions where multiple participants might propose updates with colliding IDs immediately after an upgrade.
 
 ## Usage
 
