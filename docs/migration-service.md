@@ -162,7 +162,7 @@ flowchart TD
 1. The node operator calls `start_node_migration()` with the new node's `ParticipantInfo` in the smart contract
 2. The node operator manually runs `backup-cli put-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggres the following:
     - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
-    - The `backup-cli` submits the AES-256 encrypted keyshares over the TLS connection to the nodes `PUT /set_keyshares` endpiont.
+    - The `backup-cli` submits the AES-256 encrypted keyshares over the TLS connection to the nodes `PUT /set_keyshares` endpoint.
     - The node encrypts the received keyshares with PUT `MPC_BACKUP_ENCRYPTION_KEY_HEX`
     - The new node calls `conclude_node_migration()` to finalize the migration
 
