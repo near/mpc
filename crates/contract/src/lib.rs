@@ -931,10 +931,10 @@ impl MpcContract {
 
     /// Vote for a proposed update given the [`UpdateId`] of the update.
     ///
-    /// Returns Ok(true) if the amount of voters surpassed the threshold and the update was
-    /// executed. Returns Ok(false) if the amount of voters did not surpass the threshold.
-    /// Returns Err if the update was not found or if the voter is not a participant in the
-    /// protocol.
+    /// Returns `Ok(true)` if the amount of voters surpassed the threshold and the update was
+    /// executed. Returns `Ok(false)` if the amount of voters did not surpass the threshold.
+    /// Returns [`Error`] if the update was not found or if the voter is not a participant
+    /// in the protocol.
     #[handle_result]
     pub fn vote_update(&mut self, id: UpdateId) -> Result<bool, Error> {
         log!(
