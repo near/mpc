@@ -434,6 +434,21 @@ INFO Function execution return value (printed to stdout):
 Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
+## 7. Clean Up
+Once you're done testing your local MPC network, you may want to clean up the environment to avoid stale data or conflicts during the next run.
+
+
+Stop it the nearD proccess:
+```shell
+pkill -f neard
+```
+
+Localnet stores its state under ~/.near.
+
+```shell
+rm -rf ~/.near
+```
+
 ## Appendix: Further useful commands
 
 ### Cancel a key generation
