@@ -940,21 +940,6 @@ impl MpcContract {
             id,
         );
 
-        let upgrade_transaction_minmum_gas: Gas =
-            Gas::from_tgas(self.config.contract_upgrade_terra_gas_deposit);
-        let prepaid_gas = env::prepaid_gas();
-
-        if prepaid_gas < upgrade_transaction_minmum_gas {
-            env::panic_str(
-                &InvalidParameters::InsufficientGas
-                    .message(format!(
-                        "Provided: {}, required: {}",
-                        prepaid_gas, upgrade_transaction_minmum_gas
-                    ))
-                    .to_string(),
-            );
-        }
-
         let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
@@ -971,10 +956,9 @@ impl MpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) = self
-            .proposed_updates
-            .do_update(&id, upgrade_transaction_minmum_gas)
-        else {
+        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_terra_gas);
+
+        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 

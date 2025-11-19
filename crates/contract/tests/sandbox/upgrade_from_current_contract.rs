@@ -80,7 +80,7 @@ async fn test_propose_update_config() {
     let new_config = Config {
         key_event_timeout_blocks: 20,
         tee_upgrade_deadline_duration_seconds: 3333,
-        contract_upgrade_terra_gas_deposit: 299,
+        contract_upgrade_deposit_terra_gas: 299,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
