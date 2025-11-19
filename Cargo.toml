@@ -137,16 +137,13 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-# We're running a modified 2.9 release on a custom branch,
-# 14546-set-voting-date-for-testnet at commit `1c2fd1485ffc56c1f98025ce06be1f1869b68bcd`.
-# We need to point to the branch and not the commit hash for some reason I currently don't understand.
-near-client = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-config-utils = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-crypto = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-indexer = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-o11y = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-time = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
 
 [profile.dev-release]
 inherits = "release"
