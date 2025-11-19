@@ -153,6 +153,8 @@ where
         )));
     }
     let comms = Comms::new();
+    // NOTE: this equality must be kept, as changing the threshold during `key refresh`
+    // might lead to insecure scenarios. For more information see https://github.com/ZcashFoundation/frost/security/advisories/GHSA-wgq8-vr6r-mqxm
     let threshold = old_threshold;
     let (participants, old_participants) = reshare_assertions::<C>(
         old_participants,

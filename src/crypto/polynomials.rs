@@ -42,7 +42,7 @@ impl<C: Ciphersuite> Polynomial<C> {
         })
     }
 
-    /// Returns the coeficients of the polynomial
+    /// Returns the coefficients of the polynomial
     pub fn get_coefficients(&self) -> Vec<Scalar<C>> {
         self.coefficients.clone()
     }
