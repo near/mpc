@@ -486,20 +486,47 @@ mod tests {
         proposed_updates.vote(&update_id_2, account_2.clone());
 
         let before: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
-        assert_eq!(before.entries.len(), 3);
+        let expected_before = TestUpdateVotes {
+            id: 3,
+            entries: BTreeMap::from([
+                (
+                    0,
+                    UpdateEntry {
+                        update: update_0.clone(),
+                        votes: HashSet::from([account_0.clone()]),
+                        bytes_used: bytes_used(&update_0),
+                    },
+                ),
+                (
+                    1,
+                    UpdateEntry {
+                        update: update_1.clone(),
+                        votes: HashSet::from([account_1.clone()]),
+                        bytes_used: bytes_used(&update_1),
+                    },
+                ),
+                (
+                    2,
+                    UpdateEntry {
+                        update: update_2.clone(),
+                        votes: HashSet::from([account_2.clone()]),
+                        bytes_used: bytes_used(&update_2),
+                    },
+                ),
+            ]),
+        };
+        assert_eq!(before, expected_before);
 
         // When: executing an update
         proposed_updates.do_update(&update_id_1, UPDATE_CONFIG_GAS);
 
         // Then: all state is cleared (entries and votes)
-        assert_eq!(
-            proposed_updates.vote_by_participant.len(),
-            0,
-            "All votes should be cleared"
-        );
         let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
-        assert_eq!(after.entries.len(), 0, "All entries should be cleared");
-        assert_eq!(after.id, 3, "Update ID counter should be preserved");
+        let expected_after = TestUpdateVotes {
+            id: 3,
+            entries: BTreeMap::new(),
+        };
+        assert_eq!(after, expected_after);
     }
 
     /// Helper function
