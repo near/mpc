@@ -35,10 +35,10 @@ jobs:
     
       - name: Failure Slack Notification
         if: failure()
-        uses: bryannice/gitactions-slack-notification@2.0.0
         env:
-          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
-          SLACK_USERNAME: "GHA MPC Builder"
-          SLACK_TITLE: 'MPC build failed'
-          SLACK_MESSAGE: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/nearprotocol/mpc/actions/runs/${{ github.run_id }}|here> "
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+        uses: act10ns/slack@v2
+        with:
+          status: failure
+          message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/nearprotocol/mpc/actions/runs/${{ github.run_id }}|here> "
           
