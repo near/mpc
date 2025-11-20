@@ -1,8 +1,6 @@
 use crate::{
     indexer::{
         migrations::ContractMigrationInfo,
-        tx_sender::TransactionStatus,
-        tx_signer::TransactionSigner,
         types::{
             ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
             ChainSignatureRequest, GetAttestationArgs,
@@ -13,7 +11,6 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use attestation::report_data::Ed25519PublicKey;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
@@ -30,8 +27,8 @@ use near_async::{
 use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
 use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
-    types::{BlockReference, Finality, Gas},
-    views::{BlockView, QueryRequest, QueryResponse, QueryResponseKind},
+    types::{BlockReference, Finality},
+    views::{BlockView, QueryRequest, QueryResponseKind},
 };
 use near_o11y::span_wrapped_msg::SpanWrappedMessageExt;
 use participants::ContractState;
