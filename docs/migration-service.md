@@ -326,17 +326,18 @@ pub struct BackupServiceInfo {
 
 The backup service attestation verification would follow the same process as MPC node attestations:
 1. Backup service generates TLS keypair inside TEE
-2. Creates `ReportData` V1: `[version(2 bytes) || SHA3-384(tls_public_key) || padding]`
-   - Note: Unlike MPC nodes, backup services don't include an `account_public_key` since they don't sign transactions
-3. Obtains TEE quote embedding the `ReportData`
-4. Submits attestation via `register_backup_service(public_key, attestation)`
-5. Contract verifies:
+2. Backup service generates account keypair inside TEE for signing contract transactions (required to submit the attestation to the contract)
+3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]`
+4. Obtains TEE quote embedding the `ReportData`
+5. Submits attestation via `register_backup_service(tls_public_key, account_public_key, attestation)`
+6. Contract verifies:
    - Quote validity via attestation provider
    - Docker image hash against allowed list
    - Launcher compose hash (if applicable)
    - Timestamp within deadline
-   - `ReportData` matches SHA3-384 hash of the submitted `tls_public_key`
-6. Contract stores attestation in `backup_services_info[AccountId].attestation`
+   - `ReportData` matches SHA3-384 hash of `SHA3-384(tls_public_key || account_public_key)`
+   - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
+7. Contract stores attestation in `backup_services_info[AccountId].attestation`
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
