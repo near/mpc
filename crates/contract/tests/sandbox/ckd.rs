@@ -1,5 +1,5 @@
 use crate::sandbox::common::{
-    create_response_ckd, derive_confidential_key_and_validate, generate_random_app_public_key,
+    create_response_ckd, derive_confidential_key_and_validate, generate_random_app_public_key, PARTICIPANT_LEN,
 };
 use crate::sandbox::common::{init_env, SharedSecretKey};
 use mpc_contract::primitives::domain::SignatureScheme;
@@ -22,7 +22,7 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
@@ -115,7 +115,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -196,7 +196,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -253,7 +253,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;

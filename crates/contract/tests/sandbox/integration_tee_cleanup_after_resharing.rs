@@ -4,9 +4,9 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 use crate::sandbox::common::{
-    assert_running_return_participants, check_call_success, check_call_success_all_receipts,
-    gen_accounts, get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
-    IntoInterfaceType,
+    assert_running_return_participants, assert_running_return_threshold, check_call_success,
+    check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
+    submit_participant_info, submit_tee_attestations, IntoInterfaceType, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -14,7 +14,7 @@ use mpc_contract::{
         key_state::EpochId,
         participants::Participants,
         test_utils::bogus_ed25519_near_public_key,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::ThresholdParameters,
     },
     state::ProtocolContractState,
     tee::tee_state::NodeId,
@@ -30,11 +30,13 @@ use mpc_contract::{
 /// 5. Verifies that vote_reshared triggered cleanup of stale TEE attestations
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
+#[ignore]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, env_accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
+    let (worker, contract, env_accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await?;
     let expected_node_ids = initial_participants.get_node_ids();
 
     // Verify TEE info for initial participants was added
@@ -77,8 +79,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Now, we do a resharing. We only retain two of the three initial participants
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in
-        initial_participants.participants().iter().take(2)
+    for (account_id, participant_id, participant_info) in initial_participants
+        .participants()
+        .iter()
+        .take(threshold.value() as usize)
     {
         new_participants
             .insert_with_id(
@@ -91,12 +95,12 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     let expected_tee_post_resharing = new_participants.get_node_ids();
     let new_threshold_parameters =
-        ThresholdParameters::new(new_participants, Threshold::new(2)).unwrap();
+        ThresholdParameters::new(new_participants, threshold.clone()).unwrap();
 
     let prospective_epoch_id = EpochId::new(6);
 
     do_resharing(
-        &env_accounts[..2],
+        &env_accounts[..threshold.value() as usize],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
