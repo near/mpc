@@ -16,6 +16,7 @@ borsh = { workspace = true }
 contract-interface = { workspace = true }
 elliptic-curve = { workspace = true }
 hex = { workspace = true }
+near-account-id-v2 = { workspace = true }
 near-sdk = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
