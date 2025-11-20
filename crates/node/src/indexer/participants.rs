@@ -402,6 +402,7 @@ mod tests {
     use near_indexer_primitives::types::AccountId;
     use std::collections::HashMap;
     use std::str::FromStr;
+    use test_utils::conversions::AccountIdConversion;
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![

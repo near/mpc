@@ -14,14 +14,14 @@ use mpc_contract::{
         signature::Tweak,
     },
 };
-use near_indexer_primitives::types::Gas;
 use near_account_id::AccountId;
+use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-const TGAS: u64 = 1_000_000_000_000;
+const MAX_GAS: Gas = Gas::from_teragas(300);
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 pub struct SerializableScalar {
@@ -229,9 +229,9 @@ impl ChainSendTransactionRequest {
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
             // This is too high in most settings, see https://github.com/near/mpc/issues/166
-            | Self::VerifyTee() => 300 * TGAS,
-            Self::SubmitParticipantInfo(_) => 300 * TGAS,
-            Self::ConcludeNodeMigration(_) => 300 * TGAS,
+            | Self::VerifyTee()
+            | Self::SubmitParticipantInfo(_)
+            | Self::ConcludeNodeMigration(_) => MAX_GAS,
         }
     }
 }

@@ -34,6 +34,7 @@ lru = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
+near-sdk = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
@@ -63,6 +64,8 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+test_utils = { workspace = true }
+utilities = { workspace = true }
 
 [build-dependencies]
 built = { version = "0.8", features = ["git2", "chrono"] }

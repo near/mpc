@@ -9,23 +9,24 @@ use mpc_contract::{
         tee_state::NodeId,
     },
 };
+use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
 use near_indexer_primitives::{
-    types::{AccountId, BlockReference, Finality},
-    views::{CallResult, QueryRequest, QueryResponseKind},
+    types::{BlockReference, Finality},
+    views::{QueryRequest, QueryResponseKind},
 };
-use near_o11y::span_wrapped_msg::{SpanWrapped, SpanWrappedMessageExt};
+use near_o11y::span_wrapped_msg::SpanWrappedMessageExt;
 use participants::ContractState;
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
-use tracing::instrument::WithSubscriber;
 use types::ChainSendTransactionRequest;
+use utilities::AccountIdExtV1;
 
 pub mod configs;
 pub mod handler;
@@ -135,7 +136,7 @@ impl IndexerViewClient {
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id,
+            account_id: mpc_contract_id.into_v2_account_id(),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };

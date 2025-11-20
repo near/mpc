@@ -16,7 +16,7 @@ pub mod v3_0_2_state;
 
 mod dto_mapping;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, str::FromStr, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
@@ -1339,6 +1339,11 @@ impl MpcContract {
         let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
+    }
+
+    /// Get our own account id as a voter. Returns an error if we are not a participant.
+    fn voter_account_v2(&self) -> near_account_id_v2::AccountId {
+        near_account_id_v2::AccountId::from_str("HELLO").unwrap()
     }
 
     /// Returns true if the caller is the signer account.
