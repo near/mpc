@@ -252,25 +252,6 @@ If the protocol state changes into a `Resharing` or `Initializing` state, any on
 
 ## Implementation Details
 
-### Node
-
-#### Node behavior
-
-A node must only participate in the MPC protocol if it is in the set of active participants of the current running or resharing epoch. For this, the TLS key of a node acts as a unique identifier _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
-
-Currently, due to limitations of our implementation, nodes need to drop and re-establish all connections in case of a change in the participant set. Before adding the migration feature, this was only possible if the epoch id changed, which happened only during a protocol state change.
-Now, nodes need to be able to recognize and re-establish a connection if the participant set changes without an epoch incrementing _(implemented in [(#1061)](https://github.com/near/mpc/pull/1061) and [(#1032)](https://github.com/near/mpc/pull/1032/))_.
-
-Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_.
-
-#### Web Endpoints
-
-The **MPC node** exposes web endpoints over which the backup service can submit requests. These endpoints require mutual TLS authentication using the published P2P keys.
-
-The exposed endpoints are:
-- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
-- **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
-
 ### Contract
 
 The contract stores migration-related information in the `NodeMigrations` struct:

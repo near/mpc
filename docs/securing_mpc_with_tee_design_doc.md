@@ -97,7 +97,31 @@ This is a more detailed component view of the MPC solution, covering both on-cha
 ### MPC Node
 - Executes MPC operations.  
 - Synchronizes the approved MPC Docker image hash with the on-chain contract state.  
-- Produces remote attestation quotes for both the contract and the operator.  
+- Produces remote attestation quotes for both the contract and the operator.
+
+#### Node Behavior
+
+##### Participant Set Management
+
+A node must only participate in the MPC protocol if it is in the set of active participants of the current running or resharing epoch. The TLS key of a node acts as a unique identifier for this purpose _(implemented in [#1032](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
+
+##### Connection Management
+
+Due to limitations of the current implementation, nodes need to drop and re-establish all connections whenever there is a change in the participant set. Before the migration feature was added, this was only possible when the epoch ID changed, which happened only during a protocol state change.
+
+Now, nodes are able to recognize and re-establish connections when the participant set changes without an epoch incrementing. This enables node migrations without requiring a full resharing process _(implemented in [#1061](https://github.com/near/mpc/pull/1061) and [#1032](https://github.com/near/mpc/pull/1032))_.
+
+##### Migration Handling
+
+When a node is removed from the participant set during a migration process, all remaining nodes must remove any triples and pre-signatures that involve the removed node _(implemented in [#1032](https://github.com/near/mpc/pull/1032))_.
+
+#### Web Endpoints
+
+The MPC node exposes web endpoints over which the backup service can submit requests. These endpoints require mutual TLS authentication using the published P2P keys.
+
+The exposed endpoints are:
+- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
+- **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
 ### Operators
 - Manage the CVM and the MPC nodes.  
