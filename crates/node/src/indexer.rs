@@ -136,7 +136,7 @@ impl IndexerViewClient {
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.into_v2_account_id(),
+            account_id: mpc_contract_id.as_v2_account_id(),
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };

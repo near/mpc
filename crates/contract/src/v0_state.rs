@@ -7,8 +7,8 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
+use near_account_id_v2::AccountId;
 use near_sdk::store::IterableMap;
-use near_sdk::AccountId;
 use near_sdk::BlockHeight;
 use near_sdk::{env, near, store::LookupMap};
 use std::collections::HashSet;

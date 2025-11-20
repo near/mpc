@@ -13,6 +13,7 @@ use mpc_contract::{
     },
 };
 use near_workspaces::types::NearToken;
+use utilities::AccountIdExtV1;
 
 // TODO: #1194
 // Domain id 0 is always present if we have at least one domain on the contract.
@@ -39,9 +40,14 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) =
-            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
-                .await;
+        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
+            DOMAIN_ID_ZERO,
+            &predecessor_id.as_v2_account_id(),
+            msg,
+            path,
+            &sks[0],
+        )
+        .await;
         let request = SignRequestArgs {
             payload_v2: Some(payload),
             path: path.into(),
@@ -63,7 +69,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
     let duplicate_msg = "welp";
     let (payload, respond_req, respond_resp) = create_message_payload_and_response(
         DOMAIN_ID_ZERO,
-        predecessor_id,
+        &predecessor_id.as_v2_account_id(),
         duplicate_msg,
         path,
         &sks[0],
@@ -115,8 +121,14 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload, respond_req, respond_resp) =
-        create_message_payload_and_response(DOMAIN_ID_ZERO, alice.id(), msg, path, &sks[0]).await;
+    let (payload, respond_req, respond_resp) = create_message_payload_and_response(
+        DOMAIN_ID_ZERO,
+        &alice.id().as_v2_account_id(),
+        msg,
+        path,
+        &sks[0],
+    )
+    .await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
@@ -191,8 +203,14 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
     let msg = "hello world!";
     println!("submitting: {msg}");
-    let (payload, _, _) =
-        create_message_payload_and_response(DOMAIN_ID_ZERO, alice.id(), msg, path, &sks[0]).await;
+    let (payload, _, _) = create_message_payload_and_response(
+        DOMAIN_ID_ZERO,
+        &alice.id().as_v2_account_id(),
+        msg,
+        path,
+        &sks[0],
+    )
+    .await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
@@ -255,9 +273,14 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
     // Try to sign with no deposit, should fail.
     let msg = "without-deposit";
-    let (payload, respond_req, respond_resp) =
-        create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
-            .await;
+    let (payload, respond_req, respond_resp) = create_message_payload_and_response(
+        DOMAIN_ID_ZERO,
+        &predecessor_id.as_v2_account_id(),
+        msg,
+        path,
+        &sks[0],
+    )
+    .await;
     let request = SignRequestArgs {
         payload_v2: Some(payload),
         path: path.into(),
@@ -321,9 +344,14 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) =
-            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
-                .await;
+        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
+            DOMAIN_ID_ZERO,
+            &predecessor_id.as_v2_account_id(),
+            msg,
+            path,
+            &sks[0],
+        )
+        .await;
         let status = contract
             .call("sign")
             .args_json(serde_json::json!({
@@ -440,9 +468,14 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let (payload, respond_req, respond_resp) =
-            create_message_payload_and_response(DOMAIN_ID_ZERO, predecessor_id, msg, path, &sks[0])
-                .await;
+        let (payload, respond_req, respond_resp) = create_message_payload_and_response(
+            DOMAIN_ID_ZERO,
+            &predecessor_id.as_v2_account_id(),
+            msg,
+            path,
+            &sks[0],
+        )
+        .await;
 
         let request = SignRequestArgs {
             payload_v2: Some(payload),
@@ -465,7 +498,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
     let duplicate_msg = "welp";
     let (payload, respond_req, respond_resp) = create_message_payload_and_response(
         DOMAIN_ID_ZERO,
-        predecessor_id,
+        &predecessor_id.as_v2_account_id(),
         duplicate_msg,
         path,
         &sks[0],

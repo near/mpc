@@ -4673,6 +4673,7 @@ dependencies = [
  "thiserror 2.0.17",
  "threshold-signatures",
  "tokio",
+ "utilities",
  "zstd 0.13.3",
 ]
 
@@ -4928,6 +4929,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf7d8c37ea9408d536af7e998bd0d4f9699de1f6b0d12280d28ae46977c4501"
 dependencies = [
  "borsh",
+ "schemars 0.8.22",
  "serde",
 ]
 
