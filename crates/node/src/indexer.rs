@@ -64,7 +64,7 @@ pub(crate) struct IndexerState {
     /// For querying blockchain sync status.
     client: IndexerClient,
     /// For sending txs to the chain.
-    tx_processor: IndexerTxProcessor,
+    rpc_handler: IndexerRpcHandler,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
     /// Stores runtime indexing statistics.
@@ -73,15 +73,15 @@ pub(crate) struct IndexerState {
 
 impl IndexerState {
     pub fn new(
-        view_client: IndexerViewClient,
-        client: IndexerClient,
-        tx_processor: IndexerTxProcessor,
+        view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+        client: TokioRuntimeHandle<ClientActorInner>,
+        rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
-            view_client,
-            client,
-            tx_processor,
+            view_client: IndexerViewClient { view_client },
+            client: IndexerClient { client },
+            rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
@@ -341,11 +341,11 @@ impl IndexerClient {
 }
 
 // #[derive(Debug)]
-struct IndexerTxProcessor {
+struct IndexerRpcHandler {
     rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
 }
 
-impl IndexerTxProcessor {
+impl IndexerRpcHandler {
     /// Creates, signs, and submits a function call with the given method and serialized arguments.
     async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
         let response = self

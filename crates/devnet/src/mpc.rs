@@ -29,13 +29,14 @@ use mpc_contract::{
     state::ProtocolContractState,
     utils::protocol_state_to_string,
 };
+use near_account_id_v2::AccountId;
 use near_jsonrpc_client::errors::{JsonRpcError, JsonRpcServerError};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::query::RpcQueryError;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::types::{BlockReference, Finality, FunctionArgs};
 use near_primitives::views::QueryRequest;
-use near_sdk::{borsh, AccountId, CurveType};
+use near_sdk::{borsh, CurveType};
 use node_types::http_server::StaticWebData;
 use reqwest::Client;
 use serde::Serialize;

@@ -5,8 +5,8 @@ use mpc_contract::primitives::{
     domain::{DomainConfig, SignatureScheme},
     signature::{Bytes, Payload, SignRequestArgs},
 };
+use near_account_id_v2::AccountId;
 use near_primitives::action::Action;
-use near_sdk::AccountId;
 use rand::RngCore;
 use serde::Serialize;
 

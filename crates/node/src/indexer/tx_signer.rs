@@ -7,7 +7,7 @@ use near_indexer::near_primitives::account::AccessKey;
 use near_indexer_primitives::near_primitives::transaction::{
     FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
-use near_indexer_primitives::types::Gas;
+use near_indexer_primitives::types::{Balance, Gas};
 use near_indexer_primitives::CryptoHash;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -49,7 +49,7 @@ impl TransactionSigner {
             method_name,
             args,
             gas,
-            deposit: 0,
+            deposit: Balance::from_near(0),
         };
 
         let verifying_key = self.signing_key.verifying_key();

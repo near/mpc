@@ -10,9 +10,11 @@ use crate::indexer::tee::{
     monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes, monitor_tee_accounts,
 };
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
+use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id_v2::AccountId;
+use near_indexer::Indexer;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
@@ -47,7 +49,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
-    indexer_config: IndexerConfig,
+    mpc_indexer_config: IndexerConfig,
     my_near_account_id_v2: AccountId,
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
@@ -72,22 +74,36 @@ pub fn spawn_real_indexer(
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
-        actix::System::new().block_on(async {
-            // todo: Clean this entire function up eventually.
+        // Todo; limit number of worker threads? Assume not as we don't want the node to fall behind.
+        let indexer_tokio_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime must be constructable on startup");
 
-            // We have this indirection of using a oneshot for sending the indexer state,
-            // as we can't block the main thread for waiting on the `txn_sender`.
-            // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
-            let indexer =
-                near_indexer::Indexer::new(indexer_config.to_near_indexer_config(home_dir.clone()))
-                    .expect("Failed to initialize the Indexer");
+        // todo: Clean this entire function up eventually.
+        // We have this indirection of using a oneshot for sending the indexer state,
+        // as we can't block the main thread for waiting on the `txn_sender`.
+        // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
+        indexer_tokio_runtime.block_on(async {
+            let near_indexer_config = mpc_indexer_config.to_near_indexer_config(home_dir.clone());
+
+            let near_config = near_indexer_config
+                .load_near_config()
+                .expect("near config is present");
+
+            let near_node = Indexer::start_near_node(&near_indexer_config, near_config.clone())
+                .await
+                .expect("near node has started");
+
+            let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
+
             let stream = indexer.streamer();
-            let (view_client, client, tx_processor) = indexer.client_actors();
+
             let indexer_state = Arc::new(IndexerState::new(
-                view_client,
-                client,
-                tx_processor,
-                indexer_config.mpc_contract_id.clone(),
+                near_node.view_client,
+                near_node.client,
+                near_node.rpc_handler,
+                mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
@@ -110,26 +126,23 @@ pub fn spawn_real_indexer(
             #[cfg(feature = "network-hardship-simulation")]
             let process_blocks_receiver = {
                 let (process_blocks_sender, process_blocks_receiver) = watch::channel(true);
-                actix::spawn(check_block_processing(process_blocks_sender, home_dir));
+                tokio::spawn(check_block_processing(process_blocks_sender, home_dir));
                 process_blocks_receiver
             };
 
-            actix::spawn(indexer_logger(
-                Arc::clone(&indexer_state.stats),
-                indexer_state.view_client.clone(),
-            ));
+            tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
-            actix::spawn(monitor_allowed_docker_images(
+            tokio::spawn(monitor_allowed_docker_images(
                 allowed_docker_images_sender,
                 indexer_state.clone(),
             ));
 
-            actix::spawn(monitor_allowed_launcher_compose_hashes(
+            tokio::spawn(monitor_allowed_launcher_compose_hashes(
                 allowed_launcher_compose_sender,
                 indexer_state.clone(),
             ));
 
-            actix::spawn(monitor_tee_accounts(
+            tokio::spawn(monitor_tee_accounts(
                 tee_accounts_sender,
                 indexer_state.clone(),
             ));
@@ -137,7 +150,7 @@ pub fn spawn_real_indexer(
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
                 indexer_state.clone(),
-                indexer_config.port_override,
+                mpc_indexer_config.port_override,
                 protocol_state_sender,
             )
             .await;
@@ -172,9 +185,9 @@ pub fn spawn_real_indexer(
             #[cfg(feature = "network-hardship-simulation")]
             let indexer_result = listen_blocks(
                 stream,
-                indexer_config.concurrency,
+                mpc_indexer_config.concurrency,
                 Arc::clone(&indexer_state.stats),
-                indexer_config.mpc_contract_id,
+                mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
                 process_blocks_receiver,
             )
@@ -183,9 +196,9 @@ pub fn spawn_real_indexer(
             #[cfg(not(feature = "network-hardship-simulation"))]
             let indexer_result = listen_blocks(
                 stream,
-                indexer_config.concurrency,
+                mpc_indexer_config.concurrency,
                 Arc::clone(&indexer_state.stats),
-                indexer_config.mpc_contract_id,
+                mpc_indexer_config.mpc_contract_id,
                 block_update_sender,
             )
             .await;
