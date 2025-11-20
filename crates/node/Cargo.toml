@@ -9,7 +9,6 @@ network-hardship-simulation = []
 test-utils = ["threshold-signatures/test-utils"]
 
 [dependencies]
-actix = { workspace = true }
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
