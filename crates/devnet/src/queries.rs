@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use crate::rpc::NearRpcClients;
 use anyhow::anyhow;
+use near_account_id_v2::AccountId;
 use near_jsonrpc_client::methods::query::RpcQueryRequest;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::{
     types::{BlockReference, Finality},
     views::{ContractCodeView, QueryRequest},
 };
-use near_sdk::AccountId;
 
 /// fetches the contract code and hash from `target`.
 pub async fn get_contract_code(

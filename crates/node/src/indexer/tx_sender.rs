@@ -162,7 +162,7 @@ async fn submit_tx(
         transaction.transaction.nonce(),
     );
 
-    indexer_state.tx_processor.submit_tx(transaction).await
+    indexer_state.rpc_handler.submit_tx(transaction).await
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.

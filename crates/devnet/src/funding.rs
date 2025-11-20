@@ -4,7 +4,7 @@ use crate::constants::{
     PERCENT_OF_ORIGINAL_BALANCE_BELOW_WHICH_TO_REFILL,
 };
 use crate::types::NearAccount;
-use near_sdk::AccountId;
+use near_account_id_v2::AccountId;
 use std::collections::VecDeque;
 
 /// An account to request funding for.

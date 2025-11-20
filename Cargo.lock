@@ -4690,6 +4690,7 @@ dependencies = [
  "futures",
  "hex",
  "mpc-contract",
+ "near-account-id 2.0.0",
  "near-crypto 0.28.0",
  "near-jsonrpc-client 0.15.1",
  "near-jsonrpc-primitives 0.28.0",
