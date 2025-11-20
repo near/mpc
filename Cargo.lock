@@ -9466,7 +9466,6 @@ dependencies = [
  "elliptic-curve",
  "getrandom 0.2.16",
  "hex",
- "near-account-id 2.0.0",
  "near-sdk",
  "serde",
  "sha2",
