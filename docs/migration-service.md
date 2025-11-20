@@ -377,36 +377,54 @@ The contract provides the following methods:
     - Adding this public key to the `ParticipantInfo` struct
     - Including this public key in the TEE attestation
 
+### Backup Service Components
 
-### Backup Service
+Both soft launch and hard launch implementations share common core components, with hard launch adding TEE-specific features and automation.
 
-#### Soft Launch Implementation
+#### Common Components (Both Soft and Hard Launch)
 
-For the soft launch, the node operator and a few scripts (`backup-cli`) will act as the backup service. The operator runs these scripts manually on their own infrastructure.
+1. **mTLS Client**: Establishes authenticated connections to MPC nodes using P2P keys
+   - Performs mutual TLS handshake using keys registered in the contract
+   - Validates peer identity against expected public key from contract
 
-#### Hard Launch Implementation
+2. **Symmetric Encryption**: Uses operator-provided `MPC_BACKUP_ENCRYPTION_KEY_HEX` for additional encryption layer
+   - Operator manually provides the same key to both MPC node and backup service
+   - Adds second layer of encryption beyond mTLS transport security
+   - Extra protection if contract state becomes inconsistent or manipulated
 
-For hard launch, the backup service is a standalone long-running application inside its own TEE, physically separate from any MPC node TEE.
+#### Soft Launch-Specific Components
 
-**Architecture Requirements:**
-1. **TEE Execution**: Runs in TDX.
-2. **Attestation Generation**: Generates and refreshes TEE attestations.
-3. **Contract Monitoring**: Maintains current view of MPC smart contract state.
-4. **Event Processing**: Monitors for migration events (`start_node_migration` calls).
-5. **HTTP Server**: Exposes endpoints for health checks and metrics (optional).
+3. **Local Storage**: Saves encrypted keyshares to disk
+   - Persists backed-up keyshares to local filesystem
+   - Enables recovery after process restart
 
-**Operational Characteristics:**
-- **Always Running**: Unlike the soft-launch scripts, the hard-launch backup service runs 24/7. All backed-up keyshares are kept in memory only (not on disk), so it needs to re-fetch the secret shares after recovering, e.g. after a power loss.
-- **Automatic Response**: Detects migration events and initiates keyshare transfer without operator intervention.
-- **Attestation Refresh**: Periodically refreshes TEE attestation before expiration.
-- **Monitoring**: Provides health status and operation logs for operators.
+> The soft launch implementation is intentionally simple:
+> - **No TEE**: Runs on operator's standard infrastructure without hardware attestation
+> - **No blockchain interaction**: Does not query or submit transactions to the contract
+> - **No automatic monitoring**: Operator manually triggers backup/restore operations via CLI commands
+> - **Disk-based storage**: Encrypted keyshares persisted to local filesystem
+> - **Operator provides all context**: Node URL, public keys, and encryption keys passed as CLI arguments
 
-**Security Properties:**
-- **TEE Isolation**: Backup service code and memory protected by hardware.
-- **Attestation Proof**: Contract cryptographically verifies correct execution.
-- **No Operator Access**: Node operator cannot access decrypted keyshares.
-- **Forward Secrecy**: Ephemeral keys ensure past sessions remain secure even if current keys compromised.
-- **Docker Image Verification**: Contract maintains an allowlist of approved backup service Docker image hashes, enabling support for multiple versions during upgrades.
+#### Hard Launch-Specific Components
+
+3. **Contract Transaction Interface**: Signs and submits transactions automatically
+   - Calls `register_backup_service()` with attestation periodically
+   - Uses account private key generated in TEE
+
+4. **TEE Runtime**: TDX-enabled environment backed by [dstack](https://github.com/Dstack-TEE/dstack)
+   - Generates hardware attestations proving execution in genuine TEE
+   - Protects cryptographic keys in hardware-encrypted memory
+   - Does not persist keyshares to disk: encryption key would be lost on restart, and operator must not access it
+
+5. **Blockchain Monitor**: Maintains current view of MPC contract state
+   - Embedded NEAR light client or RPC connection to track contract state
+   - Automatically detects events, e.g., migration initiations
+   - Enables autonomous operation without operator intervention
+
+6. **HTTP Server** (Optional): Operational monitoring and observability
+   - Health checks for liveness/readiness probes
+   - Prometheus-style metrics (keyshare freshness, backup success/failure rates)
+   - Operator dashboards for status visibility
 
 ### Node Operator
 
