@@ -61,10 +61,10 @@ node, but only of the secret shares. The MPC node generates a few secrets that w
 
 1. The node operator calls the contract method `register_backup_service()` to register the backup service's public key in the smart contract. The node, running a NEAR client, has access to this information and uses it for the authentication in the following step.
 2. The node operator manually runs `backup-cli get-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggers the following:
-    - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
-    - The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
-    - The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
-    - The `backup-cli` saves the encrypted keyshares to local storage
+    1. The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
+    2. The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
+    3. The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
+    4. The `backup-cli` saves the encrypted keyshares to local storage
 
 > **Note**: For soft launch, the operator must manually trigger the backup using the `backup-cli` tool. There is no automatic periodic backup.
 
@@ -113,11 +113,12 @@ flowchart TD
 
 
 ##### Hard Launch
-For the hard-launch, above steps will not be run manually, but automatically:
+
+For the hard launch, the above steps will not be run manually, but automatically:
 - The backup service runs a NEAR node and monitors the MPC smart contract;
-- The backup service compares the keyshares it has possession of with the key shares it is supposed to have possession of;
-- In case the backup service is missing key shares, it goes through steps 2a-2d above.
-Additionally, the MPC node will have to verify the attestation submitted by the backup-service.
+- The backup service compares the keyshares it has in its possession with the keyshares it is supposed to have (the contract [keeps track](https://github.com/near/mpc/blob/2d833aee6eab1e7a796348787028f3392cafe1bd/crates/contract/src/state/running.rs#L27-L29) of what keys are currently used);
+- If the backup service is missing keyshares, it requests them from the MPC node (similar to steps 2.1-2.4 in the [Soft Launch](#soft-launch) section).
+Additionally, the MPC node will have to verify the attestation submitted by the backup service.
 
 ```mermaid
 ---
