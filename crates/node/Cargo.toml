@@ -34,6 +34,7 @@ k256 = { workspace = true }
 lru = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
+near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
 near-crypto = { workspace = true }
