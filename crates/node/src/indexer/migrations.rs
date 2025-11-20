@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use tokio::sync::watch;
 
 use crate::{

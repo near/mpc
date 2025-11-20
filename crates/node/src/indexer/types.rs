@@ -15,7 +15,7 @@ use mpc_contract::{
     },
 };
 use near_indexer_primitives::types::Gas;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;

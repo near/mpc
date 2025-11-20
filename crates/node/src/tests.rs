@@ -28,7 +28,7 @@ use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
 use mpc_contract::primitives::signature::{Bytes, Payload};
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};

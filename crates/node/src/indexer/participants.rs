@@ -11,7 +11,7 @@ use mpc_contract::primitives::{
     thresholds::ThresholdParameters,
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
