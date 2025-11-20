@@ -69,6 +69,7 @@ built = { version = "0.8", features = ["git2", "chrono"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+near-sdk = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
