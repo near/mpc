@@ -40,5 +40,5 @@ jobs:
         uses: act10ns/slack@v2
         with:
           status: failure
-          message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/nearprotocol/mpc/actions/runs/${{ github.run_id }}|here> "
+          message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
           
