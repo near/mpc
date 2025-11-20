@@ -4742,6 +4742,7 @@ dependencies = [
  "near-indexer",
  "near-indexer-primitives",
  "near-o11y",
+ "near-sdk",
  "near-time 2.10.0-rc.2",
  "node-types",
  "prometheus",

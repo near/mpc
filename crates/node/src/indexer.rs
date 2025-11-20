@@ -1,24 +1,34 @@
-use crate::migration_service::types::MigrationInfo;
+use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
 
 use self::stats::IndexerStats;
 use handler::ChainBlockUpdate;
-use mpc_contract::tee::{
-    proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
-    tee_state::NodeId,
+use mpc_contract::{
+    state::ProtocolContractState,
+    tee::{
+        proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
+        tee_state::NodeId,
+    },
 };
-use near_async::{multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle};
-use near_client::{client_actor::ClientActorInner, RpcHandler, ViewClientActorInner};
-use near_indexer_primitives::types::AccountId;
+use near_async::{
+    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
+};
+use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
+use near_indexer_primitives::{
+    types::{AccountId, BlockReference, Finality},
+    views::{CallResult, QueryRequest, QueryResponseKind},
+};
+use near_o11y::span_wrapped_msg::{SpanWrapped, SpanWrappedMessageExt};
 use participants::ContractState;
-use std::sync::Arc;
+use serde::Deserialize;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
+use tracing::instrument::WithSubscriber;
 use types::ChainSendTransactionRequest;
 
 pub mod configs;
 pub mod handler;
-pub mod lib;
 pub mod migrations;
 pub mod participants;
 pub mod real;
@@ -63,14 +73,127 @@ impl IndexerState {
     }
 }
 
-// #[derive(Debug)]
+#[derive(Clone)]
 struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
 }
-// #[derive(Debug)]
+
+// TODO: during refactor I noticed the account id is always taken from the indexer state as well.
+// We should remove this account_id parameter...
+//
+// example:
+// indexer_state.view_client.get_mpc_tee_accounts(indexer_state.mpc_contract_id.clone()).await
+// =>
+// indexer_state.view_client.get_mpc_tee_accounts().await
+// This pattern repeats for all the methods.
+impl IndexerViewClient {
+    pub(crate) async fn get_mpc_contract_state(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<(u64, ProtocolContractState)> {
+        self.get_mpc_state(mpc_contract_id, CONTRACT_STATE_ENDPOINT)
+            .await
+    }
+
+    pub(crate) async fn get_mpc_allowed_image_hashes(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
+        self.get_mpc_state(mpc_contract_id, ALLOWED_IMAGE_HASHES_ENDPOINT)
+            .await
+    }
+    pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
+        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT)
+            .await
+    }
+
+    pub(crate) async fn get_mpc_tee_accounts(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<(u64, Vec<NodeId>)> {
+        self.get_mpc_state(mpc_contract_id, TEE_ACCOUNTS_ENDPOINT)
+            .await
+    }
+
+    pub(crate) async fn get_mpc_migration_info(
+        &self,
+        mpc_contract_id: AccountId,
+    ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
+        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO_ENDPOINT)
+            .await
+    }
+
+    async fn get_mpc_state<State>(
+        &self,
+        mpc_contract_id: AccountId,
+        endpoint: &str,
+    ) -> anyhow::Result<(u64, State)>
+    where
+        State: for<'de> Deserialize<'de>,
+    {
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id,
+            method_name: endpoint.to_string(),
+            args: vec![].into(),
+        };
+
+        let query = near_client::Query {
+            block_reference: BlockReference::Finality(Finality::Final),
+            request,
+        };
+
+        let response = self.view_client.send_async(query).await??;
+
+        match response.kind {
+            QueryResponseKind::CallResult(result) => Ok((
+                response.block_height,
+                serde_json::from_slice(&result.result)?,
+            )),
+            _ => {
+                anyhow::bail!("got unexpected response querying mpc contract state")
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 struct IndexerClient {
     client: TokioRuntimeHandle<ClientActorInner>,
 }
+
+const INTERVAL: Duration = Duration::from_millis(500);
+const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
+const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = "allowed_launcher_compose_hashes";
+const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
+pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
+const CONTRACT_STATE_ENDPOINT: &str = "state";
+
+impl IndexerClient {
+    async fn wait_for_full_sync(&self) {
+        loop {
+            tokio::time::sleep(INTERVAL).await;
+
+            let status_request = Status {
+                is_health_check: false,
+                detailed: false,
+            };
+
+            let status_response = self.client.send_async(status_request.span_wrap()).await;
+
+            let Ok(Ok(status)) = status_response else {
+                continue;
+            };
+
+            if !status.sync_info.syncing {
+                return;
+            }
+        }
+    }
+}
+
 // #[derive(Debug)]
 struct IndexerTxProcessor {
     rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
