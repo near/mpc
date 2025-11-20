@@ -14,7 +14,8 @@ use crate::primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 use initializing::InitializingContractState;
-use near_sdk::{near, AccountId};
+use near_account_id_v2::AccountId;
+use near_sdk::near;
 use resharing::ResharingContractState;
 use running::RunningContractState;
 

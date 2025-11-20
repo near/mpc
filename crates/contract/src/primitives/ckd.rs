@@ -1,7 +1,7 @@
-use near_sdk::{near, AccountId};
-
 use crate::primitives::domain::DomainId;
 use contract_interface::types as dtos;
+use near_account_id_v2::AccountId;
+use near_sdk::near;
 
 #[derive(Clone, Debug)]
 #[near(serializers=[json])]

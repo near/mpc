@@ -13,9 +13,11 @@ use attestation::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_sdk::{env, near, store::IterableMap, AccountId};
+use near_account_id_v2::AccountId;
+use near_sdk::{env, near, store::IterableMap};
 use std::hash::{Hash, Hasher};
 use std::{collections::HashSet, time::Duration};
+use utilities::AccountIdExtV1;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Ord, PartialOrd, Clone)]
@@ -343,7 +345,7 @@ impl TeeState {
     /// Handles multiple participants per account and supports legacy mock nodes.
     pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
         let signer_pk = env::signer_account_pk();
-        let signer_id = env::signer_account_id();
+        let signer_id = env::signer_account_id().as_v2_account_id();
 
         match participants.info(&signer_id) {
             None => false,
@@ -370,7 +372,7 @@ mod tests {
 
     use super::*;
     use attestation::attestation::{Attestation, MockAttestation};
-    use near_sdk::AccountId;
+    use near_account_id_v2::AccountId;
 
     #[test]
     fn test_clean_non_participants() {

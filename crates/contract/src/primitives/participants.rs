@@ -1,6 +1,7 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
-use near_sdk::{near, AccountId, PublicKey};
+use near_account_id_v2::AccountId;
+use near_sdk::{near, PublicKey};
 use std::{collections::BTreeSet, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
