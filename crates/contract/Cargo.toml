@@ -66,6 +66,11 @@ k256 = { workspace = true, features = [
     "expose-field",
 ] }
 mpc-primitives = { workspace = true }
+near-account-id-v2 = { workspace = true, features = [
+    "schemars-v0_8",
+    "abi",
+    "serde",
+] }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 schemars = { workspace = true }
@@ -75,11 +80,6 @@ serde_with = { workspace = true }
 sha3 = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
-near-account-id-v2 = { workspace = true, features = [
-    "schemars-v0_8",
-    "abi",
-    "serde",
-] }
 utilities = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

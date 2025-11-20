@@ -34,7 +34,6 @@ lru = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id-v2 = { workspace = true }
-near-sdk = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
@@ -42,6 +41,7 @@ near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-o11y = { workspace = true }
+near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
 prometheus = { workspace = true }
@@ -54,6 +54,7 @@ serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 tee_authority = { workspace = true }
 tempfile = { workspace = true }
+test_utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
 time = { workspace = true }
@@ -64,17 +65,16 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
-test_utils = { workspace = true }
 
 [build-dependencies]
 built = { version = "0.8", features = ["git2", "chrono"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
-near-sdk = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
