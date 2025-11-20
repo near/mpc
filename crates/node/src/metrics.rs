@@ -272,22 +272,6 @@ pub static PEERS_INDEXER_HEIGHTS: LazyLock<prometheus::IntGaugeVec> = LazyLock::
     .unwrap()
 });
 
-pub static NEAR_RESPONDER_BALANCE: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
-    prometheus::register_gauge!(
-        "mpc_near_responder_balance",
-        "Balance for the mpc responder account"
-    )
-    .unwrap()
-});
-
-pub static NEAR_SIGNER_BALANCE: LazyLock<prometheus::Gauge> = LazyLock::new(|| {
-    prometheus::register_gauge!(
-        "mpc_near_signer_balance",
-        "Balance for the mpc signer account"
-    )
-    .unwrap()
-});
-
 pub static MPC_BUILD_INFO: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(
         "mpc_node_build_info",

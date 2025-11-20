@@ -187,9 +187,18 @@ jobs:
         with:
           tool: nextest@0.9.106
 
-      - name: Install wasm-opt from crates.io
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: cargo-binstall@1.16.0
+      - name: Install cargo-near
         run: |
-          cargo install wasm-opt --locked
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+
+      - name: Install wasm-opt
+        run: |
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run cargo-nextest
@@ -248,15 +257,18 @@ jobs:
       - name: Build mpc node
         run: cargo build -p mpc-node --release --features=network-hardship-simulation
 
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: cargo-binstall@1.16.0
       - name: Install cargo-near
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev
-          cargo install cargo-near --locked
+          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
+          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
 
-      - name: Install wasm-opt from crates.io
+      - name: Install wasm-opt
         run: |
-          cargo install wasm-opt --locked
+          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
 
       - name: Setup python

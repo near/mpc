@@ -14,6 +14,7 @@ set -euo pipefail
 
 USE_LAUNCHER=false
 USE_NODE=false
+USE_NODE_GCP=false
 USE_PUSH=false
 
 for arg in "$@"
@@ -21,6 +22,9 @@ do
   case "$arg" in
     --node)
       USE_NODE=true
+      ;;
+    --node-gcp)
+      USE_NODE_GCP=true
       ;;
     --launcher)
       USE_LAUNCHER=true
@@ -36,9 +40,10 @@ do
   esac
 done
 
-if ! $USE_LAUNCHER && ! $USE_NODE; then
+if ! $USE_LAUNCHER && ! $USE_NODE && ! $USE_NODE_GCP; then
     USE_LAUNCHER=true
     USE_NODE=true
+    USE_NODE_GCP=true
 fi
 
 die() {
@@ -71,6 +76,9 @@ fi
 
 DOCKERFILE_NODE=deployment/Dockerfile-node
 : "${NODE_IMAGE_NAME:=mpc-node}"
+
+DOCKERFILE_NODE_GCP=deployment/Dockerfile-node-gcp
+: "${NODE_GCP_IMAGE_NAME:=mpc-node-gcp}"
 
 DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 : "${LAUNCHER_IMAGE_NAME:=mpc-launcher}"
@@ -113,32 +121,33 @@ if $USE_LAUNCHER; then
     launcher_image_hash=$(get_image_hash $LAUNCHER_IMAGE_NAME)
 fi
 
-if $USE_NODE; then
+if $USE_NODE || $USE_NODE_GCP; then
     SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
+fi
+
+if $USE_NODE; then
     build_reproducible_image $NODE_IMAGE_NAME $DOCKERFILE_NODE
     node_image_hash=$(get_image_hash $NODE_IMAGE_NAME)
+fi
+
+if $USE_NODE_GCP; then
+    build_reproducible_image $NODE_GCP_IMAGE_NAME $DOCKERFILE_NODE_GCP
+    node_gcp_image_hash=$(get_image_hash $NODE_GCP_IMAGE_NAME)
 fi
 
 if $USE_PUSH; then
     # This assumes that docker is logged-in dockerhub registry with nearone user
 
-    git_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
-
-    if [ -n "$git_tag" ]; then
-        image_tag="$git_tag"
-        echo "Using Git tag: $git_tag"
-    else
-        branch_name=$(git branch --show-current)
-
-        if [ -z "$branch_name" ]; then
-            branch_name="detached"
-        fi
-
-        short_hash=$(git rev-parse --short HEAD)
-        image_tag="$branch_name-$short_hash"
-        echo "Using branch-hash tag: $image_tag"
+    branch_name=$(git branch --show-current)
+    if [ -z "$branch_name" ]; then
+        branch_name="detached"
     fi
+    sanitized_branch_name="${branch_name//\//-}"
+
+    short_hash=$(git rev-parse --short HEAD)
+    image_tag="$sanitized_branch_name-$short_hash"
+    echo "Using branch-hash tag: $image_tag"
 
     if $USE_LAUNCHER; then
         temp_dir=$(mktemp -d)
@@ -154,13 +163,23 @@ if $USE_PUSH; then
         docker tag $NODE_IMAGE_NAME nearone/$NODE_IMAGE_NAME:$image_tag
         docker push nearone/$NODE_IMAGE_NAME:$image_tag
     fi
+
+    if $USE_NODE_GCP; then
+        docker tag $NODE_GCP_IMAGE_NAME nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+        docker push nearone/$NODE_GCP_IMAGE_NAME:$image_tag
+    fi
 fi
 
 echo "commit hash: $GIT_COMMIT_HASH"
 echo "SOURCE_DATE_EPOCH used: $SOURCE_DATE_EPOCH"
-if $USE_NODE; then
+if $USE_NODE || $USE_NODE_GCP; then
     echo "node binary hash: $node_binary_hash"
-    echo "node tee docker image hash: $node_image_hash"
+fi
+if $USE_NODE; then
+    echo "node docker image hash: $node_image_hash"
+fi
+if $USE_NODE_GCP; then
+    echo "node gcp docker image hash: $node_gcp_image_hash"
 fi
 if $USE_LAUNCHER; then
     echo "launcher docker image hash: $launcher_image_hash"

@@ -1,0 +1,21 @@
+FROM google/cloud-sdk:debian_component_based@sha256:666e10130e66fa3146e3be5a27fdba9fd6006131bebf6bd63e62fcffe04aa901
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
+    repro-sources-list.sh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
+    : "Clean up for improving reproducibility" && \
+    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+WORKDIR /app
+COPY target/reproducible/mpc-node mpc-node
+# The chmod part is also necessary for reproducibility
+COPY --chmod=0755 deployment/start.sh /app/start.sh
+# Copy embedded localnet genesis file
+COPY --chmod=0755 deployment/localnet/genesis.json /app/localnet-genesis.json
+CMD [ "/app/start.sh" ]

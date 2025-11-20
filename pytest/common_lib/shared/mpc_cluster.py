@@ -9,14 +9,19 @@ from common_lib import constants
 from common_lib import signature
 from common_lib import ckd
 from common_lib.constants import TGAS
-from common_lib.contract_state import ContractState, ProtocolState, SignatureScheme
+from common_lib.contract_state import (
+    ContractState,
+    ProtocolState,
+    SignatureScheme,
+    RunningProtocolState,
+)
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
     BackupServiceInfo,
     MigrationState,
     parse_migration_state,
 )
-from common_lib.shared.metrics import FloatMetricName, IntMetricName
+from common_lib.shared.metrics import IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
@@ -93,11 +98,6 @@ class MpcCluster:
 
     def mpc_contract_account(self):
         return self.contract_node.account_id()
-
-    def get_float_metric_value(
-        self, metric_name: FloatMetricName
-    ) -> List[Optional[float]]:
-        return [node.get_float_metric_value(metric_name) for node in self.mpc_nodes]
 
     def get_int_metric_value(self, metric_name: IntMetricName) -> List[Optional[int]]:
         return [node.get_int_metric_value(metric_name) for node in self.mpc_nodes]
@@ -209,6 +209,7 @@ class MpcCluster:
         self.nodes = nodes
         if assert_contract:
             contract_state = self.contract_state()
+            assert isinstance(contract_state.protocol_state, RunningProtocolState)
             assert len(
                 contract_state.protocol_state.parameters.participants.participants
             ) == len(self.mpc_nodes)
@@ -274,6 +275,7 @@ class MpcCluster:
         state = self.contract_state()
         state.print()
         assert state.is_state(ProtocolState.RUNNING), "require running state"
+        assert isinstance(state.protocol_state, RunningProtocolState)
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
         for scheme in schemes:

@@ -86,12 +86,15 @@ getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+cargo-near-build = { workspace = true }
 contract_history = { workspace = true }
 digest = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
 fs2 = { workspace = true }
+insta = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+near-abi = { workspace = true }
 near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
@@ -101,3 +104,4 @@ signature = { workspace = true }
 test_utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
+zstd = { workspace = true }

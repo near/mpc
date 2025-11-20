@@ -19,7 +19,7 @@ impl CKDProvider {
                 std::time::Duration::from_secs(60),
             )
             .await?;
-        tracing::info!("Eddsa key generation completed");
+        tracing::info!("CKD key generation completed");
 
         Ok(key)
     }
@@ -47,7 +47,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyGenerationComputation {
             self.threshold,
             OsRng,
         )?;
-        run_protocol("eddsa key generation", channel, protocol).await
+        run_protocol("CKD key generation", channel, protocol).await
     }
 
     fn leader_waits_for_success(&self) -> bool {
