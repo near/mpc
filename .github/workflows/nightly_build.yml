@@ -15,6 +15,8 @@ on:
 jobs:
   build-mpc:
     runs-on: warp-ubuntu-2404-x64-8x
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,6 +26,11 @@ jobs:
       - name: Adjust Cargo.toml to use required nearcore branch
         run: |
           BRANCH="${{ inputs.nearcore-branch || 'master' }}"
+          # Validate branch name contains only safe characters (alphanumeric, hyphens, underscores, slashes, dots)
+          if [[ ! "$BRANCH" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+            echo "Error: Invalid branch name. Only alphanumeric characters, hyphens, underscores, slashes, and dots are allowed."
+            exit 1
+          fi
           sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1$BRANCH|g" Cargo.toml
       
       - name: Build MPC
