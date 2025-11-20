@@ -65,7 +65,7 @@ mod tests {
         let p0 = gen_participant(0);
         participants.insert(p0.0.clone(), p0.1).expect("error");
         let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(p0.0.into_v1_account_id());
+        ctx.signer_account_id(p0.0.as_v1_account_id());
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
@@ -81,7 +81,7 @@ mod tests {
         // new participant
         let p1 = gen_participant(1);
         participants.insert(p1.0.clone(), p1.1).expect("error");
-        ctx.signer_account_id(p1.0.into_v1_account_id());
+        ctx.signer_account_id(p1.0.as_v1_account_id());
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");

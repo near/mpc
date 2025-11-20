@@ -315,8 +315,8 @@ pub mod tests {
             ctx.block_height(block_height);
             ctx.random_seed(seed);
             let signer = signer.unwrap_or(gen_account_id());
-            ctx.signer_account_id(signer.clone().into_v1_account_id());
-            ctx.predecessor_account_id(signer.clone().into_v1_account_id());
+            ctx.signer_account_id(signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
             Environment {
                 signer,
@@ -329,8 +329,8 @@ pub mod tests {
             ctx.signer_account_pk(pk);
             ctx.block_height(self.block_height);
             ctx.random_seed(self.seed);
-            ctx.signer_account_id(self.signer.clone().into_v1_account_id());
-            ctx.predecessor_account_id(self.signer.clone().into_v1_account_id());
+            ctx.signer_account_id(self.signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
         }
 
@@ -343,8 +343,8 @@ pub mod tests {
             let mut ctx = VMContextBuilder::new();
             ctx.block_height(self.block_height);
             ctx.random_seed(self.seed);
-            ctx.signer_account_id(self.signer.clone().into_v1_account_id());
-            ctx.predecessor_account_id(self.signer.clone().into_v1_account_id());
+            ctx.signer_account_id(self.signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
         }
 

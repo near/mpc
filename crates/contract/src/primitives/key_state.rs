@@ -252,11 +252,11 @@ pub mod tests {
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone().into_v1_account_id());
+            context.signer_account_id(account_id.clone().as_v1_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_ok());
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id().into_v1_account_id());
+            context.signer_account_id(gen_account_id().as_v1_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_err());
         }
@@ -268,11 +268,11 @@ pub mod tests {
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone().into_v1_account_id());
+            context.signer_account_id(account_id.clone().as_v1_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedAccountId::new(proposed_parameters.participants()).is_ok());
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id().into_v1_account_id());
+            context.signer_account_id(gen_account_id().as_v1_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedAccountId::new(proposed_parameters.participants()).is_err());
         }

@@ -616,7 +616,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.into_v1_account_id()).transfer(diff);
+                    Promise::new(account_id.as_v1_account_id()).transfer(diff);
                 }
             }
         }
@@ -901,7 +901,7 @@ impl MpcContract {
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
-        let proposer = self.voter_or_panic().into_v1_account_id();
+        let proposer = self.voter_or_panic().as_v1_account_id();
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
@@ -1764,8 +1764,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone().into_v1_account_id())
-            .predecessor_account_id(node_id.account_id.clone().into_v1_account_id())
+            .signer_account_id(node_id.account_id.clone().as_v1_account_id())
+            .predecessor_account_id(node_id.account_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1967,8 +1967,8 @@ mod tests {
         let first_participant_id = participants.participants()[0].0.clone();
 
         let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().into_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().into_v1_account_id())
+            .signer_account_id(first_participant_id.clone().as_v1_account_id())
+            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -2001,8 +2001,8 @@ mod tests {
             .unwrap();
 
         let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone().into_v1_account_id())
-            .predecessor_account_id(account_id.clone().into_v1_account_id())
+            .signer_account_id(account_id.clone().as_v1_account_id())
+            .predecessor_account_id(account_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -2034,8 +2034,8 @@ mod tests {
         threshold: Threshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().into_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().into_v1_account_id())
+            .signer_account_id(first_participant_id.clone().as_v1_account_id())
+            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2158,7 +2158,7 @@ mod tests {
 
         // ❌ Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone().into_v1_account_id())
+            .signer_account_id(participant_id.clone().as_v1_account_id())
             .predecessor_account_id("outsider.near".parse().unwrap())
             .attached_deposit(NearToken::from_near(1))
             .build();
@@ -2195,8 +2195,8 @@ mod tests {
 
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().into_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().into_v1_account_id())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
@@ -2256,8 +2256,8 @@ mod tests {
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().into_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().into_v1_account_id())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
         contract
@@ -2279,8 +2279,8 @@ mod tests {
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().into_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().into_v1_account_id())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
 

@@ -86,8 +86,8 @@ impl TestSetup {
     fn with_env(&mut self, account_id: &AccountId, timestamp: u64) {
         testing_env!(VMContextBuilder::new()
             .block_timestamp(timestamp)
-            .signer_account_id(account_id.clone().into_v1_account_id())
-            .predecessor_account_id(account_id.clone().into_v1_account_id())
+            .signer_account_id(account_id.clone().as_v1_account_id())
+            .predecessor_account_id(account_id.clone().as_v1_account_id())
             .build());
     }
 
@@ -123,8 +123,8 @@ impl TestSetup {
 
 fn create_context_for_participant(account_id: &AccountId) -> VMContext {
     VMContextBuilder::new()
-        .signer_account_id(account_id.clone().into_v1_account_id())
-        .predecessor_account_id(account_id.clone().into_v1_account_id())
+        .signer_account_id(account_id.clone().as_v1_account_id())
+        .predecessor_account_id(account_id.clone().as_v1_account_id())
         .block_timestamp(near_sdk::env::block_timestamp())
         .build()
 }

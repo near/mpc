@@ -20,7 +20,7 @@ async fn create_account_given_id(
 ) -> Result<Execution<Account>, near_workspaces::error::Error> {
     let (_, sk) = worker.generate_dev_account_credentials();
     worker
-        .create_root_account_subaccount(account_id.into_v1_account_id(), sk)
+        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
         .await
 }
 

@@ -169,7 +169,7 @@ async fn handle_message(
                                     predecessor_id: receipt
                                         .predecessor_id
                                         .clone()
-                                        .into_v1_account_id(),
+                                        .as_v1_account_id(),
                                     entropy: streamer_message.block.header.random_value.into(),
                                     timestamp_nanosec: streamer_message
                                         .block
@@ -190,7 +190,7 @@ async fn handle_message(
                                     predecessor_id: receipt
                                         .predecessor_id
                                         .clone()
-                                        .into_v1_account_id(),
+                                        .as_v1_account_id(),
                                     entropy: streamer_message.block.header.random_value.into(),
                                     timestamp_nanosec: streamer_message
                                         .block
@@ -279,7 +279,7 @@ fn try_extract_next_receipt_id(
     expected_executor_id: &AccountId,
 ) -> Option<CryptoHash> {
     let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id.into_v1_account_id() != expected_executor_id {
+    if &outcome.executor_id.as_v1_account_id() != expected_executor_id {
         return None;
     }
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
@@ -344,7 +344,7 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        receipt.predecessor_id.clone().into_v1_account_id(),
+        receipt.predecessor_id.clone().as_v1_account_id(),
         ckd_args.request.domain_id,
     );
 
