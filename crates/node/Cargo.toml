@@ -33,6 +33,7 @@ k256 = { workspace = true }
 lru = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
+near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
@@ -40,7 +41,6 @@ near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-o11y = { workspace = true }
-near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
 prometheus = { workspace = true }

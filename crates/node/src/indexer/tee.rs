@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use mpc_contract::tee::proposal::{LauncherDockerComposeHash, MpcDockerImageHash};
 use mpc_contract::tee::tee_state::NodeId;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use tokio::sync::watch;
 
 use crate::indexer::lib::get_mpc_allowed_launcher_compose_hashes;

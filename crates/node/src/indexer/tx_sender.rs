@@ -13,7 +13,7 @@ use near_indexer_primitives::types::Gas;
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_indexer_primitives::views::{QueryRequest, QueryResponseKind};
 use near_o11y::WithSpanContextExt;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
