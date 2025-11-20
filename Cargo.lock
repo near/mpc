@@ -4704,6 +4704,7 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "tokio-util",
+ "utilities",
 ]
 
 [[package]]
