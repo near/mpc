@@ -295,9 +295,17 @@ near transaction view-status <transaction_Id> network-config mpc-localnet
 
 ### Vote Commands
 
+
 Set **CODE_HASH** to value you want to vote for.
+for example:
 ```bash
-export CODE_HASH=5c456b7f5f3da5f92e28b4ae031fb085bde74ae59ad6691e6713309d79fb323c
+export CODE_HASH=7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
+```
+
+Note: this hash should be the same as the one used in the  **launcher_docker_compose.yaml**
+
+```text
+DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
 ```
 
 ```bash
