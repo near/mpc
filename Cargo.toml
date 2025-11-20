@@ -16,6 +16,7 @@ members = [
     "crates/test_parallel_contract",
     "crates/test_utils",
     "crates/tls",
+    "crates/utilities",
 ]
 
 [workspace.package]
@@ -37,6 +38,7 @@ mpc-tls = { path = "crates/tls" }
 node-types = { path = "crates/node-types" }
 tee_authority = { path = "crates/tee_authority" }
 test_utils = { path = "crates/test_utils" }
+utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
@@ -86,7 +88,8 @@ k256 = "0.13.4"
 lru = "0.12.5"
 mockall = "0.13.1"
 near-abi = "0.4.3"
-near-account-id = "2.0.0"
+near-account-id = "1.1.4"
+near-account-id-v2 = { version = "2.0.0", package = "near-account-id" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
