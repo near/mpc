@@ -6,8 +6,8 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use near_o11y::testonly::init_integration_logger;
 use near_account_id_v2::AccountId;
+use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use rand::Rng;
 
