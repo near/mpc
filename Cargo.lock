@@ -4656,7 +4656,6 @@ dependencies = [
  "mpc-contract",
  "mpc-primitives",
  "near-abi",
- "near-account-id 2.0.0",
  "near-sdk",
  "near-workspaces",
  "rand 0.8.5",
