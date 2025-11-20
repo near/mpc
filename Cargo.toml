@@ -38,7 +38,6 @@ node-types = { path = "crates/node-types" }
 tee_authority = { path = "crates/tee_authority" }
 test_utils = { path = "crates/test_utils" }
 
-actix = "0.13.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 assert_matches = "1.5.0"
@@ -87,7 +86,7 @@ k256 = "0.13.4"
 lru = "0.12.5"
 mockall = "0.13.1"
 near-abi = "0.4.3"
-near-account-id = "1.1.1"
+near-account-id = "2.0.0"
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
