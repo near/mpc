@@ -242,6 +242,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
+    init_config: InitConfig,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
@@ -286,7 +287,7 @@ pub async fn init_with_candidates(
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "init_config": None::<InitConfig>,
+            "init_config": Some(init_config),
         }))
     };
 
@@ -409,7 +410,8 @@ pub async fn init_env(
         .map(|scheme| make_key_for_domain(*scheme))
         .collect();
 
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
+    let (worker, contract, accounts) =
+        init_with_candidates(public_keys, InitConfig::default()).await;
 
     (worker, contract, accounts, secret_keys)
 }
