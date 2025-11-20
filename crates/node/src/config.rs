@@ -1,7 +1,7 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use near_indexer_primitives::types::Finality;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};

@@ -143,7 +143,7 @@ mod tests {
         domain::DomainId,
         signature::{Payload, Tweak},
     };
-    use near_account_id::AccountId;
+    use near_account_id_v2::AccountId;
     use near_indexer_primitives::CryptoHash;
 
     use crate::types::CKDRequest;

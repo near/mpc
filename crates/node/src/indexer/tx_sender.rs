@@ -1,19 +1,16 @@
 use super::tx_signer::{TransactionSigner, TransactionSigners};
-use super::types::ChainGetPendingSignatureRequestArgs;
 use super::ChainSendTransactionRequest;
 use super::IndexerState;
 use crate::config::RespondConfig;
-use crate::indexer::types::{ChainGetPendingCKDRequestArgs, GetAttestationArgs};
+use crate::indexer::types::GetAttestationArgs;
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
-use mpc_contract::primitives::signature::YieldIndex;
+use near_account_id_v2::AccountId;
 use near_client::Query;
 use near_indexer_primitives::types::Gas;
 use near_indexer_primitives::types::{BlockReference, Finality};
 use near_indexer_primitives::views::{QueryRequest, QueryResponseKind};
-use near_o11y::WithSpanContextExt;
-use near_account_id::AccountId;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,8 +19,6 @@ use tokio::time;
 
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
-
-const GET_TEE_ATTESTATION_METHOD_NAME: &str = "get_attestation";
 
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
@@ -147,10 +142,7 @@ async fn submit_tx(
     params_ser: String,
     gas: Gas,
 ) -> anyhow::Result<()> {
-    let block = indexer_state
-        .view_client
-        .send(near_client::GetBlock(BlockReference::Finality(Finality::Final)).with_span_context())
-        .await??;
+    let block = indexer_state.view_client.latest_final_block().await?;
 
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
@@ -170,24 +162,7 @@ async fn submit_tx(
         transaction.transaction.nonce(),
     );
 
-    let response = indexer_state
-        .tx_processor
-        .send(
-            near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            }
-            .with_span_context(),
-        )
-        .await?;
-    match response {
-        // We're not a validator, so we should always be routing the transaction.
-        near_client::ProcessTxResponse::RequestRouted => Ok(()),
-        _ => {
-            anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
-        }
-    }
+    indexer_state.tx_processor.submit_tx(transaction).await
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
@@ -201,119 +176,40 @@ async fn observe_tx_result(
         Respond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending signature request still exists in the contract state
-            let get_pending_request_args: Vec<u8> =
-                serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
-                    request: respond_args.request.clone(),
-                })
-                .unwrap()
-                .into_bytes();
-            let query_response = indexer_state
+            let pending_request_response = indexer_state
                 .view_client
-                .send(
-                    Query {
-                        block_reference: BlockReference::Finality(Finality::Final),
-                        request: QueryRequest::CallFunction {
-                            account_id: indexer_state.mpc_contract_id.clone(),
-                            method_name: "get_pending_request".to_string(),
-                            args: get_pending_request_args.into(),
-                        },
-                    }
-                    .with_span_context(),
-                )
-                .await??;
-            match query_response.kind {
-                QueryResponseKind::CallResult(call_result) => {
-                    let pending_request =
-                        serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
-                    Ok(if pending_request.is_none() {
-                        TransactionStatus::Executed
-                    } else {
-                        TransactionStatus::NotExecuted
-                    })
-                }
-                _ => {
-                    anyhow::bail!("Unexpected result from a view client function call");
-                }
-            }
+                .get_pending_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .await?;
+
+            let transaction_status = match pending_request_response {
+                Some(_) => TransactionStatus::Executed,
+                None => TransactionStatus::NotExecuted,
+            };
+
+            Ok(transaction_status)
         }
         CKDRespond(respond_args) => {
             // Confirm whether the respond call succeeded by checking whether the
             // pending ckd request still exists in the contract state
-            let get_pending_request_args: Vec<u8> =
-                serde_json::to_string(&ChainGetPendingCKDRequestArgs {
-                    request: respond_args.request.clone(),
-                })
-                .unwrap()
-                .into_bytes();
-            let query_response = indexer_state
+            let pending_request_response = indexer_state
                 .view_client
-                .send(
-                    Query {
-                        block_reference: BlockReference::Finality(Finality::Final),
-                        request: QueryRequest::CallFunction {
-                            account_id: indexer_state.mpc_contract_id.clone(),
-                            method_name: "get_pending_ckd_request".to_string(),
-                            args: get_pending_request_args.into(),
-                        },
-                    }
-                    .with_span_context(),
-                )
-                .await??;
-            match query_response.kind {
-                QueryResponseKind::CallResult(call_result) => {
-                    let pending_request =
-                        serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)?;
-                    Ok(if pending_request.is_none() {
-                        TransactionStatus::Executed
-                    } else {
-                        TransactionStatus::NotExecuted
-                    })
-                }
-                _ => {
-                    anyhow::bail!("Unexpected result from a view client function call");
-                }
-            }
+                .get_pending_ckd_request(&indexer_state.mpc_contract_id, &respond_args.request)
+                .await?;
+
+            let transaction_status = match pending_request_response {
+                Some(_) => TransactionStatus::Executed,
+                None => TransactionStatus::NotExecuted,
+            };
+
+            Ok(transaction_status)
         }
         SubmitParticipantInfo(submit_participant_info_args) => {
-            let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
-                tls_public_key: submit_participant_info_args.tls_public_key.clone(),
-            })
-            .unwrap()
-            .into_bytes();
+            let tls_public_key = &submit_participant_info_args.tls_public_key;
 
-            let query_response = indexer_state
+            let attestation_stored_on_contract = indexer_state
                 .view_client
-                .send(
-                    Query {
-                        block_reference: BlockReference::Finality(Finality::Final),
-                        request: QueryRequest::CallFunction {
-                            account_id: indexer_state.mpc_contract_id.clone(),
-                            method_name: GET_TEE_ATTESTATION_METHOD_NAME.to_string(),
-                            args: get_attestation_args.into(),
-                        },
-                    }
-                    .with_span_context(),
-                )
-                .await;
-
-            let query_response = match query_response {
-                Ok(Ok(query_response)) => query_response,
-                error => {
-                    tracing::error!(
-                        ?error,
-                        "failed to query for TEE attestation submission result"
-                    );
-                    return Ok(TransactionStatus::Unknown);
-                }
-            };
-            let attestation_stored_on_contract: Option<contract_interface::types::Attestation> =
-                match query_response.kind {
-                    QueryResponseKind::CallResult(result) => serde_json::from_slice(&result.result)
-                        .context("Failed to deserialize get_tee_accounts response")?,
-                    _ => {
-                        anyhow::bail!("got unexpected response querying mpc contract state")
-                    }
-                };
+                .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
+                .await?;
 
             let submitted_attestation_is_on_chain =
                 attestation_stored_on_contract.is_some_and(|stored_attestation| {
