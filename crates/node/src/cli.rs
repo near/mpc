@@ -545,6 +545,7 @@ impl Cli {
                     download_config_url,
                     config.boot_nodes.as_ref().map(AsRef::as_ref),
                     None,
+                    None,
                 )
             }
             CliCommand::ImportKeyshare(cmd) => cmd.run().await,
