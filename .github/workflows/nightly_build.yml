@@ -24,14 +24,10 @@ jobs:
             persist-credentials: false
 
       - name: Adjust Cargo.toml to use required nearcore branch
+        env:
+          NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
         run: |
-          BRANCH="${{ inputs.nearcore-branch || 'master' }}"
-          # Validate branch name contains only safe characters (alphanumeric, hyphens, underscores, slashes, dots)
-          if [[ ! "$BRANCH" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-            echo "Error: Invalid branch name. Only alphanumeric characters, hyphens, underscores, slashes, and dots are allowed."
-            exit 1
-          fi
-          sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1$BRANCH|g" Cargo.toml
+          sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1${NEARCORE_BRANCH}|g" Cargo.toml
       
       - name: Build MPC
         id: build-mpc
