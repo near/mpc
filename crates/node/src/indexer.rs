@@ -6,6 +6,8 @@ use mpc_contract::tee::{
     proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
     tee_state::NodeId,
 };
+use near_async::{multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle};
+use near_client::{client_actor::ClientActorInner, RpcHandler, ViewClientActorInner};
 use near_indexer_primitives::types::AccountId;
 use participants::ContractState;
 use std::sync::Arc;
@@ -29,14 +31,15 @@ pub mod types;
 #[cfg(test)]
 pub mod fake;
 
-#[derive(Debug)]
+//TODO: The new types don't implement Debug
+// #[derive(Debug)]
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
-    view_client: actix::Addr<near_client::ViewClientActor>,
+    view_client: IndexerViewClient,
     /// For querying blockchain sync status.
-    client: actix::Addr<near_client::ClientActor>,
+    client: IndexerClient,
     /// For sending txs to the chain.
-    tx_processor: actix::Addr<near_client::RpcHandlerActor>,
+    tx_processor: IndexerTxProcessor,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
     /// Stores runtime indexing statistics.
@@ -45,9 +48,9 @@ pub(crate) struct IndexerState {
 
 impl IndexerState {
     pub fn new(
-        view_client: actix::Addr<near_client::ViewClientActor>,
-        client: actix::Addr<near_client::ClientActor>,
-        tx_processor: actix::Addr<near_client::RpcHandlerActor>,
+        view_client: IndexerViewClient,
+        client: IndexerClient,
+        tx_processor: IndexerTxProcessor,
         mpc_contract_id: AccountId,
     ) -> Self {
         Self {
@@ -58,6 +61,19 @@ impl IndexerState {
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
     }
+}
+
+// #[derive(Debug)]
+struct IndexerViewClient {
+    view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
+}
+// #[derive(Debug)]
+struct IndexerClient {
+    client: TokioRuntimeHandle<ClientActorInner>,
+}
+// #[derive(Debug)]
+struct IndexerTxProcessor {
+    rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
 }
 
 /// API to interact with the indexer. Can be replaced by a dummy implementation.
