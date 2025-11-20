@@ -1,4 +1,4 @@
-name: Build mpc with latest nearcore master
+name: Build MPC with nearcore branch
 
 on:
   workflow_dispatch:
