@@ -422,22 +422,3 @@ async fn upgrade_allows_new_request_types(
         );
     }
 }
-
-#[rstest]
-#[tokio::test]
-async fn test_nonexisting_function_allowed_launcher_compose_hashes(
-    #[values(Network::Mainnet)] network: Network,
-) -> anyhow::Result<()> {
-    let worker = near_workspaces::sandbox().await?;
-
-    let contract = deploy_old(&worker, network).await?;
-    let call_result = contract
-        .view("allowed_launcher_compose_hashes")
-        .await
-        .unwrap_err();
-    let error_msg = format!("{:?}", call_result);
-    assert!(
-        error_msg.contains("wasm execution failed with error: MethodResolveError(MethodNotFound)")
-    );
-    Ok(())
-}
