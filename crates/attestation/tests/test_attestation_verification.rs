@@ -39,7 +39,7 @@ fn test_verify_method_signature() {
     let account_key = account_key();
 
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    let timestamp_s = 1755186041_u64;
+    let timestamp_s = 1763626832_u64; //Thursday, 20 November 2025 08:20:32
 
     let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();
     let allowed_launcher_compose_digest: LauncherDockerComposeHash = launcher_compose_digest();
@@ -50,5 +50,6 @@ fn test_verify_method_signature() {
         &[allowed_mpc_image_digest],
         &[allowed_launcher_compose_digest],
     );
+    dbg!(&verification_result);
     assert!(verification_result.is_ok());
 }

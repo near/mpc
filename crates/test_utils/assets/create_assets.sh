@@ -30,6 +30,9 @@ echo "Extracting data from '$INPUT_FILE' to '$OUTPUT_DIR'..."
 # Extract P2P TLS public key
 jq -j '.near_p2p_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_p2p_public_key.pub"
 
+# Extract NEAR account public key
+jq -j '.near_signer_public_key' "$INPUT_FILE" > "$OUTPUT_DIR/near_account_public_key.pub"
+
 # Extract app_compose.json. We set 4 width indentation, and remove trailing newline, so it matches the original string in tests.
 printf '%s' "$(jq -r --indent 4 '.tee_participant_info.Dstack.tcb_info.app_compose' "$INPUT_FILE")" > "$OUTPUT_DIR/app_compose.json"
 
