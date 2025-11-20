@@ -4736,7 +4736,7 @@ dependencies = [
  "mockall",
  "mpc-contract",
  "mpc-tls",
- "near-account-id 1.1.4",
+ "near-account-id 2.0.0",
  "near-async",
  "near-client",
  "near-config-utils 2.10.0-rc.2",
@@ -4771,7 +4771,6 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "url",
- "utilities",
 ]
 
 [[package]]

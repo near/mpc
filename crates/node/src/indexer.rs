@@ -1,22 +1,37 @@
-use crate::{indexer::migrations::ContractMigrationInfo, migration_service::types::MigrationInfo};
+use crate::{
+    indexer::{
+        migrations::ContractMigrationInfo,
+        tx_sender::TransactionStatus,
+        tx_signer::TransactionSigner,
+        types::{
+            ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
+            ChainSignatureRequest, GetAttestationArgs,
+        },
+    },
+    migration_service::types::MigrationInfo,
+};
 
 use self::stats::IndexerStats;
+use anyhow::Context;
+use attestation::report_data::Ed25519PublicKey;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
+    primitives::signature::YieldIndex,
     state::ProtocolContractState,
     tee::{
         proposal::{LauncherDockerComposeHash, MpcDockerImageHash},
         tee_state::NodeId,
     },
 };
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{client_actor::ClientActorInner, RpcHandler, Status, ViewClientActorInner};
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_indexer_primitives::{
-    types::{BlockReference, Finality},
-    views::{QueryRequest, QueryResponseKind},
+    types::{BlockReference, Finality, Gas},
+    views::{BlockView, QueryRequest, QueryResponse, QueryResponseKind},
 };
 use near_o11y::span_wrapped_msg::SpanWrappedMessageExt;
 use participants::ContractState;
@@ -26,7 +41,6 @@ use tokio::sync::{
     Mutex, {mpsc, watch},
 };
 use types::ChainSendTransactionRequest;
-use utilities::AccountIdExtV1;
 
 pub mod configs;
 pub mod handler;
@@ -88,6 +102,136 @@ struct IndexerViewClient {
 // indexer_state.view_client.get_mpc_tee_accounts().await
 // This pattern repeats for all the methods.
 impl IndexerViewClient {
+    pub(crate) async fn get_pending_request(
+        &self,
+        mpc_contract_id: &AccountId,
+        chain_signature_request: &ChainSignatureRequest,
+    ) -> anyhow::Result<Option<YieldIndex>> {
+        let get_pending_request_args: Vec<u8> =
+            serde_json::to_string(&ChainGetPendingSignatureRequestArgs {
+                request: chain_signature_request.clone(),
+            })
+            .unwrap()
+            .into_bytes();
+
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id.clone(),
+            method_name: "get_pending_request".to_string(),
+            args: get_pending_request_args.into(),
+        };
+        let block_reference = BlockReference::Finality(Finality::Final);
+
+        let query = near_client::Query {
+            block_reference,
+            request,
+        };
+
+        let query_response = self
+            .view_client
+            .send_async(query)
+            .await
+            .context("failed to query for pending request")??;
+
+        match query_response.kind {
+            QueryResponseKind::CallResult(call_result) => {
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
+                    .context("failed to deserialize pending request response")
+            }
+            _ => {
+                anyhow::bail!("Unexpected result from a view client function call");
+            }
+        }
+    }
+
+    pub(crate) async fn get_pending_ckd_request(
+        &self,
+        mpc_contract_id: &AccountId,
+        chain_ckd_request: &ChainCKDRequest,
+    ) -> anyhow::Result<Option<YieldIndex>> {
+        let get_pending_request_args: Vec<u8> =
+            serde_json::to_string(&ChainGetPendingCKDRequestArgs {
+                request: chain_ckd_request.clone(),
+            })
+            .unwrap()
+            .into_bytes();
+
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id.clone(),
+            method_name: "get_pending_ckd_request".to_string(),
+            args: get_pending_request_args.into(),
+        };
+        let block_reference = BlockReference::Finality(Finality::Final);
+
+        let query = near_client::Query {
+            block_reference,
+            request,
+        };
+
+        let query_response = self
+            .view_client
+            .send_async(query)
+            .await
+            .context("failed to query for pending CKD request")??;
+
+        match query_response.kind {
+            QueryResponseKind::CallResult(call_result) => {
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
+                    .context("failed to deserialize pending CKD request response")
+            }
+            _ => {
+                anyhow::bail!("Unexpected result from a view client function call");
+            }
+        }
+    }
+
+    pub(crate) async fn get_participant_attestation(
+        &self,
+        mpc_contract_id: &AccountId,
+        participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
+    ) -> anyhow::Result<Option<contract_interface::types::Attestation>> {
+        let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
+            tls_public_key: participant_tls_public_key,
+        })
+        .unwrap()
+        .into_bytes();
+
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id.clone(),
+            method_name: GET_TEE_ATTESTATION_ENDPOINT.to_string(),
+            args: get_attestation_args.into(),
+        };
+        let block_reference = BlockReference::Finality(Finality::Final);
+
+        let query = near_client::Query {
+            block_reference,
+            request,
+        };
+
+        let query_response = self
+            .view_client
+            .send_async(query)
+            .await
+            .context("failed to query for pending request")??;
+
+        match query_response.kind {
+            QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
+                Option<contract_interface::types::Attestation>,
+            >(&call_result.result)
+            .context("failed to deserialize pending request response"),
+            _ => {
+                anyhow::bail!("Unexpected result from a view client function call");
+            }
+        }
+    }
+
+    pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
+        let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
+        self.view_client
+            .send_async(block_query)
+            .await?
+            .context("failed to get query for final block")
+    }
+
     pub(crate) async fn get_mpc_contract_state(
         &self,
         mpc_contract_id: AccountId,
@@ -136,7 +280,7 @@ impl IndexerViewClient {
         State: for<'de> Deserialize<'de>,
     {
         let request = QueryRequest::CallFunction {
-            account_id: mpc_contract_id.as_v2_account_id(),
+            account_id: mpc_contract_id,
             method_name: endpoint.to_string(),
             args: vec![].into(),
         };
@@ -171,6 +315,7 @@ const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = "allowed_launcher_compose
 const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
 pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
+const GET_TEE_ATTESTATION_ENDPOINT: &str = "get_attestation";
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
@@ -198,6 +343,28 @@ impl IndexerClient {
 // #[derive(Debug)]
 struct IndexerTxProcessor {
     rpc_handler: MultithreadRuntimeHandle<RpcHandler>,
+}
+
+impl IndexerTxProcessor {
+    /// Creates, signs, and submits a function call with the given method and serialized arguments.
+    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
+        let response = self
+            .rpc_handler
+            .send_async(near_client::ProcessTxRequest {
+                transaction,
+                is_forwarded: false,
+                check_only: false,
+            })
+            .await?;
+
+        match response {
+            // We're not a validator, so we should always be routing the transaction.
+            near_client::ProcessTxResponse::RequestRouted => Ok(()),
+            _ => {
+                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
+            }
+        }
+    }
 }
 
 /// API to interact with the indexer. Can be replaced by a dummy implementation.

@@ -9,7 +9,7 @@ use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
@@ -18,7 +18,6 @@ use near_indexer_primitives::CryptoHash;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use utilities::AccountIdExtV2;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedSignArgs {
@@ -166,10 +165,7 @@ async fn handle_message(
                                     signature_id,
                                     receipt_id: receipt.receipt_id,
                                     request: sign_args,
-                                    predecessor_id: receipt
-                                        .predecessor_id
-                                        .clone()
-                                        .as_v1_account_id(),
+                                    predecessor_id: receipt.predecessor_id.clone(),
                                     entropy: streamer_message.block.header.random_value.into(),
                                     timestamp_nanosec: streamer_message
                                         .block
@@ -187,10 +183,7 @@ async fn handle_message(
                                     ckd_id,
                                     receipt_id: receipt.receipt_id,
                                     request: ckd_args,
-                                    predecessor_id: receipt
-                                        .predecessor_id
-                                        .clone()
-                                        .as_v1_account_id(),
+                                    predecessor_id: receipt.predecessor_id.clone(),
                                     entropy: streamer_message.block.header.random_value.into(),
                                     timestamp_nanosec: streamer_message
                                         .block
@@ -279,7 +272,7 @@ fn try_extract_next_receipt_id(
     expected_executor_id: &AccountId,
 ) -> Option<CryptoHash> {
     let outcome = &execution_outcome.outcome;
-    if &outcome.executor_id.as_v1_account_id() != expected_executor_id {
+    if &outcome.executor_id != expected_executor_id {
         return None;
     }
     let ExecutionStatusView::SuccessReceiptId(next_receipt_id) = outcome.status else {
@@ -344,7 +337,7 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        receipt.predecessor_id.clone().as_v1_account_id(),
+        receipt.predecessor_id.clone(),
         ckd_args.request.domain_id,
     );
 

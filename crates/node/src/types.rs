@@ -5,7 +5,7 @@ use mpc_contract::primitives::{
     signature::{Payload, Tweak},
 };
 use near_indexer_primitives::CryptoHash;
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use serde::{Deserialize, Serialize};
 
 use contract_interface::types as dtos;

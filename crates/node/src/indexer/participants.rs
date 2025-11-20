@@ -10,7 +10,7 @@ use mpc_contract::primitives::{
     thresholds::ThresholdParameters,
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -347,13 +347,6 @@ pub fn convert_participant_infos(
             ed25519_dalek::VerifyingKey::from_near_sdk_public_key(&info.sign_pk)
                 .with_context(|| format!("Invalid public key length for peer: {:?}", info.url))?;
 
-        // TODO: two incompatible versions of `near-account-id;
-        // The sdk depends on v1, whereas nearcore upgraded to 2.0.0`
-        let account_id_string = account_id.as_str();
-        let account_id: near_account_id::AccountId = account_id_string
-            .parse()
-            .expect("TODO: This is why we should not use AccountID in the public API");
-
         converted.push(ParticipantInfo {
             id: ParticipantId::from_raw(id.get()),
             address: address.to_string(),
@@ -402,7 +395,6 @@ mod tests {
     use near_indexer_primitives::types::AccountId;
     use std::collections::HashMap;
     use std::str::FromStr;
-    use test_utils::conversions::AccountIdConversion;
 
     fn create_participant_data_raw() -> Vec<(String, String, String)> {
         vec![

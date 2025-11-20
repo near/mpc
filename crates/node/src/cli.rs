@@ -23,7 +23,7 @@ use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_time::Clock;
 use std::{collections::BTreeMap, sync::Mutex};

@@ -14,7 +14,7 @@ use mpc_contract::{
         signature::Tweak,
     },
 };
-use near_account_id::AccountId;
+use near_account_id_v2::AccountId;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
@@ -138,8 +138,8 @@ pub struct ChainGetPendingCKDRequestArgs {
 }
 
 #[derive(Serialize, Debug)]
-pub struct GetAttestationArgs {
-    pub tls_public_key: contract_interface::types::Ed25519PublicKey,
+pub struct GetAttestationArgs<'a> {
+    pub tls_public_key: &'a contract_interface::types::Ed25519PublicKey,
 }
 
 #[derive(Serialize, Debug)]
