@@ -41,6 +41,7 @@ use node_types::http_server::StaticWebData;
 use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
+use utilities::AccountIdExtV2;
 
 impl ListMpcCmd {
     pub async fn run(&self, config: ParsedConfig) {
@@ -872,7 +873,7 @@ pub async fn read_contract_state(
     let request = methods::query::RpcQueryRequest {
         block_reference: BlockReference::Finality(Finality::Final),
         request: QueryRequest::CallFunction {
-            account_id: contract.clone(),
+            account_id: contract.as_v1_account_id(),
             method_name: "state".to_string(),
             args: FunctionArgs::from(b"{}".to_vec()),
         },

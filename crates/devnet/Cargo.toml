@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+utilities = { workspace = true }
 
 # TODO: #657 use workspace versions.
 # https://github.com/near/mpc/issues/657 
