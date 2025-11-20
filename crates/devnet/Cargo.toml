@@ -14,8 +14,8 @@ flume = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
-near-sdk = { workspace = true }
 near-account-id-v2 = { workspace = true }
+near-sdk = { workspace = true }
 node-types = { workspace = true }
 # TODO: #658 use workspace version
 rand = "0.9.0"
