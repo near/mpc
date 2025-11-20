@@ -548,8 +548,8 @@ pub fn assert_keygen_invariants(
             max: participants.len(),
         });
     }
-    if threshold < 1 {
-        return Err(InitializationError::ThresholdTooSmall { threshold, min: 1 });
+    if threshold < 2 {
+        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
     }
 
     // ensure uniqueness of participants in the participant list
@@ -624,6 +624,10 @@ pub fn reshare_assertions<C: Ciphersuite>(
         });
     }
 
+    if threshold < 2 {
+        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
+    }
+
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
@@ -657,11 +661,14 @@ pub mod test {
 
     use super::domain_separate_hash;
     use crate::crypto::ciphersuite::Ciphersuite;
+    use crate::errors::InitializationError;
     use crate::participants::{Participant, ParticipantList};
     use crate::test_utils::{
         assert_public_key_invariant, generate_participants, run_keygen, run_refresh, run_reshare,
     };
+    use crate::{keygen, reshare};
     use frost_core::{Field, Group};
+    use rand_core::OsRng;
 
     #[test]
     fn test_domain_separate_hash() {
@@ -697,6 +704,26 @@ pub mod test {
             x = x + p_list.lagrange::<C>(participants[i]).unwrap() * shares[i];
         }
         assert_eq!(<C::Group as Group>::generator() * x, pub_key);
+    }
+
+    #[allow(non_snake_case)]
+    pub fn keygen__should_fail_if_threshold_is_below_limit<C: Ciphersuite>()
+    where
+        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+    {
+        let threshold = 1;
+        let participants = generate_participants(2);
+
+        let result = keygen::<C>(&participants, participants[0], threshold, OsRng);
+
+        assert_eq!(
+            result.err().unwrap(),
+            InitializationError::ThresholdTooSmall { threshold, min: 2 }
+        );
+
+        // this threshold should work correctly
+        test_keygen::<C>(&participants, 2);
     }
 
     pub fn test_refresh<C: Ciphersuite>(participants: &[Participant], threshold: usize)
@@ -762,5 +789,41 @@ pub mod test {
             x = x + p_list.lagrange::<C>(participants[i]).unwrap() * shares[i];
         }
         assert_eq!(<C::Group as Group>::generator() * x, pub_key.to_element());
+    }
+
+    #[allow(non_snake_case)]
+    pub fn reshare__should_fail_if_threshold_is_below_limit<C: Ciphersuite>()
+    where
+        <C::Group as Group>::Element: std::fmt::Debug + std::marker::Send,
+        <<C::Group as Group>::Field as Field>::Scalar: std::marker::Send,
+    {
+        let participants = generate_participants(2);
+        let threshold0 = 2;
+        let threshold1 = 1;
+        let result0 = run_keygen::<C>(&participants, threshold0);
+
+        let pub_key = result0[0].1.public_key;
+
+        let result = reshare::<C>(
+            &participants,
+            threshold0,
+            None,
+            pub_key,
+            &participants,
+            threshold1,
+            participants[0],
+            OsRng,
+        );
+
+        assert_eq!(
+            result.err().unwrap(),
+            InitializationError::ThresholdTooSmall {
+                threshold: threshold1,
+                min: 2
+            }
+        );
+
+        // These threshold parameters should work correctly
+        test_reshare::<C>(&participants, 2, 2);
     }
 }

@@ -23,3 +23,13 @@ fn test_reshare() {
     let threshold1 = 3;
     crate::dkg::test::test_reshare::<C>(&participants, threshold0, threshold1);
 }
+
+#[test]
+fn test_keygen_threshold_limits() {
+    crate::dkg::test::keygen__should_fail_if_threshold_is_below_limit::<C>();
+}
+
+#[test]
+fn test_reshare_threshold_limits() {
+    crate::dkg::test::reshare__should_fail_if_threshold_is_below_limit::<C>();
+}
