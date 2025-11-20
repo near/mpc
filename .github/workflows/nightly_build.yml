@@ -1,0 +1,44 @@
+name: Build mpc with latest nearcore master
+
+on:
+  workflow_dispatch:
+    inputs:
+      nearcore-branch:
+        default: "master"
+        description: "nearcore git branch to use for mpc build"
+        type: string
+        required: true
+     
+  schedule:
+    - cron: '0 1 * * *' # Nightly at 1:00 UTC (every day)
+
+jobs:
+  build-mpc:
+    runs-on: warp-ubuntu-2404-x64-8x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+            persist-credentials: false
+
+      - name: Adjust Cargo.toml to use required nearcore branch
+        env:
+          NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
+        run: |
+          sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1${NEARCORE_BRANCH}|g" Cargo.toml
+      
+      - name: Build MPC
+        id: build-mpc
+        run: cargo build -p mpc-node
+    
+      - name: Failure Slack Notification
+        if: failure()
+        uses: bryannice/gitactions-slack-notification@994ea1036ed0a741632907a1431f8d94f00dd84f
+        env:
+          SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+          SLACK_USERNAME: "GHA MPC Builder"
+          SLACK_TITLE: 'MPC build failed'
+          SLACK_MESSAGE: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/nearprotocol/mpc/actions/runs/${{ github.run_id }}|here> "
+          
