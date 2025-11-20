@@ -34,7 +34,17 @@ Follow the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/loc
 
 ## Step 3: Deploy MPC Nodes
 
+Before proceeding, save the validator key from the network configuration
+as a `VALIDATOR_KEY` environment variable.
+We will need it in the next step.
+
+```shell
+export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret_key" | grep -Eo "ed25519:\w+")
+```
+
+
 Create two accounts for the MPC nodes (we’ll call them **Frodo** and **Sam**):
+
 
 ```bash
 near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
@@ -169,7 +179,7 @@ Example:
 export BASE_PATH="dstask base path"
 ```
 
-# Replace ${MACHINE_IP} inside the config files
+#### 4. Replace ${MACHINE_IP} inside the config files
 ```bash
 sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/frodo.conf
 ```
@@ -178,7 +188,7 @@ sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/frodo.conf
 sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
 ```
 
-#### 4. Start the Frodo MPC Node
+#### 5. Start the Frodo MPC Node
 
 ```bash
 ./deploy-launcher.sh \
@@ -234,12 +244,18 @@ near account add-key sam.test.near grant-full-access use-manually-provided-publi
 
 ### Initialize the MPC Contract
 
+Move to MPC root folder:
+
+```bash
+cd ..
+```
+
 Initialize the MPC contract with the two participants (using the `P2P_KEY` values retrieved earlier).
 
 Prepare the arguments for the init call:
 
 ```bash
-envsubst < docs/localnet/args/init.json > /tmp/init_args.json
+envsubst < docs/localnet/args/init_tee.json > /tmp/init_args.json
 ```
 
 Now call the `init` function on the contract:
@@ -258,14 +274,23 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 
 ## Voting for a New MPC Docker Image Hash
 
-Before voting, ensure that the contract’s list of valid MPC image hashes is updated.  
-If it’s not, node attestation submissions will fail.
+Before voting, the contract’s list of valid MPC image hashes is empty.  
+Therefor, node attestation submissions will fail.
 
 **Sample Error Log (Expected Before Voting):**
 
 ```
-Smart contract panicked: Invalid TEE Remote Attestation...
-MPC image hash ... is not in the allowed hashes list
+mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
+..
+..
+ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
+```
+
+you can checkout the trasaction by calling
+near transaction view-status <transaction_Id> network-config mpc-localnet
+
+```
+(ExecutionError("Smart contract panicked: Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the allowed mpc image hashes list is empty"
 ```
 
 ### Vote Commands
@@ -384,6 +409,12 @@ near contract call-function as-transaction mpc-contract.test.near sign \
 ---
 
 ## Troubleshooting
+
+You can view trascation using:
+```bash
+near transaction view-status <transaction_Id>  network-config mpc-localnet
+```
+
 
 ### NearD Dashboard
 
