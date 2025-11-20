@@ -37,7 +37,7 @@ jobs:
         if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
-        uses: act10ns/slack@v2
+        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d
         with:
           status: failure
           message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
