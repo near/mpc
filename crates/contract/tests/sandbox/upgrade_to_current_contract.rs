@@ -4,7 +4,7 @@ use crate::sandbox::common::{
     call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
     gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests,
     propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
-    SharedSecretKey,
+    SharedSecretKey, PARTICIPANT_LEN,
 };
 use mpc_contract::crypto_shared::CKDResponse;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
@@ -37,6 +37,7 @@ async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
+    // TODO: tests using this function cannot scale yet
     let (accounts, participants) = gen_accounts(worker, 3).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;

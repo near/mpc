@@ -1098,10 +1098,11 @@ pub async fn execute_key_generation_and_add_random_state(
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
     const EPOCH_ID: u64 = 0;
+    let threshold = assert_running_return_threshold(contract).await.unwrap();
 
     // 1. Submit a threshold proposal (raise threshold to 3).
     let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+        ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": dummy_threshold_parameters,
