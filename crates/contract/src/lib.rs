@@ -1,5 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![deny(clippy::mod_module_files)]
+// We disallow using `near_sdk::AccountId` in our own code.
+// However, the `near_bindgen` proc macro expands to code that uses it
+// internally, and Clippy applies the `disallowed_types` lint to that
+// generated code as well. Since the lint cannot be suppressed only for the
+// macro expansion, we allow it in this file to avoid false positives.
+#![allow(clippy::disallowed_types)]
+
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
