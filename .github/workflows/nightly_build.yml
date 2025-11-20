@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+            persist-credentials: false
 
       - name: Adjust Cargo.toml to use required nearcore branch
         run: |
@@ -30,7 +32,7 @@ jobs:
     
       - name: Failure Slack Notification
         if: failure()
-        uses: bryannice/gitactions-slack-notification@2.0.0
+        uses: bryannice/gitactions-slack-notification@994ea1036ed0a741632907a1431f8d94f00dd84f
         env:
           SLACK_INCOMING_WEBHOOK: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
           SLACK_USERNAME: "GHA MPC Builder"
