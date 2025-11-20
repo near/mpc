@@ -1218,7 +1218,7 @@ impl MpcContract {
     pub fn pub_migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_0_2_state::MpcContractV1>() {
+        match try_state_read::<v3_0_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(_) => (), // Try read as "Self" instead

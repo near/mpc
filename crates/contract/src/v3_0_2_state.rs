@@ -20,11 +20,10 @@ use crate::{
     state::ProtocolContractState,
     tee::tee_state::TeeState,
     update::ProposedUpdates,
-    MpcContract,
 };
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct MpcContractV1 {
+pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
@@ -35,8 +34,8 @@ pub struct MpcContractV1 {
     node_migrations: NodeMigrations,
 }
 
-impl From<MpcContractV1> for MpcContract {
-    fn from(value: MpcContractV1) -> Self {
+impl From<MpcContract> for crate::MpcContract {
+    fn from(value: MpcContract) -> Self {
         Self {
             protocol_state: value.protocol_state,
             pending_signature_requests: value.pending_signature_requests,
