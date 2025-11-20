@@ -2,7 +2,7 @@ use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
 use mpc_contract::config::Config;
 use mpc_contract::primitives::domain::SignatureScheme;
@@ -35,7 +35,7 @@ fn current_contract_proposal() -> ProposeUpdateArgs {
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -58,8 +58,8 @@ async fn test_propose_contract_max_size_upload() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_propose_update_config() {
+    // TODO: #1461 this fails with more participants
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
     let threshold = assert_running_return_threshold(&contract).await.unwrap();
     dbg!(contract.id());

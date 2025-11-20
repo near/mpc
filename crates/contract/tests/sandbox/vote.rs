@@ -1,5 +1,6 @@
 use crate::sandbox::common::{
-    assert_running_return_threshold, check_call_success, gen_accounts, init_env, submit_participant_info, IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN
+    assert_running_return_threshold, check_call_success, gen_accounts, init_env,
+    submit_participant_info, IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
@@ -20,7 +21,8 @@ const MODULE_PARTICIPANTS_LEN: usize = 3;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
+    let (_, contract, accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
     let args = json!({
         "domains": vec![
             json!({
@@ -151,7 +153,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
+    let (worker, contract, mut accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -179,7 +182,8 @@ async fn test_resharing() -> anyhow::Result<()> {
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     let total_participants = new_participants.len();
     accounts.push(acc[0].clone());
-    let proposal = ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
+    let proposal =
+        ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
 
     for account in &accounts {
         check_call_success(
@@ -251,7 +255,8 @@ async fn test_resharing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
-    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
+    let (worker, contract, mut accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], MODULE_PARTICIPANTS_LEN).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -277,7 +282,8 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     .expect("Attestation submission for new account must succeed.");
 
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
-    let proposal = ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
+    let proposal =
+        ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
     accounts.push(new_account.clone());
     for account in &accounts {
         check_call_success(
@@ -894,7 +900,8 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
 
-    let threshold_parameters = ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
+    let threshold_parameters =
+        ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
 
     current_participant_accounts.push(new_account.clone());
 

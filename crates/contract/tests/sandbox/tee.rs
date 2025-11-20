@@ -146,7 +146,8 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 /// account id that is not in the participant list
 #[tokio::test]
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
-    let (worker, contract, _accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, _accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
     let allowed_mpc_image_digest = image_digest();
 
@@ -168,7 +169,8 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
 
 #[tokio::test]
 async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() -> Result<()> {
-    let (_worker, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_worker, contract, accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let allowed_mpc_image_digest =
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
@@ -310,7 +312,8 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 /// This verifies the security boundary: only the contract itself should be able to perform internal cleanup operations.
 #[tokio::test]
 async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
-    let (worker, contract, _accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, _accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     // Create a new account that's not the contract
     let external_account = worker.dev_create_account().await?;
@@ -342,7 +345,8 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 /// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
-    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, mut accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let participant_uids = assert_running_return_participants(&contract)
         .await?

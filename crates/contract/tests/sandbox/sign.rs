@@ -1,5 +1,6 @@
 use crate::sandbox::common::{
-    candidates, create_message_payload_and_response, init, init_env, sign_and_validate, PARTICIPANT_LEN,
+    candidates, create_message_payload_and_response, init, init_env, sign_and_validate,
+    PARTICIPANT_LEN,
 };
 use mpc_contract::{
     config::InitConfig,
@@ -21,7 +22,8 @@ const DOMAIN_ID_ZERO: DomainId = DomainId(0);
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let path = "test";
@@ -105,7 +107,8 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -247,7 +250,8 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let predecessor_id = contract.id();
@@ -306,7 +310,8 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
-    let (_, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
     let predecessor_id = contract.id();
     let path = "test";
@@ -422,7 +427,8 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Ed25519], PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Ed25519], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let path = "test";

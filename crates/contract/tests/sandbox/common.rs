@@ -399,7 +399,7 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
 
 pub async fn init_env(
     schemes: &[SignatureScheme],
-    number_of_participants: usize
+    number_of_participants: usize,
 ) -> (
     Worker<Sandbox>,
     Contract,
@@ -411,7 +411,8 @@ pub async fn init_env(
         .map(|scheme| make_key_for_domain(*scheme))
         .collect();
 
-    let (worker, contract, accounts) = init_with_candidates(public_keys, number_of_participants).await;
+    let (worker, contract, accounts) =
+        init_with_candidates(public_keys, number_of_participants).await;
 
     (worker, contract, accounts, secret_keys)
 }
@@ -921,9 +922,7 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants().clone())
 }
 
-pub async fn assert_running_return_threshold(
-    contract: &Contract,
-) -> anyhow::Result<Threshold> {
+pub async fn assert_running_return_threshold(contract: &Contract) -> anyhow::Result<Threshold> {
     let final_state: ProtocolContractState = contract.view("state").await?.json()?;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
