@@ -5,6 +5,7 @@ pub mod confidential_key_derivation;
 pub mod ecdsa;
 pub mod eddsa;
 pub mod errors;
+
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 

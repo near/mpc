@@ -355,15 +355,11 @@ impl Shares {
 #[cfg(test)]
 mod test {
     use super::*;
-    use rand_core::OsRng;
-
     use crate::ecdsa::KeygenOutput;
     use crate::test_utils::{generate_participants, run_protocol, GenProtocol};
-    use frost_secp256k1::keys::PublicKeyPackage;
     use frost_secp256k1::VerifyingKey;
-
     use k256::ProjectivePoint;
-    use std::collections::BTreeMap;
+    use rand_core::OsRng;
 
     #[test]
     fn test_presign() {
@@ -380,10 +376,9 @@ mod test {
             // simulating the key packages for each participant
             let private_share = f.eval_at_participant(*p).unwrap();
             let verifying_key = VerifyingKey::new(big_x);
-            let public_key_package = PublicKeyPackage::new(BTreeMap::new(), verifying_key);
             let keygen_out = KeygenOutput {
                 private_share: SigningShare::new(private_share.0),
-                public_key: *public_key_package.verifying_key(),
+                public_key: verifying_key,
             };
 
             let protocol = presign(
@@ -403,9 +398,6 @@ mod test {
 
         assert!(result.len() == 5);
         // testing that big_r is the same accross participants
-        assert_eq!(result[0].1.big_r, result[1].1.big_r);
-        assert_eq!(result[1].1.big_r, result[2].1.big_r);
-        assert_eq!(result[2].1.big_r, result[3].1.big_r);
-        assert_eq!(result[3].1.big_r, result[4].1.big_r);
+        assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
     }
 }

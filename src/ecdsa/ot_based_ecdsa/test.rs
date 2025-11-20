@@ -2,27 +2,23 @@ use super::{
     presign::presign,
     sign::sign,
     triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
-    PresignArguments, PresignOutput,
+    PresignArguments, PresignOutput, RerandomizedPresignOutput,
 };
 use crate::participants::Participant;
 use crate::protocol::Protocol;
 use crate::test_utils::{
-    assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
-    one_coordinator_output, run_keygen, run_protocol, run_refresh, run_reshare, run_sign,
-};
-use crate::{
-    crypto::hash::test::scalar_hash_secp256k1, ecdsa::ot_based_ecdsa::RerandomizedPresignOutput,
-};
-use crate::{
-    ecdsa::{
-        Element, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
-        SignatureOption, Tweak,
-    },
-    test_utils::{GenOutput, GenProtocol},
+    assert_public_key_invariant, check_one_coordinator_output, generate_participants,
+    generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
+    run_sign, GenOutput, GenProtocol,
 };
 
-use rand::rngs::OsRng;
-use rand::Rng;
+use crate::crypto::hash::test::scalar_hash_secp256k1;
+use crate::ecdsa::{
+    Element, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
+    SignatureOption, Tweak,
+};
+
+use rand::{rngs::OsRng, Rng};
 use rand_core::RngCore;
 use std::error::Error;
 
@@ -62,7 +58,7 @@ pub fn run_sign_without_rerandomization(
     )
     .unwrap();
     // test one single some for the coordinator
-    let signature = one_coordinator_output(result, coordinator).unwrap();
+    let signature = check_one_coordinator_output(result, coordinator).unwrap();
     (coordinator, signature)
 }
 
@@ -111,7 +107,7 @@ pub fn run_sign_with_rerandomization(
     let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
-    let result = crate::test_utils::run_sign::<Secp256K1Sha256, _, _, _>(
+    let result = run_sign::<Secp256K1Sha256, _, _, _>(
         rerand_participants_presign,
         coordinator,
         derived_pk,
@@ -124,7 +120,7 @@ pub fn run_sign_with_rerandomization(
     )?;
 
     // test one single some for the coordinator
-    let signature = one_coordinator_output(result, coordinator)?;
+    let signature = check_one_coordinator_output(result, coordinator)?;
     Ok((tweak, coordinator, signature))
 }
 

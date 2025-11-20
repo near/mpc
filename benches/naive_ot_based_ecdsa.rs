@@ -1,10 +1,7 @@
-mod utils;
-
 use criterion::{criterion_group, Criterion};
 use frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use rand::Rng;
 use rand_core::OsRng;
-use utils::ecdsa_generate_rerandpresig_args;
 
 use threshold_signatures::{
     ecdsa::{
@@ -18,10 +15,21 @@ use threshold_signatures::{
     },
     participants::Participant,
     protocol::Protocol,
-    test_utils::{generate_participants_with_random_ids, run_keygen, run_protocol},
+    test_utils::{
+        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
+        run_protocol,
+    },
 };
 
-use utils::MAX_MALICIOUS;
+use std::{env, sync::LazyLock};
+
+// fix malicious number of participants
+pub static MAX_MALICIOUS: LazyLock<usize> = std::sync::LazyLock::new(|| {
+    env::var("MAX_MALICIOUS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6)
+});
 
 fn threshold() -> usize {
     *crate::MAX_MALICIOUS + 1

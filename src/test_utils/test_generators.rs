@@ -1,0 +1,224 @@
+// This module provides generic functions to be used in the mpc repository
+use k256::elliptic_curve::PrimeField;
+use k256::AffinePoint;
+use rand_core::OsRng;
+use std::collections::HashMap;
+
+use crate::confidential_key_derivation as ckd;
+use crate::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
+use crate::frost_ed25519::Ed25519Sha512;
+use crate::frost_secp256k1::Secp256K1Sha256;
+use crate::participants::Participant;
+use crate::protocol::Protocol;
+use crate::{ecdsa, eddsa, ParticipantList};
+use crate::{keygen, VerifyingKey};
+
+use crate::test_utils::run_protocol;
+
+// Taken from https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/tests/common_traits_tests.rs#L9
+#[allow(clippy::unnecessary_literal_unwrap)]
+pub fn check_common_traits_for_type<T: Clone + Eq + PartialEq + std::fmt::Debug>(v: &T) {
+    // Make sure can be debug-printed. This also catches if the Debug does not
+    // have an endless recursion (a popular mistake).
+    println!("{v:?}");
+    // Test Clone and Eq
+    assert_eq!(*v, v.clone());
+    // Make sure it can be unwrapped in a Result (which requires Debug).
+    let e: Result<T, ()> = Ok(v.clone());
+    assert_eq!(*v, e.unwrap());
+}
+
+pub struct TestGenerators {
+    pub participants: Vec<Participant>,
+    pub threshold: usize,
+}
+
+type ParticipantAndProtocol<T> = (Participant, Box<dyn Protocol<Output = T>>);
+
+impl TestGenerators {
+    pub fn new(num_participants: usize, threshold: usize) -> Self {
+        Self {
+            participants: (0..num_participants)
+                .map(|_| Participant::from(rand::random::<u32>()))
+                .collect::<Vec<_>>(),
+            threshold,
+        }
+    }
+
+    pub fn new_contiguous_participant_ids(num_participants: usize, threshold: usize) -> Self {
+        Self {
+            participants: (0..num_participants)
+                .map(|i| Participant::from(i as u32))
+                .collect::<Vec<_>>(),
+            threshold,
+        }
+    }
+
+    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    keygen::<Secp256K1Sha256>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_eddsa_keygens(&self) -> HashMap<Participant, eddsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<eddsa::KeygenOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    keygen::<Ed25519Sha512>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_ckd_keygens(&self) -> HashMap<Participant, ckd::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<ckd::KeygenOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    keygen::<ckd::BLS12381SHA256>(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_triples(&self) -> HashMap<Participant, TripleGenerationOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput>> = Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    ecdsa::ot_based_ecdsa::triples::generate_triple(
+                        &self.participants,
+                        *participant,
+                        self.threshold,
+                        OsRng,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_presignatures(
+        &self,
+        triple0s: &HashMap<Participant, TripleGenerationOutput>,
+        triple1s: &HashMap<Participant, TripleGenerationOutput>,
+        keygens: &HashMap<Participant, ecdsa::KeygenOutput>,
+    ) -> HashMap<Participant, ecdsa::ot_based_ecdsa::PresignOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<ecdsa::ot_based_ecdsa::PresignOutput>> =
+            Vec::new();
+        for participant in &self.participants {
+            protocols.push((
+                *participant,
+                Box::new(
+                    ecdsa::ot_based_ecdsa::presign::presign(
+                        &self.participants,
+                        *participant,
+                        ecdsa::ot_based_ecdsa::PresignArguments {
+                            triple0: triple0s[participant].clone(),
+                            triple1: triple1s[participant].clone(),
+                            keygen_out: keygens[participant].clone(),
+                            threshold: self.threshold,
+                        },
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols).unwrap().into_iter().collect()
+    }
+
+    pub fn make_signature(
+        &self,
+        presignatures: &HashMap<Participant, ecdsa::ot_based_ecdsa::PresignOutput>,
+        public_key: AffinePoint,
+        msg_hash: ecdsa::Scalar,
+    ) -> ecdsa::Signature {
+        let mut protocols: Vec<ParticipantAndProtocol<Option<ecdsa::Signature>>> = Vec::new();
+        let leader = self.participants[0];
+        for participant in &self.participants {
+            let msg_hash_bytes: [u8; 32] = msg_hash.to_bytes().into();
+            let presign_out = presignatures[participant].clone();
+            let entropy = [0u8; 32];
+
+            let tweak = [1u8; 32];
+            let tweak = ecdsa::Scalar::from_repr(tweak.into()).unwrap();
+            let tweak = crate::Tweak::new(tweak);
+
+            let rerand_args = ecdsa::RerandomizationArguments::new(
+                public_key,
+                tweak,
+                msg_hash_bytes,
+                presign_out.big_r,
+                ParticipantList::new(&self.participants).unwrap(),
+                entropy,
+            );
+
+            let derived_public_key = tweak
+                .derive_verifying_key(&VerifyingKey::new(public_key.into()))
+                .to_element()
+                .to_affine();
+
+            let rerandomized_presignature =
+                ecdsa::ot_based_ecdsa::RerandomizedPresignOutput::rerandomize_presign(
+                    &presign_out,
+                    &rerand_args,
+                )
+                .unwrap();
+
+            protocols.push((
+                *participant,
+                Box::new(
+                    ecdsa::ot_based_ecdsa::sign::sign(
+                        &self.participants,
+                        leader,
+                        *participant,
+                        derived_public_key,
+                        rerandomized_presignature,
+                        msg_hash,
+                    )
+                    .unwrap(),
+                ),
+            ));
+        }
+        run_protocol(protocols)
+            .unwrap()
+            .iter()
+            .find_map(|(p, sig)| if *p == leader { Some(sig) } else { None })
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone()
+    }
+}

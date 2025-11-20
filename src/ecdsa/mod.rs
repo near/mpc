@@ -190,20 +190,17 @@ mod test {
         },
         participants::ParticipantList,
         test_utils::{
-            generate_participants, generate_participants_with_random_ids, random_32_bytes,
-            MockCryptoRng,
+            ecdsa_generate_rerandpresig_args, generate_participants,
+            generate_participants_with_random_ids, MockCryptoRng,
         },
     };
 
     use elliptic_curve::ops::{Invert, LinearCombination, Reduce};
 
-    use frost_core::{
-        keys::SigningShare, Ciphersuite, SigningKey as FrostSigningKey,
-        VerifyingKey as FrostVerifyingKey,
-    };
+    use frost_core::{keys::SigningShare, Ciphersuite, SigningKey as FrostSigningKey};
 
     use k256::{
-        ecdsa::{signature::Verifier, SigningKey, VerifyingKey},
+        ecdsa::{signature::Verifier, SigningKey},
         ProjectivePoint, Secp256k1,
     };
     use rand_core::{CryptoRngCore, OsRng, RngCore};
@@ -217,7 +214,7 @@ mod test {
         hasher.update(msg);
 
         let sk = SigningKey::random(&mut OsRng);
-        let pk = VerifyingKey::from(&sk);
+        let pk = ecdsa::VerifyingKey::from(&sk);
         let (sig, _) = sk.sign_digest_recoverable(hasher.clone()).unwrap();
         assert!(pk.verify(msg, &sig).is_ok());
 
@@ -250,7 +247,7 @@ mod test {
 
         let keygen_output = KeygenOutput {
             private_share: SigningShare::<C>::new(Scalar::ONE),
-            public_key: FrostVerifyingKey::<C>::from(signing_key),
+            public_key: frost_core::VerifyingKey::<C>::from(signing_key),
         };
 
         // When
@@ -269,19 +266,16 @@ mod test {
         rng: &mut impl CryptoRngCore,
         num_participants: usize,
     ) -> (RerandomizationArguments, Scalar) {
-        let sk = SigningKey::random(&mut OsRng);
-        let pk = *VerifyingKey::from(sk).as_affine();
-        let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
         let (_, big_r) = <C>::generate_nonce(&mut OsRng);
+        let (_, pk) = <C>::generate_nonce(&mut OsRng);
+        let pk = frost_core::VerifyingKey::new(pk);
         let big_r = big_r.to_affine();
 
-        let msg_hash = random_32_bytes(rng);
-        let entropy = random_32_bytes(rng);
         // Generate unique ten ParticipantId values
         let participants = generate_participants_with_random_ids(num_participants, rng);
-        let participants = ParticipantList::new(&participants).unwrap();
+        // Generate Rerandomization arguments
+        let (args, _) = ecdsa_generate_rerandpresig_args(rng, &participants, pk, big_r);
 
-        let args = RerandomizationArguments::new(pk, tweak, msg_hash, big_r, participants, entropy);
         let delta = args.derive_randomness().unwrap();
         (args, delta)
     }
@@ -315,7 +309,7 @@ mod test {
         let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different msg_hash
-        args.msg_hash = random_32_bytes(&mut rng);
+        args.msg_hash = [0; 32];
         let delta_prime = args.derive_randomness().unwrap();
         assert_ne!(delta, delta_prime);
     }

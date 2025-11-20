@@ -181,7 +181,7 @@ fn compute_signature_share(
 mod test {
     use super::*;
     use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
-    use crate::test_utils::{one_coordinator_output, run_protocol, GenProtocol};
+    use crate::test_utils::{check_one_coordinator_output, run_protocol, GenProtocol};
     use rand::Rng;
 
     #[test]
@@ -240,7 +240,7 @@ mod test {
         let result = run_protocol(protocols).unwrap();
 
         // test one single some for the coordinator
-        let ckd = one_coordinator_output(result, coordinator).unwrap();
+        let ckd = check_one_coordinator_output(result, coordinator).unwrap();
 
         // compute msk . H(app_id)
         let confidential_key = ckd.unmask(app_sk);

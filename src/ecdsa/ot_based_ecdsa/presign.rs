@@ -188,9 +188,10 @@ async fn do_presign(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::{run_protocol, GenProtocol};
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::test::deal, KeygenOutput, Polynomial, ProjectivePoint},
-        test_utils::{generate_participants, run_protocol, GenProtocol},
+        test_utils::generate_participants,
     };
     use frost_secp256k1::{
         keys::{PublicKeyPackage, SigningShare},
