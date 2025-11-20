@@ -137,6 +137,7 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
 near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
 near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }
 near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.2" }

@@ -4792,6 +4792,7 @@ dependencies = [
  "mockall",
  "mpc-contract",
  "mpc-tls",
+ "near-async",
  "near-client",
  "near-config-utils 2.10.0-rc.2",
  "near-crypto 2.10.0-rc.2",
