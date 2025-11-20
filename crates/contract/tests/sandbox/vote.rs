@@ -348,6 +348,7 @@ struct ResharingTestContext {
 /// Test helper: Initialize environment and transition to resharing state
 #[rstest::fixture]
 async fn setup_resharing_state() -> ResharingTestContext {
+    // TODO: tests depending on this function do not scale yet
     let (worker, contract, mut current_participant_accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], 3).await;
 
