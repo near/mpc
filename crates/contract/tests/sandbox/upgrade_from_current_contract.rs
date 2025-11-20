@@ -142,13 +142,13 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -184,7 +184,7 @@ async fn test_invalid_contract_deploy() {
 // TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 3;
@@ -236,7 +236,7 @@ async fn test_propose_update_contract_many() {
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     let dummy_config = Config::default();
@@ -382,6 +382,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
+    // TODO: the number of participants cannot be yet scaled
     let (worker, contract, accounts) = init_with_candidates(vec![], 3).await;
 
     let participants = assert_running_return_participants(&contract)
