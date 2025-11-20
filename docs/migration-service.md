@@ -282,7 +282,7 @@ pub struct DestinationNodeInfo {
 }
 ```
 
-> **Hard Launch Extension (Planned):** `BackupServiceInfo` will be extended with `attestation: Option<Attestation>` and `registered_at: Timestamp` fields for TEE attestation verification and expiration tracking.
+> **Hard Launch Extension (Planned):** `BackupServiceInfo` will be extended with `attestation: Attestation` and `registered_at: Timestamp` fields. During soft launch, mocked attestations will be accepted (similar to MPC nodes), allowing the same contract structure for both phases without requiring migration logic.
 
 **Hard Launch Extensions:**
 
@@ -298,11 +298,12 @@ pub struct BackupServiceInfo {
     /// Ed25519 public key for mutual TLS authentication
     pub public_key: Ed25519PublicKey,
     
-    /// TEE attestation proving backup service runs approved code (hard launch only)
-    pub attestation: Option<Attestation>,
+    /// TEE attestation proving backup service runs approved code
+    /// Soft launch: mocked attestations accepted; Hard launch: real attestations required
+    pub attestation: Attestation,
     
     /// Timestamp when backup service registered (for attestation expiration tracking)
-    pub registered_at: Option<Timestamp>,
+    pub registered_at: Timestamp,
 }
 ```
 
