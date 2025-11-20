@@ -76,9 +76,6 @@ const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas
 /// Prepaid gas for a `return_ck_and_clean_state_on_success` call
 const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-/// Prepaid gas for a `update_config` call
-const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
-
 /// Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
@@ -942,6 +939,7 @@ impl MpcContract {
             env::signer_account_id(),
             id,
         );
+
         let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
@@ -958,7 +956,9 @@ impl MpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, UPDATE_CONFIG_GAS) else {
+        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_terra_gas);
+
+        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
@@ -1208,26 +1208,13 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     #[private]
-    #[handle_result]
-    pub fn migrate() {
-        log!("migrating contract: no-op");
-    }
-
     #[init(ignore_state)]
     #[handle_result]
-    pub fn pub_migrate() -> Result<Self, Error> {
+    pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
-
-        match try_state_read::<v3_0_2_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
-            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
-            Err(_) => (), // Try read as "Self" instead
-        };
-
-        match try_state_read::<Self>() {
-            Ok(Some(state)) => Ok(state),
-            Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
-            Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
+        match env::state_read::<v3_0_2_state::MpcContract>() {
+            Some(contract) => Ok(contract.into()),
+            None => Err(InvalidState::ContractStateIsMissing.into()),
         }
     }
 
@@ -1597,12 +1584,6 @@ impl MpcContract {
         }
         Ok(())
     }
-}
-
-fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Error> {
-    env::storage_read(b"STATE")
-        .map(|data| T::try_from_slice(&data))
-        .transpose()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

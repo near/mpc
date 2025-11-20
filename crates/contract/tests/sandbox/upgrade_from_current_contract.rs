@@ -4,7 +4,7 @@ use crate::sandbox::common::{
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT,
 };
-use mpc_contract::config::Config;
+use mpc_contract::config::{Config, InitConfig};
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -26,7 +26,7 @@ pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
     }
 }
 
-fn current_contract_proposal() -> ProposeUpdateArgs {
+pub fn current_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
         code: Some(current_contract().to_vec()),
         config: None,
@@ -80,6 +80,7 @@ async fn test_propose_update_config() {
     let new_config = Config {
         key_event_timeout_blocks: 20,
         tee_upgrade_deadline_duration_seconds: 3333,
+        contract_upgrade_deposit_terra_gas: 299,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -113,6 +114,7 @@ async fn test_propose_update_config() {
             .args_json(serde_json::json!({
                 "id": first_proposal,
             }))
+            .max_gas()
             .transact()
             .await
             .unwrap();
@@ -141,7 +143,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1]).await;
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -272,7 +274,7 @@ async fn many_sequential_updates() {
     dbg!(contract.id());
 
     for _ in 0..3 {
-        propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -376,7 +378,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    let (worker, contract, accounts) = init_with_candidates(vec![]).await;
+    let (worker, contract, accounts) = init_with_candidates(vec![], InitConfig::default()).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
@@ -390,5 +392,5 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&accounts, &contract, migration_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }

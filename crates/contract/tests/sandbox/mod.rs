@@ -1,4 +1,5 @@
 pub mod ckd;
+pub mod contract_configuration;
 pub mod integration_tee_cleanup_after_resharing;
 pub mod sign;
 pub mod tee;
