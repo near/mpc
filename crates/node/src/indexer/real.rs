@@ -73,13 +73,13 @@ pub fn spawn_real_indexer(
 
     // TODO(#156): replace actix with tokio
     std::thread::spawn(move || {
-        // Todo; limit number of worker threads? Assume not as we don't want the node to fall behind.
+        // TODO(#1515); limit number of worker threads? Assume not as we don't want the node to fall behind.
         let indexer_tokio_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("tokio runtime must be constructable on startup");
 
-        // todo: Clean this entire function up eventually.
+        // TODO(#1515): Clean this entire function up eventually.
         // We have this indirection of using a oneshot for sending the indexer state,
         // as we can't block the main thread for waiting on the `txn_sender`.
         // Thus we instead initialize a `txn_sender`, which runs as a spawned task, to await on the indexer state being ready.
