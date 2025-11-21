@@ -36,7 +36,7 @@ fn contract_code(network: Network) -> &'static [u8] {
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
-    number_of_participants: usize
+    number_of_participants: usize,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 

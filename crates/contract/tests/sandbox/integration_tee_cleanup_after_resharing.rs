@@ -135,16 +135,15 @@ async fn do_resharing(
 ) -> Result<()> {
     // vote for new parameters
     for account in remaining_accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": prospective_epoch_id,
-                    "proposal": new_threshold_parameters,
-                }))
-                .max_gas()
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": prospective_epoch_id,
+                "proposal": new_threshold_parameters,
+            }))
+            .max_gas()
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -173,15 +172,14 @@ async fn do_resharing(
             })
             .unwrap();
 
-        let result = 
-            leader
-                .call(contract.id(), "start_reshare_instance")
-                .args_json(json!({
-                    "key_event_id": key_event_id,
-                }))
-                .max_gas()
-                .transact()
-                .await?;
+        let result = leader
+            .call(contract.id(), "start_reshare_instance")
+            .args_json(json!({
+                "key_event_id": key_event_id,
+            }))
+            .max_gas()
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
 
         // Wait for threshold participants to vote for resharing (2 out of 3)

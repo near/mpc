@@ -1,6 +1,6 @@
 use crate::sandbox::common::{
-    assert_running_return_threshold, gen_accounts, init_env,
-    submit_participant_info, IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
+    assert_running_return_threshold, gen_accounts, init_env, submit_participant_info,
+    IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
@@ -16,12 +16,10 @@ use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
 use serde_json::json;
 
-
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
     // TODO: this test does not cannot scale yet
-    let (_, contract, accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
     let args = json!({
         "domains": vec![
             json!({
@@ -31,12 +29,11 @@ async fn test_keygen() -> anyhow::Result<()> {
         ]
     });
     for account in accounts.iter() {
-        let result = 
-            account
-                .call(contract.id(), "vote_add_domains")
-                .args_json(args.clone())
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_add_domains")
+            .args_json(args.clone())
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -48,18 +45,17 @@ async fn test_keygen() -> anyhow::Result<()> {
         _ => panic!("should be in initializing state"),
     };
 
-    let result = 
-        accounts[0]
-            .call(contract.id(), "start_keygen_instance")
-            .args_json(json!({
-                "key_event_id": {
-                    "epoch_id": 5,
-                    "domain_id": 2,
-                    "attempt_id": 0,
-                },
-            }))
-            .transact()
-            .await?;
+    let result = accounts[0]
+        .call(contract.id(), "start_keygen_instance")
+        .args_json(json!({
+            "key_event_id": {
+                "epoch_id": 5,
+                "domain_id": 2,
+                "attempt_id": 0,
+            },
+        }))
+        .transact()
+        .await?;
     assert!(result.is_success(), "{result:#?}");
 
     let pk: dtos::PublicKey = "ed25519:J75xXmF7WUPS3xCm3hy2tgwLCKdYM1iJd4BWF8sWVnae"
@@ -76,12 +72,11 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     for account in accounts.iter() {
         println!("{:?}", account);
-        let result = 
-            account
-                .call(contract.id(), "vote_pk")
-                .args_json(vote_pk_args.clone())
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_pk")
+            .args_json(vote_pk_args.clone())
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -109,12 +104,11 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         ]
     });
     for account in accounts.iter() {
-        let result = 
-            account
-                .call(contract.id(), "vote_add_domains")
-                .args_json(args.clone())
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_add_domains")
+            .args_json(args.clone())
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -127,14 +121,13 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
     };
 
     for account in accounts.iter().take(threshold.value() as usize) {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_keygen")
-                .args_json(json!({
-                    "next_domain_id": 3,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_keygen")
+            .args_json(json!({
+                "next_domain_id": 3,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -153,8 +146,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
     // TODO: this test does not cannot scale yet
-    let (worker, contract, mut accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -186,15 +178,14 @@ async fn test_resharing() -> anyhow::Result<()> {
         ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
 
     for account in &accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": 6,
-                    "proposal": proposal,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": 6,
+                "proposal": proposal,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
@@ -208,18 +199,17 @@ async fn test_resharing() -> anyhow::Result<()> {
         _ => panic!("should be in resharing state"),
     }
 
-    let result = 
-        accounts[0]
-            .call(contract.id(), "start_reshare_instance")
-            .args_json(json!({
-                "key_event_id": {
-                    "epoch_id": 6,
-                    "domain_id": 0,
-                    "attempt_id": 0,
-                },
-            }))
-            .transact()
-            .await?;
+    let result = accounts[0]
+        .call(contract.id(), "start_reshare_instance")
+        .args_json(json!({
+            "key_event_id": {
+                "epoch_id": 6,
+                "domain_id": 0,
+                "attempt_id": 0,
+            },
+        }))
+        .transact()
+        .await?;
     assert!(result.is_success(), "{result:#?}");
 
     let vote_reshared_args = json!( {
@@ -231,13 +221,12 @@ async fn test_resharing() -> anyhow::Result<()> {
     });
 
     for account in &accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_reshared")
-                .gas(GAS_FOR_VOTE_RESHARED)
-                .args_json(vote_reshared_args.clone())
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_reshared")
+            .gas(GAS_FOR_VOTE_RESHARED)
+            .args_json(vote_reshared_args.clone())
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -256,8 +245,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
     // TODO: this test does not cannot scale yet
-    let (worker, contract, mut accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -287,15 +275,14 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
     accounts.push(new_account.clone());
     for account in &accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": 6,
-                    "proposal": proposal,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": 6,
+                "proposal": proposal,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
@@ -307,15 +294,14 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     }
 
     for account in accounts.iter().take(accounts.len() - 1) {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": 7,
-                    "proposal": existing_params,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": 7,
+                "proposal": existing_params,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -392,16 +378,15 @@ async fn setup_resharing_state() -> ResharingTestContext {
 
     // Vote to transition to resharing state
     for account in &current_participant_accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": initial_epoch_id.next(),
-                    "proposal": threshold_parameters,
-                }))
-                .transact()
-                .await
-                .unwrap();
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": initial_epoch_id.next(),
+                "proposal": threshold_parameters,
+            }))
+            .transact()
+            .await
+            .unwrap();
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -457,11 +442,10 @@ async fn test_cancel_resharing_vote_is_idempotent(
     // Try to submit threshold votes with just one account (should not work due to idempotency)
     let account_1 = previous_participants[0];
     for _ in 0..initial_threshold.value() {
-        let result = 
-            account_1
-                .call(contract.id(), "vote_cancel_resharing")
-                .transact()
-                .await?;
+        let result = account_1
+            .call(contract.id(), "vote_cancel_resharing")
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -481,11 +465,10 @@ async fn test_cancel_resharing_vote_is_idempotent(
         .filter(|account| account.id() != account_1.id()) // Skip account_1 which already voted
         .take(remaining_votes_needed)
     {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_resharing")
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_resharing")
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -527,11 +510,10 @@ async fn test_cancel_resharing_requires_threshold_votes(
         .iter()
         .take((initial_threshold.value() - 1) as usize)
     {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_resharing")
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_resharing")
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -543,11 +525,10 @@ async fn test_cancel_resharing_requires_threshold_votes(
     );
 
     // Add one more vote to reach threshold
-    let result = 
-        previous_participants[initial_threshold.value() as usize - 1]
-            .call(contract.id(), "vote_cancel_resharing")
-            .transact()
-            .await?;
+    let result = previous_participants[initial_threshold.value() as usize - 1]
+        .call(contract.id(), "vote_cancel_resharing")
+        .transact()
+        .await?;
     assert!(result.is_success(), "{result:#?}");
 
     // Verify transition back to running state
@@ -608,11 +589,10 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
         .filter(|account| account.id() != new_participant_account.id())
         .take(initial_threshold.value() as usize)
     {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_resharing")
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_resharing")
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -671,11 +651,10 @@ async fn test_cancelled_epoch_cannot_be_reused(
         .filter(|account| account.id() != new_participant_account.id())
         .take(initial_threshold.value() as usize)
     {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_resharing")
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_resharing")
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -709,15 +688,14 @@ async fn test_cancelled_epoch_cannot_be_reused(
 
     // Verify we can initiate resharing with the next epoch ID
     for account in &current_participant_accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": prospective_epoch_id.get(),
-                    "proposal": threshold_parameters,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": prospective_epoch_id.get(),
+                "proposal": threshold_parameters,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -766,12 +744,11 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         .filter(|account| account.id() != new_participant_account.id())
         .take(initial_threshold.value() as usize)
     {
-        let result = 
-            account
-                .call(contract.id(), "vote_cancel_resharing")
-                .gas(GAS_FOR_VOTE_RESHARED)
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_cancel_resharing")
+            .gas(GAS_FOR_VOTE_RESHARED)
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -790,15 +767,14 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 
     // Step 2: Initiate new resharing with next epoch ID
     for account in &current_participant_accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_new_parameters")
-                .args_json(json!({
-                    "prospective_epoch_id": prospective_epoch_id.get(),
-                    "proposal": threshold_parameters,
-                }))
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(json!({
+                "prospective_epoch_id": prospective_epoch_id.get(),
+                "proposal": threshold_parameters,
+            }))
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
@@ -815,18 +791,17 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     }
 
     // Step 3: Start reshare instance
-    let result = 
-        current_participant_accounts[0]
-            .call(contract.id(), "start_reshare_instance")
-            .args_json(json!({
-                "key_event_id": {
-                    "epoch_id": prospective_epoch_id.get(),
-                    "domain_id": 0,
-                    "attempt_id": 0,
-                },
-            }))
-            .transact()
-            .await?;
+    let result = current_participant_accounts[0]
+        .call(contract.id(), "start_reshare_instance")
+        .args_json(json!({
+            "key_event_id": {
+                "epoch_id": prospective_epoch_id.get(),
+                "domain_id": 0,
+                "attempt_id": 0,
+            },
+        }))
+        .transact()
+        .await?;
     assert!(result.is_success(), "{result:#?}");
 
     // Step 4: Vote reshared
@@ -839,13 +814,12 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     });
 
     for account in &current_participant_accounts {
-        let result = 
-            account
-                .call(contract.id(), "vote_reshared")
-                .gas(GAS_FOR_VOTE_RESHARED)
-                .args_json(vote_reshared_args.clone())
-                .transact()
-                .await?;
+        let result = account
+            .call(contract.id(), "vote_reshared")
+            .gas(GAS_FOR_VOTE_RESHARED)
+            .args_json(vote_reshared_args.clone())
+            .transact()
+            .await?;
         assert!(result.is_success(), "{result:#?}");
     }
 
