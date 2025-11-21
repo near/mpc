@@ -297,12 +297,10 @@ pub struct BackupServiceInfo {
     /// Ed25519 public key for mutual TLS authentication
     pub public_key: Ed25519PublicKey,
     
-    /// TEE attestation proving backup service runs approved code
+    /// TEE information including attestation
     /// Soft launch: mocked attestations accepted; Hard launch: real attestations required
-    pub attestation: Attestation,
-    
-    /// Timestamp when backup service registered (for attestation expiration tracking)
-    pub registered_at: Timestamp,
+    /// Reuses existing TeeState struct and verification logic from the MPC contract
+    pub tee_state: TeeState,
 }
 ```
 
@@ -312,14 +310,14 @@ The backup service attestation verification would follow the same process as MPC
 3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]`
 4. Obtains TEE quote embedding the `ReportData`
 5. Submits attestation via `register_backup_service(tls_public_key, account_public_key, attestation)`
-6. Contract verifies:
+6. Contract verifies (using existing `TeeState` verification logic):
    - Quote validity via attestation provider
    - Docker image hash against allowed list
    - Launcher compose hash (if applicable)
    - Timestamp within deadline
    - `ReportData` matches SHA3-384 hash of `SHA3-384(tls_public_key || account_public_key)`
    - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
-7. Contract stores attestation in `backup_services_info[AccountId].attestation`
+7. Contract stores attestation in `backup_services_info[AccountId].tee_state` (reusing existing `TeeState` struct and verification logic)
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
@@ -434,9 +432,9 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 **Hard Launch Implementation Tasks:**
 
 *Phase 1: Standalone Application with Mocked Attestations*
-- [ ] Add `attestation` parameter to `register_backup_service()` contract method
-- [ ] Implement attestation verification for backup services in contract (accept mocked attestations)
-- [ ] Store attestation with expiration tracking in contract
+- [ ] Add `tee_state: TeeState` field to `BackupServiceInfo` struct
+- [ ] Implement voting mechanisms for backup service Docker images (reuse existing voting logic)
+- [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic
 - [ ] Develop backup service as standalone long-running application
 - [ ] Implement contract monitoring and event detection in backup service
 - [ ] Add backup service attestation refresh mechanism (before expiration)
