@@ -396,7 +396,9 @@ Both soft launch and hard launch implementations share common core components, w
 4. **TEE Runtime**: TDX-enabled environment backed by [dstack](https://github.com/Dstack-TEE/dstack)
    - Generates hardware attestations proving execution in genuine TEE
    - Protects cryptographic keys in hardware-encrypted memory
-   - Does not persist keyshares to disk: encryption key would be lost on restart, and operator must not access it
+   - Runs continuously (24/7) to maintain keyshares in memory
+   - Keeps keyshares in memory only: does not persist to disk as encryption key would be lost on restart, and operator must not access it
+   - Must re-fetch keyshares from MPC nodes after restart or power loss
 
 5. **Blockchain Monitor**: Maintains current view of MPC contract state
    - Embedded NEAR light client or RPC connection to track contract state
