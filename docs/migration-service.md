@@ -316,6 +316,39 @@ The backup service attestation verification would follow the same process as MPC
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
+#### Backup Service Voting Methods
+
+The contract provides separate voting endpoints for backup service Docker image hashes. These are intentionally separate from MPC node voting to maintain backwards compatibility:
+
+- **`vote_backup_service_code_hash(code_hash: BackupServiceDockerImageHash)`** - Votes to add a backup service Docker image hash to the whitelist:
+    - Called by MPC node operators (must be a current participant)
+    - Similar to `vote_code_hash()` but for backup service images
+    - When threshold is reached, the hash is added to the allowed backup service images list
+    - Can only be called when protocol is in `Running` state
+    - Separate from MPC node image voting for backwards compatibility
+    - Automatically generates and whitelists the corresponding launcher compose hash
+
+- **`allowed_backup_service_code_hashes()`** - Returns all currently allowed backup service Docker image hashes:
+    - Read-only view method
+    - Returns hashes that are still within their validity period
+    - Separate list from MPC node allowed hashes
+
+- **`latest_backup_service_code_hash()`** - Returns the most recently approved backup service Docker image hash:
+    - Read-only view method
+    - Useful for backup services to check the latest approved version
+
+- **`allowed_backup_service_launcher_compose_hashes()`** - Returns all allowed backup service launcher compose hashes:
+    - Read-only view method
+    - Launcher compose hashes are automatically generated from voted Docker image hashes
+    - Used by backup service launchers to verify the correct compose file is being used
+    - Separate list from MPC node launcher hashes
+
+> **Note on Launcher Compose Hashes**: Launcher compose hashes are **not voted on directly**. When operators vote for a backup service Docker image hash via `vote_backup_service_code_hash()` and the voting threshold is reached, the contract automatically:
+> 1. Computes the launcher compose hash by filling the template with the Docker image hash
+> 2. Adds both the Docker image hash and launcher compose hash to their respective allowed lists
+>
+> This deterministic derivation ensures the launcher configuration always matches the voted Docker image, eliminating the need for separate voting. The same pattern is used for MPC nodes with `vote_code_hash()`.
+
 #### Migration Methods
 
 The contract provides the following methods:
@@ -427,7 +460,9 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 **Hard Launch Implementation Tasks:**
 
 *Phase 1: Standalone Application with Mocked Attestations*
-- [ ] Implement voting mechanisms for backup service Docker images (reuse existing voting logic)
+- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `MpcDockerImageHash`)
+- [ ] Implement voting structures for backup service images (`BackupServiceCodeHashesVotes`, `AllowedBackupServiceDockerImageHashes`)
+- [ ] Implement `allowed_backup_service_code_hashes()`, `latest_backup_service_code_hash()`, and `allowed_backup_service_launcher_compose_hashes()` view methods
 - [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic
 - [ ] Develop backup service as standalone long-running application
 - [ ] Implement contract monitoring and event detection in backup service
@@ -445,6 +480,7 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 - [ ] Add comprehensive integration tests for full TEE attestation flow
 - [ ] Create monitoring dashboards for backup service health
 - [ ] Document TEE deployment procedures
+- [ ] Document backup service upgrade procedure (voting for new images)
 
 > **Implementation Strategy**: Similar to MPC nodes, the backup service will first be developed as a standalone application that uses mocked attestations. This allows development and testing of the blockchain interface, contract monitoring, and automatic backup/recovery flows in a controlled environment. Once the core functionality is stable, the service can be migrated into a TEE with real attestations.
 
