@@ -4,9 +4,14 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
 /// Used for deterministic Rngs and only in testing
 pub struct MockCryptoRng(ChaCha12Rng);
 
-impl MockCryptoRng {
-    pub fn seed_from_u64(seed: u64) -> Self {
+impl SeedableRng for MockCryptoRng {
+    type Seed = [u8; 32];
+    fn seed_from_u64(seed: u64) -> Self {
         Self(ChaCha12Rng::seed_from_u64(seed))
+    }
+
+    fn from_seed(seed: Self::Seed) -> Self {
+        Self(ChaCha12Rng::from_seed(seed))
     }
 }
 

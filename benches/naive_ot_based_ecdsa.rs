@@ -1,7 +1,7 @@
 use criterion::{criterion_group, Criterion};
-use frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
-use rand::Rng;
-use rand_core::OsRng;
+use frost_secp256k1::VerifyingKey;
+use rand::{Rng, SeedableRng};
+use rand_core::CryptoRngCore;
 
 use threshold_signatures::{
     ecdsa::{
@@ -17,7 +17,7 @@ use threshold_signatures::{
     protocol::Protocol,
     test_utils::{
         ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
-        run_protocol,
+        run_protocol, MockCryptoRng,
     },
 };
 
@@ -41,6 +41,7 @@ fn participants_num() -> usize {
 
 /// Benches the triples protocol
 fn bench_triples(c: &mut Criterion) {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
     let mut group = c.benchmark_group("triples");
@@ -50,7 +51,7 @@ fn bench_triples(c: &mut Criterion) {
         format!("ot_ecdsa_triples_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_triples(participants_num()),
+                || prepare_triples(participants_num(), &mut rng),
                 run_protocol,
                 criterion::BatchSize::SmallInput,
             );
@@ -60,19 +61,20 @@ fn bench_triples(c: &mut Criterion) {
 
 /// Benches the presigning protocol
 fn bench_presign(c: &mut Criterion) {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
     let mut group = c.benchmark_group("presign");
     group.measurement_time(std::time::Duration::from_secs(300));
 
-    let protocols = prepare_triples(participants_num());
+    let protocols = prepare_triples(participants_num(), &mut rng);
     let two_triples = run_protocol(protocols).expect("Running triple preparations should succeed");
 
     group.bench_function(
         format!("ot_ecdsa_presign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_presign(&two_triples),
+                || prepare_presign(&two_triples, &mut rng),
                 |(protocols, _)| run_protocol(protocols),
                 criterion::BatchSize::SmallInput,
             );
@@ -82,16 +84,17 @@ fn bench_presign(c: &mut Criterion) {
 
 /// Benches the signing protocol
 fn bench_sign(c: &mut Criterion) {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
 
     let mut group = c.benchmark_group("sign");
     group.measurement_time(std::time::Duration::from_secs(300));
 
-    let protocols = prepare_triples(participants_num());
+    let protocols = prepare_triples(participants_num(), &mut rng);
     let two_triples = run_protocol(protocols).expect("Running triples preparation should succeed");
 
-    let (protocols, pk) = prepare_presign(&two_triples);
+    let (protocols, pk) = prepare_presign(&two_triples, &mut rng);
     let mut result = run_protocol(protocols).expect("Running presign preparation should succeed");
     result.sort_by_key(|(p, _)| *p);
 
@@ -99,7 +102,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("ot_ecdsa_sign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || prepare_sign(&result, pk),
+                || prepare_sign(&result, pk, &mut rng),
                 run_protocol,
                 criterion::BatchSize::SmallInput,
             );
@@ -111,13 +114,17 @@ type PreparedTriples = Vec<(
     Participant,
     Box<dyn Protocol<Output = Vec<(TripleShare, TriplePub)>>>,
 )>;
-fn prepare_triples(participant_num: usize) -> PreparedTriples {
+fn prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    participant_num: usize,
+    rng: &mut R,
+) -> PreparedTriples {
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
         Vec::with_capacity(participant_num);
-    let participants = generate_participants_with_random_ids(participant_num, &mut OsRng);
+    let participants = generate_participants_with_random_ids(participant_num, rng);
 
     for p in participants.clone() {
-        let protocol = generate_triple_many::<2>(&participants, p, threshold(), OsRng)
+        let rng_p = R::seed_from_u64(rng.next_u64());
+        let protocol = generate_triple_many::<2>(&participants, p, threshold(), rng_p)
             .expect("Triple generation should succeed");
         protocols.push((p, Box::new(protocol)));
     }
@@ -128,7 +135,10 @@ type PreparedPresig = (
     Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)>,
     VerifyingKey,
 );
-fn prepare_presign(two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)]) -> PreparedPresig {
+fn prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
+    rng: &mut R,
+) -> PreparedPresig {
     let mut two_triples = two_triples.to_owned();
     two_triples.sort_by_key(|(p, _)| *p);
 
@@ -144,7 +154,7 @@ fn prepare_presign(two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)])
     // split shares into shares0 and shares 1 and pubs into pubs0 and pubs1
     let (pub0, pub1) = split_even_odd(pubs);
 
-    let key_packages = run_keygen::<Secp256K1Sha256>(&participants, threshold());
+    let key_packages = run_keygen(&participants, threshold(), rng);
     let pk = key_packages[0].1.public_key;
 
     let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)> =
@@ -170,17 +180,18 @@ fn prepare_presign(two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)])
 fn prepare_sign(
     result: &[(Participant, PresignOutput)],
     pk: VerifyingKey,
+    rng: &mut impl CryptoRngCore,
 ) -> Vec<(Participant, Box<dyn Protocol<Output = SignatureOption>>)> {
     // collect all participants
     let participants: Vec<Participant> =
         result.iter().map(|(participant, _)| *participant).collect();
 
     // choose a coordinator at random
-    let index = OsRng.gen_range(0..result.len());
+    let index = rng.gen_range(0..result.len());
     let coordinator = result[index].0;
 
     let (args, msg_hash) =
-        ecdsa_generate_rerandpresig_args(&mut OsRng, &participants, pk, result[0].1.big_r);
+        ecdsa_generate_rerandpresig_args(rng, &participants, pk, result[0].1.big_r);
     let derived_pk = args
         .tweak
         .derive_verifying_key(&pk)

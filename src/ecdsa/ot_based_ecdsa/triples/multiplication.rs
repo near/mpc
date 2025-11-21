@@ -295,8 +295,7 @@ pub(super) async fn multiplication_many<const N: usize>(
 #[cfg(test)]
 mod test {
     use k256::Scalar;
-    use rand::RngCore;
-    use rand_core::OsRng;
+    use rand::{RngCore, SeedableRng};
 
     use crate::{
         crypto::hash::hash,
@@ -327,8 +326,8 @@ mod test {
         let sid = hash(b"sid").unwrap();
 
         for (p, a_i, b_i) in prep {
-            let ctx = Comms::new();
             let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let ctx = Comms::new();
 
             let prot = make_protocol(ctx.clone(), {
                 let participants_clone = participants.clone();
@@ -359,16 +358,18 @@ mod test {
     #[test]
     fn test_multiplication_many() {
         const N: usize = 4;
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let participants = generate_participants(3);
 
         let prep: Vec<_> = participants
             .iter()
             .map(|p| {
                 let a_iv = (0..N)
-                    .map(|_| Scalar::generate_biased(&mut OsRng))
+                    .map(|_| Scalar::generate_biased(&mut rng))
                     .collect::<Vec<_>>();
                 let b_iv = (0..N)
-                    .map(|_| Scalar::generate_biased(&mut OsRng))
+                    .map(|_| Scalar::generate_biased(&mut rng))
                     .collect::<Vec<_>>();
                 (p, a_iv, b_iv)
             })
@@ -398,6 +399,7 @@ mod test {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         for (p, a_iv, b_iv) in prep {
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
             let ctx = Comms::new();
 
             let prot = make_protocol(
@@ -409,7 +411,7 @@ mod test {
                     *p,
                     a_iv,
                     b_iv,
-                    OsRng,
+                    rng_p,
                 ),
             );
             protocols.push((*p, Box::new(prot)));

@@ -66,8 +66,8 @@ mod test {
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::participants::Participant;
     use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::run_two_party_protocol;
-    use rand_core::OsRng;
+    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
+    use rand::SeedableRng;
 
     /// Run the correlated OT protocol between two parties.
     fn run_correlated_ot(
@@ -105,9 +105,10 @@ mod test {
 
     #[test]
     fn test_correlated_ot() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 256;
-        let x = BitMatrix::random(&mut OsRng, batch_size);
+        let x = BitMatrix::random(&mut rng, batch_size);
         let (q, t) = run_correlated_ot(
             (delta, k),
             (k0, k1, x.clone()),

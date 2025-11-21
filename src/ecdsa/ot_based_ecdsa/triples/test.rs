@@ -1,11 +1,15 @@
-use rand_core::{CryptoRngCore, OsRng};
+use rand::SeedableRng;
+use rand_core::CryptoRngCore;
 
 use super::{
     batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender},
     TriplePub, TripleShare,
 };
 
-use crate::ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField};
+use crate::{
+    ecdsa::{Field, Polynomial, ProjectivePoint, Secp256K1ScalarField},
+    test_utils::MockCryptoRng,
+};
 
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
@@ -56,6 +60,7 @@ pub fn deal(
 /// Run the batch random OT protocol between two parties.
 pub fn run_batch_random_ot(
 ) -> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);
     let comms_s = Comms::new();
@@ -65,12 +70,12 @@ pub fn run_batch_random_ot(
         s,
         r,
         &mut make_protocol(comms_s.clone(), {
-            let y = super::batch_random_ot::batch_random_ot_sender_helper(&mut OsRng);
+            let y = super::batch_random_ot::batch_random_ot_sender_helper(&mut rng);
             super::batch_random_ot::batch_random_ot_sender(comms_s.private_channel(s, r), y)
         }),
         &mut make_protocol(comms_r.clone(), {
             let (delta, x) =
-                super::batch_random_ot::batch_random_ot_receiver_random_helper(&mut OsRng);
+                super::batch_random_ot::batch_random_ot_receiver_random_helper(&mut rng);
             super::batch_random_ot::batch_random_ot_receiver(
                 comms_r.private_channel(r, s),
                 delta,

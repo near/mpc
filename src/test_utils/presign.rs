@@ -1,5 +1,5 @@
 use k256::AffinePoint;
-use rand_core::{CryptoRngCore, OsRng};
+use rand_core::CryptoRngCore;
 
 use crate::ecdsa::{RerandomizationArguments, Tweak};
 use crate::frost_secp256k1::Secp256K1Sha256;
@@ -23,9 +23,9 @@ pub fn ecdsa_generate_rerandpresig_args(
     big_r: AffinePoint,
 ) -> (RerandomizationArguments, Scalar<Secp256K1Sha256>) {
     let pk = pk.to_element().to_affine();
-    let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
+    let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(rng));
 
-    let msg_hash = <frost_secp256k1::Secp256K1ScalarField as frost_core::Field>::random(&mut OsRng);
+    let msg_hash = <frost_secp256k1::Secp256K1ScalarField as frost_core::Field>::random(rng);
     let entropy = random_32_bytes(rng);
     // Generate unique ten ParticipantId values
     let participants =

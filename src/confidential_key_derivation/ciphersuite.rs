@@ -300,9 +300,10 @@ mod tests {
     use blstrs::Scalar;
     use digest::generic_array::GenericArray;
     use elliptic_curve::{hash2curve::FromOkm, Field, Group};
+    use rand::SeedableRng;
     use rand::{Rng, RngCore};
-    use rand_core::OsRng;
 
+    use crate::test_utils::MockCryptoRng;
     use crate::{
         confidential_key_derivation::{
             ciphersuite::{hash_to_curve, verify_signature, ScalarWrapper, BLS12381SHA256},
@@ -344,7 +345,8 @@ mod tests {
 
     #[test]
     fn test_verify_signature() {
-        let x = Scalar::random(OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
         let g2 = ElementG2::generator();
         let g2x = g2 * x;
         let hm = hash_to_curve(b"hello world");
@@ -355,7 +357,8 @@ mod tests {
 
     #[test]
     fn test_verify_signature_invalid() {
-        let x = Scalar::random(OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::random(&mut rng);
         let g2 = ElementG2::generator();
         let g2x = g2 * Scalar::ZERO;
         let hm = hash_to_curve(b"hello world");
@@ -380,7 +383,7 @@ mod tests {
     fn test_stress_test_scalarwrapper_from_le_bytes_mod_order() {
         // empty case
         ScalarWrapper::from_be_bytes_mod_order(&[]);
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         for _ in 0..1000 {
             let len = rng.gen_range(1..10000);
             let mut bytes = vec![0; len];
@@ -394,7 +397,7 @@ mod tests {
     // This test guarantees that `overflow-checks` are enabled
     fn test_verify_overflow_failure() {
         let mut a = u64::MAX - 123;
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         // Required to avoid clippy detecting the overflow
         let b = rng.gen_range(124..10000);
         a += b;

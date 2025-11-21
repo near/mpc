@@ -4,7 +4,6 @@ use super::{
     triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
     PresignArguments, PresignOutput, RerandomizedPresignOutput,
 };
-use crate::participants::Participant;
 use crate::protocol::Protocol;
 use crate::test_utils::{
     assert_public_key_invariant, check_one_coordinator_output, generate_participants,
@@ -17,9 +16,10 @@ use crate::ecdsa::{
     Element, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
     SignatureOption, Tweak,
 };
+use crate::{participants::Participant, test_utils::MockCryptoRng};
 
-use rand::{rngs::OsRng, Rng};
-use rand_core::RngCore;
+use rand::Rng;
+use rand_core::{CryptoRngCore, SeedableRng};
 use std::error::Error;
 
 /// Runs signing by calling the generic `run_sign` function from `crate::test`
@@ -28,6 +28,7 @@ pub fn run_sign_without_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
     public_key: Element,
     msg: &[u8],
+    rng: &mut impl CryptoRngCore,
 ) -> (Participant, Signature) {
     // hash the message into secp256k1 field
     let msg_hash = scalar_hash_secp256k1(msg);
@@ -41,7 +42,7 @@ pub fn run_sign_without_rerandomization(
         })
         .collect::<Vec<_>>();
     // choose a coordinator at random
-    let index = OsRng.gen_range(0..participants_presign.len());
+    let index = rng.gen_range(0..participants_presign.len());
     let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
@@ -69,15 +70,16 @@ pub fn run_sign_with_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
     public_key: Element,
     msg: &[u8],
+    rng: &mut impl CryptoRngCore,
 ) -> Result<(Tweak, Participant, Signature), Box<dyn Error>> {
     // hash the message into secp256k1 field
     let msg_hash = scalar_hash_secp256k1(msg);
 
     // generate a random tweak
-    let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
+    let tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(rng));
     // generate a random public entropy
     let mut entropy: [u8; 32] = [0u8; 32];
-    OsRng.fill_bytes(&mut entropy);
+    rng.fill_bytes(&mut entropy);
 
     let pk = public_key.to_affine();
     let big_r = participants_presign[0].1.big_r;
@@ -103,7 +105,7 @@ pub fn run_sign_with_rerandomization(
         .collect::<Result<_, _>>()?;
 
     // choose a coordinator at random
-    let index = OsRng.gen_range(0..participants_presign.len());
+    let index = rng.gen_range(0..participants_presign.len());
     let coordinator = participants_presign[index].0;
 
     // run sign instanciation with the necessary arguments
@@ -165,31 +167,33 @@ pub fn run_presign(
 
 #[test]
 fn test_refresh() {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants = generate_participants(11);
     let max_malicious = 5;
     let threshold = max_malicious + 1;
-    let keys = run_keygen(&participants, threshold);
+    let keys = run_keygen(&participants, threshold, &mut rng);
     assert_public_key_invariant(&keys);
     // run refresh on these
-    let key_packages = run_refresh(&participants, &keys, threshold);
+    let key_packages = run_refresh(&participants, &keys, threshold, &mut rng);
     let public_key = key_packages[0].1.public_key;
     assert_public_key_invariant(&key_packages);
-    let (pub0, shares0) = deal(&mut OsRng, &participants, threshold).unwrap();
-    let (pub1, shares1) = deal(&mut OsRng, &participants, threshold).unwrap();
+    let (pub0, shares0) = deal(&mut rng, &participants, threshold).unwrap();
+    let (pub1, shares1) = deal(&mut rng, &participants, threshold).unwrap();
 
     // Presign
     let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, threshold);
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg);
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng);
 }
 
 #[test]
 fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants = generate_participants(5);
     let threshold = 3;
-    let result0 = run_keygen(&participants, threshold);
+    let result0 = run_keygen(&participants, threshold, &mut rng);
     assert_public_key_invariant(&result0);
 
     let pub_key = result0[2].1.public_key;
@@ -207,29 +211,30 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
         threshold,
         new_threshold,
         &new_participant,
+        &mut rng,
     );
     assert_public_key_invariant(&key_packages);
 
     let public_key = key_packages[0].1.public_key;
     // Prepare triples
-    let (pub0, shares0) = deal(&mut OsRng, &new_participant, new_threshold)?;
-    let (pub1, shares1) = deal(&mut OsRng, &new_participant, new_threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold)?;
+    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold)?;
 
     // Presign
     let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, new_threshold);
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg);
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng);
     Ok(())
 }
 
 #[test]
 fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants = generate_participants(5);
     let threshold = 4;
-    let mut rng = OsRng;
-    let result0 = run_keygen(&participants, threshold);
+    let result0 = run_keygen(&participants, threshold, &mut rng);
     assert_public_key_invariant(&result0);
 
     let pub_key = result0[2].1.public_key;
@@ -245,6 +250,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
         threshold,
         new_threshold,
         &new_participant,
+        &mut rng,
     );
     assert_public_key_invariant(&key_packages);
 
@@ -257,17 +263,17 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg);
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng);
     Ok(())
 }
 
 #[test]
 fn test_e2e() -> Result<(), Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants = generate_participants(3);
     let threshold = 3;
 
-    let mut rng = OsRng;
-    let key_packages = run_keygen(&participants.clone(), threshold);
+    let key_packages = run_keygen(&participants.clone(), threshold, &mut rng);
 
     assert_public_key_invariant(&key_packages);
     let public_key = key_packages[0].1.public_key;
@@ -279,18 +285,18 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg);
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng);
     Ok(())
 }
 
 #[test]
 fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants_count = 3;
-    let mut rng = OsRng;
     let participants = generate_participants_with_random_ids(participants_count, &mut rng);
     let threshold = 3;
 
-    let key_packages = run_keygen(&participants.clone(), threshold);
+    let key_packages = run_keygen(&participants.clone(), threshold, &mut rng);
     assert_public_key_invariant(&key_packages);
 
     let public_key = key_packages[0].1.public_key;
@@ -302,18 +308,18 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg);
+    run_sign_without_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng);
     Ok(())
 }
 
 #[test]
 fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants_count = 3;
-    let mut rng = OsRng;
     let participants = generate_participants_with_random_ids(participants_count, &mut rng);
     let threshold = 3;
 
-    let key_packages = run_keygen(&participants.clone(), threshold);
+    let key_packages = run_keygen(&participants.clone(), threshold, &mut rng);
     assert_public_key_invariant(&key_packages);
 
     let public_key = key_packages[0].1.public_key;
@@ -325,7 +331,7 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 
     let msg = b"hello world";
     // internally verifies the signature's validity
-    run_sign_with_rerandomization(&presign_result, public_key.to_element(), msg)?;
+    run_sign_with_rerandomization(&presign_result, public_key.to_element(), msg, &mut rng)?;
     Ok(())
 }
 
@@ -344,26 +350,27 @@ fn split_even_odd<T: Clone>(v: Vec<T>) -> (Vec<T>, Vec<T>) {
 
 #[test]
 fn test_robustness_without_rerandomization() {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail
-    test_robustness(run_sign_without_rerandomization);
+    test_robustness(run_sign_with_rerandomization, &mut rng);
 }
 
 #[test]
 fn test_robustness_with_rerandomization() {
+    let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail
-    test_robustness(run_sign_with_rerandomization);
+    test_robustness(run_sign_with_rerandomization, &mut rng);
 }
 
-fn test_robustness<T, F>(run_sign: F)
+fn test_robustness<T, F, R: CryptoRngCore + SeedableRng + Send + 'static>(run_sign: F, rng: &mut R)
 where
-    F: Fn(&[(Participant, PresignOutput)], Element, &[u8]) -> T,
+    F: Fn(&[(Participant, PresignOutput)], Element, &[u8], &mut R) -> T,
 {
     let participants_count = 7;
-    let mut rng = OsRng;
-    let mut participants = generate_participants_with_random_ids(participants_count, &mut rng);
+    let mut participants = generate_participants_with_random_ids(participants_count, rng);
     let threshold = 4;
 
-    let mut key_packages = run_keygen::<Secp256K1Sha256>(&participants.clone(), threshold);
+    let mut key_packages = run_keygen(&participants.clone(), threshold, rng);
     assert_public_key_invariant(&key_packages);
 
     let public_key = key_packages[0].1.public_key.to_element();
@@ -376,7 +383,8 @@ where
         Vec::with_capacity(participants.len());
     // Generate triples with 6 participants
     for &p in &participants {
-        let protocol = generate_triple_many::<2>(&participants, p, threshold, rng);
+        let rng_p = R::seed_from_u64(rng.next_u64());
+        let protocol = generate_triple_many::<2>(&participants, p, threshold, rng_p);
         let protocol = protocol.unwrap();
         protocols.push((p, Box::new(protocol)));
     }
@@ -405,5 +413,5 @@ where
     let msg = b"hello world";
     // Use less presignatures to sign
     presign_result.remove(0);
-    run_sign(&presign_result, public_key, msg);
+    run_sign(&presign_result, public_key, msg, rng);
 }

@@ -1,0 +1,5 @@
+---
+source: src/eddsa/sign.rs
+expression: signature
+---
+"21abca02ff95cff08fafd1e31b72132740965cca138bf0a3f2e745e236529e988948626038a280f742c613c48f14ae3bb832fa50663b6d235132ec50713bd504"

@@ -188,32 +188,33 @@ async fn do_presign(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils::{run_protocol, GenProtocol};
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::test::deal, KeygenOutput, Polynomial, ProjectivePoint},
-        test_utils::generate_participants,
+        test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng},
     };
     use frost_secp256k1::{
         keys::{PublicKeyPackage, SigningShare},
         VerifyingKey,
     };
-    use rand_core::OsRng;
+    use rand_core::SeedableRng;
     use std::collections::BTreeMap;
 
     #[test]
     fn test_presign() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let participants = generate_participants(4);
         let original_threshold: usize = 2;
         let degree = original_threshold.checked_sub(1).unwrap();
-        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
 
         let threshold = 2;
 
         let (triple0_pub, triple0_shares) =
-            deal(&mut OsRng, &participants, original_threshold).unwrap();
+            deal(&mut rng, &participants, original_threshold).unwrap();
         let (triple1_pub, triple1_shares) =
-            deal(&mut OsRng, &participants, original_threshold).unwrap();
+            deal(&mut rng, &participants, original_threshold).unwrap();
 
         let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
@@ -263,5 +264,7 @@ mod test {
         let sigma = p_list.lagrange::<Secp256>(participants[0]).unwrap() * sigma_shares[0]
             + p_list.lagrange::<Secp256>(participants[1]).unwrap() * sigma_shares[1];
         assert_eq!(sigma, k * f.eval_at_zero().unwrap().0);
+
+        insta::assert_json_snapshot!(result);
     }
 }

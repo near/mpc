@@ -197,7 +197,7 @@ where
 #[cfg(test)]
 mod test {
     use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
-    use rand_core::OsRng;
+    use rand::SeedableRng;
 
     use crate::test_utils::MockCryptoRng;
 
@@ -207,9 +207,10 @@ mod test {
 
     #[test]
     fn test_valid_proof_verifies() {
-        let x = Scalar::generate_biased(&mut OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::generate_biased(&mut rng);
 
-        let big_h = ProjectivePoint::GENERATOR * Scalar::generate_biased(&mut OsRng);
+        let big_h = ProjectivePoint::GENERATOR * Scalar::generate_biased(&mut rng);
         let statement = Statement::<Secp256K1Sha256> {
             public0: &(ProjectivePoint::GENERATOR * x),
             generator1: &big_h,
@@ -222,7 +223,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof = prove(
-            &mut OsRng,
+            &mut rng,
             &mut transcript.fork(b"party", &[1]),
             statement,
             witness,
@@ -236,7 +237,7 @@ mod test {
 
     #[test]
     fn test_prove_fixed_randomness() {
-        let mut rng = MockCryptoRng::seed_from_u64(42u64);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let x = Scalar::generate_biased(&mut rng);
         let h = Scalar::generate_biased(&mut rng);
         let big_h = ProjectivePoint::GENERATOR * h;
@@ -301,7 +302,8 @@ mod test {
 
     #[test]
     fn test_prove_with_identity_generator1_fails() {
-        let x = Scalar::generate_biased(&mut OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::generate_biased(&mut rng);
 
         let statement = Statement::<Secp256K1Sha256> {
             public0: &(ProjectivePoint::GENERATOR * x),
@@ -315,7 +317,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof_result = prove(
-            &mut OsRng,
+            &mut rng,
             &mut transcript.fork(b"party", &[1]),
             statement,
             witness,
@@ -331,7 +333,8 @@ mod test {
 
     #[test]
     fn test_verify_with_identity_generator1_fails() {
-        let x = Scalar::generate_biased(&mut OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::generate_biased(&mut rng);
 
         let statement = Statement::<Secp256K1Sha256> {
             public0: &(ProjectivePoint::GENERATOR * x),

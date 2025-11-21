@@ -1132,30 +1132,32 @@ pub fn generate_triple_many<const N: usize>(
 
 #[cfg(test)]
 mod test {
-    use rand_core::OsRng;
+    use rand::{RngCore, SeedableRng};
 
     use crate::{
         ecdsa::{ot_based_ecdsa::triples::generate_triple, ProjectivePoint},
         participants::{Participant, ParticipantList},
         protocol::Protocol,
-        test_utils::{generate_participants, run_protocol},
+        test_utils::{generate_participants, run_protocol, MockCryptoRng},
     };
 
     use super::{generate_triple_many, TripleGenerationOutput, TripleGenerationOutputMany, C};
 
     #[test]
     fn test_triple_generation() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let participants = generate_participants(3);
         let threshold = 3;
 
-        #[allow(clippy::type_complexity)]
         let mut protocols: Vec<(
             Participant,
             Box<dyn Protocol<Output = TripleGenerationOutput>>,
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple(&participants, p, threshold, OsRng).unwrap();
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol = generate_triple(&participants, p, threshold, rng_p).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1191,21 +1193,25 @@ mod test {
         assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
 
         assert_eq!(a * b, c);
+
+        insta::assert_json_snapshot!(result);
     }
 
     #[test]
     fn test_triple_generation_many() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let participants = generate_participants(3);
         let threshold = 3;
 
-        #[allow(clippy::type_complexity)]
         let mut protocols: Vec<(
             Participant,
             Box<dyn Protocol<Output = TripleGenerationOutputMany>>,
         )> = Vec::with_capacity(participants.len());
 
         for &p in &participants {
-            let protocol = generate_triple_many::<1>(&participants, p, threshold, OsRng).unwrap();
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let protocol = generate_triple_many::<1>(&participants, p, threshold, rng_p).unwrap();
             protocols.push((p, Box::new(protocol)));
         }
 
@@ -1241,5 +1247,7 @@ mod test {
         assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
 
         assert_eq!(a * b, c);
+
+        insta::assert_json_snapshot!(result);
     }
 }

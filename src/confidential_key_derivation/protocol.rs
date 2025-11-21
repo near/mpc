@@ -181,8 +181,11 @@ fn compute_signature_share(
 mod test {
     use super::*;
     use crate::confidential_key_derivation::ciphersuite::hash_to_curve;
-    use crate::test_utils::{check_one_coordinator_output, run_protocol, GenProtocol};
-    use rand::Rng;
+    use crate::test_utils::{
+        check_one_coordinator_output, generate_participants, run_protocol, GenProtocol,
+        MockCryptoRng,
+    };
+    use rand::{Rng, RngCore, SeedableRng};
 
     #[test]
     fn test_hash2curve() {
@@ -199,18 +202,14 @@ mod test {
 
     #[test]
     fn test_ckd() {
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = MockCryptoRng::seed_from_u64(42);
 
         // Create the app necessary items
         let app_id = AppId::try_from(b"Near App").unwrap();
         let app_sk = Scalar::random(&mut rng);
         let app_pk = ElementG1::generator() * app_sk;
 
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants(3);
 
         // choose a coordinator at random
         let index = rng.gen_range(0..participants.len());
@@ -220,7 +219,8 @@ mod test {
 
         let mut private_shares = Vec::new();
         for p in &participants {
-            let private_share = SigningShare::new(Scalar::random(&mut rng));
+            let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+            let private_share = SigningShare::new(Scalar::random(&mut rng_p));
             private_shares.push(private_share);
 
             let protocol = ckd(
@@ -230,7 +230,7 @@ mod test {
                 private_share,
                 app_id.clone(),
                 app_pk,
-                rng,
+                rng_p,
             )
             .unwrap();
 
@@ -240,10 +240,10 @@ mod test {
         let result = run_protocol(protocols).unwrap();
 
         // test one single some for the coordinator
-        let ckd = check_one_coordinator_output(result, coordinator).unwrap();
+        let ckd_output = check_one_coordinator_output(result, coordinator).unwrap();
 
         // compute msk . H(app_id)
-        let confidential_key = ckd.unmask(app_sk);
+        let confidential_key = ckd_output.unmask(app_sk);
 
         let mut msk = Scalar::ZERO;
         let participants = ParticipantList::new(&participants).unwrap();
@@ -260,5 +260,6 @@ mod test {
             confidential_key, expected_confidential_key,
             "Keys should be equal"
         );
+        insta::assert_json_snapshot!(ckd_output);
     }
 }

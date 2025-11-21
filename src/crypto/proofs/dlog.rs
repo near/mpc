@@ -128,7 +128,7 @@ pub fn verify<C: Ciphersuite>(
 #[cfg(test)]
 mod test {
     use elliptic_curve::{bigint::Uint, scalar::FromUintUnchecked};
-    use rand_core::OsRng;
+    use rand::SeedableRng;
 
     use super::*;
     use crate::test_utils::MockCryptoRng;
@@ -137,7 +137,8 @@ mod test {
 
     #[test]
     fn test_valid_proof_verifies() {
-        let x = Scalar::generate_biased(&mut OsRng);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let x = Scalar::generate_biased(&mut rng);
 
         let statement = Statement::<Secp256K1Sha256> {
             public: &(ProjectivePoint::GENERATOR * x),
@@ -149,7 +150,7 @@ mod test {
         let transcript = Transcript::new(b"protocol");
 
         let proof = prove(
-            &mut OsRng,
+            &mut rng,
             &mut transcript.fork(b"party", &[1]),
             statement,
             witness,

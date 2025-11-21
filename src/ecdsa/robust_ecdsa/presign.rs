@@ -355,19 +355,22 @@ impl Shares {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ecdsa::KeygenOutput;
-    use crate::test_utils::{generate_participants, run_protocol, GenProtocol};
     use frost_secp256k1::VerifyingKey;
     use k256::ProjectivePoint;
-    use rand_core::OsRng;
+    use rand::{RngCore, SeedableRng};
+
+    use crate::ecdsa::KeygenOutput;
+    use crate::test_utils::{generate_participants, run_protocol, GenProtocol, MockCryptoRng};
 
     #[test]
     fn test_presign() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let participants = generate_participants(5);
 
         let max_malicious = 2;
 
-        let f = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let f = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
         let big_x = ProjectivePoint::GENERATOR * f.eval_at_zero().unwrap().0;
 
         let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
@@ -381,6 +384,8 @@ mod test {
                 public_key: verifying_key,
             };
 
+            let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+
             let protocol = presign(
                 &participants[..],
                 *p,
@@ -388,7 +393,7 @@ mod test {
                     keygen_out,
                     threshold: max_malicious,
                 },
-                OsRng,
+                rng_p,
             )
             .unwrap();
             protocols.push((*p, Box::new(protocol)));
@@ -399,5 +404,7 @@ mod test {
         assert!(result.len() == 5);
         // testing that big_r is the same accross participants
         assert!(result.windows(2).all(|w| w[0].1.big_r == w[1].1.big_r));
+
+        insta::assert_json_snapshot!(result);
     }
 }

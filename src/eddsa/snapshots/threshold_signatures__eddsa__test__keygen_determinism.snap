@@ -1,0 +1,27 @@
+---
+source: src/eddsa/test.rs
+expression: result
+---
+[
+  [
+    0,
+    {
+      "private_share": "4868e82fde014d20fa7316500332a9cad79dee5c7aac79b82e69019da9b1790b",
+      "public_key": "e291381fe6d842f30412315cb431acdc18a02cbad062165e863f1a060e2ba4b4"
+    }
+  ],
+  [
+    1,
+    {
+      "private_share": "a3f5c2007dba391b89b1e3271506cabbd69b9d3045954d0f00ea041bc3dbb906",
+      "public_key": "e291381fe6d842f30412315cb431acdc18a02cbad062165e863f1a060e2ba4b4"
+    }
+  ],
+  [
+    2,
+    {
+      "private_share": "fe829dd11b73261618efb0ff26daeaacd5994c04107e2166d16a0899dc05fa01",
+      "public_key": "e291381fe6d842f30412315cb431acdc18a02cbad062165e863f1a060e2ba4b4"
+    }
+  ]
+]

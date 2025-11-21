@@ -2,16 +2,18 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use frost_core::Field;
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
-use rand_core::OsRng;
+use rand::SeedableRng;
 use std::hint::black_box;
 use threshold_signatures::{
     batch_compute_lagrange_coefficients, compute_lagrange_coefficient, participants::Participant,
+    test_utils::MockCryptoRng,
 };
 
 type C = Secp256K1Sha256;
 
 fn bench_lagrange_computation(c: &mut Criterion) {
     let mut group = c.benchmark_group("Lagrange");
+    let mut rng = MockCryptoRng::seed_from_u64(42);
 
     for degree in &[1u32, 100, 1_000] {
         let participants = (0..=*degree).map(Participant::from).collect::<Vec<_>>();
@@ -19,7 +21,7 @@ fn bench_lagrange_computation(c: &mut Criterion) {
             .iter()
             .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
-        let point = Some(Secp256K1ScalarField::random(&mut OsRng));
+        let point = Some(Secp256K1ScalarField::random(&mut rng));
 
         group.bench_with_input(
             format!("sequential_degree_{degree}"),
@@ -66,19 +68,20 @@ fn bench_lagrange_computation(c: &mut Criterion) {
 
 pub fn bench_inversion_vs_multiplication(c: &mut Criterion) {
     let mut group = c.benchmark_group("Inversion_vs_Multiplication");
+    let mut rng = MockCryptoRng::seed_from_u64(42);
 
     group.bench_function("single_inversion", |b| {
         b.iter(|| {
-            let value_to_invert = Secp256K1ScalarField::random(&mut OsRng);
+            let value_to_invert = Secp256K1ScalarField::random(&mut rng);
             black_box(value_to_invert.invert().unwrap());
         });
     });
 
     group.bench_function("three_multiplications", |b| {
         b.iter(|| {
-            let a = Secp256K1ScalarField::random(&mut OsRng);
-            let b = Secp256K1ScalarField::random(&mut OsRng);
-            let c = Secp256K1ScalarField::random(&mut OsRng);
+            let a = Secp256K1ScalarField::random(&mut rng);
+            let b = Secp256K1ScalarField::random(&mut rng);
+            let c = Secp256K1ScalarField::random(&mut rng);
             black_box(a * b * c);
         });
     });

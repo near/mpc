@@ -1,7 +1,8 @@
 // This module provides generic functions to be used in the mpc repository
 use k256::elliptic_curve::PrimeField;
 use k256::AffinePoint;
-use rand_core::OsRng;
+use rand::SeedableRng;
+use rand_core::CryptoRngCore;
 use std::collections::HashMap;
 
 use crate::confidential_key_derivation as ckd;
@@ -54,9 +55,13 @@ impl TestGenerators {
         }
     }
 
-    pub fn make_ecdsa_keygens(&self) -> HashMap<Participant, ecdsa::KeygenOutput> {
+    pub fn make_ecdsa_keygens<R: CryptoRngCore + SeedableRng + Send + 'static>(
+        &self,
+        rng: &mut R,
+    ) -> HashMap<Participant, ecdsa::KeygenOutput> {
         let mut protocols: Vec<ParticipantAndProtocol<ecdsa::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
+            let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((
                 *participant,
                 Box::new(
@@ -64,7 +69,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         self.threshold,
-                        OsRng,
+                        rng_p,
                     )
                     .unwrap(),
                 ),
@@ -73,9 +78,13 @@ impl TestGenerators {
         run_protocol(protocols).unwrap().into_iter().collect()
     }
 
-    pub fn make_eddsa_keygens(&self) -> HashMap<Participant, eddsa::KeygenOutput> {
+    pub fn make_eddsa_keygens<R: CryptoRngCore + SeedableRng + Send + 'static>(
+        &self,
+        rng: &mut R,
+    ) -> HashMap<Participant, eddsa::KeygenOutput> {
         let mut protocols: Vec<ParticipantAndProtocol<eddsa::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
+            let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((
                 *participant,
                 Box::new(
@@ -83,7 +92,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         self.threshold,
-                        OsRng,
+                        rng_p,
                     )
                     .unwrap(),
                 ),
@@ -92,9 +101,13 @@ impl TestGenerators {
         run_protocol(protocols).unwrap().into_iter().collect()
     }
 
-    pub fn make_ckd_keygens(&self) -> HashMap<Participant, ckd::KeygenOutput> {
+    pub fn make_ckd_keygens<R: CryptoRngCore + SeedableRng + Send + 'static>(
+        &self,
+        rng: &mut R,
+    ) -> HashMap<Participant, ckd::KeygenOutput> {
         let mut protocols: Vec<ParticipantAndProtocol<ckd::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
+            let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((
                 *participant,
                 Box::new(
@@ -102,7 +115,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         self.threshold,
-                        OsRng,
+                        rng_p,
                     )
                     .unwrap(),
                 ),
@@ -111,9 +124,13 @@ impl TestGenerators {
         run_protocol(protocols).unwrap().into_iter().collect()
     }
 
-    pub fn make_triples(&self) -> HashMap<Participant, TripleGenerationOutput> {
+    pub fn make_triples<R: CryptoRngCore + SeedableRng + Send + Clone + 'static>(
+        &self,
+        rng: &mut R,
+    ) -> HashMap<Participant, TripleGenerationOutput> {
         let mut protocols: Vec<ParticipantAndProtocol<TripleGenerationOutput>> = Vec::new();
         for participant in &self.participants {
+            let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((
                 *participant,
                 Box::new(
@@ -121,7 +138,7 @@ impl TestGenerators {
                         &self.participants,
                         *participant,
                         self.threshold,
-                        OsRng,
+                        rng_p,
                     )
                     .unwrap(),
                 ),

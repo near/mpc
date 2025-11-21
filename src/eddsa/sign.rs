@@ -279,13 +279,18 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
     use crate::crypto::hash::hash;
+    use crate::eddsa::sign::sign;
     use crate::eddsa::test::{build_key_packages_with_dealer, test_run_signature_protocols};
+    use crate::eddsa::{KeygenOutput, SignatureOption};
     use crate::participants::{Participant, ParticipantList};
+    use crate::protocol::Protocol;
     use crate::test_utils::{
-        assert_public_key_invariant, generate_participants, run_keygen, run_refresh, run_reshare,
+        assert_public_key_invariant, generate_participants, one_coordinator_output, run_keygen,
+        run_refresh, run_reshare, MockCryptoRng,
     };
     use frost_core::{Field, Group};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512};
+    use rand::{Rng, RngCore, SeedableRng};
 
     fn assert_single_coordinator_result(
         data: &[(Participant, super::SignatureOption)],
@@ -306,13 +311,15 @@ mod test {
 
     #[test]
     fn basic_two_participants() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let max_signers = 2;
         let threshold = 2;
         let actual_signers = 2;
         let msg = "hello_near";
         let msg_hash = hash(&msg).unwrap();
 
-        let key_packages = build_key_packages_with_dealer(max_signers, threshold);
+        let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
             &key_packages,
@@ -327,13 +334,16 @@ mod test {
 
     #[test]
     fn stress() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let max_signers = 7;
         let msg = "hello_near";
         let msg_hash = hash(&msg).unwrap();
 
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
-                let key_packages = build_key_packages_with_dealer(max_signers, min_signers);
+                let key_packages =
+                    build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
                 let coordinators = vec![key_packages[0].0];
                 let data = test_run_signature_protocols(
                     &key_packages,
@@ -350,6 +360,7 @@ mod test {
 
     #[test]
     fn dkg_sign_test() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = vec![
             Participant::from(0u32),
             Participant::from(31u32),
@@ -362,7 +373,7 @@ mod test {
         let msg_hash = hash(&msg).unwrap();
 
         // test dkg
-        let key_packages = run_keygen(&participants, threshold);
+        let key_packages = run_keygen(&participants, threshold, &mut rng);
         assert_public_key_invariant(&key_packages);
         let coordinators = vec![key_packages[0].0];
         let data = test_run_signature_protocols(
@@ -382,7 +393,7 @@ mod test {
             .is_ok());
 
         // // test refresh
-        let key_packages1 = run_refresh(&participants, &key_packages, threshold);
+        let key_packages1 = run_refresh(&participants, &key_packages, threshold, &mut rng);
         assert_public_key_invariant(&key_packages1);
         let msg = "hello_near_2";
         let msg_hash = hash(&msg).unwrap();
@@ -413,6 +424,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
+            &mut rng,
         );
         assert_public_key_invariant(&key_packages2);
         let msg = "hello_near_3";
@@ -436,9 +448,10 @@ mod test {
 
     #[test]
     fn test_reshare_sign_more_participants() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(5);
         let threshold = 3;
-        let result0 = run_keygen(&participants, threshold);
+        let result0 = run_keygen(&participants, threshold, &mut rng);
         assert_public_key_invariant(&result0);
 
         let pub_key = result0[2].1.public_key;
@@ -456,6 +469,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
+            &mut rng,
         );
         assert_public_key_invariant(&key_packages);
 
@@ -502,9 +516,10 @@ mod test {
 
     #[test]
     fn test_reshare_sign_less_participants() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(5);
         let threshold = 4;
-        let result0 = run_keygen(&participants, threshold);
+        let result0 = run_keygen(&participants, threshold, &mut rng);
         assert_public_key_invariant(&result0);
         let coordinators = vec![result0[0].0];
 
@@ -521,6 +536,7 @@ mod test {
             threshold,
             new_threshold,
             &new_participant,
+            &mut rng,
         );
         assert_public_key_invariant(&key_packages);
 
@@ -561,5 +577,50 @@ mod test {
             .public_key
             .verify(msg_hash.as_ref(), &signature)
             .is_ok());
+    }
+
+    #[test]
+    fn test_signature_correctness() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let threshold = 6;
+        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let public_key = keys[0].1.public_key.to_element();
+
+        let msg = b"hello worldhello worldhello worlregerghwhrth".to_vec();
+        let index = rng.gen_range(0..keys.len());
+        let coordinator = keys[index as usize].0;
+
+        let participants_sign_builder = keys
+            .iter()
+            .map(|(p, keygen_output)| {
+                let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+                (*p, (keygen_output.clone(), rng_p))
+            })
+            .collect();
+
+        // This checks the output signature validity internally
+        let result =
+            crate::test_utils::run_sign::<Ed25519Sha512, (KeygenOutput, MockCryptoRng), _, _>(
+                participants_sign_builder,
+                coordinator,
+                public_key,
+                Ed25519ScalarField::zero(),
+                |participants, coordinator, me, _, (keygen_output, p_rng), _| {
+                    sign(
+                        participants,
+                        threshold as usize,
+                        me,
+                        coordinator,
+                        keygen_output,
+                        msg.clone(),
+                        p_rng,
+                    )
+                    .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
+                },
+            )
+            .unwrap();
+        let signature = one_coordinator_output(result, coordinator).unwrap();
+
+        insta::assert_json_snapshot!(signature);
     }
 }

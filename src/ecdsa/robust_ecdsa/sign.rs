@@ -170,33 +170,36 @@ async fn fut_wrapper(
 mod test {
 
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, PublicKey};
-    use rand_core::OsRng;
+    use rand_core::{CryptoRngCore, SeedableRng};
 
     use super::*;
     use crate::ecdsa::{
-        robust_ecdsa::test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
-        robust_ecdsa::PresignOutput,
+        robust_ecdsa::{
+            test::{run_sign_with_rerandomization, run_sign_without_rerandomization},
+            PresignOutput,
+        },
         Field, Polynomial, ProjectivePoint, Secp256K1ScalarField,
     };
-    use crate::test_utils::generate_participants;
+    use crate::test_utils::{generate_participants, MockCryptoRng};
 
     type PresigSimulationOutput = (Scalar, Polynomial, Polynomial, Polynomial, ProjectivePoint);
 
-    fn simulate_presignature(max_malicious: usize) -> PresigSimulationOutput {
+    fn simulate_presignature(
+        max_malicious: usize,
+        rng: &mut impl CryptoRngCore,
+    ) -> PresigSimulationOutput {
         // the presignatures scheme requires the generation of 5 different polynomials
         // (fk, fa, fb, fd, fe)
         // Here we do not need fb as it is only used to mask some values before sending
         // them to other participants then adding them all together to generate w.
         // This sum would annihilate all the fb shares which make them useless in our case.
-        let fk = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
-        let fa = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let fk = Polynomial::generate_polynomial(None, max_malicious, rng).unwrap();
+        let fa = Polynomial::generate_polynomial(None, max_malicious, rng).unwrap();
         let degree = 2usize.checked_mul(max_malicious).unwrap();
-        let fd =
-            Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, &mut OsRng)
-                .unwrap();
-        let fe =
-            Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, &mut OsRng)
-                .unwrap();
+        let fd = Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, rng)
+            .unwrap();
+        let fe = Polynomial::generate_polynomial(Some(Secp256K1ScalarField::zero()), degree, rng)
+            .unwrap();
 
         // computing k, R, Rx
         let k = fk.eval_at_zero().unwrap().0;
@@ -211,17 +214,18 @@ mod test {
 
     #[test]
     fn test_sign_given_presignature_without_rerandomization() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let max_malicious = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
         // Manually compute presignatures then deliver them to the signing function
-        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
         // master secret key
         let x = fx.eval_at_zero().unwrap().0;
         // master public key
         let public_key = ProjectivePoint::GENERATOR * x;
 
-        let (w_invert, fa, fd, fe, big_r) = simulate_presignature(max_malicious);
+        let (w_invert, fa, fd, fe, big_r) = simulate_presignature(max_malicious, &mut rng);
         let participants = generate_participants(5);
 
         let mut participants_presign = Vec::new();
@@ -243,7 +247,8 @@ mod test {
         }
 
         let (_, sig) =
-            run_sign_without_rerandomization(&participants_presign, public_key, msg).unwrap();
+            run_sign_without_rerandomization(&participants_presign, public_key, msg, &mut rng)
+                .unwrap();
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
         // verify the correctness of the generated signature
@@ -254,17 +259,18 @@ mod test {
 
     #[test]
     fn test_sign_given_presignature_with_rerandomization() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let max_malicious = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
         // Manually compute presignatures then deliver them to the signing function
-        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut OsRng).unwrap();
+        let fx = Polynomial::generate_polynomial(None, max_malicious, &mut rng).unwrap();
         // master secret key
         let x = fx.eval_at_zero().unwrap().0;
         // master public key
         let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
 
-        let (w_invert, fa, fd, fe, big_r) = simulate_presignature(max_malicious);
+        let (w_invert, fa, fd, fe, big_r) = simulate_presignature(max_malicious, &mut rng);
         let participants = generate_participants(5);
 
         let mut participants_presign = Vec::new();
@@ -285,21 +291,28 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (tweak, _, sig) =
-            run_sign_with_rerandomization(&participants_presign, public_key.to_element(), msg)
-                .unwrap();
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
+        let (tweak, _, sig) = run_sign_with_rerandomization(
+            &participants_presign,
+            public_key.to_element(),
+            msg,
+            &mut rng,
+        )
+        .unwrap();
+        let signature = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
         // derive the public key
         let public_key = tweak.derive_verifying_key(&public_key).to_element();
 
         // verify the correctness of the generated signature
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(&msg[..], &sig)
+            .verify(&msg[..], &signature)
             .unwrap();
+
+        insta::assert_json_snapshot!(signature);
     }
 
     #[test]
     fn test_sign_fails_if_s_is_zero() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(2);
 
         // presignatures with s_me = 0 for each participant
@@ -326,6 +339,7 @@ mod test {
             &presignatures,
             public_key,
             &msg,
+            &mut rng,
         );
 
         match result {

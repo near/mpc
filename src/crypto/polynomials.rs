@@ -598,11 +598,13 @@ pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils::{generate_participants, generate_participants_with_random_ids};
+    use crate::test_utils::{
+        generate_participants, generate_participants_with_random_ids, MockCryptoRng,
+    };
     use frost_core::Field;
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
-    use rand_core::{OsRng, RngCore, SeedableRng};
+    use rand_core::{RngCore, SeedableRng};
     type C = Secp256K1Sha256;
 
     #[test]
@@ -626,12 +628,13 @@ mod test {
 
     #[test]
     fn test_get_coefficients_poly() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 50;
         let mut coefficients = Vec::with_capacity(poly_size);
 
         for _ in 0..poly_size {
             coefficients
-                .push(<<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng));
+                .push(<<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng));
         }
 
         let poly = Polynomial::<C>::new(&coefficients).unwrap();
@@ -642,13 +645,13 @@ mod test {
 
     #[test]
     fn test_get_coefficients_commitments() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 50;
         let mut coefficients = Vec::with_capacity(poly_size);
 
         let generator = <C as frost_core::Ciphersuite>::Group::generator();
         for _ in 0..poly_size {
-            let scalar =
-                <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+            let scalar = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
             coefficients.push(CoefficientCommitment::<C>::new(generator * scalar));
         }
 
@@ -660,17 +663,17 @@ mod test {
 
     #[test]
     fn test_eval_on_zero_poly() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 20;
         let mut coefficients = Vec::with_capacity(poly_size);
 
-        let zero_coeff =
-            <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+        let zero_coeff = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
         for i in 0..poly_size {
             if i == 0 {
                 coefficients.push(zero_coeff);
             } else {
                 coefficients.push(
-                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng),
+                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng),
                 );
             }
         }
@@ -684,19 +687,19 @@ mod test {
 
     #[test]
     fn test_eval_on_zero_commitments() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 50;
         let mut coefficients = Vec::with_capacity(poly_size);
 
         let generator = <C as frost_core::Ciphersuite>::Group::generator();
-        let zero_coeff =
-            <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+        let zero_coeff = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
         let zero_coeff = generator * zero_coeff;
         for i in 0..poly_size {
             if i == 0 {
                 coefficients.push(CoefficientCommitment::<C>::new(zero_coeff));
             } else {
                 let scalar =
-                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
                 coefficients.push(CoefficientCommitment::<C>::new(generator * scalar));
             }
         }
@@ -710,6 +713,7 @@ mod test {
 
     #[test]
     fn test_eval_on_point() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 4;
         let mut coefficients = Vec::with_capacity(poly_size);
         let mut coefficients_com = Vec::with_capacity(poly_size);
@@ -727,7 +731,7 @@ mod test {
 
         for _ in 1..50 {
             // test eval_at_zero
-            let point = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+            let point = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
             // explicit calculation
             let output_poly_eval = point * point * point
                 + point * point
@@ -746,6 +750,7 @@ mod test {
 
     #[test]
     fn test_eval_on_participant() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 6;
         let mut coefficients = Vec::with_capacity(poly_size);
         let mut coefficients_com = Vec::with_capacity(poly_size);
@@ -769,7 +774,7 @@ mod test {
         let polycom = PolynomialCommitment::<C>::new(&coefficients_com).unwrap();
 
         for _ in 1..50 {
-            let participant = Participant::from(OsRng.next_u32());
+            let participant = Participant::from(rng.next_u32());
             let point = participant.scalar::<C>();
             // explicit calculation
             let output_poly_eval =
@@ -790,12 +795,12 @@ mod test {
 
     #[test]
     fn test_commit_polynomial() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 4;
         let mut coefficients = Vec::with_capacity(poly_size);
         let mut coefficients_com = Vec::with_capacity(poly_size);
         for _ in 0..poly_size {
-            let scalar =
-                <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+            let scalar = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
             coefficients.push(scalar);
             let commitment = <<C as frost_core::Ciphersuite>::Group as Group>::generator() * scalar;
             coefficients_com.push(CoefficientCommitment::<C>::new(commitment));
@@ -809,9 +814,10 @@ mod test {
 
     #[test]
     fn test_generate_polynomial() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 10;
-        let point = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
-        let poly = Polynomial::<C>::generate_polynomial(Some(point), degree, &mut OsRng).unwrap();
+        let point = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
+        let poly = Polynomial::<C>::generate_polynomial(Some(point), degree, &mut rng).unwrap();
         let coeffs = poly.get_coefficients();
         assert_eq!(coeffs.len(), degree + 1);
         assert_eq!(coeffs[0], point);
@@ -819,17 +825,17 @@ mod test {
 
     #[test]
     fn test_set_to_non_zero_poly() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let poly_size = 20;
         let mut coefficients = Vec::with_capacity(poly_size);
 
-        let zero_coeff =
-            <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+        let zero_coeff = <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
         for i in 0..poly_size {
             let mut rand_scalar =
-                <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+                <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
             while i == 0 && zero_coeff == rand_scalar {
                 rand_scalar =
-                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut OsRng);
+                    <<C as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut rng);
             }
             coefficients.push(rand_scalar);
         }
@@ -844,14 +850,14 @@ mod test {
         assert_eq!(zero_coeff, poly.eval_at_point(point).unwrap().0);
 
         let one = <<C as frost_core::Ciphersuite>::Group as Group>::Field::one();
-        let mut poly_abort =
-            Polynomial::<C>::generate_polynomial(Some(one), 0, &mut OsRng).unwrap();
+        let mut poly_abort = Polynomial::<C>::generate_polynomial(Some(one), 0, &mut rng).unwrap();
         let zero = <<C as frost_core::Ciphersuite>::Group as Group>::Field::zero();
         assert!(poly_abort.set_nonzero_constant(zero).is_err());
     }
 
     #[test]
     fn test_eval_interpolation() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         let participants = (0u32..=degree).map(Participant::from).collect::<Vec<_>>();
         let ids = participants
@@ -861,9 +867,9 @@ mod test {
 
         let shares = participants
             .iter()
-            .map(|_| SerializableScalar::<C>(Secp256K1ScalarField::random(&mut rand_core::OsRng)))
+            .map(|_| SerializableScalar::<C>(Secp256K1ScalarField::random(&mut rng)))
             .collect::<Vec<_>>();
-        let ref_point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+        let ref_point = Some(Secp256K1ScalarField::random(&mut rng));
         let point = ref_point.as_ref();
         assert!(Polynomial::eval_interpolation(&ids, &shares, point).is_ok());
         assert!(Polynomial::eval_interpolation(&ids, &shares, None).is_ok());
@@ -874,9 +880,10 @@ mod test {
 
     #[test]
     fn poly_eval_interpolate() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         // generate polynomial of degree 5
-        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
             .expect("Generation must not fail with overwhealming probability");
 
         // evaluate polynomial on 6 different points
@@ -894,7 +901,7 @@ mod test {
             .collect::<Vec<_>>();
         for _ in 0..100 {
             // create arbitrary point
-            let point = Secp256K1ScalarField::random(&mut OsRng);
+            let point = Secp256K1ScalarField::random(&mut rng);
             // interpolate on this point
             let interpolation = Polynomial::eval_interpolation(&scalars, &shares, Some(&point))
                 .expect("Interpolation has the correct inputs");
@@ -908,9 +915,10 @@ mod test {
 
     #[test]
     fn test_eval_exponent_interpolation() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         // generate polynomial of degree 5
-        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
             .expect("Generation must not fail with overwhealming probability");
 
         let compoly = poly.commit_polynomial().unwrap();
@@ -929,7 +937,7 @@ mod test {
             .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
 
-        let ref_point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+        let ref_point = Some(Secp256K1ScalarField::random(&mut rng));
         let point = ref_point.as_ref();
 
         assert!(
@@ -958,9 +966,10 @@ mod test {
 
     #[test]
     fn com_generate_evaluate_interpolate() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         // generate polynomial of degree 5
-        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
             .expect("Generation must not fail with overwhealming probability");
 
         let compoly = poly.commit_polynomial().unwrap();
@@ -979,7 +988,7 @@ mod test {
             .collect::<Vec<_>>();
         for _ in 0..100 {
             // create arbitrary point
-            let point = Secp256K1ScalarField::random(&mut OsRng);
+            let point = Secp256K1ScalarField::random(&mut rng);
             // interpolate on this point
             let interpolation = PolynomialCommitment::<C>::eval_exponent_interpolation(
                 &scalars,
@@ -997,9 +1006,10 @@ mod test {
 
     #[test]
     fn test_extend_with_identity() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         // generate polynomial of degree 5
-        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
             .expect("Generation must not fail with overwhealming probability");
 
         let compoly = poly.commit_polynomial().unwrap();
@@ -1021,9 +1031,10 @@ mod test {
 
     #[test]
     fn add_polynomial_commitments() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 5;
         // generate polynomial of degree 5
-        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+        let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
             .expect("Generation must not fail with overwhealming probability");
 
         let compoly = poly.commit_polynomial().unwrap();
@@ -1085,12 +1096,13 @@ mod test {
 
     #[test]
     fn test_compute_lagrange_coefficient_cubic_polynomial() {
-        let points = generate_participants_with_random_ids(5, &mut OsRng)
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let points = generate_participants_with_random_ids(5, &mut rng)
             .iter()
             .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
         let mut result = Secp256K1ScalarField::zero();
-        let target_point = Scalar::generate_biased(&mut OsRng);
+        let target_point = Scalar::generate_biased(&mut rng);
         for point in &points {
             let coefficient =
                 compute_lagrange_coefficient::<C>(&points, point, Some(&target_point))
@@ -1103,9 +1115,10 @@ mod test {
 
     #[test]
     fn test_compute_lagrange_coefficient_edge_cases() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let one = Scalar::ONE;
         let zero = Scalar::ZERO;
-        let target_point = Scalar::generate_biased(&mut OsRng);
+        let target_point = Scalar::generate_biased(&mut rng);
 
         // coefficients computed manually
         assert_eq!(
@@ -1122,8 +1135,8 @@ mod test {
         );
 
         // target point is None should be treated as 0
-        let random_point1 = Scalar::generate_biased(&mut OsRng);
-        let random_point2 = Scalar::generate_biased(&mut OsRng);
+        let random_point1 = Scalar::generate_biased(&mut rng);
+        let random_point2 = Scalar::generate_biased(&mut rng);
         assert_eq!(
             compute_lagrange_coefficient::<C>(
                 &[random_point1, random_point2],
@@ -1153,6 +1166,7 @@ mod test {
 
     #[test]
     fn test_lagrange_computation_equivalence() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let degree = 10;
         let participants = generate_participants(degree + 1);
 
@@ -1160,7 +1174,7 @@ mod test {
             .iter()
             .map(Participant::scalar::<C>)
             .collect::<Vec<_>>();
-        let point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+        let point = Some(Secp256K1ScalarField::random(&mut rng));
 
         // Sequential
         let mut lagrange_coefficients_seq = Vec::new();
@@ -1213,6 +1227,7 @@ mod test {
 
     #[test]
     fn test_eval_exponent_interpolation_against_interpolation_times_g_at_none() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         for participants in 2..20 {
             for degree in 1..participants {
                 let participants = generate_participants(participants);
@@ -1223,7 +1238,7 @@ mod test {
                     .collect::<Vec<_>>();
 
                 // generate polynomial
-                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
                     .expect("Generation must not fail with overwhealming probability");
 
                 // build all the shares
@@ -1261,6 +1276,7 @@ mod test {
     }
     #[test]
     fn test_eval_exponent_interpolation_against_interpolation_times_g_at_some() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         for participants in 2..20 {
             for degree in 1..participants {
                 let participants = generate_participants(participants);
@@ -1271,7 +1287,7 @@ mod test {
                     .collect::<Vec<_>>();
 
                 // generate polynomial
-                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut OsRng)
+                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
                     .expect("Generation must not fail with overwhealming probability");
 
                 // build all the shares
@@ -1288,7 +1304,7 @@ mod test {
                     .map(|p| compoly.eval_at_participant(*p).unwrap())
                     .collect::<Vec<_>>();
 
-                let point = Some(Secp256K1ScalarField::random(&mut rand_core::OsRng));
+                let point = Some(Secp256K1ScalarField::random(&mut rng));
 
                 // use only degree + 1 shares to evaluate exponent
                 let exponent_eval = PolynomialCommitment::eval_exponent_interpolation(
@@ -1311,7 +1327,7 @@ mod test {
 
     #[test]
     fn test_generate_polynomial_overflow() {
-        let mut rng = OsRng;
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         // Test with a degree that would cause an overflow in `degree + 1`
         let result = Polynomial::<C>::generate_polynomial(None, usize::MAX, &mut rng);
         assert!(matches!(result, Err(ProtocolError::IntegerOverflow)));
@@ -1324,8 +1340,7 @@ mod test {
     #[test]
     fn test_polynomial_commitment_serialization() {
         // Given
-        let seed = [42u8; 32];
-        let mut rng = rand::rngs::StdRng::from_seed(seed);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let initial_poly = Polynomial::<C>::generate_polynomial(None, 6, &mut rng)
             .unwrap()
             .commit_polynomial()

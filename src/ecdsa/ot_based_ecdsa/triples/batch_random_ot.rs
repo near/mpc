@@ -370,12 +370,13 @@ pub async fn batch_random_ot_receiver_many<const N: usize>(
 #[cfg(test)]
 mod test {
 
+    use rand::SeedableRng;
+
     use super::*;
     use crate::ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot;
     use crate::participants::Participant;
     use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::run_two_party_protocol;
-    use rand_core::OsRng;
+    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
 
     #[test]
     fn test_batch_random_ot() {
@@ -397,7 +398,9 @@ mod test {
     }
 
     /// Run the batch random OT many protocol between two parties.
-    fn run_batch_random_ot_many<const N: usize>() -> Result<
+    fn run_batch_random_ot_many<const N: usize, R: CryptoRngCore + SeedableRng + Send + 'static>(
+        rng: &mut R,
+    ) -> Result<
         (
             Vec<BatchRandomOTOutputSender>,
             Vec<BatchRandomOTOutputReceiver>,
@@ -408,17 +411,18 @@ mod test {
         let r = Participant::from(1u32);
         let comms_s = Comms::new();
         let comms_r = Comms::new();
-
+        let rng_1 = R::seed_from_u64(rng.next_u64());
+        let rng_2 = R::seed_from_u64(rng.next_u64());
         run_two_party_protocol(
             s,
             r,
             &mut make_protocol(
                 comms_s.clone(),
-                batch_random_ot_sender_many::<N>(comms_s.private_channel(s, r), OsRng),
+                batch_random_ot_sender_many::<N>(comms_s.private_channel(s, r), rng_1),
             ),
             &mut make_protocol(
                 comms_r.clone(),
-                batch_random_ot_receiver_many::<N>(comms_r.private_channel(r, s), OsRng),
+                batch_random_ot_receiver_many::<N>(comms_r.private_channel(r, s), rng_2),
             ),
         )
     }
@@ -426,7 +430,9 @@ mod test {
     #[test]
     fn test_batch_random_ot_many() {
         const N: usize = 10;
-        let (a, b) = run_batch_random_ot_many::<N>().unwrap();
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
+        let (a, b) = run_batch_random_ot_many::<N, _>(&mut rng).unwrap();
         for i in 0..N {
             let ((k0, k1), (delta, k_delta)) = (&a[i], &b[i]);
             // Check that we've gotten the right rows of the two matrices.

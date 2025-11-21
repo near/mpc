@@ -136,10 +136,13 @@ impl BorshDeserialize for AppId {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::MockCryptoRng;
+
     use super::*;
     use bincode::config;
     use bincode::serde::{decode_from_slice, encode_to_vec};
-    use rand_core::{OsRng, RngCore};
+    use rand::SeedableRng;
+    use rand_core::RngCore;
     use std::borrow::Borrow;
     use std::collections::HashMap;
 
@@ -165,6 +168,8 @@ mod tests {
 
     #[test]
     fn test_borsh_roundtrip() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+
         let test_cases = vec![
             vec![],                        // empty
             vec![0x01],                    // single byte
@@ -183,7 +188,6 @@ mod tests {
         }
 
         // Very large random array
-        let rng = &mut OsRng;
         let mut large_bytes = vec![0u8; 10_000];
         rng.fill_bytes(&mut large_bytes);
         let original = AppId::try_new(large_bytes.clone()).unwrap();

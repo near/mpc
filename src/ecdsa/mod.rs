@@ -203,17 +203,19 @@ mod test {
         ecdsa::{signature::Verifier, SigningKey},
         ProjectivePoint, Secp256k1,
     };
-    use rand_core::{CryptoRngCore, OsRng, RngCore};
+    use rand::SeedableRng;
+    use rand_core::{CryptoRngCore, RngCore};
     use sha2::{digest::FixedOutput, Digest, Sha256};
     type C = Secp256K1Sha256;
 
     #[test]
     fn test_verify() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let msg = b"Hello from Near";
         let mut hasher = Sha256::new();
         hasher.update(msg);
 
-        let sk = SigningKey::random(&mut OsRng);
+        let sk = SigningKey::random(&mut rng);
         let pk = ecdsa::VerifyingKey::from(&sk);
         let (sig, _) = sk.sign_digest_recoverable(hasher.clone()).unwrap();
         assert!(pk.verify(msg, &sig).is_ok());
@@ -242,7 +244,7 @@ mod test {
     #[test]
     fn keygen_output_should_be_serializable() {
         // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42u64);
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let signing_key = FrostSigningKey::<C>::new(&mut rng);
 
         let keygen_output = KeygenOutput {
@@ -266,8 +268,8 @@ mod test {
         rng: &mut impl CryptoRngCore,
         num_participants: usize,
     ) -> (RerandomizationArguments, Scalar) {
-        let (_, big_r) = <C>::generate_nonce(&mut OsRng);
-        let (_, pk) = <C>::generate_nonce(&mut OsRng);
+        let (_, big_r) = <C>::generate_nonce(rng);
+        let (_, pk) = <C>::generate_nonce(rng);
         let pk = frost_core::VerifyingKey::new(pk);
         let big_r = big_r.to_affine();
 
@@ -282,8 +284,8 @@ mod test {
 
     #[test]
     fn test_different_pk() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different pk
         let (_, pk) = <C>::generate_nonce(&mut rng);
@@ -294,19 +296,20 @@ mod test {
 
     #[test]
     fn test_different_tweak() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
+
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different pk
-        args.tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut OsRng));
+        args.tweak = Tweak::new(frost_core::random_nonzero::<Secp256K1Sha256, _>(&mut rng));
         let delta_prime = args.derive_randomness().unwrap();
         assert_ne!(delta, delta_prime);
     }
 
     #[test]
     fn test_different_msg_hash() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different msg_hash
         args.msg_hash = [0; 32];
@@ -316,11 +319,11 @@ mod test {
 
     #[test]
     fn test_different_big_r() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different big_r
-        let (_, big_r) = <C>::generate_nonce(&mut OsRng);
+        let (_, big_r) = <C>::generate_nonce(&mut rng);
         args.big_r = big_r.to_affine();
         let delta_prime = args.derive_randomness().unwrap();
         assert_ne!(delta, delta_prime);
@@ -328,8 +331,8 @@ mod test {
 
     #[test]
     fn test_different_participants() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
         // different participants set
         let participants = generate_participants_with_random_ids(num_participants, &mut rng);
@@ -340,12 +343,12 @@ mod test {
 
     #[test]
     fn test_different_entropy() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
 
         // different entropy
-        OsRng.fill_bytes(&mut args.entropy);
+        rng.fill_bytes(&mut args.entropy);
         let delta_prime = args.derive_randomness().unwrap();
         assert_ne!(delta, delta_prime);
     }
@@ -353,8 +356,8 @@ mod test {
     // Test that with different order of participants, the randomness is the same.
     #[test]
     fn test_same_randomness() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let num_participants = 10;
-        let mut rng = OsRng;
         let (mut args, delta) = compute_random_outputs(&mut rng, num_participants);
 
         // reshuffle
@@ -365,33 +368,67 @@ mod test {
 
     #[test]
     fn test_keygen() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(3);
         let threshold = 2;
-        crate::dkg::test::test_keygen::<C>(&participants, threshold);
+        crate::dkg::test::test_keygen::<C, _>(&participants, threshold, &mut rng);
     }
 
     #[test]
     fn test_refresh() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(3);
         let threshold = 2;
-        crate::dkg::test::test_refresh::<C>(&participants, threshold);
+        crate::dkg::test::test_refresh::<C, _>(&participants, threshold, &mut rng);
     }
 
     #[test]
     fn test_reshare() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(3);
         let threshold0 = 2;
         let threshold1 = 3;
-        crate::dkg::test::test_reshare::<C>(&participants, threshold0, threshold1);
+        crate::dkg::test::test_reshare::<C, _>(&participants, threshold0, threshold1, &mut rng);
+    }
+
+    #[test]
+    fn test_keygen_determinism() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let threshold = 2;
+        let result = crate::dkg::test::test_keygen::<C, _>(&participants, threshold, &mut rng);
+        insta::assert_json_snapshot!(result);
+    }
+
+    #[test]
+    fn test_refresh_determinism() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let threshold = 2;
+        let result = crate::dkg::test::test_refresh::<C, _>(&participants, threshold, &mut rng);
+        insta::assert_json_snapshot!(result);
+    }
+
+    #[test]
+    fn test_reshare_determinism() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(3);
+        let threshold0 = 2;
+        let threshold1 = 3;
+        let result =
+            crate::dkg::test::test_reshare::<C, _>(&participants, threshold0, threshold1, &mut rng);
+        insta::assert_json_snapshot!(result);
     }
 
     #[test]
     fn test_keygen_threshold_limits() {
-        crate::dkg::test::keygen__should_fail_if_threshold_is_below_limit::<C>();
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        crate::dkg::test::keygen__should_fail_if_threshold_is_below_limit::<C, _>(&mut rng);
     }
 
     #[test]
     fn test_reshare_threshold_limits() {
-        crate::dkg::test::reshare__should_fail_if_threshold_is_below_limit::<C>();
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        crate::dkg::test::reshare__should_fail_if_threshold_is_below_limit::<C, _>(&mut rng);
     }
 }

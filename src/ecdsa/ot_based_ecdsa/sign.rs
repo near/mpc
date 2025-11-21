@@ -182,29 +182,30 @@ mod test {
             },
             Polynomial,
         },
-        test_utils::generate_participants,
+        test_utils::{generate_participants, MockCryptoRng},
     };
     use k256::{ecdsa::signature::Verifier, ecdsa::VerifyingKey, ProjectivePoint, PublicKey};
-    use rand_core::OsRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_sign_without_rerandomization() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
         let degree = threshold.checked_sub(1).unwrap();
-        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = ProjectivePoint::GENERATOR * x;
 
-        let g = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
+        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
 
         let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut OsRng).unwrap();
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
 
         let participants = generate_participants(2);
 
@@ -218,7 +219,8 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (_, sig) = run_sign_without_rerandomization(&participants_presign, public_key, msg);
+        let (_, sig) =
+            run_sign_without_rerandomization(&participants_presign, public_key, msg, &mut rng);
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
             .verify(msg, &sig)
@@ -227,22 +229,23 @@ mod test {
 
     #[test]
     fn test_sign_with_rerandomization() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let threshold: usize = 2;
         let msg = b"Hello? Is it me you're looking for?";
 
         let degree = threshold.checked_sub(1).unwrap();
-        let f = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
+        let f = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
         let x = f.eval_at_zero().unwrap().0;
         let public_key = frost_core::VerifyingKey::new(ProjectivePoint::GENERATOR * x);
 
-        let g = Polynomial::generate_polynomial(None, degree, &mut OsRng).unwrap();
+        let g = Polynomial::generate_polynomial(None, degree, &mut rng).unwrap();
 
         let k = g.eval_at_zero().unwrap().0;
         let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
 
         let sigma = k * x;
 
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut OsRng).unwrap();
+        let h = Polynomial::generate_polynomial(Some(sigma), degree, &mut rng).unwrap();
 
         let participants = generate_participants(2);
 
@@ -256,14 +259,20 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (tweak, _, sig) =
-            run_sign_with_rerandomization(&participants_presign, public_key.to_element(), msg)
-                .unwrap();
-        let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
+        let (tweak, _, sig) = run_sign_with_rerandomization(
+            &participants_presign,
+            public_key.to_element(),
+            msg,
+            &mut rng,
+        )
+        .unwrap();
+        let signature = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
         let public_key = tweak.derive_verifying_key(&public_key).to_element();
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(msg, &sig)
+            .verify(msg, &signature)
             .unwrap();
+
+        insta::assert_json_snapshot!(signature);
     }
 }

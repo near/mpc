@@ -59,24 +59,29 @@ pub fn commit<T: Serialize, R: CryptoRngCore>(
 
 #[cfg(test)]
 mod test {
-    use rand_core::OsRng;
+
+    use rand::SeedableRng;
+
+    use crate::test_utils::MockCryptoRng;
 
     use super::commit;
 
     #[test]
     fn test_commitment_is_valid() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let val = "Committed value";
-        let (c, r) = commit(&mut OsRng, &val).unwrap();
+        let (c, r) = commit(&mut rng, &val).unwrap();
         assert!(c.check(&val, &r).unwrap());
     }
 
     #[test]
     fn test_commitment_is_invalid() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let val1 = "Committed value";
-        let (c1, r1) = commit(&mut OsRng, &val1).unwrap();
+        let (c1, r1) = commit(&mut rng, &val1).unwrap();
 
         let val2 = "Another committed value";
-        let (c2, r2) = commit(&mut OsRng, &val2).unwrap();
+        let (c2, r2) = commit(&mut rng, &val2).unwrap();
 
         assert!(!c1.check(&val1, &r2).unwrap());
         assert!(!c1.check(&val2, &r1).unwrap());

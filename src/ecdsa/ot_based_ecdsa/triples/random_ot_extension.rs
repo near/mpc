@@ -217,20 +217,21 @@ mod test {
         errors::ProtocolError,
         participants::Participant,
         protocol::internal::{make_protocol, Comms},
-        test_utils::run_two_party_protocol,
+        test_utils::{run_two_party_protocol, MockCryptoRng},
     };
 
     use super::*;
 
     use k256::Scalar;
-    use rand_core::OsRng;
+    use rand::SeedableRng;
 
     /// Run the random OT protocol between two parties
-    fn run_random_ot(
+    fn run_random_ot<R: CryptoRngCore + SeedableRng + Send + 'static>(
         (delta, k): (BitVector, SquareBitMatrix),
         (k0, k1): (SquareBitMatrix, SquareBitMatrix),
         sid: Vec<u8>,
         batch_size: usize,
+        rng: &mut R,
     ) -> Result<(RandomOTExtensionSenderOut, RandomOTExtensionReceiverOut), ProtocolError> {
         let s = Participant::from(0u32);
         let r = Participant::from(1u32);
@@ -240,8 +241,8 @@ mod test {
         let sid_s = sid.clone();
         let sid_r = sid;
 
-        let seed_s = random_ot_extension_sender_helper(&mut OsRng);
-        let seed_r = random_ot_extension_receiver_helper(batch_size, &mut OsRng);
+        let seed_s = random_ot_extension_sender_helper(rng);
+        let seed_r = random_ot_extension_receiver_helper(batch_size, rng);
 
         run_two_party_protocol(
             s,
@@ -273,10 +274,17 @@ mod test {
 
     #[test]
     fn test_random_ot() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let ((k0, k1), (delta, k)) = run_batch_random_ot().unwrap();
         let batch_size = 16;
-        let (sender_out, receiver_out) =
-            run_random_ot((delta, k), (k0, k1), b"test sid".to_vec(), batch_size).unwrap();
+        let (sender_out, receiver_out) = run_random_ot(
+            (delta, k),
+            (k0, k1),
+            b"test sid".to_vec(),
+            batch_size,
+            &mut rng,
+        )
+        .unwrap();
         assert_eq!(sender_out.len(), batch_size);
         assert_eq!(receiver_out.len(), batch_size);
         for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {

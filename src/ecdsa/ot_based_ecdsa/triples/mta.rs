@@ -140,18 +140,20 @@ mod test {
     use super::*;
     use crate::crypto::constants::{BITS, SECURITY_PARAMETER};
     use k256::Scalar;
-    use rand_core::{OsRng, RngCore};
+    use rand::SeedableRng;
+    use rand_core::RngCore;
 
     use crate::errors::ProtocolError;
     use crate::participants::Participant;
     use crate::protocol::internal::{make_protocol, Comms};
-    use crate::test_utils::run_two_party_protocol;
+    use crate::test_utils::{run_two_party_protocol, MockCryptoRng};
 
     /// Run the multiplicative to additive protocol
     fn run_mta(
         (v, a): (Vec<(Scalar, Scalar)>, Scalar),
         (tv, b): (Vec<(Choice, Scalar)>, Scalar),
     ) -> Result<(Scalar, Scalar), ProtocolError> {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let s = Participant::from(0u32);
         let r = Participant::from(1u32);
         let ctx_s = Comms::new();
@@ -161,11 +163,11 @@ mod test {
             s,
             r,
             &mut make_protocol(ctx_s.clone(), {
-                let delta = mta_sender_random_helper(v.len(), &mut OsRng);
+                let delta = mta_sender_random_helper(v.len(), &mut rng);
                 mta_sender(ctx_s.private_channel(s, r), v, a, delta)
             }),
             &mut make_protocol(ctx_r.clone(), {
-                let seed = mta_receiver_random_helper(&mut OsRng);
+                let seed = mta_receiver_random_helper(&mut rng);
                 mta_receiver(ctx_r.private_channel(r, s), tv, b, seed)
             }),
         )
@@ -173,26 +175,27 @@ mod test {
 
     #[test]
     fn test_mta() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
         let batch_size = BITS + SECURITY_PARAMETER;
 
         let v: Vec<_> = (0..batch_size)
             .map(|_| {
                 (
-                    Scalar::generate_biased(&mut OsRng),
-                    Scalar::generate_biased(&mut OsRng),
+                    Scalar::generate_biased(&mut rng),
+                    Scalar::generate_biased(&mut rng),
                 )
             })
             .collect();
         let tv: Vec<_> = v
             .iter()
             .map(|(v0, v1)| {
-                let c = Choice::from((OsRng.next_u64() & 1) as u8);
+                let c = Choice::from((rng.next_u64() & 1) as u8);
                 (c, Scalar::conditional_select(v0, v1, c))
             })
             .collect();
 
-        let a = Scalar::generate_biased(&mut OsRng);
-        let b = Scalar::generate_biased(&mut OsRng);
+        let a = Scalar::generate_biased(&mut rng);
+        let b = Scalar::generate_biased(&mut rng);
         let (alpha, beta) = run_mta((v, a), (tv, b)).unwrap();
 
         assert_eq!(a * b, alpha + beta);
