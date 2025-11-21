@@ -965,6 +965,11 @@ impl MpcContract {
         Ok(true)
     }
 
+    /// returns all proposed updates
+    pub fn proposed_updates(&self) -> dtos::ProposedUpdates {
+        self.proposed_updates.into_dto_type()
+    }
+
     #[handle_result]
     pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> {
         log!(
@@ -1639,6 +1644,7 @@ mod tests {
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
+    use sha2::{Digest, Sha256};
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -2834,5 +2840,101 @@ mod tests {
         assert!(contract.cleanup_orphaned_node_migrations().is_ok());
         let result = contract.migration_info();
         assert_eq!(result, expected_vals);
+    }
+
+    fn propose_and_vote(
+        contract: &mut MpcContract,
+        update: Update,
+        expected_update_id: u64,
+    ) -> Vec<dtos::AccountId> {
+        let update_id = contract.proposed_updates.propose(update.clone());
+        assert_eq!(update_id.0, expected_update_id);
+        // generate two accounts for voting
+        let account_id_0 = gen_account_id();
+        let account_id_1 = gen_account_id();
+        contract
+            .proposed_updates
+            .vote(&update_id, account_id_0.clone())
+            .unwrap();
+        contract
+            .proposed_updates
+            .vote(&update_id, account_id_1.clone())
+            .unwrap();
+
+        let mut expected_votes = vec![
+            dtos::AccountId(account_id_0.to_string()),
+            dtos::AccountId(account_id_1.to_string()),
+        ];
+        expected_votes.sort();
+        expected_votes
+    }
+
+    fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+
+        assert_eq!(contract.proposed_updates(), dtos::ProposedUpdates(vec![]));
+
+        let code_update = {
+            // propose update
+            let code = [0u8; 1000];
+            let hash = Sha256::digest(code);
+            let update = Update::Contract(code.into());
+            let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+            let expected_update_id = 0;
+            let expected_votes = propose_and_vote(&mut contract, update, expected_update_id);
+            dtos::Update {
+                update_id: expected_update_id,
+                update_hash: expected_update_hash,
+                votes: expected_votes,
+            }
+        };
+
+        let config_update = {
+            let update_config = Config {
+                key_event_timeout_blocks: 64,
+                tee_upgrade_deadline_duration_seconds: 100,
+            };
+            let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
+            let expected_update_hash = dtos::UpdateHash::Config(hash.into());
+
+            let update = Update::Config(update_config.clone());
+
+            let expected_update_id = 1;
+            let expected_votes = propose_and_vote(&mut contract, update, expected_update_id);
+            dtos::Update {
+                update_id: expected_update_id,
+                update_hash: expected_update_hash,
+                votes: expected_votes,
+            }
+        };
+        let mut expected = vec![code_update, config_update];
+        // sorting to have consistent order
+        expected.sort();
+
+        let mut res = contract.proposed_updates();
+        res.0.iter_mut().for_each(|update| update.votes.sort());
+        // sorting to have consistent order
+        res.0.sort();
+
+        assert_eq!(dtos::ProposedUpdates(expected), res);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_running() {
+        let protocol_contract_state = ProtocolContractState::Running(gen_running_state(2));
+        test_proposed_updates_case_given_state(protocol_contract_state);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_resharing() {
+        let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
+        test_proposed_updates_case_given_state(protocol_contract_state);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_initialzing() {
+        let protocol_contract_state =
+            ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
+        test_proposed_updates_case_given_state(protocol_contract_state);
     }
 }
