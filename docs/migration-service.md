@@ -188,11 +188,11 @@ flowchart TD
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
     
-    NO -->|Provides symmetric encryption key| BS;
-    NO -->|Provides symmetric encryption key| MPC;
-    NO -- "1\. start onboarding for new node in smart contract" --> SC
-    BS -- "2\. read MPC node Public Key and address" --> SC
-    BS -- "3\. send encrypted key shares" --> MPC
+    NO -->|"1. Provides symmetric encryption key"| BS;
+    NO -->|"2. Provides symmetric encryption key"| MPC;
+    NO -->|"3. start onboarding for new node in smart contract"| SC;
+    BS -->|"4. read MPC node Public Key and address"| SC;
+    BS -->|"5. send encrypted key shares"| MPC;
     MPC -- "4\. resolve recovery and participate in the network" --> SC
 
     NO@{ shape: manual-input}
