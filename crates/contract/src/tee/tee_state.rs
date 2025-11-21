@@ -302,10 +302,10 @@ impl TeeState {
     /// Used to clean up storage after a resharing concludes.
     pub fn clean_non_participants(&mut self, participants: &Participants) {
         // Collect all allowed TLS public keys from current participants
-        let active_tls_keys: HashSet<near_sdk::PublicKey> = participants
+        let active_tls_keys: HashSet<&near_sdk::PublicKey> = participants
             .participants()
             .iter()
-            .map(|(_, _, p_info)| p_info.sign_pk.clone())
+            .map(|(_, _, p_info)| &p_info.sign_pk)
             .collect();
 
         // Collect TLS keys that are *not* in the active participants list

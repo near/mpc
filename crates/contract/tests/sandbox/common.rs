@@ -191,6 +191,7 @@ fn load_contract(package_name: &str) -> Vec<u8> {
                 &format!("--package={package_name}"),
                 "--profile=release-contract",
                 "--target=wasm32-unknown-unknown",
+                "--locked",
             ])
             .current_dir(&project_dir)
             .status()
