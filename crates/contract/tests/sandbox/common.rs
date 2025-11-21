@@ -66,7 +66,7 @@ use threshold_signatures::{
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
-pub const PARTICIPANT_LEN: usize = 3;
+pub const PARTICIPANT_LEN: usize = 10;
 
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";

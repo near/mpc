@@ -18,7 +18,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
     let args = json!({
         "domains": vec![
@@ -145,7 +145,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
@@ -244,7 +244,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
@@ -334,10 +334,11 @@ struct ResharingTestContext {
 
 /// Test helper: Initialize environment and transition to resharing state
 #[rstest::fixture]
-async fn setup_resharing_state() -> ResharingTestContext {
-    // TODO: tests depending on this function do not scale yet
+async fn setup_resharing_state(
+    #[default(PARTICIPANT_LEN)] number_of_participants: usize,
+) -> ResharingTestContext {
     let (worker, contract, mut current_participant_accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], 3).await;
+        init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {
@@ -346,6 +347,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
 
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
     let existing_params = initial_running_state.parameters.clone();
+    let threshold = existing_params.threshold();
     let mut new_participants = existing_params.participants().clone();
 
     // Add a new participant
@@ -372,7 +374,7 @@ async fn setup_resharing_state() -> ResharingTestContext {
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
     let threshold_parameters =
-        ThresholdParameters::new(new_participants, Threshold::new(3)).unwrap();
+        ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
 
     current_participant_accounts.push(new_account.clone());
 
@@ -721,11 +723,10 @@ async fn test_cancelled_epoch_cannot_be_reused(
 
 /// Test: After cancellation and successful resharing, `previously_cancelled_resharing_epoch_id`
 /// in the running state is set to None.
-#[rstest]
 #[tokio::test]
 async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
-    #[future] setup_resharing_state: ResharingTestContext,
 ) -> anyhow::Result<()> {
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let ResharingTestContext {
         contract,
         current_participant_accounts,
@@ -733,7 +734,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         threshold_parameters,
         initial_running_state,
         ..
-    } = setup_resharing_state.await;
+    } = setup_resharing_state(3).await;
 
     let initial_threshold = initial_running_state.parameters.threshold();
     let initial_epoch_id = initial_running_state.keyset.epoch_id;

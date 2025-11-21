@@ -119,7 +119,7 @@ async fn test_propose_update_config() {
             .await
             .unwrap();
 
-        // NOTE: since threshold out of total participants are required to pass a proposal, having the third one also
+        // NOTE: since threshold out of total participants are required to pass a proposal, having the `threshold+1` one also
         // vote should fail.
         if i < threshold.value() as usize {
             assert!(
@@ -270,12 +270,13 @@ async fn test_propose_incorrect_updates() {
 /// thus we want to test whether some problem builds up eventually.
 #[tokio::test]
 async fn many_sequential_updates() {
-    let number_of_participants = 3;
+    let number_of_participants = PARTICIPANT_LEN;
     let (_, contract, accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
     dbg!(contract.id());
 
-    for _ in 0..number_of_participants {
+    let number_of_updates = 3;
+    for _ in 0..number_of_updates {
         propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
     }
 }
@@ -382,7 +383,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    // TODO: the number of participants cannot be yet scaled
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (worker, contract, accounts) = init_with_candidates(vec![], 3).await;
 
     let participants = assert_running_return_participants(&contract)

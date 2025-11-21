@@ -151,7 +151,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
 
     // Add state so migration logic is exercised
@@ -198,7 +198,7 @@ async fn upgrade_preserves_state_and_requests(
 ) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
 
     let attested_account = &accounts[0];
@@ -316,7 +316,7 @@ async fn upgrade_allows_new_request_types(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    // TODO: this test does not cannot scale yet
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
     let attested_account = &accounts[0];
 
