@@ -1,7 +1,7 @@
 mod impls;
 
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use std::collections::{HashMap, HashSet};

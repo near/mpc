@@ -6,7 +6,7 @@ use crate::primitives::domain::DomainRegistry;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::BTreeSet;
 
@@ -157,7 +157,7 @@ pub mod tests {
     use crate::state::key_event::tests::find_leader;
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::gen_initializing_state;
-    use near_account_id_v2::AccountId;
+    use near_account_id::AccountId;
     use std::collections::BTreeSet;
 
     fn test_initializing_contract_state_for(num_domains: usize, num_already_generated: usize) {

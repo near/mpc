@@ -8,7 +8,7 @@ use crate::primitives::{
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::{BTreeSet, HashSet};
 

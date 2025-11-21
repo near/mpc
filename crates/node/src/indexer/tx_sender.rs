@@ -5,7 +5,7 @@ use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
 use ed25519_dalek::SigningKey;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use std::future::Future;
 use std::sync::Arc;

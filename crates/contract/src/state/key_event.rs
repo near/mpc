@@ -293,7 +293,7 @@ pub mod tests {
         test_utils::{gen_account_id, gen_seed},
     };
     use crate::state::key_event::KeyEvent;
-    use near_account_id_v2::AccountId;
+    use near_account_id::AccountId;
     use near_sdk::{test_utils::VMContextBuilder, testing_env, BlockHeight, PublicKey};
     use rand::Rng;
     use utilities::AccountIdExtV2;

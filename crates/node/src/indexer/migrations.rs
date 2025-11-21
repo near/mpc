@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use tokio::sync::watch;
 
 use crate::{indexer::IndexerState, migration_service::types::MigrationInfo};
@@ -21,12 +21,12 @@ pub async fn monitor_migrations(
     indexer_state: Arc<IndexerState>,
 
     migration_state_sender: watch::Sender<(u64, ContractMigrationInfo)>,
-    my_near_account_id_v2: AccountId,
+    my_near_account_id: AccountId,
     my_p2p_public_key: VerifyingKey,
 ) -> watch::Receiver<MigrationInfo> {
     let init_response = fetch_migrations_once(indexer_state.clone()).await;
     let init_migration_state = MigrationInfo::from_contract_state(
-        &my_near_account_id_v2,
+        &my_near_account_id,
         &my_p2p_public_key,
         &init_response.1,
     );
@@ -54,7 +54,7 @@ pub async fn monitor_migrations(
                     }
                 });
                 let my_migration_state = MigrationInfo::from_contract_state(
-                    &my_near_account_id_v2,
+                    &my_near_account_id,
                     &my_p2p_public_key,
                     &response.1,
                 );

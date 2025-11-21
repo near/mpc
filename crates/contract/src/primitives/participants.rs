@@ -1,6 +1,6 @@
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::{near, PublicKey};
 use std::{collections::BTreeSet, fmt::Display};
 

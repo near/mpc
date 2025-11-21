@@ -3,7 +3,7 @@ use mpc_contract::{
     node_migrations::{BackupServiceInfo, DestinationNodeInfo},
     primitives::key_state::Keyset,
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
@@ -157,7 +157,7 @@ pub mod tests {
             ProtocolContractState,
         },
     };
-    use near_account_id_v2::AccountId;
+    use near_account_id::AccountId;
 
     use crate::{
         config,

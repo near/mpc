@@ -18,7 +18,7 @@ use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
 use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
 use futures::FutureExt;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;

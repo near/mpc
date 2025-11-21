@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use contract_interface::types::Bls12381G1PublicKey;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use rand::rngs::OsRng;
 use threshold_signatures::{
     confidential_key_derivation::{protocol::ckd, ElementG1, KeygenOutput, VerifyingKey},

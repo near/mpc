@@ -20,7 +20,7 @@ use mpc_contract::{
         tee_state::NodeId,
     },
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };

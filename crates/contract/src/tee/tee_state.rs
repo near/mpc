@@ -13,7 +13,7 @@ use attestation::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::{env, near, store::IterableMap};
 use std::hash::{Hash, Hasher};
 use std::{collections::HashSet, time::Duration};
@@ -372,7 +372,7 @@ mod tests {
 
     use super::*;
     use attestation::attestation::{Attestation, MockAttestation};
-    use near_account_id_v2::AccountId;
+    use near_account_id::AccountId;
 
     #[test]
     fn test_clean_non_participants() {

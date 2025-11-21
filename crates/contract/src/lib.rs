@@ -48,7 +48,7 @@ use errors::{
 use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,

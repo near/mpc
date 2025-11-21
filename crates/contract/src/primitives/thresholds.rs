@@ -1,6 +1,6 @@
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::near;
 use std::collections::BTreeMap;
 

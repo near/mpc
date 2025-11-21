@@ -16,7 +16,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;

@@ -12,7 +12,7 @@ use crate::indexer::tee::{
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_indexer::Indexer;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -49,7 +49,7 @@ pub async fn check_block_processing(process_blocks_sender: watch::Sender<bool>, 
 pub fn spawn_real_indexer(
     home_dir: PathBuf,
     mpc_indexer_config: IndexerConfig,
-    my_near_account_id_v2: AccountId,
+    my_near_account_id: AccountId,
     account_secret_key: SigningKey,
     respond_config: RespondConfig,
     indexer_exit_sender: oneshot::Sender<anyhow::Result<()>>,
@@ -66,7 +66,7 @@ pub fn spawn_real_indexer(
         watch::channel(vec![]);
     let (tee_accounts_sender, tee_accounts_receiver) = watch::channel(vec![]);
 
-    let my_near_account_id_v2_clone = my_near_account_id_v2.clone();
+    let my_near_account_id_clone = my_near_account_id.clone();
     let respond_config_clone = respond_config.clone();
 
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
@@ -106,7 +106,7 @@ pub fn spawn_real_indexer(
             ));
 
             let txn_sender_result = TransactionProcessorHandle::start_transaction_processor(
-                my_near_account_id_v2_clone,
+                my_near_account_id_clone,
                 account_secret_key.clone(),
                 respond_config_clone,
                 Arc::clone(&indexer_state),
@@ -166,7 +166,7 @@ pub fn spawn_real_indexer(
             let my_migration_info_receiver = monitor_migrations(
                 indexer_state.clone(),
                 migration_state_sender,
-                my_near_account_id_v2,
+                my_near_account_id,
                 tls_public_key,
             )
             .await;
