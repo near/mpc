@@ -53,8 +53,6 @@ pub mod types;
 #[cfg(test)]
 pub mod fake;
 
-//TODO: The new types don't implement Debug
-// #[derive(Debug)]
 pub(crate) struct IndexerState {
     /// For querying blockchain state.
     view_client: IndexerViewClient,
