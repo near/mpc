@@ -15,7 +15,7 @@ use mpc_contract::{
 };
 
 use assert_matches::assert_matches;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
 use std::time::Duration;
 use utilities::AccountIdExtV2;

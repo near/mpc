@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::rpc::NearRpcClients;
 use anyhow::anyhow;
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_jsonrpc_client::methods::query::RpcQueryRequest;
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_primitives::{

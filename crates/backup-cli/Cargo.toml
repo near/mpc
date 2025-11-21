@@ -11,7 +11,7 @@ contract-interface = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-contract = { workspace = true, features = ["dev-utils"] }
 mpc-node = { workspace = true }
-near-account-id-v2 = { workspace = true }
+near-account-id = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }

@@ -6,7 +6,7 @@ use k256::{
     elliptic_curve::{point::AffineCoordinates, sec1::ToEncodedPoint, CurveArithmetic, PrimeField},
     Secp256k1,
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use sha3::{Digest, Sha3_256};
 
 // Constant prefix that ensures tweak derivation values are used specifically for

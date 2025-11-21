@@ -36,7 +36,7 @@ use mpc_contract::{
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
 
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, result::ExecutionFinalResult,
     types::NearToken, Account, Contract, Worker,

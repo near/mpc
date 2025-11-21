@@ -1,6 +1,6 @@
 use crate::rpc::NearRpcClients;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;

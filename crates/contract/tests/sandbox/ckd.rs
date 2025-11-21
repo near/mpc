@@ -9,7 +9,7 @@ use mpc_contract::{
     errors,
     primitives::{ckd::CKDRequestArgs, domain::DomainId},
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
 use rand_core::OsRng;
 use utilities::{AccountIdExtV1, AccountIdExtV2};

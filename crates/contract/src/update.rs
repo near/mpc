@@ -6,7 +6,7 @@ use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
 use near_sdk::{env, near, Gas, NearToken, Promise};
@@ -230,7 +230,7 @@ mod tests {
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
         UPDATE_CONFIG_GAS,
     };
-    use near_account_id_v2::AccountId;
+    use near_account_id::AccountId;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no

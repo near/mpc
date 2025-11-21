@@ -14,7 +14,7 @@ use mpc_contract::{
         signature::Tweak,
     },
 };
-use near_account_id_v2::AccountId;
+use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
