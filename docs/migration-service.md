@@ -98,13 +98,13 @@ flowchart TD
       _Owner of the MPC node and Backup Service._
     ");
     
-    NO -->|"Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| BS;
-    NO -->|"Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| MPC;
-    NO -->|"1. register backup service in smart contract"| SC;
-    BS -->|"2. read MPC node Public Key and address"| SC;
-    BS --> |"3. request encrypted key shares (mTLS + AES 256)"| MPC;
-    MPC -->|"4. read backup service Public Key"| SC;
-    MPC -->|"5. send encrypted key shares"| BS;
+    NO -->|"1. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| BS;
+    NO -->|"2. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| MPC;
+    NO -->|"3. register backup service in smart contract"| SC;
+    BS -->|"4. read MPC node Public Key and address"| SC;
+    BS --> |"5. request encrypted key shares (mTLS + AES 256)"| MPC;
+    MPC -->|"6. read backup service Public Key"| SC;
+    MPC -->|"7. send encrypted key shares"| BS;
     NO@{ shape: manual-input}
     SC@{ shape: db}
     BS@{ shape: proc}
