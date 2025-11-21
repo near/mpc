@@ -282,7 +282,6 @@ pub struct DestinationNodeInfo {
 }
 ```
 
-> **Hard Launch Extension (Planned):** `BackupServiceInfo` will be extended with `attestation: Attestation` and `registered_at: Timestamp` fields. During soft launch, mocked attestations will be accepted (similar to MPC nodes), allowing the same contract structure for both phases without requiring migration logic.
 
 **Hard Launch Extensions:**
 
