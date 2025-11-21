@@ -609,7 +609,7 @@ mod tests {
             let votes_1 = proposed_updates
                 .vote(&update_id_1, account_id.clone())
                 .unwrap();
-            assert_eq!(&HashSet::from([account_id.clone()]), votes_1);
+            assert_eq!(&expected_votes, votes_1);
             expected_votes
         };
 
@@ -619,7 +619,7 @@ mod tests {
             let votes_2 = proposed_updates
                 .vote(&update_id_2, account_id.clone())
                 .unwrap();
-            assert_eq!(&HashSet::from([account_id.clone()]), votes_2);
+            assert_eq!(&expected_votes, votes_2);
             expected_votes
         };
 
