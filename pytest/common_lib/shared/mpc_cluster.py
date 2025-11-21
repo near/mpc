@@ -75,7 +75,7 @@ class MpcCluster:
         # Main account where Chain Signatures contract is deployed
         self.contract_node = main
         # In some tests we may need another CS contract.
-        self.secondary_contract_node = main
+        self.secondary_contract_node = secondary or main
         # An account from which we make requests to the Chain Signatures contract
         self.request_node = main
 
