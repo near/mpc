@@ -2869,7 +2869,7 @@ mod tests {
         expected_votes
     }
 
-    fn test_proposed_updates_case(protocol_contract_state: ProtocolContractState) {
+    fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
         let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
 
         assert_eq!(contract.proposed_updates(), dtos::ProposedUpdates(vec![]));
@@ -2908,10 +2908,12 @@ mod tests {
             }
         };
         let mut expected = vec![code_update, config_update];
+        // sorting to have consistent order
         expected.sort();
 
         let mut res = contract.proposed_updates();
         res.0.iter_mut().for_each(|update| update.votes.sort());
+        // sorting to have consistent order
         res.0.sort();
 
         assert_eq!(dtos::ProposedUpdates(expected), res);
@@ -2920,19 +2922,19 @@ mod tests {
     #[test]
     pub fn test_proposed_updates_interface_running() {
         let protocol_contract_state = ProtocolContractState::Running(gen_running_state(2));
-        test_proposed_updates_case(protocol_contract_state);
+        test_proposed_updates_case_given_state(protocol_contract_state);
     }
 
     #[test]
     pub fn test_proposed_updates_interface_resharing() {
         let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
-        test_proposed_updates_case(protocol_contract_state);
+        test_proposed_updates_case_given_state(protocol_contract_state);
     }
 
     #[test]
     pub fn test_proposed_updates_interface_initialzing() {
         let protocol_contract_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
-        test_proposed_updates_case(protocol_contract_state);
+        test_proposed_updates_case_given_state(protocol_contract_state);
     }
 }
