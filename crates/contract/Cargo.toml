@@ -43,11 +43,7 @@ crate-type = ["cdylib", "lib"]
 [features]
 test-utils = ["rand", "threshold-signatures", "elliptic-curve"]
 dev-utils = ["rand", "threshold-signatures", "elliptic-curve"]
-abi = [
-    "borsh/unstable__schema",
-    "mpc-primitives/abi",
-    "contract-interface/abi",
-]
+abi = ["borsh/unstable__schema", "mpc-primitives/abi", "contract-interface/abi"]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
 # But we can't put it under `abi` feat either, because it should appear only when building schema. In other words,
 # if it appears under wasm32 target, it will break compilation too.
@@ -70,7 +66,11 @@ k256 = { workspace = true, features = [
     "expose-field",
 ] }
 mpc-primitives = { workspace = true }
-near-account-id = { workspace = true }
+near-account-id = { workspace = true, features = [
+    "schemars-v0_8",
+    "abi",
+    "serde",
+] }
 near-sdk = { workspace = true }
 rand = { workspace = true, optional = true }
 schemars = { workspace = true }
@@ -80,6 +80,7 @@ serde_with = { workspace = true }
 sha3 = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true, optional = true }
+utilities = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["custom"] }

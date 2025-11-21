@@ -515,7 +515,7 @@ pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
     use ed25519_dalek::SigningKey;
-    use near_sdk::AccountId;
+    use near_account_id::AccountId;
     use rand::rngs::OsRng;
 
     /// A unique seed for each integration test to avoid port conflicts during testing.

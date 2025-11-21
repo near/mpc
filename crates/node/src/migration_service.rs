@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use onboarding::onboard;
 use tokio::sync::{watch, RwLock};
 use types::MigrationInfo;

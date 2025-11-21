@@ -10,6 +10,7 @@ use crate::state::AuthenticatedParticipantId;
 use near_sdk::BlockHeight;
 use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
+use utilities::AccountIdExtV1;
 
 /// Maintains the state for the current key generation or resharing.
 #[near(serializers=[borsh, json])]
@@ -63,6 +64,7 @@ impl KeyEvent {
     /// Ensures that the signer account matches the leader participant.
     /// The leader is the one with the lowest participant ID.
     pub fn verify_leader(&self) -> Result<(), Error> {
+        let signer_account_id = env::signer_account_id().as_v2_account_id();
         if self
             .parameters
             .participants()
@@ -71,7 +73,7 @@ impl KeyEvent {
             .min_by_key(|(_, participant_id, _)| participant_id)
             .unwrap()
             .0
-            != env::signer_account_id()
+            != signer_account_id
         {
             return Err(VoteError::VoterNotLeader.into());
         }
@@ -291,8 +293,10 @@ pub mod tests {
         test_utils::{gen_account_id, gen_seed},
     };
     use crate::state::key_event::KeyEvent;
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, AccountId, BlockHeight, PublicKey};
+    use near_account_id::AccountId;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, BlockHeight, PublicKey};
     use rand::Rng;
+    use utilities::AccountIdExtV2;
 
     pub struct Environment {
         pub signer: AccountId,
@@ -311,8 +315,8 @@ pub mod tests {
             ctx.block_height(block_height);
             ctx.random_seed(seed);
             let signer = signer.unwrap_or(gen_account_id());
-            ctx.signer_account_id(signer.clone());
-            ctx.predecessor_account_id(signer.clone());
+            ctx.signer_account_id(signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
             Environment {
                 signer,
@@ -325,8 +329,8 @@ pub mod tests {
             ctx.signer_account_pk(pk);
             ctx.block_height(self.block_height);
             ctx.random_seed(self.seed);
-            ctx.signer_account_id(self.signer.clone());
-            ctx.predecessor_account_id(self.signer.clone());
+            ctx.signer_account_id(self.signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
         }
 
@@ -339,8 +343,8 @@ pub mod tests {
             let mut ctx = VMContextBuilder::new();
             ctx.block_height(self.block_height);
             ctx.random_seed(self.seed);
-            ctx.signer_account_id(self.signer.clone());
-            ctx.predecessor_account_id(self.signer.clone());
+            ctx.signer_account_id(self.signer.clone().as_v1_account_id());
+            ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
             testing_env!(ctx.build());
         }
 

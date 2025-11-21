@@ -1,6 +1,5 @@
 use super::IndexerState;
 use crate::config::{ParticipantInfo, ParticipantStatus, ParticipantsConfig};
-use crate::indexer::lib::{get_mpc_contract_state, wait_for_full_sync};
 use crate::primitives::ParticipantId;
 use crate::providers::PublicKeyConversion;
 use anyhow::Context;
@@ -11,7 +10,7 @@ use mpc_contract::primitives::{
     thresholds::ThresholdParameters,
 };
 use mpc_contract::state::{key_event::KeyEvent, ProtocolContractState};
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -273,15 +272,14 @@ pub async fn monitor_contract_state(
             //// We wait first to catch up to the chain to avoid reading the participants from an outdated state.
             //// We currently assume the participant set is static and do not detect or support any updates.
             tracing::debug!(target: "indexer", "awaiting full sync to read mpc contract state");
-            wait_for_full_sync(&indexer_state.client).await;
+            indexer_state.client.wait_for_full_sync().await;
 
             tracing::debug!(target: "indexer", "querying contract state");
 
-            let (height, protocol_state) = match get_mpc_contract_state(
-                indexer_state.mpc_contract_id.clone(),
-                &indexer_state.view_client,
-            )
-            .await
+            let (height, protocol_state) = match indexer_state
+                .view_client
+                .get_mpc_contract_state(indexer_state.mpc_contract_id.clone())
+                .await
             {
                 Ok(contract_state) => contract_state,
                 Err(e) => {

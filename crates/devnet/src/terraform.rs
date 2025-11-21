@@ -12,7 +12,7 @@ use crate::devnet::OperatingDevnetSetup;
 use crate::types::{near_crypto_compatible_serialization, MpcNetworkSetup, ParsedConfig};
 use describe::TerraformInfraShowOutput;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Command;

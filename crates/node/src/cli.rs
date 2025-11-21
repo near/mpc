@@ -23,8 +23,8 @@ use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
 use mpc_contract::state::ProtocolContractState;
+use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
-use near_sdk::AccountId;
 use near_time::Clock;
 use std::{collections::BTreeMap, sync::Mutex};
 use std::{path::PathBuf, sync::Arc, sync::OnceLock, time::Duration};
@@ -544,6 +544,7 @@ impl Cli {
                     download_config_type,
                     download_config_url,
                     config.boot_nodes.as_ref().map(AsRef::as_ref),
+                    None,
                     None,
                 )
             }
