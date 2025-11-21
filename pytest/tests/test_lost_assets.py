@@ -6,7 +6,7 @@ Restarts the node and verifies that signature requests succeed.
 """
 
 import sys
-import atexit
+from cluster import atexit
 import pytest
 import time
 import random
