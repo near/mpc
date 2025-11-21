@@ -4,7 +4,7 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, check_call_success,
+    assert_running_return_participants, assert_running_return_threshold,
     check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
     submit_participant_info, submit_tee_attestations, IntoInterfaceType,
 };
@@ -135,7 +135,7 @@ async fn do_resharing(
 ) -> Result<()> {
     // vote for new parameters
     for account in remaining_accounts {
-        check_call_success(
+        let result = 
             account
                 .call(contract.id(), "vote_new_parameters")
                 .args_json(json!({
@@ -144,8 +144,8 @@ async fn do_resharing(
                 }))
                 .max_gas()
                 .transact()
-                .await?,
-        );
+                .await?;
+        assert!(result.is_success(), "{result:#?}");
     }
 
     // Verify contract is now in resharing state
@@ -173,7 +173,7 @@ async fn do_resharing(
             })
             .unwrap();
 
-        check_call_success(
+        let result = 
             leader
                 .call(contract.id(), "start_reshare_instance")
                 .args_json(json!({
@@ -181,8 +181,8 @@ async fn do_resharing(
                 }))
                 .max_gas()
                 .transact()
-                .await?,
-        );
+                .await?;
+        assert!(result.is_success(), "{result:#?}");
 
         // Wait for threshold participants to vote for resharing (2 out of 3)
         // The transition should happen after 2 votes when threshold is reached

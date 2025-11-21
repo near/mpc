@@ -846,13 +846,6 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-pub fn check_call_success(result: ExecutionFinalResult) {
-    assert!(
-        result.is_success(),
-        "execution should have succeeded: {result:#?}"
-    );
-}
-
 pub fn check_call_success_all_receipts(result: ExecutionFinalResult) {
     for outcome in result.outcomes() {
         assert!(
@@ -991,16 +984,15 @@ pub async fn call_contract_key_generation<const N: usize>(
 
     for (domain_counter, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
-            check_call_success(
-                account
-                    .call(contract.id(), "vote_add_domains")
-                    .args_json(json! ({
-                        "domains": vec![domain.clone()],
-                    }))
-                    .transact()
-                    .await
-                    .unwrap(),
-            );
+            let result = account
+                .call(contract.id(), "vote_add_domains")
+                .args_json(json! ({
+                    "domains": vec![domain.clone()],
+                }))
+                .transact()
+                .await
+                .unwrap();
+            assert!(result.is_success(), "{result:#?}");
         }
 
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -1014,20 +1006,19 @@ pub async fn call_contract_key_generation<const N: usize>(
             _ => panic!("should be in initializing state"),
         };
 
-        check_call_success(
-            account_with_lowest_participant_id
-                .call(contract.id(), "start_keygen_instance")
-                .args_json(json!({
-                    "key_event_id": {
-                        "epoch_id": expected_epoch_id,
-                        "domain_id": domain.id.0,
-                        "attempt_id": 0,
-                    },
-                }))
-                .transact()
-                .await
-                .unwrap(),
-        );
+        let result = account_with_lowest_participant_id
+            .call(contract.id(), "start_keygen_instance")
+            .args_json(json!({
+                "key_event_id": {
+                    "epoch_id": expected_epoch_id,
+                    "domain_id": domain.id.0,
+                    "attempt_id": 0,
+                },
+            }))
+            .transact()
+            .await
+            .unwrap();
+        assert!(result.is_success(), "{result:#?}");
 
         println!("start_keygen_instance completed");
 
@@ -1045,14 +1036,13 @@ pub async fn call_contract_key_generation<const N: usize>(
         });
 
         for account in accounts {
-            check_call_success(
-                account
-                    .call(contract.id(), "vote_pk")
-                    .args_json(vote_pk_args.clone())
-                    .transact()
-                    .await
-                    .unwrap(),
-            );
+            let result = account
+                .call(contract.id(), "vote_pk")
+                .args_json(vote_pk_args.clone())
+                .transact()
+                .await
+                .unwrap();
+            assert!(result.is_success(), "{result:#?}");
         }
 
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -1100,7 +1090,7 @@ pub async fn execute_key_generation_and_add_random_state(
     const EPOCH_ID: u64 = 0;
     let threshold = assert_running_return_threshold(contract).await.unwrap();
 
-    // 1. Submit a threshold proposal (raise threshold to 3).
+    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
         ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
     let dummy_proposal = json!({
@@ -1240,13 +1230,12 @@ pub async fn vote_for_hash(
     contract: &Contract,
     image_hash: &MpcDockerImageHash,
 ) -> anyhow::Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": image_hash}))
-            .transact()
-            .await?,
-    );
+    let result = account
+        .call(contract.id(), "vote_code_hash")
+        .args_json(serde_json::json!({"code_hash": image_hash}))
+        .transact()
+        .await?;
+    assert!(result.is_success(), "{result:#?}");
     Ok(())
 }
 
