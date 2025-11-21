@@ -90,7 +90,7 @@ struct IndexerViewClient {
     view_client: MultithreadRuntimeHandle<ViewClientActorInner>,
 }
 
-// TODO: during refactor I noticed the account id is always taken from the indexer state as well.
+// TODO(#1514): during refactor I noticed the account id is always taken from the indexer state as well.
 // We should remove this account_id parameter...
 //
 // example:
