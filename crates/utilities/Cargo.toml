@@ -5,5 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-near-account-id-v1 = { workspace = true }
 near-account-id = { workspace = true }
+near-account-id-v1 = { workspace = true }
