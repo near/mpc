@@ -915,15 +915,15 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants().clone())
 }
 
-pub async fn assert_running_return_threshold(contract: &Contract) -> anyhow::Result<Threshold> {
-    let final_state: ProtocolContractState = contract.view("state").await?.json()?;
+pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
+    let final_state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state: {:?}",
             final_state
         );
     };
-    Ok(running_state.parameters.threshold())
+    running_state.parameters.threshold()
 }
 
 pub async fn submit_tee_attestations(
@@ -1088,7 +1088,7 @@ pub async fn execute_key_generation_and_add_random_state(
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
     const EPOCH_ID: u64 = 0;
-    let threshold = assert_running_return_threshold(contract).await.unwrap();
+    let threshold = assert_running_return_threshold(contract).await;
 
     // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =

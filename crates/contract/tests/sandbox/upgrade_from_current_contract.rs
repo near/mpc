@@ -61,7 +61,7 @@ async fn test_propose_contract_max_size_upload() {
 async fn test_propose_update_config() {
     // TODO: #1461 this fails with more participants
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
-    let threshold = assert_running_return_threshold(&contract).await.unwrap();
+    let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
     // contract should not be able to propose updates unless it's a part of the participant/voter set.

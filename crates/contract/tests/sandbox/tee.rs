@@ -21,7 +21,7 @@ use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls
 #[tokio::test]
 async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    let threshold = assert_running_return_threshold(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
 
     let allowed_mpc_image_digest = image_digest();
 
@@ -37,7 +37,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         assert_matches!(get_latest_code_hash(&contract).await, Err(_));
     }
 
-    // Second vote - should reach threshold
+    // `threshold`-th vote - should reach threshold
     vote_for_hash(
         &accounts[(threshold.value() - 1) as usize],
         &contract,
@@ -74,7 +74,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 #[tokio::test]
 async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    let threshold = assert_running_return_threshold(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
     assert!((threshold.value() as usize) < accounts.len());
     let first_hash = image_digest();
@@ -392,7 +392,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
 ) -> Result<()> {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    let threshold = assert_running_return_threshold(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
     let hash_1 = [1; 32];
     let hash_2 = [2; 32];
     let hash_3 = [3; 32];

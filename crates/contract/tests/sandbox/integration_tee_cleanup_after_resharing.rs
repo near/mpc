@@ -36,7 +36,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
-    let threshold = assert_running_return_threshold(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
     let expected_node_ids = initial_participants.get_node_ids();
 
     // Verify TEE info for initial participants was added

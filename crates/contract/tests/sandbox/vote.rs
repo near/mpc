@@ -94,7 +94,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    let threshold = assert_running_return_threshold(&contract).await?;
+    let threshold = assert_running_return_threshold(&contract).await;
     let args = json!({
         "domains": vec![
             json!({
@@ -293,7 +293,9 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         _ => panic!("should be in resharing state"),
     }
 
-    for account in accounts.iter().take(accounts.len() - 1) {
+    let num_old_participants = accounts.len() - 1;
+
+    for account in accounts.iter().take(num_old_participants) {
         let result = account
             .call(contract.id(), "vote_new_parameters")
             .args_json(json!({
@@ -314,7 +316,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
                     .proposed_parameters()
                     .participants()
                     .len(),
-                accounts.len() - 1
+                num_old_participants
             );
             assert_eq!(state.resharing_key.epoch_id().get(), 7); // we started with 5.
         }
@@ -852,7 +854,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
     let (worker, contract, mut current_participant_accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    let threshold = assert_running_return_threshold(&contract).await.unwrap();
+    let threshold = assert_running_return_threshold(&contract).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     let ProtocolContractState::Running(initial_running_state) = state else {
