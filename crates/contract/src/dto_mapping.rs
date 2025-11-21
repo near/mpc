@@ -18,6 +18,7 @@ use k256::{
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 
+use near_account_id::AccountId;
 use near_sdk::env::sha256_array;
 #[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 use threshold_signatures::confidential_key_derivation as ckd;
@@ -404,7 +405,7 @@ impl IntoInterfaceType<dtos::PublicKey> for &near_sdk::PublicKey {
     }
 }
 
-impl IntoInterfaceType<dtos::AccountId> for &near_sdk::AccountId {
+impl IntoInterfaceType<dtos::AccountId> for &AccountId {
     fn into_dto_type(self) -> dtos::AccountId {
         dtos::AccountId(self.clone().into())
     }
