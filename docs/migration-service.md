@@ -205,7 +205,7 @@ flowchart TD
 
 For the hard launch, the recovery flow is the same as in the soft launch, but more automated: the backup service monitors the contract state and initiates migrations automatically (e.g., by calling `conclude_node_migration(keyset)`). The operator only needs to initiate the process by calling `start_node_migration`.
 
-There’s also an additional TEE-attestation step: the new node must verify the backup service’s attestation before saving the received keyshares, and the contract must verify the backup service’s attestation before handing over the public key and address of the new MPC node.
+There's also an additional TEE-attestation step: the new node must verify that the smart contract successfully verified the backup service's attestation before saving the received keyshares, and the contract must verify the backup service's attestation before handing over the public key and address of the new MPC node.
 
 ```mermaid
 ---
