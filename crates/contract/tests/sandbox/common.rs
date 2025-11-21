@@ -76,7 +76,7 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 /// nodes usually attach the maximum available gas.  
 /// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
 /// unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(22);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
