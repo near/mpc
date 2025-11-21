@@ -9,16 +9,19 @@ use mpc_contract::{
     errors,
     primitives::{ckd::CKDRequestArgs, domain::DomainId},
 };
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
 use rand_core::OsRng;
+use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
 ) -> Result<Execution<Account>, near_workspaces::error::Error> {
     let (_, sk) = worker.generate_dev_account_credentials();
-    worker.create_root_account_subaccount(account_id, sk).await
+    worker
+        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
+        .await
 }
 
 #[tokio::test]
@@ -53,7 +56,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         };
 
         let (respond_req, respond_resp) = create_response_ckd(
-            account.id(),
+            &account.id().as_v2_account_id(),
             app_public_key.clone(),
             &request.domain_id,
             &sk.private_share.to_scalar(),
@@ -80,7 +83,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         domain_id: DomainId::default(),
     };
     let (respond_req, respond_resp) = create_response_ckd(
-        account.id(),
+        &account.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),
@@ -134,7 +137,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     };
 
     let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
+        &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),
@@ -281,7 +284,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     dbg!(&status);
 
     let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
+        &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),

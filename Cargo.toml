@@ -16,6 +16,7 @@ members = [
     "crates/test_parallel_contract",
     "crates/test_utils",
     "crates/tls",
+    "crates/utilities",
 ]
 
 [workspace.package]
@@ -37,8 +38,8 @@ mpc-tls = { path = "crates/tls" }
 node-types = { path = "crates/node-types" }
 tee_authority = { path = "crates/tee_authority" }
 test_utils = { path = "crates/test_utils" }
+utilities = { path = "crates/utilities" }
 
-actix = "0.13.0"
 aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 assert_matches = "1.5.0"
@@ -87,7 +88,8 @@ k256 = "0.13.4"
 lru = "0.12.5"
 mockall = "0.13.1"
 near-abi = "0.4.3"
-near-account-id = "1.1.1"
+near-account-id = "2.0.0"
+near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
@@ -137,16 +139,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-# We're running a modified 2.9 release on a custom branch,
-# 14546-set-voting-date-for-testnet at commit `1c2fd1485ffc56c1f98025ce06be1f1869b68bcd`.
-# We need to point to the branch and not the commit hash for some reason I currently don't understand.
-near-client = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-config-utils = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-crypto = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-indexer = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-o11y = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
-near-time = { git = "https://github.com/near/nearcore", branch = "14546-set-voting-date-for-testnet" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
 
 [profile.dev-release]
 inherits = "release"

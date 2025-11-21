@@ -9,7 +9,7 @@ use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
-use near_indexer_primitives::types::AccountId;
+use near_account_id::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
@@ -335,11 +335,11 @@ fn try_get_ckd_args(
         }
     };
 
-    let ckd_request = CKDRequest {
-        app_public_key: ckd_args.request.app_public_key,
-        app_id: receipt.predecessor_id.clone(),
-        domain_id: ckd_args.request.domain_id,
-    };
+    let ckd_request = CKDRequest::new(
+        ckd_args.request.app_public_key,
+        receipt.predecessor_id.clone(),
+        ckd_args.request.domain_id,
+    );
 
     tracing::info!(
         target: "mpc",

@@ -7,7 +7,7 @@ use crate::{
     IntoInterfaceType,
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
