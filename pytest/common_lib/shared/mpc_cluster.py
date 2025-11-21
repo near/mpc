@@ -68,16 +68,16 @@ class MpcCluster:
         for node_idx in node_idxs:
             self.mpc_nodes[node_idx].reset_mpc_data()
 
-    def __init__(self, main: NearAccount, secondary: NearAccount):
+    def __init__(self, main: NearAccount, secondary: Optional[NearAccount] = None):
         self.mpc_nodes: List[MpcNode] = []
         # Note: Refer to signing schemas and key resharing
         self.next_participant_id: int = 0
         # Main account where Chain Signatures contract is deployed
         self.contract_node = main
         # In some tests we may need another CS contract.
-        self.secondary_contract_node = secondary
+        self.secondary_contract_node = main
         # An account from which we make requests to the Chain Signatures contract
-        self.request_node = secondary
+        self.request_node = main
 
     def print_cluster_status(self):
         status_list = [node.print() for node in self.mpc_nodes]

@@ -194,10 +194,7 @@ def start_neard_cluster_with_cleanup(
         }
     }
 
-    client_config_changes = {
-        0: rpc_polling_config,
-        1: rpc_polling_config,
-    }
+    client_config_changes = {i: rpc_polling_config for i in range(num_validators)}
 
     # the config is set to local, so we expect local nodes.
     nodes: typing.List[LocalNode] = cast(
@@ -374,11 +371,11 @@ def start_cluster_with_mpc(
             validators[0].signer_key,
             [validators[0].signer_key],
         ),
-        secondary=NearAccount(
-            validators[1],
-            validators[1].signer_key,
-            [validators[1].signer_key],
-        ),
+        # secondary=NearAccount(
+        #     validators[1],
+        #     validators[1].signer_key,
+        #     [validators[1].signer_key],
+        # ),
     )
 
     (key, nonce) = cluster.contract_node.get_key_and_nonce()
