@@ -332,8 +332,14 @@ The contract provides the following methods:
     - Called by the node operator
     - Creates an `OngoingNodeMigration` record for the given `AccountId`
     - Stores the destination node's `ParticipantInfo` (new TLS keys, etc.)
+    - Can be called multiple times to update the destination node info (only the last value is retained)
     - Returns an error if the protocol is not in `Running` state
     - Returns an error if caller is not a current participant
+
+- **`cancel_node_migration()`** - Cancels an ongoing node migration:
+    - Called by the node operator
+    - Removes the `OngoingNodeMigration` record for the given `AccountId`
+    - Useful if the new node is not functioning correctly or wrong information was provided
 
 - **`conclude_node_migration(keyset: &Keyset)`** - Finalizes a node migration:
     - Called by the new node after receiving keyshares from backup service
