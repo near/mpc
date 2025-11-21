@@ -293,16 +293,11 @@ The backup service identification remains the same as soft launch: `AccountId` m
 
 ```Rust
 /// Backup service authentication information (PLANNED extension for hard launch)
-pub struct BackupServiceInfo {
-    /// Ed25519 public key for mutual TLS authentication
-    pub public_key: Ed25519PublicKey,
-    
-    /// TEE information including attestation
-    /// Soft launch: mocked attestations accepted; Hard launch: real attestations required
-    /// Reuses existing TeeState struct and verification logic from the MPC contract
-    pub tee_state: TeeState,
-}
+/// Uses TeeState directly to store attestation and verification data
+pub type BackupServiceInfo = TeeState;
 ```
+
+> **Note**: For hard launch, `BackupServiceInfo` will use the existing `TeeState` struct, which contains attestation, timestamp, and all TEE-related verification data. The global `TeeState` maintains allowed Docker image and launcher hash lists for backup services (separate from MPC node images), managed through existing voting mechanisms.
 
 The backup service attestation verification would follow the same process as MPC node attestations:
 1. Backup service generates TLS keypair inside TEE
@@ -317,7 +312,7 @@ The backup service attestation verification would follow the same process as MPC
    - Timestamp within deadline
    - `ReportData` matches SHA3-384 hash of `SHA3-384(tls_public_key || account_public_key)`
    - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
-7. Contract stores attestation in `backup_services_info[AccountId].tee_state` (reusing existing `TeeState` struct and verification logic)
+7. Contract stores `TeeState` (containing attestation and all verification data)
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
@@ -432,7 +427,6 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 **Hard Launch Implementation Tasks:**
 
 *Phase 1: Standalone Application with Mocked Attestations*
-- [ ] Add `tee_state: TeeState` field to `BackupServiceInfo` struct
 - [ ] Implement voting mechanisms for backup service Docker images (reuse existing voting logic)
 - [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic
 - [ ] Develop backup service as standalone long-running application
