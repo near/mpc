@@ -427,18 +427,29 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 - It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
 
 **Hard Launch Implementation Tasks:**
+
+*Phase 1: Standalone Application with Mocked Attestations*
 - [ ] Add `attestation` parameter to `register_backup_service()` contract method
-- [ ] Implement attestation verification for backup services in contract
+- [ ] Implement attestation verification for backup services in contract (accept mocked attestations)
 - [ ] Store attestation with expiration tracking in contract
-- [ ] Add attestation validity check in MPC node before backup/recovery operations
-- [ ] Develop backup service as long-running TEE application
+- [ ] Develop backup service as standalone long-running application
 - [ ] Implement contract monitoring and event detection in backup service
 - [ ] Add backup service attestation refresh mechanism (before expiration)
+- [ ] Implement automatic backup/recovery flows based on contract events
+- [ ] Add comprehensive integration tests with mocked attestations
+
+*Phase 2: TEE Migration*
+- [ ] Port backup service to TEE runtime (TDX with dstack)
+- [ ] Replace mocked attestations with real TEE attestations
+- [ ] Add attestation validity check to the contract
 - [ ] Implement Docker image hash validation for backup services
+- [ ] Update contract to reject mocked attestations (enforce real TEE attestations)
 - [ ] Add automatic cleanup of expired backup service attestations
-- [ ] Add comprehensive integration tests for attestation flow
-- [ ] Document backup service deployment procedures
+- [ ] Add comprehensive integration tests for full TEE attestation flow
 - [ ] Create monitoring dashboards for backup service health
+- [ ] Document TEE deployment procedures
+
+> **Implementation Strategy**: Similar to MPC nodes, the backup service will first be developed as a standalone application that uses mocked attestations. This allows development and testing of the blockchain interface, contract monitoring, and automatic backup/recovery flows in a controlled environment. Once the core functionality is stable, the service can be migrated into a TEE with real attestations.
 
 ## Materials:
 https://nearone.slack.com/archives/C07UW93JVQ8/p1753830474083739
