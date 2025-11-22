@@ -7,7 +7,7 @@ use utilities::AccountIdExtV1;
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold,
     check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
-    submit_participant_info, submit_tee_attestations, IntoInterfaceType,
+    submit_participant_info, submit_tee_attestations, IntoInterfaceType, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -32,8 +32,8 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    // TODO: #1461 this fails with more participants
-    let (worker, contract, env_accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (worker, contract, env_accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
@@ -78,7 +78,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let initial_and_non_participants = get_tee_accounts(&contract).await.unwrap();
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
-    // Now, we do a resharing. We only retain two of the three initial participants
+    // Now, we do a resharing. We only retain `threshold` of the initial participants
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants()
