@@ -316,7 +316,7 @@ The backup service attestation registreation and verification would follow the s
    - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
 7. Contract stores `TeeState` (containing attestation and all verification data)
 
-> **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
+> **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services [use](#todo) a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
 #### Backup Service Voting Methods
 
@@ -458,6 +458,7 @@ Node operators are responsible for:
 ### Todo
 See [(#949)](https://github.com/near/mpc/issues/949)
 - It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
+- Consider making `TeeState` generic over the identifier type (e.g., `TeeState<T>` where `T` can be `NodeId` or `AccountId`). Currently, `TeeState` uses `NodeId` for MPC nodes (allowing multiple nodes per operator), but backup services need `AccountId` as the identifier (one per operator). A generic implementation would avoid code duplication while supporting both use cases.
 
 **Hard Launch Implementation Tasks:**
 
