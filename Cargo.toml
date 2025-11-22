@@ -139,14 +139,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0-rc.3" }
+near-async = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-client = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-config-utils = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-crypto = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-indexer = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-o11y = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
+near-time = { git = "https://github.com/near/nearcore", branch = "14668-bug-utoipa-swagger-ui-v902-breaks-reproducible-builds" }
 
 [profile.dev-release]
 inherits = "release"
