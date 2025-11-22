@@ -335,10 +335,6 @@ The contract provides separate voting endpoints for backup service Docker image 
     - Returns hashes that are still within their validity period
     - Separate list from MPC node allowed hashes
 
-- **`latest_backup_service_code_hash()`** - Returns the most recently approved backup service Docker image hash:
-    - Read-only view method
-    - Useful for backup services to check the latest approved version
-
 - **`allowed_backup_service_launcher_compose_hashes()`** - Returns all allowed backup service launcher compose hashes:
     - Read-only view method
     - Launcher compose hashes are automatically generated from voted Docker image hashes
@@ -454,7 +450,7 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 *Phase 1: Standalone Application with Mocked Attestations*
 - [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `MpcDockerImageHash`)
 - [ ] Implement voting structures for backup service images (`BackupServiceCodeHashesVotes`, `AllowedBackupServiceDockerImageHashes`)
-- [ ] Implement `allowed_backup_service_code_hashes()`, `latest_backup_service_code_hash()`, and `allowed_backup_service_launcher_compose_hashes()` view methods
+- [ ] Implement `allowed_backup_service_code_hashes()` and `allowed_backup_service_launcher_compose_hashes()` view methods
 - [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic
 - [ ] Develop backup service as standalone long-running application
 - [ ] Implement contract monitoring and event detection in backup service
