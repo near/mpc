@@ -443,19 +443,8 @@ Both soft launch and hard launch implementations share common core components, w
    - Prometheus-style metrics (keyshare freshness, backup success/failure rates)
    - Operator dashboards for status visibility
 
-### Node Operator
-
-Node operators are responsible for:
-1. **Registering Backup Service**: Call `register_backup_service()` to store the backup service's public key in the contract
-2. **Initiating Migration**: Call `start_node_migration()` with the new node's `ParticipantInfo` when migrating to new hardware
-3. **Running Backup Service** (Soft Launch): Execute `backup-cli` scripts to backup and restore keyshares during migrations
-4. **Managing Environment Variables** (Soft Launch): Ensure `MPC_BACKUP_ENCRYPTION_KEY_HEX` is consistently set on both MPC node and backup-cli
-
-> **Hard Launch**: In hard launch, the backup service runs autonomously in a TEE and requires no manual intervention from operators beyond initial registration.
-
-
-
 ### Todo
+
 See [(#949)](https://github.com/near/mpc/issues/949)
 - It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
 - Consider making `TeeState` generic over the identifier type (e.g., `TeeState<T>` where `T` can be `NodeId` or `AccountId`). Currently, `TeeState` uses `NodeId` for MPC nodes (allowing multiple nodes per operator), but backup services need `AccountId` as the identifier (one per operator). A generic implementation would avoid code duplication while supporting both use cases.
@@ -487,7 +476,8 @@ See [(#949)](https://github.com/near/mpc/issues/949)
 
 > **Implementation Strategy**: Similar to MPC nodes, the backup service will first be developed as a standalone application that uses mocked attestations. This allows development and testing of the blockchain interface, contract monitoring, and automatic backup/recovery flows in a controlled environment. Once the core functionality is stable, the service can be migrated into a TEE with real attestations.
 
-## Materials:
+## Materials
+
 https://nearone.slack.com/archives/C07UW93JVQ8/p1753830474083739
 NIST SP 800-56A https://csrc.nist.gov/pubs/sp/800/56/a/r3/final
 https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Ar3.pdf - page 105 - 106
