@@ -299,7 +299,9 @@ pub type BackupServiceInfo = TeeState;
 
 > **Note**: For hard launch, `BackupServiceInfo` will use the existing `TeeState` struct, which contains attestation, timestamp, and all TEE-related verification data. The global `TeeState` maintains allowed Docker image and launcher hash lists for backup services (separate from MPC node images), managed through existing voting mechanisms.
 
-The backup service attestation verification would follow the same process as MPC node attestations:
+#### Backup Service Registration
+
+The backup service attestation registreation and verification would follow the same process as MPC node attestations:
 1. Backup service generates TLS keypair inside TEE
 2. Backup service generates account keypair inside TEE for signing contract transactions (required to submit the attestation to the contract)
 3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]`
