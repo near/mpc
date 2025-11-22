@@ -432,7 +432,7 @@ Both soft launch and hard launch implementations share common core components, w
    - Must re-fetch keyshares from MPC nodes after restart or power loss
 
 5. **Blockchain Monitor**: Maintains current view of MPC contract state
-   - Embedded NEAR light client or RPC connection to track contract state
+   - Embedded NEAR light client to track contract state
    - Automatically detects events, e.g., migration initiations
    - Enables autonomous operation without operator intervention
 
