@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.0.5] - 2025-11-21
+
+### 🚀 Features
+
+- [#1505](https://github.com/near/mpc/pull/1505)(@andrei-near): Periodic mpc build workflow (#1505)
+
+- [#1506](https://github.com/near/mpc/pull/1506)(@kevindeforth): Contract allows querying update proposals (#1506)
+
+- [#1510](https://github.com/near/mpc/pull/1510)(@gilcu3): Sandbox tests support for any number of participants (#1510)
+
+
+### 🐛 Bug Fixes
+
+- [#1488](https://github.com/near/mpc/pull/1488)(@kevindeforth): *(contract)* Fix ProposeUpdate vote method and add unit test (#1488)
+
+- [#1490](https://github.com/near/mpc/pull/1490)(@gilcu3): Remove balance checks (#1490)
+
+- [#1492](https://github.com/near/mpc/pull/1492)(@barakeinav1): *(test)* Enable and update test_from_str_valid (#1492)
+
+- [#1509](https://github.com/near/mpc/pull/1509)(@andrei-near): Nightly build MPC workflow (#1509)
+
+
+### 🧪 Testing
+
+- [#1498](https://github.com/near/mpc/pull/1498)(@pbeza): Add unit tests for `do_update` function in `contract.rs` (#1498)
+
+- [#1504](https://github.com/near/mpc/pull/1504)(@barakeinav1): Update attestation test and refresh asset extraction files (#1504)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1503](https://github.com/near/mpc/pull/1503)(@DSharifi): Update mainnet to use 3_0_2 release for backwards compatibilit… (#1503)
+
+- [#1511](https://github.com/near/mpc/pull/1511)(@DSharifi): Bump nearcore dependency to `2.10.0-rc.3` (#1511)
+
+
 ## [3.0.4] - 2025-11-18
 
 ### 🚀 Features
@@ -42,6 +78,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1460](https://github.com/near/mpc/pull/1460)(@netrome): Improved docker workflows for node and launcher image (#1460)
 
 - [#1464](https://github.com/near/mpc/pull/1464)(@gilcu3): Extend localnet guide to include eddsa and ckd examples as well (#1464)
+
+- [#1487](https://github.com/near/mpc/pull/1487)(@netrome): Bump crate versions to 3.0.4 and update changelog (#1487)
 
 
 ## [3.0.3] - 2025-11-12
