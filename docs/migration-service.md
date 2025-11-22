@@ -318,7 +318,7 @@ The backup service attestation registreation and verification would follow the s
 
 > **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services [use](#todo) a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
-#### Backup Service Voting Methods
+#### Backup Service TEE methods
 
 The contract provides separate voting endpoints for backup service Docker image hashes. These are intentionally separate from MPC node voting to maintain backwards compatibility:
 
