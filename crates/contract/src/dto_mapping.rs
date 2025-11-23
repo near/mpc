@@ -18,10 +18,15 @@ use k256::{
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 
+use near_account_id::AccountId;
+use near_sdk::env::sha256_array;
 #[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
 use threshold_signatures::confidential_key_derivation as ckd;
 
-use crate::crypto_shared::k256_types;
+use crate::{
+    crypto_shared::k256_types,
+    update::{ProposedUpdates, Update},
+};
 
 use crate::errors::{ConversionError, Error};
 pub(crate) trait IntoContractType<ContractType> {
@@ -397,5 +402,40 @@ impl IntoInterfaceType<dtos::PublicKey> for &near_sdk::PublicKey {
                 dtos::PublicKey::from(dtos::Ed25519PublicKey::from(bytes))
             }
         }
+    }
+}
+
+impl IntoInterfaceType<dtos::AccountId> for &AccountId {
+    fn into_dto_type(self) -> dtos::AccountId {
+        dtos::AccountId(self.clone().into())
+    }
+}
+
+impl IntoInterfaceType<dtos::UpdateHash> for &Update {
+    fn into_dto_type(self) -> dtos::UpdateHash {
+        match self {
+            Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
+            Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
+                &serde_json::to_vec(config).expect("serde serialization must succeed"),
+            )),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
+    fn into_dto_type(self) -> dtos::ProposedUpdates {
+        let updates = self
+            .all_updates()
+            .iter()
+            .map(|(update_id, update, votes)| dtos::Update {
+                update_id: update_id.0,
+                update_hash: update.into_dto_type(),
+                votes: votes
+                    .iter()
+                    .map(|account_id| account_id.into_dto_type())
+                    .collect(),
+            })
+            .collect();
+        dtos::ProposedUpdates(updates)
     }
 }

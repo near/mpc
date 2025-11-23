@@ -1,0 +1,44 @@
+name: Build MPC with nearcore branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      nearcore-branch:
+        default: "master"
+        description: "nearcore git branch to use for mpc build"
+        type: string
+        required: true
+     
+  schedule:
+    - cron: '0 1 * * *' # Nightly at 1:00 UTC (every day)
+
+jobs:
+  build-mpc:
+    runs-on: warp-ubuntu-2404-x64-8x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+            persist-credentials: false
+
+      - name: Adjust Cargo.toml to use required nearcore branch
+        env:
+          NEARCORE_BRANCH: ${{ inputs.nearcore-branch || 'master' }}
+        run: |
+          sed -i "s|\({ git = \"https://github.com/near/nearcore\", branch = \"\)[^\"]*|\1${NEARCORE_BRANCH}|g" Cargo.toml
+      
+      - name: Build MPC
+        id: build-mpc
+        run: cargo build -p mpc-node
+    
+      - name: Failure Slack Notification
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK }}
+        uses: act10ns/slack@44541246747a30eb3102d87f7a4cc5471b0ffb7d
+        with:
+          status: failure
+          message: "MPC build failed with latest nearcore branch: ${{ inputs.nearcore-branch || 'master' }}. Check the logs <https://github.com/near/mpc/actions/runs/${{ github.run_id }}|here> "
+          

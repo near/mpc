@@ -1,7 +1,8 @@
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use near_indexer_primitives::types::{AccountId, Finality};
+use near_account_id::AccountId;
+use near_indexer_primitives::types::Finality;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
@@ -541,8 +542,12 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 pub mod tests {
     use assert_matches::assert_matches;
     use k256::ecdsa::signature::SignerMut;
-    use mpc_contract::primitives::test_utils::{bogus_ed25519_near_public_key, gen_account_id};
-    use rand::{distributions::Alphanumeric, rngs::OsRng, Rng, RngCore};
+    use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
+    use rand::{
+        distributions::{Alphanumeric, Uniform},
+        rngs::OsRng,
+        Rng, RngCore,
+    };
 
     use crate::providers::PublicKeyConversion;
 
@@ -572,6 +577,17 @@ pub mod tests {
         );
 
         Ok(())
+    }
+
+    pub fn gen_account_id() -> AccountId {
+        let lower_case = Uniform::new_inclusive(b'a', b'z');
+        let random_string: String = rand::thread_rng()
+            .sample_iter(&lower_case)
+            .take(12)
+            .map(char::from)
+            .collect();
+        let account_id: String = format!("dummy.account.{}", random_string);
+        account_id.parse().unwrap()
     }
 
     pub fn gen_participant() -> ParticipantInfo {

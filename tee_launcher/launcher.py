@@ -10,6 +10,8 @@ import traceback
 from dataclasses import dataclass
 import re
 import ipaddress
+import json
+
 
 from requests.models import Response
 
@@ -30,6 +32,11 @@ OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = "RPC_REQUST_TIMEOUT_SECS"
 OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
+
+# optional - if set, overrides the approved hashes list.
+# format: sha256:...
+ENV_VAR_MPC_HASH_OVERRIDE = "MPC_HASH_OVERRIDE"
+
 
 # dstack user configuration flags
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
@@ -62,7 +69,7 @@ DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 # EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
 # PORTS=11780:11780,2200:2200
 
-# Define an allow-list of permitted environment variables:
+# Define an allow-list of permitted environment variables that will be passed to MPC container.
 # Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
 ALLOWED_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
@@ -246,13 +253,164 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
 
 
-def get_image_digest() -> str:
-    if os.path.isfile(IMAGE_DIGEST_FILE):
-        logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
-        return open(IMAGE_DIGEST_FILE).readline().strip()
+def load_approved_hashes() -> list[str]:
+    """
+    Load approved MPC image hashes from JSON file.
+    
+    Contract + MPC Node write them oldest → newest:
+        ["sha256:h1", "sha256:h2", "sha256:h3"]
+
+    Launcher must try newest → oldest:
+        ["sha256:h3", "sha256:h2", "sha256:h1"]
+
+    This function reverses the order to enforce this.
+    """
+
+    # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
+    if not os.path.isfile(IMAGE_DIGEST_FILE):
+        fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+        logging.warning(
+            f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
+        )
+        return [fallback]
+
+    # JSON strictly required
+    try:
+        data = json.load(open(IMAGE_DIGEST_FILE))
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
+
+    hashes = data.get("approved_hashes")
+    if not isinstance(hashes, list) or not hashes:
+        raise RuntimeError(
+            f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
+        )
+
+    # Contract provides oldest→newest; launcher needs newest→oldest
+    reversed_hashes = list(reversed(hashes))
+
+    # Optional override: e.g. MPC_HASH_OVERRIDE=sha256:xyz
+    override = os.getenv(ENV_VAR_MPC_HASH_OVERRIDE)
+    if override and override in reversed_hashes:
+        reversed_hashes.remove(override)
+        reversed_hashes.insert(0, override)
+        logging.info(f"Startup order with override: {reversed_hashes}")
     else:
-        logging.info("Using default image digest from environment.")
-        return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+        logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
+
+    return reversed_hashes
+
+
+
+def validate_image_hash(
+    image_digest: str,
+    dstack_config: dict,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
+) -> bool:
+    """
+    Returns True if the given image digest is valid (pull + manifest + digest match).
+    Does NOT extend RTMR3 and does NOT run the container.
+    """
+    try:
+        logging.info(f"Validating MPC hash: {image_digest}")
+
+        image_spec = get_image_spec(dstack_config)
+        docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
+
+        manifest_digest = get_manifest_digest(
+            docker_image, rpc_request_interval_secs, rpc_max_attempts
+        )
+
+        name_and_digest = f"{image_spec.image_name}@{manifest_digest}"
+
+        # Pull
+        proc = run(["docker", "pull", name_and_digest], capture_output=True)
+        if proc.returncode != 0:
+            logging.error(f"docker pull failed for {image_digest}")
+            return False
+
+        # Verify digest
+        proc = run(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                "{{index .ID}}",
+                name_and_digest,
+            ],
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            logging.error(f"docker inspect failed for {image_digest}")
+            return False
+
+        pulled_digest = proc.stdout.decode("utf-8").strip()
+        if pulled_digest != image_digest:
+            logging.error(f"digest mismatch: {pulled_digest} != {image_digest}")
+            return False
+
+        return True
+
+    except Exception as e:
+        logging.error(f"Validation failed for {image_digest}: {e}")
+        return False
+
+
+def select_valid_hash(
+    approved_hashes: list[str],
+    dstack_config: dict,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
+) -> str:
+    """
+    Iterate through approved hashes, return the first hash that validates.
+    Raises if none succeed.
+    """
+    for h in approved_hashes:
+        if validate_image_hash(
+            h, dstack_config, rpc_request_interval_secs, rpc_max_attempts
+        ):
+            logging.info(f"Valid MPC hash selected: {h}")
+            return h
+
+    raise RuntimeError("All approved MPC image hashes failed validation.")
+
+
+def extend_rtmr3_and_launch(valid_hash: str, user_env: dict):
+    """
+    Extends RTMR3 with the selected valid hash and launches the MPC container.
+    """
+    logging.info(f"Extending RTMR3 with validated hash: {valid_hash}")
+
+    proc = curl_unix_socket_post(
+        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
+    )
+    if proc.returncode:
+        raise RuntimeError("GetQuote failed before extending RTMR3")
+
+    extend_rtmr3_json = (
+        '{"event": "mpc-image-digest", "payload": "%s"}' % valid_hash.split(":")[1]
+    )
+
+    proc = curl_unix_socket_post(
+        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
+    )
+    if proc.returncode:
+        raise RuntimeError("EmitEvent failed while extending RTMR3")
+
+    # Launch container
+    logging.info(f"Launching MPC node with validated hash: {valid_hash}")
+
+    remove_existing_container()
+    docker_cmd = build_docker_cmd(user_env, valid_hash)
+
+    proc = run(docker_cmd)
+    if proc.returncode != 0:
+        raise RuntimeError(f"docker run failed for validated hash={valid_hash}")
+
+    logging.info("MPC launched successfully.")
 
 
 def curl_unix_socket_post(
@@ -291,12 +449,14 @@ def curl_unix_socket_post(
 
 def main():
     logging.info("start")
-    # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
+
+    # DOCKER_CONTENT_TRUST must be enabled
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
             "Environment variable DOCKER_CONTENT_TRUST must be set to 1."
         )
 
+    # Load dstack configuration (tags, registry, image name)
     # In dstack, /tapp/user_config provides unmeasured data to the CVM.
     # We use this interface to make some aspects of the launcher configurable.
     # *** Only security-irrelevant parts *** may be made configurable in this way, e.g., the specific image tag(s) we look up.
@@ -306,96 +466,44 @@ def main():
         else {}
     )
 
-    image_digest = get_image_digest()
-    logging.info(f"Using image digest {image_digest}.")
-    image_spec = get_image_spec(dstack_config)
-    docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
-
-    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
+    # RPC timing configuration
+    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))  #TODO used?
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
-    manifest_digest = get_manifest_digest(
-        docker_image, rpc_request_interval_secs, rpc_max_attempts
+
+    # --------------------------------------------------------
+    # Load approved hashes from disk.
+    # --------------------------------------------------------
+    approved_hashes = load_approved_hashes()
+    
+
+    logging.info(f"Approved hashes: {approved_hashes}")
+
+    # --------------------------------------------------------
+    # PHASE 1: VALIDATION — find a single valid hash
+    # --------------------------------------------------------
+    valid_hash = select_valid_hash(
+        approved_hashes,
+        dstack_config,
+        rpc_request_interval_secs,
+        rpc_max_attempts,
     )
 
-    name_and_digest = image_spec.image_name + "@" + manifest_digest
-
-    proc = run(["docker", "pull", name_and_digest], capture_output=True)
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"docker pull returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
-        )
-
-    proc = run(
-        ["docker", "image", "inspect", "--format", "{{index .ID}}", name_and_digest],
-        capture_output=True,
-    )
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"docker image inspect returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
-        )
-
-    pulled_image_digest = proc.stdout.decode("utf-8").strip()
-
-    if pulled_image_digest != image_digest:
-        raise RuntimeError(
-            "Wrong image digest %s. Expected digest is %s"
-            % (pulled_image_digest, image_digest)
-        )
-
-    # Generate a quote before extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(
-        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
-    )
-    if proc.returncode:
-        raise RuntimeError(
-            f"getting quote failed with error code {proc.returncode}:\n{proc.stderr}"
-        )
-    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
-
-    extend_rtmr3_json = (
-        '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(":")[1]
-    )
-
-    proc = curl_unix_socket_post(
-        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
-    )
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"extending rtmr3 failed with error code {proc.returncode}:\n {proc.stderr}"
-        )
-
-    # Get quote after extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(
-        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
-    )
-    if proc.returncode:
-        raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
-
-    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
-
-    # Build the docker command we use to start the mpc node
-
-    # Load environment variables from the user config file
-    # We allow only a limited set of environment variables to be passed to the container.
-    # This is to prevent users from passing sensitive information or modifying the container's behavior in unexpected ways.
-    # The allowed environment variables are defined in ALLOWED_ENV_VARS.
+    # --------------------------------------------------------
+    # Load user env for docker run
+    # --------------------------------------------------------
     user_env_file = "/tapp/.host-shared/.user-config"
     user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
-    docker_cmd = build_docker_cmd(user_env, image_digest)
 
-    remove_existing_container()
-    # logging.info("docker cmd %s", " ".join(docker_cmd))
-    proc = run(docker_cmd)
-
-    if proc.returncode:
-        raise RuntimeError("docker run non-zero exit code %d", proc.returncode)
+    # --------------------------------------------------------
+    # PHASE 2 + 3:
+    # - Extend RTMR3 with validated hash
+    # - Launch MPC container
+    # --------------------------------------------------------
+    extend_rtmr3_and_launch(valid_hash, user_env)
 
 
 def request_until_success(
