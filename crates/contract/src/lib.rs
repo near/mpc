@@ -981,7 +981,7 @@ impl MpcContract {
     }
 
     /// Removes an update vote by the caller
-    /// panics if the account is not in a running state or if the caller is not a participant
+    /// panics if the contract is not in a running state or if the caller is not a participant
     pub fn remove_update_vote(&mut self) {
         log!("remove_update_vote: signer={}", env::signer_account_id(),);
         let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
@@ -1664,6 +1664,7 @@ mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
+    use rand::SeedableRng;
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
     use sha2::{Digest, Sha256};
@@ -2338,7 +2339,7 @@ mod tests {
     }
 
     impl MpcContract {
-        pub fn new_from_protocol_sate(protocol_state: ProtocolContractState) -> Self {
+        pub fn new_from_protocol_state(protocol_state: ProtocolContractState) -> Self {
             MpcContract {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
@@ -2355,7 +2356,7 @@ mod tests {
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(2));
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
 
         // sanity check
         assert!(contract.migration_info().is_empty());
@@ -2372,7 +2373,7 @@ mod tests {
     #[test]
     fn test_start_node_migration_success() {
         let running_state = ProtocolContractState::Running(gen_running_state(2));
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
 
         // sanity check
         assert!(contract.migration_info().is_empty());
@@ -2428,14 +2429,14 @@ mod tests {
     fn test_start_node_migration_failure_initializing() {
         let initializing_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 0).1);
-        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        let contract = MpcContract::new_from_protocol_state(initializing_state);
         test_start_migration_node_failure_not_running(contract);
     }
 
     #[test]
     fn test_start_node_migration_failure_resharing() {
         let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
-        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        let contract = MpcContract::new_from_protocol_state(resharing_state);
         test_start_migration_node_failure_not_running(contract);
     }
 
@@ -2457,7 +2458,7 @@ mod tests {
     #[test]
     fn test_register_backup_service_fail_non_participant_running() {
         let running_state = ProtocolContractState::Running(gen_running_state(2));
-        let contract = MpcContract::new_from_protocol_sate(running_state);
+        let contract = MpcContract::new_from_protocol_state(running_state);
         test_register_backup_service_fail_non_participant(contract);
     }
 
@@ -2465,14 +2466,14 @@ mod tests {
     fn test_register_backup_service_fail_non_participant_initializing() {
         let initializing_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 0).1);
-        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        let contract = MpcContract::new_from_protocol_state(initializing_state);
         test_register_backup_service_fail_non_participant(contract);
     }
 
     #[test]
     fn test_register_backup_service_fail_non_participant_resharnig() {
         let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
-        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        let contract = MpcContract::new_from_protocol_state(resharing_state);
         test_register_backup_service_fail_non_participant(contract);
     }
 
@@ -2510,7 +2511,7 @@ mod tests {
         let running_state = gen_running_state(2);
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let contract = MpcContract::new_from_protocol_sate(running_state);
+        let contract = MpcContract::new_from_protocol_state(running_state);
         test_register_backup_service_success(&participants, contract);
     }
 
@@ -2523,7 +2524,7 @@ mod tests {
             .participants()
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
-        let contract = MpcContract::new_from_protocol_sate(resharing_state);
+        let contract = MpcContract::new_from_protocol_state(resharing_state);
         test_register_backup_service_success(&participants, contract);
     }
 
@@ -2536,7 +2537,7 @@ mod tests {
             .participants()
             .clone();
         let initializing_state = ProtocolContractState::Initializing(initializing_state);
-        let contract = MpcContract::new_from_protocol_sate(initializing_state);
+        let contract = MpcContract::new_from_protocol_state(initializing_state);
         test_register_backup_service_success(&participants, contract);
     }
 
@@ -2546,7 +2547,7 @@ mod tests {
         let keyset = running_state.keyset.clone();
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         for (account_id, expected_participant_id, _) in participants.participants() {
             let destination_node_info = gen_random_destination_info();
             let setup = ConcludeNodeMigrationTestSetup {
@@ -2576,7 +2577,7 @@ mod tests {
         let keyset = running_state.keyset.clone();
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         for (account_id, expected_participant_id, expected_participant_info) in
             participants.participants()
         {
@@ -2604,7 +2605,7 @@ mod tests {
         let keyset = running_state.keyset.clone();
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         for (account_id, expected_participant_id, expected_participant_info) in
             participants.participants()
         {
@@ -2638,7 +2639,7 @@ mod tests {
         keyset.epoch_id = keyset.epoch_id.next();
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         for (account_id, expected_participant_id, expected_participant_info) in
             participants.participants()
         {
@@ -2670,7 +2671,7 @@ mod tests {
         let running_state = gen_running_state(2);
         let keyset = running_state.keyset.clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         let non_participant_account_id = gen_account_id();
         let destination_node_info = gen_random_destination_info();
         let setup = ConcludeNodeMigrationTestSetup {
@@ -2731,7 +2732,7 @@ mod tests {
             .participants()
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
-        let mut contract = MpcContract::new_from_protocol_sate(resharing_state);
+        let mut contract = MpcContract::new_from_protocol_state(resharing_state);
         test_conclude_node_migration_failure_not_running(&participants, &mut contract, &keyset);
     }
 
@@ -2749,7 +2750,7 @@ mod tests {
             .participants()
             .clone();
         let initializing_state = ProtocolContractState::Initializing(initializing);
-        let mut contract = MpcContract::new_from_protocol_sate(initializing_state);
+        let mut contract = MpcContract::new_from_protocol_state(initializing_state);
         test_conclude_node_migration_failure_not_running(&participants, &mut contract, &keyset);
     }
 
@@ -2829,7 +2830,7 @@ mod tests {
         let running_state = gen_running_state(2);
         let participants = running_state.parameters.participants().clone();
         let running_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(running_state);
+        let mut contract = MpcContract::new_from_protocol_state(running_state);
         let mut expected_vals = BTreeMap::new();
         for (account_id, _, _) in participants.participants() {
             let destination_node_info = gen_random_destination_info();
@@ -2908,7 +2909,7 @@ mod tests {
     }
 
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
-        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
 
         assert_eq!(contract.proposed_updates(), dtos::ProposedUpdates(vec![]));
 
@@ -2968,12 +2969,12 @@ mod tests {
         let running_state = gen_running_state(2);
         let participants = running_state.parameters.participants().clone();
         let protocol_contract_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let expected = propose_and_vote_code(0, &mut contract);
         for (account_id, _, _) in participants.participants() {
             contract
                 .proposed_updates
-                .vote(&UpdateId(0), account_id.clone());
+                .vote(&UpdateId::from(expected.update_id), account_id.clone());
             let mut expected_with_participant_vote = expected.clone();
             expected_with_participant_vote
                 .votes
@@ -3008,10 +3009,10 @@ mod tests {
     fn test_remove_update_vote_panics_if_non_voter() {
         let running_state = gen_running_state(2);
         let protocol_contract_state = ProtocolContractState::Running(running_state);
-        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let expected = propose_and_vote_code(0, &mut contract);
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = expected.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
         testing_env!(VMContextBuilder::new()
@@ -3026,7 +3027,7 @@ mod tests {
     #[should_panic(expected = "protocol must be in running state")]
     pub fn test_remove_update_vote_resharing() {
         let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
-        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_id.as_v1_account_id())
@@ -3040,7 +3041,7 @@ mod tests {
     pub fn test_remove_update_vote_initializing() {
         let protocol_contract_state =
             ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
-        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+        let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
             .signer_account_id(account_id.as_v1_account_id())
