@@ -54,6 +54,9 @@ DEFAULT_MPC_IMAGE_TAG = "latest"
 # the unix socket to communicate with dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
+SHA256_PREFIX = "sha256:"
+
+
 # Example of .user-config file format:
 #
 # MPC_ACCOUNT_ID=mpc-user-123
@@ -71,7 +74,7 @@ DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 # Define an allow-list of permitted environment variables that will be passed to MPC container.
 # Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
-ALLOWED_ENV_VARS = {
+ALLOWED_MPC_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
     "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
@@ -253,10 +256,10 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
 
 
-def load_approved_hashes() -> list[str]:
+def load_approved_hashes(dstack_config: dict) -> list[str]:
     """
     Load approved MPC image hashes from JSON file.
-    
+
     Contract + MPC Node write them oldest → newest:
         ["sha256:h1", "sha256:h2", "sha256:h3"]
 
@@ -269,6 +272,8 @@ def load_approved_hashes() -> list[str]:
     # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
     if not os.path.isfile(IMAGE_DIGEST_FILE):
         fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+        if not fallback.startswith(SHA256_PREFIX):
+            fallback = SHA256_PREFIX + fallback
         logging.warning(
             f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
         )
@@ -290,7 +295,10 @@ def load_approved_hashes() -> list[str]:
     reversed_hashes = list(reversed(hashes))
 
     # Optional override: e.g. MPC_HASH_OVERRIDE=sha256:xyz
-    override = os.getenv(ENV_VAR_MPC_HASH_OVERRIDE)
+    override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
+    if override and not override.startswith(SHA256_PREFIX):
+        logging.warning(f"Ignoring invalid override format: {override}")
+        override = None
     if override and override in reversed_hashes:
         reversed_hashes.remove(override)
         reversed_hashes.insert(0, override)
@@ -299,7 +307,6 @@ def load_approved_hashes() -> list[str]:
         logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
 
     return reversed_hashes
-
 
 
 def validate_image_hash(
@@ -467,7 +474,7 @@ def main():
     )
 
     # RPC timing configuration
-    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))  #TODO used?
+    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))  # TODO used?
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
@@ -477,8 +484,7 @@ def main():
     # --------------------------------------------------------
     # Load approved hashes from disk.
     # --------------------------------------------------------
-    approved_hashes = load_approved_hashes()
-    
+    approved_hashes = load_approved_hashes(dstack_config)
 
     logging.info(f"Approved hashes: {approved_hashes}")
 
@@ -493,17 +499,11 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Load user env for docker run
-    # --------------------------------------------------------
-    user_env_file = "/tapp/.host-shared/.user-config"
-    user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
-
-    # --------------------------------------------------------
     # PHASE 2 + 3:
     # - Extend RTMR3 with validated hash
     # - Launch MPC container
     # --------------------------------------------------------
-    extend_rtmr3_and_launch(valid_hash, user_env)
+    extend_rtmr3_and_launch(valid_hash, dstack_config)
 
 
 def request_until_success(
@@ -646,7 +646,7 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
 
     for key, value in user_env.items():
-        if key in ALLOWED_ENV_VARS:
+        if key in ALLOWED_MPC_ENV_VARS:
             if is_safe_env_value(value):
                 docker_cmd += ["--env", f"{key}={value}"]
             else:
@@ -674,7 +674,7 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
                         f"Ignoring invalid or unsafe PORTS entry: {clean_port}"
                     )
         else:
-            logging.warning(f"Ignoring unauthorized environment variable: {key}")
+            logging.info(f"Ignoring non-MPC variable: {key}")
 
     docker_cmd += [
         "--security-opt",
