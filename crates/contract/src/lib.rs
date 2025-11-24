@@ -92,7 +92,7 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
 /// Prepaid gas for a `clean_tee_status` call
-const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
+const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(10);
 
 /// Minimum deposit required for sign requests
 const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
