@@ -354,6 +354,7 @@ def start_cluster_with_mpc(
     presignatures_to_buffer=None,
     start_mpc_nodes=True,
 ):
+    create_secondary_account = True
     validators, observers = start_neard_cluster_with_cleanup(
         num_validators,
         num_mpc_nodes,
