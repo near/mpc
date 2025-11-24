@@ -1628,6 +1628,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckd-example-cli"
+version = "3.0.5"
+dependencies = [
+ "anyhow",
+ "blstrs",
+ "bs58 0.5.1",
+ "clap",
+ "derive_more 2.0.1",
+ "elliptic-curve",
+ "hex",
+ "hkdf",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
