@@ -58,7 +58,7 @@ it should look something like this:
 
 ```
 # Configuration File
-my_near_account_id: n1-multichain.testnet
+my_near_account_id: n1-multichain.near
 web_ui:
   host: 0.0.0.0
   port: 8080
@@ -77,11 +77,11 @@ indexer:
   validate_genesis: false
   sync_mode: Latest
   concurrency: 1
-  mpc_contract_id: v1.signer-prod.testnet
+  mpc_contract_id: v1.signer-prod.near
   port_override: 80
   finality: optimistic
 cores: 12
-near_responder_account_id: n1-multichain.testnet
+near_responder_account_id: n1-multichain.near
 number_of_responder_keys: 1
 ckd:
   timeout_sec: 60
