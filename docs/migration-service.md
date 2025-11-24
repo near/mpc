@@ -264,6 +264,10 @@ pub struct NodeMigrations {
 
     /// Maps AccountId to destination node info for in-progress migrations
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+
+    /// Global TEE state for backup services (for hard launch)
+    /// Contains shared allowed Docker image hashes, launcher hashes, and voting state
+    pub backup_service_tee_state: TeeState,
 }
 
 /// Backup service authentication information
