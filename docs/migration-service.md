@@ -398,7 +398,7 @@ Both soft launch and hard launch implementations share common core components, w
    - Performs mutual TLS handshake using keys registered in the contract
    - Validates peer identity against expected public key from contract
 
-2. **Symmetric Encryption**: Uses operator-provided `MPC_BACKUP_ENCRYPTION_KEY_HEX` for additional encryption layer
+2. **Symmetric Encryption**: Uses the operator-provided `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable for an additional encryption layer
    - Operator manually provides the same key to both MPC node and backup service
    - Adds second layer of encryption beyond mTLS transport security
    - Extra protection if contract state becomes inconsistent or manipulated
