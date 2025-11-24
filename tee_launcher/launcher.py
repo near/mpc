@@ -265,15 +265,16 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 
     Launcher must try newest → oldest:
         ["sha256:h3", "sha256:h2", "sha256:h1"]
-
-    This function reverses the order to enforce this.
     """
 
     # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
     if not os.path.isfile(IMAGE_DIGEST_FILE):
         fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+
+        # Normalize fallback (ensure it starts with sha256:)
         if not fallback.startswith(SHA256_PREFIX):
             fallback = SHA256_PREFIX + fallback
+
         logging.warning(
             f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
         )
@@ -281,7 +282,8 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 
     # JSON strictly required
     try:
-        data = json.load(open(IMAGE_DIGEST_FILE))
+        with open(IMAGE_DIGEST_FILE, "r") as f:
+            data = json.load(f)
     except Exception as e:
         raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
 
@@ -291,18 +293,34 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
             f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
         )
 
-    # Contract provides oldest→newest; launcher needs newest→oldest
+    # Contract writes oldest → newest; we need newest → oldest
     reversed_hashes = list(reversed(hashes))
 
-    # Optional override: e.g. MPC_HASH_OVERRIDE=sha256:xyz
+   
+    SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+    # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
     override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
-    if override and not override.startswith(SHA256_PREFIX):
-        logging.warning(f"Ignoring invalid override format: {override}")
+
+    if override and not SHA256_REGEX.match(override):
+        logging.warning(
+            f"Ignoring MPC_HASH_OVERRIDE='{override}' — invalid SHA-256 digest format. "
+            f"Expected 'sha256:<64 lowercase hex chars>'."
+        )
         override = None
-    if override and override in reversed_hashes:
-        reversed_hashes.remove(override)
-        reversed_hashes.insert(0, override)
-        logging.info(f"Startup order with override: {reversed_hashes}")
+
+    if override:
+        if override in reversed_hashes:
+            # Move override to the front (highest priority)
+            reversed_hashes.remove(override)
+            reversed_hashes.insert(0, override)
+            logging.info(f"Startup order with override: {reversed_hashes}")
+        else:
+            logging.warning(
+                f"MPC_HASH_OVERRIDE was provided ({override}) but does NOT match any approved hash. "
+                f"Approved hashes: {reversed_hashes}"
+            )
+            logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
     else:
         logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
 
