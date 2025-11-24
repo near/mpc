@@ -16,7 +16,7 @@ docker images
 Which should output roughly the following
 ```
 REPOSITORY              TAG               IMAGE ID       CREATED       SIZE
-nearone/mpc-node-gcp    mainnet-release   7c0ee6d08f25   6 days ago    3.82GB
+nearone/mpc-node-gcp    mainnet-release   3fb7ddd28233   6 days ago    3.82GB
 ```
 
 Next, ensure you have the `secrets.json` file set.
