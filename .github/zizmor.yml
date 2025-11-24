@@ -1,0 +1,6 @@
+rules:
+  cache-poisoning:
+    ignore:
+      # this one was wrongly detected as a release action, provoking a 
+      # problem because because we use cache there
+      - contract-verification.yml

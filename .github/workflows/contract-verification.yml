@@ -27,6 +27,13 @@ jobs:
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-provider: "warpbuild"
+
       - name: Run contract verification tests
         run: |
           cd crates/contract_history
