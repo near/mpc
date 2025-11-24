@@ -1,8 +1,12 @@
 name: Python Code Quality
 
 on:
+  workflow_dispatch:
   pull_request:
-    types: [opened, synchronize, reopened]
+  merge_group:
+  push:
+    branches:
+      - main
 
 jobs:
   ruff-formatter:
