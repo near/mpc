@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - main
 
 jobs:
   docker-tee-build:
@@ -112,10 +115,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Run Clippy fmt
         run: |
@@ -144,10 +148,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Run Clippy fmt
         run: |
@@ -176,10 +181,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
@@ -220,10 +226,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Download near core binary from S3
         id: download-neard
