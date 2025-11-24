@@ -47,7 +47,7 @@ DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
 
@@ -55,6 +55,11 @@ DEFAULT_MPC_IMAGE_TAG = "latest"
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 SHA256_PREFIX = "sha256:"
+
+# JSON key used inside image-digest.bin
+# IMPORTANT: Must stay aligned with the MPC node implementation in:
+#   crates/node/src/tee/allowed_image_hashes_watcher.rs
+JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 
 # Example of .user-config file format:
@@ -287,7 +292,7 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
     except Exception as e:
         raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
 
-    hashes = data.get("approved_hashes")
+    hashes = data.get(JSON_KEY_APPROVED_HASHES)
     if not isinstance(hashes, list) or not hashes:
         raise RuntimeError(
             f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
