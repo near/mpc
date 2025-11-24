@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.0.4",
+    "version": "3.0.5",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -609,6 +609,17 @@ expression: abi
         }
       },
       {
+        "name": "proposed_updates",
+        "doc": " returns all proposed updates",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ProposedUpdates"
+          }
+        }
+      },
+      {
         "name": "pub_migrate",
         "kind": "call",
         "modifiers": [
@@ -1186,6 +1197,10 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
+        "AccountId": {
+          "description": "A Near AccountId",
+          "type": "string"
+        },
         "AddDomainsVotes": {
           "description": "Tracks votes to add domains. Each participant can at any given time vote for a list of domains to add.",
           "type": "object",
@@ -2041,6 +2056,13 @@ expression: abi
             }
           ]
         },
+        "ProposedUpdates": {
+          "description": "A vector of proposed updates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Update"
+          }
+        },
         "ProtocolContractState": {
           "oneOf": [
             {
@@ -2581,6 +2603,74 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
+        },
+        "Update": {
+          "description": "A proposed update",
+          "type": "object",
+          "required": [
+            "update_hash",
+            "update_id",
+            "votes"
+          ],
+          "properties": {
+            "update_hash": {
+              "$ref": "#/definitions/UpdateHash"
+            },
+            "update_id": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "votes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AccountId"
+              }
+            }
+          }
+        },
+        "UpdateHash": {
+          "description": "An update hash",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Code"
+              ],
+              "properties": {
+                "Code": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Config"
+              ],
+              "properties": {
+                "Config": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "uint8",
+                    "minimum": 0.0
+                  },
+                  "maxItems": 32,
+                  "minItems": 32
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "UpdateId": {
           "type": "integer",

@@ -36,12 +36,10 @@ use mpc_contract::{
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
 
+use near_account_id::AccountId;
 use near_workspaces::{
-    network::Sandbox,
-    operations::TransactionStatus,
-    result::ExecutionFinalResult,
-    types::{AccountId, NearToken},
-    Account, Contract, Worker,
+    network::Sandbox, operations::TransactionStatus, result::ExecutionFinalResult,
+    types::NearToken, Account, Contract, Worker,
 };
 use rand::Rng;
 use rand::{distributions::Alphanumeric, rngs::OsRng};
@@ -66,7 +64,8 @@ use threshold_signatures::{
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
-pub const PARTICIPANT_LEN: usize = 3;
+pub const PARTICIPANT_LEN: usize = 10;
+use utilities::AccountIdExtV1;
 
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
@@ -76,14 +75,14 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 /// nodes usually attach the maximum available gas.  
 /// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
 /// unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(15);
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(22);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(11579);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13000);
 
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
@@ -116,7 +115,9 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         log!("created account");
         accounts.push(account);
     }
-    let candidates = candidates(Some(accounts.iter().map(|a| a.id().clone()).collect()));
+    let candidates = candidates(Some(
+        accounts.iter().map(|a| a.id().as_v2_account_id()).collect(),
+    ));
     (accounts, candidates)
 }
 
@@ -191,6 +192,7 @@ fn load_contract(package_name: &str) -> Vec<u8> {
                 &format!("--package={package_name}"),
                 "--profile=release-contract",
                 "--target=wasm32-unknown-unknown",
+                "--locked",
             ])
             .current_dir(&project_dir)
             .status()
@@ -242,9 +244,10 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
+    number_of_participants: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
-    let (accounts, participants) = gen_accounts(&worker, PARTICIPANT_LEN).await;
+    let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
     let threshold_parameters = {
         let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
         ThresholdParameters::new(participants.clone(), threshold).unwrap()
@@ -398,6 +401,7 @@ pub fn new_bls12381() -> (dtos::PublicKey, ckd::KeygenOutput) {
 
 pub async fn init_env(
     schemes: &[SignatureScheme],
+    number_of_participants: usize,
 ) -> (
     Worker<Sandbox>,
     Contract,
@@ -409,7 +413,8 @@ pub async fn init_env(
         .map(|scheme| make_key_for_domain(*scheme))
         .collect();
 
-    let (worker, contract, accounts) = init_with_candidates(public_keys).await;
+    let (worker, contract, accounts) =
+        init_with_candidates(public_keys, number_of_participants).await;
 
     (worker, contract, accounts, secret_keys)
 }
@@ -721,7 +726,7 @@ pub async fn derive_confidential_key_and_validate(
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        assert!(account.id() == &respond_req.app_id);
+        assert!(account.id().as_v2_account_id() == respond_req.app_id);
         let respond = attested_account
             .call(contract.id(), "respond_ckd")
             .args_json(serde_json::json!({
@@ -843,13 +848,6 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-pub fn check_call_success(result: ExecutionFinalResult) {
-    assert!(
-        result.is_success(),
-        "execution should have succeeded: {result:#?}"
-    );
-}
-
 pub fn check_call_success_all_receipts(result: ExecutionFinalResult) {
     for outcome in result.outcomes() {
         assert!(
@@ -919,6 +917,17 @@ pub async fn assert_running_return_participants(
     Ok(running_state.parameters.participants().clone())
 }
 
+pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
+    let final_state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let ProtocolContractState::Running(running_state) = final_state else {
+        panic!(
+            "Expected contract to be in Running state: {:?}",
+            final_state
+        );
+    };
+    running_state.parameters.threshold()
+}
+
 pub async fn submit_tee_attestations(
     contract: &Contract,
     env_accounts: &mut [Account],
@@ -926,7 +935,11 @@ pub async fn submit_tee_attestations(
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+        assert_eq!(
+            *account.id().as_v2_account_id(),
+            node_id.account_id,
+            "AccountId mismatch"
+        );
         let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
         let result = submit_participant_info(
             account,
@@ -977,16 +990,15 @@ pub async fn call_contract_key_generation<const N: usize>(
 
     for (domain_counter, domain) in domains_to_add.iter().enumerate() {
         for account in accounts {
-            check_call_success(
-                account
-                    .call(contract.id(), "vote_add_domains")
-                    .args_json(json! ({
-                        "domains": vec![domain.clone()],
-                    }))
-                    .transact()
-                    .await
-                    .unwrap(),
-            );
+            let result = account
+                .call(contract.id(), "vote_add_domains")
+                .args_json(json! ({
+                    "domains": vec![domain.clone()],
+                }))
+                .transact()
+                .await
+                .unwrap();
+            assert!(result.is_success(), "{result:#?}");
         }
 
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -1000,20 +1012,19 @@ pub async fn call_contract_key_generation<const N: usize>(
             _ => panic!("should be in initializing state"),
         };
 
-        check_call_success(
-            account_with_lowest_participant_id
-                .call(contract.id(), "start_keygen_instance")
-                .args_json(json!({
-                    "key_event_id": {
-                        "epoch_id": expected_epoch_id,
-                        "domain_id": domain.id.0,
-                        "attempt_id": 0,
-                    },
-                }))
-                .transact()
-                .await
-                .unwrap(),
-        );
+        let result = account_with_lowest_participant_id
+            .call(contract.id(), "start_keygen_instance")
+            .args_json(json!({
+                "key_event_id": {
+                    "epoch_id": expected_epoch_id,
+                    "domain_id": domain.id.0,
+                    "attempt_id": 0,
+                },
+            }))
+            .transact()
+            .await
+            .unwrap();
+        assert!(result.is_success(), "{result:#?}");
 
         println!("start_keygen_instance completed");
 
@@ -1031,14 +1042,13 @@ pub async fn call_contract_key_generation<const N: usize>(
         });
 
         for account in accounts {
-            check_call_success(
-                account
-                    .call(contract.id(), "vote_pk")
-                    .args_json(vote_pk_args.clone())
-                    .transact()
-                    .await
-                    .unwrap(),
-            );
+            let result = account
+                .call(contract.id(), "vote_pk")
+                .args_json(vote_pk_args.clone())
+                .transact()
+                .await
+                .unwrap();
+            assert!(result.is_success(), "{result:#?}");
         }
 
         let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -1084,10 +1094,11 @@ pub async fn execute_key_generation_and_add_random_state(
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
     const EPOCH_ID: u64 = 0;
+    let threshold = assert_running_return_threshold(contract).await;
 
-    // 1. Submit a threshold proposal (raise threshold to 3).
+    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(3)).unwrap();
+        ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": dummy_threshold_parameters,
@@ -1155,7 +1166,7 @@ pub async fn make_and_submit_requests(
     ];
 
     let alice = worker.dev_create_account().await.unwrap();
-    let predecessor_id = alice.id();
+    let alice_id = alice.id().as_v2_account_id();
 
     for (domain, shared_secret_key) in domains.iter().zip(shared_secret_keys.iter()) {
         match domain.scheme {
@@ -1164,7 +1175,7 @@ pub async fn make_and_submit_requests(
                     let (payload, signature_request, signature_response) =
                         create_message_payload_and_response(
                             domain.id,
-                            predecessor_id,
+                            &alice_id,
                             message,
                             path,
                             shared_secret_key,
@@ -1195,7 +1206,7 @@ pub async fn make_and_submit_requests(
                         unreachable!();
                     };
                     let (ckd_request, ckd_response) = create_response_ckd(
-                        alice.id(),
+                        &alice.id().as_v2_account_id(),
                         app_public_key.clone(),
                         &domain.id,
                         &sk.private_share.to_scalar(),
@@ -1225,13 +1236,12 @@ pub async fn vote_for_hash(
     contract: &Contract,
     image_hash: &MpcDockerImageHash,
 ) -> anyhow::Result<()> {
-    check_call_success(
-        account
-            .call(contract.id(), "vote_code_hash")
-            .args_json(serde_json::json!({"code_hash": image_hash}))
-            .transact()
-            .await?,
-    );
+    let result = account
+        .call(contract.id(), "vote_code_hash")
+        .args_json(serde_json::json!({"code_hash": image_hash}))
+        .transact()
+        .await?;
+    assert!(result.is_success(), "{result:#?}");
     Ok(())
 }
 

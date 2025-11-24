@@ -42,6 +42,8 @@ def lost_assets_cluster():
 
     yield cluster
 
+    cluster.kill_all()
+
     atexit._run_exitfuncs()
 
 

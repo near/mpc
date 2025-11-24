@@ -1,5 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![deny(clippy::mod_module_files)]
+// We disallow using `near_sdk::AccountId` in our own code.
+// However, the `near_bindgen` proc macro expands to code that uses it
+// internally, and Clippy applies the `disallowed_types` lint to that
+// generated code as well. Since the lint cannot be suppressed only for the
+// macro expansion, we allow it in this file to avoid false positives.
+#![allow(clippy::disallowed_types)]
+
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
@@ -41,11 +48,12 @@ use errors::{
 use k256::elliptic_curve::PrimeField;
 
 use mpc_primitives::hash::LauncherDockerComposeHash;
+use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     store::LookupMap,
-    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -60,6 +68,7 @@ use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, TeeValidationResult},
 };
+use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Gas required for a sign request
 const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
@@ -83,7 +92,7 @@ const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
 /// Prepaid gas for a `clean_tee_status` call
-const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(3);
+const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(10);
 
 /// Minimum deposit required for sign requests
 const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
@@ -236,7 +245,7 @@ impl MpcContract {
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
-            &predecessor,
+            &predecessor.as_v2_account_id(),
             &request.path,
         );
 
@@ -285,7 +294,8 @@ impl MpcContract {
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
     ) -> Result<dtos::PublicKey, Error> {
-        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
+        let predecessor: AccountId =
+            predecessor.unwrap_or_else(|| env::predecessor_account_id().as_v2_account_id());
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
@@ -403,7 +413,7 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let app_id = env::predecessor_account_id();
+        let app_id = env::predecessor_account_id().as_v2_account_id();
         let request = CKDRequest::new(request.app_public_key, app_id, request.domain_id);
 
         let promise_index = env::promise_yield_create(
@@ -613,7 +623,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id).transfer(diff);
+                    Promise::new(account_id.as_v1_account_id()).transfer(diff);
                 }
             }
         }
@@ -898,7 +908,7 @@ impl MpcContract {
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
-        let proposer = self.voter_or_panic();
+        let proposer = self.voter_or_panic().as_v1_account_id();
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
@@ -963,6 +973,11 @@ impl MpcContract {
         };
 
         Ok(true)
+    }
+
+    /// returns all proposed updates
+    pub fn proposed_updates(&self) -> dtos::ProposedUpdates {
+        self.proposed_updates.into_dto_type()
     }
 
     #[handle_result]
@@ -1331,7 +1346,7 @@ impl MpcContract {
         if !self.caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
-        let voter = env::signer_account_id();
+        let voter = env::signer_account_id().as_v2_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1379,7 +1394,7 @@ impl MpcContract {
 
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
-    fn assert_caller_is_signer(&self) -> near_sdk::AccountId {
+    fn assert_caller_is_signer(&self) -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
 
@@ -1389,7 +1404,7 @@ impl MpcContract {
             signer_id, predecessor_id
         );
 
-        signer_id
+        signer_id.as_v2_account_id()
     }
 }
 
@@ -1404,7 +1419,7 @@ impl MpcContract {
         Option<BackupServiceInfo>,
         Option<DestinationNodeInfo>,
     ) {
-        let account_id = env::signer_account_id();
+        let account_id = env::signer_account_id().as_v2_account_id();
         log!("my_migration_info: signer={:?}", account_id,);
         self.node_migrations.get_for_account(&account_id)
     }
@@ -1639,6 +1654,7 @@ mod tests {
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
+    use sha2::{Digest, Sha256};
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -1744,7 +1760,7 @@ mod tests {
     /// Temporarily sets the testing environment so that calls appear
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
-    pub fn with_attested_context(contract: &MpcContract) -> near_sdk::AccountId {
+    pub fn with_attested_context(contract: &MpcContract) -> AccountId {
         let (_account_id, (node_id, _)) = contract
             .tee_state
             .participants_attestations
@@ -1755,8 +1771,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone())
-            .predecessor_account_id(node_id.account_id.clone())
+            .signer_account_id(node_id.account_id.clone().as_v1_account_id())
+            .predecessor_account_id(node_id.account_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1792,14 +1808,17 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
-            &context.predecessor_account_id,
+            &context.predecessor_account_id.as_v2_account_id(),
             &request.path,
         );
         contract.sign(request);
         contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
-        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
+        let derivation_path = derive_tweak(
+            &context.predecessor_account_id.as_v2_account_id(),
+            &key_path,
+        );
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
         let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
@@ -1868,7 +1887,7 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload,
-            &context.predecessor_account_id,
+            &context.predecessor_account_id.as_v2_account_id(),
             &request.path,
         );
         contract.sign(request);
@@ -1896,7 +1915,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id,
+            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
         );
         contract.request_app_private_key(request);
@@ -1933,7 +1952,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id,
+            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
         );
         contract.request_app_private_key(request);
@@ -1955,8 +1974,8 @@ mod tests {
         let first_participant_id = participants.participants()[0].0.clone();
 
         let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone())
-            .predecessor_account_id(first_participant_id.clone())
+            .signer_account_id(first_participant_id.clone().as_v1_account_id())
+            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -1989,8 +2008,8 @@ mod tests {
             .unwrap();
 
         let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone())
-            .predecessor_account_id(account_id.clone())
+            .signer_account_id(account_id.clone().as_v1_account_id())
+            .predecessor_account_id(account_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -2022,8 +2041,8 @@ mod tests {
         threshold: Threshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone())
-            .predecessor_account_id(first_participant_id.clone())
+            .signer_account_id(first_participant_id.clone().as_v1_account_id())
+            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2146,7 +2165,7 @@ mod tests {
 
         // ❌ Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone())
+            .signer_account_id(participant_id.clone().as_v1_account_id())
             .predecessor_account_id("outsider.near".parse().unwrap())
             .attached_deposit(NearToken::from_near(1))
             .build();
@@ -2174,7 +2193,7 @@ mod tests {
 
         submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
 
-        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+        let outsider_id: AccountId = "outsider.near".parse().unwrap();
 
         let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
         let dto_public_key = fake_tls_pk.clone().try_into_dto_type().unwrap();
@@ -2183,8 +2202,8 @@ mod tests {
 
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
@@ -2225,7 +2244,7 @@ mod tests {
         };
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
-            context.predecessor_account_id.clone(),
+            context.predecessor_account_id.clone().as_v2_account_id(),
             request.domain_id,
         );
 
@@ -2239,13 +2258,13 @@ mod tests {
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
 
         // --- Step 3: Attested outsider (not a participant) joins ---
-        let outsider_id: near_sdk::AccountId = "outsider.near".parse().unwrap();
+        let outsider_id: AccountId = "outsider.near".parse().unwrap();
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
         contract
@@ -2267,8 +2286,8 @@ mod tests {
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -2834,5 +2853,101 @@ mod tests {
         assert!(contract.cleanup_orphaned_node_migrations().is_ok());
         let result = contract.migration_info();
         assert_eq!(result, expected_vals);
+    }
+
+    fn propose_and_vote(
+        contract: &mut MpcContract,
+        update: Update,
+        expected_update_id: u64,
+    ) -> Vec<dtos::AccountId> {
+        let update_id = contract.proposed_updates.propose(update.clone());
+        assert_eq!(update_id.0, expected_update_id);
+        // generate two accounts for voting
+        let account_id_0 = gen_account_id();
+        let account_id_1 = gen_account_id();
+        contract
+            .proposed_updates
+            .vote(&update_id, account_id_0.clone())
+            .unwrap();
+        contract
+            .proposed_updates
+            .vote(&update_id, account_id_1.clone())
+            .unwrap();
+
+        let mut expected_votes = vec![
+            dtos::AccountId(account_id_0.to_string()),
+            dtos::AccountId(account_id_1.to_string()),
+        ];
+        expected_votes.sort();
+        expected_votes
+    }
+
+    fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
+        let mut contract = MpcContract::new_from_protocol_sate(protocol_contract_state);
+
+        assert_eq!(contract.proposed_updates(), dtos::ProposedUpdates(vec![]));
+
+        let code_update = {
+            // propose update
+            let code = [0u8; 1000];
+            let hash = Sha256::digest(code);
+            let update = Update::Contract(code.into());
+            let expected_update_hash = dtos::UpdateHash::Code(hash.into());
+            let expected_update_id = 0;
+            let expected_votes = propose_and_vote(&mut contract, update, expected_update_id);
+            dtos::Update {
+                update_id: expected_update_id,
+                update_hash: expected_update_hash,
+                votes: expected_votes,
+            }
+        };
+
+        let config_update = {
+            let update_config = Config {
+                key_event_timeout_blocks: 64,
+                tee_upgrade_deadline_duration_seconds: 100,
+            };
+            let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
+            let expected_update_hash = dtos::UpdateHash::Config(hash.into());
+
+            let update = Update::Config(update_config.clone());
+
+            let expected_update_id = 1;
+            let expected_votes = propose_and_vote(&mut contract, update, expected_update_id);
+            dtos::Update {
+                update_id: expected_update_id,
+                update_hash: expected_update_hash,
+                votes: expected_votes,
+            }
+        };
+        let mut expected = vec![code_update, config_update];
+        // sorting to have consistent order
+        expected.sort();
+
+        let mut res = contract.proposed_updates();
+        res.0.iter_mut().for_each(|update| update.votes.sort());
+        // sorting to have consistent order
+        res.0.sort();
+
+        assert_eq!(dtos::ProposedUpdates(expected), res);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_running() {
+        let protocol_contract_state = ProtocolContractState::Running(gen_running_state(2));
+        test_proposed_updates_case_given_state(protocol_contract_state);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_resharing() {
+        let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
+        test_proposed_updates_case_given_state(protocol_contract_state);
+    }
+
+    #[test]
+    pub fn test_proposed_updates_interface_initialzing() {
+        let protocol_contract_state =
+            ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
+        test_proposed_updates_case_given_state(protocol_contract_state);
     }
 }

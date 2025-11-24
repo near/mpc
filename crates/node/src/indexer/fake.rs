@@ -31,7 +31,7 @@ use mpc_contract::state::{
     initializing::InitializingContractState, key_event::tests::Environment, key_event::KeyEvent,
     resharing::ResharingContractState, running::RunningContractState, ProtocolContractState,
 };
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use near_time::{Clock, Duration};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{atomic::AtomicBool, Arc};

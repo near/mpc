@@ -1,4 +1,4 @@
-use near_primitives::types::AccountId;
+use near_account_id::AccountId;
 
 #[derive(clap::Parser, Debug)]
 #[command(version = env!("CARGO_PKG_VERSION"))]

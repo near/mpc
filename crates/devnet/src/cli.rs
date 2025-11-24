@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 
 use crate::types::load_config;
 
