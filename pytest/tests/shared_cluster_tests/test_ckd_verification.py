@@ -10,6 +10,7 @@ Verifies that ckd responses are correct
 
 import sys
 import pathlib
+import pytest
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
@@ -17,6 +18,7 @@ from common_lib import shared, ckd
 from common_lib.constants import CKD_DEPOSIT
 
 
+@pytest.mark.no_atexit_cleanup
 def test_ckd_request_lifecycle(shared_cluster: shared.MpcCluster):
     domains = shared_cluster.contract_state().get_running_domains()
 
