@@ -1633,7 +1633,6 @@ version = "3.0.5"
 dependencies = [
  "anyhow",
  "blstrs",
- "bs58 0.5.1",
  "clap",
  "contract-interface",
  "derive_more 2.0.1",
@@ -1644,7 +1643,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.17",
 ]
 
 [[package]]
