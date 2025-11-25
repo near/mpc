@@ -8,7 +8,7 @@ const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 
 /// Amount of gas to deposit when creating an internal upgrade transaction promise.
 /// Note this deposit must be less than 300, as the total gas usage including the
 /// initial call itself to vote for the update can not exceed 300 Tgas.
-const CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
+const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -28,7 +28,7 @@ impl Default for Config {
         Self {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
             tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
-            contract_upgrade_deposit_tera_gas: CONTRACT_UPGRADE_DEPOSIT_TERA_GAS,
+            contract_upgrade_deposit_tera_gas: DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS,
         }
     }
 }
@@ -58,7 +58,7 @@ impl From<Option<InitConfig>> for Config {
 
         let contract_upgrade_deposit_tera_gas = init_config
             .vote_update_minimum_gas_attached_tera_gas
-            .unwrap_or(CONTRACT_UPGRADE_DEPOSIT_TERA_GAS);
+            .unwrap_or(DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS);
 
         Config {
             key_event_timeout_blocks,
