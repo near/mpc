@@ -29,6 +29,10 @@ pub struct AllowedImageHashesFile {
     file_path: PathBuf,
 }
 
+// important: must stay aligned with the launcher implementation in:
+// mpc/tee_launcher/launcher.py
+const JSON_KEY_APPROVED_HASHES: &str = "approved_hashes";
+
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
     async fn set(&mut self, approved_hashes: Vec<MpcDockerImageHash>) -> Result<(), io::Error> {
         tracing::info!(
@@ -43,8 +47,15 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             .collect();
 
         let json = serde_json::json!({
-            "approved_hashes": hash_strings
+            JSON_KEY_APPROVED_HASHES: hash_strings
         });
+
+        tracing::debug!(
+            %JSON_KEY_APPROVED_HASHES,
+            approved = ?hash_strings,
+            json = %json.to_string(),
+            "Approved image hashes JSON that will be written to disk"
+        );
 
         let tmp_path = self.file_path.with_extension("tmp");
 
@@ -494,5 +505,9 @@ mod tests {
             Err(TryRecvError::Empty),
             "Shutdown should NOT be sent when list is empty"
         );
+    }
+    #[test]
+    fn test_json_key_matches_launcher() {
+        assert_eq!(JSON_KEY_APPROVED_HASHES, "approved_hashes");
     }
 }

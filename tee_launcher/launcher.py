@@ -27,7 +27,7 @@ ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 # the time to wait between rpc requests, in milliseconds. Defaults to 500 milliseconds.
 OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS = "RPC_REQUST_INTERVAL_MS"
 # the maximum time to wait for an rpc response. Defaults to 10 seconds.
-OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = "RPC_REQUST_TIMEOUT_SECS"
+OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS = "RPC_REQUEST_TIMEOUT_SECS"
 # the maximum number of attempts for rpc requests until we raise an exception
 OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
@@ -47,7 +47,7 @@ DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
 
@@ -55,6 +55,11 @@ DEFAULT_MPC_IMAGE_TAG = "latest"
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 SHA256_PREFIX = "sha256:"
+
+# JSON key used inside image-digest.bin
+# IMPORTANT: Must stay aligned with the MPC node implementation in:
+#   crates/node/src/tee/allowed_image_hashes_watcher.rs
+JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 
 # Example of .user-config file format:
@@ -265,15 +270,16 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 
     Launcher must try newest → oldest:
         ["sha256:h3", "sha256:h2", "sha256:h1"]
-
-    This function reverses the order to enforce this.
     """
 
     # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
     if not os.path.isfile(IMAGE_DIGEST_FILE):
         fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+
+        # Normalize fallback (ensure it starts with sha256:)
         if not fallback.startswith(SHA256_PREFIX):
             fallback = SHA256_PREFIX + fallback
+
         logging.warning(
             f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
         )
@@ -281,28 +287,44 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 
     # JSON strictly required
     try:
-        data = json.load(open(IMAGE_DIGEST_FILE))
+        with open(IMAGE_DIGEST_FILE, "r") as f:
+            data = json.load(f)
     except Exception as e:
         raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
 
-    hashes = data.get("approved_hashes")
+    hashes = data.get(JSON_KEY_APPROVED_HASHES)
     if not isinstance(hashes, list) or not hashes:
         raise RuntimeError(
             f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
         )
 
-    # Contract provides oldest→newest; launcher needs newest→oldest
+    # Contract writes oldest → newest; we need newest → oldest
     reversed_hashes = list(reversed(hashes))
 
-    # Optional override: e.g. MPC_HASH_OVERRIDE=sha256:xyz
+    SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+    # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
     override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
-    if override and not override.startswith(SHA256_PREFIX):
-        logging.warning(f"Ignoring invalid override format: {override}")
+
+    if override and not SHA256_REGEX.match(override):
+        logging.warning(
+            f"Ignoring MPC_HASH_OVERRIDE='{override}' — invalid SHA-256 digest format. "
+            f"Expected 'sha256:<64 lowercase hex chars>'."
+        )
         override = None
-    if override and override in reversed_hashes:
-        reversed_hashes.remove(override)
-        reversed_hashes.insert(0, override)
-        logging.info(f"Startup order with override: {reversed_hashes}")
+
+    if override:
+        if override in reversed_hashes:
+            # Move override to the front (highest priority)
+            reversed_hashes.remove(override)
+            reversed_hashes.insert(0, override)
+            logging.info(f"Startup order with override: {reversed_hashes}")
+        else:
+            logging.warning(
+                f"MPC_HASH_OVERRIDE was provided ({override}) but does NOT match any approved hash. "
+                f"Approved hashes: {reversed_hashes}"
+            )
+            logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
     else:
         logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
 
@@ -312,6 +334,7 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 def validate_image_hash(
     image_digest: str,
     dstack_config: dict,
+    rpc_request_timeout_secs: float,
     rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> bool:
@@ -326,7 +349,10 @@ def validate_image_hash(
         docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
         manifest_digest = get_manifest_digest(
-            docker_image, rpc_request_interval_secs, rpc_max_attempts
+            docker_image,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
         )
 
         name_and_digest = f"{image_spec.image_name}@{manifest_digest}"
@@ -365,9 +391,10 @@ def validate_image_hash(
         return False
 
 
-def select_valid_hash(
+def select_first_valid_hash(
     approved_hashes: list[str],
     dstack_config: dict,
+    rpc_request_timeout_secs: float,
     rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> str:
@@ -377,7 +404,11 @@ def select_valid_hash(
     """
     for h in approved_hashes:
         if validate_image_hash(
-            h, dstack_config, rpc_request_interval_secs, rpc_max_attempts
+            h,
+            dstack_config,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
         ):
             logging.info(f"Valid MPC hash selected: {h}")
             return h
@@ -385,29 +416,27 @@ def select_valid_hash(
     raise RuntimeError("All approved MPC image hashes failed validation.")
 
 
-def extend_rtmr3_and_launch(valid_hash: str, user_env: dict):
-    """
-    Extends RTMR3 with the selected valid hash and launches the MPC container.
-    """
-    logging.info(f"Extending RTMR3 with validated hash: {valid_hash}")
+def extend_rtmr3(valid_hash: str) -> None:
+    full, bare = split_digest(valid_hash)
+    logging.info(f"Extending RTMR3 with validated hash: {full}")
 
+    # GetQuote first
     proc = curl_unix_socket_post(
         endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
     )
     if proc.returncode:
         raise RuntimeError("GetQuote failed before extending RTMR3")
 
-    extend_rtmr3_json = (
-        '{"event": "mpc-image-digest", "payload": "%s"}' % valid_hash.split(":")[1]
-    )
+    payload_json = json.dumps({"event": "mpc-image-digest", "payload": bare})
 
     proc = curl_unix_socket_post(
-        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
+        endpoint="EmitEvent", payload=payload_json, capture_output=True
     )
     if proc.returncode:
         raise RuntimeError("EmitEvent failed while extending RTMR3")
 
-    # Launch container
+
+def launch_mpc_container(valid_hash: str, user_env: dict) -> None:
     logging.info(f"Launching MPC node with validated hash: {valid_hash}")
 
     remove_existing_container()
@@ -474,43 +503,37 @@ def main():
     )
 
     # RPC timing configuration
-    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))  # TODO used?
+    rpc_request_timeout_secs = int(
+        os.environ.get(OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, "10")
+    )
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
 
-    # --------------------------------------------------------
-    # Load approved hashes from disk.
-    # --------------------------------------------------------
     approved_hashes = load_approved_hashes(dstack_config)
 
     logging.info(f"Approved hashes: {approved_hashes}")
 
-    # --------------------------------------------------------
-    # PHASE 1: VALIDATION — find a single valid hash
-    # --------------------------------------------------------
-    valid_hash = select_valid_hash(
+    valid_hash = select_first_valid_hash(
         approved_hashes,
         dstack_config,
+        rpc_request_timeout_secs,
         rpc_request_interval_secs,
         rpc_max_attempts,
     )
 
-    # --------------------------------------------------------
-    # PHASE 2 + 3:
-    # - Extend RTMR3 with validated hash
-    # - Launch MPC container
-    # --------------------------------------------------------
-    extend_rtmr3_and_launch(valid_hash, dstack_config)
+    extend_rtmr3(valid_hash)
+
+    launch_mpc_container(valid_hash, dstack_config)
 
 
 def request_until_success(
     url: str,
     headers: Dict[str, str],
-    rpc_request_interval_secs: float,
     rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> Response:
     """
@@ -558,7 +581,10 @@ def request_until_success(
 
 
 def get_manifest_digest(
-    docker_image: ResolvedImage, rpc_request_interval_secs: float, rpc_max_attempts: int
+    docker_image: ResolvedImage,
+    rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
 ) -> str:
     """
     Given an `image_digest` returns a manifest digest.
@@ -592,8 +618,8 @@ def get_manifest_digest(
             manifest_resp = request_until_success(
                 url=manifest_url,
                 headers=headers,
+                rpc_request_timeout_secs=rpc_request_timeout_secs,
                 rpc_request_interval_secs=rpc_request_interval_secs,
-                rpc_request_timeout_secs=rpc_request_interval_secs,
                 rpc_max_attempts=rpc_max_attempts,
             )
             manifest = manifest_resp.json()
@@ -623,28 +649,30 @@ def get_manifest_digest(
     raise Exception("Image hash not found among tags.")
 
 
+def split_digest(d: str) -> tuple[str, str]:
+    """
+    Returns (full_digest, bare_digest).
+    full_digest: 'sha256:abcd...'
+    bare_digest: 'abcd...'
+    """
+    if not d.startswith("sha256:"):
+        raise ValueError(f"Invalid digest (missing sha256: prefix): {d}")
+
+    return d, d.split(":", 1)[1]
+
+
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
-    # Parse the image hash safely
-    if ":" in image_digest:
-        parts = image_digest.split(":", 1)
-        if len(parts) == 2 and parts[1]:
-            image_hash = parts[1]
-        else:
-            raise ValueError(f"Invalid image_digest format: {image_digest}")
-    else:
-        image_hash = image_digest
+    # Parse digest into full + bare
+    full_digest, bare_digest = split_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
 
-    # add required environment variables.
-    # "MPC_IMAGE_HASH",  -  Digest of the Docker image - used by the MPC node to verify hash used.
-    # "MPC_LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"MPC_IMAGE_HASH={image_hash}"]
+    # Required environment variables
+    docker_cmd += ["--env", f"MPC_IMAGE_HASH={bare_digest}"]
     docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
-
-    # Set the MPC configuration to run in real TDX mode.
     docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
 
+    # MPC env vars and extra config
     for key, value in user_env.items():
         if key in ALLOWED_MPC_ENV_VARS:
             if is_safe_env_value(value):
@@ -655,27 +683,24 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
                 )
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
-                clean_host = host_entry.strip()
-                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
-                    docker_cmd += ["--add-host", clean_host]
+                clean = host_entry.strip()
+                if is_safe_host_entry(clean) and is_valid_host_entry(clean):
+                    docker_cmd += ["--add-host", clean]
                 else:
                     logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
+                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean}"
                     )
         elif key == "PORTS":
             for port_pair in value.split(","):
-                clean_port = port_pair.strip()
-                if is_safe_port_mapping(clean_port) and is_valid_port_mapping(
-                    clean_port
-                ):
-                    docker_cmd += ["-p", clean_port]
+                clean = port_pair.strip()
+                if is_safe_port_mapping(clean) and is_valid_port_mapping(clean):
+                    docker_cmd += ["-p", clean]
                 else:
-                    logging.warning(
-                        f"Ignoring invalid or unsafe PORTS entry: {clean_port}"
-                    )
+                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean}")
         else:
             logging.info(f"Ignoring non-MPC variable: {key}")
 
+    # Container run configuration
     docker_cmd += [
         "--security-opt",
         "no-new-privileges:true",
@@ -690,20 +715,15 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "--name",
         MPC_CONTAINER_NAME,
         "--detach",
-        image_digest,
+        full_digest,  # IMPORTANT: Docker must get the FULL digest
     ]
+
     logging.info("docker cmd %s", " ".join(docker_cmd))
 
-    # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
-    if any("LD_PRELOAD" in arg for arg in docker_cmd):
-        raise RuntimeError(
-            "Unsafe docker command: LD_PRELOAD detected in argument list."
-        )
-
-    # Also check the full command as a single string
+    # Final LD_PRELOAD safeguard
     docker_cmd_str = " ".join(docker_cmd)
     if "LD_PRELOAD" in docker_cmd_str:
-        raise RuntimeError("Unsafe docker command string: LD_PRELOAD detected.")
+        raise RuntimeError("Unsafe docker command: LD_PRELOAD detected.")
 
     return docker_cmd
 
