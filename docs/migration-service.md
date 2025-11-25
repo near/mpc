@@ -254,7 +254,7 @@ If the protocol state changes into a `Resharing` or `Initializing` state, any on
 
 ### Contract
 
-The contract stores migration-related information in the `NodeMigrations` struct:
+For the soft launch, the structures backing the migration service look as follows:
 
 ```rust
 /// Manages backup service registration and ongoing node migrations
@@ -264,10 +264,6 @@ pub struct NodeMigrations {
 
     /// Maps AccountId to destination node info for in-progress migrations
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
-
-    /// Global TEE state for backup services (for hard launch)
-    /// Contains shared allowed Docker image hashes, launcher hashes, and voting state
-    pub backup_service_tee_state: TeeState,
 }
 
 /// Backup service authentication information
@@ -289,19 +285,24 @@ pub struct DestinationNodeInfo {
 
 **Hard Launch Extensions:**
 
-For hard launch, the backup service must provide TEE attestation similar to MPC nodes. The contract will need to be extended to support attestation verification for backup services.
+For hard launch, `NodeMigrations` will be extended with the existing `TeeState` struct, which contains attestation, timestamp, and all TEE-related verification data. The global `TeeState` maintains allowed Docker image and launcher hash lists for backup services (separate from MPC node images), managed through existing voting mechanisms.
 
-**Planned Implementation Approach:**
+```
+/// Manages backup service registration and ongoing node migrations
+pub struct NodeMigrations {
+    /// Maps AccountId to backup service info (public key for TLS authentication)
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
 
-The backup service identification remains the same as soft launch: `AccountId` maps to `BackupServiceInfo`. For hard launch, the `BackupServiceInfo` struct would be extended to include attestation:
+    /// Maps AccountId to destination node info for in-progress migrations
+    ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
 
-```Rust
-/// Backup service authentication information (PLANNED extension for hard launch)
-/// Uses TeeState directly to store attestation and verification data
-pub type BackupServiceInfo = TeeState;
+    /// Global TEE state for backup services (for hard launch)
+    /// Contains shared allowed Docker image hashes, launcher hashes, and voting state
+    pub backup_service_tee_state: TeeState,
+}
 ```
 
-> **Note**: For hard launch, `BackupServiceInfo` will use the existing `TeeState` struct, which contains attestation, timestamp, and all TEE-related verification data. The global `TeeState` maintains allowed Docker image and launcher hash lists for backup services (separate from MPC node images), managed through existing voting mechanisms.
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO issue [#947](https://github.com/near/mpc/issues/947))
 
 #### Backup Service Registration
 
