@@ -4,7 +4,7 @@ use crate::sandbox::common::{
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
-use mpc_contract::config::{Config, InitConfig};
+use mpc_contract::config::Config;
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
