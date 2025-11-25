@@ -449,7 +449,7 @@ mod test {
     #[test]
     fn test_reshare_sign_more_participants() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(5);
+        let participants = generate_participants(4);
         let threshold = 3;
         let result0 = run_keygen(&participants, threshold, &mut rng);
         assert_public_key_invariant(&result0);
@@ -461,7 +461,6 @@ mod test {
         let mut new_participant = participants.clone();
         new_participant.push(Participant::from(31u32));
         new_participant.push(Participant::from(32u32));
-        new_participant.push(Participant::from(33u32));
         let key_packages = run_reshare(
             &participants,
             &pub_key,

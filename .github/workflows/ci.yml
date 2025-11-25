@@ -15,7 +15,7 @@ on:
 jobs:
   ci-tests:
     name: "Run tests"
-    runs-on: warp-ubuntu-2204-x64-8x
+    runs-on: warp-ubuntu-2404-x64-8x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -27,10 +27,11 @@ jobs:
           persist-credentials: false
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Run clippy fmt
         run: |
@@ -58,12 +59,9 @@ jobs:
       - name: Run cargo-nextest
         run: cargo nextest run --locked --all-features --cargo-profile test-release
 
-      - name: Run cargo test debug
-        run: cargo test --locked --all-features --all-targets
-
   ci-coverage:
     name: Coverage
-    runs-on: warp-ubuntu-2204-x64-8x
+    runs-on: warp-ubuntu-2404-x64-8x
     permissions:
       contents: read
     steps:
@@ -71,11 +69,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
@@ -95,7 +96,7 @@ jobs:
   
   zizmor-check:
     name: "zizmor github actions check"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read

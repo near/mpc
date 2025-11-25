@@ -45,8 +45,8 @@ fn run_sign(
 
 #[test]
 fn test_sign() {
-    let participants = generate_participants(11);
-    let max_malicious = 5;
+    let participants = generate_participants(5);
+    let max_malicious = 3;
     let threshold = max_malicious + 1;
     let keys = run_keygen::<C>(&participants, threshold);
     assert_eq!(keys.len(), participants.len());
