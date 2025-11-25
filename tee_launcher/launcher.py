@@ -27,7 +27,7 @@ ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 # the time to wait between rpc requests, in milliseconds. Defaults to 500 milliseconds.
 OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS = "RPC_REQUST_INTERVAL_MS"
 # the maximum time to wait for an rpc response. Defaults to 10 seconds.
-OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = "RPC_REQUST_TIMEOUT_SECS"
+OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS = "RPC_REQUEST_TIMEOUT_SECS"
 # the maximum number of attempts for rpc requests until we raise an exception
 OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
@@ -334,6 +334,7 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 def validate_image_hash(
     image_digest: str,
     dstack_config: dict,
+    rpc_request_timeout_secs: float,
     rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> bool:
@@ -348,7 +349,10 @@ def validate_image_hash(
         docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
 
         manifest_digest = get_manifest_digest(
-            docker_image, rpc_request_interval_secs, rpc_max_attempts
+            docker_image,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
         )
 
         name_and_digest = f"{image_spec.image_name}@{manifest_digest}"
@@ -390,6 +394,7 @@ def validate_image_hash(
 def select_first_valid_hash(
     approved_hashes: list[str],
     dstack_config: dict,
+    rpc_request_timeout_secs: float,
     rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> str:
@@ -399,7 +404,11 @@ def select_first_valid_hash(
     """
     for h in approved_hashes:
         if validate_image_hash(
-            h, dstack_config, rpc_request_interval_secs, rpc_max_attempts
+            h,
+            dstack_config,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
         ):
             logging.info(f"Valid MPC hash selected: {h}")
             return h
@@ -438,7 +447,6 @@ def launch_mpc_container(valid_hash: str, user_env: dict) -> None:
         raise RuntimeError(f"docker run failed for validated hash={valid_hash}")
 
     logging.info("MPC launched successfully.")
-
 
 
 def curl_unix_socket_post(
@@ -495,14 +503,15 @@ def main():
     )
 
     # RPC timing configuration
-    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))  # TODO used?
+    rpc_request_timeout_secs = int(
+        os.environ.get(OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, "10")
+    )
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
 
-  
     approved_hashes = load_approved_hashes(dstack_config)
 
     logging.info(f"Approved hashes: {approved_hashes}")
@@ -510,20 +519,21 @@ def main():
     valid_hash = select_first_valid_hash(
         approved_hashes,
         dstack_config,
+        rpc_request_timeout_secs,
         rpc_request_interval_secs,
         rpc_max_attempts,
     )
 
     extend_rtmr3(valid_hash)
-    
+
     launch_mpc_container(valid_hash, dstack_config)
 
 
 def request_until_success(
     url: str,
     headers: Dict[str, str],
-    rpc_request_interval_secs: float,
     rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> Response:
     """
@@ -571,7 +581,10 @@ def request_until_success(
 
 
 def get_manifest_digest(
-    docker_image: ResolvedImage, rpc_request_interval_secs: float, rpc_max_attempts: int
+    docker_image: ResolvedImage,
+    rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
 ) -> str:
     """
     Given an `image_digest` returns a manifest digest.
@@ -605,8 +618,8 @@ def get_manifest_digest(
             manifest_resp = request_until_success(
                 url=manifest_url,
                 headers=headers,
+                rpc_request_timeout_secs=rpc_request_timeout_secs,
                 rpc_request_interval_secs=rpc_request_interval_secs,
-                rpc_request_timeout_secs=rpc_request_interval_secs,
                 rpc_max_attempts=rpc_max_attempts,
             )
             manifest = manifest_resp.json()
