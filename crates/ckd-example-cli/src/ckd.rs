@@ -6,14 +6,14 @@ use rand_core::{CryptoRngCore, OsRng};
 use sha2::Sha256;
 use std::io::{self, Write as _};
 
+use contract_interface::types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
+
 use crate::{
     cli::Args,
-    types::{
-        BLS12381G1_PUBLIC_KEY_SIZE, Bls12381G1PublicKey, Bls12381G2PublicKey, CKDArgs,
-        CKDRequestArgs, CKDResponse,
-    },
+    types::{CKDArgs, CKDRequestArgs, CKDResponse},
 };
 
+const BLS12381G1_PUBLIC_KEY_SIZE: usize = 48;
 const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 const OUTPUT_SECRET_SIZE: usize = 32;
 

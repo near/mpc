@@ -1635,6 +1635,7 @@ dependencies = [
  "blstrs",
  "bs58 0.5.1",
  "clap",
+ "contract-interface",
  "derive_more 2.0.1",
  "elliptic-curve",
  "hex",
