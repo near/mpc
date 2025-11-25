@@ -28,7 +28,6 @@ license = "MIT"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
-ckd-example-cli = { path = "crates/ckd-example-cli" }
 contract-interface = { path = "crates/contract-interface" }
 contract_history = { path = "crates/contract_history" }
 mpc-contract = { path = "crates/contract", features = [
