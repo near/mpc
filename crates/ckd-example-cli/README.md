@@ -1,14 +1,37 @@
 # Example CKD cli
 
-The purpose of this tool is to show how to use the CKD functionality in the MPC
-contract. The crate provides an interactive cli that will:
+The purpose of this tool is to show how to use the Confidential Key Derivation
+(CKD) functionality in the MPC contract. The crate provides an interactive cli
+that will:
 
 - generate the parameters for a CKD request
-- ask for the response
+- ask the user for the response
 - verify the response
 - compute the private key
 
+For more details on the design and cryptography of CKD, see the
+[docs](https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation/confidential_key_derivation.md).
+The contract interface is explained in the MPC contract
+[docs](https://github.com/near/mpc/blob/main/crates/contract/README.md#submitting-a-confidential-key-derivation-ckd-request).
+
+This cli does not cover anything related to TEE apps, as it main objective is to
+show how to use the functionality in the simplest possible setting.
+
 ## Example usage
+
+The cli takes 3 parameters:
+
+- `signer-account-id`: the account that will be used to call the MPC contract.
+  Notice the secret obtained at the end is dependent on this value, the same
+  account will always obtain the same secret.
+
+- `domain-id`: the domain id in the MPC contract that supports CKD. The associated scheme of such
+domain is `Bls12381`.
+
+- `mpc-ckd-public-key`: the public key associated to the domain id above.
+
+Notice that both the latter two parameters can be obtained by querying the state
+of the MPC contract.
 
 ```console
 ❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
