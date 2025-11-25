@@ -54,7 +54,7 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             %JSON_KEY_APPROVED_HASHES,
             approved = ?hash_strings,
             json = %json.to_string(),
-            "Approved image hashes JSON that will be written to disk"
+            "approved image hashes JSON that will be written to disk"
         );
 
         let tmp_path = self.file_path.with_extension("tmp");
