@@ -403,8 +403,8 @@ Both soft launch and hard launch implementations share common core components, w
    - Performs mutual TLS handshake using keys registered in the contract
    - Validates peer identity against expected public key from contract
 
-2. **Symmetric Encryption**: Uses the operator-provided `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable for an additional encryption layer
-   - Operator manually provides the same key to both MPC node and backup service
+2. **Symmetric Encryption**: Uses an operator-provided environment variable for an additional encryption layer
+   - Operator manually provides the same key to both MPC node and backup service: `MPC_BACKUP_ENCRYPTION_KEY_HEX` (soft launch) or `BS_BACKUP_ENCRYPTION_KEY_HEX` (hard launch)
    - Adds second layer of encryption beyond mTLS transport security
    - Extra protection if contract state becomes inconsistent or manipulated
 
@@ -430,6 +430,7 @@ Both soft launch and hard launch implementations share common core components, w
 4. **TEE Runtime**: TDX-enabled environment backed by [dstack](https://github.com/Dstack-TEE/dstack)
    - Generates hardware attestations proving execution in genuine TEE
    - Protects cryptographic keys in hardware-encrypted memory
+   - Uses `BS_BACKUP_ENCRYPTION_KEY_HEX` for symmetric encryption of keyshares
    - Runs continuously (24/7) to maintain keyshares in memory
    - Keeps keyshares in memory only: does not persist to disk as encryption key would be lost on restart, and operator must not access it
    - Must re-fetch keyshares from MPC nodes after restart or power loss
