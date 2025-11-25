@@ -168,7 +168,8 @@ where
     }
 
     /// Handles an updated list of allowed image hashes in the `allowed_hashes_in_contract` watcher.
-    /// The ordered list of allowed image hashes is written to the `image_hash_storage`.
+    /// An ordered list of allowed image hashes is written to the `image_hash_storage`, from
+   /// most to least recent image hash.
     /// Returns an [io::Error] if the [AllowedImageHashesStorage::set] implementation fails.
     async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), io::Error> {
         tracing::info!(
