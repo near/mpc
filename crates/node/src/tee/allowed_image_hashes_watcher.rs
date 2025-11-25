@@ -20,7 +20,7 @@ use mockall::automock;
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
-        approved_hashes: Vec<MpcDockerImageHash>,
+        approved_hashes: &[MpcDockerImageHash],
     ) -> impl Future<Output = Result<(), io::Error>> + Send;
 }
 
@@ -34,7 +34,7 @@ pub struct AllowedImageHashesFile {
 const JSON_KEY_APPROVED_HASHES: &str = "approved_hashes";
 
 impl AllowedImageHashesStorage for AllowedImageHashesFile {
-    async fn set(&mut self, approved_hashes: Vec<MpcDockerImageHash>) -> Result<(), io::Error> {
+    async fn set(&mut self, approved_hashes: &[MpcDockerImageHash]) -> Result<(), io::Error> {
         tracing::info!(
             ?self.file_path,
             len = approved_hashes.len(),
@@ -183,7 +183,7 @@ where
         }
 
         // Write all hashes, newest-first (as provided by contract)
-        self.image_hash_storage.set(allowed_hashes.clone()).await?;
+        self.image_hash_storage.set(&allowed_hashes).await?;
 
         let running_image_is_not_allowed = !allowed_hashes.iter().contains(&self.current_image);
 
