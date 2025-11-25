@@ -966,7 +966,7 @@ impl MpcContract {
             return Ok(false);
         }
 
-        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_terra_gas);
+        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
 
         let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
@@ -2900,7 +2900,7 @@ mod tests {
             let update_config = Config {
                 key_event_timeout_blocks: 64,
                 tee_upgrade_deadline_duration_seconds: 100,
-                contract_upgrade_deposit_terra_gas: 10,
+                contract_upgrade_deposit_tera_gas: 10,
             };
             let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
             let expected_update_hash = dtos::UpdateHash::Config(hash.into());

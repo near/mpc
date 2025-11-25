@@ -590,7 +590,7 @@ mod tests {
         let update_2 = Update::Config(Config {
             key_event_timeout_blocks: 1054,
             tee_upgrade_deadline_duration_seconds: 0,
-            contract_upgrade_deposit_terra_gas: 20,
+            contract_upgrade_deposit_tera_gas: 20,
         });
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);

@@ -28,7 +28,7 @@ async fn test_zero_gas_deposit_config_value_fails_upgrades() {
 
 async fn run_upgrade_scenario(min_gas: Option<u64>) -> (bool, bool) {
     let init_config = InitConfig {
-        vote_update_minimum_gas_attached_terra_gas: min_gas,
+        vote_update_minimum_gas_attached_tera_gas: min_gas,
         ..Default::default()
     };
 

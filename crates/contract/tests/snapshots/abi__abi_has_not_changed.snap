@@ -533,7 +533,7 @@ expression: abi
                         "u64"
                       ],
                       [
-                        "contract_upgrade_deposit_terra_gas",
+                        "contract_upgrade_deposit_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1405,12 +1405,12 @@ expression: abi
           "description": "Config for V2 of the contract.",
           "type": "object",
           "required": [
-            "contract_upgrade_deposit_terra_gas",
+            "contract_upgrade_deposit_tera_gas",
             "key_event_timeout_blocks",
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
-            "contract_upgrade_deposit_terra_gas": {
+            "contract_upgrade_deposit_tera_gas": {
               "description": "Amount of gas to deposit for contract and config updates.",
               "type": "integer",
               "format": "uint64",
@@ -1586,7 +1586,7 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
-            "vote_update_minimum_gas_attached_terra_gas": {
+            "vote_update_minimum_gas_attached_tera_gas": {
               "type": [
                 "integer",
                 "null"
