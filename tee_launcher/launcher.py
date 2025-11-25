@@ -301,7 +301,6 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
     # Contract writes oldest → newest; we need newest → oldest
     reversed_hashes = list(reversed(hashes))
 
-   
     SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 
     # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
@@ -388,7 +387,7 @@ def validate_image_hash(
         return False
 
 
-def select_valid_hash(
+def select_first_valid_hash(
     approved_hashes: list[str],
     dstack_config: dict,
     rpc_request_interval_secs: float,
@@ -408,29 +407,27 @@ def select_valid_hash(
     raise RuntimeError("All approved MPC image hashes failed validation.")
 
 
-def extend_rtmr3_and_launch(valid_hash: str, user_env: dict):
-    """
-    Extends RTMR3 with the selected valid hash and launches the MPC container.
-    """
-    logging.info(f"Extending RTMR3 with validated hash: {valid_hash}")
+def extend_rtmr3(valid_hash: str) -> None:
+    full, bare = split_digest(valid_hash)
+    logging.info(f"Extending RTMR3 with validated hash: {full}")
 
+    # GetQuote first
     proc = curl_unix_socket_post(
         endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
     )
     if proc.returncode:
         raise RuntimeError("GetQuote failed before extending RTMR3")
 
-    extend_rtmr3_json = (
-        '{"event": "mpc-image-digest", "payload": "%s"}' % valid_hash.split(":")[1]
-    )
+    payload_json = json.dumps({"event": "mpc-image-digest", "payload": bare})
 
     proc = curl_unix_socket_post(
-        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
+        endpoint="EmitEvent", payload=payload_json, capture_output=True
     )
     if proc.returncode:
         raise RuntimeError("EmitEvent failed while extending RTMR3")
 
-    # Launch container
+
+def launch_mpc_container(valid_hash: str, user_env: dict) -> None:
     logging.info(f"Launching MPC node with validated hash: {valid_hash}")
 
     remove_existing_container()
@@ -441,6 +438,7 @@ def extend_rtmr3_and_launch(valid_hash: str, user_env: dict):
         raise RuntimeError(f"docker run failed for validated hash={valid_hash}")
 
     logging.info("MPC launched successfully.")
+
 
 
 def curl_unix_socket_post(
@@ -504,29 +502,21 @@ def main():
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
 
-    # --------------------------------------------------------
-    # Load approved hashes from disk.
-    # --------------------------------------------------------
+  
     approved_hashes = load_approved_hashes(dstack_config)
 
     logging.info(f"Approved hashes: {approved_hashes}")
 
-    # --------------------------------------------------------
-    # PHASE 1: VALIDATION — find a single valid hash
-    # --------------------------------------------------------
-    valid_hash = select_valid_hash(
+    valid_hash = select_first_valid_hash(
         approved_hashes,
         dstack_config,
         rpc_request_interval_secs,
         rpc_max_attempts,
     )
 
-    # --------------------------------------------------------
-    # PHASE 2 + 3:
-    # - Extend RTMR3 with validated hash
-    # - Launch MPC container
-    # --------------------------------------------------------
-    extend_rtmr3_and_launch(valid_hash, dstack_config)
+    extend_rtmr3(valid_hash)
+    
+    launch_mpc_container(valid_hash, dstack_config)
 
 
 def request_until_success(
@@ -646,28 +636,30 @@ def get_manifest_digest(
     raise Exception("Image hash not found among tags.")
 
 
+def split_digest(d: str) -> tuple[str, str]:
+    """
+    Returns (full_digest, bare_digest).
+    full_digest: 'sha256:abcd...'
+    bare_digest: 'abcd...'
+    """
+    if not d.startswith("sha256:"):
+        raise ValueError(f"Invalid digest (missing sha256: prefix): {d}")
+
+    return d, d.split(":", 1)[1]
+
+
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
-    # Parse the image hash safely
-    if ":" in image_digest:
-        parts = image_digest.split(":", 1)
-        if len(parts) == 2 and parts[1]:
-            image_hash = parts[1]
-        else:
-            raise ValueError(f"Invalid image_digest format: {image_digest}")
-    else:
-        image_hash = image_digest
+    # Parse digest into full + bare
+    full_digest, bare_digest = split_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
 
-    # add required environment variables.
-    # "MPC_IMAGE_HASH",  -  Digest of the Docker image - used by the MPC node to verify hash used.
-    # "MPC_LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"MPC_IMAGE_HASH={image_hash}"]
+    # Required environment variables
+    docker_cmd += ["--env", f"MPC_IMAGE_HASH={bare_digest}"]
     docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
-
-    # Set the MPC configuration to run in real TDX mode.
     docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
 
+    # MPC env vars and extra config
     for key, value in user_env.items():
         if key in ALLOWED_MPC_ENV_VARS:
             if is_safe_env_value(value):
@@ -678,27 +670,24 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
                 )
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
-                clean_host = host_entry.strip()
-                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
-                    docker_cmd += ["--add-host", clean_host]
+                clean = host_entry.strip()
+                if is_safe_host_entry(clean) and is_valid_host_entry(clean):
+                    docker_cmd += ["--add-host", clean]
                 else:
                     logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
+                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean}"
                     )
         elif key == "PORTS":
             for port_pair in value.split(","):
-                clean_port = port_pair.strip()
-                if is_safe_port_mapping(clean_port) and is_valid_port_mapping(
-                    clean_port
-                ):
-                    docker_cmd += ["-p", clean_port]
+                clean = port_pair.strip()
+                if is_safe_port_mapping(clean) and is_valid_port_mapping(clean):
+                    docker_cmd += ["-p", clean]
                 else:
-                    logging.warning(
-                        f"Ignoring invalid or unsafe PORTS entry: {clean_port}"
-                    )
+                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean}")
         else:
             logging.info(f"Ignoring non-MPC variable: {key}")
 
+    # Container run configuration
     docker_cmd += [
         "--security-opt",
         "no-new-privileges:true",
@@ -713,20 +702,15 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "--name",
         MPC_CONTAINER_NAME,
         "--detach",
-        image_digest,
+        full_digest,  # IMPORTANT: Docker must get the FULL digest
     ]
+
     logging.info("docker cmd %s", " ".join(docker_cmd))
 
-    # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
-    if any("LD_PRELOAD" in arg for arg in docker_cmd):
-        raise RuntimeError(
-            "Unsafe docker command: LD_PRELOAD detected in argument list."
-        )
-
-    # Also check the full command as a single string
+    # Final LD_PRELOAD safeguard
     docker_cmd_str = " ".join(docker_cmd)
     if "LD_PRELOAD" in docker_cmd_str:
-        raise RuntimeError("Unsafe docker command string: LD_PRELOAD detected.")
+        raise RuntimeError("Unsafe docker command: LD_PRELOAD detected.")
 
     return docker_cmd
 
