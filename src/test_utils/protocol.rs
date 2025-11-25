@@ -1,6 +1,7 @@
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
+use crate::test_utils::ProtocolSnapshot;
 use std::collections::HashMap;
 
 // +++++++++++++++++ Any Protocol +++++++++++++++++ //
@@ -49,6 +50,71 @@ pub fn run_protocol<T>(
         }
     }
     Ok(out)
+}
+
+/// Like [`run_protocol()`], except that it snapshots all the communication.
+pub fn run_protocol_and_take_snapshots<T>(
+    mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
+) -> Result<(Vec<(Participant, T)>, ProtocolSnapshot), ProtocolError> {
+    // Get the participants
+    let participants: Vec<_> = ps.iter().map(|(p, _)| *p).collect();
+    // Build the snapshot
+    let mut protocol_snapshots = ProtocolSnapshot::new_empty(participants);
+
+    // Compute the participants indices
+    let indices: HashMap<Participant, usize> =
+        ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
+
+    // run the protocol
+    let size = ps.len();
+    let mut out = Vec::with_capacity(size);
+    while out.len() < size {
+        for i in 0..size {
+            while {
+                let action = ps[i].1.poke()?;
+                match action {
+                    Action::Wait => false,
+                    Action::SendMany(m) => {
+                        for j in 0..size {
+                            if i == j {
+                                continue;
+                            }
+                            let from = ps[i].0;
+                            let to = ps[j].0;
+                            // snapshot the message
+                            protocol_snapshots
+                                .push_message(to, from, m.clone())
+                                .ok_or_else(|| {
+                                    ProtocolError::Other(
+                                        "Participant not found in snapshot".to_string(),
+                                    )
+                                })?;
+                            ps[j].1.message(from, m.clone());
+                        }
+                        true
+                    }
+                    Action::SendPrivate(to, m) => {
+                        let from = ps[i].0;
+                        // snapshot the message
+                        protocol_snapshots
+                            .push_message(to, from, m.clone())
+                            .ok_or_else(|| {
+                                ProtocolError::Other(
+                                    "Participant not found in snapshot".to_string(),
+                                )
+                            })?;
+                        ps[indices[&to]].1.message(from, m);
+                        true
+                    }
+                    Action::Return(r) => {
+                        out.push((ps[i].0, r));
+                        false
+                    }
+                }
+            } {}
+        }
+    }
+    Ok((out, protocol_snapshots))
 }
 
 /// Like [`run_protocol()`], except for just two parties.

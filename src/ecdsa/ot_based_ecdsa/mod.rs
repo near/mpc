@@ -30,7 +30,7 @@ pub struct PresignArguments {
 ///
 /// This output is basically all the parts of the signature that we can perform
 /// without knowing the message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     pub big_r: AffinePoint,

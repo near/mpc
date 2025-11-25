@@ -21,7 +21,7 @@ pub struct PresignArguments {
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresignOutput {
     /// The public nonce commitment.
     pub big_r: AffinePoint,
