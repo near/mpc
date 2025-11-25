@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - main
 
 jobs:
   docker-tee-build:
@@ -23,17 +26,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build MPC Node binary
-        run: cargo build -p mpc-node --profile reproducible --locked
+      - name: Install repro-env
+        run: |
+          wget 'https://github.com/kpcyrd/repro-env/releases/download/v0.4.3/repro-env'
+          echo '2a00b21ac5e990e0c6a0ccbf3b91e34a073660d1f4553b5f3cda2b09cc4d4d8a  repro-env' | sha256sum -c -
+          sudo install -m755 repro-env -t /usr/bin
 
-      - name: Build MPC Docker image
-        uses: Warpbuilds/build-push-action@8c1f3b8bd22c68607865d99ff650d37a564229a5 # v6.0.7
-        with:
-          context: .
-          profile-name: "mpc-image-builder"
-          file: deployment/Dockerfile-node
-          tags: test_image_tag_ci
-          load: true
+      - name: Build MPC Node binary and image
+        run: |
+          export NODE_IMAGE_NAME=test_image_tag_ci
+          ./deployment/build-images.sh --node
 
       - name: Check Docker image can initialize and start
         run: |
@@ -113,10 +115,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Run Clippy fmt
         run: |
@@ -145,10 +148,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Run Clippy fmt
         run: |
@@ -177,10 +181,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
@@ -221,10 +226,11 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Cache Rust dependencies
-        uses: WarpBuilds/rust-cache@e58c7440f25a26655b3867119bf68a1ba2dcc171 # v2.9.0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           cache-on-failure: true
           cache-all-crates: true
+          cache-provider: "warpbuild"
 
       - name: Download near core binary from S3
         id: download-neard

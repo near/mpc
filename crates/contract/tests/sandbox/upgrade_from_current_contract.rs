@@ -59,8 +59,7 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    // TODO: #1461 this fails with more participants
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -115,6 +114,7 @@ async fn test_propose_update_config() {
             .args_json(serde_json::json!({
                 "id": first_proposal,
             }))
+            .max_gas()
             .transact()
             .await
             .unwrap();

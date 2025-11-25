@@ -678,6 +678,11 @@ expression: abi
         }
       },
       {
+        "name": "remove_update_vote",
+        "doc": " Removes an update vote by the caller\n panics if the contract is not in a running state or if the caller is not a participant",
+        "kind": "call"
+      },
+      {
         "name": "request_app_private_key",
         "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.",
         "kind": "call",
