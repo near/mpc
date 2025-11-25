@@ -14,7 +14,7 @@ For more details on the design and cryptography of CKD, see the
 The contract interface is explained in the MPC contract
 [docs](https://github.com/near/mpc/blob/main/crates/contract/README.md#submitting-a-confidential-key-derivation-ckd-request).
 
-This cli does not cover anything related to TEE apps, as it main objective is to
+This cli does not cover anything related to TEE apps, as its main objective is to
 show how to use the functionality in the simplest possible setting.
 
 ## Example usage
