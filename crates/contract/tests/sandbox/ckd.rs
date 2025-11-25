@@ -1,5 +1,6 @@
 use crate::sandbox::common::{
     create_response_ckd, derive_confidential_key_and_validate, generate_random_app_public_key,
+    PARTICIPANT_LEN,
 };
 use crate::sandbox::common::{init_env, SharedSecretKey};
 use mpc_contract::primitives::domain::SignatureScheme;
@@ -8,21 +9,25 @@ use mpc_contract::{
     errors,
     primitives::{ckd::CKDRequestArgs, domain::DomainId},
 };
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
 use rand_core::OsRng;
+use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
 ) -> Result<Execution<Account>, near_workspaces::error::Error> {
     let (_, sk) = worker.generate_dev_account_credentials();
-    worker.create_root_account_subaccount(account_id, sk).await
+    worker
+        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
+        .await
 }
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
     let SharedSecretKey::Bls12381(sk) = &sks[0] else {
         unreachable!();
@@ -51,7 +56,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         };
 
         let (respond_req, respond_resp) = create_response_ckd(
-            account.id(),
+            &account.id().as_v2_account_id(),
             app_public_key.clone(),
             &request.domain_id,
             &sk.private_share.to_scalar(),
@@ -78,7 +83,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         domain_id: DomainId::default(),
     };
     let (respond_req, respond_resp) = create_response_ckd(
-        account.id(),
+        &account.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),
@@ -115,7 +120,8 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -131,7 +137,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     };
 
     let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
+        &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),
@@ -196,7 +202,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, _, _) = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -253,7 +259,8 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) = init_env(&[SignatureScheme::Bls12381]).await;
+    let (worker, contract, mpc_nodes, sks) =
+        init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -277,7 +284,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     dbg!(&status);
 
     let (respond_req, respond_resp) = create_response_ckd(
-        alice.id(),
+        &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
         &sk.private_share.to_scalar(),

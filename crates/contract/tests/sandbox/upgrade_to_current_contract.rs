@@ -16,7 +16,7 @@ use mpc_contract::{
     },
     state::ProtocolContractState,
 };
-use near_sdk::AccountId;
+use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
@@ -36,8 +36,9 @@ fn contract_code(network: Network) -> &'static [u8] {
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
+    number_of_participants: usize,
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
-    let (accounts, participants) = gen_accounts(worker, PARTICIPANT_LEN).await;
+    let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 
     let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
     let threshold = Threshold::new(threshold);
@@ -107,7 +108,7 @@ async fn back_compatibility_without_state(
 
     let contract = deploy_old(&worker, network).await?;
 
-    init_old_contract(&worker, &contract).await?;
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
 
     assert!(healthcheck(&contract).await?);
 
@@ -146,7 +147,8 @@ async fn propose_upgrade_from_production_to_current_binary(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
+    let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
 
     // Add state so migration logic is exercised
     execute_key_generation_and_add_random_state(
@@ -192,7 +194,8 @@ async fn upgrade_preserves_state_and_requests(
 ) {
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
+    let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
 
     let attested_account = &accounts[0];
 
@@ -247,7 +250,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    init_old_contract(&worker, &contract).await?;
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
 
     let initial_participants = get_participants(&contract).await?;
     let participant_set_is_not_empty = !initial_participants.participants().is_empty();
@@ -309,7 +312,8 @@ async fn upgrade_allows_new_request_types(
 
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract).await.unwrap();
+    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
+    let (accounts, participants) = init_old_contract(&worker, &contract, 3).await.unwrap();
     let attested_account = &accounts[0];
 
     let injected_contract_state = execute_key_generation_and_add_random_state(

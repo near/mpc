@@ -32,7 +32,7 @@ async fn run_upgrade_scenario(min_gas: Option<u64>) -> (bool, bool) {
         ..Default::default()
     };
 
-    let (_, contract, accounts) = init_with_candidates(vec![], init_config).await;
+    let (_, contract, accounts) = init_with_candidates(vec![], init_config, 3).await;
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")

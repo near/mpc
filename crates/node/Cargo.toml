@@ -9,7 +9,6 @@ network-hardship-simulation = []
 test-utils = ["threshold-signatures/test-utils"]
 
 [dependencies]
-actix = { workspace = true }
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -34,6 +33,8 @@ k256 = { workspace = true }
 lru = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
+near-account-id = { workspace = true }
+near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
 near-crypto = { workspace = true }
@@ -53,6 +54,7 @@ serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 tee_authority = { workspace = true }
 tempfile = { workspace = true }
+test_utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
 time = { workspace = true }
@@ -72,6 +74,7 @@ assert_matches = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }

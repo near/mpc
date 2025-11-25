@@ -18,6 +18,7 @@ use crate::rpc::NearRpcClients;
 use crate::types::{ContractSetup, MpcParticipantSetup, NearAccount, NearAccountKind};
 use ed25519_dalek::{ed25519::signature::rand_core::OsRng, SigningKey, VerifyingKey};
 use futures::FutureExt;
+use near_account_id::AccountId;
 use near_crypto::{ED25519SecretKey, InMemorySigner, SecretKey, Signer};
 use near_jsonrpc_client::methods;
 use near_jsonrpc_client::methods::send_tx::SignedTransaction;
@@ -29,11 +30,12 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
 use near_primitives::types::{BlockReference, FunctionArgs};
 use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
-use near_sdk::{AccountId, CurveType};
+use near_sdk::CurveType;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
+use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Current state of an account while the CLI is running.
 pub struct OperatingAccount {
@@ -109,7 +111,7 @@ impl OperatingAccessKey {
             SecretKey::ED25519(ED25519SecretKey(signing_key.to_keypair_bytes()));
 
         let signer = Signer::InMemory(InMemorySigner::from_secret_key(
-            account_id.clone(),
+            account_id.as_v1_account_id(),
             near_crypto_secret_key.clone(),
         ));
         Self {
@@ -131,7 +133,7 @@ impl OperatingAccessKey {
             }
             None => {
                 let request = near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.account_id.clone(),
+                    account_id: self.account_id.as_v1_account_id(),
                     public_key: self.signer.public_key(),
                 };
                 let nonce = self
@@ -186,8 +188,8 @@ impl OperatingAccessKey {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::create_account(
                 self.next_nonce().await,
-                self.account_id.clone(),
-                new_account_id.clone(),
+                self.account_id.as_v1_account_id(),
+                new_account_id.as_v1_account_id(),
                 amount,
                 near_core_public_key,
                 &self.signer,
@@ -218,8 +220,8 @@ impl OperatingAccessKey {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
-                self.account_id.clone(),
-                self.account_id.clone(),
+                self.account_id.as_v1_account_id(),
+                self.account_id.as_v1_account_id(),
                 &self.signer,
                 vec![Action::AddKey(Box::new(AddKeyAction {
                     access_key: AccessKey {
@@ -270,8 +272,8 @@ impl OperatingAccessKey {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::from_actions(
                 self.next_nonce().await,
-                self.account_id.clone(),
-                contract_id.clone(),
+                self.account_id.as_v1_account_id(),
+                contract_id.as_v1_account_id(),
                 &self.signer,
                 vec![Action::FunctionCall(Box::new(
                     near_primitives::action::FunctionCallAction {
@@ -292,8 +294,8 @@ impl OperatingAccessKey {
     pub async fn sign_tx_from_actions(&mut self, action_call: ActionCall) -> SignedTransaction {
         SignedTransaction::from_actions(
             self.next_nonce().await,
-            self.account_id.clone(),
-            action_call.receiver_id,
+            self.account_id.as_v1_account_id(),
+            action_call.receiver_id.as_v1_account_id(),
             &self.signer,
             action_call.actions,
             self.recent_block_hash,
@@ -393,7 +395,7 @@ impl OperatingAccount {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::deploy_contract(
                 key.next_nonce().await,
-                &self.account_data.account_id,
+                &self.account_data.account_id.as_v1_account_id(),
                 code,
                 &key.signer,
                 key.recent_block_hash,
@@ -411,7 +413,7 @@ impl OperatingAccount {
         let request = methods::query::RpcQueryRequest {
             block_reference: BlockReference::Finality(Finality::Final),
             request: QueryRequest::CallFunction {
-                account_id: self.account_data.account_id.clone(),
+                account_id: self.account_data.account_id.as_v1_account_id(),
                 method_name: method.to_string(),
                 args: FunctionArgs::from(args),
             },
@@ -462,7 +464,7 @@ impl OperatingAccounts {
                 .into_iter()
                 .map(|(account_id, account_data)| {
                     (
-                        account_id.clone(),
+                        account_id,
                         OperatingAccount::new(account_data, recent_block_hash, client.clone()),
                     )
                 })
@@ -503,8 +505,8 @@ impl OperatingAccounts {
         let request = methods::send_tx::RpcSendTransactionRequest {
             signed_transaction: SignedTransaction::send_money(
                 sender.next_nonce().await,
-                sender.account_id.clone(),
-                receiver.clone(),
+                sender.account_id.as_v1_account_id(),
+                receiver.as_v1_account_id(),
                 &sender.signer,
                 amount,
                 sender.recent_block_hash,
@@ -575,7 +577,7 @@ impl OperatingAccounts {
         let futs = accounts.iter().map(|account_id| async {
             self.client
                 .with_retry(10, |rpc| {
-                    let account_id = account_id.clone();
+                    let account_id = account_id.as_v1_account_id();
                     async move {
                         match rpc
                             .call(methods::query::RpcQueryRequest {
@@ -588,7 +590,7 @@ impl OperatingAccounts {
                             .kind
                         {
                             QueryResponseKind::ViewAccount(account) => {
-                                anyhow::Ok((account_id.clone(), account.amount))
+                                anyhow::Ok((account_id.as_v2_account_id(), account.amount))
                             }
                             _ => panic!("Unexpected response"),
                         }

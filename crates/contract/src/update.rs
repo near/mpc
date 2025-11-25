@@ -6,9 +6,10 @@ use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use near_account_id::AccountId;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::IterableMap;
-use near_sdk::{env, near, AccountId, Gas, NearToken, Promise};
+use near_sdk::{env, near, Gas, NearToken, Promise};
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -189,6 +190,13 @@ impl ProposedUpdates {
             }
         }
     }
+
+    pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
+        self.entries
+            .iter()
+            .map(|(update_id, entry)| (*update_id, &entry.update, &entry.votes))
+            .collect()
+    }
 }
 
 fn bytes_used(update: &Update) -> u128 {
@@ -221,7 +229,8 @@ mod tests {
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
-    use near_sdk::{AccountId, Gas};
+    use near_account_id::AccountId;
+    use near_sdk::Gas;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no
@@ -565,5 +574,65 @@ mod tests {
 
             Ok(TestUpdateVotes { id, entries })
         }
+    }
+
+    #[test]
+    fn test_proposed_updates_all_updates() {
+        let mut proposed_updates = ProposedUpdates::default();
+        assert_eq!(proposed_updates.all_updates(), vec![]);
+        let update_0 = Update::Contract([0; 1000].into());
+        let update_id_0 = proposed_updates.propose(update_0.clone());
+        assert_eq!(update_id_0.0, 0);
+        let update_1 = Update::Contract([1; 1000].into());
+        let update_id_1 = proposed_updates.propose(update_1.clone());
+        assert_eq!(update_id_1.0, 1);
+
+        let update_2 = Update::Config(Config {
+            key_event_timeout_blocks: 1054,
+            tee_upgrade_deadline_duration_seconds: 0,
+            contract_upgrade_deposit_terra_gas: 20,
+        });
+        let update_id_2 = proposed_updates.propose(update_2.clone());
+        assert_eq!(update_id_2.0, 2);
+
+        let votes_0 = {
+            let account_id = gen_account_id();
+            let expected_votes = HashSet::from([account_id.clone()]);
+            let votes_0 = proposed_updates
+                .vote(&update_id_0, account_id.clone())
+                .unwrap();
+            assert_eq!(&expected_votes, votes_0);
+            expected_votes
+        };
+
+        let votes_1 = {
+            let account_id = gen_account_id();
+            let expected_votes = HashSet::from([account_id.clone()]);
+            let votes_1 = proposed_updates
+                .vote(&update_id_1, account_id.clone())
+                .unwrap();
+            assert_eq!(&expected_votes, votes_1);
+            expected_votes
+        };
+
+        let votes_2 = {
+            let account_id = gen_account_id();
+            let expected_votes = HashSet::from([account_id.clone()]);
+            let votes_2 = proposed_updates
+                .vote(&update_id_2, account_id.clone())
+                .unwrap();
+            assert_eq!(&expected_votes, votes_2);
+            expected_votes
+        };
+
+        let expected = vec![
+            (update_id_0, &update_0, &votes_0),
+            (update_id_1, &update_1, &votes_1),
+            (update_id_2, &update_2, &votes_2),
+        ];
+
+        let mut res = proposed_updates.all_updates();
+        res.sort_by_key(|(update_id, _, _)| *update_id);
+        assert_eq!(res, expected);
     }
 }
