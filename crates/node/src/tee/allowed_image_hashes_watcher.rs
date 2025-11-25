@@ -58,7 +58,9 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
         );
 
         let tmp_path = self.file_path.with_extension("tmp");
-
+        // Write to a temporary file first.
+        // This prevents corruption of the final file if the node crashes or power is lost mid-write.
+        // Only once the temp file is fully written do we atomically rename() it into place.
         {
             let mut file = OpenOptions::new()
                 .truncate(true)
@@ -70,7 +72,8 @@ impl AllowedImageHashesStorage for AllowedImageHashesFile {
             file.write_all(json.to_string().as_bytes()).await?;
             file.flush().await?;
         }
-
+        // Atomic replace: POSIX rename() ensures that either the old file or the new file exists.
+        // The final file is never left in a partially-written state.
         tokio::fs::rename(&tmp_path, &self.file_path).await?;
 
         Ok(())
@@ -169,7 +172,7 @@ where
 
     /// Handles an updated list of allowed image hashes in the `allowed_hashes_in_contract` watcher.
     /// An ordered list of allowed image hashes is written to the `image_hash_storage`, from
-   /// most to least recent image hash.
+    /// most to least recent image hash.
     /// Returns an [io::Error] if the [AllowedImageHashesStorage::set] implementation fails.
     async fn handle_allowed_image_hashes_update(&mut self) -> Result<(), io::Error> {
         tracing::info!(
@@ -228,7 +231,7 @@ mod tests {
     /// must pass the entire vector untouched to the storage backend.
     #[rstest]
     #[tokio::test]
-    async fn test_latest_allowed_image_hash_is_written() {
+    async fn test_allowed_image_hash_is_written() {
         let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
         for current_hash in &allowed_images[..2] {
             let cancellation_token = CancellationToken::new();
