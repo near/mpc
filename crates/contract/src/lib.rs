@@ -1188,6 +1188,7 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<InitConfig>,
     ) -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
@@ -1237,6 +1238,7 @@ impl MpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!("migrating contract");
 
         match try_state_read::<v3_0_2_state::MpcContract>() {
@@ -1626,9 +1628,18 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .transpose()
 }
 
+fn assert_predecessor_is_contract_itself() {
+    let predecessor_is_contract_itself = env::predecessor_account_id() == env::current_account_id();
+    if !predecessor_is_contract_itself {
+        env::panic_str("This method is private, and only callable by the contract itself.")
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::crypto_shared::k256_types;
     use crate::errors::{ErrorKind, NodeMigrationError};
@@ -1743,8 +1754,13 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        let contract_account_id = AccountId::from_str("contract_account.near")
+            .unwrap()
+            .as_v1_account_id();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
+            .predecessor_account_id(contract_account_id.clone())
+            .current_account_id(contract_account_id)
             .build();
         testing_env!(context.clone());
         let domain_id = DomainId::default();
@@ -1761,6 +1777,7 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+
         let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, sk)
     }

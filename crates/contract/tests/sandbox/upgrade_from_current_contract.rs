@@ -399,3 +399,27 @@ async fn update_from_current_contract_to_migration_contract() {
     .await;
     propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }
+
+#[tokio::test]
+async fn migration_function_rejects_external_callers() {
+    let (_worker, contract, accounts) = init_with_candidates(vec![], None, 2).await;
+
+    let execution_error = accounts[0]
+        .call(contract.id(), "migrate")
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect_err("method is private and not callable from participant account.");
+
+    let error_message = format!("{:?}", execution_error);
+
+    let expected_error_message = "Smart contract panicked: This method is private, and only callable by the contract itself.";
+
+    assert!(
+        error_message.contains(expected_error_message),
+        "migrate call was accepted by external caller. expected method to be private. {:?}",
+        error_message
+    )
+}

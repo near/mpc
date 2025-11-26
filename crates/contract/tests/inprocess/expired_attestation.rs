@@ -17,7 +17,7 @@ use mpc_contract::{
 use assert_matches::assert_matches;
 use near_account_id::AccountId;
 use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 use utilities::AccountIdExtV2;
 
 use crate::sandbox::common::IntoInterfaceType;
@@ -55,6 +55,18 @@ impl TestSetup {
                 id: DomainId::default(),
                 scheme: SignatureScheme::Secp256k1,
             }];
+            let contract_account_id = AccountId::from_str("contract_account.near")
+                .unwrap()
+                .as_v1_account_id();
+
+            let context = VMContextBuilder::new()
+                .attached_deposit(NearToken::from_yoctonear(1))
+                .predecessor_account_id(contract_account_id.clone())
+                .current_account_id(contract_account_id)
+                .build();
+
+            testing_env!(context.clone());
+
             MpcContract::init_running(domains, 1, keyset, parameters, init_config).unwrap()
         };
 

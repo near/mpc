@@ -2,12 +2,13 @@ use std::collections::HashSet;
 
 use crate::sandbox::common::{
     call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
-    gen_accounts, get_participants, get_tee_accounts, make_and_submit_requests,
+    gen_accounts, get_participants, get_tee_accounts, init, make_and_submit_requests,
     propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
     SharedSecretKey, PARTICIPANT_LEN,
 };
 use mpc_contract::crypto_shared::CKDResponse;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::key_state::{EpochId, Keyset};
 use mpc_contract::{
     crypto_shared::SignatureResponse,
     primitives::{
@@ -428,4 +429,44 @@ async fn upgrade_allows_new_request_types(
             "Returned ckd response does not match"
         );
     }
+}
+
+#[tokio::test]
+async fn init_running_rejects_external_callers_pre_initialization() {
+    let (worker, contract) = init().await;
+    let number_of_participants = 2;
+    let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
+
+    let threshold_parameters = ThresholdParameters::new(
+        participants.clone(),
+        Threshold::new(number_of_participants as u64),
+    )
+    .unwrap();
+
+    let init_running_args = serde_json::json!({
+            "domains": [],
+            "next_domain_id": 0,
+            "keyset": Keyset::new(EpochId::new(2), vec![]),
+            "parameters": threshold_parameters,
+    });
+
+    let execution_error = accounts[0]
+        .call(contract.id(), "init_running")
+        .max_gas()
+        .args_json(init_running_args)
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect_err("method is private and not callable from participant account.");
+
+    let error_message = format!("{:?}", execution_error);
+
+    let expected_error_message = "Smart contract panicked: This method is private, and only callable by the contract itself.";
+
+    assert!(
+        error_message.contains(expected_error_message),
+        "init_running call was accepted by external caller. expected method to be private. {:?}",
+        error_message
+    )
 }
