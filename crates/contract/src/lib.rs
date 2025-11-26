@@ -1237,6 +1237,7 @@ impl MpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!("migrating contract");
 
         match try_state_read::<v3_0_2_state::MpcContract>() {
@@ -1624,6 +1625,13 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
     env::storage_read(b"STATE")
         .map(|data| T::try_from_slice(&data))
         .transpose()
+}
+
+fn assert_predecessor_is_contract_itself() {
+    let predecessor_is_contract_itself = env::predecessor_account_id() == env::current_account_id();
+    if !predecessor_is_contract_itself {
+        env::panic_str("This method is private, and only callable by the contract itself.")
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
