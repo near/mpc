@@ -246,6 +246,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
+    init_config: Option<InitConfig>,
     number_of_participants: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
@@ -291,7 +292,7 @@ pub async fn init_with_candidates(
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "init_config": None::<InitConfig>,
+            "init_config": init_config,
         }))
     };
 
@@ -416,7 +417,7 @@ pub async fn init_env(
         .collect();
 
     let (worker, contract, accounts) =
-        init_with_candidates(public_keys, number_of_participants).await;
+        init_with_candidates(public_keys, None, number_of_participants).await;
 
     (worker, contract, accounts, secret_keys)
 }
@@ -771,7 +772,6 @@ pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
-    extra_migrate_step: bool,
 ) {
     let propose_update_execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -804,16 +804,6 @@ pub async fn propose_and_vote_contract_binary(
         .expect("state is deserializable.");
 
     vote_update_till_completion(contract, accounts, &proposal_id).await;
-
-    if extra_migrate_step {
-        contract
-            .call("pub_migrate")
-            .transact()
-            .await
-            .unwrap()
-            .into_result()
-            .unwrap();
-    }
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(

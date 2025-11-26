@@ -26,7 +26,7 @@ pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
     }
 }
 
-fn current_contract_proposal() -> ProposeUpdateArgs {
+pub fn current_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
         code: Some(current_contract().to_vec()),
         config: None,
@@ -81,6 +81,7 @@ async fn test_propose_update_config() {
     let new_config = Config {
         key_event_timeout_blocks: 20,
         tee_upgrade_deadline_duration_seconds: 3333,
+        contract_upgrade_deposit_tera_gas: 299,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -143,7 +144,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -274,10 +275,9 @@ async fn many_sequential_updates() {
     let (_, contract, accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
     dbg!(contract.id());
-
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
-        propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -383,7 +383,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    let (worker, contract, accounts) = init_with_candidates(vec![], PARTICIPANT_LEN).await;
+    let (worker, contract, accounts) = init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
@@ -397,5 +397,5 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&accounts, &contract, migration_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
 }
