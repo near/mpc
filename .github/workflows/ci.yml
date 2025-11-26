@@ -195,16 +195,21 @@ jobs:
       - name: Install cargo-binstall
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
-          tool: cargo-binstall@1.16.0
+          tool: cargo-binstall
+
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Install wasm-opt
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Run cargo-nextest
         run: cargo nextest run --release --locked
@@ -266,16 +271,21 @@ jobs:
       - name: Install cargo-binstall
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
-          tool: cargo-binstall@1.16.0
+          tool: cargo-binstall
+
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
           cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Install wasm-opt
         run: |
           cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
           echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Setup python
         uses: actions/setup-python@v4
