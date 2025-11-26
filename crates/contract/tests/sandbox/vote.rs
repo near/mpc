@@ -1,6 +1,7 @@
 use crate::sandbox::common::{
-    assert_running_return_threshold, gen_accounts, init_env, submit_participant_info,
-    IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
+    assert_running_return_threshold, execute_async_transactions, gen_accounts, init_env,
+    submit_participant_info, IntoInterfaceType, GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_PK,
+    GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
@@ -18,8 +19,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     let args = json!({
         "domains": vec![
             json!({
@@ -70,15 +70,16 @@ async fn test_keygen() -> anyhow::Result<()> {
         "public_key": pk,
     });
 
-    for account in accounts.iter() {
-        println!("{:?}", account);
-        let result = account
-            .call(contract.id(), "vote_pk")
-            .args_json(vote_pk_args.clone())
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
+    execute_async_transactions(
+        &accounts,
+        &contract,
+        "vote_pk",
+        &vote_pk_args,
+        GAS_FOR_VOTE_PK,
+    )
+    .await
+    .unwrap();
+
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     match state {
         ProtocolContractState::Running(state) => {
@@ -145,8 +146,8 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_resharing() -> anyhow::Result<()> {
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
-    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (worker, contract, mut accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -177,17 +178,20 @@ async fn test_resharing() -> anyhow::Result<()> {
     let proposal =
         ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
 
-    for account in &accounts {
-        let result = account
-            .call(contract.id(), "vote_new_parameters")
-            .args_json(json!({
-                "prospective_epoch_id": 6,
-                "proposal": proposal,
-            }))
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
+    let json_args = json!({
+        "prospective_epoch_id": 6,
+        "proposal": proposal,
+    });
+    execute_async_transactions(
+        &accounts,
+        &contract,
+        "vote_new_parameters",
+        &json_args,
+        GAS_FOR_VOTE_NEW_PARAMETERS,
+    )
+    .await
+    .unwrap();
+
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     match state {
         ProtocolContractState::Resharing(resharing_contract_state) => {
@@ -219,16 +223,15 @@ async fn test_resharing() -> anyhow::Result<()> {
             "attempt_id": 0,
         },
     });
-
-    for account in &accounts {
-        let result = account
-            .call(contract.id(), "vote_reshared")
-            .gas(GAS_FOR_VOTE_RESHARED)
-            .args_json(vote_reshared_args.clone())
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
+    execute_async_transactions(
+        &accounts,
+        &contract,
+        "vote_reshared",
+        &vote_reshared_args,
+        GAS_FOR_VOTE_RESHARED,
+    )
+    .await
+    .unwrap();
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     match state {
@@ -244,8 +247,8 @@ async fn test_resharing() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_repropose_resharing() -> anyhow::Result<()> {
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
-    let (worker, contract, mut accounts, _) = init_env(&[SignatureScheme::Secp256k1], 3).await;
+    let (worker, contract, mut accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
     let existing_params = match state {
@@ -728,7 +731,6 @@ async fn test_cancelled_epoch_cannot_be_reused(
 #[tokio::test]
 async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 ) -> anyhow::Result<()> {
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
     let ResharingTestContext {
         contract,
         current_participant_accounts,
@@ -736,7 +738,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         threshold_parameters,
         initial_running_state,
         ..
-    } = setup_resharing_state(3).await;
+    } = setup_resharing_state(PARTICIPANT_LEN).await;
 
     let initial_threshold = initial_running_state.parameters.threshold();
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
@@ -816,15 +818,15 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         },
     });
 
-    for account in &current_participant_accounts {
-        let result = account
-            .call(contract.id(), "vote_reshared")
-            .gas(GAS_FOR_VOTE_RESHARED)
-            .args_json(vote_reshared_args.clone())
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
+    execute_async_transactions(
+        &current_participant_accounts,
+        &contract,
+        "vote_reshared",
+        &vote_reshared_args,
+        GAS_FOR_VOTE_RESHARED,
+    )
+    .await
+    .unwrap();
 
     // Step 5: Verify final state
     let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
