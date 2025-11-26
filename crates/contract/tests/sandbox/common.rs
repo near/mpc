@@ -11,7 +11,10 @@ use k256::{
     AffinePoint, FieldBytes, Secp256k1,
 };
 use mpc_contract::{
-    config::InitConfig,
+    crypto_shared::k256_types::SerializableAffinePoint,
+    primitives::signature::{Payload, SignRequestArgs},
+};
+use mpc_contract::{
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         CKDResponse, SerializableScalar, SignatureResponse,
@@ -28,10 +31,6 @@ use mpc_contract::{
     state::ProtocolContractState,
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
-};
-use mpc_contract::{
-    crypto_shared::k256_types::SerializableAffinePoint,
-    primitives::signature::{Payload, SignRequestArgs},
 };
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
@@ -246,7 +245,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
-    init_config: Option<InitConfig>,
+    init_config: Option<dtos::Config>,
     number_of_participants: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
@@ -292,7 +291,7 @@ pub async fn init_with_candidates(
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "init_config": init_config,
+            "config": init_config,
         }))
     };
 

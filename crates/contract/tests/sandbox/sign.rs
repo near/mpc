@@ -3,7 +3,6 @@ use crate::sandbox::common::{
     PARTICIPANT_LEN,
 };
 use mpc_contract::{
-    config::InitConfig,
     crypto_shared::SignatureResponse,
     errors,
     primitives::{
@@ -412,7 +411,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .call("init")
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
-            "init_config": None::<InitConfig>,
         }))
         .transact()
         .await?;
@@ -427,7 +425,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .call("init")
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
-            "init_config": None::<InitConfig>,
         }))
         .transact()
         .await?;
@@ -441,7 +438,7 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         .call("init")
         .args_json(serde_json::json!({
             "parameters": proposed_parameters,
-            "init_config": None::<InitConfig>,
+            "config": "null",
         }))
         .transact()
         .await?;

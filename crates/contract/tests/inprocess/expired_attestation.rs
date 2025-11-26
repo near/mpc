@@ -1,6 +1,5 @@
 use contract_interface::types::{Attestation, MockAttestation};
 use mpc_contract::{
-    config::InitConfig,
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -31,7 +30,11 @@ struct TestSetup {
 }
 
 impl TestSetup {
-    fn new(participant_count: usize, threshold: u64, init_config: Option<InitConfig>) -> Self {
+    fn new(
+        participant_count: usize,
+        threshold: u64,
+        init_config: Option<contract_interface::types::Config>,
+    ) -> Self {
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
         let contract = {
@@ -55,6 +58,7 @@ impl TestSetup {
                 id: DomainId::default(),
                 scheme: SignatureScheme::Secp256k1,
             }];
+
             let contract_account_id = AccountId::from_str("contract_account.near")
                 .unwrap()
                 .as_v1_account_id();
@@ -361,7 +365,7 @@ fn only_latest_hash_after_grace_period() {
     const SECOND_ENTRY_TIME_NS: u64 = 4 * NANOS_IN_SECOND; // 1s
     const GRACE_PERIOD_NS: u64 = 10 * NANOS_IN_SECOND; // 10s
 
-    let init_config = InitConfig {
+    let init_config = contract_interface::types::Config {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
@@ -397,7 +401,7 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     const INITIAL_TIME: u64 = 1;
     const GRACE_PERIOD: u64 = 10;
 
-    let init_config = InitConfig {
+    let init_config = contract_interface::types::Config {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD),
         ..Default::default()
     };
@@ -429,7 +433,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     const THIRD_ENTRY_TIME_NS: u64 = 7 * NANOS_IN_SECOND;
     const GRACE_PERIOD_TIME_NS: u64 = 10 * NANOS_IN_SECOND;
 
-    let init_config = InitConfig {
+    let init_config = contract_interface::types::Config {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_TIME_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
@@ -482,7 +486,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
     const START_TIME_SECONDS: u64 = 1;
     const GRACE_PERIOD_SECONDS: u64 = 10;
 
-    let init_config = InitConfig {
+    let init_config = contract_interface::types::Config {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
         ..Default::default()
     };
@@ -539,7 +543,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     const GRACE_PERIOD_NANOS: u64 = GRACE_PERIOD_SECONDS * NANOS_IN_SECOND;
     const HASH_DEPLOYMENT_INTERVAL_NANOS: u64 = 3 * NANOS_IN_SECOND;
 
-    let init_config = InitConfig {
+    let init_config = contract_interface::types::Config {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
         ..Default::default()
     };

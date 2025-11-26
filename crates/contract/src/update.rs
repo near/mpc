@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
-use crate::config::Config;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
@@ -47,18 +46,40 @@ impl From<u64> for UpdateId {
     }
 }
 
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(Config),
+    Config(contract_interface::types::Config),
 }
 
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Default)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<Config>,
+    pub config: Option<contract_interface::types::Config>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -82,8 +103,19 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     }
 }
 
-#[near(serializers=[borsh ])]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 struct UpdateEntry {
     update: Update,
     votes: HashSet<AccountId>,
@@ -225,7 +257,6 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::Config,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
@@ -482,7 +513,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(Config::default());
+        let update_2 = Update::Config(contract_interface::types::Config::default());
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -587,10 +618,11 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(Config {
-            key_event_timeout_blocks: 1054,
-            tee_upgrade_deadline_duration_seconds: 0,
-            contract_upgrade_deposit_tera_gas: 20,
+        let update_2 = Update::Config(contract_interface::types::Config {
+            key_event_timeout_blocks: Some(1054),
+            tee_upgrade_deadline_duration_seconds: Some(0),
+            contract_upgrade_deposit_tera_gas: Some(20),
+            ..Default::default()
         });
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);

@@ -18,7 +18,6 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
-use mpc_contract::config::Config;
 use mpc_contract::node_migrations::NodeMigrations;
 use mpc_contract::primitives::{
     domain::{DomainConfig, DomainRegistry},
@@ -40,7 +39,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
-    config: Config,
+    config: contract_interface::types::Config,
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
@@ -50,8 +49,8 @@ pub struct FakeMpcContractState {
 impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
-        let config = Config {
-            key_event_timeout_blocks: 10,
+        let config = contract_interface::types::Config {
+            key_event_timeout_blocks: Some(10),
             ..Default::default()
         };
         let env = Environment::new(None, None, None);
@@ -159,7 +158,12 @@ impl FakeMpcContractState {
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
                 self.env.set_signer(&account_id);
-                if let Err(e) = state.start(id, self.config.key_event_timeout_blocks) {
+                if let Err(e) = state.start(
+                    id,
+                    self.config
+                        .key_event_timeout_blocks
+                        .expect("timeout is configured for test"),
+                ) {
                     tracing::info!("vote_start_keygen transaction failed: {}", e);
                 }
             }
@@ -196,7 +200,12 @@ impl FakeMpcContractState {
         match &mut self.state {
             ProtocolContractState::Resharing(state) => {
                 self.env.set_signer(&account_id);
-                if let Err(e) = state.start(id, self.config.key_event_timeout_blocks) {
+                if let Err(e) = state.start(
+                    id,
+                    self.config
+                        .key_event_timeout_blocks
+                        .expect("timeout is configured for test"),
+                ) {
                     tracing::info!("vote_start_reshare transaction failed: {}", e);
                 }
             }

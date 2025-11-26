@@ -4703,6 +4703,7 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "clap",
+ "contract-interface",
  "ed25519-dalek",
  "flume",
  "futures",

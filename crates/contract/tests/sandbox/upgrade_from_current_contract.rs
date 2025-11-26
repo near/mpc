@@ -4,7 +4,6 @@ use crate::sandbox::common::{
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
-use mpc_contract::config::Config;
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -78,10 +77,11 @@ async fn test_propose_update_config() {
         .contains("not a voter"));
 
     // have each participant propose a new update:
-    let new_config = Config {
-        key_event_timeout_blocks: 20,
-        tee_upgrade_deadline_duration_seconds: 3333,
-        contract_upgrade_deposit_tera_gas: 299,
+    let new_config = contract_interface::types::Config {
+        key_event_timeout_blocks: Some(20),
+        tee_upgrade_deadline_duration_seconds: Some(3333),
+        contract_upgrade_deposit_tera_gas: Some(299),
+        ..Default::default()
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -240,7 +240,7 @@ async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = Config::default();
+    let dummy_config = contract_interface::types::Config::default();
 
     // Can not propose update both to code and config
     let execution = accounts[0]
