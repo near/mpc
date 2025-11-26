@@ -1266,15 +1266,19 @@ impl MpcContract {
         &self.protocol_state
     }
 
+    /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
     pub fn allowed_docker_image_hashes(&self) -> Vec<MpcDockerImageHash> {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.tee_state
+        let mut hashes: Vec<MpcDockerImageHash> = self
+            .tee_state
             .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration)
             .into_iter()
             .map(|allowed_image_hash| allowed_image_hash.image_hash)
-            .collect()
+            .collect();
+        hashes.reverse();
+        hashes
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {

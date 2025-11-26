@@ -17,7 +17,7 @@ expression: abi
     "functions": [
       {
         "name": "allowed_code_hashes",
-        "doc": " Returns all allowed code hashes. The first element is the most recent allowed code hash.",
+        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -38,6 +38,7 @@ expression: abi
       },
       {
         "name": "allowed_docker_image_hashes",
+        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
