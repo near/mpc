@@ -383,8 +383,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
-    let (worker, contract, accounts) = init_with_candidates(vec![], None, 3).await;
+    let (worker, contract, accounts) = init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
