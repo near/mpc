@@ -104,6 +104,9 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
 
+/// Prepaid gas for a `clean_non_participant_update_votes` call
+const CLEAN_NON_PARTICIPANT_UPDATE_VOTES_GAS: Gas = Gas::from_tgas(2);
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -821,15 +824,13 @@ impl MpcContract {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
 
-            // Clear update votes from accounts that are no longer participants
-            let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-                unreachable!("just assigned Running state above");
-            };
-            self.proposed_updates
-                .clear_votes_from_non_participants(|account_id| {
-                    running_state.is_participant(account_id)
-                });
-
+            // Spawn a promise to clear update votes from accounts that are no longer participants
+            Promise::new(env::current_account_id()).function_call(
+                "clean_non_participant_update_votes".to_string(),
+                vec![],
+                NearToken::from_yoctonear(0),
+                CLEAN_NON_PARTICIPANT_UPDATE_VOTES_GAS,
+            );
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id()).function_call(
                 "clean_tee_status".to_string(),
@@ -1118,6 +1119,30 @@ impl MpcContract {
                 Ok(true)
             }
         }
+    }
+
+    /// Private endpoint to clean update votes from non-participants after resharing.
+    /// This can only be called by the contract itself via a promise.
+    #[private]
+    #[handle_result]
+    pub fn clean_non_participant_update_votes(&mut self) -> Result<(), Error> {
+        log!(
+            "clean_non_participant_update_votes: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.proposed_updates
+            .clear_votes_from_non_participants(|account_id| {
+                participants.is_participant(account_id)
+            });
+        Ok(())
     }
 
     /// Private endpoint to clean up TEE information for non-participants after resharing.
