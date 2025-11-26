@@ -371,7 +371,7 @@ impl MpcInitContractCmd {
             ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
-            init_config: contract_interface::types::Config::default(),
+            config: contract_interface::types::Config::default(),
         })
         .unwrap();
 
@@ -394,7 +394,7 @@ impl MpcInitContractCmd {
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
-    init_config: contract_interface::types::Config,
+    config: contract_interface::types::Config,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
