@@ -31,7 +31,6 @@ container_build_command = [
     "--profile=release-contract",
     "--features",
     "abi",
-    "--no-embed-abi",
 ]
 
 [package.metadata.cargo-shear]
