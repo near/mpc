@@ -49,7 +49,7 @@ use {
     tracing::info,
 };
 
-pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(10 * 60);
+pub const ATTESTATION_RESUBMISSION_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 #[derive(Parser, Debug)]
 #[command(name = "mpc-node")]
