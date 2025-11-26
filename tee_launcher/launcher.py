@@ -303,7 +303,7 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
 
     # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
     override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
-
+    logging.info("latest code. not reverse order")
     if override and not SHA256_REGEX.match(override):
         logging.warning(
             f"Ignoring MPC_HASH_OVERRIDE='{override}' — invalid SHA-256 digest format. "
