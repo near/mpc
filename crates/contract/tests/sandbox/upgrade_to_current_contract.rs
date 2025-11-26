@@ -431,21 +431,23 @@ async fn upgrade_allows_new_request_types(
 #[tokio::test]
 async fn init_running_rejects_external_callers_pre_initialization() {
     let (worker, contract) = init().await;
-    let new_account = worker.dev_create_account().await.unwrap();
-    let participants = Participants::new();
+    let number_of_participants = 2;
+    let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
 
-    let threshold_parameters =
-        ThresholdParameters::new(participants.clone(), Threshold::new(0)).unwrap();
+    let threshold_parameters = ThresholdParameters::new(
+        participants.clone(),
+        Threshold::new(number_of_participants as u64),
+    )
+    .unwrap();
 
     let init_running_args = serde_json::json!({
             "domains": [],
             "next_domain_id": 0,
-            "keyset": Keyset::new(EpochId::new(0), vec![]),
+            "keyset": Keyset::new(EpochId::new(2), vec![]),
             "parameters": threshold_parameters,
-
     });
 
-    let execution_error = new_account
+    let execution_error = accounts[0]
         .call(contract.id(), "init_running")
         .max_gas()
         .args_json(init_running_args)
