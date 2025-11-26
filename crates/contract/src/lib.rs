@@ -1020,16 +1020,21 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Returns all allowed code hashes. The first element is the most recent allowed code hash.
     pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.tee_state
-            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
+        let mut hashes = self
+            .tee_state
+            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
+        hashes.reverse();
+        hashes
     }
 
+    /// Returns the latest (most recent) allowed code hash.
     pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         log!("latest_code_hash: signer={}", env::signer_account_id());
 

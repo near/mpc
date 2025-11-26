@@ -14,18 +14,14 @@ For additional information about the MPC network see [Chain-signatures](https://
 
 ## **T**rusted **E**xecution **E**nvironment (TEE) 
 
+A **t**rusted **e**xecution **e**nvironment (TEE) is an environment isolated from the host operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
 
-A Trusted Execution Environment (TEE) is an isolated execution environment that runs separately from the host operating system. A TEE provides strong guarantees of confidentiality and integrity for the code and data it executes.
 
 ## Benefits of TEEs in MPC
 
-
-These guarantees are valuable to the MPC network for two reasons:
-
-
-
-1. **Enforcing backward secrecy** — TEEs ensure that nodes don't expose the secret key shares (and other assets) to their operators. Thus removing the need to trust the operators. Departed nodes cannot retain plaintext secret-shares, making collusion attacks (by the operators) after departure infeasible.
-2. **Relaxing threat models** — TEEs allow the network to assume honest-but-curious adversaries instead of malicious ones, enabling the use of more efficient MPC protocols.
+The security guarantees provided by TEEs are attractive to the MPC network for two reasons:
+1. They help enforce **backward secrecy**. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
+2. They allow to *relax the threat models* (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
 
 Our primary goal is to ensure that every MPC node runs inside a TEE—specifically Intel TDX in the current phase. Running nodes within TEEs enhances network security by providing strong assurances of both integrity and confidentiality.
 
@@ -101,7 +97,31 @@ This is a more detailed component view of the MPC solution, covering both on-cha
 ### MPC Node
 - Executes MPC operations.  
 - Synchronizes the approved MPC Docker image hash with the on-chain contract state.  
-- Produces remote attestation quotes for both the contract and the operator.  
+- Produces remote attestation quotes for both the contract and the operator.
+
+#### Node Behavior
+
+##### Participant Set Management
+
+A node must only participate in the MPC protocol if it is in the set of active participants of the current running or resharing epoch. The TLS key of a node acts as a unique identifier for this purpose _(implemented in [#1032](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
+
+##### Connection Management
+
+Due to limitations of the current implementation, nodes need to drop and re-establish all connections whenever there is a change in the participant set. Before the migration feature was added, this was only possible when the epoch ID changed, which happened only during a protocol state change.
+
+Now, nodes are able to recognize and re-establish connections when the participant set changes without an epoch incrementing. This enables node migrations without requiring a full resharing process _(implemented in [#1061](https://github.com/near/mpc/pull/1061) and [#1032](https://github.com/near/mpc/pull/1032))_.
+
+##### Migration Handling
+
+When a node is removed from the participant set during a migration process, all remaining nodes must remove any triples and pre-signatures that involve the removed node _(implemented in [#1032](https://github.com/near/mpc/pull/1032))_.
+
+#### Web Endpoints
+
+The MPC node exposes web endpoints over which the backup service can submit requests. These endpoints require mutual TLS authentication using the published P2P keys.
+
+The exposed endpoints are:
+- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
+- **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
 ### Operators
 - Manage the CVM and the MPC nodes.  
@@ -331,38 +351,35 @@ This section describes the API and functionality with respect to TEE.
 * New methods: Voting on the whitelisted docker images, retrieving whitelisted hashes, submitting participant (attestation) info, and removing  participants with invalid/stale attestation.
 * Existing vote_new_parameters API:  keep the same interface , but voting will also include a verification of the remote attestation information of each node.
 
-  ```rust
-  pub struct Contract {
-   
-   
+```rust
+pub struct Contract {
+
     /// (Prospective) Participants can submit their tee participant information through this
     /// endpoint.
-   pub fn submit_participant_info(
-          &mut self,
-          #[serializer(borsh)] proposed_participant_attestation: Attestation,
-          #[serializer(borsh)] tls_public_key: PublicKey,
-      ) -> Result<(), Error>
-      
-   
-     /// Propose a new set of parameters (participants and threshold) for the MPC network.
-      /// If a threshold number of votes are reached on the exact same proposal, this will transition
-      /// the contract into the Resharing state.
-      ///
-      /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
-      /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
-      /// accidentally voting on outdated proposals.   
-   pub fn vote_new_parameters(
-          &mut self,
-          prospective_epoch_id: EpochId,
-          proposal: ThresholdParameters,
-      ) -> Result<(), Error> 
-      
-   
-   ///If the vote threshold is reached and the new Docker image hash
-   ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
-   ///   to the whitelist of approved MPC Docker images.   
-   pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> 
-   
+    pub fn submit_participant_info(
+           &mut self,
+           #[serializer(borsh)] proposed_participant_attestation: Attestation,
+           #[serializer(borsh)] tls_public_key: PublicKey,
+       ) -> Result<(), Error>
+    
+    /// Propose a new set of parameters (participants and threshold) for the MPC network.
+    /// If a threshold number of votes are reached on the exact same proposal, this will transition
+    /// the contract into the Resharing state.
+    ///
+    /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
+    /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
+    /// accidentally voting on outdated proposals.   
+    pub fn vote_new_parameters(
+           &mut self,
+           prospective_epoch_id: EpochId,
+           proposal: ThresholdParameters,
+       ) -> Result<(), Error> 
+    
+    ///If the vote threshold is reached and the new Docker image hash
+    ///   is allowed by the TEE's RTMR3 measurement, the proposed hash is added
+    ///   to the whitelist of approved MPC Docker images.   
+    pub fn vote_code_hash(&mut self, code_hash: MpcDockerImageHash) -> Result<(), Error> 
+    
     ///Returns all whitelisted Docker image hashes that have been approved
     ///     by the DAO and verified by the TEE.
     pub fn allowed_code_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error>
@@ -370,13 +387,14 @@ This section describes the API and functionality with respect to TEE.
     /// Returns the last entry in the whitelist of allowed hashes.
     /// - Panics if the whitelist is empty (there must always be at least one hash).
     pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error>
-    
-      /// Verifies if all current participants have an accepted TEE state.
-      /// Automatically enters a resharing, in case one or more participants do not have an accepted
-      /// TEE state.
-      /// Returns `false` and stops the contract from accepting new signature requests or responses,
-      /// in case less than `threshold` participants run in an accepted Tee State.
-      pub fn verify_tee(&mut self) -> Result<bool, Error>
+     
+    /// Verifies if all current participants have an accepted TEE state.
+    /// Automatically enters a resharing, in case one or more participants do not have an accepted
+    /// TEE state.
+    /// Returns `false` and stops the contract from accepting new signature requests or responses,
+    /// in case less than `threshold` participants run in an accepted Tee State.
+    pub fn verify_tee(&mut self) -> Result<bool, Error>
+}
   ```
 
   
@@ -522,7 +540,7 @@ The Contract has a template of an approved (launcher)docker_compose file that wa
 Each time a new MPC docker image hash is voted, The contract creates a new launcher compose file (from the template) that has the new hash, and adds it to the list.  
 A valid Docker compose file to start the MPC node might look like the following
 
-```javascript
+```yaml
 version: '3.8'
 
 services:
@@ -546,7 +564,7 @@ volumes:
 
 Given this Docker compose file, the resulting `app-compose.json` might look like this. On the host, the app-compose file can be found in `meta-dstack/build/run/vm/*/shared/app-compose.json` while in the guest it is available at `/tapp/` and `/dstack/`.
 
-```javascript
+```json
 {
   "manifest_version": 2,
   "name": "launcher-mpc-node-0",
