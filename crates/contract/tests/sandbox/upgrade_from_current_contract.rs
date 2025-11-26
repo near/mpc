@@ -78,10 +78,18 @@ async fn test_propose_update_config() {
 
     // have each participant propose a new update:
     let new_config = contract_interface::types::Config {
-        key_event_timeout_blocks: Some(20),
-        tee_upgrade_deadline_duration_seconds: Some(3333),
-        contract_upgrade_deposit_tera_gas: Some(299),
-        ..Default::default()
+        key_event_timeout_blocks: Some(11),
+        tee_upgrade_deadline_duration_seconds: Some(22),
+        contract_upgrade_deposit_tera_gas: Some(33),
+        sign_call_deposit_requirement_tera_gas: Some(44),
+        ckd_call_deposit_requirement_tera_gas: Some(55),
+        return_signature_and_clean_state_on_success_call_tera_gas: Some(66),
+        return_ck_and_clean_state_on_success_call_tera_gas: Some(77),
+        fail_on_timeout_tera_gas: Some(88),
+        clean_tee_status_tera_gas: Some(99),
+        cleanup_orphaned_node_migrations_tera_gas: Some(11),
+        minimum_sign_request_deposit_yocto_near: Some(22),
+        minimum_ckd_request_deposit_yocto_near: Some(33),
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -103,7 +111,8 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let old_config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
@@ -134,9 +143,10 @@ async fn test_propose_update_config() {
             );
         }
     }
-    let new_config = serde_json::json!(new_config);
     // check that the proposal executed since the threshold got changed.
-    let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
+
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
 }
