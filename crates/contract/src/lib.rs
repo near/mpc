@@ -1188,6 +1188,7 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<InitConfig>,
     ) -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),

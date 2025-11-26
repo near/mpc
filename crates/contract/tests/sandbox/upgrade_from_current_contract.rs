@@ -403,7 +403,7 @@ async fn update_from_current_contract_to_migration_contract() {
 
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
-    let (_worker, contract, accounts) = init_with_candidates(vec![], None, 3).await;
+    let (_worker, contract, accounts) = init_with_candidates(vec![], None, 2).await;
 
     let execution_error = accounts[0]
         .call(contract.id(), "migrate")
@@ -420,6 +420,7 @@ async fn migration_function_rejects_external_callers() {
 
     assert!(
         error_message.contains(expected_error_message),
-        "migrate call was accepted by external caller. expected method to be private"
+        "migrate call was accepted by external caller. expected method to be private. {:?}",
+        error_message
     )
 }
