@@ -2,6 +2,7 @@
 import inspect
 
 import tempfile
+import tee_launcher.launcher as launcher
 from tee_launcher.launcher import parse_env_lines
 
 from tee_launcher.launcher import (
@@ -372,4 +373,12 @@ def test_ld_preload_in_ports2():
     assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
 
 
-# Additional tests could go here to check other edge cases
+def test_json_key_matches_node():
+    """
+    Ensure the JSON key used by the launcher to read approved image hashes
+    stays aligned with the MPC node implementation.
+
+    If this test fails, it means the launcher and MPC node are using different
+    JSON field names, which would break MPC hash propagation.
+    """
+    assert launcher.JSON_KEY_APPROVED_HASHES == "approved_hashes"

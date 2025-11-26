@@ -20,7 +20,7 @@ See Phala's [setup guide](https://github.com/Dstack-TEE/dstack).
 Also review specific MPC configuration in [running_an_mpc_node_in_tdx_external_guide.md](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#mpc-node-setup-and-deployment)
 - Python 3.6 or higher installed
 - Required Python packages (cryptography, eth_keys, eth_utils)
-- `vmm-cli.py` should be located under meta-dstack/dstack/vmm/src/vmm-cli.py
+- `vmm-cli.py` should be located under $basePath/vmm/src/vmm-cli.py
 - Docker Compose template (`$DOCKER_COMPOSE_FILE_PATH`)
 - Deployment configuration in `*.env` file
 - user-config.conf file
@@ -56,8 +56,8 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
    ```bash
    ./deploy-launcher.sh \
      --env-file tee_deployment/configs/sgx.env \
-     --base-path /home/barak/project \
-     --python-exec /home/barak/project/.venv/bin/python
+     --base-path /project \
+     --python-exec /project/.venv/bin/python
    ```
 
    Or use just the `.env` override:
@@ -81,7 +81,7 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 | Option                | Description                                                               |
 | --------------------- | ------------------------------------------------------------------------- |
 | `--env-file`, `-e`    | Path to a `.env` file with deployment parameters (default: `default.env`) |
-| `--base-path`, `-b`   | Path to the parent directory containing meta-dstack. For example, if your Dstack installation is in /home/barak/project/meta-dstack, then you should set --base-path /home/barak/project.  |
+| `--base-path`, `-b`   | Path to the parent directory containing the vmm folder . For example, if your Dstack installation is in /project/meta-dstack/dstack/vmm, then you should set --base-path /project/meta-dstack/dstack/  |
 | `--python-exec`, `-p` | Path to the Python executable to use (default: under base path)           |
 
 ---
@@ -96,12 +96,12 @@ You can also use the example `.env` files under `tee_deployment/configs/`:
 ./deploy-launcher.sh --env-file tee_deployment/configs/sgx.env
 
 # Override Python path only
-./deploy-launcher.sh --python-exec /home/barak/.venv/bin/python
+./deploy-launcher.sh --python-exec python3
 
 # Override both base path (folder above meta-dstack) and Python path
 ./deploy-launcher.sh \
   --base-path /home/barak/project \
-  --python-exec /home/barak/project/.venv/bin/python
+  --python-exec python3
 ```
 
 ---

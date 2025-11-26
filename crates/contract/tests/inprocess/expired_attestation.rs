@@ -339,12 +339,16 @@ fn test_clean_tee_status_removes_non_participants() {
 macro_rules! assert_allowed_code_hashes {
     ($test_setup:expr, $blocktime_ns:expr, $expected_value:expr $(,)?) => {{
         set_system_time($blocktime_ns);
-        let res: Vec<[u8; 32]> = $test_setup
+
+        let mut res: Vec<[u8; 32]> = $test_setup
             .contract
             .allowed_code_hashes()
             .iter()
             .map(|hash| *hash.clone())
             .collect();
+
+        res.reverse();
+
         assert_eq!(res, $expected_value);
     }};
 }

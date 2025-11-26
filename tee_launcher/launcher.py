@@ -10,6 +10,8 @@ import traceback
 from dataclasses import dataclass
 import re
 import ipaddress
+import json
+
 
 from requests.models import Response
 
@@ -25,11 +27,16 @@ ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 # the time to wait between rpc requests, in milliseconds. Defaults to 500 milliseconds.
 OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS = "RPC_REQUST_INTERVAL_MS"
 # the maximum time to wait for an rpc response. Defaults to 10 seconds.
-OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS = "RPC_REQUST_TIMEOUT_SECS"
+OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS = "RPC_REQUEST_TIMEOUT_SECS"
 # the maximum number of attempts for rpc requests until we raise an exception
 OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
+
+# optional - if set, overrides the approved hashes list.
+# format: sha256:...
+ENV_VAR_MPC_HASH_OVERRIDE = "MPC_HASH_OVERRIDE"
+
 
 # dstack user configuration flags
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
@@ -40,12 +47,20 @@ DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
 # Default values for dstack user config file.
-DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node-gcp"
+DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
 
 # the unix socket to communicate with dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
+
+SHA256_PREFIX = "sha256:"
+
+# JSON key used inside image-digest.bin
+# IMPORTANT: Must stay aligned with the MPC node implementation in:
+#   crates/node/src/tee/allowed_image_hashes_watcher.rs
+JSON_KEY_APPROVED_HASHES = "approved_hashes"
+
 
 # Example of .user-config file format:
 #
@@ -62,9 +77,9 @@ DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 # EXTRA_HOSTS=host1:192.168.0.1,host2:192.168.0.2
 # PORTS=11780:11780,2200:2200
 
-# Define an allow-list of permitted environment variables:
+# Define an allow-list of permitted environment variables that will be passed to MPC container.
 # Note - extra hosts and port forwarding are explicitly defined in the docker run command generation.
-ALLOWED_ENV_VARS = {
+ALLOWED_MPC_ENV_VARS = {
     "MPC_ACCOUNT_ID",  # ID of the MPC account on the network
     "MPC_LOCAL_ADDRESS",  # Local IP address or hostname used by the MPC node
     "MPC_SECRET_STORE_KEY",  # Key used to encrypt/decrypt secrets
@@ -246,13 +261,190 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
 
 
-def get_image_digest() -> str:
-    if os.path.isfile(IMAGE_DIGEST_FILE):
-        logging.info(f"opening image digest file {IMAGE_DIGEST_FILE}.")
-        return open(IMAGE_DIGEST_FILE).readline().strip()
+def load_approved_hashes(dstack_config: dict) -> list[str]:
+    """
+    Load approved MPC image hashes from JSON file.
+
+    Contract + MPC Node write them oldest → newest:
+        ["sha256:h1", "sha256:h2", "sha256:h3"]
+
+    Launcher must try newest → oldest:
+        ["sha256:h3", "sha256:h2", "sha256:h1"]
+    """
+
+    # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
+    if not os.path.isfile(IMAGE_DIGEST_FILE):
+        fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+
+        # Normalize fallback (ensure it starts with sha256:)
+        if not fallback.startswith(SHA256_PREFIX):
+            fallback = SHA256_PREFIX + fallback
+
+        logging.warning(
+            f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
+        )
+        return [fallback]
+
+    # JSON strictly required
+    try:
+        with open(IMAGE_DIGEST_FILE, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
+
+    # Extract approved_hashes, order newest → oldest
+    hashes = data.get(JSON_KEY_APPROVED_HASHES)
+    if not isinstance(hashes, list) or not hashes:
+        raise RuntimeError(
+            f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
+        )
+
+    SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+    # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
+    override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
+    logging.info("latest code. not reverse order")
+    if override and not SHA256_REGEX.match(override):
+        logging.warning(
+            f"Ignoring MPC_HASH_OVERRIDE='{override}' — invalid SHA-256 digest format. "
+            f"Expected 'sha256:<64 lowercase hex chars>'."
+        )
+        override = None
+
+    if override:
+        if override in hashes:
+            # Move override to the front (highest priority)
+            hashes.remove(override)
+            hashes.insert(0, override)
+            logging.info(f"Startup order with override: {hashes}")
+        else:
+            logging.warning(
+                f"MPC_HASH_OVERRIDE was provided ({override}) but does NOT match any approved hash. "
+                f"Approved hashes: {hashes}"
+            )
+            logging.info(f"Startup order (newest→oldest): {hashes}")
     else:
-        logging.info("Using default image digest from environment.")
-        return os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
+        logging.info(f"Startup order (newest→oldest): {hashes}")
+
+    return hashes
+
+
+def validate_image_hash(
+    image_digest: str,
+    dstack_config: dict,
+    rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
+) -> bool:
+    """
+    Returns True if the given image digest is valid (pull + manifest + digest match).
+    Does NOT extend RTMR3 and does NOT run the container.
+    """
+    try:
+        logging.info(f"Validating MPC hash: {image_digest}")
+
+        image_spec = get_image_spec(dstack_config)
+        docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
+
+        manifest_digest = get_manifest_digest(
+            docker_image,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
+        )
+
+        name_and_digest = f"{image_spec.image_name}@{manifest_digest}"
+
+        # Pull
+        proc = run(["docker", "pull", name_and_digest], capture_output=True)
+        if proc.returncode != 0:
+            logging.error(f"docker pull failed for {image_digest}")
+            return False
+
+        # Verify digest
+        proc = run(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                "{{index .ID}}",
+                name_and_digest,
+            ],
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            logging.error(f"docker inspect failed for {image_digest}")
+            return False
+
+        pulled_digest = proc.stdout.decode("utf-8").strip()
+        if pulled_digest != image_digest:
+            logging.error(f"digest mismatch: {pulled_digest} != {image_digest}")
+            return False
+
+        return True
+
+    except Exception as e:
+        logging.error(f"Validation failed for {image_digest}: {e}")
+        return False
+
+
+def select_first_valid_hash(
+    approved_hashes: list[str],
+    dstack_config: dict,
+    rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
+) -> str:
+    """
+    Iterate through approved hashes, return the first hash that validates.
+    Raises if none succeed.
+    """
+    for h in approved_hashes:
+        if validate_image_hash(
+            h,
+            dstack_config,
+            rpc_request_timeout_secs,
+            rpc_request_interval_secs,
+            rpc_max_attempts,
+        ):
+            logging.info(f"Valid MPC hash selected: {h}")
+            return h
+
+    raise RuntimeError("All approved MPC image hashes failed validation.")
+
+
+def extend_rtmr3(valid_hash: str) -> None:
+    full, bare = split_digest(valid_hash)
+    logging.info(f"Extending RTMR3 with validated hash: {full}")
+
+    # GetQuote first
+    proc = curl_unix_socket_post(
+        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
+    )
+    if proc.returncode:
+        raise RuntimeError("GetQuote failed before extending RTMR3")
+
+    payload_json = json.dumps({"event": "mpc-image-digest", "payload": bare})
+
+    proc = curl_unix_socket_post(
+        endpoint="EmitEvent", payload=payload_json, capture_output=True
+    )
+    if proc.returncode:
+        raise RuntimeError("EmitEvent failed while extending RTMR3")
+
+
+def launch_mpc_container(valid_hash: str, user_env: dict) -> None:
+    logging.info(f"Launching MPC node with validated hash: {valid_hash}")
+
+    remove_existing_container()
+    docker_cmd = build_docker_cmd(user_env, valid_hash)
+
+    proc = run(docker_cmd)
+    if proc.returncode != 0:
+        raise RuntimeError(f"docker run failed for validated hash={valid_hash}")
+
+    logging.info("MPC launched successfully.")
 
 
 def curl_unix_socket_post(
@@ -291,12 +483,14 @@ def curl_unix_socket_post(
 
 def main():
     logging.info("start")
-    # We want to globally enable DOCKER_CONTENT_TRUST=1 to ensure integrity of Docker images.
+
+    # DOCKER_CONTENT_TRUST must be enabled
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
             "Environment variable DOCKER_CONTENT_TRUST must be set to 1."
         )
 
+    # Load dstack configuration (tags, registry, image name)
     # In dstack, /tapp/user_config provides unmeasured data to the CVM.
     # We use this interface to make some aspects of the launcher configurable.
     # *** Only security-irrelevant parts *** may be made configurable in this way, e.g., the specific image tag(s) we look up.
@@ -306,103 +500,38 @@ def main():
         else {}
     )
 
-    image_digest = get_image_digest()
-    logging.info(f"Using image digest {image_digest}.")
-    image_spec = get_image_spec(dstack_config)
-    docker_image = ResolvedImage(spec=image_spec, digest=image_digest)
-
-    int(os.environ.get(OS_ENV_VAR_RPC_REQUST_TIMEOUT_SECS, "10"))
+    # RPC timing configuration
+    rpc_request_timeout_secs = int(
+        os.environ.get(OS_ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, "10")
+    )
     rpc_request_interval_ms = int(
         os.environ.get(OS_ENV_VAR_RPC_REQUEST_INTERVAL_MS, "1000")
     )
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
-    manifest_digest = get_manifest_digest(
-        docker_image, rpc_request_interval_secs, rpc_max_attempts
+
+    approved_hashes = load_approved_hashes(dstack_config)
+
+    logging.info(f"Approved hashes: {approved_hashes}")
+
+    valid_hash = select_first_valid_hash(
+        approved_hashes,
+        dstack_config,
+        rpc_request_timeout_secs,
+        rpc_request_interval_secs,
+        rpc_max_attempts,
     )
 
-    name_and_digest = image_spec.image_name + "@" + manifest_digest
+    extend_rtmr3(valid_hash)
 
-    proc = run(["docker", "pull", name_and_digest], capture_output=True)
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"docker pull returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
-        )
-
-    proc = run(
-        ["docker", "image", "inspect", "--format", "{{index .ID}}", name_and_digest],
-        capture_output=True,
-    )
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"docker image inspect returned non-zero exit code {proc.returncode}:\n{proc.stderr}"
-        )
-
-    pulled_image_digest = proc.stdout.decode("utf-8").strip()
-
-    if pulled_image_digest != image_digest:
-        raise RuntimeError(
-            "Wrong image digest %s. Expected digest is %s"
-            % (pulled_image_digest, image_digest)
-        )
-
-    # Generate a quote before extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(
-        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
-    )
-    if proc.returncode:
-        raise RuntimeError(
-            f"getting quote failed with error code {proc.returncode}:\n{proc.stderr}"
-        )
-    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
-
-    extend_rtmr3_json = (
-        '{"event": "mpc-image-digest","payload": "%s"}' % image_digest.split(":")[1]
-    )
-
-    proc = curl_unix_socket_post(
-        endpoint="EmitEvent", payload=extend_rtmr3_json, capture_output=True
-    )
-
-    if proc.returncode:
-        raise RuntimeError(
-            f"extending rtmr3 failed with error code {proc.returncode}:\n {proc.stderr}"
-        )
-
-    # Get quote after extending RTMR3 with the image digest
-    proc = curl_unix_socket_post(
-        endpoint="GetQuote", payload='{"report_data": ""}', capture_output=True
-    )
-    if proc.returncode:
-        raise RuntimeError("getting quote failed with error code %d" % proc.returncode)
-
-    logging.info("Quote: %s" % proc.stdout.decode("utf-8").strip())
-
-    # Build the docker command we use to start the mpc node
-
-    # Load environment variables from the user config file
-    # We allow only a limited set of environment variables to be passed to the container.
-    # This is to prevent users from passing sensitive information or modifying the container's behavior in unexpected ways.
-    # The allowed environment variables are defined in ALLOWED_ENV_VARS.
-    user_env_file = "/tapp/.host-shared/.user-config"
-    user_env = parse_env_file(user_env_file) if os.path.isfile(user_env_file) else {}
-    docker_cmd = build_docker_cmd(user_env, image_digest)
-
-    remove_existing_container()
-    # logging.info("docker cmd %s", " ".join(docker_cmd))
-    proc = run(docker_cmd)
-
-    if proc.returncode:
-        raise RuntimeError("docker run non-zero exit code %d", proc.returncode)
+    launch_mpc_container(valid_hash, dstack_config)
 
 
 def request_until_success(
     url: str,
     headers: Dict[str, str],
-    rpc_request_interval_secs: float,
     rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
     rpc_max_attempts: int,
 ) -> Response:
     """
@@ -450,7 +579,10 @@ def request_until_success(
 
 
 def get_manifest_digest(
-    docker_image: ResolvedImage, rpc_request_interval_secs: float, rpc_max_attempts: int
+    docker_image: ResolvedImage,
+    rpc_request_timeout_secs: float,
+    rpc_request_interval_secs: float,
+    rpc_max_attempts: int,
 ) -> str:
     """
     Given an `image_digest` returns a manifest digest.
@@ -484,8 +616,8 @@ def get_manifest_digest(
             manifest_resp = request_until_success(
                 url=manifest_url,
                 headers=headers,
+                rpc_request_timeout_secs=rpc_request_timeout_secs,
                 rpc_request_interval_secs=rpc_request_interval_secs,
-                rpc_request_timeout_secs=rpc_request_interval_secs,
                 rpc_max_attempts=rpc_max_attempts,
             )
             manifest = manifest_resp.json()
@@ -515,30 +647,32 @@ def get_manifest_digest(
     raise Exception("Image hash not found among tags.")
 
 
+def split_digest(d: str) -> tuple[str, str]:
+    """
+    Returns (full_digest, bare_digest).
+    full_digest: 'sha256:abcd...'
+    bare_digest: 'abcd...'
+    """
+    if not d.startswith("sha256:"):
+        raise ValueError(f"Invalid digest (missing sha256: prefix): {d}")
+
+    return d, d.split(":", 1)[1]
+
+
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
-    # Parse the image hash safely
-    if ":" in image_digest:
-        parts = image_digest.split(":", 1)
-        if len(parts) == 2 and parts[1]:
-            image_hash = parts[1]
-        else:
-            raise ValueError(f"Invalid image_digest format: {image_digest}")
-    else:
-        image_hash = image_digest
+    # Parse digest into full + bare
+    full_digest, bare_digest = split_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
 
-    # add required environment variables.
-    # "MPC_IMAGE_HASH",  -  Digest of the Docker image - used by the MPC node to verify hash used.
-    # "MPC_LATEST_ALLOWED_HASH_FILE" - Path to the shared digest file
-    docker_cmd += ["--env", f"MPC_IMAGE_HASH={image_hash}"]
+    # Required environment variables
+    docker_cmd += ["--env", f"MPC_IMAGE_HASH={bare_digest}"]
     docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
-
-    # Set the MPC configuration to run in real TDX mode.
     docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
 
+    # MPC env vars and extra config
     for key, value in user_env.items():
-        if key in ALLOWED_ENV_VARS:
+        if key in ALLOWED_MPC_ENV_VARS:
             if is_safe_env_value(value):
                 docker_cmd += ["--env", f"{key}={value}"]
             else:
@@ -547,27 +681,24 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
                 )
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
-                clean_host = host_entry.strip()
-                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
-                    docker_cmd += ["--add-host", clean_host]
+                clean = host_entry.strip()
+                if is_safe_host_entry(clean) and is_valid_host_entry(clean):
+                    docker_cmd += ["--add-host", clean]
                 else:
                     logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
+                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean}"
                     )
         elif key == "PORTS":
             for port_pair in value.split(","):
-                clean_port = port_pair.strip()
-                if is_safe_port_mapping(clean_port) and is_valid_port_mapping(
-                    clean_port
-                ):
-                    docker_cmd += ["-p", clean_port]
+                clean = port_pair.strip()
+                if is_safe_port_mapping(clean) and is_valid_port_mapping(clean):
+                    docker_cmd += ["-p", clean]
                 else:
-                    logging.warning(
-                        f"Ignoring invalid or unsafe PORTS entry: {clean_port}"
-                    )
+                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean}")
         else:
-            logging.warning(f"Ignoring unauthorized environment variable: {key}")
+            logging.info(f"Ignoring non-MPC variable: {key}")
 
+    # Container run configuration
     docker_cmd += [
         "--security-opt",
         "no-new-privileges:true",
@@ -582,20 +713,15 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "--name",
         MPC_CONTAINER_NAME,
         "--detach",
-        image_digest,
+        full_digest,  # IMPORTANT: Docker must get the FULL digest
     ]
+
     logging.info("docker cmd %s", " ".join(docker_cmd))
 
-    # Final safeguard: ensure LD_PRELOAD isn't anywhere in the command
-    if any("LD_PRELOAD" in arg for arg in docker_cmd):
-        raise RuntimeError(
-            "Unsafe docker command: LD_PRELOAD detected in argument list."
-        )
-
-    # Also check the full command as a single string
+    # Final LD_PRELOAD safeguard
     docker_cmd_str = " ".join(docker_cmd)
     if "LD_PRELOAD" in docker_cmd_str:
-        raise RuntimeError("Unsafe docker command string: LD_PRELOAD detected.")
+        raise RuntimeError("Unsafe docker command: LD_PRELOAD detected.")
 
     return docker_cmd
 

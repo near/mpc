@@ -29,18 +29,22 @@ It should be uploaded to: /tapp/.host-shared/.user-config
 
 ## 📁 File Locations
 
-- `/tapp/.host-shared/.user-config`: Optional `.env` file for overriding defaults
+- `/tapp/user_config"`: Optional `.env` file for overriding defaults
 - `/mnt/shared/image-digest`: Optional override of image digest (written by external components)
 - `/var/run/dstack.sock`: Unix socket used to communicate with `dstack`
 
 ## 🔧 Configuration (via user-config)
 
-The launcher supports the following environment variables via `/tapp/.host-shared/.user-config`:
+The launcher supports the following environment variables via `/tapp/user_config`:
 
 ```bash
-LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
-LAUNCHER_IMAGE_TAGS=latest
+LAUNCHER_IMAGE_NAME=nearone/mpc-node
+ # Comma-separated list of Docker image tags to use for the MPC node (e.g., "latest,stable")
+LAUNCHER_IMAGE_TAGS=latest 
+# LAUNCHER_REGISTRY: The Docker registry to pull the image from (e.g., registry.hub.docker.com)
 LAUNCHER_REGISTRY=registry.hub.docker.com
+# ENV_VAR_MPC_HASH_OVERRIDE: Optional; Can be use to select the hash of the MPC docker image. (out of allowed hashes)
+ENV_VAR_MPC_HASH_OVERRIDE=sha256:xyz...
 ```
 
 ## Reproducible builds
@@ -48,7 +52,7 @@ from: tee_launcher folder run:
 docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
 
 - [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
-- [deployment/Dockerfile-gcp](deployment/Dockerfile-gcp) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
+- [deployment/Dockerfile](deployment/Dockerfile) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
 - [deployment/build-image.sh](deployment/build-image.sh) drives the build process
 
 For example, I ran `deployment/build-image.sh` on the git commit [ef3f1e7...](https://github.com/Near-One/mpc/commit/ef3f1e7f862d447de60e91d32dadf68696eb6a58). The resulting Docker image digest was
