@@ -1020,7 +1020,7 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns all allowed code hashes. The first element is the most recent allowed code hash.
+    /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
     pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
         log!("allowed_code_hashes: signer={}", env::signer_account_id());
 
