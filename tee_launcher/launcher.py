@@ -292,14 +292,12 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
     except Exception as e:
         raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
 
+    # Extract approved_hashes, order newest → oldest
     hashes = data.get(JSON_KEY_APPROVED_HASHES)
     if not isinstance(hashes, list) or not hashes:
         raise RuntimeError(
             f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
         )
-
-    # Contract writes oldest → newest; we need newest → oldest
-    reversed_hashes = list(reversed(hashes))
 
     SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -314,21 +312,21 @@ def load_approved_hashes(dstack_config: dict) -> list[str]:
         override = None
 
     if override:
-        if override in reversed_hashes:
+        if override in hashes:
             # Move override to the front (highest priority)
-            reversed_hashes.remove(override)
-            reversed_hashes.insert(0, override)
-            logging.info(f"Startup order with override: {reversed_hashes}")
+            hashes.remove(override)
+            hashes.insert(0, override)
+            logging.info(f"Startup order with override: {hashes}")
         else:
             logging.warning(
                 f"MPC_HASH_OVERRIDE was provided ({override}) but does NOT match any approved hash. "
-                f"Approved hashes: {reversed_hashes}"
+                f"Approved hashes: {hashes}"
             )
-            logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
+            logging.info(f"Startup order (newest→oldest): {hashes}")
     else:
-        logging.info(f"Startup order (newest→oldest): {reversed_hashes}")
+        logging.info(f"Startup order (newest→oldest): {hashes}")
 
-    return reversed_hashes
+    return hashes
 
 
 def validate_image_hash(
