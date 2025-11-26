@@ -174,7 +174,7 @@ async fn test_resharing() -> anyhow::Result<()> {
 
     new_participants.insert(new_p.0.clone(), new_p.2).unwrap();
     let total_participants = new_participants.len();
-    accounts.push(acc[0].clone());
+    accounts.push(new_account.clone());
     let proposal =
         ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
 
@@ -182,8 +182,21 @@ async fn test_resharing() -> anyhow::Result<()> {
         "prospective_epoch_id": 6,
         "proposal": proposal,
     });
+    // At least threshold old participants need to vote first,
+    // here we are just using all of them
     execute_async_transactions(
-        &accounts,
+        &accounts[..accounts.len() - 1],
+        &contract,
+        "vote_new_parameters",
+        &json_args,
+        GAS_FOR_VOTE_NEW_PARAMETERS,
+    )
+    .await
+    .unwrap();
+
+    // then new participant can vote
+    execute_async_transactions(
+        &[new_account.clone()],
         &contract,
         "vote_new_parameters",
         &json_args,

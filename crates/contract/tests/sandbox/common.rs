@@ -850,12 +850,12 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-pub fn check_call_success_all_receipts(result: ExecutionFinalResult) -> anyhow::Result<()> {
-    for outcome in result.outcomes() {
-        if outcome.is_failure() {
-            anyhow::bail!("execution should have succeeded: {result:#?}");
-        }
-    }
+/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed  
+fn all_receipts_successful(result: ExecutionFinalResult) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        result.outcomes().iter().all(|o| !o.is_failure()),
+        "execution should have succeeded: {result:#?}"
+    );
     Ok(())
 }
 
@@ -1246,7 +1246,7 @@ pub async fn vote_for_hash(
         .args_json(serde_json::json!({"code_hash": image_hash}))
         .transact()
         .await?;
-    check_call_success_all_receipts(result)?;
+    all_receipts_successful(result)?;
     Ok(())
 }
 
@@ -1275,7 +1275,7 @@ pub async fn execute_async_transactions(
     }
     for transaction in transactions {
         let result = transaction.await?;
-        check_call_success_all_receipts(result)?;
+        all_receipts_successful(result)?;
     }
     Ok(())
 }
