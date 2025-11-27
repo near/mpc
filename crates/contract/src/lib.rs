@@ -85,9 +85,6 @@ const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas
 /// Prepaid gas for a `return_ck_and_clean_state_on_success` call
 const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
 
-/// Prepaid gas for a `update_config` call
-const UPDATE_CONFIG_GAS: Gas = Gas::from_tgas(5);
-
 /// Prepaid gas for a `fail_on_timeout` call
 const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
 
@@ -952,6 +949,7 @@ impl MpcContract {
             env::signer_account_id(),
             id,
         );
+
         let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
@@ -968,7 +966,9 @@ impl MpcContract {
             return Ok(false);
         }
 
-        let Some(_promise) = self.proposed_updates.do_update(&id, UPDATE_CONFIG_GAS) else {
+        let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
+
+        let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
@@ -1193,6 +1193,7 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<InitConfig>,
     ) -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
@@ -1239,14 +1240,10 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     #[private]
-    #[handle_result]
-    pub fn migrate() {
-        log!("migrating contract: no-op");
-    }
-
     #[init(ignore_state)]
     #[handle_result]
-    pub fn pub_migrate() -> Result<Self, Error> {
+    pub fn migrate() -> Result<Self, Error> {
+        assert_predecessor_is_contract_itself();
         log!("migrating contract");
 
         match try_state_read::<v3_0_2_state::MpcContract>() {
@@ -1640,9 +1637,18 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .transpose()
 }
 
+fn assert_predecessor_is_contract_itself() {
+    let predecessor_is_contract_itself = env::predecessor_account_id() == env::current_account_id();
+    if !predecessor_is_contract_itself {
+        env::panic_str("This method is private, and only callable by the contract itself.")
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::crypto_shared::k256_types;
     use crate::errors::{ErrorKind, NodeMigrationError};
@@ -1757,8 +1763,13 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        let contract_account_id = AccountId::from_str("contract_account.near")
+            .unwrap()
+            .as_v1_account_id();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
+            .predecessor_account_id(contract_account_id.clone())
+            .current_account_id(contract_account_id)
             .build();
         testing_env!(context.clone());
         let domain_id = DomainId::default();
@@ -1775,6 +1786,7 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
+
         let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, sk)
     }
@@ -2928,6 +2940,7 @@ mod tests {
             let update_config = Config {
                 key_event_timeout_blocks: 64,
                 tee_upgrade_deadline_duration_seconds: 100,
+                contract_upgrade_deposit_tera_gas: 10,
             };
             let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
             let expected_update_hash = dtos::UpdateHash::Config(hash.into());
