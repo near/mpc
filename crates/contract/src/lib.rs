@@ -3127,7 +3127,7 @@ mod tests {
         // then: only votes from current participants remain
         let updates_after = contract.proposed_updates();
         assert_eq!(updates_after.0.len(), 1);
-        let votes_after: Vec<_> = updates_after.0[0]
+        let voters_after: Vec<_> = updates_after.0[0]
             .votes
             .iter()
             .map(|v| v.0.parse::<AccountId>().unwrap())
@@ -3136,9 +3136,9 @@ mod tests {
         let ProtocolContractState::Running(running_state) = &contract.protocol_state else {
             panic!("Expected Running state");
         };
-        for vote in &votes_after {
+        for voter in &voters_after {
             assert!(
-                running_state.is_participant(vote),
+                running_state.is_participant(voter),
                 "Non-participant vote should have been removed"
             );
         }
