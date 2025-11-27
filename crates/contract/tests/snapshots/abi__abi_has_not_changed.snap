@@ -78,20 +78,6 @@ expression: abi
         }
       },
       {
-        "name": "remove_non_participant_update_votes",
-        "doc": " Private endpoint to clean update votes from non-participants after resharing.\n This can only be called by the contract itself via a promise.",
-        "kind": "call",
-        "modifiers": [
-          "private"
-        ],
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "null"
-          }
-        }
-      },
-      {
         "name": "clean_tee_status",
         "doc": " Private endpoint to clean up TEE information for non-participants after resharing.\n This can only be called by the contract itself via a promise.",
         "kind": "call",
@@ -684,6 +670,20 @@ expression: abi
             }
           ]
         },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_update_votes",
+        "doc": " Private endpoint to clean update votes from non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
