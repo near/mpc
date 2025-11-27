@@ -231,7 +231,7 @@ mod tests {
     /// must pass the entire vector untouched to the storage backend.
     #[rstest]
     #[tokio::test]
-    async fn test_allowed_image_hash_is_written() {
+    async fn test_allowed_image_hash_list_is_written() {
         let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
         for current_hash in &allowed_images[..2] {
             let cancellation_token = CancellationToken::new();
@@ -363,10 +363,8 @@ mod tests {
             "Shutdown signal was sent unexpectedly."
         );
 
-        assert!(
-            !receiver_shutdown.is_closed(),
-            "Event loop should be running."
-        );
+        let event_loop_is_alive = !receiver_shutdown.is_closed();
+        assert!(event_loop_is_alive, "Event loop should be running.");
     }
 
     /// Validates behavior when the `watch::Receiver` for allowed image
@@ -420,7 +418,7 @@ mod tests {
         assert_matches!(
             receiver_shutdown.try_recv(),
             Ok(()),
-            "Shutdown signal should be sent when watcher is closed."
+            "Shutdown signal should be sent when running image is disallowed."
         );
     }
 
@@ -510,8 +508,11 @@ mod tests {
             "Shutdown should NOT be sent when list is empty"
         );
     }
+
     #[test]
     fn test_json_key_matches_launcher() {
+        // important: must stay aligned with the launcher implementation in:
+        // mpc/tee_launcher/launcher.py
         assert_eq!(JSON_KEY_APPROVED_HASHES, "approved_hashes");
     }
 }

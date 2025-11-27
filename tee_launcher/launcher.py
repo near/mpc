@@ -393,8 +393,8 @@ def validate_image_hash(
 
 
 def extend_rtmr3(valid_hash: str) -> None:
-    full, bare = split_digest(valid_hash)
-    logging.info(f"Extending RTMR3 with validated hash: {full}")
+    bare = split_digest(valid_hash)
+    logging.info(f"Extending RTMR3 with validated hash: {bare}")
 
     # GetQuote first
     proc = curl_unix_socket_post(
@@ -490,7 +490,6 @@ def main():
 
     # Choose exactly one allowed hash (override or newest)
     selected_hash = load_and_select_hash(dstack_config)
-    logging.info(f"Selected MPC image hash: {selected_hash}")
 
     if not validate_image_hash(
         selected_hash,
