@@ -104,8 +104,8 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
 
-/// Prepaid gas for a `clean_non_participant_update_votes` call
-const CLEAN_NON_PARTICIPANT_UPDATE_VOTES_GAS: Gas = Gas::from_tgas(2);
+/// Prepaid gas for a `remove_non_participant_update_votes` call
+const REMOVE_NON_PARTICIPANT_UPDATE_VOTES_GAS: Gas = Gas::from_tgas(5);
 
 impl Default for MpcContract {
     fn default() -> Self {
@@ -826,10 +826,10 @@ impl MpcContract {
 
             // Spawn a promise to clear update votes from accounts that are no longer participants
             Promise::new(env::current_account_id()).function_call(
-                "clean_non_participant_update_votes".to_string(),
+                "remove_non_participant_update_votes".to_string(),
                 vec![],
                 NearToken::from_yoctonear(0),
-                CLEAN_NON_PARTICIPANT_UPDATE_VOTES_GAS,
+                REMOVE_NON_PARTICIPANT_UPDATE_VOTES_GAS,
             );
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id()).function_call(
@@ -1125,9 +1125,9 @@ impl MpcContract {
     /// This can only be called by the contract itself via a promise.
     #[private]
     #[handle_result]
-    pub fn clean_non_participant_update_votes(&mut self) -> Result<(), Error> {
+    pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
         log!(
-            "clean_non_participant_update_votes: signer={}",
+            "remove_non_participant_update_votes: signer={}",
             env::signer_account_id()
         );
 
