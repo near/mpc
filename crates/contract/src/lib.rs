@@ -1143,10 +1143,13 @@ impl MpcContract {
             }
         };
 
-        self.proposed_updates
-            .clear_votes_from_non_participants(|account_id| {
-                participants.is_participant(account_id)
-            });
+        let non_participants: Vec<AccountId> = self
+            .proposed_updates
+            .voters()
+            .into_iter()
+            .filter(|voter| !participants.is_participant(voter))
+            .collect();
+        self.proposed_updates.remove_votes(&non_participants);
         Ok(())
     }
 
@@ -3117,11 +3120,13 @@ mod tests {
 
         // when: resharing completes with a new participant set and we clear non-participant votes
         let new_running_state = gen_running_state(2);
-        contract
+        let non_participants: Vec<AccountId> = contract
             .proposed_updates
-            .clear_votes_from_non_participants(|account_id| {
-                new_running_state.is_participant(account_id)
-            });
+            .voters()
+            .into_iter()
+            .filter(|voter| !new_running_state.is_participant(voter))
+            .collect();
+        contract.proposed_updates.remove_votes(&non_participants);
         contract.protocol_state = ProtocolContractState::Running(new_running_state);
 
         // then: only votes from current participants remain

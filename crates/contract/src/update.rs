@@ -191,24 +191,16 @@ impl ProposedUpdates {
         }
     }
 
-    /// Removes votes from accounts that are not in the provided participant list.
-    /// This should be called after resharing concludes to clear votes from non-participants.
-    pub fn clear_votes_from_non_participants<F>(&mut self, is_participant: F)
-    where
-        F: Fn(&AccountId) -> bool,
-    {
-        // Collect voters to remove (those who are not participants)
-        let voters_to_remove: Vec<AccountId> = self
-            .vote_by_participant
-            .keys()
-            .filter(|voter| !is_participant(voter))
-            .cloned()
-            .collect();
+    /// Removes votes from the specified accounts.
+    pub fn remove_votes(&mut self, accounts_to_remove: &[AccountId]) {
+        accounts_to_remove
+            .iter()
+            .for_each(|account| self.remove_vote(account));
+    }
 
-        // Remove each non-participant voter
-        for voter in voters_to_remove {
-            self.remove_vote(&voter);
-        }
+    /// Returns all account IDs that have voted.
+    pub fn voters(&self) -> Vec<AccountId> {
+        self.vote_by_participant.keys().cloned().collect()
     }
 
     pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
