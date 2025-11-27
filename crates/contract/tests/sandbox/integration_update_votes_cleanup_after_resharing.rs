@@ -7,7 +7,7 @@ use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold,
-    check_call_success_all_receipts, init_env, PARTICIPANT_LEN,
+    execute_async_transactions, init_env, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -136,16 +136,15 @@ async fn test_update_votes_cleared_after_resharing() -> Result<()> {
         .into_result()?;
 
     // All new participants vote reshared (triggers cleanup via promise on state transition)
-    for account in &env_accounts[1..threshold.value() as usize + 1] {
-        check_call_success_all_receipts(
-            account
-                .call(contract.id(), "vote_reshared")
-                .args_json(json!({"key_event_id": key_event_id}))
-                .max_gas()
-                .transact()
-                .await?,
-        );
-    }
+    let vote_reshared_args = json!({"key_event_id": key_event_id});
+    execute_async_transactions(
+        &env_accounts[1..threshold.value() as usize + 1],
+        &contract,
+        "vote_reshared",
+        &vote_reshared_args,
+        GAS_FOR_VOTE_RESHARED,
+    )
+    .await?;
 
     // Verify votes cleaned up - only current participants should have votes
     let final_participants = assert_running_return_participants(&contract).await?;
