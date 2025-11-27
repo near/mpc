@@ -1441,6 +1441,7 @@ expression: abi
           }
         },
         "Config": {
+          "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
             "ckd_call_deposit_requirement_tera_gas",
@@ -1656,6 +1657,7 @@ expression: abi
           }
         },
         "InitConfig": {
+          "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
             "ckd_call_deposit_requirement_tera_gas": {
