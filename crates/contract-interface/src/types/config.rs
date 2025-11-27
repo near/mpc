@@ -1,3 +1,6 @@
+/// The initial configuration parameters for when initializing the contract.
+/// All fields are optional, as the contract can fill in defaults for any
+/// missing fields.
 #[derive(
     Clone,
     Debug,
@@ -31,6 +34,7 @@ pub struct InitConfig {
     pub minimum_ckd_request_deposit_yocto_near: Option<u128>,
 }
 
+/// Configuration parameters of the contract.
 #[derive(
     Clone,
     Debug,
