@@ -377,6 +377,7 @@ def test_json_key_matches_node():
     """
     Ensure the JSON key used by the launcher to read approved image hashes
     stays aligned with the MPC node implementation.
+    mpc/crates/node/src/tee/allowed_image_hashes_watcher.rs -> JSON_KEY_APPROVED_HASHES
 
     If this test fails, it means the launcher and MPC node are using different
     JSON field names, which would break MPC hash propagation.
