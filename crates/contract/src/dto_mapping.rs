@@ -25,8 +25,8 @@ use crate::{
             KeyForDomain, Keyset,
         },
         participants::Participants,
+        threshold_votes::ThresholdParametersVotes,
         thresholds::{Threshold, ThresholdParameters},
-        votes::ThresholdParametersVotes,
     },
     state::{
         initializing::InitializingContractState,
