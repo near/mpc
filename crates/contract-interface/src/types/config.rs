@@ -34,7 +34,6 @@ pub struct InitConfig {
 #[derive(
     Clone,
     Debug,
-    Default,
     Eq,
     PartialEq,
     Ord,

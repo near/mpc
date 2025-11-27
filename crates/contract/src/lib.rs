@@ -1676,6 +1676,7 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
     use sha2::{Digest, Sha256};
+    use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -2929,12 +2930,7 @@ mod tests {
         let code_update = propose_and_vote_code(0, &mut contract);
 
         let config_update = {
-            let update_config = dtos::InitConfig {
-                key_event_timeout_blocks: Some(64),
-                tee_upgrade_deadline_duration_seconds: Some(100),
-                contract_upgrade_deposit_tera_gas: Some(10),
-                ..Default::default()
-            };
+            let update_config = dummy_config(1);
             let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
             let expected_update_hash = dtos::UpdateHash::Config(hash.into());
 

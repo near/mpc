@@ -522,59 +522,59 @@ expression: abi
                   "()": {
                     "Primitive": 0
                   },
-                  "InitConfig": {
+                  "Config": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "tee_upgrade_deadline_duration_seconds",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "contract_upgrade_deposit_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "sign_call_deposit_requirement_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "ckd_call_deposit_requirement_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "return_signature_and_clean_state_on_success_call_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "return_ck_and_clean_state_on_success_call_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "fail_on_timeout_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "clean_tee_status_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "cleanup_orphaned_node_migrations_tera_gas",
-                        "Option<u64>"
+                        "u64"
                       ],
                       [
                         "minimum_sign_request_deposit_yocto_near",
-                        "Option<u128>"
+                        "u128"
                       ],
                       [
                         "minimum_ckd_request_deposit_yocto_near",
-                        "Option<u128>"
+                        "u128"
                       ]
                     ]
                   },
-                  "Option<InitConfig>": {
+                  "Option<Config>": {
                     "Enum": {
                       "tag_width": 1,
                       "variants": [
@@ -586,7 +586,7 @@ expression: abi
                         [
                           1,
                           "Some",
-                          "InitConfig"
+                          "Config"
                         ]
                       ]
                     }
@@ -608,40 +608,6 @@ expression: abi
                       ]
                     }
                   },
-                  "Option<u128>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "u128"
-                        ]
-                      ]
-                    }
-                  },
-                  "Option<u64>": {
-                    "Enum": {
-                      "tag_width": 1,
-                      "variants": [
-                        [
-                          0,
-                          "None",
-                          "()"
-                        ],
-                        [
-                          1,
-                          "Some",
-                          "u64"
-                        ]
-                      ]
-                    }
-                  },
                   "ProposeUpdateArgs": {
                     "Struct": [
                       [
@@ -650,7 +616,7 @@ expression: abi
                       ],
                       [
                         "config",
-                        "Option<InitConfig>"
+                        "Option<Config>"
                       ]
                     ]
                   },

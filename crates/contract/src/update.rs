@@ -61,7 +61,7 @@ impl From<u64> for UpdateId {
 )]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(contract_interface::types::InitConfig),
+    Config(contract_interface::types::Config),
 }
 
 #[derive(
@@ -79,7 +79,7 @@ pub enum Update {
 )]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<contract_interface::types::InitConfig>,
+    pub config: Option<contract_interface::types::Config>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -263,6 +263,7 @@ mod tests {
     use near_account_id::AccountId;
     use near_sdk::Gas;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
+    use test_utils::contract_types::dummy_config;
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no
     /// ephemeral vote count by participant id.
@@ -513,7 +514,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(contract_interface::types::InitConfig::default());
+        let update_2 = Update::Config(dummy_config(1));
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -618,12 +619,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(contract_interface::types::InitConfig {
-            key_event_timeout_blocks: Some(1054),
-            tee_upgrade_deadline_duration_seconds: Some(0),
-            contract_upgrade_deposit_tera_gas: Some(20),
-            ..Default::default()
-        });
+        let update_2 = Update::Config(dummy_config(2));
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);
 
