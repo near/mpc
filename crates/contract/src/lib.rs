@@ -29,7 +29,10 @@ use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
     errors::{Error, RequestError},
-    primitives::ckd::{CKDRequest, CKDRequestArgs},
+    primitives::{
+        ckd::{CKDRequest, CKDRequestArgs},
+        participants::Participants,
+    },
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -1137,12 +1140,17 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
         };
 
+        self.remove_votes_from_non_participants(&participants);
+        Ok(())
+    }
+
+    pub(crate) fn remove_votes_from_non_participants(&mut self, participants: &Participants) {
         let non_participants: Vec<AccountId> = self
             .proposed_updates
             .voters()
@@ -1150,7 +1158,6 @@ impl MpcContract {
             .filter(|voter| !participants.is_participant(voter))
             .collect();
         self.proposed_updates.remove_votes(&non_participants);
-        Ok(())
     }
 
     /// Private endpoint to clean up TEE information for non-participants after resharing.
@@ -3120,13 +3127,7 @@ mod tests {
 
         // when: resharing completes with a new participant set and we clear non-participant votes
         let new_running_state = gen_running_state(2);
-        let non_participants: Vec<AccountId> = contract
-            .proposed_updates
-            .voters()
-            .into_iter()
-            .filter(|voter| !new_running_state.is_participant(voter))
-            .collect();
-        contract.proposed_updates.remove_votes(&non_participants);
+        contract.remove_votes_from_non_participants(new_running_state.parameters.participants());
         contract.protocol_state = ProtocolContractState::Running(new_running_state);
 
         // then: only votes from current participants remain
