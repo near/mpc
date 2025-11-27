@@ -1347,7 +1347,7 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn update_config(&mut self, config: dtos::InitConfig) {
+    pub fn update_config(&mut self, config: dtos::Config) {
         self.config = config.into();
     }
 

@@ -995,7 +995,7 @@ expression: abi
             {
               "name": "config",
               "type_schema": {
-                "$ref": "#/definitions/InitConfig"
+                "$ref": "#/definitions/Config"
               }
             }
           ]
