@@ -17,6 +17,7 @@ expression: abi
     "functions": [
       {
         "name": "allowed_code_hashes",
+        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -37,6 +38,7 @@ expression: abi
       },
       {
         "name": "allowed_docker_image_hashes",
+        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -389,6 +391,7 @@ expression: abi
       },
       {
         "name": "latest_code_hash",
+        "doc": " Returns the latest (most recent) allowed code hash.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -438,9 +441,9 @@ expression: abi
       {
         "name": "migrate",
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
-        "kind": "view",
+        "kind": "call",
         "modifiers": [
-          "private"
+          "init"
         ]
       },
       {
@@ -545,6 +548,10 @@ expression: abi
                       [
                         "tee_upgrade_deadline_duration_seconds",
                         "u64"
+                      ],
+                      [
+                        "contract_upgrade_deposit_tera_gas",
+                        "u64"
                       ]
                     ]
                   },
@@ -632,13 +639,6 @@ expression: abi
             "$ref": "#/definitions/ProposedUpdates"
           }
         }
-      },
-      {
-        "name": "pub_migrate",
-        "kind": "call",
-        "modifiers": [
-          "init"
-        ]
       },
       {
         "name": "public_key",
@@ -1422,10 +1422,17 @@ expression: abi
           "description": "Config for V2 of the contract.",
           "type": "object",
           "required": [
+            "contract_upgrade_deposit_tera_gas",
             "key_event_timeout_blocks",
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
+            "contract_upgrade_deposit_tera_gas": {
+              "description": "Amount of gas to deposit for contract and config updates.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
               "type": "integer",
@@ -1589,6 +1596,14 @@ expression: abi
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "vote_update_minimum_gas_attached_tera_gas": {
               "type": [
                 "integer",
                 "null"

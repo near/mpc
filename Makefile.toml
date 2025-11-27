@@ -1,0 +1,81 @@
+[tasks.check-all-fast]
+description = "Run all fast checks"
+dependencies = [
+  "ruff-format",
+  "ruff-check",
+  "fmt",
+  "cargo-sort",
+  "cargo-shear",
+  "zizmor",
+  "check",
+  "clippy",
+]
+
+[tasks.check-all]
+description = "Run all checks"
+dependencies = [
+  "ruff-format",
+  "ruff-check",
+  "fmt",
+  "cargo-sort",
+  "cargo-shear",
+  "zizmor",
+  "check",
+  "clippy",
+  "nextest",
+]
+
+[tasks.check]
+command = "cargo"
+args = ["check"]
+
+[tasks.clippy]
+command = "cargo"
+args = [
+  "clippy",
+  "--all-features",
+  "--all-targets",
+  "--locked",
+  "--",
+  "-D",
+  "warnings",
+]
+
+[tasks.fmt]
+command = "cargo"
+args = ["fmt", "--", "--check"]
+
+[tasks.cargo-sort]
+command = "cargo"
+args = ["sort", "--workspace", "--grouped"]
+
+[tasks.cargo-shear]
+command = "cargo"
+args = ["shear"]
+
+
+[tasks.nextest]
+command = "cargo"
+args = [
+  "nextest",
+  "run",
+  "--release",
+  "--all-features",
+  "--all-targets",
+  "--locked",
+]
+
+[tasks.ruff-format]
+command = "ruff"
+args = ["format", "--diff", "--exclude", "libs/nearcore"]
+
+[tasks.ruff-check]
+command = "ruff"
+args = ["check", "--diff", "--exclude", "libs/nearcore"]
+
+[tasks.zizmor]
+command = "zizmor"
+args = [".github/"]
+
+[config]
+default_to_workspace = false
