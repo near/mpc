@@ -3,6 +3,7 @@
 ## Prerequisites
 
 neard, near CLI, cargo, grep, envsubst, python3-keyring
+MPC repositoy is cloned, and you are in the MPC root folder.
 
 ## Install neard and MPC node binary
 
