@@ -286,8 +286,11 @@ mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQ
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
-you can checkout the trasaction by calling
+You can view the trasaction details by calling:
+
+```bash
 near transaction view-status <transaction_Id> network-config mpc-localnet
+```
 
 ```
 (ExecutionError("Smart contract panicked: Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the allowed mpc image hashes list is empty"
@@ -349,7 +352,10 @@ near contract call-function as-transaction \
   sign-with-keychain send
 ```
 
-You should see both nodes with valid attestations containing a `tls_public_key` and `account_public_key`.
+You should see both nodes with valid attestations containing a `tls_public_key` and an `account_public_key`.
+
+> **Note:** If the `account_public_key` is `null`, this means the attestation recorded on the contract is the mock attestation, and the real attestation verification failed.
+
 
 ---
 
