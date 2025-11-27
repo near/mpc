@@ -1145,13 +1145,13 @@ impl MpcContract {
     #[init]
     pub fn init(
         parameters: ThresholdParameters,
-        config: Option<dtos::InitConfig>,
+        init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         log!(
-            "init: signer={}, parameters={:?}, config={:?}",
+            "init: signer={}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
             parameters,
-            config,
+            init_config,
         );
         parameters.validate()?;
 
@@ -1172,7 +1172,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
-            config: config.map(Into::into).unwrap_or_default(),
+            config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -1188,16 +1188,16 @@ impl MpcContract {
         next_domain_id: u64,
         keyset: Keyset,
         parameters: ThresholdParameters,
-        config: Option<dtos::InitConfig>,
+        init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         assert_predecessor_is_contract_itself();
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
             parameters,
-            config,
+            init_config,
         );
         parameters.validate()?;
         let domains = DomainRegistry::from_raw_validated(domains, next_domain_id)?;
@@ -1217,7 +1217,7 @@ impl MpcContract {
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         Ok(MpcContract {
-            config: config.map(Into::into).unwrap_or_default(),
+            config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),

@@ -27,12 +27,12 @@ async fn test_zero_gas_deposit_config_value_fails_upgrades() {
 }
 
 async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
-    let config = contract_interface::types::InitConfig {
+    let init_config = contract_interface::types::InitConfig {
         contract_upgrade_deposit_tera_gas: Some(min_gas),
         ..Default::default()
     };
 
-    let (_, contract, accounts) = init_with_candidates(vec![], Some(config), 3).await;
+    let (_, contract, accounts) = init_with_candidates(vec![], Some(init_config), 3).await;
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -78,7 +78,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
 
 #[tokio::test]
 async fn contract_configuration_can_be_set_on_initialization() {
-    let config = contract_interface::types::InitConfig {
+    let init_config = contract_interface::types::InitConfig {
         key_event_timeout_blocks: Some(11),
         tee_upgrade_deadline_duration_seconds: Some(22),
         contract_upgrade_deposit_tera_gas: Some(33),
@@ -91,10 +91,10 @@ async fn contract_configuration_can_be_set_on_initialization() {
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
     };
 
-    let (_, contract, _) = init_with_candidates(vec![], Some(config.clone()), 2).await;
+    let (_, contract, _) = init_with_candidates(vec![], Some(init_config.clone()), 2).await;
 
     let stored_config: contract_interface::types::InitConfig =
         contract.view("config").await.unwrap().json().unwrap();
 
-    assert_eq!(stored_config, config);
+    assert_eq!(stored_config, init_config);
 }
