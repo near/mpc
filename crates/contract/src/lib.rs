@@ -443,7 +443,7 @@ impl MpcContract {
         request: SignatureRequest,
         response: SignatureResponse,
     ) -> Result<(), Error> {
-        let signer = self.assert_caller_is_signer();
+        let signer = Self::assert_caller_is_signer();
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
@@ -526,7 +526,7 @@ impl MpcContract {
 
     #[handle_result]
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
-        let signer = self.assert_caller_is_signer();
+        let signer = Self::assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
         if !self.protocol_state.is_running_or_resharing() {
@@ -562,7 +562,7 @@ impl MpcContract {
             proposed_participant_attestation.into_contract_type();
 
         let account_key = env::signer_account_pk();
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
@@ -1295,7 +1295,7 @@ impl MpcContract {
     }
 
     // contract version
-    pub fn version(&self) -> String {
+    pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
@@ -1348,7 +1348,7 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn fail_on_timeout(&self) {
+    pub fn fail_on_timeout() {
         // To stay consistent with the old version of the timeout error
         env::panic_str(&RequestError::Timeout.to_string());
     }
@@ -1360,7 +1360,7 @@ impl MpcContract {
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
-        if !self.caller_is_signer() {
+        if !Self::caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
         let voter = env::signer_account_id().as_v2_account_id();
@@ -1369,7 +1369,7 @@ impl MpcContract {
     }
 
     /// Returns true if the caller is the signer account.
-    fn caller_is_signer(&self) -> bool {
+    fn caller_is_signer() -> bool {
         let signer = env::signer_account_id();
         let predecessor = env::predecessor_account_id();
         signer == predecessor
@@ -1378,7 +1378,7 @@ impl MpcContract {
     /// Get our own account id as a voter. If we are not a participant, panic.
     /// also ensures that the caller is the signer account.
     fn voter_or_panic(&self) -> AccountId {
-        self.assert_caller_is_signer();
+        Self::assert_caller_is_signer();
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
@@ -1399,7 +1399,7 @@ impl MpcContract {
     fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
 
-        self.assert_caller_is_signer();
+        Self::assert_caller_is_signer();
 
         if !self
             .tee_state
@@ -1411,7 +1411,7 @@ impl MpcContract {
 
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
-    fn assert_caller_is_signer(&self) -> AccountId {
+    fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
 
@@ -1460,7 +1460,7 @@ impl MpcContract {
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
         log!(
             "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
@@ -1496,7 +1496,7 @@ impl MpcContract {
     ) -> Result<(), Error> {
         // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
 
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
 
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
@@ -1534,7 +1534,7 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
