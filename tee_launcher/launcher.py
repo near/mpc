@@ -33,10 +33,6 @@ OS_ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_RETRIES"
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
 
-# optional - if set, overrides the approved hashes list.
-# format: sha256:...
-ENV_VAR_MPC_HASH_OVERRIDE = "MPC_HASH_OVERRIDE"
-
 
 # dstack user configuration flags
 DSTACK_USER_CONFIG_FILE = "/tapp/user_config"
@@ -46,10 +42,24 @@ DSTACK_USER_CONFIG_MPC_IMAGE_TAGS = "MPC_IMAGE_TAGS"
 DSTACK_USER_CONFIG_MPC_IMAGE_NAME = "MPC_IMAGE_NAME"
 DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY = "MPC_REGISTRY"
 
+# optional - if set, overrides the approved hashes list.
+# format: sha256:...
+ENV_VAR_MPC_HASH_OVERRIDE = "MPC_HASH_OVERRIDE"
+
 # Default values for dstack user config file.
 DEFAULT_MPC_IMAGE_NAME = "nearone/mpc-node"
 DEFAULT_MPC_REGISTRY = "registry.hub.docker.com"
 DEFAULT_MPC_IMAGE_TAG = "latest"
+
+# Environment variables that configure the launcher itself.
+# These are read from the user config file but should NEVER be passed to the MPC container.
+ALLOWED_LAUNCHER_ENV_VARS = {
+    DSTACK_USER_CONFIG_MPC_IMAGE_TAGS,
+    DSTACK_USER_CONFIG_MPC_IMAGE_NAME,
+    DSTACK_USER_CONFIG_MPC_IMAGE_REGISTRY,
+    ENV_VAR_MPC_HASH_OVERRIDE,
+}
+
 
 # the unix socket to communicate with dstack
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
@@ -61,6 +71,8 @@ SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 # IMPORTANT: Must stay aligned with the MPC node implementation in:
 #   crates/node/src/tee/allowed_image_hashes_watcher.rs
 JSON_KEY_APPROVED_HASHES = "approved_hashes"
+
+
 
 
 # Example of .user-config file format:
@@ -321,8 +333,7 @@ def load_and_select_hash(dstack_config: dict) -> str:
                 logging.error(
                     f"MPC_HASH_OVERRIDE={override} does NOT match any approved hash!"
                 )
-                raise RuntimeError("MPC_HASH_OVERRIDE does not match approved hashes")
-
+                raise RuntimeError(f"MPC_HASH_OVERRIDE invalid: {override}")
             logging.info(f"MPC_HASH_OVERRIDE provided → selecting: {override}")
             return override
 
@@ -393,7 +404,7 @@ def validate_image_hash(
 
 
 def extend_rtmr3(valid_hash: str) -> None:
-    bare = split_digest(valid_hash)
+    bare = get_bare_digest(valid_hash)
     logging.info(f"Extending RTMR3 with validated hash: {bare}")
 
     # GetQuote first
@@ -628,21 +639,22 @@ def get_manifest_digest(
     raise Exception("Image hash not found among tags.")
 
 
-def split_digest(d: str) -> tuple[str, str]:
+def get_bare_digest(full_digest: str) -> str:
     """
-    Returns (full_digest, bare_digest).
-    full_digest: 'sha256:abcd...'
-    bare_digest: 'abcd...'
-    """
-    if not d.startswith("sha256:"):
-        raise ValueError(f"Invalid digest (missing sha256: prefix): {d}")
+    Extracts and returns the bare digest (without the sha256: prefix).
 
-    return d, d.split(":", 1)[1]
+    Example:
+        'sha256:abcd...' -> 'abcd...'
+    """
+    if not full_digest.startswith("sha256:"):
+        raise ValueError(f"Invalid digest (missing sha256: prefix): {full_digest}")
+
+    return full_digest.split(":", 1)[1]
 
 
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
-    # Parse digest into full + bare
-    full_digest, bare_digest = split_digest(image_digest)
+    
+    bare_digest = get_bare_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
 
@@ -662,22 +674,25 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
                 )
         elif key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
-                clean = host_entry.strip()
-                if is_safe_host_entry(clean) and is_valid_host_entry(clean):
-                    docker_cmd += ["--add-host", clean]
+                clean_host = host_entry.strip()
+                if is_safe_host_entry(clean_host) and is_valid_host_entry(clean_host):
+                    docker_cmd += ["--add-host", clean_host]
                 else:
                     logging.warning(
-                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean}"
+                        f"Ignoring invalid or unsafe EXTRA_HOSTS entry: {clean_host}"
                     )
         elif key == "PORTS":
             for port_pair in value.split(","):
-                clean = port_pair.strip()
-                if is_safe_port_mapping(clean) and is_valid_port_mapping(clean):
-                    docker_cmd += ["-p", clean]
+                clean_host = port_pair.strip()
+                if is_safe_port_mapping(clean_host) and is_valid_port_mapping(clean_host):
+                    docker_cmd += ["-p", clean_host]
                 else:
-                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean}")
+                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean_host}")
+        elif key in ALLOWED_LAUNCHER_ENV_VARS:
+            #ignored here - launcher-only env vars
+            continue
         else:
-            logging.info(f"Ignoring non-MPC variable: {key}")
+            logging.warning(f"Ignoring unknown or unapproved env var: {key}")
 
     # Container run configuration
     docker_cmd += [
@@ -694,7 +709,7 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "--name",
         MPC_CONTAINER_NAME,
         "--detach",
-        full_digest,  # IMPORTANT: Docker must get the FULL digest
+        image_digest,  # IMPORTANT: Docker must get the FULL digest
     ]
 
     logging.info("docker cmd %s", " ".join(docker_cmd))

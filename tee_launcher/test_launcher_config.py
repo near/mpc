@@ -6,7 +6,7 @@ import tempfile
 import tee_launcher.launcher as launcher
 from tee_launcher.launcher import parse_env_lines
 import pytest
-from unittest.mock import mock_open, patch
+from unittest.mock import mock_open
 
 from tee_launcher.launcher import (
     build_docker_cmd,
@@ -16,14 +16,15 @@ from tee_launcher.launcher import (
 
 from tee_launcher.launcher import (
     load_and_select_hash,
-    IMAGE_DIGEST_FILE,
     JSON_KEY_APPROVED_HASHES,
     ENV_VAR_MPC_HASH_OVERRIDE,
     ENV_VAR_DEFAULT_IMAGE_DIGEST,
 )
 
+
 def make_digest_json(hashes):
     return json.dumps({JSON_KEY_APPROVED_HASHES: hashes})
+
 
 def parse_env_string(text: str) -> dict:
     return parse_env_lines(text.splitlines())
@@ -397,16 +398,17 @@ def test_json_key_matches_node():
     """
     assert launcher.JSON_KEY_APPROVED_HASHES == "approved_hashes"
 
+
 def test_override_present(monkeypatch):
-    override_value = "sha256:" + "a"*64
-    approved = [override_value, "sha256:" + "b"*64]
+    override_value = "sha256:" + "a" * 64
+    approved = ["sha256:" + "b" * 64, override_value, "sha256:" + "c" * 64]
 
     fake_json = make_digest_json(approved)
 
     monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
     monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
 
-    dstack_config = { ENV_VAR_MPC_HASH_OVERRIDE: override_value }
+    dstack_config = {ENV_VAR_MPC_HASH_OVERRIDE: override_value}
 
     selected = load_and_select_hash(dstack_config)
     assert selected == override_value
@@ -420,22 +422,7 @@ def test_override_not_present(monkeypatch):
     monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
 
     dstack_config = {
-        ENV_VAR_MPC_HASH_OVERRIDE: "sha256:xyz"   # NOT in list
-    }
-
-    with pytest.raises(RuntimeError):
-        load_and_select_hash(dstack_config)
-
-
-def test_override_not_present(monkeypatch):
-    approved = ["sha256:aaa", "sha256:bbb"]
-    fake_json = make_digest_json(approved)
-
-    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
-    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
-
-    dstack_config = {
-        ENV_VAR_MPC_HASH_OVERRIDE: "sha256:xyz"   # NOT in list
+        ENV_VAR_MPC_HASH_OVERRIDE: "sha256:xyz"  # NOT in list
     }
 
     with pytest.raises(RuntimeError):
@@ -451,7 +438,6 @@ def test_no_override_picks_newest(monkeypatch):
 
     selected = load_and_select_hash({})
     assert selected == "sha256:newest"
-
 
 
 def test_missing_file_fallback(monkeypatch):
