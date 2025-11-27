@@ -33,7 +33,7 @@ impl TestSetup {
     fn new(
         participant_count: usize,
         threshold: u64,
-        config: Option<contract_interface::types::Config>,
+        config: Option<contract_interface::types::InitConfig>,
     ) -> Self {
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
@@ -365,7 +365,7 @@ fn only_latest_hash_after_grace_period() {
     const SECOND_ENTRY_TIME_NS: u64 = 4 * NANOS_IN_SECOND; // 1s
     const GRACE_PERIOD_NS: u64 = 10 * NANOS_IN_SECOND; // 10s
 
-    let config = contract_interface::types::Config {
+    let config = contract_interface::types::InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
@@ -401,7 +401,7 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     const INITIAL_TIME: u64 = 1;
     const GRACE_PERIOD: u64 = 10;
 
-    let config = contract_interface::types::Config {
+    let config = contract_interface::types::InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD),
         ..Default::default()
     };
@@ -433,7 +433,7 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     const THIRD_ENTRY_TIME_NS: u64 = 7 * NANOS_IN_SECOND;
     const GRACE_PERIOD_TIME_NS: u64 = 10 * NANOS_IN_SECOND;
 
-    let config = contract_interface::types::Config {
+    let config = contract_interface::types::InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_TIME_NS / NANOS_IN_SECOND),
         ..Default::default()
     };
@@ -486,7 +486,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
     const START_TIME_SECONDS: u64 = 1;
     const GRACE_PERIOD_SECONDS: u64 = 10;
 
-    let config = contract_interface::types::Config {
+    let config = contract_interface::types::InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
         ..Default::default()
     };
@@ -543,7 +543,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     const GRACE_PERIOD_NANOS: u64 = GRACE_PERIOD_SECONDS * NANOS_IN_SECOND;
     const HASH_DEPLOYMENT_INTERVAL_NANOS: u64 = 3 * NANOS_IN_SECOND;
 
-    let config = contract_interface::types::Config {
+    let config = contract_interface::types::InitConfig {
         tee_upgrade_deadline_duration_seconds: Some(GRACE_PERIOD_SECONDS),
         ..Default::default()
     };

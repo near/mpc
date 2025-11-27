@@ -77,7 +77,7 @@ async fn test_propose_update_config() {
         .contains("not a voter"));
 
     // have each participant propose a new update:
-    let new_config = contract_interface::types::Config {
+    let new_config = contract_interface::types::InitConfig {
         key_event_timeout_blocks: Some(11),
         tee_upgrade_deadline_duration_seconds: Some(22),
         contract_upgrade_deposit_tera_gas: Some(33),
@@ -111,7 +111,7 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: contract_interface::types::Config =
+    let old_config: contract_interface::types::InitConfig =
         contract.view("config").await.unwrap().json().unwrap();
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
 
@@ -144,7 +144,7 @@ async fn test_propose_update_config() {
         }
     }
     // check that the proposal executed since the threshold got changed.
-    let config: contract_interface::types::Config =
+    let config: contract_interface::types::InitConfig =
         contract.view("config").await.unwrap().json().unwrap();
 
     assert_ne!(config, old_config);
@@ -250,7 +250,7 @@ async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = contract_interface::types::Config::default();
+    let dummy_config = contract_interface::types::InitConfig::default();
 
     // Can not propose update both to code and config
     let execution = accounts[0]

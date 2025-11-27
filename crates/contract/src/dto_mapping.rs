@@ -441,8 +441,8 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
     }
 }
 
-impl From<contract_interface::types::Config> for Config {
-    fn from(config_ext: contract_interface::types::Config) -> Self {
+impl From<contract_interface::types::InitConfig> for Config {
+    fn from(config_ext: contract_interface::types::InitConfig) -> Self {
         let mut config = super::Config::default();
 
         if let Some(v) = config_ext.key_event_timeout_blocks {
@@ -489,34 +489,21 @@ impl From<contract_interface::types::Config> for Config {
 impl From<&Config> for contract_interface::types::Config {
     fn from(value: &Config) -> Self {
         contract_interface::types::Config {
-            key_event_timeout_blocks: Some(value.key_event_timeout_blocks),
-            tee_upgrade_deadline_duration_seconds: Some(
-                value.tee_upgrade_deadline_duration_seconds,
-            ),
-            contract_upgrade_deposit_tera_gas: Some(value.contract_upgrade_deposit_tera_gas),
-            sign_call_deposit_requirement_tera_gas: Some(
-                value.sign_call_deposit_requirement_tera_gas,
-            ),
-            ckd_call_deposit_requirement_tera_gas: Some(
-                value.ckd_call_deposit_requirement_tera_gas,
-            ),
-            return_signature_and_clean_state_on_success_call_tera_gas: Some(
-                value.return_signature_and_clean_state_on_success_call_tera_gas,
-            ),
-            return_ck_and_clean_state_on_success_call_tera_gas: Some(
-                value.return_ck_and_clean_state_on_success_call_tera_gas,
-            ),
-            fail_on_timeout_tera_gas: Some(value.fail_on_timeout_tera_gas),
-            clean_tee_status_tera_gas: Some(value.clean_tee_status_tera_gas),
-            cleanup_orphaned_node_migrations_tera_gas: Some(
-                value.cleanup_orphaned_node_migrations_tera_gas,
-            ),
-            minimum_sign_request_deposit_yocto_near: Some(
-                value.minimum_sign_request_deposit_yocto_near,
-            ),
-            minimum_ckd_request_deposit_yocto_near: Some(
-                value.minimum_ckd_request_deposit_yocto_near,
-            ),
+            key_event_timeout_blocks: value.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            sign_call_deposit_requirement_tera_gas: value.sign_call_deposit_requirement_tera_gas,
+            ckd_call_deposit_requirement_tera_gas: value.ckd_call_deposit_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: value
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: value
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: value
+                .cleanup_orphaned_node_migrations_tera_gas,
+            minimum_sign_request_deposit_yocto_near: value.minimum_sign_request_deposit_yocto_near,
+            minimum_ckd_request_deposit_yocto_near: value.minimum_ckd_request_deposit_yocto_near,
         }
     }
 }

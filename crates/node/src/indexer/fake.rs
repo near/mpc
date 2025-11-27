@@ -39,7 +39,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
-    config: contract_interface::types::Config,
+    config: contract_interface::types::InitConfig,
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<AccountId, CKDId>,
@@ -49,7 +49,7 @@ pub struct FakeMpcContractState {
 impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
-        let config = contract_interface::types::Config {
+        let config = contract_interface::types::InitConfig {
             key_event_timeout_blocks: Some(10),
             ..Default::default()
         };

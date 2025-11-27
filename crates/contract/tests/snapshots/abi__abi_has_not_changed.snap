@@ -308,7 +308,7 @@ expression: abi
               "type_schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/Config"
+                    "$ref": "#/definitions/InitConfig"
                   },
                   {
                     "type": "null"
@@ -362,7 +362,7 @@ expression: abi
               "type_schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/Config"
+                    "$ref": "#/definitions/InitConfig"
                   },
                   {
                     "type": "null"
@@ -522,7 +522,7 @@ expression: abi
                   "()": {
                     "Primitive": 0
                   },
-                  "Config": {
+                  "InitConfig": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
@@ -574,7 +574,7 @@ expression: abi
                       ]
                     ]
                   },
-                  "Option<Config>": {
+                  "Option<InitConfig>": {
                     "Enum": {
                       "tag_width": 1,
                       "variants": [
@@ -586,7 +586,7 @@ expression: abi
                         [
                           1,
                           "Some",
-                          "Config"
+                          "InitConfig"
                         ]
                       ]
                     }
@@ -650,7 +650,7 @@ expression: abi
                       ],
                       [
                         "config",
-                        "Option<Config>"
+                        "Option<InitConfig>"
                       ]
                     ]
                   },
@@ -1029,7 +1029,7 @@ expression: abi
             {
               "name": "config",
               "type_schema": {
-                "$ref": "#/definitions/Config"
+                "$ref": "#/definitions/InitConfig"
               }
             }
           ]
@@ -1476,100 +1476,78 @@ expression: abi
         },
         "Config": {
           "type": "object",
+          "required": [
+            "ckd_call_deposit_requirement_tera_gas",
+            "clean_tee_status_tera_gas",
+            "cleanup_orphaned_node_migrations_tera_gas",
+            "contract_upgrade_deposit_tera_gas",
+            "fail_on_timeout_tera_gas",
+            "key_event_timeout_blocks",
+            "minimum_ckd_request_deposit_yocto_near",
+            "minimum_sign_request_deposit_yocto_near",
+            "return_ck_and_clean_state_on_success_call_tera_gas",
+            "return_signature_and_clean_state_on_success_call_tera_gas",
+            "sign_call_deposit_requirement_tera_gas",
+            "tee_upgrade_deadline_duration_seconds"
+          ],
           "properties": {
             "ckd_call_deposit_requirement_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "clean_tee_status_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "cleanup_orphaned_node_migrations_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "contract_upgrade_deposit_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "fail_on_timeout_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "key_event_timeout_blocks": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "minimum_ckd_request_deposit_yocto_near": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint128",
               "minimum": 0.0
             },
             "minimum_sign_request_deposit_yocto_near": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint128",
               "minimum": 0.0
             },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "return_signature_and_clean_state_on_success_call_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "sign_call_deposit_requirement_tera_gas": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             }
@@ -1707,6 +1685,107 @@ expression: abi
               "description": "The index of the IMR (Integrity Measurement Register)",
               "type": "integer",
               "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        },
+        "InitConfig": {
+          "type": "object",
+          "properties": {
+            "ckd_call_deposit_requirement_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_tee_status_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "cleanup_orphaned_node_migrations_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "contract_upgrade_deposit_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "fail_on_timeout_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "key_event_timeout_blocks": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "minimum_ckd_request_deposit_yocto_near": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint128",
+              "minimum": 0.0
+            },
+            "minimum_sign_request_deposit_yocto_near": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint128",
+              "minimum": 0.0
+            },
+            "return_ck_and_clean_state_on_success_call_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "return_signature_and_clean_state_on_success_call_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sign_call_deposit_requirement_tera_gas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "tee_upgrade_deadline_duration_seconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
               "minimum": 0.0
             }
           }

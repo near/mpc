@@ -245,7 +245,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
-    config: Option<dtos::Config>,
+    config: Option<dtos::InitConfig>,
     number_of_participants: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;

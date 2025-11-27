@@ -1143,7 +1143,7 @@ impl MpcContract {
     #[init]
     pub fn init(
         parameters: ThresholdParameters,
-        config: Option<dtos::Config>,
+        config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         log!(
             "init: signer={}, parameters={:?}, config={:?}",
@@ -1186,7 +1186,7 @@ impl MpcContract {
         next_domain_id: u64,
         keyset: Keyset,
         parameters: ThresholdParameters,
-        config: Option<dtos::Config>,
+        config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         assert_predecessor_is_contract_itself();
         log!(
@@ -1347,7 +1347,7 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn update_config(&mut self, config: dtos::Config) {
+    pub fn update_config(&mut self, config: dtos::InitConfig) {
         self.config = config.into();
     }
 
@@ -2929,7 +2929,7 @@ mod tests {
         let code_update = propose_and_vote_code(0, &mut contract);
 
         let config_update = {
-            let update_config = dtos::Config {
+            let update_config = dtos::InitConfig {
                 key_event_timeout_blocks: Some(64),
                 tee_upgrade_deadline_duration_seconds: Some(100),
                 contract_upgrade_deposit_tera_gas: Some(10),

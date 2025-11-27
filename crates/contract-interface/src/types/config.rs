@@ -16,7 +16,7 @@
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct Config {
+pub struct InitConfig {
     pub key_event_timeout_blocks: Option<u64>,
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
     pub contract_upgrade_deposit_tera_gas: Option<u64>,
@@ -31,6 +31,39 @@ pub struct Config {
     pub minimum_ckd_request_deposit_yocto_near: Option<u128>,
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct Config {
+    pub key_event_timeout_blocks: u64,
+    pub tee_upgrade_deadline_duration_seconds: u64,
+    pub contract_upgrade_deposit_tera_gas: u64,
+    pub sign_call_deposit_requirement_tera_gas: u64,
+    pub ckd_call_deposit_requirement_tera_gas: u64,
+    pub return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    pub return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    pub fail_on_timeout_tera_gas: u64,
+    pub clean_tee_status_tera_gas: u64,
+    pub cleanup_orphaned_node_migrations_tera_gas: u64,
+    pub minimum_sign_request_deposit_yocto_near: u128,
+    pub minimum_ckd_request_deposit_yocto_near: u128,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -38,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_config_round_trip_serialization() {
-        let original_config = Config {
+        let original_config = InitConfig {
             key_event_timeout_blocks: Some(2000),
             tee_upgrade_deadline_duration_seconds: Some(3333),
             contract_upgrade_deposit_tera_gas: Some(120),
@@ -53,7 +86,7 @@ mod tests {
             minimum_ckd_request_deposit_yocto_near: Some(1),
         };
         let json = serde_json::to_string(&original_config).unwrap();
-        let serialized_and_deserialized_config: Config = serde_json::from_str(&json).unwrap();
+        let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(original_config, serialized_and_deserialized_config);
     }
@@ -62,8 +95,8 @@ mod tests {
     fn test_config_defaults_from_empty_json() {
         // Test that an empty JSON object results in a default config.
         let json = "{}";
-        let deserialized: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized, Config::default());
+        let deserialized: InitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(deserialized, InitConfig::default());
     }
 
     #[test]
@@ -72,9 +105,9 @@ mod tests {
         // Note: The key name must match the struct field name.
         let json = r#"{"key_event_timeout_blocks": 9999}"#;
 
-        let deserialized: Config = serde_json::from_str(json).unwrap();
+        let deserialized: InitConfig = serde_json::from_str(json).unwrap();
 
-        let expected = Config {
+        let expected = InitConfig {
             key_event_timeout_blocks: Some(9999),
             ..Default::default()
         };
@@ -85,8 +118,8 @@ mod tests {
 
     #[test]
     fn default_implementation_sets_all_values_to_none() {
-        let default_config = Config::default();
-        let config_with_all_values_as_none = Config {
+        let default_config = InitConfig::default();
+        let config_with_all_values_as_none = InitConfig {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
             contract_upgrade_deposit_tera_gas: None,

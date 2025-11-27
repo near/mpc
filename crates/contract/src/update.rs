@@ -61,7 +61,7 @@ impl From<u64> for UpdateId {
 )]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(contract_interface::types::Config),
+    Config(contract_interface::types::InitConfig),
 }
 
 #[derive(
@@ -79,7 +79,7 @@ pub enum Update {
 )]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<contract_interface::types::Config>,
+    pub config: Option<contract_interface::types::InitConfig>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -513,7 +513,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(contract_interface::types::Config::default());
+        let update_2 = Update::Config(contract_interface::types::InitConfig::default());
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -618,7 +618,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(contract_interface::types::Config {
+        let update_2 = Update::Config(contract_interface::types::InitConfig {
             key_event_timeout_blocks: Some(1054),
             tee_upgrade_deadline_duration_seconds: Some(0),
             contract_upgrade_deposit_tera_gas: Some(20),
