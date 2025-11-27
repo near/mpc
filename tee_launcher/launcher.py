@@ -55,6 +55,7 @@ DEFAULT_MPC_IMAGE_TAG = "latest"
 DSTACK_UNIX_SOCKET = "/var/run/dstack.sock"
 
 SHA256_PREFIX = "sha256:"
+SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 # JSON key used inside image-digest.bin
 # IMPORTANT: Must stay aligned with the MPC node implementation in:
@@ -261,72 +262,74 @@ def get_image_spec(dstack_config: dict[str, str]) -> ImageSpec:
     return ImageSpec(tags=tags, image_name=image_name, registry=registry)
 
 
-def load_approved_hashes(dstack_config: dict) -> list[str]:
+def load_and_select_hash(dstack_config: dict) -> str:
     """
-    Load approved MPC image hashes from JSON file.
+    Load the approved MPC image hashes and deterministically select a single hash.
 
-    Contract + MPC Node write them oldest → newest:
-        ["sha256:h1", "sha256:h2", "sha256:h3"]
+    Selection rules:
+      - If MPC_HASH_OVERRIDE is set → use it (after basic format validation)
+      - Else → use the newest approved hash (already first in the list)
 
-    Launcher must try newest → oldest:
-        ["sha256:h3", "sha256:h2", "sha256:h1"]
+    This function does NOT validate the hash — only selects it.
     """
 
-    # No file → fallback to DEFAULT_IMAGE_DIGEST (single-entry list)
+    # IMAGE_DIGEST_FILE missing → use DEFAULT_IMAGE_DIGEST
     if not os.path.isfile(IMAGE_DIGEST_FILE):
         fallback = os.environ[ENV_VAR_DEFAULT_IMAGE_DIGEST].strip()
 
-        # Normalize fallback (ensure it starts with sha256:)
         if not fallback.startswith(SHA256_PREFIX):
             fallback = SHA256_PREFIX + fallback
+        if not SHA256_REGEX.match(fallback):
+            raise RuntimeError(f"DEFAULT_IMAGE_DIGEST invalid: {fallback}")
 
-        logging.warning(
+        logging.info(
             f"{IMAGE_DIGEST_FILE} missing → fallback to DEFAULT_IMAGE_DIGEST={fallback}"
         )
-        return [fallback]
+        approved_hashes = [fallback]
 
-    # JSON strictly required
-    try:
-        with open(IMAGE_DIGEST_FILE, "r") as f:
-            data = json.load(f)
-    except Exception as e:
-        raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
+    else:
+        # Load JSON with approved hashes
+        try:
+            with open(IMAGE_DIGEST_FILE, "r") as f:
+                data = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse {IMAGE_DIGEST_FILE}: {e}")
 
-    # Extract approved_hashes, order newest → oldest
-    hashes = data.get(JSON_KEY_APPROVED_HASHES)
-    if not isinstance(hashes, list) or not hashes:
-        raise RuntimeError(
-            f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
-        )
+        hashes = data.get(JSON_KEY_APPROVED_HASHES)
 
-    SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
+        if not isinstance(hashes, list) or not hashes:
+            raise RuntimeError(
+                f"Invalid JSON in {IMAGE_DIGEST_FILE}: approved_hashes missing or empty"
+            )
 
-    # Optional override: e.g., MPC_HASH_OVERRIDE=sha256:<digest> - overrides the approved hashes order.
+        # Hashes from the node are already ordered newest → oldest
+        approved_hashes = hashes
+
+    # Print allowed hashes for operator UX
+    logging.info("Approved MPC image hashes (newest → oldest):")
+    for h in approved_hashes:
+        logging.info(f"  - {h}")
+
+    # --- Optional override ---
     override = dstack_config.get(ENV_VAR_MPC_HASH_OVERRIDE)
 
-    if override and not SHA256_REGEX.match(override):
-        logging.warning(
-            f"Ignoring MPC_HASH_OVERRIDE='{override}' — invalid SHA-256 digest format. "
-            f"Expected 'sha256:<64 lowercase hex chars>'."
-        )
-        override = None
-
     if override:
-        if override in hashes:
-            # Move override to the front (highest priority)
-            hashes.remove(override)
-            hashes.insert(0, override)
-            logging.info(f"Startup order with override: {hashes}")
+        if not SHA256_REGEX.match(override):
+            raise RuntimeError(f"MPC_HASH_OVERRIDE invalid: {override}")
         else:
-            logging.warning(
-                f"MPC_HASH_OVERRIDE was provided ({override}) but does NOT match any approved hash. "
-                f"Approved hashes: {hashes}"
-            )
-            logging.info(f"Startup order (newest→oldest): {hashes}")
-    else:
-        logging.info(f"Startup order (newest→oldest): {hashes}")
+            if override not in approved_hashes:
+                logging.error(
+                    f"MPC_HASH_OVERRIDE={override} does NOT match any approved hash!"
+                )
+                raise RuntimeError("MPC_HASH_OVERRIDE does not match approved hashes")
 
-    return hashes
+            logging.info(f"MPC_HASH_OVERRIDE provided → selecting: {override}")
+            return override
+
+    # No override → select newest
+    selected = approved_hashes[0]
+    logging.info(f"Selected MPC hash (newest allowed): {selected}")
+    return selected
 
 
 def validate_image_hash(
@@ -381,37 +384,12 @@ def validate_image_hash(
         if pulled_digest != image_digest:
             logging.error(f"digest mismatch: {pulled_digest} != {image_digest}")
             return False
-
+        logging.info(f"MPC hash {image_digest} validated successfully.")
         return True
 
     except Exception as e:
         logging.error(f"Validation failed for {image_digest}: {e}")
         return False
-
-
-def select_first_valid_hash(
-    approved_hashes: list[str],
-    dstack_config: dict,
-    rpc_request_timeout_secs: float,
-    rpc_request_interval_secs: float,
-    rpc_max_attempts: int,
-) -> str:
-    """
-    Iterate through approved hashes, return the first hash that validates.
-    Raises if none succeed.
-    """
-    for h in approved_hashes:
-        if validate_image_hash(
-            h,
-            dstack_config,
-            rpc_request_timeout_secs,
-            rpc_request_interval_secs,
-            rpc_max_attempts,
-        ):
-            logging.info(f"Valid MPC hash selected: {h}")
-            return h
-
-    raise RuntimeError("All approved MPC image hashes failed validation.")
 
 
 def extend_rtmr3(valid_hash: str) -> None:
@@ -510,21 +488,25 @@ def main():
     rpc_request_interval_secs = rpc_request_interval_ms / 1000.0
     rpc_max_attempts = int(os.environ.get(OS_ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
 
-    approved_hashes = load_approved_hashes(dstack_config)
+    # Choose exactly one allowed hash (override or newest)
+    selected_hash = load_and_select_hash(dstack_config)
+    logging.info(f"Selected MPC image hash: {selected_hash}")
 
-    logging.info(f"Approved hashes: {approved_hashes}")
-
-    valid_hash = select_first_valid_hash(
-        approved_hashes,
+    if not validate_image_hash(
+        selected_hash,
         dstack_config,
         rpc_request_timeout_secs,
         rpc_request_interval_secs,
         rpc_max_attempts,
-    )
+    ):
+        raise RuntimeError(f"MPC image hash validation failed: {selected_hash}")
 
-    extend_rtmr3(valid_hash)
+    # Continue with validated hash
+    logging.info(f"MPC image hash validated successfully: {selected_hash}")
 
-    launch_mpc_container(valid_hash, dstack_config)
+    extend_rtmr3(selected_hash)
+
+    launch_mpc_container(selected_hash, dstack_config)
 
 
 def request_until_success(
