@@ -1286,7 +1286,7 @@ impl MpcContract {
     }
 
     // contract version
-    pub fn version(&self) -> String {
+    pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
