@@ -20,15 +20,26 @@
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct InitConfig {
+    /// If a key event attempt has not successfully completed within this many blocks,
+    /// it is considered failed.
     pub key_event_timeout_blocks: Option<u64>,
+    /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
+    /// Amount of gas to deposit for contract and config updates.
     pub contract_upgrade_deposit_tera_gas: Option<u64>,
+    /// Gas required for a sign request.
     pub sign_call_deposit_requirement_tera_gas: Option<u64>,
+    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub ckd_call_deposit_requirement_tera_gas: Option<u64>,
+    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: Option<u64>,
+    /// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
     pub return_ck_and_clean_state_on_success_call_tera_gas: Option<u64>,
+    /// Prepaid gas for a `fail_on_timeout` call.
     pub fail_on_timeout_tera_gas: Option<u64>,
+    /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: Option<u64>,
+    /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
 }
 
@@ -51,15 +62,26 @@ pub struct InitConfig {
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Config {
+    /// If a key event attempt has not successfully completed within this many blocks,
+    /// it is considered failed.
     pub key_event_timeout_blocks: u64,
+    /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: u64,
+    /// Amount of gas to deposit for contract and config updates.
     pub contract_upgrade_deposit_tera_gas: u64,
+    /// Gas required for a sign request.
     pub sign_call_deposit_requirement_tera_gas: u64,
+    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub ckd_call_deposit_requirement_tera_gas: u64,
+    /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    /// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
     pub return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    /// Prepaid gas for a `fail_on_timeout` call.
     pub fail_on_timeout_tera_gas: u64,
+    /// Prepaid gas for a `clean_tee_status` call.
     pub clean_tee_status_tera_gas: u64,
+    /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
 }
 

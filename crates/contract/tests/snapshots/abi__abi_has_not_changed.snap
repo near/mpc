@@ -304,7 +304,7 @@ expression: abi
               }
             },
             {
-              "name": "config",
+              "name": "init_config",
               "type_schema": {
                 "anyOf": [
                   {
@@ -358,7 +358,7 @@ expression: abi
               }
             },
             {
-              "name": "config",
+              "name": "init_config",
               "type_schema": {
                 "anyOf": [
                   {
@@ -1446,51 +1446,61 @@ expression: abi
           ],
           "properties": {
             "ckd_call_deposit_requirement_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "clean_tee_status_tera_gas": {
+              "description": "Prepaid gas for a `clean_tee_status` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "cleanup_orphaned_node_migrations_tera_gas": {
+              "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "contract_upgrade_deposit_tera_gas": {
+              "description": "Amount of gas to deposit for contract and config updates.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "fail_on_timeout_tera_gas": {
+              "description": "Prepaid gas for a `fail_on_timeout` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "key_event_timeout_blocks": {
+              "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "return_signature_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "sign_call_deposit_requirement_tera_gas": {
+              "description": "Gas required for a sign request.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
+              "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1638,6 +1648,7 @@ expression: abi
           "type": "object",
           "properties": {
             "ckd_call_deposit_requirement_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": [
                 "integer",
                 "null"
@@ -1646,6 +1657,7 @@ expression: abi
               "minimum": 0.0
             },
             "clean_tee_status_tera_gas": {
+              "description": "Prepaid gas for a `clean_tee_status` call.",
               "type": [
                 "integer",
                 "null"
@@ -1654,6 +1666,7 @@ expression: abi
               "minimum": 0.0
             },
             "cleanup_orphaned_node_migrations_tera_gas": {
+              "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
               "type": [
                 "integer",
                 "null"
@@ -1662,6 +1675,7 @@ expression: abi
               "minimum": 0.0
             },
             "contract_upgrade_deposit_tera_gas": {
+              "description": "Amount of gas to deposit for contract and config updates.",
               "type": [
                 "integer",
                 "null"
@@ -1670,6 +1684,7 @@ expression: abi
               "minimum": 0.0
             },
             "fail_on_timeout_tera_gas": {
+              "description": "Prepaid gas for a `fail_on_timeout` call.",
               "type": [
                 "integer",
                 "null"
@@ -1678,6 +1693,7 @@ expression: abi
               "minimum": 0.0
             },
             "key_event_timeout_blocks": {
+              "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
               "type": [
                 "integer",
                 "null"
@@ -1686,6 +1702,7 @@ expression: abi
               "minimum": 0.0
             },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
               "type": [
                 "integer",
                 "null"
@@ -1694,6 +1711,7 @@ expression: abi
               "minimum": 0.0
             },
             "return_signature_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": [
                 "integer",
                 "null"
@@ -1702,6 +1720,7 @@ expression: abi
               "minimum": 0.0
             },
             "sign_call_deposit_requirement_tera_gas": {
+              "description": "Gas required for a sign request.",
               "type": [
                 "integer",
                 "null"
@@ -1710,6 +1729,7 @@ expression: abi
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
+              "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
               "type": [
                 "integer",
                 "null"
