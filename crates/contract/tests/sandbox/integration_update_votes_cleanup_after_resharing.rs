@@ -158,3 +158,34 @@ async fn test_update_votes_cleared_after_resharing() -> Result<()> {
 
     Ok(())
 }
+
+/// Tests that external accounts cannot call the private remove_non_participant_update_votes
+/// contract method. This verifies the security boundary: only the contract itself should be
+/// able to perform internal cleanup operations for update votes.
+#[tokio::test]
+async fn test_remove_non_participant_update_votes_denies_external_account_call() -> Result<()> {
+    // given: a contract and an external account that's not the contract itself
+    let (worker, contract, _accounts, _) =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let external_account = worker.dev_create_account().await?;
+
+    // when: the external account attempts to call the private method
+    let result = external_account
+        .call(contract.id(), "remove_non_participant_update_votes")
+        .args_json(json!({}))
+        .transact()
+        .await?;
+
+    // then: the call should fail with a "method is private" error
+    assert!(!result.is_success());
+
+    match result.into_result() {
+        Err(failure) => {
+            let error_msg = format!("{:?}", failure);
+            assert!(error_msg.contains("Method remove_non_participant_update_votes is private"));
+        }
+        Ok(_) => panic!("Call should have failed - remove_non_participant_update_votes is private"),
+    }
+
+    Ok(())
+}
