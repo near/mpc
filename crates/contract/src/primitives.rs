@@ -1,5 +1,7 @@
 pub mod ckd;
 pub mod domain;
+// todo: make pub(crate)
+pub mod generic_votes;
 pub mod key_state;
 pub mod participants;
 pub mod signature;
