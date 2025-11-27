@@ -1,14 +1,29 @@
 # test_launcher_config.py
 import inspect
 
+import json
 import tempfile
+import tee_launcher.launcher as launcher
 from tee_launcher.launcher import parse_env_lines
+import pytest
+from unittest.mock import mock_open
 
 from tee_launcher.launcher import (
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping,
 )
+
+from tee_launcher.launcher import (
+    load_and_select_hash,
+    JSON_KEY_APPROVED_HASHES,
+    ENV_VAR_MPC_HASH_OVERRIDE,
+    ENV_VAR_DEFAULT_IMAGE_DIGEST,
+)
+
+
+def make_digest_json(hashes):
+    return json.dumps({JSON_KEY_APPROVED_HASHES: hashes})
 
 
 def parse_env_string(text: str) -> dict:
@@ -372,4 +387,65 @@ def test_ld_preload_in_ports2():
     assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
 
 
-# Additional tests could go here to check other edge cases
+def test_json_key_matches_node():
+    """
+    Ensure the JSON key used by the launcher to read approved image hashes
+    stays aligned with the MPC node implementation.
+    mpc/crates/node/src/tee/allowed_image_hashes_watcher.rs -> JSON_KEY_APPROVED_HASHES
+
+    If this test fails, it means the launcher and MPC node are using different
+    JSON field names, which would break MPC hash propagation.
+    """
+    assert launcher.JSON_KEY_APPROVED_HASHES == "approved_hashes"
+
+
+def test_override_present(monkeypatch):
+    override_value = "sha256:" + "a" * 64
+    approved = ["sha256:" + "b" * 64, override_value, "sha256:" + "c" * 64]
+
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    dstack_config = {ENV_VAR_MPC_HASH_OVERRIDE: override_value}
+
+    selected = load_and_select_hash(dstack_config)
+    assert selected == override_value
+
+
+def test_override_not_present(monkeypatch):
+    approved = ["sha256:aaa", "sha256:bbb"]
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    dstack_config = {
+        ENV_VAR_MPC_HASH_OVERRIDE: "sha256:xyz"  # NOT in list
+    }
+
+    with pytest.raises(RuntimeError):
+        load_and_select_hash(dstack_config)
+
+
+def test_no_override_picks_newest(monkeypatch):
+    approved = ["sha256:newest", "sha256:older", "sha256:oldest"]
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    selected = load_and_select_hash({})
+    assert selected == "sha256:newest"
+
+
+def test_missing_file_fallback(monkeypatch):
+    # Pretend file does NOT exist
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: False)
+
+    # Valid fallback digest (64 hex chars)
+    monkeypatch.setenv(ENV_VAR_DEFAULT_IMAGE_DIGEST, "a" * 64)
+
+    selected = load_and_select_hash({})
+    assert selected == "sha256:" + "a" * 64
