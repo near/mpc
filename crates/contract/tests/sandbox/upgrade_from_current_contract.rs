@@ -88,8 +88,6 @@ async fn test_propose_update_config() {
         fail_on_timeout_tera_gas: 88,
         clean_tee_status_tera_gas: 99,
         cleanup_orphaned_node_migrations_tera_gas: 11,
-        minimum_sign_request_deposit_yocto_near: 22,
-        minimum_ckd_request_deposit_yocto_near: 33,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());

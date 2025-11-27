@@ -563,14 +563,6 @@ expression: abi
                       [
                         "cleanup_orphaned_node_migrations_tera_gas",
                         "u64"
-                      ],
-                      [
-                        "minimum_sign_request_deposit_yocto_near",
-                        "u128"
-                      ],
-                      [
-                        "minimum_ckd_request_deposit_yocto_near",
-                        "u128"
                       ]
                     ]
                   },
@@ -629,9 +621,6 @@ expression: abi
                       },
                       "elements": "u8"
                     }
-                  },
-                  "u128": {
-                    "Primitive": 16
                   },
                   "u64": {
                     "Primitive": 8
@@ -1450,8 +1439,6 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
-            "minimum_ckd_request_deposit_yocto_near",
-            "minimum_sign_request_deposit_yocto_near",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
             "sign_call_deposit_requirement_tera_gas",
@@ -1486,16 +1473,6 @@ expression: abi
             "key_event_timeout_blocks": {
               "type": "integer",
               "format": "uint64",
-              "minimum": 0.0
-            },
-            "minimum_ckd_request_deposit_yocto_near": {
-              "type": "integer",
-              "format": "uint128",
-              "minimum": 0.0
-            },
-            "minimum_sign_request_deposit_yocto_near": {
-              "type": "integer",
-              "format": "uint128",
               "minimum": 0.0
             },
             "return_ck_and_clean_state_on_success_call_tera_gas": {
@@ -1706,22 +1683,6 @@ expression: abi
                 "null"
               ],
               "format": "uint64",
-              "minimum": 0.0
-            },
-            "minimum_ckd_request_deposit_yocto_near": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint128",
-              "minimum": 0.0
-            },
-            "minimum_sign_request_deposit_yocto_near": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint128",
               "minimum": 0.0
             },
             "return_ck_and_clean_state_on_success_call_tera_gas": {

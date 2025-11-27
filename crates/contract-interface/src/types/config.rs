@@ -30,8 +30,6 @@ pub struct InitConfig {
     pub fail_on_timeout_tera_gas: Option<u64>,
     pub clean_tee_status_tera_gas: Option<u64>,
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
-    pub minimum_sign_request_deposit_yocto_near: Option<u128>,
-    pub minimum_ckd_request_deposit_yocto_near: Option<u128>,
 }
 
 /// Configuration parameters of the contract.
@@ -63,8 +61,6 @@ pub struct Config {
     pub fail_on_timeout_tera_gas: u64,
     pub clean_tee_status_tera_gas: u64,
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
-    pub minimum_sign_request_deposit_yocto_near: u128,
-    pub minimum_ckd_request_deposit_yocto_near: u128,
 }
 
 #[cfg(test)]
@@ -85,8 +81,6 @@ mod tests {
             fail_on_timeout_tera_gas: Some(2),
             clean_tee_status_tera_gas: Some(10),
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
-            minimum_sign_request_deposit_yocto_near: Some(1),
-            minimum_ckd_request_deposit_yocto_near: Some(1),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -133,8 +127,6 @@ mod tests {
             fail_on_timeout_tera_gas: None,
             clean_tee_status_tera_gas: None,
             cleanup_orphaned_node_migrations_tera_gas: None,
-            minimum_sign_request_deposit_yocto_near: None,
-            minimum_ckd_request_deposit_yocto_near: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);

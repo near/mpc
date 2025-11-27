@@ -80,6 +80,12 @@ impl Default for MpcContract {
 /// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
 
+/// Minimum deposit required for sign requests
+const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
+/// Minimum deposit required for CKD requests
+const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
 #[near_bindgen]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -193,9 +199,7 @@ impl MpcContract {
         let storage_used = env::storage_usage() - initial_storage;
         let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let minimum_deposit =
-            NearToken::from_yoctonear(self.config.minimum_sign_request_deposit_yocto_near);
-        let cost = std::cmp::max(storage_cost, minimum_deposit);
+        let cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
 
         match deposit.checked_sub(cost) {
             None => {
@@ -368,9 +372,7 @@ impl MpcContract {
         let storage_used = env::storage_usage() - initial_storage;
         let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let minimum_deposit =
-            NearToken::from_yoctonear(self.config.minimum_ckd_request_deposit_yocto_near);
-        let cost = std::cmp::max(storage_cost, minimum_deposit);
+        let cost = std::cmp::max(storage_cost, MINIMUM_CKD_REQUEST_DEPOSIT);
 
         match deposit.checked_sub(cost) {
             None => {

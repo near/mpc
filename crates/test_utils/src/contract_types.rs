@@ -11,7 +11,5 @@ pub fn dummy_config(value: u64) -> contract_interface::types::Config {
         fail_on_timeout_tera_gas: value + 7,
         clean_tee_status_tera_gas: value + 8,
         cleanup_orphaned_node_migrations_tera_gas: value + 9,
-        minimum_sign_request_deposit_yocto_near: value as u128 + 10,
-        minimum_ckd_request_deposit_yocto_near: value as u128 + 11,
     }
 }

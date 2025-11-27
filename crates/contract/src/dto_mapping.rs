@@ -475,12 +475,6 @@ impl From<contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.cleanup_orphaned_node_migrations_tera_gas {
             config.cleanup_orphaned_node_migrations_tera_gas = v;
         }
-        if let Some(v) = config_ext.minimum_sign_request_deposit_yocto_near {
-            config.minimum_sign_request_deposit_yocto_near = v;
-        }
-        if let Some(v) = config_ext.minimum_ckd_request_deposit_yocto_near {
-            config.minimum_ckd_request_deposit_yocto_near = v;
-        }
 
         config
     }
@@ -502,8 +496,6 @@ impl From<&Config> for contract_interface::types::Config {
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
-            minimum_sign_request_deposit_yocto_near: value.minimum_sign_request_deposit_yocto_near,
-            minimum_ckd_request_deposit_yocto_near: value.minimum_ckd_request_deposit_yocto_near,
         }
     }
 }
@@ -524,8 +516,6 @@ impl From<contract_interface::types::Config> for Config {
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
-            minimum_sign_request_deposit_yocto_near: value.minimum_sign_request_deposit_yocto_near,
-            minimum_ckd_request_deposit_yocto_near: value.minimum_ckd_request_deposit_yocto_near,
         }
     }
 }

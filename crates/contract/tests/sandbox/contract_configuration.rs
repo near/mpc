@@ -89,8 +89,6 @@ async fn contract_configuration_can_be_set_on_initialization() {
         fail_on_timeout_tera_gas: Some(88),
         clean_tee_status_tera_gas: Some(99),
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
-        minimum_sign_request_deposit_yocto_near: Some(22),
-        minimum_ckd_request_deposit_yocto_near: Some(33),
     };
 
     let (_, contract, _) = init_with_candidates(vec![], Some(config.clone()), 2).await;

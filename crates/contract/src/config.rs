@@ -29,12 +29,6 @@ const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
 
-// --- Deposit Defaults (in YoctoNEAR) ---
-/// Minimum deposit required for sign requests
-const DEFAULT_MINIMUM_SIGN_REQUEST_DEPOSIT_YOCTO_NEAR: u128 = 1;
-/// Minimum deposit required for CKD requests
-const DEFAULT_MINIMUM_CKD_REQUEST_DEPOSIT_YOCTO_NEAR: u128 = 1;
-
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,10 +54,6 @@ pub(crate) struct Config {
     pub(crate) clean_tee_status_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub(crate) cleanup_orphaned_node_migrations_tera_gas: u64,
-    /// Minimum deposit required for sign requests.
-    pub(crate) minimum_sign_request_deposit_yocto_near: u128,
-    /// Minimum deposit required for CKD requests.
-    pub(crate) minimum_ckd_request_deposit_yocto_near: u128,
 }
 
 impl Default for Config {
@@ -82,9 +72,6 @@ impl Default for Config {
             clean_tee_status_tera_gas: DEFAULT_CLEAN_TEE_STATUS_TERA_GAS,
             cleanup_orphaned_node_migrations_tera_gas:
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
-            minimum_sign_request_deposit_yocto_near:
-                DEFAULT_MINIMUM_SIGN_REQUEST_DEPOSIT_YOCTO_NEAR,
-            minimum_ckd_request_deposit_yocto_near: DEFAULT_MINIMUM_CKD_REQUEST_DEPOSIT_YOCTO_NEAR,
         }
     }
 }
