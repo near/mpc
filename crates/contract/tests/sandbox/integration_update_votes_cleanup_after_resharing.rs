@@ -23,6 +23,7 @@ use mpc_contract::{
 /// Tests that update votes from non-participants are cleared after resharing.
 #[tokio::test]
 async fn test_update_votes_cleared_after_resharing() -> Result<()> {
+    // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
     let (_, contract, env_accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
@@ -69,6 +70,7 @@ async fn test_update_votes_cleared_after_resharing() -> Result<()> {
         ])
     );
 
+    // when: resharing completes with new participants that exclude participant 0
     // Reshare with threshold participants, excluding participant 0 who voted
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
@@ -146,7 +148,7 @@ async fn test_update_votes_cleared_after_resharing() -> Result<()> {
     )
     .await?;
 
-    // Verify votes cleaned up - only current participants should have votes
+    // then: the cleanup promise removes participant 0's vote from storage
     let final_participants = assert_running_return_participants(&contract).await?;
     let proposals_after: dtos::ProposedUpdates = contract.view("proposed_updates").await?.json()?;
 

@@ -23,16 +23,15 @@ pub mod v3_0_2_state;
 
 mod dto_mapping;
 
+use std::collections::HashSet;
 use std::{collections::BTreeMap, time::Duration};
 
+use crate::primitives::participants::Participants;
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
     errors::{Error, RequestError},
-    primitives::{
-        ckd::{CKDRequest, CKDRequestArgs},
-        participants::Participants,
-    },
+    primitives::ckd::{CKDRequest, CKDRequestArgs},
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -824,7 +823,8 @@ impl MpcContract {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
 
-            // Spawn a promise to clear update votes from accounts that are no longer participants
+            // Spawn a promise to clean up votes from non-participants.
+            // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
             Promise::new(env::current_account_id()).function_call(
                 "remove_non_participant_update_votes".to_string(),
                 vec![],
@@ -957,19 +957,32 @@ impl MpcContract {
             id,
         );
 
-        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
 
         let threshold = self.threshold()?;
 
         let voter = self.voter_or_panic();
-        let Some(votes) = self.proposed_updates.vote(&id, voter) else {
+        let Some(all_votes) = self.proposed_updates.vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
-        // Not enough votes, wait for more.
-        if (votes.len() as u64) < threshold.value() {
+        // Filter votes to only count current participants. This ensures correctness
+        // even if the cleanup promise in MpcContract::vote_reshared() fails.
+        let current_participants: HashSet<AccountId> = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+
+        // Only count votes from current participants
+        let valid_votes_count = all_votes.intersection(&current_participants).count();
+
+        // Not enough votes from current participants, wait for more.
+        if (valid_votes_count as u64) < threshold.value() {
             return Ok(false);
         }
 

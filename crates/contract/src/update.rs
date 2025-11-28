@@ -135,7 +135,7 @@ impl ProposedUpdates {
     /// Removes any existing vote by `voter`.
     /// Sets `voter`s vote for the update with the given id.
     ///
-    /// Returns Some(votes) if the given [`UpdateId`] exists, otherwise None.
+    /// Returns `Some(votes)` if the given [`UpdateId`] exists, otherwise `None`.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
         // If participant has voted before, remove their vote
         self.remove_vote(&voter);
