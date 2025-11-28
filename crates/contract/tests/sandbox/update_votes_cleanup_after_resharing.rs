@@ -92,18 +92,17 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let prospective_epoch_id = EpochId::new(6);
 
     // Vote for new parameters (skip participant 0, use participants 1-6)
-    for account in &env_accounts[1..threshold.value() as usize + 1] {
-        account
-            .call(contract.id(), "vote_new_parameters")
-            .args_json(json!({
-                "prospective_epoch_id": prospective_epoch_id,
-                "proposal": new_threshold_parameters,
-            }))
-            .max_gas()
-            .transact()
-            .await?
-            .into_result()?;
-    }
+    execute_async_transactions(
+        &env_accounts[1..threshold.value() as usize + 1],
+        &contract,
+        "vote_new_parameters",
+        &json!({
+            "prospective_epoch_id": prospective_epoch_id,
+            "proposal": new_threshold_parameters,
+        }),
+        near_workspaces::types::Gas::from_tgas(300),
+    )
+    .await?;
 
     // Get resharing state and start reshare
     let state: ProtocolContractState = contract.view("state").await?.json()?;
