@@ -486,8 +486,10 @@ impl From<&Config> for contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
-            sign_call_gas_attachment_requirement_tera_gas: value.sign_call_gas_attachment_requirement_tera_gas,
-            ckd_call_gas_attachment_requirement_tera_gas: value.ckd_call_gas_attachment_requirement_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value
+                .ckd_call_gas_attachment_requirement_tera_gas,
             return_signature_and_clean_state_on_success_call_tera_gas: value
                 .return_signature_and_clean_state_on_success_call_tera_gas,
             return_ck_and_clean_state_on_success_call_tera_gas: value
@@ -506,8 +508,10 @@ impl From<contract_interface::types::Config> for Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
-            sign_call_gas_attachment_requirement_tera_gas: value.sign_call_gas_attachment_requirement_tera_gas,
-            ckd_call_gas_attachment_requirement_tera_gas: value.ckd_call_gas_attachment_requirement_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value
+                .ckd_call_gas_attachment_requirement_tera_gas,
             return_signature_and_clean_state_on_success_call_tera_gas: value
                 .return_signature_and_clean_state_on_success_call_tera_gas,
             return_ck_and_clean_state_on_success_call_tera_gas: value
