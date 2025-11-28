@@ -415,7 +415,7 @@ async fn migration_function_rejects_external_callers() {
 
     let error_message = format!("{:?}", execution_error);
 
-    let expected_error_message = "Smart contract panicked: Method migrate is private.";
+    let expected_error_message = "Smart contract panicked: Method migrate is private";
 
     assert!(
         error_message.contains(expected_error_message),
