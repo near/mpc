@@ -16,12 +16,12 @@ Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`)
 
    ```bash
    # build nearcore:
-   cd libs/nearcore && cargo build -p neard --release
+   cd libs/nearcore && cargo build -p neard --release --locked
    ```
 
    ```bash
    # build the main node
-   cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation
+   cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation --locked
    ```
 
 3. Set up virtualenv (optional, but recommended):
