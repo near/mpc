@@ -9,11 +9,14 @@ use near_sdk::{
     borsh::{BorshDeserialize, BorshSerialize},
     env::log_str,
     near_bindgen,
+    state::ContractState,
 };
 
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 #[near_bindgen]
 pub struct Contract {}
+
+impl ContractState for Contract {}
 
 #[near_bindgen]
 impl Contract {
