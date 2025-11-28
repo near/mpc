@@ -95,7 +95,7 @@ near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
-near-sdk = { version = "5.15.1", features = [
+near-sdk = { version = "5.18.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
