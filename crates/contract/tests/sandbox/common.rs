@@ -291,7 +291,7 @@ pub async fn init_with_candidates(
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "config": init_config,
+            "init_config": init_config,
         }))
     };
 
