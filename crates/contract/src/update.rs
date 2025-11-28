@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use crate::config::Config;
+use crate::primitives::participants::Participants;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
@@ -196,6 +197,18 @@ impl ProposedUpdates {
         accounts_to_remove
             .iter()
             .for_each(|account| self.remove_vote(account));
+    }
+
+    /// Removes votes from accounts that are not participants.
+    pub fn remove_non_participant_votes(&mut self, participants: &Participants) {
+        let non_participants: Vec<AccountId> = self
+            .vote_by_participant
+            .keys()
+            .filter(|voter| !participants.is_participant(voter))
+            .cloned()
+            .collect();
+
+        self.remove_votes(&non_participants);
     }
 
     /// Returns all account IDs that have voted.

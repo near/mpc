@@ -26,7 +26,6 @@ mod dto_mapping;
 use std::collections::HashSet;
 use std::{collections::BTreeMap, time::Duration};
 
-use crate::primitives::participants::Participants;
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
@@ -1153,24 +1152,14 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
+            ProtocolContractState::Running(state) => state.parameters.participants(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
         };
 
-        self.remove_votes_from_non_participants(&participants);
+        self.proposed_updates.remove_non_participant_votes(participants);
         Ok(())
-    }
-
-    pub(crate) fn remove_votes_from_non_participants(&mut self, participants: &Participants) {
-        let non_participants: Vec<AccountId> = self
-            .proposed_updates
-            .voters()
-            .into_iter()
-            .filter(|voter| !participants.is_participant(voter))
-            .collect();
-        self.proposed_updates.remove_votes(&non_participants);
     }
 
     /// Private endpoint to clean up TEE information for non-participants after resharing.
@@ -3140,7 +3129,7 @@ mod tests {
 
         // when: resharing completes with a new participant set and we clear non-participant votes
         let new_running_state = gen_running_state(2);
-        contract.remove_votes_from_non_participants(new_running_state.parameters.participants());
+        contract.proposed_updates.remove_non_participant_votes(new_running_state.parameters.participants());
         contract.protocol_state = ProtocolContractState::Running(new_running_state);
 
         // then: only votes from current participants remain
