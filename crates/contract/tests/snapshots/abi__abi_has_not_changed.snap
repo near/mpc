@@ -325,7 +325,8 @@ expression: abi
         "name": "init_running",
         "kind": "call",
         "modifiers": [
-          "init"
+          "init",
+          "private"
         ],
         "params": {
           "serialization_type": "json",
@@ -429,7 +430,8 @@ expression: abi
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
         "kind": "call",
         "modifiers": [
-          "init"
+          "init",
+          "private"
         ]
       },
       {
