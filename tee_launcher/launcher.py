@@ -73,8 +73,6 @@ SHA256_REGEX = re.compile(r"^sha256:[0-9a-f]{64}$")
 JSON_KEY_APPROVED_HASHES = "approved_hashes"
 
 
-
-
 # Example of .user-config file format:
 #
 # MPC_ACCOUNT_ID=mpc-user-123
@@ -653,7 +651,6 @@ def get_bare_digest(full_digest: str) -> str:
 
 
 def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
-    
     bare_digest = get_bare_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
@@ -684,12 +681,16 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         elif key == "PORTS":
             for port_pair in value.split(","):
                 clean_host = port_pair.strip()
-                if is_safe_port_mapping(clean_host) and is_valid_port_mapping(clean_host):
+                if is_safe_port_mapping(clean_host) and is_valid_port_mapping(
+                    clean_host
+                ):
                     docker_cmd += ["-p", clean_host]
                 else:
-                    logging.warning(f"Ignoring invalid or unsafe PORTS entry: {clean_host}")
+                    logging.warning(
+                        f"Ignoring invalid or unsafe PORTS entry: {clean_host}"
+                    )
         elif key in ALLOWED_LAUNCHER_ENV_VARS:
-            #ignored here - launcher-only env vars
+            # ignored here - launcher-only env vars
             continue
         else:
             logging.warning(f"Ignoring unknown or unapproved env var: {key}")
