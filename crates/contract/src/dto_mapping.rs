@@ -24,6 +24,7 @@ use near_sdk::env::sha256_array;
 use threshold_signatures::confidential_key_derivation as ckd;
 
 use crate::{
+    config::Config,
     crypto_shared::k256_types,
     update::{ProposedUpdates, Update},
 };
@@ -437,5 +438,88 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
             })
             .collect();
         dtos::ProposedUpdates(updates)
+    }
+}
+
+impl From<contract_interface::types::InitConfig> for Config {
+    fn from(config_ext: contract_interface::types::InitConfig) -> Self {
+        let mut config = super::Config::default();
+
+        if let Some(v) = config_ext.key_event_timeout_blocks {
+            config.key_event_timeout_blocks = v;
+        }
+        if let Some(v) = config_ext.tee_upgrade_deadline_duration_seconds {
+            config.tee_upgrade_deadline_duration_seconds = v;
+        }
+        if let Some(v) = config_ext.contract_upgrade_deposit_tera_gas {
+            config.contract_upgrade_deposit_tera_gas = v;
+        }
+        if let Some(v) = config_ext.sign_call_gas_attachment_requirement_tera_gas {
+            config.sign_call_gas_attachment_requirement_tera_gas = v;
+        }
+        if let Some(v) = config_ext.ckd_call_gas_attachment_requirement_tera_gas {
+            config.ckd_call_gas_attachment_requirement_tera_gas = v;
+        }
+        if let Some(v) = config_ext.return_signature_and_clean_state_on_success_call_tera_gas {
+            config.return_signature_and_clean_state_on_success_call_tera_gas = v;
+        }
+        if let Some(v) = config_ext.return_ck_and_clean_state_on_success_call_tera_gas {
+            config.return_ck_and_clean_state_on_success_call_tera_gas = v;
+        }
+        if let Some(v) = config_ext.fail_on_timeout_tera_gas {
+            config.fail_on_timeout_tera_gas = v;
+        }
+        if let Some(v) = config_ext.clean_tee_status_tera_gas {
+            config.clean_tee_status_tera_gas = v;
+        }
+        if let Some(v) = config_ext.cleanup_orphaned_node_migrations_tera_gas {
+            config.cleanup_orphaned_node_migrations_tera_gas = v;
+        }
+
+        config
+    }
+}
+
+impl From<&Config> for contract_interface::types::Config {
+    fn from(value: &Config) -> Self {
+        contract_interface::types::Config {
+            key_event_timeout_blocks: value.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: value
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: value
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: value
+                .cleanup_orphaned_node_migrations_tera_gas,
+        }
+    }
+}
+
+impl From<contract_interface::types::Config> for Config {
+    fn from(value: contract_interface::types::Config) -> Self {
+        Config {
+            key_event_timeout_blocks: value.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
+            contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: value
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: value
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: value.fail_on_timeout_tera_gas,
+            clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: value
+                .cleanup_orphaned_node_migrations_tera_gas,
+        }
     }
 }
