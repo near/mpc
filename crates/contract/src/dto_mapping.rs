@@ -454,11 +454,11 @@ impl From<contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.contract_upgrade_deposit_tera_gas {
             config.contract_upgrade_deposit_tera_gas = v;
         }
-        if let Some(v) = config_ext.sign_call_deposit_requirement_tera_gas {
-            config.sign_call_deposit_requirement_tera_gas = v;
+        if let Some(v) = config_ext.sign_call_gas_attachment_requirement_tera_gas {
+            config.sign_call_gas_attachment_requirement_tera_gas = v;
         }
-        if let Some(v) = config_ext.ckd_call_deposit_requirement_tera_gas {
-            config.ckd_call_deposit_requirement_tera_gas = v;
+        if let Some(v) = config_ext.ckd_call_gas_attachment_requirement_tera_gas {
+            config.ckd_call_gas_attachment_requirement_tera_gas = v;
         }
         if let Some(v) = config_ext.return_signature_and_clean_state_on_success_call_tera_gas {
             config.return_signature_and_clean_state_on_success_call_tera_gas = v;
@@ -486,8 +486,8 @@ impl From<&Config> for contract_interface::types::Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
-            sign_call_deposit_requirement_tera_gas: value.sign_call_deposit_requirement_tera_gas,
-            ckd_call_deposit_requirement_tera_gas: value.ckd_call_deposit_requirement_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value.sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value.ckd_call_gas_attachment_requirement_tera_gas,
             return_signature_and_clean_state_on_success_call_tera_gas: value
                 .return_signature_and_clean_state_on_success_call_tera_gas,
             return_ck_and_clean_state_on_success_call_tera_gas: value
@@ -506,8 +506,8 @@ impl From<contract_interface::types::Config> for Config {
             key_event_timeout_blocks: value.key_event_timeout_blocks,
             tee_upgrade_deadline_duration_seconds: value.tee_upgrade_deadline_duration_seconds,
             contract_upgrade_deposit_tera_gas: value.contract_upgrade_deposit_tera_gas,
-            sign_call_deposit_requirement_tera_gas: value.sign_call_deposit_requirement_tera_gas,
-            ckd_call_deposit_requirement_tera_gas: value.ckd_call_deposit_requirement_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: value.sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: value.ckd_call_gas_attachment_requirement_tera_gas,
             return_signature_and_clean_state_on_success_call_tera_gas: value
                 .return_signature_and_clean_state_on_success_call_tera_gas,
             return_ck_and_clean_state_on_success_call_tera_gas: value

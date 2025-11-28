@@ -28,9 +28,9 @@ pub struct InitConfig {
     /// Amount of gas to deposit for contract and config updates.
     pub contract_upgrade_deposit_tera_gas: Option<u64>,
     /// Gas required for a sign request.
-    pub sign_call_deposit_requirement_tera_gas: Option<u64>,
+    pub sign_call_gas_attachment_requirement_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
-    pub ckd_call_deposit_requirement_tera_gas: Option<u64>,
+    pub ckd_call_gas_attachment_requirement_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: Option<u64>,
     /// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
@@ -70,9 +70,9 @@ pub struct Config {
     /// Amount of gas to deposit for contract and config updates.
     pub contract_upgrade_deposit_tera_gas: u64,
     /// Gas required for a sign request.
-    pub sign_call_deposit_requirement_tera_gas: u64,
+    pub sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
-    pub ckd_call_deposit_requirement_tera_gas: u64,
+    pub ckd_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub return_signature_and_clean_state_on_success_call_tera_gas: u64,
     /// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
@@ -96,8 +96,8 @@ mod tests {
             key_event_timeout_blocks: Some(2000),
             tee_upgrade_deadline_duration_seconds: Some(3333),
             contract_upgrade_deposit_tera_gas: Some(120),
-            sign_call_deposit_requirement_tera_gas: Some(15),
-            ckd_call_deposit_requirement_tera_gas: Some(15),
+            sign_call_gas_attachment_requirement_tera_gas: Some(15),
+            ckd_call_gas_attachment_requirement_tera_gas: Some(15),
             return_signature_and_clean_state_on_success_call_tera_gas: Some(7),
             return_ck_and_clean_state_on_success_call_tera_gas: Some(7),
             fail_on_timeout_tera_gas: Some(2),
@@ -142,8 +142,8 @@ mod tests {
             key_event_timeout_blocks: None,
             tee_upgrade_deadline_duration_seconds: None,
             contract_upgrade_deposit_tera_gas: None,
-            sign_call_deposit_requirement_tera_gas: None,
-            ckd_call_deposit_requirement_tera_gas: None,
+            sign_call_gas_attachment_requirement_tera_gas: None,
+            ckd_call_gas_attachment_requirement_tera_gas: None,
             return_signature_and_clean_state_on_success_call_tera_gas: None,
             return_ck_and_clean_state_on_success_call_tera_gas: None,
             fail_on_timeout_tera_gas: None,

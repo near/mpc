@@ -14,9 +14,9 @@ const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 
 /// initial call itself to vote for the update can not exceed 300 Tgas.
 const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
 /// Gas required for a sign request
-const DEFAULT_SIGN_CALL_DEPOSIT_REQUIREMENT_TERA_GAS: u64 = 15;
+const DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Gas required for a CKD request
-const DEFAULT_CKD_CALL_DEPOSIT_REQUIREMENT_TERA_GAS: u64 = 15;
+const DEFAULT_CKD_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Prepaid gas for a `return_signature_and_clean_state_on_success` call
 const DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
 /// Prepaid gas for a `return_ck_and_clean_state_on_success` call
@@ -41,9 +41,9 @@ pub(crate) struct Config {
     /// Amount of gas to deposit for contract and config updates.
     pub(crate) contract_upgrade_deposit_tera_gas: u64,
     /// Gas required for a sign request.
-    pub(crate) sign_call_deposit_requirement_tera_gas: u64,
+    pub(crate) sign_call_gas_attachment_requirement_tera_gas: u64,
     /// Gas required for a CKD request.
-    pub(crate) ckd_call_deposit_requirement_tera_gas: u64,
+    pub(crate) ckd_call_gas_attachment_requirement_tera_gas: u64,
     /// Prepaid gas for a `return_signature_and_clean_state_on_success` call.
     pub(crate) return_signature_and_clean_state_on_success_call_tera_gas: u64,
     /// Prepaid gas for a `return_ck_and_clean_state_on_success` call.
@@ -62,8 +62,10 @@ impl Default for Config {
             key_event_timeout_blocks: DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS,
             tee_upgrade_deadline_duration_seconds: DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS,
             contract_upgrade_deposit_tera_gas: DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS,
-            sign_call_deposit_requirement_tera_gas: DEFAULT_SIGN_CALL_DEPOSIT_REQUIREMENT_TERA_GAS,
-            ckd_call_deposit_requirement_tera_gas: DEFAULT_CKD_CALL_DEPOSIT_REQUIREMENT_TERA_GAS,
+            sign_call_gas_attachment_requirement_tera_gas:
+                DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
+            ckd_call_gas_attachment_requirement_tera_gas:
+                DEFAULT_CKD_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS,
             return_signature_and_clean_state_on_success_call_tera_gas:
                 DEFAULT_RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS,
             return_ck_and_clean_state_on_success_call_tera_gas:

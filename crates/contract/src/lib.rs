@@ -178,7 +178,8 @@ impl MpcContract {
             }
         }
 
-        let gas_required = Gas::from_tgas(self.config.sign_call_deposit_requirement_tera_gas);
+        let gas_required =
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
 
         // Make sure sign call will not run out of gas doing yield/resume logic
         if env::prepaid_gas() < gas_required {
@@ -351,7 +352,7 @@ impl MpcContract {
             );
         }
 
-        let gas_required = Gas::from_tgas(self.config.ckd_call_deposit_requirement_tera_gas);
+        let gas_required = Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas);
 
         // Make sure CKD call will not run out of gas doing yield/resume logic
         if env::prepaid_gas() < gas_required {
