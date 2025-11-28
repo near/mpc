@@ -20,7 +20,10 @@ class TestLauncher(unittest.TestCase):
             digest=image_hash,
         )
         result = get_manifest_digest(
-            image, rpc_request_timeout_secs=10, rpc_request_interval_secs=0.5, rpc_max_attempts=10
+            image,
+            rpc_request_timeout_secs=10,
+            rpc_request_interval_secs=0.5,
+            rpc_max_attempts=10,
         )
         self.assertEqual(result, expected_manifest_digest)
 
