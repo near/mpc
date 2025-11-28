@@ -336,13 +336,13 @@ fn test_clean_tee_status_removes_non_participants() {
     assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 
-macro_rules! assert_allowed_code_hashes {
+macro_rules! assert_allowed_docker_image_hashes {
     ($test_setup:expr, $blocktime_ns:expr, $expected_value:expr $(,)?) => {{
         set_system_time($blocktime_ns);
 
         let mut res: Vec<[u8; 32]> = $test_setup
             .contract
-            .allowed_code_hashes()
+            .allowed_docker_image_hashes()
             .iter()
             .map(|hash| *hash.clone())
             .collect();
@@ -375,16 +375,16 @@ fn only_latest_hash_after_grace_period() {
     let successor_hash = [2; 32];
 
     setup.vote_with_all_participants(old_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_code_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[old_hash]);
+    assert_allowed_docker_image_hashes!(&setup, FIRST_ENTRY_TIME_NS, &[old_hash]);
     setup.vote_with_all_participants(successor_hash, SECOND_ENTRY_TIME_NS);
-    assert_allowed_code_hashes!(&setup, SECOND_ENTRY_TIME_NS, &[old_hash, successor_hash]);
+    assert_allowed_docker_image_hashes!(&setup, SECOND_ENTRY_TIME_NS, &[old_hash, successor_hash]);
 
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS,
         &[old_hash, successor_hash]
     );
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_NS + 1,
         &[successor_hash]
@@ -416,9 +416,9 @@ fn latest_inserted_image_hash_takes_precedence_on_equal_time_stamps() {
     for hash in hashes {
         setup.vote_with_all_participants(hash, INITIAL_TIME);
     }
-    assert_allowed_code_hashes!(&setup, INITIAL_TIME, &hashes);
+    assert_allowed_docker_image_hashes!(&setup, INITIAL_TIME, &hashes);
     // Jump far in future
-    assert_allowed_code_hashes!(&setup, u64::MAX, &[hash_3]);
+    assert_allowed_docker_image_hashes!(&setup, u64::MAX, &[hash_3]);
 }
 
 /// **Test for successor-based grace periods**
@@ -444,36 +444,40 @@ fn hash_grace_period_depends_on_successor_entry_time_not_latest() {
     let third_code_hash = [3; 32];
 
     test_setup.vote_with_all_participants(first_code_hash, FIRST_ENTRY_TIME_NS);
-    assert_allowed_code_hashes!(&test_setup, FIRST_ENTRY_TIME_NS, &[first_code_hash]);
+    assert_allowed_docker_image_hashes!(&test_setup, FIRST_ENTRY_TIME_NS, &[first_code_hash]);
 
     test_setup.vote_with_all_participants(second_code_hash, SECOND_ENTRY_TIME_NS);
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS,
         &[first_code_hash, second_code_hash]
     );
 
     test_setup.vote_with_all_participants(third_code_hash, THIRD_ENTRY_TIME_NS);
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &test_setup,
         THIRD_ENTRY_TIME_NS,
         &[first_code_hash, second_code_hash, third_code_hash]
     );
 
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &test_setup,
         SECOND_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS + 1,
         &[second_code_hash, third_code_hash]
     );
 
     let expiration_second_hash = THIRD_ENTRY_TIME_NS + GRACE_PERIOD_TIME_NS;
-    assert_allowed_code_hashes!(
+    assert_allowed_docker_image_hashes!(
         &test_setup,
         expiration_second_hash,
         &[second_code_hash, third_code_hash]
     );
 
-    assert_allowed_code_hashes!(&test_setup, expiration_second_hash + 1, &[third_code_hash]);
+    assert_allowed_docker_image_hashes!(
+        &test_setup,
+        expiration_second_hash + 1,
+        &[third_code_hash]
+    );
 }
 
 /// **Test for indefinite validity of the latest hash**
@@ -498,7 +502,7 @@ fn latest_image_never_expires_if_its_not_superseded() {
 
     // Even far in the future, latest remains allowed
 
-    assert_allowed_code_hashes!(&test_setup, u64::MAX, &[only_image_code_hash]);
+    assert_allowed_docker_image_hashes!(&test_setup, u64::MAX, &[only_image_code_hash]);
 }
 
 /// **Test for nodes starting with old but valid image hashes during grace period**
@@ -566,7 +570,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // At T=10s: All three versions should be allowed (within grace periods)
     let test_time_1 = deployment_times[0] + GRACE_PERIOD_NANOS;
-    assert_allowed_code_hashes!(&test_setup, test_time_1, &hashes);
+    assert_allowed_docker_image_hashes!(&test_setup, test_time_1, &hashes);
 
     // Use existing participant nodes for testing different hash versions
     let node_ids = test_setup.get_participant_node_ids();
@@ -583,10 +587,10 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
     let v1_expiry_time = deployment_times[1] + GRACE_PERIOD_NANOS;
 
     // +1s ensures we're testing *after* expiration occurs - at T=19s the hash is still valid,
-    // but at T=20s it has expired and should be filtered out by allowed_code_hashes()
+    // but at T=20s it has expired and should be filtered out by allowed_docker_image_hashes()
     // T=20s: hash_v1 is expired. Verify that only hash_v2 and hash_v3 are allowed.
     let expected_after_v1_expiry = [hash_v2, hash_v3];
-    assert_allowed_code_hashes!(&test_setup, v1_expiry_time + 1, &expected_after_v1_expiry);
+    assert_allowed_docker_image_hashes!(&test_setup, v1_expiry_time + 1, &expected_after_v1_expiry);
 
     // Verify that submitting attestation with expired hash_v1 now fails
     let expired_attestation = TestSetup::create_attestation_with_hash_constraint(hash_v1);
@@ -606,7 +610,7 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 
     // Advance to T=22s: hash_v2 should expire (v3 deployed at T=7s + 15s grace = T=22s)
     let v2_expiry_time = deployment_times[2] + GRACE_PERIOD_NANOS;
-    assert_allowed_code_hashes!(&test_setup, v2_expiry_time + 1, &[hash_v3]);
+    assert_allowed_docker_image_hashes!(&test_setup, v2_expiry_time + 1, &[hash_v3]);
 
     // Verify that only the latest hash is now accepted
     // Reuse the third node (index 2) for final validation
