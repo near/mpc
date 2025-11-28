@@ -118,7 +118,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     });
 
     // Find the leader (participant with lowest ID) to start the reshare instance
-    env_accounts[1..threshold.value() as usize + 1]
+    let leader = env_accounts[1..threshold.value() as usize + 1]
         .iter()
         .min_by_key(|a| {
             resharing_state
@@ -128,7 +128,9 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
                 .id(&a.id().as_v2_account_id())
                 .unwrap()
         })
-        .unwrap()
+        .unwrap();
+
+    leader
         .call(contract.id(), "start_reshare_instance")
         .args_json(json!({"key_event_id": key_event_id}))
         .max_gas()
