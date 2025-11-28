@@ -1023,20 +1023,6 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
-    pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
-        log!("allowed_code_hashes: signer={}", env::signer_account_id());
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
-        let mut hashes = self
-            .tee_state
-            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
-        hashes.reverse();
-        hashes
-    }
-
     /// Returns the latest (most recent) allowed code hash.
     pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
         log!("latest_code_hash: signer={}", env::signer_account_id());
@@ -1433,19 +1419,6 @@ impl MpcContract {
 /// Methods for Migration service
 #[near_bindgen]
 impl MpcContract {
-    // todo: [#1248](https://github.com/near/mpc/issues/1248), we might want to delete this one
-    pub fn my_migration_info(
-        &self,
-    ) -> (
-        AccountId,
-        Option<BackupServiceInfo>,
-        Option<DestinationNodeInfo>,
-    ) {
-        let account_id = env::signer_account_id().as_v2_account_id();
-        log!("my_migration_info: signer={:?}", account_id,);
-        self.node_migrations.get_for_account(&account_id)
-    }
-
     pub fn migration_info(
         &self,
     ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
@@ -1693,6 +1666,17 @@ mod tests {
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
     use threshold_signatures::frost_secp256k1::Secp256K1Group;
+
+    pub fn migration_info(
+        contract_state: &MpcContract,
+        account_id: &AccountId,
+    ) -> (
+        AccountId,
+        Option<BackupServiceInfo>,
+        Option<DestinationNodeInfo>,
+    ) {
+        contract_state.node_migrations.get_for_account(account_id)
+    }
 
     #[derive(Debug)]
     #[allow(dead_code)]
@@ -2416,14 +2400,14 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.my_migration_info(),
+                migration_info(&contract, account_id),
                 (account_id.clone(), None, None)
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
-            assert_eq!(contract.my_migration_info(), expected_res);
+            assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
         let expected_migration_state = expected_migration_state.into_iter().collect();
@@ -2515,7 +2499,7 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.my_migration_info(),
+                migration_info(&contract, account_id),
                 (account_id.clone(), None, None)
             );
             let backup_service_info = BackupServiceInfo {
@@ -2524,7 +2508,7 @@ mod tests {
             let res = contract.register_backup_service(backup_service_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
-            assert_eq!(contract.my_migration_info(), expected_res);
+            assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
         let result = contract.migration_info();

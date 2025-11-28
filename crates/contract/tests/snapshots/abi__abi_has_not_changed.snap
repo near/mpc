@@ -16,27 +16,6 @@ expression: abi
   "body": {
     "functions": [
       {
-        "name": "allowed_code_hashes",
-        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
-            }
-          }
-        }
-      },
-      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
@@ -466,44 +445,6 @@ expression: abi
               "maxItems": 2,
               "minItems": 2
             }
-          }
-        }
-      },
-      {
-        "name": "my_migration_info",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "array",
-            "items": [
-              {
-                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                "type": "string"
-              },
-              {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/BackupServiceInfo"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/DestinationNodeInfo"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            ],
-            "maxItems": 3,
-            "minItems": 3
           }
         }
       },
