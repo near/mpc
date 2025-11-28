@@ -22,7 +22,7 @@ use mpc_contract::{
 
 /// Tests that update votes from non-participants are cleared after resharing.
 #[tokio::test]
-async fn test_update_votes_cleared_after_resharing() -> Result<()> {
+async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
     let (_, contract, env_accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
