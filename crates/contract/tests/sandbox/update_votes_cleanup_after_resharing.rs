@@ -43,15 +43,14 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .await?
         .json()?;
 
-    for account in &env_accounts[0..2] {
-        account
-            .call(contract.id(), "vote_update")
-            .args_json(json!({"id": update_id}))
-            .max_gas()
-            .transact()
-            .await?
-            .into_result()?;
-    }
+    execute_async_transactions(
+        &env_accounts[0..2],
+        &contract,
+        "vote_update",
+        &json!({"id": update_id}),
+        near_workspaces::types::Gas::from_tgas(300),
+    )
+    .await?;
 
     let proposals_before: dtos::ProposedUpdates =
         contract.view("proposed_updates").await?.json()?;
