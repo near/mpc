@@ -17,7 +17,7 @@ pub enum Error {
 }
 
 pub struct MpcP2PClient {
-    mpc_node_url: String,
+    mpc_node_address: String,
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
     backup_encryption_key: AesKey256,
@@ -25,13 +25,13 @@ pub struct MpcP2PClient {
 
 impl MpcP2PClient {
     pub fn new(
-        mpc_node_url: String,
+        mpc_node_address: String,
         mpc_node_p2p_key: VerifyingKey,
         p2p_private_key: SigningKey,
         backup_encryption_key: AesKey256,
     ) -> Self {
         Self {
-            mpc_node_url,
+            mpc_node_address,
             mpc_node_p2p_key,
             p2p_private_key,
             backup_encryption_key,
@@ -45,7 +45,7 @@ impl ports::P2PClient for MpcP2PClient {
     async fn get_keyshares(&self, keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
         let mut send_request = client::connect_to_web_server(
             &self.p2p_private_key,
-            &self.mpc_node_url,
+            &self.mpc_node_address,
             &self.mpc_node_p2p_key,
         )
         .await
@@ -64,7 +64,7 @@ impl ports::P2PClient for MpcP2PClient {
     async fn put_keyshares(&self, keyshares: &[Keyshare]) -> Result<(), Self::Error> {
         let mut send_request = client::connect_to_web_server(
             &self.p2p_private_key,
-            &self.mpc_node_url,
+            &self.mpc_node_address,
             &self.mpc_node_p2p_key,
         )
         .await

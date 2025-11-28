@@ -1,15 +1,23 @@
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+import enum
+import json
 import pathlib
 import sys
 import time
-from typing import cast
+from typing import Any, cast
 
 from key import Key
 from ruamel.yaml import YAML
 
+
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
 from common_lib.contracts import ContractMethod
-from common_lib.migration_state import BackupServiceInfo, DestinationNodeInfo
+from common_lib.migration_state import (
+    BackupServiceInfo,
+    DestinationNodeInfo,
+    MigrationState,
+    parse_migration_state,
+)
 from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
@@ -25,6 +33,21 @@ import requests
 DUMMY_MPC_IMAGE_HASH = "deadbeef" * 8
 
 
+@dataclass
+class SocketAddress:
+    host: str
+    port: str
+
+    @staticmethod
+    def from_config(config_section: Any) -> "SocketAddress":
+        return SocketAddress(
+            host=config_section.get("host"), port=config_section.get("port")
+        )
+
+    def __str__(self) -> str:
+        return f"{self.host}:{self.port}"
+
+
 class MpcNode(NearAccount):
     """
     MPC Node interface to keep track of the current status in the Chain-Signatures contract.
@@ -33,7 +56,7 @@ class MpcNode(NearAccount):
     Mpc Node has its respective account on NEAR Blockchain.
     """
 
-    class NodeStatus:
+    class NodeStatus(enum.IntEnum):
         # not a participant, neither a candidate
         IDLE = 1
         # a participant in the current epoch and also in the next epoch
@@ -47,15 +70,19 @@ class MpcNode(NearAccount):
         self,
         near_node: LocalNode,
         signer_key: Key,
-        url,
-        p2p_public_key,
+        p2p_url: str,
+        web_address: SocketAddress,
+        migration_address: SocketAddress,
+        p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
     ):
         super().__init__(near_node, signer_key, pytest_signer_keys)
-        self.url = url
-        self.p2p_public_key = p2p_public_key
-        self.status = MpcNode.NodeStatus.IDLE
+        self.p2p_url: str = p2p_url
+        self.web_address: SocketAddress = web_address
+        self.migration_address: SocketAddress = migration_address
+        self.p2p_public_key: str = p2p_public_key
+        self.status: MpcNode.NodeStatus = MpcNode.NodeStatus.IDLE
         self.participant_id: int | None = None
         self.home_dir = self.near_node.node_dir
         self.is_running = False
@@ -97,6 +124,25 @@ class MpcNode(NearAccount):
 
     def set_secret_store_key(self, secret_store_key):
         self.secret_store_key = secret_store_key
+
+    def migration_state_from_web(self) -> MigrationState:
+        response = requests.get(f"http://{str(self.web_address)}/debug/migrations")
+        (_, contract_btree_map) = json.loads(response.text)
+        return parse_migration_state(contract_btree_map)
+
+    def wait_for_migration_state(
+        self, expected_migrations: MigrationState, max_wait_duration_sec: int = 10
+    ):
+        start = time.time()
+        while True:
+            current_state = self.migration_state_from_web()
+            if current_state == expected_migrations:
+                return
+            else:
+                assert time.time() < start + max_wait_duration_sec, (
+                    f"Expected {expected_migrations}, found: {current_state}"
+                )
+                time.sleep(1)
 
     def reset_mpc_data(self):
         assert not self.is_running

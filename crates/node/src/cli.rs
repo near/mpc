@@ -98,6 +98,9 @@ pub enum CliCommand {
         desired_presignatures_to_buffer: usize,
         #[arg(long, default_value = "1")]
         desired_responder_keys_per_participant: usize,
+        /// optional generates additional config for participants[id] for each id in migrating_nodes.
+        #[arg(long, value_delimiter = ',')]
+        migrating_nodes: Vec<usize>,
     },
 }
 
@@ -559,6 +562,7 @@ impl Cli {
                 desired_triples_to_buffer,
                 desired_presignatures_to_buffer,
                 desired_responder_keys_per_participant,
+                ref migrating_nodes,
             } => {
                 anyhow::ensure!(
                     participants.len() == responders.len(),
@@ -566,12 +570,13 @@ impl Cli {
                 );
                 self.run_generate_test_configs(
                     output_dir,
-                    participants,
-                    responders,
+                    participants.to_vec(),
+                    responders.to_vec(),
                     threshold,
                     desired_triples_to_buffer,
                     desired_presignatures_to_buffer,
                     desired_responder_keys_per_participant,
+                    migrating_nodes.to_vec(),
                 )
                 .await
             }
@@ -580,6 +585,45 @@ impl Cli {
 
     #[allow(clippy::too_many_arguments)]
     async fn run_generate_test_configs(
+        &self,
+        output_dir: &str,
+        mut participants: Vec<AccountId>,
+        mut responders: Vec<AccountId>,
+        threshold: usize,
+        desired_triples_to_buffer: usize,
+        desired_presignatures_to_buffer: usize,
+        desired_responder_keys_per_participant: usize,
+        migrating_nodes: Vec<usize>,
+    ) -> anyhow::Result<()> {
+        for i in migrating_nodes {
+            let p = participants
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for participants", i))?
+                .clone();
+
+            let r = responders
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for responders", i))?
+                .clone();
+
+            participants.push(p);
+            responders.push(r);
+        }
+
+        self._run_generate_test_configs(
+            output_dir,
+            &participants,
+            &responders,
+            threshold,
+            desired_triples_to_buffer,
+            desired_presignatures_to_buffer,
+            desired_responder_keys_per_participant,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn _run_generate_test_configs(
         &self,
         output_dir: &str,
         participants: &[AccountId],

@@ -1,4 +1,5 @@
 import base64
+from dataclasses import asdict
 import json
 import pathlib
 import sys
@@ -18,6 +19,7 @@ from common_lib.contract_state import (
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
     BackupServiceInfo,
+    DestinationNodeInfo,
     MigrationState,
     parse_migration_state,
 )
@@ -231,7 +233,7 @@ class MpcCluster:
                         node.participant_id,
                         {
                             "sign_pk": node.p2p_public_key,
-                            "url": node.url,
+                            "url": node.p2p_url,
                         },
                     ]
                     for node in self.mpc_nodes
@@ -245,6 +247,7 @@ class MpcCluster:
         the contract is usable.
         """
         args = {"parameters": self.make_threshold_parameters(threshold)}
+        print(f"arg: {args}\n")
         if additional_init_args is not None:
             args.update(additional_init_args)
         tx = self.contract_node.sign_tx(self.contract_node.account_id(), "init", args)
@@ -343,7 +346,7 @@ class MpcCluster:
             )
             self.update_participant_status()
 
-    def get_contract_state(self):
+    def get_contract_state(self) -> Any:
         cn = self.contract_node
         txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.STATE, {})
         res = cn.send_txn_and_check_success(txn)
@@ -544,13 +547,31 @@ class MpcCluster:
         )
 
     def register_backup_service_info(
-        self, node_id, backup_service_info: BackupServiceInfo
+        self, node_id: int, backup_service_info: BackupServiceInfo
     ):
         node = self.mpc_nodes[node_id]
         tx = node.sign_tx(
             self.mpc_contract_account(),
-            "register_backup_service_info",
-            {"backup_service_info": backup_service_info},
+            "register_backup_service",
+            {"backup_service_info": asdict(backup_service_info)},
+        )
+        res = node.send_txn_and_check_success(tx)
+        return json.dumps(
+            json.loads(
+                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
+                    "utf-8"
+                )
+            )
+        )
+
+    def start_node_migration(
+        self, node_id: int, destination_node_info: DestinationNodeInfo
+    ):
+        node = self.mpc_nodes[node_id]
+        tx = node.sign_tx(
+            self.mpc_contract_account(),
+            "start_node_migration",
+            {"destination_node_info": asdict(destination_node_info)},
         )
         res = node.send_txn_and_check_success(tx)
         return json.dumps(

@@ -3,6 +3,9 @@ import os
 
 MPC_REPO_DIR = pathlib.Path(__file__).resolve().parents[2]
 MPC_BINARY_PATH = os.path.join(MPC_REPO_DIR / "target" / "release", "mpc-node")
+BACKUP_SERVICE_BINARY_PATH = os.path.join(
+    MPC_REPO_DIR / "target" / "release", "backup-cli"
+)
 CONFIG_PATH = os.path.join(MPC_REPO_DIR / "pytest" / "config.json")
 
 LISTEN_BLOCKS_FILE = "listen_blocks.flag"
