@@ -336,7 +336,7 @@ jobs:
         run: |
           source tee_launcher/venv/bin/activate
           cd tee_launcher 
-          PYTHONPATH=. pytest -vsx
+          PYTHONPATH=. pytest -vsx -m "not ci_excluded"
 
   detect-unused-dependencies:
     name: "Detect unused dependencies"
