@@ -1,89 +1,173 @@
-# Deploy and Upgrade an MPC Node on dstack
+# 🚀 MPC Node Launcher for dstack (TDX Confidential VM)
 
-The launcher is a single Python script: [launcher.py](launcher.py)
+This repository contains the secure **launcher** used to deploy and upgrade an MPC node inside a **confidential TDX VM**.  
+The launcher ensures integrity, validates the MPC image before execution, and interacts with dstack’s attestation agent.
 
-This is a secure launcher script for initializing and attesting a Docker-based MPC node.  
-It is designed to run inside a TEE-enabled environment (e.g., Intel TDX) to add and ensures the integrity and trustworthiness of the image before launching it.
+The launcher is a single Python script: **launcher.py**.
+
+---
+
+# 🔐 Features
+
+- Pulls an MPC Docker image from the registry  
+- Validates the MPC image digest against an allow-listed set
+- Optionally enforces an override digest (`MPC_HASH_OVERRIDE`)
+- Extends **RTMR3** with the validated digest via dstack `/var/run/dstack.sock`
+- Launches the MPC docker container securely  
 
 
-## 🔐 Features
+---
 
-- Pull an MPC docker image.
-- Compares the MPC image digest against expected values
-- Extends RTMR3 with the verified image digest
-- prints remote attestation and quote generation information to log
-- Starts the MPC node container with secure mount and network settings
+# 📦 Components
 
-## Usage
+- **launcher.py** — secure attestation + container launcher  
+- **launcher-docker-compose.yaml** — Docker Compose example for local development  
+- **/tapp/user_config** — dstack-provided configuration file  
+- **/mnt/shared/image-digest.bin** — allow-listed approved image hashes (written by MPC node)
 
-The launcher script is designed to run inside a confidential TDX VM managed by Dstack VMM.
+---
 
-launcher-docker-compose.yaml — Docker Compose file used to start the launcher and supporting containers.
-config.txt — File containing trusted environment variables used by the launcher and MPC node.
-It should be uploaded to: /tapp/.host-shared/.user-config
+# 🧩 Mandatory Environment Variables
 
-## 🧩 Environment Variables
+These must be present **launcher-docker-compose.yaml**:
 
-- `DOCKER_CONTENT_TRUST=1`: Must be enabled
-- `DEFAULT_IMAGE_DIGEST`: The expected hash of the Docker image (e.g., `sha256:...`)
+| Variable | Purpose |
+|---------|---------|
+| `DOCKER_CONTENT_TRUST=1` | Ensures all docker pulls are content-trusted |
+| `DEFAULT_IMAGE_DIGEST` | Allowed image for the first boot.
 
-## 📁 File Locations
+---
 
-- `/tapp/user_config"`: Optional `.env` file for overriding defaults
-- `/mnt/shared/image-digest`: Optional override of image digest (written by external components)
-- `/var/run/dstack.sock`: Unix socket used to communicate with `dstack`
+# ⚙️ Optional Launcher Environment Variables (via `/tapp/user_config`)
 
-## 🔧 Configuration (via user-config)
+These configure how the launcher behaves and how the MPC image is selected.
 
-The launcher supports the following environment variables via `/tapp/user_config`:
+## 🖼️ Image selection
+
+| Variable | Description |
+|----------|-------------|
+| `MPC_IMAGE_NAME` | Name of the MPC docker image (default: `nearone/mpc-node`) |
+| `MPC_REGISTRY` | Registry hostname (default: `registry.hub.docker.com`) |
+| `MPC_IMAGE_TAGS` | Comma-separated tags to try (default: `latest`) |
+| `RPC_REQUEST_TIMEOUT_SECS` | Per-request timeout | `10` |
+| `RPC_REQUEST_INTERVAL_SECS` | Initial retry interval (seconds) | `1.0` |
+| `RPC_MAX_ATTEMPTS` | Max attempts before failure | `20` |
+| `MPC_HASH_OVERRIDE` | Optional: force a slection of specific sha256 digest (must be in approved list) |
+
+Example:
 
 ```bash
-LAUNCHER_IMAGE_NAME=nearone/mpc-node
- # Comma-separated list of Docker image tags to use for the MPC node (e.g., "latest,stable")
-LAUNCHER_IMAGE_TAGS=latest 
-# LAUNCHER_REGISTRY: The Docker registry to pull the image from (e.g., registry.hub.docker.com)
-LAUNCHER_REGISTRY=registry.hub.docker.com
-# ENV_VAR_MPC_HASH_OVERRIDE: Optional; Can be use to select the hash of the MPC docker image. (out of allowed hashes)
-ENV_VAR_MPC_HASH_OVERRIDE=sha256:xyz...
+MPC_IMAGE_NAME=nearone/mpc-node
+MPC_REGISTRY=registry.hub.docker.com
+MPC_IMAGE_TAGS=latest,stable
+RPC_REQUEST_TIMEOUT_SECS=5
+RPC_REQUEST_INTERVAL_SECS=1.0
+RPC_MAX_ATTEMPTS=15
+MPC_HASH_OVERRIDE=sha256:abc123...
 ```
 
-## Reproducible builds
-from: tee_launcher folder run:
+These variables **never** propagate into the MPC container.  
+They are used only by the launcher.
+
+---
+
+
+---
+
+# 📁 Important File Locations
+
+| Path | Purpose |
+|------|---------|
+| `/tapp/user_config` | User-supplied `.env` file read by launcher |
+| `/mnt/shared/image-digest.bin` | JSON file containing approved MPC image hashes |
+| `/var/run/dstack.sock` | Unix socket to communicate with the dstack agent |
+| `/mnt/shared/` | Shared volume between launcher + MPC container |
+
+---
+
+# ▶️ How the Launcher Works (High-Level Flow)
+
+1. Ensure `DOCKER_CONTENT_TRUST=1`
+2. Load `/tapp/user_config` (optional)
+3. Load RPC timing configuration
+4. Load approved image hashes  
+   - From `image-digest.bin`, or  
+   - From `DEFAULT_IMAGE_DIGEST`
+5. Select digest  
+   - Use `MPC_HASH_OVERRIDE` if present  
+   - Otherwise take newest approved hash
+6. Validate digest  
+   - Fetch Docker manifests  
+   - Confirm digest vs content-trust digest
+7. Extend RTMR3 with validated digest
+8. Launch MPC container securely using Docker
+
+---
+
+# 🛠️ Building the Launcher (Reproducible Builds)
+
+From `tee_launcher/`, run:
+
+```bash
 docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
+```
 
-- [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
-- [deployment/Dockerfile](deployment/Dockerfile) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
-- [deployment/build-image.sh](deployment/build-image.sh) drives the build process
+Additional reproducible build components:
 
-For example, I ran `deployment/build-image.sh` on the git commit [ef3f1e7...](https://github.com/Near-One/mpc/commit/ef3f1e7f862d447de60e91d32dadf68696eb6a58). The resulting Docker image digest was
+- **Makefile** — Reproducible build of MPC binary  
+- **deployment/Dockerfile** — Fully pinned dependencies  
+- **deployment/build-image.sh** — Drives reproducible MPC docker builds  
+
+Example image digest:
 
 ```
 sha256:dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4
 ```
 
-and the MPC binary digest was
+Example binary digest:
 
 ```
 5dd1a80f842d08753184334466e97d55e5caa3dbcd93af27097d11e926d7f823
 ```
 
-The respective commands to find either are
+To inspect image digest:
 
-```
+```bash
 docker image inspect mpc-node-gcp:latest | jq '.[0].Id'
 ```
 
-Note, the image digest used with `docker run` is the output of the `docker image inspect ...` command.
+To compute binary digest:
 
+```bash
+docker run --rm <IMAGE_DIGEST> cat /app/mpc-node | sha256sum
 ```
-docker run --rm dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4 cat /app/mpc-node | sha256sum
-```
 
-Opens: write a script utilizing `vmm-cli.py` from Dstack to deploy an mpc node
+---
 
-- Artifacts to deploy a node
-  - Scripts to a) reproducibly build the mpc binary and b) reproducibly build a docker image containing the mpc binary
-- Actual upgrade procedure
-  - Write new image hash to /mnt/shared/image-digest
-  - Shut down cvm
-  - Amend `LAUNCHER_IMAGE_TAGS` if necessary; can be done from host by editing ./meta-dstack/build/run/*/shared/.user-config
+# 🔄 Upgrading an MPC Node
+
+1. Generate a new MPC docker image (reproducible build)
+2. Write the new digest to `/mnt/shared/image-digest.bin`  (with is done by the MPC node)
+3. **Optionally** adjust:
+   - `MPC_IMAGE_TAGS`
+   - `MPC_IMAGE_NAME`
+   - `MPC_REGISTRY`
+4. Shutdown the CVM
+5. Start it again through dstack → launcher validates + launches new image
+
+All node upgrades go through **digest-based verification**, ensuring integrity.
+
+---
+
+# 📌 (Optional) Automating Deployment
+
+You can write a script using `vmm-cli.py` from dstack to:
+
+- Upload `/tapp/user_config`
+- Upload new image digest
+- Reboot CVM
+- Verify attestation logs
+- Confirm the newly launched MPC container is running
+
+---
+
