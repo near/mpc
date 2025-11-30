@@ -1,21 +1,21 @@
 # test_launcher_config.py
 import inspect
-
 import json
 import tempfile
 import tee_launcher.launcher as launcher
-from tee_launcher.launcher import parse_env_lines
+
 import pytest
 from unittest.mock import mock_open
 
 from tee_launcher.launcher import (
+    load_and_select_hash,
+    validate_image_hash,
+    parse_env_lines,
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping,
 )
-
 from tee_launcher.launcher import (
-    load_and_select_hash,
     JSON_KEY_APPROVED_HASHES,
     ENV_VAR_MPC_HASH_OVERRIDE,
     ENV_VAR_DEFAULT_IMAGE_DIGEST,
@@ -449,3 +449,38 @@ def test_missing_file_fallback(monkeypatch):
 
     selected = load_and_select_hash({})
     assert selected == "sha256:" + "a" * 64
+
+
+TEST_DIGEST = "sha256:90fded62844519945a8df988437d541c218efdd486d15990fb5ca78ec7f001cd"
+# Important: ensure the config matches your test image
+DSTACK_CONFIG = {
+    "MPC_IMAGE_TAGS": "1",  # tag you used
+    "MPC_IMAGE_NAME": "barakeinavnear/launcher-test",
+    "MPC_REGISTRY": "registry.hub.docker.com",
+}
+
+# Launcher defaults
+RPC_REQUEST_TIMEOUT_SECS = 10
+RPC_REQUEST_INTERVAL_SECS = 1.0
+RPC_MAX_ATTEMPTS = 20
+
+
+# ------------------------------------------------------------------------------------
+# NOTE:
+#   This integration test depends on an externally hosted Docker image and its
+#   immutable digest. All steps for building, updating, and debugging this test
+#   are documented in:
+#
+#   ./launcher-test-image/README.md
+#
+#   Please read that file before modifying the test or the test image.
+# ------------------------------------------------------------------------------------
+def test_validate_image_hash():
+    result = validate_image_hash(
+        TEST_DIGEST,
+        DSTACK_CONFIG,
+        RPC_REQUEST_TIMEOUT_SECS,
+        RPC_REQUEST_INTERVAL_SECS,
+        RPC_MAX_ATTEMPTS,
+    )
+    assert result is True, "validate_image_hash() failed for test image"
