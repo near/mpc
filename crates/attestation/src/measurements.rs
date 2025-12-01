@@ -5,10 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
-use crate::report_data::ReportDataVersion;
 use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
-
-const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
 
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
@@ -41,8 +38,6 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
-    /// Expected version of the report data.
-    pub report_data_version: ReportDataVersion,
 }
 
 impl ExpectedMeasurements {
@@ -85,10 +80,7 @@ impl ExpectedMeasurements {
                 mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
             };
 
-            Ok(ExpectedMeasurements {
-                rtmrs,
-                report_data_version: EXPECTED_REPORT_DATA_VERSION,
-            })
+            Ok(ExpectedMeasurements { rtmrs })
         };
 
         let mut results = vec![];
