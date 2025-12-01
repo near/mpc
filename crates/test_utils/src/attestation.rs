@@ -1,8 +1,8 @@
-use attestation::{
+use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use mpc_attestation::{
     attestation::{Attestation, DstackAttestation},
     quote::QuoteBytes,
 };
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use serde_json::Value;
 use sha2::{Digest, Sha256};

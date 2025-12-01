@@ -4651,12 +4651,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7843ec2de400bcbc6a6328c958dc38e5359da6e93e72e37bc5246bf1ae776389"
 
 [[package]]
+name = "mpc-attestation"
+version = "3.0.6"
+dependencies = [
+ "attestation",
+]
+
+[[package]]
 name = "mpc-contract"
 version = "3.0.6"
 dependencies = [
  "anyhow",
  "assert_matches",
- "attestation",
  "borsh",
  "cargo-near-build",
  "contract-interface",
@@ -4671,6 +4677,7 @@ dependencies = [
  "hex",
  "insta",
  "k256",
+ "mpc-attestation",
  "mpc-contract",
  "mpc-primitives",
  "near-abi",
@@ -4734,7 +4741,6 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
- "attestation",
  "axum 0.7.9",
  "backon",
  "base64 0.22.1",
@@ -4755,6 +4761,7 @@ dependencies = [
  "k256",
  "lru 0.12.5",
  "mockall",
+ "mpc-attestation",
  "mpc-contract",
  "mpc-tls",
  "near-account-id 2.0.0",
@@ -6597,9 +6604,9 @@ name = "node-types"
 version = "3.0.6"
 dependencies = [
  "anyhow",
- "attestation",
  "bs58 0.5.1",
  "ed25519-dalek",
+ "mpc-attestation",
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
@@ -9495,10 +9502,10 @@ dependencies = [
 name = "test_utils"
 version = "3.0.6"
 dependencies = [
- "attestation",
  "contract-interface",
  "dstack-sdk-types",
  "hex",
+ "mpc-attestation",
  "mpc-primitives",
  "near-sdk",
  "serde_json",

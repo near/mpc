@@ -19,9 +19,9 @@ use crate::{
     web::{start_web_server, static_web_data, DebugRequest},
 };
 use anyhow::{anyhow, Context};
-use attestation::{attestation::Attestation, report_data::ReportData};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
+use mpc_attestation::{attestation::Attestation, report_data::ReportData};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
