@@ -1,15 +1,15 @@
 use anyhow::{Context, bail};
-use attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::Collateral,
-    quote::QuoteBytes,
-    report_data::ReportData,
-};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};
 use derive_more::{Constructor, From};
 use dstack_sdk::dstack_client::DstackClient;
 use http::status::StatusCode;
+use mpc_attestation::{
+    attestation::{Attestation, DstackAttestation, MockAttestation},
+    collateral::Collateral,
+    quote::QuoteBytes,
+    report_data::ReportData,
+};
 use reqwest::{Url, multipart::Form};
 use serde::Deserialize;
 use tracing::error;
@@ -210,9 +210,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attestation::report_data::ReportDataV1;
     #[cfg(feature = "external-services-tests")]
     use hex::ToHex;
+    use mpc_attestation::report_data::ReportDataV1;
     use rstest::rstest;
     use std::{
         cell::RefCell,

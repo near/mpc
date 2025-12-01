@@ -1,7 +1,7 @@
 use crate::{
     app_compose::AppCompose,
     collateral::Collateral,
-    measurements::{EXPECTED_LOCAL_SGX_EVENT_DIGEST, ExpectedMeasurements, MeasurementsError},
+    measurements::{ExpectedMeasurements, MeasurementsError},
     quote::QuoteBytes,
     report_data::ReportData,
 };
@@ -199,6 +199,8 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        expected_measurements_list: &[ExpectedMeasurements],
+        expected_local_sgx_expected_event: &[u8; 48],
     ) -> Result<(), VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
@@ -207,6 +209,8 @@ impl Attestation {
                 timestamp_seconds,
                 allowed_mpc_docker_image_hashes,
                 allowed_launcher_docker_compose_hashes,
+                expected_measurements_list,
+                expected_local_sgx_expected_event,
             ),
             Self::Mock(mock_attestation) => verify_mock_attestation(
                 mock_attestation,
@@ -220,6 +224,7 @@ impl Attestation {
     /// Checks whether the node is running the expected environment, including the expected Docker
     /// images (launcher and MPC node), by verifying report_data, replaying RTMR3, and comparing
     /// the relevant event values to expected values.
+    #[allow(clippy::too_many_arguments)]
     fn verify_attestation(
         &self,
         attestation: &DstackAttestation,
@@ -227,6 +232,8 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        expected_measurements_list: &[ExpectedMeasurements],
+        expected_local_sgx_expected_event: &[u8; 48],
     ) -> Result<(), VerificationError> {
         if allowed_mpc_docker_image_hashes.is_empty() {
             return Err(VerificationError::EmptyAllowedMpcImageHashesList);
@@ -234,9 +241,6 @@ impl Attestation {
         if allowed_launcher_docker_compose_hashes.is_empty() {
             return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
         }
-
-        let expected_measurements_list = ExpectedMeasurements::from_embedded_tcb_info()
-            .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 
         let verification_result = dcap_qvl::verify::verify(
             &attestation.quote,
@@ -256,11 +260,12 @@ impl Attestation {
         self.verify_any_static_rtmrs(
             report_data,
             &attestation.tcb_info,
-            &expected_measurements_list,
+            expected_measurements_list,
         )?;
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)?;
-        self.verify_local_sgx_digest(&attestation.tcb_info, &EXPECTED_LOCAL_SGX_EVENT_DIGEST)?;
+
+        self.verify_local_sgx_digest(&attestation.tcb_info, expected_local_sgx_expected_event)?;
 
         self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)?;
         self.verify_launcher_compose_hash(

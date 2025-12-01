@@ -6,3 +6,6 @@ edition = { workspace = true }
 
 [dependencies]
 attestation = { workspace = true }
+borsh = { workspace = true }
+mpc-primitives = { workspace = true }
+serde = { workspace = true }
