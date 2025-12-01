@@ -5,7 +5,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use dstack_sdk_types::dstack::{EventLog, TcbInfo as DstackTcbInfo};
+
+use crate::attestation::KEY_PROVIDER_EVENT;
 
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
@@ -38,6 +40,9 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
+    /// Expected digest for the key-provider event.
+    #[serde_as(as = "Bytes")]
+    pub key_provider_event_digest: [u8; 48],
 }
 
 impl ExpectedMeasurements {
@@ -62,7 +67,7 @@ impl ExpectedMeasurements {
             let tcb_info: DstackTcbInfo =
                 serde_json::from_str(json_str).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
 
-            let decode_rtmr =
+            let decode_measurement =
                 |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
                     let decoded = hex::decode(hex_value).map_err(|_| {
                         MeasurementsError::InvalidHexValue(name.into(), hex_value.into())
@@ -74,13 +79,27 @@ impl ExpectedMeasurements {
                 };
 
             let rtmrs = Measurements {
-                rtmr0: decode_rtmr("rtmr0", &tcb_info.rtmr0)?,
-                rtmr1: decode_rtmr("rtmr1", &tcb_info.rtmr1)?,
-                rtmr2: decode_rtmr("rtmr2", &tcb_info.rtmr2)?,
-                mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
+                rtmr0: decode_measurement("rtmr0", &tcb_info.rtmr0)?,
+                rtmr1: decode_measurement("rtmr1", &tcb_info.rtmr1)?,
+                rtmr2: decode_measurement("rtmr2", &tcb_info.rtmr2)?,
+                mrtd: decode_measurement("mrtd", &tcb_info.mrtd)?,
             };
 
-            Ok(ExpectedMeasurements { rtmrs })
+            let key_provider_events: Vec<&EventLog> = tcb_info
+                .event_log
+                .iter()
+                .filter(|e| e.event == KEY_PROVIDER_EVENT)
+                .collect();
+            if key_provider_events.len() != 1 {
+                return Err(MeasurementsError::InvalidTcbInfo);
+            }
+            let key_provider_event_digest =
+                decode_measurement(KEY_PROVIDER_EVENT, &key_provider_events[0].digest)?;
+
+            Ok(ExpectedMeasurements {
+                rtmrs,
+                key_provider_event_digest,
+            })
         };
 
         let mut results = vec![];

@@ -26,7 +26,7 @@ const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 const DSTACK_EVENT_TYPE: u32 = 134217729;
 
 const COMPOSE_HASH_EVENT: &str = "compose-hash";
-const KEY_PROVIDER_EVENT: &str = "key-provider";
+pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
@@ -160,7 +160,6 @@ impl Attestation {
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         expected_measurements_list: &[ExpectedMeasurements],
-        expected_local_sgx_expected_event: &[u8; 48],
     ) -> Result<(), VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
@@ -168,7 +167,6 @@ impl Attestation {
                 expected_report_data,
                 timestamp_seconds,
                 expected_measurements_list,
-                expected_local_sgx_expected_event,
             ),
             Self::Mock(mock_attestation) => {
                 verify_mock_attestation(mock_attestation, timestamp_seconds)
@@ -186,7 +184,6 @@ impl Attestation {
         expected_report_data: ReportData,
         timestamp_seconds: u64,
         expected_measurements_list: &[ExpectedMeasurements],
-        expected_local_sgx_expected_event: &[u8; 48],
     ) -> Result<(), VerificationError> {
         let verification_result = dcap_qvl::verify::verify(
             &attestation.quote,
@@ -203,15 +200,15 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
-        self.verify_any_static_rtmrs(
+
+        self.verify_rtmr3(report_data, &attestation.tcb_info)?;
+        self.verify_app_compose(&attestation.tcb_info)?;
+
+        self.verify_any_measurements(
             report_data,
             &attestation.tcb_info,
             expected_measurements_list,
         )?;
-        self.verify_rtmr3(report_data, &attestation.tcb_info)?;
-        self.verify_app_compose(&attestation.tcb_info)?;
-
-        self.verify_local_sgx_digest(&attestation.tcb_info, expected_local_sgx_expected_event)?;
 
         Ok(())
     }
@@ -328,9 +325,9 @@ impl Attestation {
         compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 
-    /// Try to verify static RTMRs against multiple expected measurement sets.
+    /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
     /// Returns `Ok(())` if any set matches; otherwise, returns a WrongHash error.
-    fn verify_any_static_rtmrs(
+    fn verify_any_measurements(
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
@@ -340,6 +337,9 @@ impl Attestation {
             if self
                 .verify_static_rtmrs(report_data, tcb_info, expected)
                 .is_ok()
+                && self
+                    .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
+                    .is_ok()
             {
                 return Ok(()); // found a valid match
             }
@@ -453,7 +453,7 @@ impl Attestation {
     }
 
     /// Verifies local key-provider event digest matches the expected digest.
-    fn verify_local_sgx_digest(
+    fn verify_key_provider_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_digest: &[u8; 48],
@@ -461,7 +461,7 @@ impl Attestation {
         let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
 
         compare_hex_hashes(
-            "sgx_digest",
+            "key_provider",
             &key_provider_event.digest,
             &hex::encode(expected_digest),
         )

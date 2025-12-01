@@ -18,7 +18,6 @@ use sha2::{Digest as _, Sha256};
 
 use crate::alloc::format;
 use crate::alloc::string::ToString;
-use crate::measurements::EXPECTED_LOCAL_SGX_EVENT_DIGEST;
 
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
@@ -89,7 +88,6 @@ impl Attestation {
             expected_report_data,
             timestamp_seconds,
             &expected_measurements_list,
-            &EXPECTED_LOCAL_SGX_EVENT_DIGEST,
         )
     }
 
