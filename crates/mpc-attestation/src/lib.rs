@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(clippy::mod_module_files)]
 
 extern crate alloc;
 

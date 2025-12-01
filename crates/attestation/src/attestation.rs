@@ -177,7 +177,6 @@ impl Attestation {
     /// Checks whether the image is running the expected environment,
     /// by verifying report_data, replaying RTMR3, and comparing
     /// the relevant event values to expected values.
-    #[allow(clippy::too_many_arguments)]
     fn verify_attestation(
         &self,
         attestation: &DstackAttestation,
@@ -208,9 +207,7 @@ impl Attestation {
             report_data,
             &attestation.tcb_info,
             expected_measurements_list,
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all

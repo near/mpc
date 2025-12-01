@@ -1,10 +1,8 @@
+use ::attestation::report_data::REPORT_DATA_SIZE;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{AsRef, Deref, From};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_384};
-
-/// Number of bytes for the report data.
-const REPORT_DATA_SIZE: usize = 64;
 
 /// Common constants for all [`ReportData`] versions.
 const BINARY_VERSION_OFFSET: usize = 0;
