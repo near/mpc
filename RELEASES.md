@@ -75,7 +75,7 @@ cargo nextest run -p mpc-contract abi_has_not_changed
 cargo insta review
 ```
 
-At this point it's appropraite to open a PR with the changelog and crate version changes.
+At this point it's appropriate to open a PR with the changelog and crate version changes.
 See [the 3.0.6 PR](https://github.com/near/mpc/pull/1549) for reference.
 
 ### 3. Create the release tag
