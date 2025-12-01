@@ -35,7 +35,7 @@ use crate::{
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use config::{Config, InitConfig};
+use config::Config;
 use contract_interface::types as dtos;
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
@@ -52,6 +52,7 @@ use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
+    state::ContractState,
     store::LookupMap,
     CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
@@ -70,26 +71,9 @@ use tee::{
 };
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
-/// Gas required for a sign request
-const GAS_FOR_SIGN_CALL: Gas = Gas::from_tgas(15);
-
-/// Gas required for a CKD request
-const GAS_FOR_CKD_CALL: Gas = Gas::from_tgas(15);
-
-/// Register used to receive data id from `promise_await_data`
+/// Register used to receive data id from `promise_await_data`.
+/// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
-
-/// Prepaid gas for a `return_signature_and_clean_state_on_success` call
-const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
-
-/// Prepaid gas for a `return_ck_and_clean_state_on_success` call
-const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS: Gas = Gas::from_tgas(7);
-
-/// Prepaid gas for a `fail_on_timeout` call
-const FAIL_ON_TIMEOUT_GAS: Gas = Gas::from_tgas(2);
-
-/// Prepaid gas for a `clean_tee_status` call
-const CLEAN_TEE_STATUS_GAS: Gas = Gas::from_tgas(10);
 
 /// Minimum deposit required for sign requests
 const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
@@ -97,15 +81,12 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Prepaid gas for a `cleanup_orphaned_node_migrations` call
-/// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
-const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
-
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
     }
 }
+impl ContractState for MpcContract {}
 
 #[near_bindgen]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -199,14 +180,17 @@ impl MpcContract {
             }
         }
 
+        let gas_required =
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
+
         // Make sure sign call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < GAS_FOR_SIGN_CALL {
+        if env::prepaid_gas() < gas_required {
             env::panic_str(
                 &InvalidParameters::InsufficientGas
                     .message(format!(
                         "Provided: {}, required: {}",
                         env::prepaid_gas(),
-                        GAS_FOR_SIGN_CALL
+                        gas_required
                     ))
                     .to_string(),
             );
@@ -217,15 +201,16 @@ impl MpcContract {
         let deposit = env::attached_deposit();
         let storage_used = env::storage_usage() - initial_storage;
         let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
-        let storage_cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
 
-        match deposit.checked_sub(storage_cost) {
+        let cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
+
+        match deposit.checked_sub(cost) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            storage_cost.as_yoctonear(),
+                            cost.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -234,7 +219,7 @@ impl MpcContract {
             Some(diff) => {
                 if diff > NearToken::from_yoctonear(0) {
                     log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff);
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
                 }
             }
         }
@@ -250,10 +235,15 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
+        let callback_gas = Gas::from_tgas(
+            self.config
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+        );
+
         let promise_index = env::promise_yield_create(
             "return_signature_and_clean_state_on_success",
-            &serde_json::to_vec(&(&request,)).unwrap(),
-            RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS,
+            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_gas,
             GasWeight(0),
             DATA_ID_REGISTER,
         );
@@ -364,14 +354,16 @@ impl MpcContract {
             );
         }
 
+        let gas_required = Gas::from_tgas(self.config.ckd_call_gas_attachment_requirement_tera_gas);
+
         // Make sure CKD call will not run out of gas doing yield/resume logic
-        if env::prepaid_gas() < GAS_FOR_CKD_CALL {
+        if env::prepaid_gas() < gas_required {
             env::panic_str(
                 &InvalidParameters::InsufficientGas
                     .message(format!(
                         "Provided: {}, required: {}",
                         env::prepaid_gas(),
-                        GAS_FOR_CKD_CALL
+                        gas_required
                     ))
                     .to_string(),
             );
@@ -381,8 +373,9 @@ impl MpcContract {
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
         let storage_used = env::storage_usage() - initial_storage;
-        let cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
-        let cost = std::cmp::max(cost, MINIMUM_CKD_REQUEST_DEPOSIT);
+        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
+
+        let cost = std::cmp::max(storage_cost, MINIMUM_CKD_REQUEST_DEPOSIT);
 
         match deposit.checked_sub(cost) {
             None => {
@@ -399,7 +392,7 @@ impl MpcContract {
             Some(diff) => {
                 if diff > NearToken::from_yoctonear(0) {
                     log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff);
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
                 }
             }
         }
@@ -413,10 +406,16 @@ impl MpcContract {
         let app_id = env::predecessor_account_id().as_v2_account_id();
         let request = CKDRequest::new(request.app_public_key, app_id, request.domain_id);
 
+        let callback_gas = Gas::from_tgas(
+            mpc_contract
+                .config
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+        );
+
         let promise_index = env::promise_yield_create(
             "return_ck_and_clean_state_on_success",
-            &serde_json::to_vec(&(&request,)).unwrap(),
-            RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_GAS,
+            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_gas,
             GasWeight(0),
             DATA_ID_REGISTER,
         );
@@ -443,7 +442,7 @@ impl MpcContract {
         request: SignatureRequest,
         response: SignatureResponse,
     ) -> Result<(), Error> {
-        let signer = self.assert_caller_is_signer();
+        let signer = Self::assert_caller_is_signer();
 
         log!("respond: signer={}, request={:?}", &signer, &request);
 
@@ -517,7 +516,7 @@ impl MpcContract {
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_signature_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
@@ -526,7 +525,7 @@ impl MpcContract {
 
     #[handle_result]
     pub fn respond_ckd(&mut self, request: CKDRequest, response: CKDResponse) -> Result<(), Error> {
-        let signer = self.assert_caller_is_signer();
+        let signer = Self::assert_caller_is_signer();
         log!("respond_ckd: signer={}, request={:?}", &signer, &request);
 
         if !self.protocol_state.is_running_or_resharing() {
@@ -542,7 +541,7 @@ impl MpcContract {
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
@@ -562,7 +561,7 @@ impl MpcContract {
             proposed_participant_attestation.into_contract_type();
 
         let account_key = env::signer_account_pk();
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
@@ -620,7 +619,9 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.as_v1_account_id()).transfer(diff);
+                    Promise::new(account_id.as_v1_account_id())
+                        .transfer(diff)
+                        .detach();
                 }
             }
         }
@@ -824,20 +825,30 @@ impl MpcContract {
             };
 
         if resharing_concluded {
+            let clean_tee_status_gas = Gas::from_tgas(self.config.clean_tee_status_tera_gas);
+
             // Spawn a promise to clean up TEE information for non-participants
-            Promise::new(env::current_account_id()).function_call(
-                "clean_tee_status".to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                CLEAN_TEE_STATUS_GAS,
-            );
+            Promise::new(env::current_account_id())
+                .function_call(
+                    "clean_tee_status".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    clean_tee_status_gas,
+                )
+                .detach();
+
+            let clean_node_migrations_gas =
+                Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas);
+
             // Spawn a promise to clean up orphaned node migrations for non-participants
-            Promise::new(env::current_account_id()).function_call(
-                "cleanup_orphaned_node_migrations".to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                CLEAN_NODE_MIGRATIONS,
-            );
+            Promise::new(env::current_account_id())
+                .function_call(
+                    "cleanup_orphaned_node_migrations".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    clean_node_migrations_gas,
+                )
+                .detach();
         }
 
         Ok(())
@@ -929,7 +940,7 @@ impl MpcContract {
         // Refund the difference if the proposer attached more than required.
         if let Some(diff) = attached.checked_sub(required) {
             if diff > NearToken::from_yoctonear(0) {
-                Promise::new(proposer).transfer(diff);
+                Promise::new(proposer).transfer(diff).detach();
             }
         }
 
@@ -1018,20 +1029,6 @@ impl MpcContract {
         }
 
         Ok(())
-    }
-
-    /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
-    pub fn allowed_code_hashes(&self) -> Vec<MpcDockerImageHash> {
-        log!("allowed_code_hashes: signer={}", env::signer_account_id());
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
-        let mut hashes = self
-            .tee_state
-            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
-        hashes.reverse();
-        hashes
     }
 
     /// Returns the latest (most recent) allowed code hash.
@@ -1148,7 +1145,7 @@ impl MpcContract {
     #[init]
     pub fn init(
         parameters: ThresholdParameters,
-        init_config: Option<InitConfig>,
+        init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         log!(
             "init: signer={}, parameters={:?}, init_config={:?}",
@@ -1175,7 +1172,7 @@ impl MpcContract {
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
             proposed_updates: ProposedUpdates::default(),
-            config: Config::from(init_config),
+            config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -1191,9 +1188,8 @@ impl MpcContract {
         next_domain_id: u64,
         keyset: Keyset,
         parameters: ThresholdParameters,
-        init_config: Option<InitConfig>,
+        init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        assert_predecessor_is_contract_itself();
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
@@ -1220,7 +1216,7 @@ impl MpcContract {
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
 
         Ok(MpcContract {
-            config: Config::from(init_config),
+            config: init_config.map(Into::into).unwrap_or_default(),
             protocol_state: ProtocolContractState::Running(RunningContractState::new(
                 domains, keyset, parameters,
             )),
@@ -1243,7 +1239,6 @@ impl MpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        assert_predecessor_is_contract_itself();
         log!("migrating contract");
 
         match try_state_read::<v3_0_2_state::MpcContract>() {
@@ -1290,12 +1285,12 @@ impl MpcContract {
         self.pending_ckd_requests.get(request).cloned()
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> dtos::Config {
+        dtos::Config::from(&self.config)
     }
 
     // contract version
-    pub fn version(&self) -> String {
+    pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
@@ -1312,11 +1307,12 @@ impl MpcContract {
             Ok(signature) => PromiseOrValue::Value(signature),
             Err(_) => {
                 self.pending_signature_requests.remove(&request);
+                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
-                    FAIL_ON_TIMEOUT_GAS,
+                    fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
@@ -1336,11 +1332,12 @@ impl MpcContract {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 self.pending_ckd_requests.remove(&request);
+                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
                     vec![],
                     NearToken::from_near(0),
-                    FAIL_ON_TIMEOUT_GAS,
+                    fail_on_timeout_gas,
                 );
                 near_sdk::PromiseOrValue::Promise(promise.as_return())
             }
@@ -1348,19 +1345,19 @@ impl MpcContract {
     }
 
     #[private]
-    pub fn fail_on_timeout(&self) {
+    pub fn fail_on_timeout() {
         // To stay consistent with the old version of the timeout error
         env::panic_str(&RequestError::Timeout.to_string());
     }
 
     #[private]
-    pub fn update_config(&mut self, config: Config) {
-        self.config = config;
+    pub fn update_config(&mut self, config: dtos::Config) {
+        self.config = config.into();
     }
 
     /// Get our own account id as a voter. Returns an error if we are not a participant.
     fn voter_account(&self) -> Result<AccountId, Error> {
-        if !self.caller_is_signer() {
+        if !Self::caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
         let voter = env::signer_account_id().as_v2_account_id();
@@ -1369,7 +1366,7 @@ impl MpcContract {
     }
 
     /// Returns true if the caller is the signer account.
-    fn caller_is_signer(&self) -> bool {
+    fn caller_is_signer() -> bool {
         let signer = env::signer_account_id();
         let predecessor = env::predecessor_account_id();
         signer == predecessor
@@ -1378,7 +1375,7 @@ impl MpcContract {
     /// Get our own account id as a voter. If we are not a participant, panic.
     /// also ensures that the caller is the signer account.
     fn voter_or_panic(&self) -> AccountId {
-        self.assert_caller_is_signer();
+        Self::assert_caller_is_signer();
         match self.voter_account() {
             Ok(voter) => voter,
             Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
@@ -1399,7 +1396,7 @@ impl MpcContract {
     fn assert_caller_is_attested_participant_and_protocol_active(&self) {
         let participants = self.protocol_state.active_participants();
 
-        self.assert_caller_is_signer();
+        Self::assert_caller_is_signer();
 
         if !self
             .tee_state
@@ -1411,7 +1408,7 @@ impl MpcContract {
 
     /// Ensures the current call originates from the signer account itself.
     /// Panics if `signer_account_id` and `predecessor_account_id` differ.
-    fn assert_caller_is_signer(&self) -> AccountId {
+    fn assert_caller_is_signer() -> AccountId {
         let signer_id = env::signer_account_id();
         let predecessor_id = env::predecessor_account_id();
 
@@ -1428,19 +1425,6 @@ impl MpcContract {
 /// Methods for Migration service
 #[near_bindgen]
 impl MpcContract {
-    // todo: [#1248](https://github.com/near/mpc/issues/1248), we might want to delete this one
-    pub fn my_migration_info(
-        &self,
-    ) -> (
-        AccountId,
-        Option<BackupServiceInfo>,
-        Option<DestinationNodeInfo>,
-    ) {
-        let account_id = env::signer_account_id().as_v2_account_id();
-        log!("my_migration_info: signer={:?}", account_id,);
-        self.node_migrations.get_for_account(&account_id)
-    }
-
     pub fn migration_info(
         &self,
     ) -> BTreeMap<AccountId, (Option<BackupServiceInfo>, Option<DestinationNodeInfo>)> {
@@ -1460,7 +1444,7 @@ impl MpcContract {
         &mut self,
         backup_service_info: BackupServiceInfo,
     ) -> Result<(), Error> {
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
         log!(
             "register_backup_service: signer={:?}, backup_service_info={:?}",
             account_id,
@@ -1496,7 +1480,7 @@ impl MpcContract {
     ) -> Result<(), Error> {
         // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
 
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
 
         log!(
             "start_node_migration: signer={:?}, destination_node_info={:?}",
@@ -1534,7 +1518,7 @@ impl MpcContract {
     /// - `InvalidParameters::InvalidTeeRemoteAttestation`: if destination node’s TEE quote is invalid
     #[handle_result]
     pub fn conclude_node_migration(&mut self, keyset: &Keyset) -> Result<(), Error> {
-        let account_id = self.assert_caller_is_signer();
+        let account_id = Self::assert_caller_is_signer();
         let signer_pk = env::signer_account_pk();
         log!(
             "conclude_node_migration: signer={:?}, signer_pk={:?} keyset={:?}",
@@ -1637,13 +1621,6 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .transpose()
 }
 
-fn assert_predecessor_is_contract_itself() {
-    let predecessor_is_contract_itself = env::predecessor_account_id() == env::current_account_id();
-    if !predecessor_is_contract_itself {
-        env::panic_str("This method is private, and only callable by the contract itself.")
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
@@ -1683,10 +1660,22 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
     use sha2::{Digest, Sha256};
+    use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
     use threshold_signatures::frost_ed25519::Ed25519Group;
     use threshold_signatures::frost_secp256k1::Secp256K1Group;
+
+    pub fn migration_info(
+        contract_state: &MpcContract,
+        account_id: &AccountId,
+    ) -> (
+        AccountId,
+        Option<BackupServiceInfo>,
+        Option<DestinationNodeInfo>,
+    ) {
+        contract_state.node_migrations.get_for_account(account_id)
+    }
 
     #[derive(Debug)]
     #[allow(dead_code)]
@@ -1786,7 +1775,6 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-
         let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
         (context, contract, sk)
     }
@@ -1883,10 +1871,12 @@ mod tests {
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
                 assert!(success);
-                contract.return_signature_and_clean_state_on_success(
-                    signature_request.clone(),
-                    Ok(signature_response),
-                );
+                contract
+                    .return_signature_and_clean_state_on_success(
+                        signature_request.clone(),
+                        Ok(signature_response),
+                    )
+                    .detach();
 
                 assert!(contract.get_pending_request(&signature_request).is_none(),);
             }
@@ -1964,7 +1954,9 @@ mod tests {
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
-                contract.return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response));
+                contract
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
+                    .detach();
 
                 assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
             }
@@ -2411,14 +2403,14 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.my_migration_info(),
+                migration_info(&contract, account_id),
                 (account_id.clone(), None, None)
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
-            assert_eq!(contract.my_migration_info(), expected_res);
+            assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
         let expected_migration_state = expected_migration_state.into_iter().collect();
@@ -2510,7 +2502,7 @@ mod tests {
             test_env.set_signer(account_id);
             // sanity check
             assert_eq!(
-                contract.my_migration_info(),
+                migration_info(&contract, account_id),
                 (account_id.clone(), None, None)
             );
             let backup_service_info = BackupServiceInfo {
@@ -2519,7 +2511,7 @@ mod tests {
             let res = contract.register_backup_service(backup_service_info.clone());
             assert!(res.is_ok(), "res: {:?}", res);
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
-            assert_eq!(contract.my_migration_info(), expected_res);
+            assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
         }
         let result = contract.migration_info();
@@ -2794,8 +2786,8 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation = attestation::attestation::Attestation::Mock(
-                attestation::attestation::MockAttestation::Valid,
+            let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
+                mpc_attestation::attestation::MockAttestation::Valid,
             );
             contract.tee_state.add_participant(
                 NodeId {
@@ -2937,11 +2929,7 @@ mod tests {
         let code_update = propose_and_vote_code(0, &mut contract);
 
         let config_update = {
-            let update_config = Config {
-                key_event_timeout_blocks: 64,
-                tee_upgrade_deadline_duration_seconds: 100,
-                contract_upgrade_deposit_tera_gas: 10,
-            };
+            let update_config = dummy_config(1);
             let hash = Sha256::digest(serde_json::to_vec(&update_config).unwrap());
             let expected_update_hash = dtos::UpdateHash::Config(hash.into());
 

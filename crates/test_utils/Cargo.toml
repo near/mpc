@@ -5,10 +5,10 @@ license = { workspace = true }
 edition = "2021"
 
 [dependencies]
-attestation = { workspace = true }
 contract-interface = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
+mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 near-sdk = { workspace = true }
 serde_json = { workspace = true }

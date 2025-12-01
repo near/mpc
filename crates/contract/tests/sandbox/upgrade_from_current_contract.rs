@@ -4,7 +4,6 @@ use crate::sandbox::common::{
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
-use mpc_contract::config::Config;
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -78,10 +77,17 @@ async fn test_propose_update_config() {
         .contains("not a voter"));
 
     // have each participant propose a new update:
-    let new_config = Config {
-        key_event_timeout_blocks: 20,
-        tee_upgrade_deadline_duration_seconds: 3333,
-        contract_upgrade_deposit_tera_gas: 299,
+    let new_config = contract_interface::types::Config {
+        key_event_timeout_blocks: 11,
+        tee_upgrade_deadline_duration_seconds: 22,
+        contract_upgrade_deposit_tera_gas: 33,
+        sign_call_gas_attachment_requirement_tera_gas: 44,
+        ckd_call_gas_attachment_requirement_tera_gas: 55,
+        return_signature_and_clean_state_on_success_call_tera_gas: 66,
+        return_ck_and_clean_state_on_success_call_tera_gas: 77,
+        fail_on_timeout_tera_gas: 88,
+        clean_tee_status_tera_gas: 99,
+        cleanup_orphaned_node_migrations_tera_gas: 11,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -103,7 +109,8 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let old_config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
@@ -134,9 +141,10 @@ async fn test_propose_update_config() {
             );
         }
     }
-    let new_config = serde_json::json!(new_config);
     // check that the proposal executed since the threshold got changed.
-    let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
+
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
 }
@@ -240,7 +248,7 @@ async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = Config::default();
+    let dummy_config = contract_interface::types::InitConfig::default();
 
     // Can not propose update both to code and config
     let execution = accounts[0]
@@ -415,7 +423,7 @@ async fn migration_function_rejects_external_callers() {
 
     let error_message = format!("{:?}", execution_error);
 
-    let expected_error_message = "Smart contract panicked: This method is private, and only callable by the contract itself.";
+    let expected_error_message = "Smart contract panicked: Method migrate is private";
 
     assert!(
         error_message.contains(expected_error_message),

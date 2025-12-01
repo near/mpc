@@ -6,12 +6,12 @@ use crate::{
     },
     TryIntoInterfaceType,
 };
-use attestation::{
+use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::types::Ed25519PublicKey;
+use mpc_attestation::{
     attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::{env, near, store::IterableMap};
@@ -371,7 +371,7 @@ mod tests {
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
 
     use super::*;
-    use attestation::attestation::{Attestation, MockAttestation};
+    use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
 
     #[test]

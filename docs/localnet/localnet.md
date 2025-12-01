@@ -409,12 +409,12 @@ near contract call-function as-transaction mpc-contract.test.near sign file-args
 ```
 
 ```log
-INFO Function execution return value (printed to stdout): { 
+INFO Function execution return value (printed to stdout): {
   "scheme": "Ed25519",
   "signature": [ 37, 63, 224, 202, 221, 22, 31, 208, 134, 42, 206, 69, 44, 196,
 110, 57, 11, 185, 238, 164, 197, 97, 53, 86, 1, 173, 88, 162, 0, 200, 176, 135,
 139, 71, 210, 109, 157, 5, 20, 79, 213, 187, 180, 95, 225, 75, 62, 164, 176,
-229, 254, 11, 32, 111, 51, 109, 230, 202, 146, 132, 41, 51, 134, 10 ] 
+229, 254, 11, 32, 111, 51, 109, 230, 202, 146, 132, 41, 51, 134, 10 ]
 }
 ```
 
@@ -461,7 +461,7 @@ near contract call-function as-transaction mpc-contract.test.near vote_cancel_ke
 ### Check allowed image hashes
 
 ```shell
-near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near allowed_docker_image_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Add more funds to the mpc-contract account
