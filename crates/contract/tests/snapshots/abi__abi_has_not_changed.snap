@@ -16,27 +16,6 @@ expression: abi
   "body": {
     "functions": [
       {
-        "name": "allowed_code_hashes",
-        "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
-            }
-          }
-        }
-      },
-      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.",
         "kind": "view",
@@ -325,7 +304,8 @@ expression: abi
         "name": "init_running",
         "kind": "call",
         "modifiers": [
-          "init"
+          "init",
+          "private"
         ],
         "params": {
           "serialization_type": "json",
@@ -429,7 +409,8 @@ expression: abi
         "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.",
         "kind": "call",
         "modifiers": [
-          "init"
+          "init",
+          "private"
         ]
       },
       {
@@ -470,44 +451,6 @@ expression: abi
         }
       },
       {
-        "name": "my_migration_info",
-        "kind": "view",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "array",
-            "items": [
-              {
-                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                "type": "string"
-              },
-              {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/BackupServiceInfo"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/DestinationNodeInfo"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            ],
-            "maxItems": 3,
-            "minItems": 3
-          }
-        }
-      },
-      {
         "name": "propose_update",
         "doc": " Propose update to either code or config, but not both of them at the same time.",
         "kind": "call",
@@ -537,6 +480,34 @@ expression: abi
                       ],
                       [
                         "contract_upgrade_deposit_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "sign_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "ckd_call_gas_attachment_requirement_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_signature_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "return_ck_and_clean_state_on_success_call_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "fail_on_timeout_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "clean_tee_status_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "cleanup_orphaned_node_migrations_tera_gas",
                         "u64"
                       ]
                     ]
@@ -1419,22 +1390,71 @@ expression: abi
           }
         },
         "Config": {
-          "description": "Config for V2 of the contract.",
+          "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
+            "ckd_call_gas_attachment_requirement_tera_gas",
+            "clean_tee_status_tera_gas",
+            "cleanup_orphaned_node_migrations_tera_gas",
             "contract_upgrade_deposit_tera_gas",
+            "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "return_ck_and_clean_state_on_success_call_tera_gas",
+            "return_signature_and_clean_state_on_success_call_tera_gas",
+            "sign_call_gas_attachment_requirement_tera_gas",
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
+            "ckd_call_gas_attachment_requirement_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_tee_status_tera_gas": {
+              "description": "Prepaid gas for a `clean_tee_status` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "cleanup_orphaned_node_migrations_tera_gas": {
+              "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "contract_upgrade_deposit_tera_gas": {
               "description": "Amount of gas to deposit for contract and config updates.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
+            "fail_on_timeout_tera_gas": {
+              "description": "Prepaid gas for a `fail_on_timeout` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "return_ck_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "return_signature_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sign_call_gas_attachment_requirement_tera_gas": {
+              "description": "Gas required for a sign request.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1584,10 +1604,83 @@ expression: abi
           }
         },
         "InitConfig": {
-          "description": "Config for initializing V2 of the contract.",
+          "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
+            "ckd_call_gas_attachment_requirement_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "clean_tee_status_tera_gas": {
+              "description": "Prepaid gas for a `clean_tee_status` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "cleanup_orphaned_node_migrations_tera_gas": {
+              "description": "Prepaid gas for a `cleanup_orphaned_node_migrations` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "contract_upgrade_deposit_tera_gas": {
+              "description": "Amount of gas to deposit for contract and config updates.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "fail_on_timeout_tera_gas": {
+              "description": "Prepaid gas for a `fail_on_timeout` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "key_event_timeout_blocks": {
+              "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "return_ck_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_ck_and_clean_state_on_success` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "return_signature_and_clean_state_on_success_call_tera_gas": {
+              "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "sign_call_gas_attachment_requirement_tera_gas": {
+              "description": "Gas required for a sign request.",
               "type": [
                 "integer",
                 "null"
@@ -1596,14 +1689,7 @@ expression: abi
               "minimum": 0.0
             },
             "tee_upgrade_deadline_duration_seconds": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "vote_update_minimum_gas_attached_tera_gas": {
+              "description": "The grace period duration for expiry of old mpc image hashes once a new one is added.",
               "type": [
                 "integer",
                 "null"

@@ -8,12 +8,12 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
-use attestation::{
+use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
+use contract_interface::types::Ed25519PublicKey;
+use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::ReportData,
 };
-use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 

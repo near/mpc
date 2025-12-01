@@ -462,7 +462,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
 
     let error_message = format!("{:?}", execution_error);
 
-    let expected_error_message = "Smart contract panicked: This method is private, and only callable by the contract itself.";
+    let expected_error_message = "Smart contract panicked: Method init_running is private";
 
     assert!(
         error_message.contains(expected_error_message),

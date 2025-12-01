@@ -6,58 +6,69 @@ Simply run `exec_pytest.sh` (optional flag `--verbose` and `--reset-submodules`)
 
 1. Ensure submodules are clean and point to the correct commit. Use the following commands at your own risk:
 
-    ```bash
-    git submodule foreach --recursive git reset --hard
-    git submodule foreach --recursive git clean -fdx
-    git submodule update --init --recursive --force
-    ```
+   ```bash
+   git submodule foreach --recursive git reset --hard
+   git submodule foreach --recursive git clean -fdx
+   git submodule update --init --recursive --force
+   ```
 
 2. Build nearcore and main node:
 
-    ```bash
-    # build nearcore:
-    cd libs/nearcore && cargo build -p neard --release
+   ```bash
+   # build nearcore:
+   cd libs/nearcore && cargo build -p neard --release --locked
+   ```
 
-    # build the main node
-    cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation
-    ```
+   ```bash
+   # build the main node
+   cd ../.. && cargo build -p mpc-node --release --features=network-hardship-simulation --locked
+   ```
 
 3. Set up virtualenv (optional, but recommended):
 
-    ```bash
-    cd pytest && python3 -m venv venv
+   ```bash
+   cd pytest && python3 -m venv venv
+   ```
 
-    # activate virtualenv:
-    source venv/bin/activate
+   Activate virtualenv:
 
-    # install requirements:
-    pip install -r requirements.txt
-    ```
+   ```bash
+   source venv/bin/activate
+   ```
+
+   Install requirements:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 4. Install docker and cargo-near. For the latter:
+   ```bash
+   cargo install cargo-near --locked
+   ```
 
-    ```bash
-    cargo install cargo-near --locked
-    ```
-
-    This is only needed if using reproducible builds for the contract, which is 
-    enabled by default.
+This is only needed if using reproducible builds for the contract, which is
+enabled by default.
 
 5. Run pytest:
 
-    ```bash
-    pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
-    ```
+   ```bash
+   pytest # -v -s optional flags for verbosity and -m "not slow" to skip slow tests
+   ```
 
-    In case you run into docker permission issues, make sure your user is part of the docker group and the docker daemon is running, c.f. [docker docs](https://docs.docker.com/engine/install/linux-postinstall/).
+   In case you run into docker permission issues, make sure your user is part of the docker group and the docker daemon is running, c.f. [docker docs](https://docs.docker.com/engine/install/linux-postinstall/).
 
-    To disable the reproducible build of the contract, use:
+   To disable the reproducible build of the contract, use:
 
-    ```bash
-    pytest --non-reproducible
-    ```
+   ```bash
+   pytest --non-reproducible
+   ```
 
-Run individual tests with e.g. `pytest tests/test_requests.py::test_request_lifecycle`
+   Run individual tests with e.g.:
+
+   ```bash
+   pytest --non-reproducible tests/shared_cluster_tests/test_requests.py::test_request_lifecycle
+   ```
 
 ### Code Style
 
