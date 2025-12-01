@@ -10,6 +10,7 @@ use crate::Protocol;
 
 use elliptic_curve::{Field, Group};
 use rand_core::CryptoRngCore;
+use zeroize::Zeroizing;
 
 #[allow(clippy::too_many_arguments)]
 fn do_ckd_participant(
@@ -160,15 +161,26 @@ fn compute_signature_share(
     app_pk: PublicKey,
     rng: &mut impl CryptoRngCore,
 ) -> Result<(ElementG1, ElementG1), ProtocolError> {
+    // Ensures the value is zeroized on drop
+    let private_share = Zeroizing::new(private_share);
+
     // y <- ZZq* , Y <- y * G
     let y = Scalar::random(rng);
-    let big_y = ElementG1::generator() * y;
+
+    // Ensures the value is zeroized on drop
+    let y = Zeroizing::new(super::scalar_wrapper::ScalarWrapper(y));
+
+    let big_y = ElementG1::generator() * y.0;
+
     // H(app_id) when H is a random oracle
     let hash_point = hash_to_curve(app_id);
+
     // S <- x . H(app_id)
     let big_s = hash_point * private_share.to_scalar();
+
     // C <- S + y . A
-    let big_c = big_s + app_pk * y;
+    let big_c = big_s + app_pk * y.0;
+
     // Compute  λi := λi(0)
     let lambda_i = participants.lagrange::<BLS12381SHA256>(me)?;
     // Normalize Y and C into  (λi . Y , λi . C)

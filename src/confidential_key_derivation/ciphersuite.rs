@@ -2,9 +2,8 @@ use crate::confidential_key_derivation::{ElementG1, Signature, VerifyingKey};
 use crate::crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat};
 use crate::crypto::constants::NEAR_CKD_DOMAIN;
 use blstrs::{G1Affine, G2Affine};
-use digest::{consts::U48, generic_array::GenericArray};
 use elliptic_curve::group::prime::PrimeCurveAffine;
-use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd, FromOkm};
+use elliptic_curve::hash2curve::{hash_to_field, ExpandMsgXmd};
 use rand_core::{CryptoRng, RngCore};
 use sha2::Sha256;
 
@@ -20,12 +19,12 @@ pub struct BLS12381G1Group;
 #[derive(Clone, Copy)]
 pub struct BLS12381ScalarField;
 
-pub type BLS12381Scalar = blstrs::Scalar;
-
 pub use blstrs;
 pub use blstrs::G1Projective;
 pub use blstrs::G2Projective;
 pub use elliptic_curve::{Field, Group};
+
+use crate::confidential_key_derivation::Scalar;
 
 impl ScalarSerializationFormat for BLS12381SHA256 {
     fn bytes_order() -> BytesOrder {
@@ -88,16 +87,16 @@ impl frost_core::Ciphersuite for BLS12381SHA256 {
 }
 
 impl frost_core::Field for BLS12381ScalarField {
-    type Scalar = blstrs::Scalar;
+    type Scalar = Scalar;
 
     type Serialization = [u8; 32];
 
     fn zero() -> Self::Scalar {
-        blstrs::Scalar::ZERO
+        Scalar::ZERO
     }
 
     fn one() -> Self::Scalar {
-        blstrs::Scalar::ONE
+        Scalar::ONE
     }
 
     fn invert(scalar: &Self::Scalar) -> Result<Self::Scalar, frost_core::FieldError> {
@@ -108,7 +107,7 @@ impl frost_core::Field for BLS12381ScalarField {
     }
 
     fn random<R: RngCore + CryptoRng>(rng: &mut R) -> Self::Scalar {
-        blstrs::Scalar::random(rng)
+        Scalar::random(rng)
     }
 
     fn serialize(scalar: &Self::Scalar) -> Self::Serialization {
@@ -116,7 +115,7 @@ impl frost_core::Field for BLS12381ScalarField {
     }
 
     fn deserialize(buf: &Self::Serialization) -> Result<Self::Scalar, frost_core::FieldError> {
-        blstrs::Scalar::from_bytes_le(buf)
+        Scalar::from_bytes_le(buf)
             .into_option()
             .ok_or(frost_core::FieldError::MalformedScalar)
     }
@@ -247,66 +246,31 @@ pub fn hash_to_curve(bytes: &[u8]) -> ElementG1 {
 }
 
 // From https://github.com/ZcashFoundation/frost/blob/3ffc19d8f473d5bc4e07ed41bc884bdb42d6c29f/frost-secp256k1/src/lib.rs#L161
-fn hash_to_scalar(domain: &[&[u8]], msg: &[u8]) -> blstrs::Scalar {
-    let mut u = [ScalarWrapper(
+fn hash_to_scalar(domain: &[&[u8]], msg: &[u8]) -> Scalar {
+    let mut u = [super::scalar_wrapper::ScalarWrapper(
         <BLS12381ScalarField as frost_core::Field>::zero(),
     )];
-    hash_to_field::<ExpandMsgXmd<Sha256>, ScalarWrapper>(&[msg], domain, &mut u)
-        .expect("should never return error according to error cases described in ExpandMsgXmd");
+    hash_to_field::<ExpandMsgXmd<Sha256>, super::scalar_wrapper::ScalarWrapper>(
+        &[msg],
+        domain,
+        &mut u,
+    )
+    .expect("should never return error according to error cases described in ExpandMsgXmd");
     u[0].0
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct ScalarWrapper(blstrs::Scalar);
-
-impl ScalarWrapper {
-    // Based on https://github.com/arkworks-rs/algebra/blob/c6f9284c17df00c50d954a5fe1c72dd4a5698103/ff/src/fields/prime.rs#L72
-    // Converts `bytes` into a `Scalar` by interpreting the input as
-    // an integer in big-endian and then converting the result to Scalar
-    // which implicitly does modular reduction
-    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
-        let mut res = blstrs::Scalar::ZERO;
-
-        let mut count = 0;
-        let mut remainder = 0;
-        for byte in bytes {
-            remainder = (remainder << 8) + u64::from(*byte);
-            count += 1;
-            if count == 8 {
-                res = res.shl(64) + blstrs::Scalar::from(remainder);
-                remainder = 0;
-                count = 0;
-            }
-        }
-        if count > 0 {
-            res = res * res.shl(count * 8) + blstrs::Scalar::from(remainder);
-        }
-        Self(res)
-    }
-}
-
-// Follows https://github.com/zkcrypto/bls12_381/blob/6bb96951d5c2035caf4989b6e4a018435379590f/src/hash_to_curve/map_scalar.rs
-impl FromOkm for ScalarWrapper {
-    // ceil(log2(p)) = 255, m = 1, k = 128.
-    type Length = U48;
-
-    fn from_okm(okm: &GenericArray<u8, Self::Length>) -> Self {
-        Self::from_be_bytes_mod_order(okm)
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use blstrs::Scalar;
     use digest::generic_array::GenericArray;
     use elliptic_curve::{hash2curve::FromOkm, Field, Group};
-    use rand::SeedableRng;
-    use rand::{Rng, RngCore};
+    use rand_core::SeedableRng;
 
+    use crate::confidential_key_derivation::scalar_wrapper::ScalarWrapper;
+    use crate::confidential_key_derivation::Scalar;
     use crate::test_utils::MockCryptoRng;
     use crate::{
         confidential_key_derivation::{
-            ciphersuite::{hash_to_curve, verify_signature, ScalarWrapper, BLS12381SHA256},
+            ciphersuite::{hash_to_curve, verify_signature, BLS12381SHA256},
             ElementG2, VerifyingKey,
         },
         test_utils::check_common_traits_for_type,
@@ -375,32 +339,5 @@ mod tests {
             verify_signature(&VerifyingKey::new(g2x), b"hello world", &sigma).unwrap_err(),
             frost_core::Error::InvalidSignature
         );
-    }
-
-    #[test]
-    // This test only makes sense if `overflow-checks` are enabled
-    // This is guaranteed by the `test_verify_overflow_failure` below
-    fn test_stress_test_scalarwrapper_from_le_bytes_mod_order() {
-        // empty case
-        ScalarWrapper::from_be_bytes_mod_order(&[]);
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        for _ in 0..1000 {
-            let len = rng.gen_range(1..10000);
-            let mut bytes = vec![0; len];
-            rng.fill_bytes(&mut bytes);
-            ScalarWrapper::from_be_bytes_mod_order(&bytes);
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "attempt to add with overflow")]
-    // This test guarantees that `overflow-checks` are enabled
-    fn test_verify_overflow_failure() {
-        let mut a = u64::MAX - 123;
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        // Required to avoid clippy detecting the overflow
-        let b = rng.gen_range(124..10000);
-        a += b;
-        assert!(a > 0);
     }
 }

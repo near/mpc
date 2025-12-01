@@ -8,6 +8,7 @@ use crate::{
     errors::ProtocolError,
 };
 use serde::{Deserialize, Serialize};
+use zeroize::ZeroizeOnDrop;
 
 /// The necessary inputs for the creation of a presignature.
 pub struct PresignArguments {
@@ -21,9 +22,10 @@ pub struct PresignArguments {
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct PresignOutput {
     /// The public nonce commitment.
+    #[zeroize(skip)]
     pub big_r: AffinePoint,
 
     /// Our secret shares of the nonces.
@@ -36,9 +38,10 @@ pub struct PresignOutput {
 /// The output of the presigning protocol.
 /// Contains the signature precomputed elements
 /// independently of the message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 pub struct RerandomizedPresignOutput {
     /// The rerandomized public nonce commitment.
+    #[zeroize(skip)]
     big_r: AffinePoint,
 
     /// Our rerandomized secret shares of the nonces.

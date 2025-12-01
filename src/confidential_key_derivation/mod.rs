@@ -11,17 +11,19 @@
 pub mod app_id;
 pub mod ciphersuite;
 pub mod protocol;
+mod scalar_wrapper;
 #[cfg(test)]
 mod test;
 
-pub use app_id::AppId;
 use serde::{Deserialize, Serialize};
+
+pub use app_id::AppId;
 
 pub use crate::confidential_key_derivation::ciphersuite::BLS12381SHA256;
 
+pub type Scalar = blstrs::Scalar;
 pub type ElementG1 = blstrs::G1Projective;
 pub type ElementG2 = blstrs::G2Projective;
-pub type Scalar = blstrs::Scalar;
 pub type KeygenOutput = crate::KeygenOutput<BLS12381SHA256>;
 pub type SigningShare = crate::SigningShare<BLS12381SHA256>;
 
