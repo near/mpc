@@ -6080,9 +6080,9 @@ source = "git+https://github.com/near/nearcore?branch=bug-utoipa-swagger_patch_n
 
 [[package]]
 name = "near-sdk"
-version = "5.17.2"
+version = "5.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29b8a870f6bfe533f2f5b35f6f1fb1a818105de80b2de6c0d78000f78729e4cc"
+checksum = "ab0fa9255055e9715ff7c4bffc819772ed757af13a2583dbdbd982db897b4769"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -6102,14 +6102,15 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "serde_with",
  "wee_alloc",
 ]
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.17.2"
+version = "5.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "342e608e586394911a799adb2536e3ac93c45e83cc472acdc882f603c18b6046"
+checksum = "4c349917f79b2df2a94eff6409fc74722918e471835cb62edd0eb084f4ea7feb"
 dependencies = [
  "Inflector",
  "darling 0.20.11",
@@ -8905,6 +8906,7 @@ dependencies = [
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.12.0",
+ "schemars 0.8.22",
  "schemars 0.9.0",
  "schemars 1.0.4",
  "serde_core",
