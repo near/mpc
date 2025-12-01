@@ -26,7 +26,7 @@ fn test_mock_attestation_verify(
     let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
-        attestation.verify(report_data, timestamp_s, &[], &[], &[], &[0u8; 48]),
+        attestation.verify(report_data, timestamp_s, &[], &[0u8; 48]),
         expected_quote_verification_result
     );
 }

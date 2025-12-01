@@ -10,7 +10,6 @@ dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
 dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
-mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -20,5 +19,4 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-rstest = { workspace = true }
 test_utils = { workspace = true }
