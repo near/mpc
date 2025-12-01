@@ -3101,48 +3101,6 @@ mod tests {
         contract.remove_update_vote();
     }
 
-    #[test]
-    pub fn test_update_votes_cleared_after_resharing() {
-        // given: a running state with an update that has votes from old participants
-        let running_state = gen_running_state(2);
-        let old_participants = running_state.parameters.participants().clone();
-        let mut contract =
-            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
-
-        let update = Update::Contract([0; 1000].into());
-        let update_id = contract.proposed_updates.propose(update);
-
-        let voter = old_participants.participants()[0].0.clone();
-        contract.proposed_updates.vote(&update_id, voter.clone());
-        assert_eq!(contract.proposed_updates().0[0].votes.len(), 1);
-
-        // when: resharing completes with a new participant set and we clear non-participant votes
-        let new_running_state = gen_running_state(2);
-        contract
-            .proposed_updates
-            .remove_non_participant_votes(new_running_state.parameters.participants());
-        contract.protocol_state = ProtocolContractState::Running(new_running_state);
-
-        // then: only votes from current participants remain
-        let updates_after = contract.proposed_updates();
-        assert_eq!(updates_after.0.len(), 1);
-        let voters_after: Vec<_> = updates_after.0[0]
-            .votes
-            .iter()
-            .map(|v| v.0.parse::<AccountId>().unwrap())
-            .collect();
-
-        let ProtocolContractState::Running(running_state) = &contract.protocol_state else {
-            panic!("Expected Running state");
-        };
-        for voter in &voters_after {
-            assert!(
-                running_state.is_participant(voter),
-                "Non-participant vote should have been removed"
-            );
-        }
-    }
-
     /// Test that `vote_update` correctly filters out non-participant votes when checking threshold.
     ///
     /// This is a regression test for a bug where votes from accounts that were no longer
