@@ -3159,4 +3159,39 @@ mod tests {
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
     }
+
+    /// Test that `remove_non_participant_update_votes` successfully removes votes from non-participants
+    /// (simulating post-resharing cleanup).
+    #[test]
+    pub fn test_remove_non_participant_update_votes() {
+        let running_state = gen_running_state(2);
+        let participants = running_state.parameters.participants().clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // Propose an update with 2 non-participant votes
+        propose_and_vote_code(0, &mut contract);
+        let update_id = UpdateId(0);
+
+        // Add votes from 2 current participants
+        let participants = participants.participants();
+        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
+        contract.proposed_updates.vote(&update_id, p1.clone());
+        contract.proposed_updates.vote(&update_id, p2.clone());
+
+        // Sanity check: 4 total votes (2 non-participants + 2 participants)
+        assert_eq!(contract.proposed_updates.voters().len(), 4);
+
+        // when: calling remove_non_participant_update_votes
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(env::current_account_id())
+            .predecessor_account_id(env::current_account_id())
+            .build());
+        contract.remove_non_participant_update_votes().unwrap();
+
+        // then: only the 2 participant votes remain
+        let voters: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
+        let expected = HashSet::from([p1, p2]);
+        assert_eq!(voters, expected);
+    }
 }
