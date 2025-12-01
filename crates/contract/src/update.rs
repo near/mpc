@@ -688,4 +688,73 @@ mod tests {
         res.sort_by_key(|(update_id, _, _)| *update_id);
         assert_eq!(res, expected);
     }
+
+    #[test]
+    fn test_proposed_updates_remove_votes() {
+        let mut proposed_updates = ProposedUpdates::default();
+        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+
+        let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2.clone());
+
+        proposed_updates.remove_votes(&[acc0, acc2]);
+
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[&update_id.0].votes, HashSet::from([acc1]));
+    }
+
+    #[test]
+    fn test_proposed_updates_remove_non_participant_votes() {
+        use crate::primitives::test_utils::gen_participants;
+
+        let mut proposed_updates = ProposedUpdates::default();
+        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+
+        let participants = gen_participants(2);
+        let (acc0, acc1) = (
+            &participants.participants()[0].0,
+            &participants.participants()[1].0,
+        );
+        let (acc2, acc3) = (gen_account_id(), gen_account_id());
+
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2);
+        proposed_updates.vote(&update_id, acc3);
+
+        proposed_updates.remove_non_participant_votes(&participants);
+
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(
+            result.entries[&update_id.0].votes,
+            HashSet::from([acc0.clone(), acc1.clone()])
+        );
+    }
+
+    #[test]
+    fn test_proposed_updates_voters() {
+        let mut proposed_updates = ProposedUpdates::default();
+        assert!(proposed_updates.voters().is_empty());
+
+        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+        let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
+
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2.clone());
+
+        let voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(
+            voters,
+            HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()])
+        );
+
+        proposed_updates.remove_vote(&acc1);
+        let voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(voters, HashSet::from([acc0, acc2]));
+    }
 }
