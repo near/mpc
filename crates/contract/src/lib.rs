@@ -52,6 +52,7 @@ use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
+    state::ContractState,
     store::LookupMap,
     CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
@@ -70,12 +71,6 @@ use tee::{
 };
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
-impl Default for MpcContract {
-    fn default() -> Self {
-        env::panic_str("Calling default not allowed.");
-    }
-}
-
 /// Register used to receive data id from `promise_await_data`.
 /// Note: This is an implementation constant, not a configurable policy value.
 const DATA_ID_REGISTER: u64 = 0;
@@ -85,6 +80,13 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
+impl Default for MpcContract {
+    fn default() -> Self {
+        env::panic_str("Calling default not allowed.");
+    }
+}
+impl ContractState for MpcContract {}
 
 #[near_bindgen]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -217,7 +219,7 @@ impl MpcContract {
             Some(diff) => {
                 if diff > NearToken::from_yoctonear(0) {
                     log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff);
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
                 }
             }
         }
@@ -240,7 +242,7 @@ impl MpcContract {
 
         let promise_index = env::promise_yield_create(
             "return_signature_and_clean_state_on_success",
-            &serde_json::to_vec(&(&request,)).unwrap(),
+            serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
             DATA_ID_REGISTER,
@@ -390,7 +392,7 @@ impl MpcContract {
             Some(diff) => {
                 if diff > NearToken::from_yoctonear(0) {
                     log!("refund excess deposit {diff} to {predecessor}");
-                    Promise::new(predecessor.clone()).transfer(diff);
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
                 }
             }
         }
@@ -412,7 +414,7 @@ impl MpcContract {
 
         let promise_index = env::promise_yield_create(
             "return_ck_and_clean_state_on_success",
-            &serde_json::to_vec(&(&request,)).unwrap(),
+            serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
             DATA_ID_REGISTER,
@@ -514,7 +516,7 @@ impl MpcContract {
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_signature_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
@@ -539,7 +541,7 @@ impl MpcContract {
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
             // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, &serde_json::to_vec(&response).unwrap());
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
@@ -617,7 +619,9 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.as_v1_account_id()).transfer(diff);
+                    Promise::new(account_id.as_v1_account_id())
+                        .transfer(diff)
+                        .detach();
                 }
             }
         }
@@ -824,23 +828,27 @@ impl MpcContract {
             let clean_tee_status_gas = Gas::from_tgas(self.config.clean_tee_status_tera_gas);
 
             // Spawn a promise to clean up TEE information for non-participants
-            Promise::new(env::current_account_id()).function_call(
-                "clean_tee_status".to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                clean_tee_status_gas,
-            );
+            Promise::new(env::current_account_id())
+                .function_call(
+                    "clean_tee_status".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    clean_tee_status_gas,
+                )
+                .detach();
 
             let clean_node_migrations_gas =
                 Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas);
 
             // Spawn a promise to clean up orphaned node migrations for non-participants
-            Promise::new(env::current_account_id()).function_call(
-                "cleanup_orphaned_node_migrations".to_string(),
-                vec![],
-                NearToken::from_yoctonear(0),
-                clean_node_migrations_gas,
-            );
+            Promise::new(env::current_account_id())
+                .function_call(
+                    "cleanup_orphaned_node_migrations".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    clean_node_migrations_gas,
+                )
+                .detach();
         }
 
         Ok(())
@@ -932,7 +940,7 @@ impl MpcContract {
         // Refund the difference if the proposer attached more than required.
         if let Some(diff) = attached.checked_sub(required) {
             if diff > NearToken::from_yoctonear(0) {
-                Promise::new(proposer).transfer(diff);
+                Promise::new(proposer).transfer(diff).detach();
             }
         }
 
@@ -1182,7 +1190,6 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        assert_predecessor_is_contract_itself();
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
             env::signer_account_id(),
@@ -1232,7 +1239,6 @@ impl MpcContract {
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
-        assert_predecessor_is_contract_itself();
         log!("migrating contract");
 
         match try_state_read::<v3_0_2_state::MpcContract>() {
@@ -1615,13 +1621,6 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .transpose()
 }
 
-fn assert_predecessor_is_contract_itself() {
-    let predecessor_is_contract_itself = env::predecessor_account_id() == env::current_account_id();
-    if !predecessor_is_contract_itself {
-        env::panic_str("This method is private, and only callable by the contract itself.")
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
@@ -1872,10 +1871,12 @@ mod tests {
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
                 assert!(success);
-                contract.return_signature_and_clean_state_on_success(
-                    signature_request.clone(),
-                    Ok(signature_response),
-                );
+                contract
+                    .return_signature_and_clean_state_on_success(
+                        signature_request.clone(),
+                        Ok(signature_response),
+                    )
+                    .detach();
 
                 assert!(contract.get_pending_request(&signature_request).is_none(),);
             }
@@ -1953,7 +1954,9 @@ mod tests {
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
-                contract.return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response));
+                contract
+                    .return_ck_and_clean_state_on_success(ckd_request.clone(), Ok(response))
+                    .detach();
 
                 assert!(contract.get_pending_ckd_request(&ckd_request).is_none(),);
             }
@@ -2783,8 +2786,8 @@ mod tests {
                     destination_node_info,
                 );
             }
-            let valid_participant_attestation = attestation::attestation::Attestation::Mock(
-                attestation::attestation::MockAttestation::Valid,
+            let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
+                mpc_attestation::attestation::MockAttestation::Valid,
             );
             contract.tee_state.add_participant(
                 NodeId {

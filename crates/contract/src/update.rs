@@ -194,7 +194,7 @@ impl ProposedUpdates {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
                 promise = promise.deploy_contract(code).function_call(
-                    "migrate".into(),
+                    "migrate",
                     Vec::new(),
                     NearToken::from_near(0),
                     gas,
@@ -202,7 +202,7 @@ impl ProposedUpdates {
             }
             Update::Config(config) => {
                 promise = promise.function_call(
-                    "update_config".into(),
+                    "update_config",
                     serde_json::to_vec(&(&config,)).unwrap(),
                     NearToken::from_near(0),
                     gas,

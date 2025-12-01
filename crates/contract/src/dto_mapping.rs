@@ -4,12 +4,12 @@
 //! These types are mapped with the [IntoContractType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
-use attestation::{
+use contract_interface::types as dtos;
+use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
 };
-use contract_interface::types as dtos;
 
 use k256::{
     elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
@@ -417,7 +417,7 @@ impl IntoInterfaceType<dtos::UpdateHash> for &Update {
         match self {
             Update::Contract(code) => dtos::UpdateHash::Code(sha256_array(code)),
             Update::Config(config) => dtos::UpdateHash::Config(sha256_array(
-                &serde_json::to_vec(config).expect("serde serialization must succeed"),
+                serde_json::to_vec(config).expect("serde serialization must succeed"),
             )),
         }
     }
