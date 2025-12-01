@@ -897,7 +897,6 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
- "sha3",
  "test_utils",
  "thiserror 2.0.17",
  "tracing",
@@ -4654,12 +4653,15 @@ version = "3.0.6"
 dependencies = [
  "attestation",
  "borsh",
+ "dcap-qvl",
+ "derive_more 2.0.1",
  "hex",
  "mpc-primitives",
  "rstest",
  "serde",
  "serde_json",
  "sha2",
+ "sha3",
  "test_utils",
 ]
 

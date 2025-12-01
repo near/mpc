@@ -1,12 +1,11 @@
-use attestation::{
-    attestation::{Attestation, MockAttestation, VerificationError},
-    report_data::{ReportData, ReportDataV1},
-};
+use attestation::attestation::{Attestation, MockAttestation, VerificationError};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use rstest::rstest;
 use test_utils::attestation::{
     account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
 };
+
+use mpc_attestation::report_data::{ReportData, ReportDataV1};
 
 #[rstest]
 #[case(MockAttestation::Valid, Ok(()))]
@@ -26,7 +25,7 @@ fn test_mock_attestation_verify(
     let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
-        attestation.verify(report_data, timestamp_s, &[]),
+        attestation.verify(report_data.into(), timestamp_s, &[]),
         expected_quote_verification_result
     );
 }
@@ -44,7 +43,7 @@ fn test_verify_method_signature() {
     let allowed_launcher_compose_digest: LauncherDockerComposeHash = launcher_compose_digest();
 
     let verification_result = attestation.verify(
-        report_data,
+        report_data.into(),
         timestamp_s,
         &[allowed_mpc_image_digest],
         &[allowed_launcher_compose_digest],

@@ -7,12 +7,15 @@ edition = { workspace = true }
 [dependencies]
 attestation = { workspace = true }
 borsh = { workspace = true }
+derive_more = { workspace = true }
 hex = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+sha3 = { workspace = true }
 
 [dev-dependencies]
+dcap-qvl = { workspace = true }
 rstest = { workspace = true }
 test_utils = { workspace = true }

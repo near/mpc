@@ -296,7 +296,7 @@ mod tests {
         let timestamp_s = 0u64;
         assert_eq!(
             attestation
-                .verify(report_data, timestamp_s, &[], &[])
+                .verify(report_data.into(), timestamp_s, &[], &[])
                 .is_ok(),
             quote_verification_result
         );

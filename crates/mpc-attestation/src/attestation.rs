@@ -2,12 +2,11 @@ use attestation::{
     TcbInfo,
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
-};
-pub use attestation::{
-    attestation::{DstackAttestation, VerificationError},
     measurements::ExpectedMeasurements,
     report_data::ReportData,
 };
+
+pub use attestation::attestation::{DstackAttestation, VerificationError};
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
