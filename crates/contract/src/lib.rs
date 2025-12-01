@@ -3142,4 +3142,63 @@ mod tests {
             );
         }
     }
+
+    /// Test that `vote_update` correctly filters out non-participant votes when checking threshold.
+    ///
+    /// This is a regression test for a bug where votes from accounts that were no longer
+    /// participants (e.g., after resharing) were still counted toward the update threshold.
+    ///
+    /// The test verifies that only votes from current participants are counted:
+    /// - With threshold=2 and 3 participants, we need 2 valid participant votes
+    /// - Adding 2 non-participant votes + 1 participant vote should NOT meet threshold (returns false)
+    /// - Adding a 2nd participant vote should meet threshold (returns true)
+    #[test]
+    pub fn test_vote_update_filters_non_participant_votes() {
+        // given: a running state with 3 participants and threshold of 2
+        let running_state = gen_running_state(1);
+        let running_state = RunningContractState::new(
+            running_state.domains.clone(),
+            running_state.keyset.clone(),
+            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
+        );
+
+        let participants = running_state.parameters.participants().participants();
+        let participant_1 = participants[0].0.clone();
+        let participant_2 = participants[1].0.clone();
+
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let update_id = contract
+            .proposed_updates
+            .propose(Update::Contract([0; 1000].into()));
+
+        // given: 2 non-participant votes + 1 participant vote (simulating old voters from before resharing)
+        contract.proposed_updates.vote(&update_id, gen_account_id());
+        contract.proposed_updates.vote(&update_id, gen_account_id());
+        contract
+            .proposed_updates
+            .vote(&update_id, participant_1.clone());
+
+        // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_1.as_v1_account_id())
+            .predecessor_account_id(participant_1.as_v1_account_id())
+            .build());
+        // then: threshold not met (need 2 valid votes, have only 1)
+        assert_eq!(contract.vote_update(update_id).unwrap(), false);
+
+        // given: a 2nd participant vote is added
+        contract
+            .proposed_updates
+            .vote(&update_id, participant_2.clone());
+
+        // when: second participant calls vote_update (2 valid participant votes out of 4 total)
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_2.as_v1_account_id())
+            .predecessor_account_id(participant_2.as_v1_account_id())
+            .build());
+        // then: threshold met (have 2 valid votes, need 2)
+        assert_eq!(contract.vote_update(update_id).unwrap(), true);
+    }
 }
