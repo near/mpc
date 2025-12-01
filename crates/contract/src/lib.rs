@@ -3186,7 +3186,7 @@ mod tests {
             .predecessor_account_id(participant_1.as_v1_account_id())
             .build());
         // then: threshold not met (need 2 valid votes, have only 1)
-        assert_eq!(contract.vote_update(update_id).unwrap(), false);
+        assert!(!contract.vote_update(update_id).unwrap());
 
         // given: a 2nd participant vote is added
         contract
@@ -3199,6 +3199,6 @@ mod tests {
             .predecessor_account_id(participant_2.as_v1_account_id())
             .build());
         // then: threshold met (have 2 valid votes, need 2)
-        assert_eq!(contract.vote_update(update_id).unwrap(), true);
+        assert!(contract.vote_update(update_id).unwrap());
     }
 }
