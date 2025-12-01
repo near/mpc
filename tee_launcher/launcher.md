@@ -52,7 +52,7 @@ These configure how the launcher behaves and how the MPC image is selected.
 | `RPC_REQUEST_TIMEOUT_SECS` | Per-request timeout | `10` |
 | `RPC_REQUEST_INTERVAL_SECS` | Initial retry interval (seconds) | `1.0` |
 | `RPC_MAX_ATTEMPTS` | Max attempts before failure | `20` |
-| `MPC_HASH_OVERRIDE` | Optional: force a slection of specific sha256 digest (must be in approved list) |
+| `MPC_HASH_OVERRIDE` | Optional: force a selection of specific sha256 digest (must be in approved list) |
 
 Example:
 
