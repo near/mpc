@@ -37,7 +37,7 @@ ENV_VAR_DEFAULT_IMAGE_DIGEST = "DEFAULT_IMAGE_DIGEST"
 ENV_VAR_RPC_REQUEST_INTERVAL_SECS = "RPC_REQUEST_INTERVAL_SECS"
 # optional - the maximum time to wait for an rpc response. Defaults to 10 seconds.
 ENV_VAR_RPC_REQUEST_TIMEOUT_SECS = "RPC_REQUEST_TIMEOUT_SECS"
-# optional -the maximum number of attempts for rpc requests until we raise an exception
+# optional - the maximum number of attempts for rpc requests until we raise an exception
 ENV_VAR_RPC_MAX_ATTEMPTS = "RPC_MAX_ATTEMPTS"
 # MUST be set to 1.
 OS_ENV_DOCKER_CONTENT_TRUST = "DOCKER_CONTENT_TRUST"
@@ -568,11 +568,10 @@ def request_until_success(
         - Retries indefinitely until the request succeeds.
         - Prints a warning with the response content on each failure.
     """
-    interval = rpc_request_interval_secs
     for attempt in range(1, rpc_max_attempts + 1):
         # Ensure that we respect the backoff time. Performance is not a priority in this case.
-        time.sleep(interval)
-        interval = min(max(interval, 1.0) * 1.5, 60.0)
+        time.sleep(rpc_request_interval_secs)
+        rpc_request_interval_secs = min(max(rpc_request_interval_secs, 1.0) * 1.5, 60.0)
         try:
             manifest_resp = requests.get(
                 url, headers=headers, timeout=rpc_request_timeout_secs
