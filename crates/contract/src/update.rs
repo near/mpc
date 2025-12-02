@@ -244,6 +244,7 @@ impl ProposedUpdates {
     }
 
     /// Returns all account IDs that have voted.
+    #[cfg(test)]
     pub fn voters(&self) -> Vec<AccountId> {
         self.vote_by_participant.keys().cloned().collect()
     }
