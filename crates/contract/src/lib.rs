@@ -84,10 +84,7 @@ const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
-const CLEAN_NODE_MIGRATIONS: Gas = Gas::from_tgas(3);
-
-/// Prepaid gas for a `remove_non_participant_update_votes` call
-const REMOVE_NON_PARTICIPANT_UPDATE_VOTES_GAS: Gas = Gas::from_tgas(5);
+const CLEAN_NODE_MIGRATIONS_GAS: Gas = Gas::from_tgas(3);
 
 impl Default for MpcContract {
     fn default() -> Self {
@@ -834,7 +831,7 @@ impl MpcContract {
                     "remove_non_participant_update_votes".to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
-                    REMOVE_NON_PARTICIPANT_UPDATE_VOTES_GAS,
+                    Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
                 )
                 .detach();
             // Spawn a promise to clean up TEE information for non-participants
@@ -852,7 +849,7 @@ impl MpcContract {
                     "cleanup_orphaned_node_migrations".to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
-                    CLEAN_NODE_MIGRATIONS,
+                    CLEAN_NODE_MIGRATIONS_GAS,
                 )
                 .detach();
         }

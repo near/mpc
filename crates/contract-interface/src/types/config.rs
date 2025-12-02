@@ -41,6 +41,8 @@ pub struct InitConfig {
     pub clean_tee_status_tera_gas: Option<u64>,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: Option<u64>,
+    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    pub remove_non_participant_update_votes_tera_gas: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -83,6 +85,8 @@ pub struct Config {
     pub clean_tee_status_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub cleanup_orphaned_node_migrations_tera_gas: u64,
+    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    pub remove_non_participant_update_votes_tera_gas: u64,
 }
 
 #[cfg(test)]
@@ -103,6 +107,7 @@ mod tests {
             fail_on_timeout_tera_gas: Some(2),
             clean_tee_status_tera_gas: Some(10),
             cleanup_orphaned_node_migrations_tera_gas: Some(3),
+            remove_non_participant_update_votes_tera_gas: Some(5),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
@@ -149,6 +154,7 @@ mod tests {
             fail_on_timeout_tera_gas: None,
             clean_tee_status_tera_gas: None,
             cleanup_orphaned_node_migrations_tera_gas: None,
+            remove_non_participant_update_votes_tera_gas: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);

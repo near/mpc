@@ -28,6 +28,8 @@ const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for a `cleanup_orphaned_node_migrations` call
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
+/// Prepaid gas for a `remove_non_participant_update_votes` call
+const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
@@ -54,6 +56,8 @@ pub(crate) struct Config {
     pub(crate) clean_tee_status_tera_gas: u64,
     /// Prepaid gas for a `cleanup_orphaned_node_migrations` call.
     pub(crate) cleanup_orphaned_node_migrations_tera_gas: u64,
+    /// Prepaid gas for a `remove_non_participant_update_votes` call.
+    pub(crate) remove_non_participant_update_votes_tera_gas: u64,
 }
 
 impl Default for Config {
@@ -74,6 +78,8 @@ impl Default for Config {
             clean_tee_status_tera_gas: DEFAULT_CLEAN_TEE_STATUS_TERA_GAS,
             cleanup_orphaned_node_migrations_tera_gas:
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
+            remove_non_participant_update_votes_tera_gas:
+                DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS,
         }
     }
 }
