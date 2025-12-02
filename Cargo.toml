@@ -28,9 +28,6 @@ license = "MIT"
 
 [workspace.dependencies]
 #workspace members
-# alloy +1.0.32 is required by dstack. Newer version requires a rust toolchain that is +1.88,
-# whereas this project is for now stuck on +1.86 due to the `nearcore` runtime we depend on.
-alloy = { version = "=1.0.32"}
 attestation = { path = "crates/attestation" }
 contract-interface = { path = "crates/contract-interface" }
 contract_history = { path = "crates/contract_history" }
