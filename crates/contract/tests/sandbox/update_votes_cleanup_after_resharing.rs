@@ -1,4 +1,5 @@
 use anyhow::Result;
+use assert_matches::assert_matches;
 use contract_interface::types as dtos;
 use near_account_id::AccountId;
 use serde_json::json;
@@ -180,15 +181,10 @@ async fn test_remove_non_participant_update_votes_denies_external_account_call()
         .await?;
 
     // then: the call should fail with a "method is private" error
-    assert!(!result.is_success());
-
-    match result.into_result() {
-        Err(failure) => {
-            let error_msg = format!("{:?}", failure);
-            assert!(error_msg.contains("Method remove_non_participant_update_votes is private"));
-        }
-        Ok(_) => panic!("Call should have failed - remove_non_participant_update_votes is private"),
-    }
+    assert_matches!(
+        result.into_result(),
+        Err(ref failure) if format!("{:?}", failure).contains("Method remove_non_participant_update_votes is private")
+    );
 
     Ok(())
 }
