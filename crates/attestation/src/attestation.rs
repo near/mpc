@@ -155,18 +155,25 @@ pub(crate) fn verify_mock_attestation(
 }
 
 impl Attestation {
+    /// Checks whether this attestation is valid
+    /// with respect to expected values of:
+    /// - report_data: must be measured correctly in RTMR3
+    /// - timestamp_seconds: current UNIX time in seconds
+    /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
+    ///   If any element in the set is valid, the function accepts the attestation as
+    ///   valid.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
-        expected_measurements_list: &[ExpectedMeasurements],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => self.verify_attestation(
                 dstack_attestation,
                 expected_report_data,
                 timestamp_seconds,
-                expected_measurements_list,
+                accepted_measurements,
             ),
             Self::Mock(mock_attestation) => {
                 verify_mock_attestation(mock_attestation, timestamp_seconds)
@@ -182,7 +189,7 @@ impl Attestation {
         attestation: &DstackAttestation,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
-        expected_measurements_list: &[ExpectedMeasurements],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
         let verification_result = dcap_qvl::verify::verify(
             &attestation.quote,
@@ -203,11 +210,7 @@ impl Attestation {
         self.verify_rtmr3(report_data, &attestation.tcb_info)?;
         self.verify_app_compose(&attestation.tcb_info)?;
 
-        self.verify_any_measurements(
-            report_data,
-            &attestation.tcb_info,
-            expected_measurements_list,
-        )
+        self.verify_any_measurements(report_data, &attestation.tcb_info, accepted_measurements)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -328,9 +331,9 @@ impl Attestation {
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
-        expected_measurements_list: &[ExpectedMeasurements],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
-        for expected in expected_measurements_list {
+        for expected in accepted_measurements {
             if self
                 .verify_static_rtmrs(report_data, tcb_info, expected)
                 .is_ok()

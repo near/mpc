@@ -77,7 +77,7 @@ impl Attestation {
         // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
         const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
 
-        let expected_measurements_list = ExpectedMeasurements::from_embedded_tcb_info(&[
+        let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
             TCB_INFO_STRING_PROD,
             TCB_INFO_STRING_DEV,
         ])
@@ -86,7 +86,7 @@ impl Attestation {
         attestation.verify(
             expected_report_data,
             timestamp_seconds,
-            &expected_measurements_list,
+            &accepted_measurements,
         )
     }
 
