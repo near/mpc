@@ -143,14 +143,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-client = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-config-utils = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-crypto = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-indexer = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-o11y = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-time = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
 
 [profile.dev-release]
 inherits = "release"
