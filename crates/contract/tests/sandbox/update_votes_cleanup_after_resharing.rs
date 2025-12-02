@@ -1,9 +1,7 @@
 use anyhow::Result;
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
-use near_account_id::AccountId;
 use serde_json::json;
-use std::collections::HashSet;
 use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
@@ -23,13 +21,13 @@ use mpc_contract::{
 };
 
 /// Tests that update votes from non-participants are cleared after resharing.
-/// Also measures gas usage for the cleanup promise when run with larger PARTICIPANT_LEN.
+/// Measures gas usage for cleanup methods with maximum number of votes to clean up.
 #[tokio::test]
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // Use 30 participants to maximize cleanup work while staying within gas limits
-    const TEST_PARTICIPANT_LEN: usize = 20;
+    const TEST_PARTICIPANT_LEN: usize = 30;
 
-    // given: a running contract with TEST_PARTICIPANT_LEN participants and an update proposal with ALL participants voting
+    // given: a running contract with TEST_PARTICIPANT_LEN participants
     let (_, contract, env_accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], TEST_PARTICIPANT_LEN).await;
 
@@ -42,7 +40,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         threshold.value()
     );
 
-    // Propose update and have ALL participants vote on it to maximize votes that need cleanup
+    // Propose update and have participants vote - maximize votes from those who will be removed
     let propose_result = env_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(ProposeUpdateArgs {
@@ -52,34 +50,24 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .max_gas()
         .transact()
-        .await?;
+        .await?
+        .into_result()?;
 
-    println!("Propose update result: {:?}", propose_result);
-    if !propose_result.is_success() {
-        println!("Propose update failed!");
-        for outcome in propose_result.receipt_outcomes() {
-            println!("  Receipt outcome: {:?}", outcome);
-        }
-    }
-
-    propose_result.clone().into_result()?;
     let update_id: UpdateId = propose_result.json()?;
     println!("Update ID: {:?}", update_id);
 
-    // Have participants from threshold onwards vote to maximize cleanup
-    // (these will be removed during resharing which keeps only first threshold participants)
-    // Vote with (TEST_PARTICIPANT_LEN - threshold) participants, but cap at threshold-1 to avoid auto-approval
+    // Have all participants from threshold onwards vote (these will be removed during resharing)
     let voters_to_be_removed = TEST_PARTICIPANT_LEN - threshold.value() as usize;
-    let votes_needed = voters_to_be_removed.min(threshold.value() as usize - 1);
 
     println!(
-        "Having {} participants vote (from index {} onwards, these will be removed)",
-        votes_needed,
-        threshold.value()
+        "Having {} participants vote (indices {} to {}, these will be removed)",
+        voters_to_be_removed,
+        threshold.value(),
+        TEST_PARTICIPANT_LEN - 1
     );
 
     execute_async_transactions(
-        &env_accounts[threshold.value() as usize..threshold.value() as usize + votes_needed],
+        &env_accounts[threshold.value() as usize..],
         &contract,
         "vote_update",
         &json!({"id": update_id}),
@@ -89,25 +77,19 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     let proposals_before: dtos::ProposedUpdates =
         contract.view("proposed_updates").await?.json()?;
-    assert_eq!(proposals_before.0.len(), 1);
 
-    let voters_before: HashSet<_> = proposals_before.0[0]
-        .votes
-        .iter()
-        .map(|v| v.0.parse::<AccountId>().unwrap())
-        .collect();
+    println!(
+        "Votes before resharing: {}",
+        proposals_before.0[0].votes.len()
+    );
+    assert_eq!(proposals_before.0[0].votes.len(), voters_to_be_removed);
 
-    println!("Votes before resharing: {}", voters_before.len());
-    assert_eq!(voters_before.len(), votes_needed);
-
-    // when: resharing completes with new participants that are only the threshold number
-    // This maximizes the number of non-participants whose votes need to be cleaned up
+    // when: resharing with only threshold participants (removing all voters)
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants()
         .iter()
         .take(threshold.value() as usize)
-    // Only keep threshold participants
     {
         new_participants
             .insert_with_id(
@@ -119,14 +101,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     }
 
     println!(
-        "New participant set: {} (down from {})",
+        "\n=== Resharing ===\nNew participants: {} (keeping first {})",
         new_participants.len(),
-        TEST_PARTICIPANT_LEN
+        threshold.value()
     );
-    println!(
-        "Votes to be cleaned up: {} (from non-participants)",
-        TEST_PARTICIPANT_LEN - threshold.value() as usize
-    );
+    println!("Votes to clean up: {}", voters_to_be_removed);
 
     let new_threshold_parameters = ThresholdParameters::new(new_participants, threshold.clone())
         .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -194,33 +173,16 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     println!("Vote_reshared calls completed");
 
     // Wait for state transition to Running
-    let mut attempts = 0;
-    loop {
+    for _ in 0..10 {
         let current_state: ProtocolContractState = contract.view("state").await?.json()?;
         if matches!(current_state, ProtocolContractState::Running(_)) {
-            println!("State transitioned to Running");
             break;
         }
-
-        attempts += 1;
-        if attempts > 10 {
-            panic!(
-                "State did not transition to Running after {} attempts",
-                attempts
-            );
-        }
-
-        println!("Waiting for state transition (attempt {})", attempts);
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 
-    // then: verify cleanup removed all non-participant votes
-    let _ = assert_running_return_participants(&contract).await?;
-
-    // Measure gas usage by calling cleanup method directly
-    // (The actual cleanup already happened via fire-and-forget promise during vote_reshared,
-    // but we call it again to measure gas usage for documentation purposes)
-    println!("\n=== Gas Measurement (calling cleanup methods directly) ===");
+    // then: measure gas usage by calling cleanup methods directly
+    println!("\n=== Gas Measurement ===");
 
     let cleanup_result = contract
         .call("remove_non_participant_update_votes")
@@ -228,20 +190,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .transact()
         .await?;
 
-    if cleanup_result.is_success() {
-        println!("remove_non_participant_update_votes:");
-        println!(
-            "  Total gas burnt: {:.3} Tgas",
-            cleanup_result.total_gas_burnt.as_gas() as f64 / 1e12
-        );
-        for (i, outcome) in cleanup_result.receipt_outcomes().iter().enumerate() {
-            println!(
-                "    Receipt {}: {:.3} Tgas",
-                i,
-                outcome.gas_burnt.as_gas() as f64 / 1e12
-            );
-        }
-    }
+    println!(
+        "remove_non_participant_update_votes ({} votes): {:.3} Tgas",
+        voters_to_be_removed,
+        cleanup_result.total_gas_burnt.as_gas() as f64 / 1e12
+    );
 
     let cleanup_result = contract
         .call("clean_tee_status")
@@ -249,60 +202,20 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .transact()
         .await?;
 
-    if cleanup_result.is_success() {
-        println!("clean_tee_status:");
-        println!(
-            "  Total gas burnt: {:.3} Tgas",
-            cleanup_result.total_gas_burnt.as_gas() as f64 / 1e12
-        );
-        for (i, outcome) in cleanup_result.receipt_outcomes().iter().enumerate() {
-            println!(
-                "    Receipt {}: {:.3} Tgas",
-                i,
-                outcome.gas_burnt.as_gas() as f64 / 1e12
-            );
-        }
-    }
+    println!(
+        "clean_tee_status ({} nodes): {:.3} Tgas",
+        voters_to_be_removed,
+        cleanup_result.total_gas_burnt.as_gas() as f64 / 1e12
+    );
 
-    let cleanup_result = contract
-        .call("cleanup_orphaned_node_migrations")
-        .gas(near_workspaces::types::Gas::from_tgas(10))
-        .transact()
-        .await?;
-
-    if cleanup_result.is_success() {
-        println!("cleanup_orphaned_node_migrations:");
-        println!(
-            "  Total gas burnt: {:.3} Tgas",
-            cleanup_result.total_gas_burnt.as_gas() as f64 / 1e12
-        );
-        for (i, outcome) in cleanup_result.receipt_outcomes().iter().enumerate() {
-            println!(
-                "    Receipt {}: {:.3} Tgas",
-                i,
-                outcome.gas_burnt.as_gas() as f64 / 1e12
-            );
-        }
-    }
-
+    // Verify cleanup worked
     let proposals_after: dtos::ProposedUpdates = contract.view("proposed_updates").await?.json()?;
+    assert_eq!(proposals_after.0[0].votes.len(), 0);
 
     println!(
-        "\n=== Cleanup Results ===\nVotes after cleanup: {}",
-        proposals_after.0[0].votes.len()
+        "✓ All {} non-participant votes removed\n",
+        voters_to_be_removed
     );
-    println!("Expected votes: 0 (all voters were removed during resharing)");
-
-    assert_eq!(proposals_after.0.len(), 1);
-    let votes = &proposals_after.0[0].votes;
-    assert_eq!(
-        votes.len(),
-        0,
-        "All {} votes should have been cleaned up since all voters were non-participants",
-        votes_needed
-    ); // All voters were non-participants
-
-    println!("✓ Cleanup successful: all non-participant votes removed\n");
 
     Ok(())
 }

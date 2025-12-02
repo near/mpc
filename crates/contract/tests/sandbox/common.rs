@@ -288,11 +288,13 @@ pub async fn init_with_candidates(
             "keyset": Keyset::new(EpochId::new(5), keys),
             "parameters": threshold_parameters,
         }))
+        .max_gas()
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
             "init_config": init_config,
         }))
+        .max_gas()
     };
 
     let init = call_builder
