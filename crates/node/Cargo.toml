@@ -12,7 +12,6 @@ test-utils = ["threshold-signatures/test-utils"]
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-attestation = { workspace = true }
 axum = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
@@ -31,6 +30,7 @@ hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
 lru = { workspace = true }
+mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }

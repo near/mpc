@@ -8,6 +8,7 @@
 use elliptic_curve::group::Group;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
+use near_sdk::state::ContractState;
 use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -53,6 +54,8 @@ pub fn generate_app_public_key(seed: u64) -> Bls12381G1PublicKey {
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, Default)]
 pub struct TestContract;
+
+impl ContractState for TestContract {}
 
 #[near_bindgen]
 impl TestContract {

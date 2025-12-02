@@ -6,9 +6,9 @@ edition = { workspace = true }
 
 [dependencies]
 anyhow = { workspace = true }
-attestation = { workspace = true }
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
+mpc-attestation = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]

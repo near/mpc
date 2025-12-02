@@ -9,6 +9,7 @@ members = [
     "crates/contract-interface",
     "crates/contract_history",
     "crates/devnet",
+    "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
@@ -30,6 +31,7 @@ license = "MIT"
 attestation = { path = "crates/attestation" }
 contract-interface = { path = "crates/contract-interface" }
 contract_history = { path = "crates/contract_history" }
+mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
 ] }
@@ -95,7 +97,7 @@ near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"
 near-primitives = "0.28.0"
-near-sdk = { version = "5.15.1", features = [
+near-sdk = { version = "5.18.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
@@ -141,14 +143,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-client = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-config-utils = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-crypto = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-indexer = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-o11y = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
-near-time = { git = "https://github.com/near/nearcore", branch = "bug-utoipa-swagger_patch_nearcore_210rc4" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
 
 [profile.dev-release]
 inherits = "release"
