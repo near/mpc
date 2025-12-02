@@ -122,7 +122,7 @@ RUST_LOG=info
 NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
 
 # Port forwarding
-PORTS=8080:8080,24566:24566,13001:13001
+PORTS=8080:8080,24566:24566,3000:3000
 ```
 
 
@@ -147,7 +147,7 @@ RUST_LOG=info
 NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
 
 # Port forwarding
-PORTS=8080:8080,24566:24566,13002:13002
+PORTS=8080:8080,24566:24566,3001:3001
 ```
 
 ---
@@ -255,13 +255,14 @@ Initialize the MPC contract with the two participants (using the `P2P_KEY` value
 Prepare the arguments for the init call:
 
 ```bash
-envsubst < docs/localnet/args/init_tee.json > /tmp/init_args.json
+mkdir -p "/tmp/$USER"
+envsubst < docs/localnet/args/init.json > "/tmp/$USER/init_args.json"
 ```
 
 Now call the `init` function on the contract:
 
 ```bash
-near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/$USER/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 Verify that initialization succeeded:
