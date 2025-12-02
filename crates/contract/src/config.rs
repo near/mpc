@@ -29,7 +29,7 @@ const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
 const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
 /// Prepaid gas for a `remove_non_participant_update_votes` call
-const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
+const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 7;
 
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]

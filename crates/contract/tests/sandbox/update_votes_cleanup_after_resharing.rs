@@ -6,8 +6,8 @@ use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold,
-    execute_async_transactions, init_env, GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED,
-    PARTICIPANT_LEN,
+    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    GAS_FOR_VOTE_NEW_PARAMETERS, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
