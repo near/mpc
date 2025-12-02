@@ -105,7 +105,7 @@ fn validate_remote_attestation(
         .unwrap()
         .as_secs();
     attestation.verify(
-        expected_report_data,
+        expected_report_data.into(),
         now,
         allowed_docker_image_hashes,
         allowed_launcher_compose_hashes,
