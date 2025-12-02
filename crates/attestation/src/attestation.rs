@@ -30,13 +30,6 @@ pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum Attestation {
-    Dstack(DstackAttestation),
-    Mock(MockAttestation),
-}
-
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
     pub quote: QuoteBytes,
@@ -116,45 +109,7 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum MockAttestation {
-    #[default]
-    /// Always pass validation
-    Valid,
-    /// Always fails validation
-    Invalid,
-    /// Pass validation depending on the set constraints
-    WithConstraints {
-        /// Unix time stamp for when this attestation expires.  
-        expiry_time_stamp_seconds: Option<u64>,
-    },
-}
-
-pub(crate) fn verify_mock_attestation(
-    mock_attestation: &MockAttestation,
-    timestamp_seconds: u64,
-) -> Result<(), VerificationError> {
-    match mock_attestation {
-        MockAttestation::Valid => Ok(()),
-        MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
-        MockAttestation::WithConstraints {
-            expiry_time_stamp_seconds: expiry_timestamp_seconds,
-        } => {
-            if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                (timestamp_seconds < *expiry_timestamp).or_err(|| {
-                    VerificationError::ExpiredCertificate {
-                        attestation_time: timestamp_seconds,
-                        expiry_time: *expiry_timestamp,
-                    }
-                })?;
-            };
-
-            Ok(())
-        }
-    }
-}
-
-impl Attestation {
+impl DstackAttestation {
     /// Checks whether this attestation is valid
     /// with respect to expected values of:
     /// - report_data: must be measured correctly in RTMR3
@@ -168,35 +123,9 @@ impl Attestation {
         timestamp_seconds: u64,
         accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
-        match self {
-            Self::Dstack(dstack_attestation) => self.verify_attestation(
-                dstack_attestation,
-                expected_report_data,
-                timestamp_seconds,
-                accepted_measurements,
-            ),
-            Self::Mock(mock_attestation) => {
-                verify_mock_attestation(mock_attestation, timestamp_seconds)
-            }
-        }
-    }
-
-    /// Checks whether the image is running the expected environment,
-    /// by verifying report_data, replaying RTMR3, and comparing
-    /// the relevant event values to expected values.
-    fn verify_attestation(
-        &self,
-        attestation: &DstackAttestation,
-        expected_report_data: ReportData,
-        timestamp_seconds: u64,
-        accepted_measurements: &[ExpectedMeasurements],
-    ) -> Result<(), VerificationError> {
-        let verification_result = dcap_qvl::verify::verify(
-            &attestation.quote,
-            &attestation.collateral,
-            timestamp_seconds,
-        )
-        .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
+        let verification_result =
+            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
+                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
         let report_data = verification_result
             .report
@@ -207,10 +136,10 @@ impl Attestation {
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
 
-        self.verify_rtmr3(report_data, &attestation.tcb_info)?;
-        self.verify_app_compose(&attestation.tcb_info)?;
+        self.verify_rtmr3(report_data, &self.tcb_info)?;
+        self.verify_app_compose(&self.tcb_info)?;
 
-        self.verify_any_measurements(report_data, &attestation.tcb_info, accepted_measurements)
+        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -548,7 +477,7 @@ mod tests {
         // Given
         let app_compose = valid_app_compose();
         // When
-        let result = Attestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
 
         // Then
         assert!(result)
@@ -562,7 +491,7 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = Attestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
 
         // Then
         assert!(result)

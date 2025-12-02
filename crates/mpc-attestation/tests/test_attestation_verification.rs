@@ -1,10 +1,11 @@
-use attestation::attestation::{Attestation, MockAttestation, VerificationError};
+use attestation::attestation::VerificationError;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use rstest::rstest;
 use test_utils::attestation::{
     account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
 };
 
+use mpc_attestation::attestation::{Attestation, MockAttestation};
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 
 #[rstest]
@@ -25,7 +26,7 @@ fn test_mock_attestation_verify(
     let attestation = Attestation::Mock(local_attestation);
 
     assert_eq!(
-        attestation.verify(report_data.into(), timestamp_s, &[]),
+        attestation.verify(report_data.into(), timestamp_s, &[], &[]),
         expected_quote_verification_result
     );
 }

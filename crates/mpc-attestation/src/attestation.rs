@@ -57,9 +57,7 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                // TODO: we should avoid the clone here, but doing so will
-                // probably require changing API
-                attestation::attestation::Attestation::Dstack(dstack_attestation.clone())
+                dstack_attestation
             }
             Self::Mock(mock_attestation) => {
                 // Override attestation verification for this case
