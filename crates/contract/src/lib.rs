@@ -23,7 +23,6 @@ pub mod v3_0_2_state;
 
 mod dto_mapping;
 
-use std::collections::HashSet;
 use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
@@ -973,16 +972,13 @@ impl MpcContract {
 
         // Filter votes to only count current participants. This ensures correctness
         // even if the cleanup promise in MpcContract::vote_reshared() fails.
-        let current_participants: HashSet<AccountId> = running_state
+        let valid_votes_count = running_state
             .parameters
             .participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect();
-
-        // Only count votes from current participants
-        let valid_votes_count = all_votes.intersection(&current_participants).count();
+            .filter(|(id, _, _)| all_votes.contains(id))
+            .count();
 
         // Not enough votes from current participants, wait for more.
         if (valid_votes_count as u64) < threshold.value() {
@@ -1658,7 +1654,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{collections::HashSet, str::FromStr};
 
     use super::*;
     use crate::crypto_shared::k256_types;
