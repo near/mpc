@@ -480,13 +480,10 @@ RPC_MAX_ATTEMPTS = 20
 #
 # IMPORTANT:
 #   • The digest in this test corresponds EXACTLY to that pre-built image.
+#   • Dockerfile used to build the image can be found at mpc/tee_launcher/launcher-test-image/Dockerfile
 #   • If the test image is rebuilt, the digest MUST be updated here.
 #   • If the registry is unavailable or slow, this test may fail.
 #   • CI will run this only if explicitly enabled.
-#
-# Full instructions for building, updating, and debugging the test image are in:
-#
-#     ./launcher-test-image/README.md
 #
 # Please read that file before modifying the digest, registry, or test behavior.
 # ------------------------------------------------------------------------------------
