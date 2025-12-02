@@ -56,12 +56,27 @@ near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-ne
 
 ### Configuration Parameters
 
+Note: The files below define several port numbers.
+If any of these ports are already in use on your system, you will need to update them.
+
+The most important ports are the Frodo/Sam TLS ports: 13001 / 13002.
+These appear in the following files:
+- frodo/sam.conf
+- frodo/sam.env
+- init_tee.json
+
+If you change these ports, make sure to update them in all of the above files.
+
+There are additional ports defined in frodo/sam.env, but you may change those to any values you prefer.
+
+
+
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [docker-compose.yml](./tee_launcher/launcher_docker_compose.yaml)
-* [frodo.conf](./deployment/localnet/TEE/frodo.conf) / [sam.conf](./deployment/localnet/TEE/sam.conf) 
-* [frodo.env](./deployment/localnet/TEE/frodo.env)/ [sam.env](./deployment/localnet/TEE/sam.env)    - if you use the deployment script
+* [docker-compose.yml](../../tee_launcher/launcher_docker_compose.yaml)
+* [frodo.conf](../../deployment/localnet/tee/frodo.conf) / [sam.conf](../../deployment/localnet/tee/sam.conf) 
+* [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
 #### Define the machine's external IP once  
