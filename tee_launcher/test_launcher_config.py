@@ -466,14 +466,29 @@ RPC_MAX_ATTEMPTS = 20
 
 
 # ------------------------------------------------------------------------------------
-# NOTE:
-#   This integration test depends on an externally hosted Docker image and its
-#   immutable digest. All steps for building, updating, and debugging this test
-#   are documented in:
+# NOTE: Integration Test (External Dependency)
 #
-#   ./launcher-test-image/README.md
+# This test validates that `validate_image_hash()` correctly:
+#   - contacts the real Docker registry,
+#   - resolves the manifest digest,
+#   - pulls the remote image,
+#   - and verifies that its sha256 digest matches the expected immutable value.
 #
-#   Please read that file before modifying the test or the test image.
+# The test image is a **pre-built, minimal Docker image containing only a tiny
+# binary**, created intentionally for performance and fast pulls.
+# This image is uploaded to Docker Hub together.
+#
+# IMPORTANT:
+#   • The digest in this test corresponds EXACTLY to that pre-built image.
+#   • If the test image is rebuilt, the digest MUST be updated here.
+#   • If the registry is unavailable or slow, this test may fail.
+#   • CI will run this only if explicitly enabled.
+#
+# Full instructions for building, updating, and debugging the test image are in:
+#
+#     ./launcher-test-image/README.md
+#
+# Please read that file before modifying the digest, registry, or test behavior.
 # ------------------------------------------------------------------------------------
 def test_validate_image_hash():
     result = validate_image_hash(
@@ -493,11 +508,10 @@ ATTEMPT_VALUES = [3, 5]
 
 
 @pytest.mark.ci_excluded
-def test_validate_image_hash_stress():
+def test_validate_image_hash_different_configurations():
     """
-    Stress-test validate_image_hash() with reasonable permutations of RPC timing params.
+    check validate_image_hash() with reasonable permutations of RPC timing params.
     This test is intentionally slow and WILL hit the real Docker registry.
-    Run manually:  pytest -m stress
     """
 
     failures = []
