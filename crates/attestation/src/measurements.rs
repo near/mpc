@@ -85,16 +85,10 @@ impl ExpectedMeasurements {
                 mrtd: decode_measurement("mrtd", &tcb_info.mrtd)?,
             };
 
-            let key_provider_events: Vec<&EventLog> = tcb_info
-                .event_log
-                .iter()
-                .filter(|e| e.event == KEY_PROVIDER_EVENT)
-                .collect();
-            if key_provider_events.len() != 1 {
-                return Err(MeasurementsError::InvalidTcbInfo);
-            }
+            let key_provider_event_digest_encoded =
+                Self::get_key_provider_digest(&tcb_info.event_log)?;
             let key_provider_event_digest =
-                decode_measurement(KEY_PROVIDER_EVENT, &key_provider_events[0].digest)?;
+                decode_measurement(KEY_PROVIDER_EVENT, key_provider_event_digest_encoded)?;
 
             Ok(ExpectedMeasurements {
                 rtmrs,
@@ -108,6 +102,24 @@ impl ExpectedMeasurements {
         }
 
         Ok(results)
+    }
+
+    /// The expected SHA-384 digest for the `key-provider` event, not the event payload.
+    ///
+    /// Digest format:
+    ///   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
+    ///
+    /// If the key provider is `local-sgx` then:
+    /// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
+    fn get_key_provider_digest(event_log: &[EventLog]) -> Result<&str, MeasurementsError> {
+        let key_provider_events: Vec<&EventLog> = event_log
+            .iter()
+            .filter(|e| e.event == KEY_PROVIDER_EVENT)
+            .collect();
+        if key_provider_events.len() != 1 {
+            return Err(MeasurementsError::InvalidTcbInfo);
+        };
+        Ok(&key_provider_events[0].digest)
     }
 }
 
