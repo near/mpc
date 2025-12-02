@@ -24,6 +24,12 @@ MPC_CONTAINER_NAME = "mpc-node"
 IMAGE_DIGEST_FILE = "/mnt/shared/image-digest.bin"
 
 
+# docker-hub defaults
+RPC_REQUEST_TIMEOUT_SECS = 10
+RPC_REQUEST_INTERVAL_SECS = 1.0
+RPC_MAX_ATTEMPTS = 20
+
+
 class RpcTimingConfig(NamedTuple):
     rpc_request_timeout_secs: int
     rpc_request_interval_secs: float
@@ -266,16 +272,17 @@ def parse_env_file(path: str) -> dict:
 
 def load_rpc_timing_config(dstack_config: dict[str, str]) -> RpcTimingConfig:
     """
-    Loads RPC timing configuration from dstack_config,
-    falling back to environment variables, then to defaults.
+    Loads dockerhub RPC timing configuration from dstack_config,
+    falling back to defaults if not provided by user.
     """
 
-    def get_value(key: str, default: str) -> str:
-        return dstack_config.get(key, os.environ.get(key, default))
-
-    timeout_secs = int(get_value(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, "10"))
-    interval_secs = float(get_value(ENV_VAR_RPC_REQUEST_INTERVAL_SECS, "1.0"))
-    max_attempts = int(get_value(ENV_VAR_RPC_MAX_ATTEMPTS, "20"))
+    timeout_secs = int(
+        dstack_config.get(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, RPC_REQUEST_TIMEOUT_SECS)
+    )
+    interval_secs = float(
+        dstack_config.get(ENV_VAR_RPC_REQUEST_INTERVAL_SECS, RPC_REQUEST_INTERVAL_SECS)
+    )
+    max_attempts = int(dstack_config.get(ENV_VAR_RPC_MAX_ATTEMPTS, RPC_MAX_ATTEMPTS))
 
     return RpcTimingConfig(
         rpc_request_timeout_secs=timeout_secs,
