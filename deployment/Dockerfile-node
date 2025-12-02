@@ -1,18 +1,17 @@
-# FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
-FROM google/cloud-sdk:debian_component_based
-# ENV DEBIAN_FRONTEND=noninteractive
+FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+ENV DEBIAN_FRONTEND=noninteractive
 
-# RUN \
-#     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-#     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-#     --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
-#     repro-sources-list.sh && \
-#     apt-get update && \
-#     apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
-#     : "Clean up for improving reproducibility" && \
-#     rm -rf /var/log/* /var/cache/ldconfig/aux-cache
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=./deployment/repro-sources-list.sh,target=/usr/local/bin/repro-sources-list.sh \
+    repro-sources-list.sh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates openssl python3 && \
+    : "Clean up for improving reproducibility" && \
+    rm -rf /var/log/* /var/cache/ldconfig/aux-cache
 
-# ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 WORKDIR /app
 COPY target/reproducible/mpc-node mpc-node
 # The chmod part is also necessary for reproducibility
