@@ -255,13 +255,14 @@ Initialize the MPC contract with the two participants (using the `P2P_KEY` value
 Prepare the arguments for the init call:
 
 ```bash
-envsubst < docs/localnet/args/init_tee.json > /tmp/init_args.json
+mkdir -p "/tmp/$USER"
+envsubst < docs/localnet/args/init_tee.json > "/tmp/$USER/init_args.json"
 ```
 
 Now call the `init` function on the contract:
 
 ```bash
-near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near init file-args /tmp/$USER/init_args.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 Verify that initialization succeeded:
