@@ -31,7 +31,7 @@ RPC_MAX_ATTEMPTS = 20
 
 
 class RpcTimingConfig(NamedTuple):
-    rpc_request_timeout_secs: int
+    rpc_request_timeout_secs: float
     rpc_request_interval_secs: float
     rpc_max_attempts: int
 
@@ -276,7 +276,7 @@ def load_rpc_timing_config(dstack_config: dict[str, str]) -> RpcTimingConfig:
     falling back to defaults if not provided by user.
     """
 
-    timeout_secs = int(
+    timeout_secs = float(
         dstack_config.get(ENV_VAR_RPC_REQUEST_TIMEOUT_SECS, RPC_REQUEST_TIMEOUT_SECS)
     )
     interval_secs = float(
