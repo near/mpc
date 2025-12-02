@@ -82,10 +82,6 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
-/// Prepaid gas for a `cleanup_orphaned_node_migrations` call
-/// todo: benchmark [#1164](https://github.com/near/mpc/issues/1164)
-const CLEAN_NODE_MIGRATIONS_GAS: Gas = Gas::from_tgas(3);
-
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -849,7 +845,7 @@ impl MpcContract {
                     "cleanup_orphaned_node_migrations".to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
-                    CLEAN_NODE_MIGRATIONS_GAS,
+                    Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
                 )
                 .detach();
         }
