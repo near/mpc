@@ -37,5 +37,5 @@ jobs:
 
       - name: Build and push node gcp image
         run: |
-          export NODE_IMAGE_NAME=mpc-node-gcp
+          export NODE_GCP_IMAGE_NAME=mpc-node-gcp
           ./deployment/build-images.sh --node-gcp --push

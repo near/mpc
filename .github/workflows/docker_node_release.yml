@@ -16,10 +16,10 @@ on:
         required: true
         type: string
       repository:
-        description: "Target repository name (default: 'mpc-node')"
+        description: "Target repository name (default: 'mpc-node-gcp')"
         required: false
         type: string
-        default: mpc-node
+        default: mpc-node-gcp
 
 jobs:
   retag-node-image:
@@ -43,9 +43,10 @@ jobs:
       - name: Verify source image exists
         env:
           SOURCE_TAG: ${{ github.event.inputs.source-tag }}
+          REPOSITORY: ${{ github.event.inputs.repository }}
         run: |
-          if ! skopeo inspect docker://nearone/mpc-node:$SOURCE_TAG > /dev/null 2>&1; then
-            echo "❌ Source image nearone/mpc-node:$SOURCE_TAG does not exist"
+          if ! skopeo inspect docker://nearone/$REPOSITORY:$SOURCE_TAG > /dev/null 2>&1; then
+            echo "❌ Source image nearone/$REPOSITORY:$SOURCE_TAG does not exist"
             exit 1
           fi
 
@@ -56,5 +57,5 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.release-tag }}
         run: |
           skopeo copy \
-            docker://nearone/mpc-node:$SOURCE_TAG \
+            docker://nearone/$REPOSITORY:$SOURCE_TAG \
             docker://nearone/$REPOSITORY:$RELEASE_TAG
