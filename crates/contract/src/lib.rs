@@ -10,7 +10,6 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
-pub mod legacy_contract_state;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;

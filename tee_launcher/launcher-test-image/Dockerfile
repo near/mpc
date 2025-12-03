@@ -1,0 +1,3 @@
+# Dockerfile
+FROM alpine@sha256:765942a4039992336de8dd5db680586e1a206607dd06170ff0a37267a9e01958
+CMD ["true"]
