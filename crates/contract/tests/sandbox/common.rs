@@ -13,6 +13,7 @@ use k256::{
 use mpc_contract::{
     crypto_shared::k256_types::SerializableAffinePoint,
     primitives::signature::{Payload, SignRequestArgs},
+    state::ProtocolContractState,
 };
 use mpc_contract::{
     crypto_shared::{
@@ -28,7 +29,6 @@ use mpc_contract::{
         test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
 };
@@ -40,8 +40,7 @@ use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, result::ExecutionFinalResult,
     types::NearToken, Account, Contract, Worker,
 };
-use rand::Rng;
-use rand::{distributions::Alphanumeric, rngs::OsRng};
+use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -69,12 +68,15 @@ use utilities::AccountIdExtV1;
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 
-/// Convenience constant used only in tests.  
-/// The contract itself does not require a specific gas attachment; in practice,  
-/// nodes usually attach the maximum available gas.  
-/// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
-/// unexpectedly in the future.
-pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(22);
+/// Convenience constant used only in tests. The contract itself does not require a specific
+/// gas attachment; in practice, nodes usually attach the maximum available gas. For testing,
+/// we use this constant to attach a fixed amount to each call and detect if gas usage
+/// increases unexpectedly in the future.
+///
+/// TODO(#926) this gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559. This
+/// might be due to the high cost of `self.protocol_state = new_state` in the vote_reshard
+/// contract call. This needs to be investigated to understand why the increase was necessary.
+pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 
@@ -1328,4 +1330,80 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKey {
             }
         }
     }
+}
+
+/// Performs a complete resharing operation with the given parameters.
+/// This includes voting for new parameters, starting reshare instances for each domain,
+/// and voting reshared to complete the transition.
+pub async fn do_resharing(
+    remaining_accounts: &[Account],
+    contract: &Contract,
+    new_threshold_parameters: ThresholdParameters,
+    prospective_epoch_id: EpochId,
+    domain_ids: &[DomainId],
+) -> anyhow::Result<()> {
+    // vote for new parameters
+    for account in remaining_accounts {
+        let result = account
+            .call(contract.id(), "vote_new_parameters")
+            .args_json(serde_json::json!({
+                "prospective_epoch_id": prospective_epoch_id,
+                "proposal": new_threshold_parameters,
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(result.is_success(), "{result:#?}");
+    }
+
+    // Verify contract is now in resharing state
+    let state: ProtocolContractState = contract.view("state").await?.json()?;
+    let ProtocolContractState::Resharing(resharing_state) = state else {
+        panic!("Expected contract to be in Resharing state after voting");
+    };
+
+    for domain_id in domain_ids {
+        let key_event_id = serde_json::json!({
+            "epoch_id": prospective_epoch_id.get(),
+            "domain_id": domain_id.0,
+            "attempt_id": 0,
+        });
+
+        let leader = remaining_accounts
+            .iter()
+            .min_by_key(|a| {
+                resharing_state
+                    .resharing_key
+                    .proposed_parameters()
+                    .participants()
+                    .id(&a.id().as_v2_account_id())
+                    .unwrap()
+            })
+            .unwrap();
+
+        let result = leader
+            .call(contract.id(), "start_reshare_instance")
+            .args_json(serde_json::json!({
+                "key_event_id": key_event_id,
+            }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(result.is_success(), "{result:#?}");
+
+        let vote_reshared_args = serde_json::json!({
+            "key_event_id": key_event_id,
+        });
+
+        execute_async_transactions(
+            remaining_accounts,
+            contract,
+            "vote_reshared",
+            &vote_reshared_args,
+            GAS_FOR_VOTE_RESHARED,
+        )
+        .await
+        .unwrap();
+    }
+    Ok(())
 }

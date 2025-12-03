@@ -92,4 +92,45 @@ mod tests {
         assert_eq!(votes.n_votes(&params2, params2.participants()), 0);
         assert_eq!(votes.n_votes(&params, &participants), 0);
     }
+
+    #[test]
+    fn test_non_participant_votes_not_counted() {
+        // given: two participants vote for a proposal
+        let mut old_participants = Participants::default();
+        let (p0, p1) = (gen_participant(0), gen_participant(1));
+        old_participants.insert(p0.0.clone(), p0.1.clone()).unwrap();
+        old_participants.insert(p1.0.clone(), p1.1.clone()).unwrap();
+
+        let mut ctx = VMContextBuilder::new();
+        let auth_p0 = {
+            ctx.signer_account_id(p0.0.as_v1_account_id());
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&old_participants).unwrap()
+        };
+        let auth_p1 = {
+            ctx.signer_account_id(p1.0.as_v1_account_id());
+            testing_env!(ctx.build());
+            AuthenticatedAccountId::new(&old_participants).unwrap()
+        };
+
+        let params = gen_threshold_params(30);
+        let mut votes = ThresholdParametersVotes::default();
+        votes.vote(&params, auth_p0);
+        votes.vote(&params, auth_p1);
+        assert_eq!(votes.n_votes(&params, &old_participants), 2);
+
+        // when: checking votes against a different participant set (simulating post-resharing)
+        let mut new_participants = Participants::default();
+        let p2 = gen_participant(2);
+        new_participants.insert(p2.0.clone(), p2.1).unwrap();
+
+        // then: votes from non-participants are not counted
+        assert_eq!(votes.n_votes(&params, &new_participants), 0);
+
+        ctx.signer_account_id(p2.0.as_v1_account_id());
+        testing_env!(ctx.build());
+        let auth_p2 = AuthenticatedAccountId::new(&new_participants).unwrap();
+        votes.vote(&params, auth_p2);
+        assert_eq!(votes.n_votes(&params, &new_participants), 1);
+    }
 }

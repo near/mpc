@@ -53,7 +53,7 @@ anyhow = { workspace = true }
 borsh = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
-derive_more = { workspace = true, features = ["from"] }
+derive_more = { workspace = true, features = ["from", "deref"] }
 elliptic-curve = { workspace = true, optional = true }
 hex = { workspace = true, features = [] }
 k256 = { workspace = true, features = [

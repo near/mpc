@@ -475,6 +475,9 @@ impl From<contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.cleanup_orphaned_node_migrations_tera_gas {
             config.cleanup_orphaned_node_migrations_tera_gas = v;
         }
+        if let Some(v) = config_ext.remove_non_participant_update_votes_tera_gas {
+            config.remove_non_participant_update_votes_tera_gas = v;
+        }
 
         config
     }
@@ -498,6 +501,8 @@ impl From<&Config> for contract_interface::types::Config {
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: value
+                .remove_non_participant_update_votes_tera_gas,
         }
     }
 }
@@ -520,6 +525,8 @@ impl From<contract_interface::types::Config> for Config {
             clean_tee_status_tera_gas: value.clean_tee_status_tera_gas,
             cleanup_orphaned_node_migrations_tera_gas: value
                 .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: value
+                .remove_non_participant_update_votes_tera_gas,
         }
     }
 }
