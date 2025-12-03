@@ -1,13 +1,11 @@
 use anyhow::Result;
 use contract_interface::types::{Attestation, MockAttestation};
-use near_workspaces::{Account, Contract};
-use serde_json::json;
 use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold,
-    execute_async_transactions, gen_accounts, get_tee_accounts, init_env, submit_participant_info,
-    submit_tee_attestations, IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
+    assert_running_return_participants, assert_running_return_threshold, do_resharing,
+    gen_accounts, get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
+    IntoInterfaceType, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -17,7 +15,6 @@ use mpc_contract::{
         test_utils::bogus_ed25519_near_public_key,
         thresholds::ThresholdParameters,
     },
-    state::ProtocolContractState,
     tee::tee_state::NodeId,
 };
 
@@ -124,78 +121,5 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Verify that the remaining TEE participants match exactly the new contract participants
     assert_eq!(tee_participants_after_cleanup, expected_tee_post_resharing);
 
-    Ok(())
-}
-
-async fn do_resharing(
-    remaining_accounts: &[Account],
-    contract: &Contract,
-    new_threshold_parameters: ThresholdParameters,
-    prospective_epoch_id: EpochId,
-    domain_ids: &[DomainId],
-) -> Result<()> {
-    // vote for new parameters
-    for account in remaining_accounts {
-        let result = account
-            .call(contract.id(), "vote_new_parameters")
-            .args_json(json!({
-                "prospective_epoch_id": prospective_epoch_id,
-                "proposal": new_threshold_parameters,
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
-
-    // Verify contract is now in resharing state
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Resharing(resharing_state) = state else {
-        panic!("Expected contract to be in Resharing state after voting");
-    };
-
-    for domain_id in domain_ids {
-        let key_event_id = json!({
-            "epoch_id": prospective_epoch_id.get(),
-            "domain_id": domain_id.0,
-            "attempt_id": 0,
-        });
-
-        let leader = remaining_accounts
-            .iter()
-            .min_by_key(|a| {
-                resharing_state
-                    .resharing_key
-                    .proposed_parameters()
-                    .participants()
-                    .id(&a.id().as_v2_account_id())
-                    .unwrap()
-            })
-            .unwrap();
-
-        let result = leader
-            .call(contract.id(), "start_reshare_instance")
-            .args_json(json!({
-                "key_event_id": key_event_id,
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-
-        let vote_reshared_args = json!({
-            "key_event_id": key_event_id,
-        });
-
-        execute_async_transactions(
-            remaining_accounts,
-            contract,
-            "vote_reshared",
-            &vote_reshared_args,
-            GAS_FOR_VOTE_RESHARED,
-        )
-        .await
-        .unwrap();
-    }
     Ok(())
 }

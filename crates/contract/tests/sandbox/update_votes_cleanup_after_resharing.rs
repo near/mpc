@@ -8,9 +8,8 @@ use sha2::Digest;
 use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold,
-    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
-    GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
+    assert_running_return_participants, assert_running_return_threshold, do_resharing,
+    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -19,7 +18,6 @@ use mpc_contract::{
         participants::Participants,
         thresholds::ThresholdParameters,
     },
-    state::ProtocolContractState,
     update::{ProposeUpdateArgs, UpdateId},
 };
 
@@ -83,60 +81,13 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = EpochId::new(6);
 
-    // Vote for new parameters (skip participant 0, use participants 1-6)
-    execute_async_transactions(
+    // when: resharing completes with new participants that exclude participant 0
+    do_resharing(
         &env_accounts[1..threshold.value() as usize + 1],
         &contract,
-        "vote_new_parameters",
-        &json!({
-            "prospective_epoch_id": prospective_epoch_id,
-            "proposal": new_threshold_parameters,
-        }),
-        GAS_FOR_VOTE_NEW_PARAMETERS,
-    )
-    .await?;
-
-    // Get resharing state and start reshare
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Resharing(resharing_state) = state else {
-        panic!("Expected Resharing state");
-    };
-
-    let key_event_id = json!({
-        "epoch_id": prospective_epoch_id.get(),
-        "domain_id": DomainId(0).0,
-        "attempt_id": 0,
-    });
-
-    // Find the leader (participant with lowest ID) to start the reshare instance
-    let leader = env_accounts[1..threshold.value() as usize + 1]
-        .iter()
-        .min_by_key(|a| {
-            resharing_state
-                .resharing_key
-                .proposed_parameters()
-                .participants()
-                .id(&a.id().as_v2_account_id())
-                .unwrap()
-        })
-        .unwrap();
-
-    leader
-        .call(contract.id(), "start_reshare_instance")
-        .args_json(json!({"key_event_id": key_event_id}))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result()?;
-
-    // All new participants vote reshared (triggers cleanup via promise on state transition)
-    let vote_reshared_args = json!({"key_event_id": key_event_id});
-    execute_async_transactions(
-        &env_accounts[1..threshold.value() as usize + 1],
-        &contract,
-        "vote_reshared",
-        &vote_reshared_args,
-        GAS_FOR_VOTE_RESHARED,
+        new_threshold_parameters,
+        prospective_epoch_id,
+        &[DomainId(0)],
     )
     .await?;
 
