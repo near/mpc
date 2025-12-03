@@ -130,7 +130,7 @@ impl TeeState {
         ));
 
         match attestation.verify(
-            expected_report_data,
+            expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.allowed_launcher_compose_hashes,
@@ -188,7 +188,7 @@ impl TeeState {
         // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();
         match participant_attestation.1.verify(
-            expected_report_data,
+            expected_report_data.into(),
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,

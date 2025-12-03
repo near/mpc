@@ -1,7 +1,7 @@
 use crate::{
     app_compose::AppCompose,
     collateral::Collateral,
-    measurements::{EXPECTED_LOCAL_SGX_EVENT_DIGEST, ExpectedMeasurements, MeasurementsError},
+    measurements::{ExpectedMeasurements, MeasurementsError},
     quote::QuoteBytes,
     report_data::ReportData,
 };
@@ -11,11 +11,10 @@ use alloc::{
     string::{String, ToString},
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::{fmt, ops::Deref as _};
+use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
 use dstack_sdk_types::dstack::{EventLog, TcbInfo};
-use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
 
@@ -27,17 +26,9 @@ const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
 const DSTACK_EVENT_TYPE: u32 = 134217729;
 
 const COMPOSE_HASH_EVENT: &str = "compose-hash";
-const KEY_PROVIDER_EVENT: &str = "key-provider";
-const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+pub(crate) const KEY_PROVIDER_EVENT: &str = "key-provider";
 
 const RTMR3_INDEX: u32 = 3;
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum Attestation {
-    Dstack(DstackAttestation),
-    Mock(MockAttestation),
-}
 
 #[derive(Clone, Constructor, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct DstackAttestation {
@@ -80,10 +71,6 @@ pub enum VerificationError {
     AppComposeEventPayloadWrongSize(usize),
     #[error("app-compose event payload `{0}` is not a hex string")]
     AppComposeEventPayloadNotHex(String),
-    #[error("MPC image hash {0} is not in the allowed hashes list")]
-    MpcImageHashNotInAllowedHashesList(String),
-    #[error("launcher compose hash {0} is not in the allowed hashes list")]
-    LauncherComposeHashNotInAllowedHashesList(String),
     #[error(
         "the attestation certificate with timestap {attestation_time} has expired since {expiry_time}"
     )]
@@ -93,10 +80,8 @@ pub enum VerificationError {
     },
     #[error("the mock attestation is invalid per definition")]
     InvalidMockAttestation,
-    #[error("the allowed mpc image hashes list is empty")]
-    EmptyAllowedMpcImageHashesList,
-    #[error("the allowed mpc laucher compose hashes list is empty")]
-    EmptyAllowedMpcLauncherComposeHashesList,
+    #[error("custom error: `{0}`")]
+    Custom(String),
 }
 
 impl fmt::Debug for DstackAttestation {
@@ -124,126 +109,23 @@ impl fmt::Debug for DstackAttestation {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum MockAttestation {
-    #[default]
-    /// Always pass validation
-    Valid,
-    /// Always fails validation
-    Invalid,
-    /// Pass validation depending on the set constraints
-    WithConstraints {
-        mpc_docker_image_hash: Option<MpcDockerImageHash>,
-        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
-        /// Unix time stamp for when this attestation expires.  
-        expiry_time_stamp_seconds: Option<u64>,
-    },
-}
-
-pub(crate) fn verify_mock_attestation(
-    mock_attestation: &MockAttestation,
-    timestamp_seconds: u64,
-    allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
-    allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-) -> Result<(), VerificationError> {
-    match mock_attestation {
-        MockAttestation::Valid => Ok(()),
-        MockAttestation::Invalid => Err(VerificationError::InvalidMockAttestation),
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash,
-            launcher_docker_compose_hash,
-            expiry_time_stamp_seconds: expiry_timestamp_seconds,
-        } => {
-            if let Some(hash) = mpc_docker_image_hash {
-                if allowed_mpc_docker_image_hashes.is_empty() {
-                    return Err(VerificationError::EmptyAllowedMpcImageHashesList);
-                }
-                allowed_mpc_docker_image_hashes.contains(hash).or_err(|| {
-                    VerificationError::MpcImageHashNotInAllowedHashesList(hex::encode(
-                        hash.as_ref(),
-                    ))
-                })?;
-            };
-
-            if let Some(hash) = launcher_docker_compose_hash {
-                if allowed_launcher_docker_compose_hashes.is_empty() {
-                    return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
-                }
-                allowed_launcher_docker_compose_hashes
-                    .contains(hash)
-                    .or_err(|| {
-                        VerificationError::LauncherComposeHashNotInAllowedHashesList(hex::encode(
-                            hash.as_ref(),
-                        ))
-                    })?;
-            };
-
-            if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                (timestamp_seconds < *expiry_timestamp).or_err(|| {
-                    VerificationError::ExpiredCertificate {
-                        attestation_time: timestamp_seconds,
-                        expiry_time: *expiry_timestamp,
-                    }
-                })?;
-            };
-
-            Ok(())
-        }
-    }
-}
-
-impl Attestation {
+impl DstackAttestation {
+    /// Checks whether this attestation is valid
+    /// with respect to expected values of:
+    /// - report_data: must be measured correctly in RTMR3
+    /// - timestamp_seconds: current UNIX time in seconds
+    /// - accepted_measurements: set of accepted RTMRs and key-provider event digest.
+    ///   If any element in the set is valid, the function accepts the attestation as
+    ///   valid.
     pub fn verify(
         &self,
         expected_report_data: ReportData,
         timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
-        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
-        match self {
-            Self::Dstack(dstack_attestation) => self.verify_attestation(
-                dstack_attestation,
-                expected_report_data,
-                timestamp_seconds,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-            ),
-            Self::Mock(mock_attestation) => verify_mock_attestation(
-                mock_attestation,
-                timestamp_seconds,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-            ),
-        }
-    }
-
-    /// Checks whether the node is running the expected environment, including the expected Docker
-    /// images (launcher and MPC node), by verifying report_data, replaying RTMR3, and comparing
-    /// the relevant event values to expected values.
-    fn verify_attestation(
-        &self,
-        attestation: &DstackAttestation,
-        expected_report_data: ReportData,
-        timestamp_seconds: u64,
-        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
-        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    ) -> Result<(), VerificationError> {
-        if allowed_mpc_docker_image_hashes.is_empty() {
-            return Err(VerificationError::EmptyAllowedMpcImageHashesList);
-        }
-        if allowed_launcher_docker_compose_hashes.is_empty() {
-            return Err(VerificationError::EmptyAllowedMpcLauncherComposeHashesList);
-        }
-
-        let expected_measurements_list = ExpectedMeasurements::from_embedded_tcb_info()
-            .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
-
-        let verification_result = dcap_qvl::verify::verify(
-            &attestation.quote,
-            &attestation.collateral,
-            timestamp_seconds,
-        )
-        .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
+        let verification_result =
+            dcap_qvl::verify::verify(&self.quote, &self.collateral, timestamp_seconds)
+                .map_err(|e| VerificationError::DcapVerification(e.to_string()))?;
 
         let report_data = verification_result
             .report
@@ -253,20 +135,11 @@ impl Attestation {
         // Verify all attestation components
         self.verify_tcb_status(&verification_result)?;
         self.verify_report_data(&expected_report_data, report_data)?;
-        self.verify_any_static_rtmrs(
-            report_data,
-            &attestation.tcb_info,
-            &expected_measurements_list,
-        )?;
-        self.verify_rtmr3(report_data, &attestation.tcb_info)?;
-        self.verify_app_compose(&attestation.tcb_info)?;
-        self.verify_local_sgx_digest(&attestation.tcb_info, &EXPECTED_LOCAL_SGX_EVENT_DIGEST)?;
 
-        self.verify_mpc_hash(&attestation.tcb_info, allowed_mpc_docker_image_hashes)?;
-        self.verify_launcher_compose_hash(
-            &attestation.tcb_info,
-            allowed_launcher_docker_compose_hashes,
-        )
+        self.verify_rtmr3(report_data, &self.tcb_info)?;
+        self.verify_app_compose(&self.tcb_info)?;
+
+        self.verify_any_measurements(report_data, &self.tcb_info, accepted_measurements)
     }
 
     /// Replays RTMR3 from the event log by hashing all relevant events together and verifies all
@@ -381,18 +254,21 @@ impl Attestation {
         compare_hashes("report_data", &actual.report_data, &expected.to_bytes())
     }
 
-    /// Try to verify static RTMRs against multiple expected measurement sets.
+    /// Try to verify static RTMRs and key_provider_digest against multiple expected measurement sets.
     /// Returns `Ok(())` if any set matches; otherwise, returns a WrongHash error.
-    fn verify_any_static_rtmrs(
+    fn verify_any_measurements(
         &self,
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
-        expected_measurements_list: &[ExpectedMeasurements],
+        accepted_measurements: &[ExpectedMeasurements],
     ) -> Result<(), VerificationError> {
-        for expected in expected_measurements_list {
+        for expected in accepted_measurements {
             if self
                 .verify_static_rtmrs(report_data, tcb_info, expected)
                 .is_ok()
+                && self
+                    .verify_key_provider_digest(tcb_info, &expected.key_provider_event_digest)
+                    .is_ok()
             {
                 return Ok(()); // found a valid match
             }
@@ -506,7 +382,7 @@ impl Attestation {
     }
 
     /// Verifies local key-provider event digest matches the expected digest.
-    fn verify_local_sgx_digest(
+    fn verify_key_provider_digest(
         &self,
         tcb_info: &TcbInfo,
         expected_digest: &[u8; 48],
@@ -514,47 +390,10 @@ impl Attestation {
         let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
 
         compare_hex_hashes(
-            "sgx_digest",
+            "key_provider",
             &key_provider_event.digest,
             &hex::encode(expected_digest),
         )
-    }
-
-    /// Verifies MPC node image hash is in allowed list.
-    fn verify_mpc_hash(
-        &self,
-        tcb_info: &TcbInfo,
-        allowed_hashes: &[MpcDockerImageHash],
-    ) -> Result<(), VerificationError> {
-        let event = tcb_info.get_single_event(MPC_IMAGE_HASH_EVENT)?;
-
-        allowed_hashes
-            .iter()
-            .any(|hash| hash.as_hex() == *event.event_payload)
-            .or_err(|| {
-                VerificationError::MpcImageHashNotInAllowedHashesList(event.event_payload.clone())
-            })
-    }
-
-    fn verify_launcher_compose_hash(
-        &self,
-        tcb_info: &TcbInfo,
-        allowed_hashes: &[LauncherDockerComposeHash],
-    ) -> Result<(), VerificationError> {
-        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
-
-        let launcher_bytes: [u8; 32] =
-            Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
-
-        allowed_hashes
-            .iter()
-            .any(|hash| hash.deref() == &launcher_bytes)
-            .or_err(|| {
-                VerificationError::LauncherComposeHashNotInAllowedHashesList(hex::encode(
-                    launcher_bytes,
-                ))
-            })
     }
 
     // Implementation taken to match Dstack's https://github.com/Dstack-TEE/dstack/blob/cfa4cc4e8a4f525d537883b1a0ba5d9fbfd87f1e/cc-eventlog/src/lib.rs#L54
@@ -593,7 +432,7 @@ fn compare_hex_hashes<S: ToString + Eq>(
     })
 }
 
-trait OrErr {
+pub trait OrErr {
     fn or_err<Error>(self, err: impl FnOnce() -> Error) -> Result<(), Error>;
 }
 
@@ -603,7 +442,7 @@ impl OrErr for bool {
     }
 }
 
-trait GetSingleEvent {
+pub trait GetSingleEvent {
     fn get_single_event(&self, event_name: &'static str) -> Result<&EventLog, VerificationError>;
 }
 
@@ -638,7 +477,7 @@ mod tests {
         // Given
         let app_compose = valid_app_compose();
         // When
-        let result = Attestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
 
         // Then
         assert!(result)
@@ -652,7 +491,7 @@ mod tests {
             ..valid_app_compose()
         };
         // When
-        let result = Attestation::validate_app_compose_config(&app_compose);
+        let result = DstackAttestation::validate_app_compose_config(&app_compose);
 
         // Then
         assert!(result)
