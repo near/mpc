@@ -3106,9 +3106,9 @@ mod tests {
         running_state.parameters =
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
 
-        let participants_list = running_state.parameters.participants().participants();
-        let participant_1 = participants_list[0].0.clone();
-        let participant_2 = participants_list[1].0.clone();
+        let participants = running_state.parameters.participants().participants();
+        let participant_1 = participants[0].0.clone();
+        let participant_2 = participants[1].0.clone();
 
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
