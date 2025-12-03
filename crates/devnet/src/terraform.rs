@@ -9,9 +9,8 @@ use crate::cli::{
 };
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
-use crate::types::{near_crypto_compatible_serialization, MpcNetworkSetup, ParsedConfig};
+use crate::types::{MpcNetworkSetup, ParsedConfig};
 use describe::TerraformInfraShowOutput;
-use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -141,14 +140,6 @@ struct TerraformMpcNode {
     url: String,
     number_of_responder_keys: usize,
     near_responder_account_id: AccountId,
-}
-
-// From MPC code.
-#[derive(Serialize)]
-pub struct RespondConfigFile {
-    pub account_id: AccountId,
-    #[serde(with = "near_crypto_compatible_serialization::signing_keys")]
-    pub access_keys: Vec<SigningKey>,
 }
 
 impl MpcTerraformDeployInfraCmd {
