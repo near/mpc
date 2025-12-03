@@ -700,7 +700,9 @@ mod tests {
     #[test]
     fn test_proposed_updates_remove_votes() {
         let mut proposed_updates = ProposedUpdates::default();
-        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
 
         let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
         proposed_updates.vote(&update_id, acc0.clone());
@@ -709,9 +711,20 @@ mod tests {
 
         proposed_updates.remove_votes(&[acc0, acc2]);
 
+        let expected = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc1]),
+                    bytes_used,
+                },
+            )]),
+        };
+
         let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
-        assert_eq!(result.entries.len(), 1);
-        assert_eq!(result.entries[&update_id.0].votes, HashSet::from([acc1]));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -719,7 +732,9 @@ mod tests {
         use crate::primitives::test_utils::gen_participants;
 
         let mut proposed_updates = ProposedUpdates::default();
-        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
 
         let participants = gen_participants(2);
         let (acc0, acc1) = (
@@ -735,12 +750,20 @@ mod tests {
 
         proposed_updates.remove_non_participant_votes(&participants);
 
+        let expected = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0.clone(), acc1.clone()]),
+                    bytes_used,
+                },
+            )]),
+        };
+
         let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
-        assert_eq!(result.entries.len(), 1);
-        assert_eq!(
-            result.entries[&update_id.0].votes,
-            HashSet::from([acc0.clone(), acc1.clone()])
-        );
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -748,7 +771,9 @@ mod tests {
         let mut proposed_updates = ProposedUpdates::default();
         assert!(proposed_updates.voters().is_empty());
 
-        let update_id = proposed_updates.propose(Update::Contract([0; 1000].into()));
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
         let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
 
         proposed_updates.vote(&update_id, acc0.clone());
@@ -761,8 +786,36 @@ mod tests {
             HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()])
         );
 
+        let expected_after_votes = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()]),
+                    bytes_used,
+                },
+            )]),
+        };
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected_after_votes);
+
         proposed_updates.remove_vote(&acc1);
         let voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
-        assert_eq!(voters, HashSet::from([acc0, acc2]));
+        assert_eq!(voters, HashSet::from([acc0.clone(), acc2.clone()]));
+
+        let expected_after_removal = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0, acc2]),
+                    bytes_used,
+                },
+            )]),
+        };
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected_after_removal);
     }
 }
