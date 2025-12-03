@@ -5,22 +5,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
 
-use crate::report_data::ReportDataVersion;
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
+use dstack_sdk_types::dstack::{EventLog, TcbInfo as DstackTcbInfo};
 
-/// The expected SHA-384 digest for the `local-sgx` event, not the event payload.
-///
-/// Digest format:
-///   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
-///
-/// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
-pub const EXPECTED_LOCAL_SGX_EVENT_DIGEST: [u8; 48] = [
-    0x74, 0xca, 0x93, 0x9b, 0x8c, 0x3c, 0x74, 0xaa, 0xb3, 0xc3, 0x09, 0x66, 0xa7, 0x88, 0xf7, 0x74,
-    0x39, 0x51, 0xd5, 0x4a, 0x93, 0x6a, 0x71, 0x1d, 0xd0, 0x14, 0x22, 0xf0, 0x03, 0xff, 0x9d, 0xf6,
-    0x66, 0x6f, 0x3c, 0xc5, 0x49, 0x75, 0xd2, 0xe4, 0xf3, 0x5c, 0x82, 0x98, 0x65, 0x58, 0x3f, 0x0f,
-];
-
-const EXPECTED_REPORT_DATA_VERSION: ReportDataVersion = ReportDataVersion::V1;
+use crate::attestation::KEY_PROVIDER_EVENT;
 
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
@@ -53,8 +40,9 @@ pub struct Measurements {
 pub struct ExpectedMeasurements {
     /// Expected RTMRs (Runtime Measurement Registers).
     pub rtmrs: Measurements,
-    /// Expected version of the report data.
-    pub report_data_version: ReportDataVersion,
+    /// Expected digest for the key-provider event.
+    #[serde_as(as = "Bytes")]
+    pub key_provider_event_digest: [u8; 48],
 }
 
 impl ExpectedMeasurements {
@@ -66,25 +54,20 @@ impl ExpectedMeasurements {
     /// all subsequent calls, ensuring consistent measurements across both production and test environments.
     ///
     /// TODO(#737): Define a process for updating these static RTMRs going forward, since they are already outdated.
-    /// TODO Security #1433 - remove dev measurements from production builds after testing is complete.
     /// $ git rev-parse HEAD
     /// fbdf2e76fb6bd9142277fdd84809de87d86548ef
     ///
     /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
     /// Load all supported TCB info measurement sets (e.g., production + dev).
-    pub fn from_embedded_tcb_info() -> Result<Vec<Self>, MeasurementsError> {
-        // Embedded JSON assets
-
-        const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
-        // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
-
+    pub fn from_embedded_tcb_info(
+        tcb_info_strings: &[&str],
+    ) -> Result<Vec<Self>, MeasurementsError> {
         // Helper closure to parse one TCB info JSON
         let parse_tcb_info = |json_str: &str| -> Result<ExpectedMeasurements, MeasurementsError> {
             let tcb_info: DstackTcbInfo =
                 serde_json::from_str(json_str).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
 
-            let decode_rtmr =
+            let decode_measurement =
                 |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
                     let decoded = hex::decode(hex_value).map_err(|_| {
                         MeasurementsError::InvalidHexValue(name.into(), hex_value.into())
@@ -96,24 +79,47 @@ impl ExpectedMeasurements {
                 };
 
             let rtmrs = Measurements {
-                rtmr0: decode_rtmr("rtmr0", &tcb_info.rtmr0)?,
-                rtmr1: decode_rtmr("rtmr1", &tcb_info.rtmr1)?,
-                rtmr2: decode_rtmr("rtmr2", &tcb_info.rtmr2)?,
-                mrtd: decode_rtmr("mrtd", &tcb_info.mrtd)?,
+                rtmr0: decode_measurement("rtmr0", &tcb_info.rtmr0)?,
+                rtmr1: decode_measurement("rtmr1", &tcb_info.rtmr1)?,
+                rtmr2: decode_measurement("rtmr2", &tcb_info.rtmr2)?,
+                mrtd: decode_measurement("mrtd", &tcb_info.mrtd)?,
             };
+
+            let key_provider_event_digest_encoded =
+                Self::get_key_provider_digest(&tcb_info.event_log)?;
+            let key_provider_event_digest =
+                decode_measurement(KEY_PROVIDER_EVENT, key_provider_event_digest_encoded)?;
 
             Ok(ExpectedMeasurements {
                 rtmrs,
-                report_data_version: EXPECTED_REPORT_DATA_VERSION,
+                key_provider_event_digest,
             })
         };
 
-        // Parse both files
-        let prod = parse_tcb_info(TCB_INFO_STRING_PROD)?;
-        // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        let dev = parse_tcb_info(TCB_INFO_STRING_DEV)?;
+        let mut results = vec![];
+        for s in tcb_info_strings {
+            results.push(parse_tcb_info(s)?);
+        }
 
-        Ok(vec![prod, dev])
+        Ok(results)
+    }
+
+    /// The expected SHA-384 digest for the `key-provider` event, not the event payload.
+    ///
+    /// Digest format:
+    ///   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
+    ///
+    /// If the key provider is `local-sgx` then:
+    /// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
+    fn get_key_provider_digest(event_log: &[EventLog]) -> Result<&str, MeasurementsError> {
+        let key_provider_events: Vec<&EventLog> = event_log
+            .iter()
+            .filter(|e| e.event == KEY_PROVIDER_EVENT)
+            .collect();
+        if key_provider_events.len() != 1 {
+            return Err(MeasurementsError::InvalidTcbInfo);
+        };
+        Ok(&key_provider_events[0].digest)
     }
 }
 
