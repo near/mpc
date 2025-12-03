@@ -8,8 +8,8 @@ use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold,
-    execute_async_transactions, init_env, GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED,
-    PARTICIPANT_LEN,
+    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -39,7 +39,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             code: Some(vec![1u8; 1000]),
             config: None,
         })
-        .deposit(near_workspaces::types::NearToken::from_near(1))
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
         .max_gas()
         .transact()
         .await?
