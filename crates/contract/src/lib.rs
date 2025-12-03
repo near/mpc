@@ -3102,16 +3102,13 @@ mod tests {
     #[test]
     pub fn test_vote_update_filters_non_participant_votes() {
         // given: a running state with 3 participants and threshold of 2
-        let running_state = gen_running_state(1);
-        let running_state = RunningContractState::new(
-            running_state.domains.clone(),
-            running_state.keyset.clone(),
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-        );
+        let mut running_state = gen_running_state(1);
+        running_state.parameters =
+            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
 
-        let participants = running_state.parameters.participants().participants();
-        let participant_1 = participants[0].0.clone();
-        let participant_2 = participants[1].0.clone();
+        let participants_list = running_state.parameters.participants().participants();
+        let participant_1 = participants_list[0].0.clone();
+        let participant_2 = participants_list[1].0.clone();
 
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
