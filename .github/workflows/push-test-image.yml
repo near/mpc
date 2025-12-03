@@ -1,0 +1,39 @@
+name: Build & Push Test Image
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v6
+        with:
+          context: tee_launcher/launcher-test-image
+          file: tee_launcher/launcher-test-image/Dockerfile
+          push: true
+          tags: |
+            nearone/testing:latest
+            nearone/testing:${{ github.sha }}
