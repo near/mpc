@@ -39,7 +39,6 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             config: None,
         })
         .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
-        .max_gas()
         .transact()
         .await?
         .json()?;
