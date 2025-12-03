@@ -74,8 +74,8 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 /// increases unexpectedly in the future.
 ///
 /// TODO(#926) this gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559. This
-/// might be due to the high cost of `self.protocol_state = new_state` in vote_reshard contract
-/// calls. This needs to be investigated to understand why the increase was necessary.
+/// might be due to the high cost of `self.protocol_state = new_state` in the vote_reshard
+/// contract call. This needs to be investigated to understand why the increase was necessary.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
