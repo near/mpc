@@ -1127,9 +1127,8 @@ impl MpcContract {
         }
     }
 
-    /// Private endpoint to clean update votes from non-participants after resharing.
-    /// This can only be called by the contract itself via a promise.
-    #[private]
+    /// Cleans update votes from non-participants after resharing.
+    /// Can be called by any participant or triggered automatically via promise.
     #[handle_result]
     pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
         log!(

@@ -654,11 +654,8 @@ expression: abi
       },
       {
         "name": "remove_non_participant_update_votes",
-        "doc": " Private endpoint to clean update votes from non-participants after resharing.\n This can only be called by the contract itself via a promise.",
+        "doc": " Cleans update votes from non-participants after resharing.\n Can be called by any participant or triggered automatically via promise.",
         "kind": "call",
-        "modifiers": [
-          "private"
-        ],
         "result": {
           "serialization_type": "json",
           "type_schema": {
