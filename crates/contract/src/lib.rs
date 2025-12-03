@@ -3156,8 +3156,8 @@ mod tests {
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 
         // Propose an update with 2 non-participant votes
-        propose_and_vote_code(0, &mut contract);
-        let update_id = UpdateId(0);
+        let dto_update = propose_and_vote_code(0, &mut contract);
+        let update_id: UpdateId = dto_update.update_id.into();
 
         // Add votes from 2 current participants
         let participants = participants.participants();
@@ -3165,8 +3165,18 @@ mod tests {
         contract.proposed_updates.vote(&update_id, p1.clone());
         contract.proposed_updates.vote(&update_id, p2.clone());
 
-        // Sanity check: 4 total votes (2 non-participants + 2 participants)
-        assert_eq!(contract.proposed_updates.voters().len(), 4);
+        // Sanity check: verify exact set of voters before cleanup
+        let voters_before: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
+        let non_participants: HashSet<_> = dto_update
+            .votes
+            .iter()
+            .map(|dto_id| dto_id.0.parse().unwrap())
+            .collect();
+        let expected_voters_before: HashSet<_> = [p1.clone(), p2.clone()]
+            .into_iter()
+            .chain(non_participants)
+            .collect();
+        assert_eq!(voters_before, expected_voters_before);
 
         // when: calling remove_non_participant_update_votes
         testing_env!(VMContextBuilder::new()
@@ -3176,8 +3186,16 @@ mod tests {
         contract.remove_non_participant_update_votes().unwrap();
 
         // then: only the 2 participant votes remain
-        let voters: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
-        let expected = HashSet::from([p1, p2]);
-        assert_eq!(voters, expected);
+        let voters_after: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
+        let expected_voters = HashSet::from([p1.clone(), p2.clone()]);
+        assert_eq!(voters_after, expected_voters);
+
+        // verify the update entry reflects only participant votes
+        let all_updates = contract.proposed_updates.all_updates();
+        assert_eq!(all_updates.len(), 1);
+        let (update_id_result, update, votes) = &all_updates[0];
+        assert_eq!(*update_id_result, update_id);
+        assert!(matches!(update, Update::Contract(_)));
+        assert_eq!(**votes, HashSet::from([p1, p2]));
     }
 }
