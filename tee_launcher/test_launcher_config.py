@@ -451,11 +451,11 @@ def test_missing_file_fallback(monkeypatch):
     assert selected == "sha256:" + "a" * 64
 
 
-TEST_DIGEST = "sha256:90fded62844519945a8df988437d541c218efdd486d15990fb5ca78ec7f001cd"
+TEST_DIGEST = "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372"
 # Important: ensure the config matches your test image
 DSTACK_CONFIG = {
-    "MPC_IMAGE_TAGS": "1",  # tag you used
-    "MPC_IMAGE_NAME": "barakeinavnear/launcher-test",
+    "MPC_IMAGE_TAGS": "83b52da4e2270c688cdd30da04f6b9d3565f25bb",
+    "MPC_IMAGE_NAME": "nearone/testing",
     "MPC_REGISTRY": "registry.hub.docker.com",
 }
 
