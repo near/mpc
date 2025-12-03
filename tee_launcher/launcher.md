@@ -48,7 +48,8 @@ It should be uploaded to: /tapp/.host-shared/.user-config
 | `RPC_MAX_ATTEMPTS` | Max attempts before failure for dockerhub | `20` |
 
 The launcher supports the following environment variables via `/tapp/user_config`:
-example:
+
+Example values (for [user-config.conf](./user-config.conf))
 
 ```bash
 LAUNCHER_IMAGE_NAME=nearone/mpc-node
