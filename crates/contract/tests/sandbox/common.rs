@@ -11,7 +11,10 @@ use k256::{
     AffinePoint, FieldBytes, Secp256k1,
 };
 use mpc_contract::{
-    config::InitConfig,
+    crypto_shared::k256_types::SerializableAffinePoint,
+    primitives::signature::{Payload, SignRequestArgs},
+};
+use mpc_contract::{
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         CKDResponse, SerializableScalar, SignatureResponse,
@@ -28,10 +31,6 @@ use mpc_contract::{
     state::ProtocolContractState,
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
-};
-use mpc_contract::{
-    crypto_shared::k256_types::SerializableAffinePoint,
-    primitives::signature::{Payload, SignRequestArgs},
 };
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
@@ -76,6 +75,8 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 /// For testing, we use this constant to attach a fixed amount to each call and detect if gas usage increases  
 /// unexpectedly in the future.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(22);
+pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
+pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
@@ -244,6 +245,7 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
+    init_config: Option<dtos::InitConfig>,
     number_of_participants: usize,
 ) -> (Worker<Sandbox>, Contract, Vec<Account>) {
     let (worker, contract) = init().await;
@@ -289,7 +291,7 @@ pub async fn init_with_candidates(
     } else {
         contract.call("init").args_json(serde_json::json!({
             "parameters": threshold_parameters,
-            "init_config": None::<InitConfig>,
+            "init_config": init_config,
         }))
     };
 
@@ -414,7 +416,7 @@ pub async fn init_env(
         .collect();
 
     let (worker, contract, accounts) =
-        init_with_candidates(public_keys, number_of_participants).await;
+        init_with_candidates(public_keys, None, number_of_participants).await;
 
     (worker, contract, accounts, secret_keys)
 }
@@ -769,7 +771,6 @@ pub async fn propose_and_vote_contract_binary(
     accounts: &[Account],
     contract: &Contract,
     new_contract_binary: &[u8],
-    extra_migrate_step: bool,
 ) {
     let propose_update_execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -802,16 +803,6 @@ pub async fn propose_and_vote_contract_binary(
         .expect("state is deserializable.");
 
     vote_update_till_completion(contract, accounts, &proposal_id).await;
-
-    if extra_migrate_step {
-        contract
-            .call("pub_migrate")
-            .transact()
-            .await
-            .unwrap()
-            .into_result()
-            .unwrap();
-    }
 
     let contract_binary_post_upgrade = contract.view_code().await.unwrap();
     assert_eq!(
@@ -848,13 +839,13 @@ pub async fn vote_update_till_completion(
     panic!("Update didn't occurred")
 }
 
-pub fn check_call_success_all_receipts(result: ExecutionFinalResult) {
-    for outcome in result.outcomes() {
-        assert!(
-            outcome.is_success(),
-            "execution should have succeeded: {result:#?}"
-        );
-    }
+/// Returns an error if any of the outcomes in [`ExecutionFinalResult`] failed  
+fn all_receipts_successful(result: ExecutionFinalResult) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        result.outcomes().iter().all(|o| !o.is_failure()),
+        "execution should have succeeded: {result:#?}"
+    );
+    Ok(())
 }
 
 /// Helper function to get TEE participants from contract.
@@ -988,30 +979,30 @@ pub async fn call_contract_key_generation<const N: usize>(
         }
     };
 
-    for (domain_counter, domain) in domains_to_add.iter().enumerate() {
-        for account in accounts {
-            let result = account
-                .call(contract.id(), "vote_add_domains")
-                .args_json(json! ({
-                    "domains": vec![domain.clone()],
-                }))
-                .transact()
-                .await
-                .unwrap();
-            assert!(result.is_success(), "{result:#?}");
+    for account in accounts {
+        let result = account
+            .call(contract.id(), "vote_add_domains")
+            .args_json(json! ({
+                "domains": domains_to_add.to_vec(),
+            }))
+            .transact()
+            .await
+            .unwrap();
+        assert!(result.is_success(), "{result:#?}");
+    }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    match state {
+        ProtocolContractState::Initializing(state) => {
+            assert_eq!(
+                state.domains.domains().len(),
+                existing_domains + domains_to_add.len()
+            );
         }
+        _ => panic!("should be in initializing state"),
+    };
 
-        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
-        match state {
-            ProtocolContractState::Initializing(state) => {
-                assert_eq!(
-                    state.domains.domains().len(),
-                    existing_domains + domain_counter + 1
-                );
-            }
-            _ => panic!("should be in initializing state"),
-        };
-
+    for domain in domains_to_add.iter() {
         let result = account_with_lowest_participant_id
             .call(contract.id(), "start_keygen_instance")
             .args_json(json!({
@@ -1041,25 +1032,28 @@ pub async fn call_contract_key_generation<const N: usize>(
             "public_key": public_key,
         });
 
-        for account in accounts {
-            let result = account
-                .call(contract.id(), "vote_pk")
-                .args_json(vote_pk_args.clone())
-                .transact()
-                .await
-                .unwrap();
-            assert!(result.is_success(), "{result:#?}");
-        }
-
-        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
-        match state {
-            ProtocolContractState::Running(state) => {
-                assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);
-                assert_eq!(state.domains.domains().len(), domain.id.0 as usize + 1);
-            }
-            state => panic!("should be in running state. Actual state: {state:#?}"),
-        };
+        execute_async_transactions(
+            accounts,
+            contract,
+            "vote_pk",
+            &vote_pk_args,
+            GAS_FOR_VOTE_PK,
+        )
+        .await
+        .unwrap();
     }
+
+    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    match state {
+        ProtocolContractState::Running(state) => {
+            assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);
+            assert_eq!(
+                state.domains.domains().len(),
+                domains_to_add.len() + existing_domains
+            );
+        }
+        state => panic!("should be in running state. Actual state: {state:#?}"),
+    };
 
     private_key_shares.try_into().unwrap()
 }
@@ -1241,7 +1235,7 @@ pub async fn vote_for_hash(
         .args_json(serde_json::json!({"code_hash": image_hash}))
         .transact()
         .await?;
-    assert!(result.is_success(), "{result:#?}");
+    all_receipts_successful(result)?;
     Ok(())
 }
 
@@ -1249,6 +1243,30 @@ fn hash(code: &[u8]) -> [u8; 32] {
     let mut hasher = sha2::Sha256::new();
     hasher.update(code);
     hasher.finalize().into()
+}
+
+pub async fn execute_async_transactions(
+    accounts: &[Account],
+    contract: &Contract,
+    function_name: &str,
+    json_args: &impl Serialize,
+    attached_gas: Gas,
+) -> anyhow::Result<()> {
+    let mut transactions = vec![];
+    for account in accounts.iter() {
+        let result = account
+            .call(contract.id(), function_name)
+            .gas(attached_gas)
+            .args_json(json_args)
+            .transact_async()
+            .await?;
+        transactions.push(result);
+    }
+    for transaction in transactions {
+        let result = transaction.await?;
+        all_receipts_successful(result)?;
+    }
+    Ok(())
 }
 
 // These are temporary conversions to avoid breaking the contract API.

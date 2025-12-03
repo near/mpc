@@ -4,11 +4,6 @@
 //! These types are mapped with the [IntoContractInterfaceType] trait. We can not use [`From`]
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
-use attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::{Collateral, QuoteCollateralV3},
-    EventLog, TcbInfo,
-};
 use derive_more::Display;
 use k256::{
     elliptic_curve::{
@@ -16,6 +11,11 @@ use k256::{
         sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
     },
     EncodedPoint,
+};
+use mpc_attestation::{
+    attestation::{Attestation, DstackAttestation, MockAttestation},
+    collateral::{Collateral, QuoteCollateralV3},
+    EventLog, TcbInfo,
 };
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_ed25519;

@@ -8,12 +8,12 @@ use crate::{
     trait_extensions::convert_to_contract_dto::IntoContractInterfaceType,
 };
 use anyhow::Context;
-use attestation::{
+use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
+use contract_interface::types::Ed25519PublicKey;
+use mpc_attestation::{
     attestation::{Attestation, VerificationError},
     report_data::ReportData,
 };
-use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
-use contract_interface::types::Ed25519PublicKey;
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
 
@@ -105,7 +105,7 @@ fn validate_remote_attestation(
         .unwrap()
         .as_secs();
     attestation.verify(
-        expected_report_data,
+        expected_report_data.into(),
         now,
         allowed_docker_image_hashes,
         allowed_launcher_compose_hashes,

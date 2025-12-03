@@ -46,7 +46,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     .await?;
     let allowed_hashes = get_allowed_hashes(&contract).await?;
     assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
-    // latest_code_hash should return the same hash as the one in allowed_code_hashes
+    // latest_code_hash should return the same hash as the one in allowed_docker_image_hashes
     assert_eq!(
         get_latest_code_hash(&contract).await?,
         Some(allowed_mpc_image_digest.clone())
@@ -199,7 +199,7 @@ async fn get_allowed_launcher_compose_hashes(
 
 async fn get_allowed_hashes(contract: &Contract) -> Result<Vec<MpcDockerImageHash>> {
     Ok(contract
-        .call("allowed_code_hashes")
+        .call("allowed_docker_image_hashes")
         .args_json(serde_json::json!(""))
         .max_gas()
         .transact()

@@ -6,12 +6,12 @@ use crate::{
     },
     TryIntoInterfaceType,
 };
-use attestation::{
+use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::types::Ed25519PublicKey;
+use mpc_attestation::{
     attestation::{Attestation, MockAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use borsh::{BorshDeserialize, BorshSerialize};
-use contract_interface::types::Ed25519PublicKey;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::{env, near, store::IterableMap};
@@ -130,7 +130,7 @@ impl TeeState {
         ));
 
         match attestation.verify(
-            expected_report_data,
+            expected_report_data.into(),
             Self::current_time_seconds(),
             &self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration),
             &self.allowed_launcher_compose_hashes,
@@ -188,7 +188,7 @@ impl TeeState {
         // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();
         match participant_attestation.1.verify(
-            expected_report_data,
+            expected_report_data.into(),
             time_stamp_seconds,
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
@@ -371,7 +371,7 @@ mod tests {
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
 
     use super::*;
-    use attestation::attestation::{Attestation, MockAttestation};
+    use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
 
     #[test]

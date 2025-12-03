@@ -19,7 +19,6 @@ use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::SigningKey;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
-    config::InitConfig,
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::EpochId,
@@ -372,7 +371,7 @@ impl MpcInitContractCmd {
             ThresholdParameters::new(participants, Threshold::new(self.threshold)).unwrap();
         let args = serde_json::to_vec(&InitV2Args {
             parameters,
-            init_config: None,
+            init_config: contract_interface::types::InitConfig::default(),
         })
         .unwrap();
 
@@ -395,7 +394,7 @@ impl MpcInitContractCmd {
 #[derive(Serialize)]
 struct InitV2Args {
     parameters: ThresholdParameters,
-    init_config: Option<InitConfig>,
+    init_config: contract_interface::types::InitConfig,
 }
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {

@@ -31,7 +31,6 @@ container_build_command = [
     "--profile=release-contract",
     "--features",
     "abi",
-    "--no-embed-abi",
 ]
 
 [package.metadata.cargo-shear]
@@ -51,7 +50,6 @@ __abi-generate = ["near-sdk/__abi-generate"]
 
 [dependencies]
 anyhow = { workspace = true }
-attestation = { workspace = true }
 borsh = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -65,6 +63,7 @@ k256 = { workspace = true, features = [
     "arithmetic",
     "expose-field",
 ] }
+mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true, features = [
     "schemars-v0_8",

@@ -4,7 +4,6 @@ use crate::sandbox::common::{
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
 };
-use mpc_contract::config::Config;
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
@@ -26,7 +25,7 @@ pub fn invalid_contract_proposal() -> ProposeUpdateArgs {
     }
 }
 
-fn current_contract_proposal() -> ProposeUpdateArgs {
+pub fn current_contract_proposal() -> ProposeUpdateArgs {
     ProposeUpdateArgs {
         code: Some(current_contract().to_vec()),
         config: None,
@@ -78,9 +77,17 @@ async fn test_propose_update_config() {
         .contains("not a voter"));
 
     // have each participant propose a new update:
-    let new_config = Config {
-        key_event_timeout_blocks: 20,
-        tee_upgrade_deadline_duration_seconds: 3333,
+    let new_config = contract_interface::types::Config {
+        key_event_timeout_blocks: 11,
+        tee_upgrade_deadline_duration_seconds: 22,
+        contract_upgrade_deposit_tera_gas: 33,
+        sign_call_gas_attachment_requirement_tera_gas: 44,
+        ckd_call_gas_attachment_requirement_tera_gas: 55,
+        return_signature_and_clean_state_on_success_call_tera_gas: 66,
+        return_ck_and_clean_state_on_success_call_tera_gas: 77,
+        fail_on_timeout_tera_gas: 88,
+        clean_tee_status_tera_gas: 99,
+        cleanup_orphaned_node_migrations_tera_gas: 11,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
@@ -102,7 +109,8 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let old_config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
@@ -133,9 +141,10 @@ async fn test_propose_update_config() {
             );
         }
     }
-    let new_config = serde_json::json!(new_config);
     // check that the proposal executed since the threshold got changed.
-    let config: serde_json::Value = contract.view("config").await.unwrap().json().unwrap();
+    let config: contract_interface::types::Config =
+        contract.view("config").await.unwrap().json().unwrap();
+
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);
 }
@@ -143,7 +152,7 @@ async fn test_propose_update_config() {
 #[tokio::test]
 async fn test_propose_update_contract() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
@@ -239,7 +248,7 @@ async fn test_propose_incorrect_updates() {
     let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    let dummy_config = Config::default();
+    let dummy_config = contract_interface::types::InitConfig::default();
 
     // Can not propose update both to code and config
     let execution = accounts[0]
@@ -274,10 +283,9 @@ async fn many_sequential_updates() {
     let (_, contract, accounts, _) =
         init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
     dbg!(contract.id());
-
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
-        propose_and_vote_contract_binary(&accounts, &contract, current_contract(), false).await;
+        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
     }
 }
 
@@ -383,8 +391,7 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    // TODO(#1518): this test does not cannot scale yet, "Smart contract panicked: Expected ongoing reshare"
-    let (worker, contract, accounts) = init_with_candidates(vec![], 3).await;
+    let (worker, contract, accounts) = init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
@@ -398,5 +405,29 @@ async fn update_from_current_contract_to_migration_contract() {
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&accounts, &contract, migration_contract(), false).await;
+    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
+}
+
+#[tokio::test]
+async fn migration_function_rejects_external_callers() {
+    let (_worker, contract, accounts) = init_with_candidates(vec![], None, 2).await;
+
+    let execution_error = accounts[0]
+        .call(contract.id(), "migrate")
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect_err("method is private and not callable from participant account.");
+
+    let error_message = format!("{:?}", execution_error);
+
+    let expected_error_message = "Smart contract panicked: Method migrate is private";
+
+    assert!(
+        error_message.contains(expected_error_message),
+        "migrate call was accepted by external caller. expected method to be private. {:?}",
+        error_message
+    )
 }

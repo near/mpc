@@ -1,14 +1,29 @@
 # test_launcher_config.py
 import inspect
-
+import json
 import tempfile
-from tee_launcher.launcher import parse_env_lines
+import tee_launcher.launcher as launcher
+
+import pytest
+from unittest.mock import mock_open
 
 from tee_launcher.launcher import (
+    load_and_select_hash,
+    validate_image_hash,
+    parse_env_lines,
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping,
 )
+from tee_launcher.launcher import (
+    JSON_KEY_APPROVED_HASHES,
+    ENV_VAR_MPC_HASH_OVERRIDE,
+    ENV_VAR_DEFAULT_IMAGE_DIGEST,
+)
+
+
+def make_digest_json(hashes):
+    return json.dumps({JSON_KEY_APPROVED_HASHES: hashes})
 
 
 def parse_env_string(text: str) -> dict:
@@ -372,4 +387,112 @@ def test_ld_preload_in_ports2():
     assert "LD_PRELOAD" not in docker_cmd  # Ensure LD_PRELOAD is NOT in the command
 
 
-# Additional tests could go here to check other edge cases
+def test_json_key_matches_node():
+    """
+    Ensure the JSON key used by the launcher to read approved image hashes
+    stays aligned with the MPC node implementation.
+    mpc/crates/node/src/tee/allowed_image_hashes_watcher.rs -> JSON_KEY_APPROVED_HASHES
+
+    If this test fails, it means the launcher and MPC node are using different
+    JSON field names, which would break MPC hash propagation.
+    """
+    assert launcher.JSON_KEY_APPROVED_HASHES == "approved_hashes"
+
+
+def test_override_present(monkeypatch):
+    override_value = "sha256:" + "a" * 64
+    approved = ["sha256:" + "b" * 64, override_value, "sha256:" + "c" * 64]
+
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    dstack_config = {ENV_VAR_MPC_HASH_OVERRIDE: override_value}
+
+    selected = load_and_select_hash(dstack_config)
+    assert selected == override_value
+
+
+def test_override_not_present(monkeypatch):
+    approved = ["sha256:aaa", "sha256:bbb"]
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    dstack_config = {
+        ENV_VAR_MPC_HASH_OVERRIDE: "sha256:xyz"  # NOT in list
+    }
+
+    with pytest.raises(RuntimeError):
+        load_and_select_hash(dstack_config)
+
+
+def test_no_override_picks_newest(monkeypatch):
+    approved = ["sha256:newest", "sha256:older", "sha256:oldest"]
+    fake_json = make_digest_json(approved)
+
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: True)
+    monkeypatch.setattr("builtins.open", mock_open(read_data=fake_json))
+
+    selected = load_and_select_hash({})
+    assert selected == "sha256:newest"
+
+
+def test_missing_file_fallback(monkeypatch):
+    # Pretend file does NOT exist
+    monkeypatch.setattr("tee_launcher.launcher.os.path.isfile", lambda _: False)
+
+    # Valid fallback digest (64 hex chars)
+    monkeypatch.setenv(ENV_VAR_DEFAULT_IMAGE_DIGEST, "a" * 64)
+
+    selected = load_and_select_hash({})
+    assert selected == "sha256:" + "a" * 64
+
+
+TEST_DIGEST = "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372"
+# Important: ensure the config matches your test image
+DSTACK_CONFIG = {
+    "MPC_IMAGE_TAGS": "83b52da4e2270c688cdd30da04f6b9d3565f25bb",
+    "MPC_IMAGE_NAME": "nearone/testing",
+    "MPC_REGISTRY": "registry.hub.docker.com",
+}
+
+# Launcher defaults
+RPC_REQUEST_TIMEOUT_SECS = 10.0
+RPC_REQUEST_INTERVAL_SECS = 1.0
+RPC_MAX_ATTEMPTS = 20
+
+
+# ------------------------------------------------------------------------------------
+# NOTE: Integration Test (External Dependency)
+#
+# This test validates that `validate_image_hash()` correctly:
+#   - contacts the real Docker registry,
+#   - resolves the manifest digest,
+#   - pulls the remote image,
+#   - and verifies that its sha256 digest matches the expected immutable value.
+#
+# The test image is a **pre-built, minimal Docker image containing only a tiny
+# binary**, created intentionally for performance and fast pulls.
+# This image is uploaded to Docker Hub together.
+#
+# IMPORTANT:
+#   • The digest in this test corresponds EXACTLY to that pre-built image.
+#   • Dockerfile used to build the image can be found at mpc/tee_launcher/launcher-test-image/Dockerfile
+#   • If the test image is rebuilt, the digest MUST be updated here.
+#   • If the registry is unavailable or slow, this test may fail.
+#   • CI will run this only if explicitly enabled.
+#
+# Please read that file before modifying the digest, registry, or test behavior.
+# ------------------------------------------------------------------------------------
+def test_validate_image_hash():
+    result = validate_image_hash(
+        TEST_DIGEST,
+        DSTACK_CONFIG,
+        RPC_REQUEST_TIMEOUT_SECS,
+        RPC_REQUEST_INTERVAL_SECS,
+        RPC_MAX_ATTEMPTS,
+    )
+    assert result is True, "validate_image_hash() failed for test image"

@@ -6,8 +6,8 @@ use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold,
-    check_call_success_all_receipts, gen_accounts, get_tee_accounts, init_env,
-    submit_participant_info, submit_tee_attestations, IntoInterfaceType, PARTICIPANT_LEN,
+    execute_async_transactions, gen_accounts, get_tee_accounts, init_env, submit_participant_info,
+    submit_tee_attestations, IntoInterfaceType, GAS_FOR_VOTE_RESHARED, PARTICIPANT_LEN,
 };
 use mpc_contract::{
     primitives::{
@@ -183,20 +183,19 @@ async fn do_resharing(
             .await?;
         assert!(result.is_success(), "{result:#?}");
 
-        // Wait for threshold participants to vote for resharing (2 out of 3)
-        // The transition should happen after 2 votes when threshold is reached
-        for account in remaining_accounts {
-            check_call_success_all_receipts(
-                account
-                    .call(contract.id(), "vote_reshared")
-                    .args_json(json!({
-                        "key_event_id": key_event_id,
-                    }))
-                    .max_gas()
-                    .transact()
-                    .await?,
-            );
-        }
+        let vote_reshared_args = json!({
+            "key_event_id": key_event_id,
+        });
+
+        execute_async_transactions(
+            remaining_accounts,
+            contract,
+            "vote_reshared",
+            &vote_reshared_args,
+            GAS_FOR_VOTE_RESHARED,
+        )
+        .await
+        .unwrap();
     }
     Ok(())
 }

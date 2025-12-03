@@ -1,7 +1,6 @@
 use crate::config::{SecretsConfig, WebUIConfig};
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
-use attestation::attestation::Attestation;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Response, StatusCode};
@@ -9,6 +8,7 @@ use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
 use futures::future::BoxFuture;
+use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use node_types::http_server::StaticWebData;

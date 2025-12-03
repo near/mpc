@@ -5,7 +5,36 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.0.5] - 2025-11-21
+## [3.0.6] - 2025-11-25
+
+### 🚀 Features
+
+- [#1533](https://github.com/near/mpc/pull/1533)(@gilcu3): Fix rust-cache in CI (#1533)
+
+- [#1537](https://github.com/near/mpc/pull/1537)(@kevindeforth): Allow participants to withdraw their update vote (#1537)
+
+- [#1542](https://github.com/near/mpc/pull/1542)(@gilcu3): Initial ckd example app (#1542)
+
+
+### 🐛 Bug Fixes
+
+- [#1521](https://github.com/near/mpc/pull/1521)(@gilcu3): Both test could be fixed by bumping gas appropiately (#1521)
+
+- [#1530](https://github.com/near/mpc/pull/1530)(@gilcu3): Enable pytest optimizations removed in #1511  (#1530)
+
+- [#1531](https://github.com/near/mpc/pull/1531)(@gilcu3): Use reproducible build in existing test (#1531)
+
+- [#1539](https://github.com/near/mpc/pull/1539)(@gilcu3): Use correct nearcore commit in submodule (#1539)
+
+- [#1547](https://github.com/near/mpc/pull/1547)(@gilcu3): Patch nearcore version 210 (#1547)
+
+
+### 📚 Documentation
+
+- [#1467](https://github.com/near/mpc/pull/1467)(@pbeza): Design TEE-enabled backup service (#1467)
+
+
+## [3.0.5] - 2025-11-23
 
 ### 🚀 Features
 
@@ -26,6 +55,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1509](https://github.com/near/mpc/pull/1509)(@andrei-near): Nightly build MPC workflow (#1509)
 
+- [#1525](https://github.com/near/mpc/pull/1525)(@netrome): Use patched near core supporting reproducible builds (#1525)
+
 
 ### 🧪 Testing
 
@@ -39,6 +70,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1503](https://github.com/near/mpc/pull/1503)(@DSharifi): Update mainnet to use 3_0_2 release for backwards compatibilit… (#1503)
 
 - [#1511](https://github.com/near/mpc/pull/1511)(@DSharifi): Bump nearcore dependency to `2.10.0-rc.3` (#1511)
+
+- [#1523](https://github.com/near/mpc/pull/1523)(@netrome): Bump crate versions to 3.0.5 and update changelog (#1523)
 
 
 ## [3.0.4] - 2025-11-18

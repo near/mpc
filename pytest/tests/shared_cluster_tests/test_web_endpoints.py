@@ -24,6 +24,7 @@ from common_lib.shared.mpc_cluster import MpcCluster
 from common_lib.shared.mpc_node import MpcNode
 from common_lib import shared
 
+
 @pytest.mark.no_atexit_cleanup
 def test_web_endpoints(shared_cluster: shared.MpcCluster):
     number_nodes = len(shared_cluster.mpc_nodes)

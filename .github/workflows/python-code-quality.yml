@@ -1,11 +1,16 @@
 name: Python Code Quality
 
 on:
+  workflow_dispatch:
   pull_request:
-    types: [opened, synchronize, reopened]
+  merge_group:
+  push:
+    branches:
+      - main
 
 jobs:
   ruff-formatter:
+    name: "Python ruff formatter"
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read
@@ -14,13 +19,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/ruff-action@@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
+      - uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
         with:
           args: "format --diff --verbose --exclude libs/nearcore"
           src: "."
 
 
   ruff-linter:
+    name: "Python ruff linter"
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read

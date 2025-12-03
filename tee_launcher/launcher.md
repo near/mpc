@@ -29,18 +29,36 @@ It should be uploaded to: /tapp/.host-shared/.user-config
 
 ## 📁 File Locations
 
-- `/tapp/.host-shared/.user-config`: Optional `.env` file for overriding defaults
+- `/tapp/user_config"`: Optional `.env` file for overriding defaults
 - `/mnt/shared/image-digest`: Optional override of image digest (written by external components)
 - `/var/run/dstack.sock`: Unix socket used to communicate with `dstack`
 
 ## 🔧 Configuration (via user-config)
 
-The launcher supports the following environment variables via `/tapp/.host-shared/.user-config`:
+## 🖼️ Image selection
+
+| Variable | Description |
+|----------|-------------|
+| `MPC_IMAGE_NAME` | Name of the MPC docker image (default: `nearone/mpc-node`) |
+| `MPC_REGISTRY` | Registry hostname (default: `registry.hub.docker.com`) |
+| `MPC_IMAGE_TAGS` | Comma-separated tags to try (default: `latest`) |
+| `MPC_HASH_OVERRIDE` | Optional: force a slection of specific sha256 digest (must be in approved list) |
+| `RPC_REQUEST_TIMEOUT_SECS` |  Per-request timeout for dockerhub | `10` |
+| `RPC_REQUEST_INTERVAL_SECS` | Initial retry interval (seconds) for dockerhub | `1.0` |
+| `RPC_MAX_ATTEMPTS` | Max attempts before failure for dockerhub | `20` |
+
+The launcher supports the following environment variables via `/tapp/user_config`:
+
+Example values (for [user-config.conf](./user-config.conf))
 
 ```bash
-LAUNCHER_IMAGE_NAME=nearone/mpc-node-gcp
-LAUNCHER_IMAGE_TAGS=latest
+LAUNCHER_IMAGE_NAME=nearone/mpc-node
+LAUNCHER_IMAGE_TAGS=latest 
 LAUNCHER_REGISTRY=registry.hub.docker.com
+MPC_HASH_OVERRIDE=sha256:xyz...
+RPC_REQUEST_TIMEOUT_SECS =10
+RPC_REQUEST_INTERVAL_SECS =1
+RPC_MAX_ATTEMPTS =20
 ```
 
 ## Reproducible builds
@@ -48,7 +66,7 @@ from: tee_launcher folder run:
 docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
 
 - [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
-- [deployment/Dockerfile-gcp](deployment/Dockerfile-gcp) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
+- [deployment/Dockerfile](deployment/Dockerfile) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
 - [deployment/build-image.sh](deployment/build-image.sh) drives the build process
 
 For example, I ran `deployment/build-image.sh` on the git commit [ef3f1e7...](https://github.com/Near-One/mpc/commit/ef3f1e7f862d447de60e91d32dadf68696eb6a58). The resulting Docker image digest was

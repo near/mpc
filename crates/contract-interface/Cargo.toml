@@ -5,7 +5,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["schemars"]
+abi = ["borsh/unstable__schema", "schemars"]
 
 [dependencies]
 borsh = { workspace = true }

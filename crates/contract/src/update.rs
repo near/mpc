@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
-use crate::config::Config;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
@@ -47,18 +46,40 @@ impl From<u64> for UpdateId {
     }
 }
 
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum Update {
     Contract(Vec<u8>),
-    Config(Config),
+    Config(contract_interface::types::Config),
 }
 
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Default)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
 pub struct ProposeUpdateArgs {
     pub code: Option<Vec<u8>>,
-    pub config: Option<Config>,
+    pub config: Option<contract_interface::types::Config>,
 }
 
 impl TryFrom<ProposeUpdateArgs> for Update {
@@ -82,8 +103,19 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     }
 }
 
-#[near(serializers=[borsh ])]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 struct UpdateEntry {
     update: Update,
     votes: HashSet<AccountId>,
@@ -162,7 +194,7 @@ impl ProposedUpdates {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
                 promise = promise.deploy_contract(code).function_call(
-                    "migrate".into(),
+                    "migrate",
                     Vec::new(),
                     NearToken::from_near(0),
                     gas,
@@ -170,7 +202,7 @@ impl ProposedUpdates {
             }
             Update::Config(config) => {
                 promise = promise.function_call(
-                    "update_config".into(),
+                    "update_config",
                     serde_json::to_vec(&(&config,)).unwrap(),
                     NearToken::from_near(0),
                     gas,
@@ -225,13 +257,13 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::Config,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
-        UPDATE_CONFIG_GAS,
     };
     use near_account_id::AccountId;
+    use near_sdk::Gas;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
+    use test_utils::contract_types::dummy_config;
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no
     /// ephemeral vote count by participant id.
@@ -482,7 +514,7 @@ mod tests {
         let update_1 = Update::Contract([1; 1000].into());
         let update_id_1 = proposed_updates.propose(update_1.clone());
 
-        let update_2 = Update::Config(Config::default());
+        let update_2 = Update::Config(dummy_config(1));
         let update_id_2 = proposed_updates.propose(update_2.clone());
 
         let account_0 = gen_account_id();
@@ -526,7 +558,7 @@ mod tests {
         assert_eq!(before, expected_before);
 
         // When: executing an update
-        proposed_updates.do_update(&update_id_1, UPDATE_CONFIG_GAS);
+        proposed_updates.do_update(&update_id_1, Gas::from_tgas(100));
 
         // Then: all state is cleared (entries and votes)
         let after: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
@@ -587,10 +619,7 @@ mod tests {
         let update_id_1 = proposed_updates.propose(update_1.clone());
         assert_eq!(update_id_1.0, 1);
 
-        let update_2 = Update::Config(Config {
-            key_event_timeout_blocks: 1054,
-            tee_upgrade_deadline_duration_seconds: 0,
-        });
+        let update_2 = Update::Config(dummy_config(2));
         let update_id_2 = proposed_updates.propose(update_2.clone());
         assert_eq!(update_id_2.0, 2);
 

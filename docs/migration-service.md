@@ -1,69 +1,93 @@
-# Migration Service
+# Backup and Migration Service
 
 ## Overview
-A **t**rusted **e**xecution **e**nvironment (TEE) is an environment isolated from the operating system. A TEE provides security guarantees about confidentiality and integrity of the code and memory executed inside it.
 
-The security guarantees provided by TEEs are attractive to the MPC network for two reasons:
-1. They help enforce backward secrecy. Since TEEs can guarantee that former nodes never gain lasting possession of plain text secret-shares, collusion attacks after departure become infeasible.
-2. They allow to relax the threat models (e.g. honest-but-curious instead of malicious adversaries). This allows the adoption of significantly more efficient MPC protocols.
+Near One is currently in the process of migrating the MPC nodes into **Trusted Execution Environment (TEEs)** (c.f. [TEE doc](./securing_mpc_with_tee_design_doc.md) for an introduction to TEEs and their benefits).
 
-TEEs provide their security guarantees by restricting how anything outside of the TEE can interact with the code running inside the TEE. This is great to protect against malicious actors, but it also restricts the honest actors. It has to be expected that debugging and handling of emergencies will become much more difficult compared to running an MPC node outside of a TEE.
+Running MPC nodes inside TEEs significantly increases the security of the network, but poses additional operational challenges:
 
-In the context of threshold cryptography, this poses the risk of losing the "signing quorum". If too few nodes remain operational, the protocol grinds to halt, in which case, no funds can be moved.
+- **Node migrations become more difficult:** Once an MPC node operates inside a TEE, extracting or transferring its secret key shares is infeasible. Migrating a node would normally require a full resharing, involving the entire MPC network.  
+- **Recovery from catastrophic failures is harder:** If multiple MPC nodes fails irrecoverably and simultaneously, the network risks losing its signing quorum, which could halt protocol operations.
 
-Therefore, Near-One will roll-out its TEE implementation in two phases:
-- Soft Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up outside of the TEE.
-- Hard Launch: All mainnet nodes are running within TEEs. Their key shares are backed-up inside a different TEE.
+This document outlines the design and implementation of a **Migration Service**, a service aimed at addressing those issues by solving the above problems:
 
-As long as the secret shares of the MPC nodes are securely backed-up outside of the TEE's in which the nodes are running, it is highly likely that the network will be able to recover from otherwise catastrophic failures. 
+1. **Operational resilience** — the migration service enables secure recovery of nodes in the event of hardware or system failure.  
+2. **Node migration** — the migration service allows node operators to move their MPC nodes into or between TEEs without resharing.
 
-Besides the existential risk, TEE's make it (without additional precautions) impossible for node operators to migrate their node to a different machine without entering a resharing procedure, which requires the explicit approval of all MPC participants.
+Near-One will roll-out its TEE implementation in two phases:
+- **Soft Launch:**
+    - Some MPC nodes are running within TEEs.
+    - Their key shares are backed-up outside of the TEE through the migration service.
+    - The MPC contract does not formally enforce nodes to run inside a TEE.
+    - The migration service is used to move nodes into TEEs.
+- **Hard Launch:** 
+    - All MPC nodes are running within TEEs.
+    - Their key shares are backed-up inside another TEE through the Migration Service.
+    - The MPC contract kicks out any nodes that are not running inside a TEE.
+    - The migration service is used to move nodes between different TEEs (if required).
 
-Having keyshare backups outside of the TEE environment allows node operators not only to recover from a catastrophic event, but also to migrate their nodes to new machines without going through a reshring process. In fact, disaster recovery is just a special case of the more general migration use case.
+## Migration Service Design
 
-## Migration of an MPC Node
-Migrating a node requires a procedure that allows an MPC node to:
+### System Components
+
+The Migration Service enables secure backup and recovery of MPC node key shares. It involves four main components:
+- **MPC Node**
+  Runs the Multi-Party Computation protocol and holds the node’s secret key shares.  
+- **Node Operator** 
+  A person or entity responsible for an MPC node.
+- **Backup Service**
+  A separate process, running on a different machine than the MPC node. The backup service stores the encrypted key shares from the MPC node.
+  During the *soft launch*, this service is implemented as a simple CLI and manually triggered by the node operator.
+  For the *hard launch*, it will be a long-running program inside its own TEE, maintain an up-to-date view of the on-chain MPC contract and handle back-up and recovery processes in an automated manner. Each node operator must run their own back-up service.
+- **MPC Smart Contract**
+  Serves as the source of truth for protocol state and node information.  
+  It stores metadata about registered backup services and information about node migrations.
+
+Communication between the backup service and the MPC node takes place over **mutual TLS**. The MPC smart-contract, (i.e. the NEAR blockchain) is used as a public key infrastructure, that is, the MPC node and the backup service fetch the expected public key from the smart contract and authenticate their peer against the expected value.
+To protect against spoofing attacks, sensitive data is additonally encrypted via AES 256.
+
+### Workflows
+
+On a high-level, the migration service allows two workflows:
 - _Back-up_: securely back-up and store their secret shares in an external environment;
-- _Recover_: securely request the backup from the external environment and join the MPC network.
+- _Recovery/Migration_: securely request the backed-up secret shares from the external environment and import them into a new node.
 
-To allow migration, a node operator will need to run a **backup service**. This service is separate from the MPC node and should run on a different machine. Its responsiblities are:
-- to request an encrypted copy of the secret keys from the MPC node belonging to this node operator;
-- securely store the secret keys;
-- provide the secret keys to a newly set-up node.
+Note that the migration service does not enable a _"Recovery"_ of the _entire_
+node, but only of the secret shares. The MPC node generates a few secrets that would still be unrecoverable, since no back-up exists (such as TLS keys or access keys for NEAR accounts). As such, _Recovery_ is just a special case of _Migration_, where the target host machine stays the same. TLS Key and access key of the node are still expected to change.
 
-For the soft launch, the node operator (assisted by a script) can act as the backup service. For the hard launch, the backup service must run in its own TEE environment and it must have a current view of the MPC smart contract on the NEAR blockchain.
+#### Backup 
 
-For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
+##### Soft Launch
 
-Note that starting a migration does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. But, to avoid making the migration process a DOS attack vector, protocol state changes must have priority over any ongoing migrations.
-If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing Migration processes will simply be cancelled.
+1. The node operator calls the contract method `register_backup_service()` to register the backup service's public key in the smart contract. The node, running a NEAR client, has access to this information and uses it for the authentication in the following step.
+2. The node operator manually runs `backup-cli get-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggers the following:
+    1. The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
+    2. The `backup-cli` requests the keyshares from the MPC node's `GET /get_keyshares` endpoint
+    3. The MPC node returns the AES-256 encrypted keyshares. The MPC node uses the node-operator provided symmetric key `MPC_BACKUP_ENCRYPTION_KEY_HEX` for encryption.
+    4. The `backup-cli` saves the encrypted keyshares to local storage
 
-### Backup Flow
-The node provides an HTTP `GET` endpoint on which requests for the encrypted keyshares can be submitted. 
-The node fetches the public key associated to the backup service from the MPC contract and uses it to derive a symmetric key, with which it will encrypt the shares (c.f. [cryptography](#cryptography) for more details on the encryption).
-The backup service requests the encrypted keyshares on the web endpoint. The request includes an authentication header.
+> **Note**: For soft launch, the operator must manually trigger the backup using the `backup-cli` tool. There is no automatic periodic backup.
 
 ```mermaid
 ---
-title: Backup Flow
+title: Backup Flow (Soft Launch)
 ---
 flowchart TD
-
     SC("
-      **Smart contract**
+      **Smart Contract**
       _Source of truth for
       protocol state and
       node information._
     ");
 
     MPC("
-      **MPC node**
+      **MPC Node**
       _Currently participating in the MPC network.
       Holds sensitive key shares_.
     ");
 
     BS("
-      **Backup service**
+      **Backup Service**
       _Stores encrypted backups
       of key shares.
       Uniquely identified by a public key._
@@ -74,46 +98,101 @@ flowchart TD
       _Owner of the MPC node and Backup Service._
     ");
     
-    NO -->|1\. register backup service in smart contract| SC;
-    BS -->|2\. read MPC node Public Key and address| SC;
-    BS --> |3\. request encrypted key share| MPC;
-    MPC -->|4\. read backup service Public Key | SC;
-    MPC -->|5\. send encrypted key shares | BS;
-
+    NO -->|"1. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| BS;
+    NO -->|"2. Provides symmetric encryption key `MPC_BACKUP_ENCRYPTION_KEY_HEX`"| MPC;
+    NO -->|"3. register backup service in smart contract"| SC;
+    BS -->|"4. read MPC node Public Key and address"| SC;
+    BS --> |"5. request encrypted key shares (mTLS + AES 256)"| MPC;
+    MPC -->|"6. read backup service Public Key"| SC;
+    MPC -->|"7. send encrypted key shares"| BS;
     NO@{ shape: manual-input}
     SC@{ shape: db}
     BS@{ shape: proc}
     MPC@{ shape: proc}
 ```
 
-### Recovery Flow
-The node provides an HTTP `PUT` endpoint on which the encrypted keyshares can be sent.
-The backup service monitors the smart contract for any onboarding events and uses the public key stored in the smart contract to derive a shared secret, used to encrypt the keys (c.f. [cryptography](#cryptography) for more details on the encryption).
-The backup service submits the encrypted keys via the nodes HTTP endpoint.
+
+##### Hard Launch
+
+For the hard launch, the above steps will not be run manually, but automatically:
+- The backup service runs a NEAR node and monitors the MPC smart contract;
+- The backup service compares the keyshares it has in its possession with the keyshares it is supposed to have (the contract [keeps track](https://github.com/near/mpc/blob/2d833aee6eab1e7a796348787028f3392cafe1bd/crates/contract/src/state/running.rs#L27-L29) of what keys are currently used);
+- If the backup service is missing keyshares, it requests them from the MPC node (similar to steps 2.1-2.4 in the [Soft Launch](#soft-launch) section).
+Additionally, the MPC node will have to verify the attestation submitted by the backup service.
 
 ```mermaid
 ---
-title: Recovery Flow
+title: Backup Flow (Hard Launch with TEE Attestation)
+---
+flowchart TD
+    SC("
+      **Smart Contract**
+      _Source of truth for
+      protocol state and
+      node information._
+    ");
+    MPC("
+      **MPC Node (TEE)**
+      _Currently participating in the MPC network.
+      Holds sensitive key shares_.
+    ");
+    BS("
+      **Backup Service (TEE)**
+      _Stores encrypted backups
+      of key shares.
+      Uniquely identified by a public key._
+    ");
+    
+    BS -->|"1. register backup service with attestation (resubmitted periodically)"| SC
+    SC -->|"2. verify TEE attestation and Docker image hash"| SC
+    BS -->|"3. read MPC node Public Key and address"| SC
+    BS -->|"4. request encrypted keyshares (mTLS)"| MPC
+    MPC -->|"5. verify attestation and read backup service Public Key"| SC
+    MPC -->|"6. send encrypted key shares"| BS
+    
+    SC@{shape: cylinder}
+    MPC@{shape: proc}
+    BS@{shape: proc}
+```
+
+
+#### Recovery/Migration
+
+##### Soft Launch
+
+1. The node operator calls `start_node_migration()` with the new node's `ParticipantInfo` in the smart contract
+2. The node operator manually runs `backup-cli put-keyshares` with the MPC node's URL, public key and the symmetric AES-256 key (matching `MPC_BACKUP_ENCRYPTION_KEY_HEX` below) as input. This triggers the following:
+    - The `backup-cli` and MPC node establish a mutually authenticated TLS connection using their P2P keys.
+    - The `backup-cli` submits the AES-256 encrypted keyshares over the TLS connection to the nodes `PUT /set_keyshares` endpoint.
+    - The node decrypts the received encrypted keyshares using the symmetric key (`MPC_BACKUP_ENCRYPTION_KEY_HEX`)
+    - The new node calls `conclude_node_migration(keyset)` to finalize the migration
+
+> **Note**: For soft launch, the operator must manually trigger the keyshare transfer using the `backup-cli` tool. There is no automatic contract monitoring.
+
+```mermaid
+---
+title: Recovery Flow (Soft Launch)
 ---
 flowchart TD
     NO["**Node Operator**
       _Owner of the MPC node and Backup Service._"]
 
-    SC["**Smart contract**
+    SC["**Smart Contract**
       _Source of truth for
       protocol state and
       node information._"]
-      
-    BS@{ label: "**Backup service**
-        _Stores encrypted backups of key shares.     
-        Uniquely identified by a public key._" }
 
+    BS@{ label: "**Backup Service**
+        _Stores encrypted backups of key shares. 
+        Uniquely identified by a public key._" }
     MPC["**New MPC node**
       _Needs keyshares from backup service._"]
     
-    NO -- "1\. start onboarding for new node in smart contract" --> SC
-    BS -- "2\. read MPC node Public Key and address" --> SC
-    BS -- "3\. send encrypted key shares" --> MPC
+    NO -->|"1. Provides symmetric encryption key"| BS;
+    NO -->|"2. Provides symmetric encryption key"| MPC;
+    NO -->|"3. start onboarding for new node in smart contract"| SC;
+    BS -->|"4. read MPC node Public Key and address"| SC;
+    BS -->|"5. send encrypted key shares"| MPC;
     MPC -- "4\. resolve recovery and participate in the network" --> SC
 
     NO@{ shape: manual-input}
@@ -122,98 +201,285 @@ flowchart TD
     MPC@{ shape: proc}
 ```
 
-### Implementation Details
+##### Hard Launch
 
-#### Node 
-##### Node behavior
-A node must only participate in the MPC protocol, if it is in the set of active participants of the current running or resharing epoch. For this, the TLS key of a node acts as a unique identifier _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/files#diff-c54adafe6cebf73c37af97ce573a28c60593be635aa568ec93e912b8f286aa83R181))_.
+For the hard launch, the recovery flow is the same as in the soft launch, but more automated: the backup service monitors the contract state and initiates migrations automatically (e.g., by calling `conclude_node_migration(keyset)`). The operator only needs to initiate the process by calling `start_node_migration`.
 
-Currently, due to limitations of our implementation, nodes need to drop and re-establish all connections in case of a change in the participant set. Before adding the migration feature, this was only possible if the epoch id changed, which happened only during a protocol state change.
-Now, nodes need to be able to recognize and re-establish a connection if the participant set changes without an epoch incrementing _(implemented in [(#1061)](https://github.com/near/mpc/pull/1061) and [(#1032)](https://github.com/near/mpc/pull/1032/))_.
+There's also an additional TEE-attestation step: the new node must verify that the smart contract successfully verified the backup service's attestation before saving the received keyshares, and the contract must verify the backup service's attestation before handing over the public key and address of the new MPC node.
 
-Additionally, nodes need to remove any triples and pre-signatures involving the node that was removed from the participant set in the migration process _(implemented in [(#1032)](https://github.com/near/mpc/pull/1032/))_
+```mermaid
+---
+title: Recovery Flow (Hard Launch with TEE Attestation)
+---
+flowchart TD
+    NO["**Node Operator**
+      _Owner of the MPC node and Backup Service._"]
 
-##### Web Endpoints
-The **MPC node** will expose a web endpoint over which the backup service can submit requests. These endpoints require some sort of authentication using the published public keys _(todo: [(#1088)](https://github.com/near/mpc/issues/1088))_.
-The exposed endpoints are:
-- GET /shares_backup - with an authentication header
-    - Returns the encrypted shares, if a valid backup service is registered.
-- POST /shares_recover
-    - Posts encrypted shares to a new node.
+    SC["**Smart Contract**
+      _Source of truth for
+      protocol state and
+      node information._"]
 
-#### Contract
-The contract needs to store information related to the recovery process, namely:
-- any information related to the backup service
-- any ongoing recovery processes
+    BS@{ label: "**Backup Service (TEE)**
+        _Stores encrypted backups of key shares.
+        Uniquely identified by a public key._" }
 
-Below is a draft for the structs to add (c.f. _([(#1083)](https://github.com/near/mpc/issues/1083))_:
+    MPC["**New MPC Node (TEE)**
+      _Needs keyshares from backup service._"]
 
-```Rust
-struct Recovery {
-    backup_services: IterableMap<AccountId, BackupService>,
-    recoveries: IterableMap<AccountId, RecoveringNode>,
+    NO -->|"1. start onboarding for new node with attestation in smart contract"| SC
+    BS -->|"2. monitor for migration events"| SC
+    SC -->|"3. new migration"| BS
+    BS -->|"4. request new MPC node Public Key and address"| SC
+    SC -->|"5. verify backup service attestation"| SC
+    SC -->|"6. send new MPC node Public Key and address"| BS
+    BS -->|"7. send encrypted key shares (mTLS)"| MPC
+    MPC -->|"8. verify backup service attestation before saving keyshares"| SC
+    MPC -->|"9. resolve recovery and participate in the network"| SC
+
+    NO@{ shape: manual-input}
+    SC@{ shape: db}
+    BS@{ shape: proc}
+    MPC@{ shape: proc}
+```
+
+### Operational Details and Constraints
+
+For security reasons and to avoid edge cases and race conditions, the MPC network allows migration of nodes only while the protocol is in a `Running` state (as opposed to `Resharing` or `Initializing`, which are the two other well-defined states).
+
+Note that starting a migration workflow does not require a signing quorum. Instead, each participant can migrate their node at their own discretion. However, to avoid making the migration process a DoS attack vector, protocol state changes must have priority over any ongoing migrations.
+If the protocol state changes into a `Resharing` or `Initializing` state, any ongoing migration processes will simply be cancelled.
+
+## Implementation Details
+
+### Contract
+
+For the soft launch, the structures backing the migration service look as follows:
+
+```rust
+/// Manages backup service registration and ongoing node migrations
+pub struct NodeMigrations {
+    /// Maps AccountId to backup service info (public key for TLS authentication)
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
+
+    /// Maps AccountId to destination node info for in-progress migrations
+    ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
 }
 
-struct BackupService {
-    public_key: PublicKey,
+/// Backup service authentication information
+pub struct BackupServiceInfo {
+    /// Ed25519 public key for mutual TLS authentication
+    pub public_key: Ed25519PublicKey,
 }
 
-struct RecoveringNode {
-    epoch_id: EpochId,
-    prospective_participant_info: ParticipantInfo,
+/// Destination node information during migration
+pub struct DestinationNodeInfo {
+    /// NEAR account public key (for verifying contract transaction signatures)
+    pub signer_account_pk: near_sdk::PublicKey,
+
+    /// New node's participant info (TLS key, cipher key, URL, etc.)
+    pub destination_node_info: ParticipantInfo,
 }
 ```
 
-Additionally, the contract must allow the same node operator (`AccountId`) to store multiple TEE attestations. Instead of using `AccountId` as a unique identifier in [`TEEState`](https://github.com/near/mpc/blob/b5a9d1b2eef4de47d19b66cb25b577da2b897560/crates/contract/src/tee/tee_state.rs#L32), Attestations shall be stored with respect to the TLS key _(c.f. [(#1084)](https://github.com/near/mpc/issues/1084))_.
 
-##### Migration Methods
-The contract also needs to proved the following methods:
-- `swap_node(participant_info: ParticipantInfo)`. This method:
-    - is called by the node operator
-    - generates a `RecoveringNode` for the given `AccountId`.
-    - returns an error if the protocol is not in `Running` state.
-- `conclude_recovery(public_keys: Vec<(KeyEventId, PublicKey)>)`. This method:
-    - is called by the new node after it received the keyshares from the backup service.
-    - concludes the recovery process in case it still exists, replacing the `ParticipantInfo` associated to `AccountId` in the current participant set with the information stored in the corresponding `RecoveringNode`.
-    - returns an error if the protocol is not in `Running` state.
-- `set_backup_service(backup_service: BackupService)`. This method:
-    - is called by the node operator
-    - defines or overrides the BackupService for the node operator.
+**Hard Launch Extensions:**
 
+For hard launch, `NodeMigrations` will be extended with the existing `TeeState` struct, which contains attestation, timestamp, and all TEE-related verification data. The global `TeeState` maintains allowed Docker image and launcher hash lists for backup services (separate from MPC node images), managed through existing voting mechanisms.
 
-##### Migration Related Behavior
-- The map `Recovery::recoveries` needs to be emptied upon concluding a `Running` state and entering a `Resharing` or `Initialization` state
-- It may be desirable if the Contract verified that the calls to `conclude_recovery` are actually coming from the onboarding node. It might actually be desirable that the contract verified for all calls stemming from a node, that are signed by the correct public key. That is, to avoid mistaking any calls from ill-behaved decomissioned nodes as valid instructions _(c.f. [(#1086)](https://github.com/near/mpc/issues/1086))_. For this:
-    - the contract would need to compare the `env::signer_account_pk()` with the public key associated to the nodee (note: this is a different key to the TLS Key. The TLS key is already stored in the contract under the name [`signer_pk`](https://github.com/near/mpc/blob/b5a9d1b2eef4de47d19b66cb25b577da2b897560/crates/contract/src/primitives/participants.rs#L14)) _(tangent: the team is aware the chosen name is not ideal and eager to change it when opportun)_)
-    - the public key used by the node would need to be part of the `ParticipantInfo` struct
-    - we would probably also want that public key to be part of the TEE attestation.
+```
+/// Manages backup service registration and ongoing node migrations
+pub struct NodeMigrations {
+    /// Maps AccountId to backup service info (public key for TLS authentication)
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
 
+    /// Maps AccountId to destination node info for in-progress migrations
+    ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
 
-#### Backup Service
-For the soft launch, the node operator and a few scripts will act as the backup-service. For the hard-launch, the backup service will be a standalone application running inside a separate TEE from the MPC node. A detailed design of the hard launch backup service is currently out of the scope of this document.
+    /// Global TEE state for backup services (for hard launch)
+    /// Contains shared allowed Docker image hashes, launcher hashes, and voting state
+    pub backup_service_tee_state: TeeState,
+}
+```
 
-#### Node Operator
-- needs to add backup service information
-- needs to submit `ParticipantInfo` for new (recovering) node
-- needs to act as the backup service before soft launch (there will be scripts or binaries to support).
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO issue [#947](https://github.com/near/mpc/issues/947))
 
+#### Backup Service Registration
 
-#### Cryptography
-A pair-wise key establishment scheme can be leveraged to establish a symmetric key. A suitable implementation can be found in [libsodium](https://doc.libsodium.org/) and its rust wrapper [libsodium-rs](https://docs.rs/crate/libsodium-rs/latest). Specifically, the **key exchange protocol based on X25519** would be a good fit for the given set-up (c.f. [libsodium](https://doc.libsodium.org/key_exchange) and [libsodium-rs](https://docs.rs/libsodium-rs/latest/libsodium_rs/crypto_kx/index.html)).
+The backup service attestation registreation and verification would follow the same process as MPC node attestations:
+1. Backup service generates TLS keypair inside TEE
+2. Backup service generates account keypair inside TEE for signing contract transactions (required to submit the attestation to the contract)
+3. Creates `ReportData` V1: `[version(2 bytes big endian) || sha384(TLS pub key || account_pubkey) || zero padding]`
+4. Obtains TEE quote embedding the `ReportData`
+5. Submits attestation via `register_backup_service(tls_public_key, account_public_key, attestation)`
+6. Contract verifies (using existing `TeeState` verification logic):
+   - Quote validity via attestation provider
+   - Docker image hash against allowed list
+   - Launcher compose hash (if applicable)
+   - Timestamp within deadline
+   - `ReportData` matches SHA3-384 hash of `SHA3-384(tls_public_key || account_public_key)`
+   - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
+7. Contract stores `TeeState` (containing attestation and all verification data)
 
-The key establishment scheme requires that the node as well as the backup service have *mutually authenticated Curve25519 public keys*. The NEAR blockchain can be leveraged for this, more specifically, for each backup generation or recovery, the node and the backup service generate ephemeral keys on the `Curve25519` and publish them on the MPC smart contract. The node and the backup service can then each run a key generation protocol using their private key and the public key of the other party. 
+> **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services [use](#todo) a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
-_Note: The curious reader might ask why this protocol does not simply use the NEAR public/private key pairs associated to the MPC node and the backup service. The reason for this is is twofold:_
-- _those keys are meant for signature generation._
-- _While it is true that Curve25519 used in X25519 and edwards25519 used by the NEAR blockchain are [birationally equivalent](https://crypto.stackexchange.com/questions/43013/what-does-birational-equivalence-mean-in-a-cryptographic-context), so one could theoretically convert the NEAR account keys and use them for `X25519`, it is generally advised to use one key per application. This also allows us to use ephemeral keys, as opposed to static keys for the encryption. Which is desirable._
+#### Backup Service TEE methods
 
+The contract provides separate voting endpoints for backup service Docker image hashes. These are intentionally separate from MPC node voting to maintain backwards compatibility:
 
-#### Todo
-c.f. [(#949)](https://github.com/near/mpc/issues/949)
-- it is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
-- define attestation for backup service [(#947)](https://github.com/near/mpc/issues/947)
+- **`vote_backup_service_code_hash(code_hash: BackupServiceDockerImageHash)`** - Votes to add a backup service Docker image hash to the whitelist:
+    - Called by MPC node operators (must be a current participant)
+    - Similar to `vote_code_hash()` but for backup service images
+    - When threshold is reached, the hash is added to the allowed backup service images list
+    - Can only be called when protocol is in `Running` state
+    - Separate from MPC node image voting for backwards compatibility
+    - Automatically generates and whitelists the corresponding launcher compose hash
 
-## Materials:
+- **`allowed_backup_service_code_hashes()`** - Returns all currently allowed backup service Docker image hashes:
+    - Read-only view method
+    - Returns hashes that are still within their validity period
+    - Separate list from MPC node allowed hashes
+
+- **`allowed_backup_service_launcher_compose_hashes()`** - Returns all allowed backup service launcher compose hashes:
+    - Read-only view method
+    - Launcher compose hashes are automatically generated from voted Docker image hashes
+    - Used by backup service launchers to verify the correct compose file is being used
+    - Separate list from MPC node launcher hashes
+
+> **Note on Launcher Compose Hashes**: Launcher compose hashes are **not voted on directly**. When operators vote for a backup service Docker image hash via `vote_backup_service_code_hash()` and the voting threshold is reached, the contract automatically:
+> 1. Computes the launcher compose hash by filling the template with the Docker image hash
+> 2. Adds both the Docker image hash and launcher compose hash to their respective allowed lists
+>
+> This deterministic derivation ensures the launcher configuration always matches the voted Docker image, eliminating the need for separate voting. The same pattern is used for MPC nodes with `vote_code_hash()`.
+
+#### Migration Methods
+
+The contract provides the following methods:
+
+- **`start_node_migration(destination_node_info: ParticipantInfo)`** - Initiates a node migration:
+    - Called by the node operator
+    - Creates an `OngoingNodeMigration` record for the given `AccountId`
+    - Stores the destination node's `ParticipantInfo` (new TLS keys, etc.)
+    - Can be called multiple times to update the destination node info (only the last value is retained)
+    - Returns an error if the protocol is not in `Running` state
+    - Returns an error if caller is not a current participant
+
+- **`cancel_node_migration()`** - Cancels an ongoing node migration:
+    - Called by the node operator
+    - Removes the `OngoingNodeMigration` record for the given `AccountId`
+    - Useful if the new node is not functioning correctly or wrong information was provided
+
+- **`conclude_node_migration(keyset: &Keyset)`** - Finalizes a node migration:
+    - Called by the new node after receiving keyshares from backup service
+    - Verifies the provided `keyset` matches the expected key event IDs for this epoch
+    - Replaces the old node's `ParticipantInfo` with the new node's info in the current participant set
+    - Removes the `OngoingNodeMigration` record
+    - Returns an error if the protocol is not in `Running` state
+    - Returns an error if no ongoing migration exists for the caller
+
+- **`register_backup_service(backup_service_info: BackupServiceInfo)`** - Registers or updates backup service:
+    - Called by the node operator
+    - Stores the backup service's public key and URL for the node operator's account
+    - Defines or overrides the `BackupServiceInfo` for the node operator
+    - Can be called in any protocol state (`Running`, `Initializing`, or `Resharing`)
+    - Returns an error if caller is not a current participant
+
+> **Hard Launch Extension (Planned):** For hard launch, `register_backup_service()` will require an `attestation` and `operator_account_pk` parameter. The contract will verify the attestation validity, Docker image hash, and that the `ReportData` includes both the TLS public key and operator's account public key (`SHA3-384(tls_public_key || operator_account_pk)`). This cryptographically binds the backup service TEE to the specific operator, preventing a malicious backup service from registering under a different operator's account. Backup services will need to refresh attestations before expiration.
+
+#### Migration Related Behavior
+
+- The `OngoingNodeMigration` records are automatically cleared when the protocol transitions from `Running` state to `Resharing` or `Initializing` state, effectively cancelling any in-progress migrations.
+- **Future Enhancement**: It may be desirable for the contract to verify that calls to `conclude_node_migration(keyset)` come from the actual onboarding node by checking the transaction signer's public key _(see [(#1086)](https://github.com/near/mpc/issues/1086))_. This would prevent ill-behaved decommissioned nodes from making spurious migration calls. This would require:
+    - Comparing `env::signer_account_pk()` with the public key associated with the participant (note: this is different from the TLS key currently stored as [`signer_pk`](https://github.com/near/mpc/blob/b5a9d1b2eef4de47d19b66cb25b577da2b897560/crates/contract/src/tee/tee_state.rs#L32) in TEEState)
+    - Including this public key in the TEE attestation
+
+### Backup Service Components
+
+Both soft launch and hard launch implementations share common core components, with hard launch adding TEE-specific features and automation.
+
+#### Common Components (Both Soft and Hard Launch)
+
+1. **mTLS Client**: Establishes authenticated connections to MPC nodes using P2P keys
+   - Performs mutual TLS handshake using keys registered in the contract
+   - Validates peer identity against expected public key from contract
+
+2. **Symmetric Encryption**: Uses an operator-provided environment variable for an additional encryption layer
+   - Operator manually provides the same key to both MPC node and backup service: `MPC_BACKUP_ENCRYPTION_KEY_HEX` (soft launch) or `BS_BACKUP_ENCRYPTION_KEY_HEX` (hard launch)
+   - Adds second layer of encryption beyond mTLS transport security
+   - Extra protection if contract state becomes inconsistent or manipulated
+
+#### Soft Launch-Specific Components
+
+3. **Local Storage**: Saves encrypted keyshares to disk
+   - Persists backed-up keyshares to local filesystem
+   - Enables recovery after process restart
+
+> The soft launch implementation is intentionally simple:
+> - **No TEE**: Runs on operator's standard infrastructure without hardware attestation
+> - **No blockchain interaction**: Does not query or submit transactions to the contract
+> - **No automatic monitoring**: Operator manually triggers backup/restore operations via CLI commands
+> - **Disk-based storage**: Encrypted keyshares persisted to local filesystem
+> - **Operator provides all context**: Node URL, public keys, and encryption keys passed as CLI arguments
+
+#### Hard Launch-Specific Components
+
+3. **Contract Transaction Interface**: Signs and submits transactions automatically
+   - Calls `register_backup_service()` with attestation periodically
+   - Uses account private key generated in TEE
+
+4. **TEE Runtime**: TDX-enabled environment backed by [dstack](https://github.com/Dstack-TEE/dstack)
+   - Generates hardware attestations proving execution in genuine TEE
+   - Protects cryptographic keys in hardware-encrypted memory
+   - Uses `BS_BACKUP_ENCRYPTION_KEY_HEX` for symmetric encryption of keyshares
+   - Runs continuously (24/7) to maintain keyshares in memory
+   - Keeps keyshares in memory only: does not persist to disk as encryption key would be lost on restart, and operator must not access it
+   - Must re-fetch keyshares from MPC nodes after restart or power loss
+
+5. **Blockchain Monitor**: Maintains current view of MPC contract state
+   - Embedded NEAR light client to track contract state
+   - Automatically detects events, e.g., migration initiations
+   - Enables autonomous operation without operator intervention
+
+6. **HTTP Server** (Optional): Operational monitoring and observability
+   - Health checks for liveness/readiness probes
+   - Prometheus-style metrics (keyshare freshness, backup success/failure rates)
+   - Operator dashboards for status visibility
+
+### Todo
+
+See [(#949)](https://github.com/near/mpc/issues/949)
+- It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)
+- Consider making `TeeState` generic over the identifier type (e.g., `TeeState<T>` where `T` can be `NodeId` or `AccountId`). Currently, `TeeState` uses `NodeId` for MPC nodes (allowing multiple nodes per operator), but backup services need `AccountId` as the identifier (one per operator). A generic implementation would avoid code duplication while supporting both use cases.
+
+**Hard Launch Implementation Tasks:**
+
+*Phase 1: Standalone Application with Mocked Attestations*
+- [ ] Create `BackupServiceDockerImageHash` type in primitives (separate from `MpcDockerImageHash`)
+- [ ] Implement voting structures for backup service images (`BackupServiceCodeHashesVotes`, `AllowedBackupServiceDockerImageHashes`)
+- [ ] Implement `allowed_backup_service_code_hashes()` and `allowed_backup_service_launcher_compose_hashes()` view methods
+- [ ] Update `register_backup_service()` to accept and verify attestations using `TeeState` verification logic
+- [ ] Develop backup service as standalone long-running application
+- [ ] Implement contract monitoring and event detection in backup service
+- [ ] Add backup service attestation refresh mechanism (before expiration)
+- [ ] Implement automatic backup/recovery flows based on contract events
+- [ ] Add comprehensive integration tests with mocked attestations
+
+*Phase 2: TEE Migration*
+- [ ] Port backup service to TEE runtime (TDX with dstack)
+- [ ] Replace mocked attestations with real TEE attestations
+- [ ] Add attestation validity check to the contract
+- [ ] Implement Docker image hash validation for backup services
+- [ ] Update contract to reject mocked attestations (enforce real TEE attestations)
+- [ ] Add automatic cleanup of expired backup service attestations
+- [ ] Add comprehensive integration tests for full TEE attestation flow
+- [ ] Create monitoring dashboards for backup service health
+- [ ] Document TEE deployment procedures
+- [ ] Document backup service upgrade procedure (voting for new images)
+
+> **Implementation Strategy**: Similar to MPC nodes, the backup service will first be developed as a standalone application that uses mocked attestations. This allows development and testing of the blockchain interface, contract monitoring, and automatic backup/recovery flows in a controlled environment. Once the core functionality is stable, the service can be migrated into a TEE with real attestations.
+
+## Materials
+
 https://nearone.slack.com/archives/C07UW93JVQ8/p1753830474083739
 NIST SP 800-56A https://csrc.nist.gov/pubs/sp/800/56/a/r3/final
 https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Ar3.pdf - page 105 - 106

@@ -1,5 +1,5 @@
-use attestation::attestation::Attestation;
 use ed25519_dalek::VerifyingKey;
+use mpc_attestation::attestation::Attestation;
 use serde::{Deserialize, Serialize};
 
 pub mod verifying_key_bs58;
