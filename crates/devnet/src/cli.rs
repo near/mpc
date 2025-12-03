@@ -335,11 +335,6 @@ pub struct MpcTerraformDeployNomadCmd {
     /// The default is `constants::DEFAULT_MPC_DOCKER_IMAGE`.
     #[clap(long)]
     pub docker_image: Option<String>,
-    /// By default, we deploy the default docker image, which is a legacy node, requiring secret
-    /// shares.
-    /// Set this flag if you deploy a newer node that generates its secrets on its own.
-    #[clap(long)]
-    pub not_legacy: bool, // todo: remove [(#710)](https://github.com/near/mpc/issues/710)
 }
 
 #[derive(clap::Parser)]
