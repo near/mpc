@@ -161,8 +161,6 @@ Finally, initialize the contract
 mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2
 ```
 
-(TODO: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
-
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.
 
