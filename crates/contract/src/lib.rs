@@ -2951,6 +2951,22 @@ mod tests {
         }
     }
 
+    fn assert_proposed_update_has_expected_voters(
+        proposed_updates: &ProposedUpdates,
+        expected_update_id: UpdateId,
+        expected_voters: &HashSet<AccountId>,
+    ) {
+        let actual_voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(actual_voters, *expected_voters);
+
+        let all_updates = proposed_updates.all_updates();
+        assert_eq!(all_updates.len(), 1);
+        let (actual_update_id, update, actual_votes) = &all_updates[0];
+        assert_eq!(*actual_update_id, expected_update_id);
+        assert!(matches!(update, Update::Contract(_)));
+        assert_eq!(**actual_votes, *expected_voters);
+    }
+
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
 
@@ -3178,6 +3194,13 @@ mod tests {
             .collect();
         assert_eq!(voters_before, expected_voters_before);
 
+        // verify the update entry reflects participant + non-participant votes
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &expected_voters_before,
+        );
+
         // when: calling remove_non_participant_update_votes
         testing_env!(VMContextBuilder::new()
             .current_account_id(env::current_account_id())
@@ -3186,16 +3209,11 @@ mod tests {
         contract.remove_non_participant_update_votes().unwrap();
 
         // then: only the 2 participant votes remain
-        let voters_after: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
-        let expected_voters = HashSet::from([p1.clone(), p2.clone()]);
-        assert_eq!(voters_after, expected_voters);
-
-        // verify the update entry reflects only participant votes
-        let all_updates = contract.proposed_updates.all_updates();
-        assert_eq!(all_updates.len(), 1);
-        let (update_id_result, update, votes) = &all_updates[0];
-        assert_eq!(*update_id_result, update_id);
-        assert!(matches!(update, Update::Contract(_)));
-        assert_eq!(**votes, HashSet::from([p1, p2]));
+        let expected_voters_after = HashSet::from([p1.clone(), p2.clone()]);
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &expected_voters_after,
+        );
     }
 }
