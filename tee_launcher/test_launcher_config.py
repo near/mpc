@@ -1,21 +1,21 @@
 # test_launcher_config.py
 import inspect
-
 import json
 import tempfile
 import tee_launcher.launcher as launcher
-from tee_launcher.launcher import parse_env_lines
+
 import pytest
 from unittest.mock import mock_open
 
 from tee_launcher.launcher import (
+    load_and_select_hash,
+    validate_image_hash,
+    parse_env_lines,
     build_docker_cmd,
     is_valid_host_entry,
     is_valid_port_mapping,
 )
-
 from tee_launcher.launcher import (
-    load_and_select_hash,
     JSON_KEY_APPROVED_HASHES,
     ENV_VAR_MPC_HASH_OVERRIDE,
     ENV_VAR_DEFAULT_IMAGE_DIGEST,
@@ -449,3 +449,50 @@ def test_missing_file_fallback(monkeypatch):
 
     selected = load_and_select_hash({})
     assert selected == "sha256:" + "a" * 64
+
+
+TEST_DIGEST = "sha256:f2472280c437efc00fa25a030a24990ae16c4fbec0d74914e178473ce4d57372"
+# Important: ensure the config matches your test image
+DSTACK_CONFIG = {
+    "MPC_IMAGE_TAGS": "83b52da4e2270c688cdd30da04f6b9d3565f25bb",
+    "MPC_IMAGE_NAME": "nearone/testing",
+    "MPC_REGISTRY": "registry.hub.docker.com",
+}
+
+# Launcher defaults
+RPC_REQUEST_TIMEOUT_SECS = 10.0
+RPC_REQUEST_INTERVAL_SECS = 1.0
+RPC_MAX_ATTEMPTS = 20
+
+
+# ------------------------------------------------------------------------------------
+# NOTE: Integration Test (External Dependency)
+#
+# This test validates that `validate_image_hash()` correctly:
+#   - contacts the real Docker registry,
+#   - resolves the manifest digest,
+#   - pulls the remote image,
+#   - and verifies that its sha256 digest matches the expected immutable value.
+#
+# The test image is a **pre-built, minimal Docker image containing only a tiny
+# binary**, created intentionally for performance and fast pulls.
+# This image is uploaded to Docker Hub together.
+#
+# IMPORTANT:
+#   • The digest in this test corresponds EXACTLY to that pre-built image.
+#   • Dockerfile used to build the image can be found at mpc/tee_launcher/launcher-test-image/Dockerfile
+#   • If the test image is rebuilt, the digest MUST be updated here.
+#   • If the registry is unavailable or slow, this test may fail.
+#   • CI will run this only if explicitly enabled.
+#
+# Please read that file before modifying the digest, registry, or test behavior.
+# ------------------------------------------------------------------------------------
+def test_validate_image_hash():
+    result = validate_image_hash(
+        TEST_DIGEST,
+        DSTACK_CONFIG,
+        RPC_REQUEST_TIMEOUT_SECS,
+        RPC_REQUEST_INTERVAL_SECS,
+        RPC_MAX_ATTEMPTS,
+    )
+    assert result is True, "validate_image_hash() failed for test image"

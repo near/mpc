@@ -35,16 +35,30 @@ It should be uploaded to: /tapp/.host-shared/.user-config
 
 ## 🔧 Configuration (via user-config)
 
+## 🖼️ Image selection
+
+| Variable | Description |
+|----------|-------------|
+| `MPC_IMAGE_NAME` | Name of the MPC docker image (default: `nearone/mpc-node`) |
+| `MPC_REGISTRY` | Registry hostname (default: `registry.hub.docker.com`) |
+| `MPC_IMAGE_TAGS` | Comma-separated tags to try (default: `latest`) |
+| `MPC_HASH_OVERRIDE` | Optional: force a slection of specific sha256 digest (must be in approved list) |
+| `RPC_REQUEST_TIMEOUT_SECS` |  Per-request timeout for dockerhub | `10` |
+| `RPC_REQUEST_INTERVAL_SECS` | Initial retry interval (seconds) for dockerhub | `1.0` |
+| `RPC_MAX_ATTEMPTS` | Max attempts before failure for dockerhub | `20` |
+
 The launcher supports the following environment variables via `/tapp/user_config`:
+
+Example values (for [user-config.conf](./user-config.conf))
 
 ```bash
 LAUNCHER_IMAGE_NAME=nearone/mpc-node
- # Comma-separated list of Docker image tags to use for the MPC node (e.g., "latest,stable")
 LAUNCHER_IMAGE_TAGS=latest 
-# LAUNCHER_REGISTRY: The Docker registry to pull the image from (e.g., registry.hub.docker.com)
 LAUNCHER_REGISTRY=registry.hub.docker.com
-# ENV_VAR_MPC_HASH_OVERRIDE: Optional; Can be use to select the hash of the MPC docker image. (out of allowed hashes)
-ENV_VAR_MPC_HASH_OVERRIDE=sha256:xyz...
+MPC_HASH_OVERRIDE=sha256:xyz...
+RPC_REQUEST_TIMEOUT_SECS =10
+RPC_REQUEST_INTERVAL_SECS =1
+RPC_MAX_ATTEMPTS =20
 ```
 
 ## Reproducible builds
