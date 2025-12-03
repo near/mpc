@@ -327,20 +327,4 @@ pub mod near_crypto_compatible_serialization {
             }
         }
     }
-
-    pub mod verifying_key {
-        use super::*;
-
-        pub fn serialize<S>(key: &VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let bs58_encoding = format!(
-                "{ED25519_PREFIX}:{}",
-                bs58::encode(key.as_bytes()).into_string()
-            );
-
-            bs58_encoding.serialize(serializer)
-        }
-    }
 }
