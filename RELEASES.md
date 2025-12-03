@@ -106,7 +106,7 @@ Both of these work the same way. They take an existing image and re-tags it with
 Run these workflows with the source image tag `main-<short-commit-hash>` using the short commit hash
 at the release tag.
 It's easiest to find this exact tag at docker hub.
-For example for the node image, visit the [nearone/mpc-node](https://hub.docker.com/r/nearone/mpc-node/tags)
+For example for the node image, visit the [nearone/mpc-node-gcp](https://hub.docker.com/r/nearone/mpc-node-gcp/tags)
 page and find the image associated with the commit at the release tag.
 
 We don't have a workflow to build and publish the contract yet, so this is easiest to build
