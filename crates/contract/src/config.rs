@@ -1,7 +1,5 @@
 use near_sdk::near;
 
-use crate::legacy_contract_state;
-
 // --- Timeouts & Deadlines ---
 /// Default for `key_event_timeout_blocks`.
 const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 30;
@@ -75,11 +73,5 @@ impl Default for Config {
             cleanup_orphaned_node_migrations_tera_gas:
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
         }
-    }
-}
-
-impl From<&legacy_contract_state::ConfigV1> for Config {
-    fn from(_config: &legacy_contract_state::ConfigV1) -> Self {
-        Config::default()
     }
 }
