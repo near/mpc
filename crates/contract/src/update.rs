@@ -6,10 +6,14 @@ use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use derive_more::Deref;
 use near_account_id::AccountId;
-use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::store::IterableMap;
-use near_sdk::{env, near, Gas, NearToken, Promise};
+use near_sdk::{
+    env, near,
+    serde::{Deserialize, Serialize},
+    store::IterableMap,
+    Gas, NearToken, Promise,
+};
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -30,6 +34,7 @@ use near_sdk::{env, near, Gas, NearToken, Promise};
     PartialOrd,
     Ord,
     Hash,
+    Deref,
 )]
 pub struct UpdateId(pub(crate) u64);
 
