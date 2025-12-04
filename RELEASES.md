@@ -12,7 +12,7 @@ The NEAR MPC project consists of two main components that are released together 
 
 ### 1. Release from the `main` branch
 Releases are created by making a release tag on the `main` branch, followed by the manual steps outlined in the
-[GitHub release documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repoaitory#creating-a-release).
+[GitHub release documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#creating-a-release).
 
 Before creating the tag, make sure to update the version number in all relevant `Cargo.toml` files.
 
