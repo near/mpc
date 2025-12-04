@@ -47,7 +47,7 @@ pub async fn run_protocol<T>(
     let sending_handle = {
         let counters = counters.clone();
         let sender = channel.sender();
-        tracking::spawn_checked("send messages", async move {
+        tracking::spawn_checked("message senders for all participants", async move {
             // One future for each recipient. For the same recipient it is OK to send messages
             // serially, but for multiple recipients we want them to not block each other.
             // These futures are IO-bound, so we don't have to spawn them separately.

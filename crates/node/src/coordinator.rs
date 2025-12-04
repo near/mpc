@@ -425,7 +425,7 @@ where
             let network_client = network_client.clone();
             let mpc_config = mpc_config.clone();
 
-            tracking::spawn_checked("key_resharing", async move {
+            tracking::spawn_checked("key resharing", async move {
                 Self::run_key_resharing(
                     &config_file,
                     keyshare_storage.clone(),

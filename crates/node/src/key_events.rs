@@ -511,7 +511,7 @@ pub async fn keygen_follower(
         };
 
         tasks.spawn_checked(
-            &format!("Key generation follower for {:?}", key_event_id),
+            &format!("key generation follower for {:?}", key_event_id),
             keygen_computation(
                 key_event_receiver.clone(),
                 channel,
@@ -641,7 +641,7 @@ pub async fn resharing_follower(
         };
 
         tasks.spawn_checked(
-            &format!("Key resharing follower for {:?}", key_event_id),
+            &format!("key resharing follower for {:?}", key_event_id),
             resharing_computation(
                 key_event_receiver.clone(),
                 channel,

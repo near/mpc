@@ -511,7 +511,7 @@ impl MpcClient {
         while let Some(channel) = channel_receiver.recv().await {
             let mpc_clone = mpc_client.clone();
             tasks.spawn_checked(
-                &format!("passive task {:?}", channel.task_id()),
+                &format!("passive task; task_id: {:?}", channel.task_id()),
                 async move { mpc_clone.process_channel_task(channel).await },
             );
         }
