@@ -10,7 +10,7 @@ const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 
 /// Amount of gas to deposit when creating an internal upgrade transaction promise.
 /// Note this deposit must be less than 300, as the total gas usage including the
 /// initial call itself to vote for the update can not exceed 300 Tgas.
-const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 50;
+const DEFAULT_CONTRACT_UPGRADE_DEPOSIT_TERA_GAS: u64 = 25;
 /// Gas required for a sign request
 const DEFAULT_SIGN_CALL_GAS_ATTACHMENT_REQUIREMENT_TERA_GAS: u64 = 15;
 /// Gas required for a CKD request
