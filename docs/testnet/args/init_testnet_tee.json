@@ -1,0 +1,26 @@
+{
+  "parameters": {
+    "threshold": 2,
+    "participants": {
+      "next_id": 2,
+      "participants": [
+        [
+          "frodo.test.near",
+          0,
+          {
+            "sign_pk": "$FRODO_P2P_KEY",
+            "url": "https://$SERVER_IP_1:13001"
+          }
+        ],
+        [
+          "sam.test.near", 
+          1,
+          {
+            "sign_pk": "$SAM_P2P_KEY",
+            "url": "https://$SERVER_IP_2:13002"
+          }
+        ]
+      ]
+    }
+  }
+}
