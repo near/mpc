@@ -105,6 +105,9 @@ class NearAccount:
         assert nonce is not None
         return (key, nonce)
 
+    ## todo:
+    # transactions.py where we have for example
+
     def sign_tx(
         self,
         target_contract,

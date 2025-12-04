@@ -567,6 +567,7 @@ class MpcCluster:
         )
 
     ## todo: move these two methods to the MpcNode struct
+    ## proper refactor: move all transaction to a separate file. make them there
     # or even better, the Account struct
     def start_node_migration(
         self, node_id: int, destination_node_info: DestinationNodeInfo
