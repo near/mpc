@@ -360,7 +360,7 @@ pub async fn new_tls_mesh_network(
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
-            tasks.spawn_checked::<_, ()>("Handle connection", async move {
+            tasks.spawn_checked::<_, ()>("connection handler", async move {
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
