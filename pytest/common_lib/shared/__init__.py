@@ -353,11 +353,7 @@ def start_cluster_with_mpc(
     contract,
     presignatures_to_buffer=None,
     start_mpc_nodes=True,
-    create_secondary_account=True,
 ):
-    # Overriding to check if all tests pass when validators is always 1.
-    num_validators = 1
-
     validators, observers = start_neard_cluster_with_cleanup(
         num_validators,
         num_mpc_nodes,
@@ -421,27 +417,26 @@ def start_cluster_with_mpc(
         create_txs.append(tx)
         pytest_keys_per_node.append(pytest_signer_keys)
 
-    if create_secondary_account:
-        secondary_account_id = f"secondary.{cluster.contract_node.account_id()}"
-        secondary_signing_key: SigningKey = SigningKey.generate()
-        secondary_key: Key = Key.from_keypair(
-            secondary_account_id,
-            secondary_signing_key,
-        )
-        nonce += 1
-        tx = sign_create_account_with_multiple_access_keys_tx(
-            key,
-            secondary_account_id,
-            [secondary_key],
-            nonce,
-            cluster.contract_node.last_block_hash(),
-        )
-        create_txs.append(tx)
-        secondary_near_account = NearAccount(
-            validators[0],
-            secondary_key,
-            [secondary_key],
-        )
+    secondary_account_id = f"secondary.{cluster.contract_node.account_id()}"
+    secondary_signing_key: SigningKey = SigningKey.generate()
+    secondary_key: Key = Key.from_keypair(
+        secondary_account_id,
+        secondary_signing_key,
+    )
+    nonce += 1
+    tx = sign_create_account_with_multiple_access_keys_tx(
+        key,
+        secondary_account_id,
+        [secondary_key],
+        nonce,
+        cluster.contract_node.last_block_hash(),
+    )
+    create_txs.append(tx)
+    secondary_near_account = NearAccount(
+        validators[0],
+        secondary_key,
+        [secondary_key],
+    )
 
     cluster.contract_node.send_await_check_txs_parallel(
         "create account", create_txs, assert_txn_success
