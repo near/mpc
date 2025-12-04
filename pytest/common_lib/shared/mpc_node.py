@@ -1,5 +1,6 @@
 from dataclasses import asdict
 import enum
+import json
 import pathlib
 import sys
 import time
@@ -11,7 +12,12 @@ from ruamel.yaml import YAML
 
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
 from common_lib.contracts import ContractMethod
-from common_lib.migration_state import BackupServiceInfo, DestinationNodeInfo
+from common_lib.migration_state import (
+    BackupServiceInfo,
+    DestinationNodeInfo,
+    MigrationState,
+    parse_migration_state,
+)
 from common_lib.shared import metrics
 from common_lib.shared.metrics import DictMetricName, IntMetricName
 from common_lib.shared.near_account import NearAccount
@@ -51,6 +57,8 @@ class MpcNode(NearAccount):
         signer_key: Key,
         p2p_url: str,
         migration_service_url: str,
+        web_ui_host: str,
+        web_ui_port: str,
         p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
@@ -58,6 +66,8 @@ class MpcNode(NearAccount):
         super().__init__(near_node, signer_key, pytest_signer_keys)
         self.p2p_url: str = p2p_url
         self.migration_service_url: str = migration_service_url
+        self.web_ui_host: str = web_ui_host
+        self.web_ui_port: str = web_ui_port
         self.p2p_public_key: str = p2p_public_key
         self.status: MpcNode.NodeStatus = MpcNode.NodeStatus.IDLE
         self.participant_id: int | None = None
@@ -101,6 +111,30 @@ class MpcNode(NearAccount):
 
     def set_secret_store_key(self, secret_store_key):
         self.secret_store_key = secret_store_key
+
+    # todo: use this in web endpiont test
+    def migration_state_from_web(self) -> MigrationState:
+        response = requests.get(
+            f"http://{self.web_ui_host}:{self.web_ui_port}/debug/migrations"
+        )
+        (_, contract_btree_map) = json.loads(response.text)
+        return parse_migration_state(contract_btree_map)
+
+    def wait_for_migration_state(
+        self, expected_migrations: MigrationState, max_wait_duration_sec: int = 10
+    ):
+        start = time.time()
+        while True:
+            # for attempt in range(max_attempts):
+            current_state = self.migration_state_from_web()
+            print(f"found: {current_state}")
+            if current_state == expected_migrations:
+                return
+            else:
+                assert time.time() < start + max_wait_duration_sec, (
+                    f"Expected {expected_migrations}, found: {current_state}"
+                )
+                time.sleep(1)
 
     def reset_mpc_data(self):
         assert not self.is_running

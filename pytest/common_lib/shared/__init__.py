@@ -230,13 +230,18 @@ class Candidate:
         responder_keys: list[Key],
         p2p_public_key: str,
         p2p_url: str,
+        web_ui_host: str,
+        web_ui_port: str,
         backup_key: bytes,
         migration_service_url: str,
     ):
+        # todo: proper types for web_ui [host, port]
         self.signer_key: Key = signer_key
         self.responder_keys: list[Key] = responder_keys
         self.p2p_public_key: str = p2p_public_key
         self.p2p_url: str = p2p_url
+        self.web_ui_host: str = web_ui_host
+        self.web_ui_port: str = web_ui_port
         self.backup_key: bytes = backup_key
         self.migration_service_url: str = migration_service_url
 
@@ -245,6 +250,8 @@ def config_participant(
     account_id: str,
     p2p_public_key: bytes,
     p2p_url: str,
+    web_ui_host: str,
+    web_ui_port: str,
     migration_service_url: str,
     secrets_file_path: str,
     responder_account_id: str,
@@ -268,6 +275,8 @@ def config_participant(
         responder_keys=responder_keys,
         p2p_public_key=p2p_public_key_near_sdk_representation,
         p2p_url=p2p_url,
+        web_ui_host=web_ui_host,
+        web_ui_port=web_ui_port,
         backup_key=backup_key,
         migration_service_url=migration_service_url,
     )
@@ -347,12 +356,17 @@ def generate_migration_mpc_configs(
             migration_port: str = config.get("migration_web_ui").get("port")
             # todo: this is not a url, it's a socket address
             migration_service_url = f"{migration_addr}:{migration_port}"
+            # todo: function for extracting web_ui config
+            web_ui_host: str = config.get("web_ui").get("host")
+            web_ui_port: str = config.get("web_ui").get("port")
 
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         candidate: Candidate = config_participant(
             account_id=near_account,
             p2p_public_key=p2p_public_key,
             p2p_url=p2p_url,
+            web_ui_host=web_ui_host,
+            web_ui_port=web_ui_port,
             migration_service_url=migration_service_url,
             secrets_file_path=secrets_file_path,
             responder_account_id=responder_account_id,
@@ -423,11 +437,17 @@ def generate_mpc_configs(
             migration_port: str = config.get("migration_web_ui").get("port")
             migration_service_url = f"http://{migration_addr}:{migration_port}"
 
+            # todo: function for extracting web_ui config
+            web_ui_host: str = config.get("web_ui").get("host")
+            web_ui_port: str = config.get("web_ui").get("port")
+
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
         candidate: Candidate = config_participant(
             account_id=near_account,
             p2p_public_key=p2p_public_key,
             p2p_url=p2p_url,
+            web_ui_host=web_ui_host,
+            web_ui_port=web_ui_port,
             migration_service_url=migration_service_url,
             secrets_file_path=secrets_file_path,
             responder_account_id=responder_account_id,
@@ -663,11 +683,14 @@ def start_cluster_with_mpc(
         )
         access_txs.append(tx)
 
+        # todo: easier converion Candidate to MpcNode
         mpc_node = MpcNode(
             near_node=near_node,
             signer_key=candidate.signer_key,
             p2p_url=candidate.p2p_url,
             migration_service_url=candidate.migration_service_url,
+            web_ui_host=candidate.web_ui_host,
+            web_ui_port=candidate.web_ui_port,
             p2p_public_key=candidate.p2p_public_key,
             pytest_signer_keys=pytest_signer_keys,
             backup_key=candidate.backup_key,

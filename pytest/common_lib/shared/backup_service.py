@@ -102,6 +102,25 @@ class BackupService:
             json.dump(contract_state, f, indent=2, ensure_ascii=False)
         print(f"Backup service saved contract state to: {json_path}")
 
+    def put_keyshares(self, mpc_node: MpcNode):
+        url: str = mpc_node.migration_service_url
+        p2p_key: str = mpc_node.p2p_public_key
+        backup_encryption_key: bytes = mpc_node.backup_key
+        cmd = (
+            BACKUP_SERVICE_BINARY_PATH,
+            "--home-dir",
+            self.home_dir,
+            "put-keyshares",
+            "--mpc-node-url",
+            url,
+            "--mpc-node-p2p-key",
+            p2p_key,
+            "--backup-encryption-key-hex",
+            backup_encryption_key.hex(),
+        )
+        print(f"running command:\n{cmd}\n")
+        _ = subprocess.run(cmd, check=True)
+
 
 # def call_backup_service(mpc_node: MpcNode, home_dir: str):
 #    url = mpc_node.migration_service_url

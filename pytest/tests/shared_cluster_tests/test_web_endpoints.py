@@ -77,6 +77,7 @@ def verify_migration_endpoint(
     assert expected_migrations == res, f"expected {expected_migrations}, found {res}"
 
     # it does not matter which node we take here, as long as we end up taking all of them
+    # todo: fix this port mess
     node_id = port - 20000
     node: MpcNode = cluster.mpc_nodes[node_id]
     # we just need a bogus key

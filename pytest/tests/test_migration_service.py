@@ -18,7 +18,13 @@ from nacl.signing import SigningKey
 
 from common_lib.constants import BACKUP_SERVICE_BINARY_PATH, MPC_REPO_DIR
 from common_lib.contract_state import ProtocolState, RunningProtocolState
-from common_lib.migration_state import BackupServiceInfo
+from common_lib.migration_state import (
+    AccountEntry,
+    BackupServiceInfo,
+    DestinationNodeInfo,
+    MigrationState,
+    ParticipantInfo,
+)
 from common_lib.shared.backup_service import BackupService
 from common_lib.shared.mpc_cluster import MpcCluster
 from common_lib.shared.mpc_node import MpcNode
@@ -54,6 +60,7 @@ def test_migration_service():
     target_node: MpcNode = mpc_nodes[2]
 
     assert migrating_node.account_id() == target_node.account_id()
+    assert migrating_node.p2p_public_key != target_node.p2p_public_key
 
     # with the first two nodes
     cluster.init_cluster(participants=[migrating_node, fixed_node], threshold=2)
@@ -70,21 +77,6 @@ def test_migration_service():
     cluster.send_and_await_ckd_requests(1)
     cluster.send_and_await_signature_requests(1)
 
-    # assert len(
-    #       contract_state.protocol_state.parameters.participants.participants
-    #  ) == len(self.mpc_nodes)
-
-    #        for p in self.mpc_nodes:
-    #            assert contract_state.protocol_state.parameters.participants.is_participant(
-    #                p.account_id()
-    #            )
-    #            p_info: Participant = (
-    #                contract_state.protocol_state.parameters.participants.by_account(
-    #                    p.account_id()
-    #                )
-    #            )
-    #            assert p.p2p_public_key == p_info.sign_pk
-
     # 1. submit backup service info
     backup_service_info: BackupServiceInfo = backup_service.info()
     res = cluster.register_backup_service_info(
@@ -92,21 +84,75 @@ def test_migration_service():
     )
     print(res)
 
-    # _ = submit_backup_service_info(cluster, 0)
+    # max_attempts: int = 10
+    expected_account_entry = AccountEntry(
+        backup_service_info, destination_node_info=None
+    )
+    expected_migrations = MigrationState(
+        {migrating_node.account_id(): expected_account_entry}
+    )
+    migrating_node.wait_for_migration_state(expected_migrations)
+    # for attempt in range(max_attempts):
+    #    current_state = migrating_node.migration_state_from_web()
+    #    print(f"found: {current_state}")
+    #    if current_state == expected_migrations:
+    #        break
+    #    else:
+    #        assert attempt + 1 < max_attempts, (
+    #            f"Expected {expected_migrations}, found: {current_state}"
+    #        )
+    #        time.sleep(1)
 
-    ## wait until it appears in the webendpoint of node
-    time.sleep(10)
-    ## todo, remove sleep
+    ## get keyshares
     contract_state = cluster.get_contract_state()
     backup_service.set_contract_state(contract_state)
+    backup_service.get_keyshares(mpc_node=mpc_nodes[PARTING_NODE_ID])
+
+    ## start node migration
+    signer_account_pk = target_node._signer_key.pk
+    destination_node_participant_info = ParticipantInfo(
+        url=target_node.p2p_url, sign_pk=target_node.p2p_public_key
+    )
+    destination_node = DestinationNodeInfo(
+        signer_account_pk=signer_account_pk,
+        destination_node_info=destination_node_participant_info,
+    )
+    cluster.start_node_migration(PARTING_NODE_ID, destination_node)
     # json_path = os.path.join(home_dir, "contract_state.json")
     # with open(json_path, "w", encoding="utf-8") as f:
     #    json.dump(contract_state, f, indent=2, ensure_ascii=False)
 
     # print(f"Saved contract state to: {json_path}")
-    backup_service.get_keyshares(mpc_node=mpc_nodes[PARTING_NODE_ID])
-    time.sleep(100)
+    expected_account_entry = AccountEntry(
+        backup_service_info, destination_node_info=destination_node
+    )
+    expected_migrations = MigrationState(
+        {migrating_node.account_id(): expected_account_entry}
+    )
+    migrating_node.wait_for_migration_state(expected_migrations)
+    target_node.wait_for_migration_state(expected_migrations)
 
+    contract_state = cluster.get_contract_state()
+    backup_service.set_contract_state(contract_state)
+    backup_service.put_keyshares(mpc_node=target_node)
+    # time.sleep(100)
+
+    expected_account_entry = AccountEntry(
+        backup_service_info, destination_node_info=None
+    )
+    expected_migrations = MigrationState(
+        {migrating_node.account_id(): expected_account_entry}
+    )
+    migrating_node.wait_for_migration_state(expected_migrations)
+    target_node.wait_for_migration_state(expected_migrations)
+    contract_state = cluster.contract_state()
+    assert isinstance(contract_state.protocol_state, RunningProtocolState)
+    migrating_node_info = (
+        contract_state.protocol_state.parameters.participants.by_account(
+            migrating_node.account_id()
+        )
+    )
+    assert migrating_node_info.sign_pk == target_node.p2p_public_key
     # time.sleep(2000)
     # url = mpc_nodes[0].url
     # p2p_key = mpc_nodes[0].p2p_public_key

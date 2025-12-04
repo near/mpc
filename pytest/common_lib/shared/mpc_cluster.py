@@ -20,6 +20,7 @@ from common_lib.contract_state import (
 from common_lib.contracts import ContractMethod
 from common_lib.migration_state import (
     BackupServiceInfo,
+    DestinationNodeInfo,
     MigrationState,
     parse_migration_state,
 )
@@ -555,6 +556,26 @@ class MpcCluster:
             self.mpc_contract_account(),
             "register_backup_service",
             {"backup_service_info": asdict(backup_service_info)},
+        )
+        res = node.send_txn_and_check_success(tx)
+        return json.dumps(
+            json.loads(
+                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
+                    "utf-8"
+                )
+            )
+        )
+
+    ## todo: move these two methods to the MpcNode struct
+    # or even better, the Account struct
+    def start_node_migration(
+        self, node_id: int, destination_node_info: DestinationNodeInfo
+    ):
+        node = self.mpc_nodes[node_id]
+        tx = node.sign_tx(
+            self.mpc_contract_account(),
+            "start_node_migration",
+            {"destination_node_info": asdict(destination_node_info)},
         )
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
