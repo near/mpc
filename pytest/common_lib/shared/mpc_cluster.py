@@ -346,7 +346,7 @@ class MpcCluster:
             )
             self.update_participant_status()
 
-    def get_contract_state(self):
+    def get_contract_state(self) -> Any:
         cn = self.contract_node
         txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.STATE, {})
         res = cn.send_txn_and_check_success(txn)

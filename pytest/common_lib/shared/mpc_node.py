@@ -51,15 +51,15 @@ class MpcNode(NearAccount):
         signer_key: Key,
         p2p_url: str,
         migration_service_url: str,
-        p2p_public_key,
+        p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
     ):
         super().__init__(near_node, signer_key, pytest_signer_keys)
-        self.p2p_url = p2p_url
-        self.migration_service_url = migration_service_url
-        self.p2p_public_key = p2p_public_key
-        self.status = MpcNode.NodeStatus.IDLE
+        self.p2p_url: str = p2p_url
+        self.migration_service_url: str = migration_service_url
+        self.p2p_public_key: str = p2p_public_key
+        self.status: MpcNode.NodeStatus = MpcNode.NodeStatus.IDLE
         self.participant_id: int | None = None
         self.home_dir = self.near_node.node_dir
         self.is_running = False

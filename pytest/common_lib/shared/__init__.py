@@ -226,15 +226,15 @@ class Candidate:
         self,
         signer_key: Key,
         responder_keys: list[Key],
-        p2p_public_key,
-        p2p_url,
+        p2p_public_key: str,
+        p2p_url: str,
         backup_key: bytes,
         migration_service_url: str,
     ):
         self.signer_key: Key = signer_key
         self.responder_keys: list[Key] = responder_keys
-        self.p2p_public_key = p2p_public_key
-        self.p2p_url = p2p_url
+        self.p2p_public_key: str = p2p_public_key
+        self.p2p_url: str = p2p_url
         self.backup_key: bytes = backup_key
         self.migration_service_url: str = migration_service_url
 
@@ -247,7 +247,7 @@ def config_participant(
     secrets_file_path: str,
     responder_account_id: str,
 ) -> Candidate:
-    p2p_public_key_near_sdk_representation = serialize_key(p2p_public_key)
+    p2p_public_key_near_sdk_representation: str = serialize_key(p2p_public_key)
 
     # secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
     with open(secrets_file_path) as file:
@@ -256,7 +256,7 @@ def config_participant(
         account_id,
         participant_secrets["near_signer_key"],
     )
-    responder_keys = []
+    responder_keys: list[Key] = []
     for key in participant_secrets["near_responder_keys"]:
         responder_keys.append(deserialize_key(responder_account_id, key))
 
@@ -291,13 +291,7 @@ def generate_migration_mpc_configs(
     presignatures_to_buffer: int | None,
 ) -> list[Candidate]:
     """
-    Generate MPC configs for each participant.
-    Without loss of generality, we will make all MPC participant's near account a subaccount of the main (contract) node.
-    This will make things easier. Otherwise:
-    FIXME: the canonical way is to create completely new accounts via registrar account.
-      (1) How to get it via py api?
-      (2) observer nodes that corresponds to the mpc participant hasn't been started yet,
-        so we can not make any requests from them yet.
+    Generates one additional node of same account id as the first one
     """
     signers = ",".join(f"signer_{i}.test0" for i in range(num_mpc_nodes))
     responders = [f"responder_{i}.test0" for i in range(num_mpc_nodes)]
@@ -322,6 +316,7 @@ def generate_migration_mpc_configs(
         )
     subprocess.run(cmd)
 
+    responders.append(responders[0])
     candidates = []
     with open(pathlib.Path(dot_near / "participants.json")) as file:
         participants_config = yaml.load(file, Loader=SafeLoaderIgnoreUnknown)
@@ -331,6 +326,9 @@ def generate_migration_mpc_configs(
             responders,
         )
     ):
+        print(
+            f"idx: {idx}, reading participant: {participant}, responder_account_id: {responder_account_id}"
+        )
         near_account = participant["near_account_id"]
         p2p_public_key = participant[
             "p2p_public_key"
@@ -358,6 +356,7 @@ def generate_migration_mpc_configs(
             responder_account_id=responder_account_id,
         )
         candidates.append(candidate)
+    print(f"returning candidates: {candidates}")
     return candidates
 
 
@@ -486,7 +485,7 @@ def start_cluster_with_mpc(
 
     if for_migration:
         candidates = generate_migration_mpc_configs(
-            num_mpc_nodes, num_respond_aks, presignatures_to_buffer
+            num_mpc_nodes - 1, num_respond_aks, presignatures_to_buffer
         )
     else:
         candidates = generate_mpc_configs(
@@ -510,7 +509,9 @@ def start_cluster_with_mpc(
     pytest_keys_per_node = []
     secondary_near_account: NearAccount | None = None
 
-    for near_node, candidate in zip(observers, candidates):
+    num_candidates = len(candidates) - (1 if for_migration else 0)
+
+    for near_node, candidate in zip(observers, candidates[:num_candidates]):
         # add the nodes responder access key to the list
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
