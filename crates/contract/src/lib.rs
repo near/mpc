@@ -1038,20 +1038,6 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Returns the latest (most recent) allowed code hash.
-    pub fn latest_code_hash(&mut self) -> MpcDockerImageHash {
-        log!("latest_code_hash: signer={}", env::signer_account_id());
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
-        self.tee_state
-            .get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
-            .last()
-            .expect("there must be at least one allowed code hash")
-            .clone()
-    }
-
     /// Returns all accounts that have TEE attestations stored in the contract.
     /// Note: This includes both current protocol participants and accounts that may have
     /// submitted TEE information but are not currently part of the active participant set.
