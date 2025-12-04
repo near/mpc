@@ -4,7 +4,6 @@ use crate::sandbox::common::{
     submit_tee_attestations, vote_for_hash, PARTICIPANT_LEN,
 };
 use anyhow::Result;
-use assert_matches::assert_matches;
 use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
@@ -26,15 +25,12 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     let allowed_mpc_image_digest = image_digest();
 
     // Initially, there should be no allowed hashes
-    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-    assert_matches!(get_allowed_hashes(&contract).await, Err(_));
+    assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // First votes - should not be enough
     for account in accounts.iter().take((threshold.value() - 1) as usize) {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
-        assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-        // Should get an error when no code hash is available yet
-        assert_matches!(get_allowed_hashes(&contract).await, Err(_));
+        assert_eq!(get_allowed_hashes(&contract).await, vec![]);
     }
 
     // `threshold`-th vote - should reach threshold
@@ -44,7 +40,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
         &allowed_mpc_image_digest,
     )
     .await?;
-    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
 
     // Additional votes - should not change the allowed hashes
@@ -52,7 +48,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     for _ in 0..EXTRA_VOTES_TO_TEST_STABILITY {
         vote_for_hash(&accounts[2], &contract, &allowed_mpc_image_digest).await?;
         // Should still have exactly one hash
-        let allowed_hashes = get_allowed_hashes(&contract).await?;
+        let allowed_hashes = get_allowed_hashes(&contract).await;
         assert_eq!(allowed_hashes, vec![allowed_mpc_image_digest.clone()]);
     }
 
@@ -73,8 +69,8 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let second_hash = MpcDockerImageHash::from(arbitrary_bytes);
 
     // Initially, there should be no allowed hashes
-    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-    assert_matches!(get_allowed_hashes(&contract).await, Err(_));
+    assert_eq!(get_allowed_hashes(&contract).await.len(), 0);
+    assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // Initial votes for first hash - reach threshold
     for account in accounts.iter().take(threshold.value() as usize) {
@@ -82,7 +78,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     }
 
     // Verify first hash is allowed
-    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(allowed_hashes, vec![first_hash.clone()]);
 
     // Participant 0 changes vote to second hash
@@ -90,7 +86,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 
     // First hash should still be allowed
     // Second hash should not be allowed yet (only 1 vote)
-    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(allowed_hashes, vec![first_hash.clone()]);
 
     // Participants 2..threshold votes for second hash - should reach threshold
@@ -99,7 +95,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     }
 
     // Now both hashes should be allowed
-    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(
         allowed_hashes,
         vec![first_hash.clone(), second_hash.clone()]
@@ -110,7 +106,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 
     // Both hashes should still be allowed (once a hash reaches threshold, it stays)
     // Second hash should still be allowed (threshold + 1 votes)
-    let allowed_hashes = get_allowed_hashes(&contract).await?;
+    let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(
         allowed_hashes,
         vec![first_hash.clone(), second_hash.clone()]
@@ -174,14 +170,16 @@ async fn get_allowed_launcher_compose_hashes(
         .json::<Vec<LauncherDockerComposeHash>>()?)
 }
 
-async fn get_allowed_hashes(contract: &Contract) -> Result<Vec<MpcDockerImageHash>> {
-    Ok(contract
+async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
+    contract
         .call("allowed_docker_image_hashes")
         .args_json(serde_json::json!(""))
         .max_gas()
         .transact()
-        .await?
-        .json::<Vec<MpcDockerImageHash>>()?)
+        .await
+        .expect("Contract is running")
+        .json::<Vec<MpcDockerImageHash>>()
+        .expect("allowed_docker_image_hashes method is infallible")
 }
 
 pub async fn get_participants(contract: &Contract) -> Result<usize> {
@@ -367,8 +365,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
     let participant_account_1 = &accounts[0];
 
     // Initially, there should be no allowed hashes
-    assert_eq!(get_allowed_hashes(&contract).await?.len(), 0);
-    assert_matches!(get_allowed_hashes(&contract).await, Err(_));
+    assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     let hashes = [hash_1, hash_2, hash_3];
 
