@@ -356,24 +356,6 @@ expression: abi
         }
       },
       {
-        "name": "latest_code_hash",
-        "doc": " Returns the latest (most recent) allowed code hash.",
-        "kind": "call",
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "uint8",
-              "minimum": 0.0
-            },
-            "maxItems": 32,
-            "minItems": 32
-          }
-        }
-      },
-      {
         "name": "latest_key_version",
         "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
         "kind": "view",
