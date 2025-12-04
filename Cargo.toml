@@ -125,6 +125,7 @@ tempfile = "3.22.0"
 thiserror = "2.0.12"
 # Last commit on main branch as of 30-10-2025
 threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "53f928c9e7d21f5858fd928b7524c8ce8bf8b854" }
+tikv-jemallocator = "0.5.4"
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
@@ -143,14 +144,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.0" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
 
 [profile.dev-release]
 inherits = "release"

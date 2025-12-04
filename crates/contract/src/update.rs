@@ -1,14 +1,19 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use crate::primitives::participants::Participants;
 use crate::storage_keys::StorageKey;
 
 use crate::errors::{ConversionError, Error};
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use derive_more::Deref;
 use near_account_id::AccountId;
-use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::store::IterableMap;
-use near_sdk::{env, near, Gas, NearToken, Promise};
+use near_sdk::{
+    env, near,
+    serde::{Deserialize, Serialize},
+    store::IterableMap,
+    Gas, NearToken, Promise,
+};
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -29,6 +34,7 @@ use near_sdk::{env, near, Gas, NearToken, Promise};
     PartialOrd,
     Ord,
     Hash,
+    Deref,
 )]
 pub struct UpdateId(pub(crate) u64);
 
@@ -167,7 +173,7 @@ impl ProposedUpdates {
     /// Removes any existing vote by `voter`.
     /// Sets `voter`s vote for the update with the given id.
     ///
-    /// Returns Some(votes) if the given [`UpdateId`] exists, otherwise None.
+    /// Returns `Some(votes)` if the given [`UpdateId`] exists, otherwise `None`.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
         // If participant has voted before, remove their vote
         self.remove_vote(&voter);
@@ -221,6 +227,33 @@ impl ProposedUpdates {
                 env::log_str("inconsistent voting set");
             }
         }
+    }
+
+    /// Removes votes from the specified accounts.
+    pub fn remove_votes(&mut self, accounts_to_remove: &[AccountId]) {
+        accounts_to_remove
+            .iter()
+            .for_each(|account| self.remove_vote(account));
+    }
+
+    /// Removes votes from accounts that are not participants.
+    pub fn remove_non_participant_votes(&mut self, participants: &Participants) {
+        // Note: This operation has quadratic time complexity.
+        // TODO issue [#1572](https://github.com/near/mpc/issues/1572)
+        let non_participants: Vec<AccountId> = self
+            .vote_by_participant
+            .keys()
+            .filter(|voter| !participants.is_participant(voter))
+            .cloned()
+            .collect();
+
+        self.remove_votes(&non_participants);
+    }
+
+    /// Returns all account IDs that have voted.
+    #[cfg(test)]
+    pub fn voters(&self) -> Vec<AccountId> {
+        self.vote_by_participant.keys().cloned().collect()
     }
 
     pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
@@ -662,5 +695,127 @@ mod tests {
         let mut res = proposed_updates.all_updates();
         res.sort_by_key(|(update_id, _, _)| *update_id);
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_proposed_updates_remove_votes() {
+        let mut proposed_updates = ProposedUpdates::default();
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
+
+        let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2.clone());
+
+        proposed_updates.remove_votes(&[acc0, acc2]);
+
+        let expected = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc1]),
+                    bytes_used,
+                },
+            )]),
+        };
+
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_proposed_updates_remove_non_participant_votes() {
+        use crate::primitives::test_utils::gen_participants;
+
+        let mut proposed_updates = ProposedUpdates::default();
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
+
+        let participants = gen_participants(2);
+        let (acc0, acc1) = (
+            &participants.participants()[0].0,
+            &participants.participants()[1].0,
+        );
+        let (acc2, acc3) = (gen_account_id(), gen_account_id());
+
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2);
+        proposed_updates.vote(&update_id, acc3);
+
+        proposed_updates.remove_non_participant_votes(&participants);
+
+        let expected = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0.clone(), acc1.clone()]),
+                    bytes_used,
+                },
+            )]),
+        };
+
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_proposed_updates_voters() {
+        let mut proposed_updates = ProposedUpdates::default();
+        assert!(proposed_updates.voters().is_empty());
+
+        let update = Update::Contract([0; 1000].into());
+        let bytes_used = bytes_used(&update);
+        let update_id = proposed_updates.propose(update.clone());
+        let (acc0, acc1, acc2) = (gen_account_id(), gen_account_id(), gen_account_id());
+
+        proposed_updates.vote(&update_id, acc0.clone());
+        proposed_updates.vote(&update_id, acc1.clone());
+        proposed_updates.vote(&update_id, acc2.clone());
+
+        let voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(
+            voters,
+            HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()])
+        );
+
+        let expected_after_votes = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()]),
+                    bytes_used,
+                },
+            )]),
+        };
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected_after_votes);
+
+        proposed_updates.remove_vote(&acc1);
+        let voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(voters, HashSet::from([acc0.clone(), acc2.clone()]));
+
+        let expected_after_removal = TestUpdateVotes {
+            id: 1,
+            entries: BTreeMap::from([(
+                0,
+                UpdateEntry {
+                    update: update.clone(),
+                    votes: HashSet::from([acc0, acc2]),
+                    bytes_used,
+                },
+            )]),
+        };
+        let result: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(result, expected_after_removal);
     }
 }

@@ -85,7 +85,6 @@ pub struct OperatingAccessKey {
     recent_block_hash: CryptoHash,
     client: Arc<NearRpcClients>,
     signer: Signer,
-    signing_key: SigningKey,
 }
 
 /// Returns {prefix}{random string}{suffix}.
@@ -120,7 +119,6 @@ impl OperatingAccessKey {
             recent_block_hash,
             client,
             signer,
-            signing_key,
         }
     }
 
@@ -301,10 +299,6 @@ impl OperatingAccessKey {
             self.recent_block_hash,
             0,
         )
-    }
-
-    pub fn secret_key(&self) -> SigningKey {
-        self.signing_key.clone()
     }
 }
 

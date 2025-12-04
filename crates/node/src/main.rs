@@ -1,5 +1,9 @@
 use clap::Parser;
 use mpc_node::cli;
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: Jemalloc = Jemalloc;
 
 fn main() -> anyhow::Result<()> {
     // Handle version flags before parsing CLI

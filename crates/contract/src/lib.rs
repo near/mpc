@@ -10,7 +10,6 @@
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
-pub mod legacy_contract_state;
 pub mod node_migrations;
 pub mod primitives;
 pub mod state;
@@ -815,38 +814,36 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        let resharing_concluded =
-            if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
-                // Resharing has concluded, transition to running state
-                self.protocol_state = new_state;
-                true
-            } else {
-                false
-            };
+        if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
+            // Resharing has concluded, transition to running state
+            self.protocol_state = new_state;
 
-        if resharing_concluded {
-            let clean_tee_status_gas = Gas::from_tgas(self.config.clean_tee_status_tera_gas);
-
+            // Spawn a promise to clean up votes from non-participants.
+            // Note: MpcContract::vote_update uses filtering to ensure correctness even if this cleanup fails.
+            Promise::new(env::current_account_id())
+                .function_call(
+                    "remove_non_participant_update_votes".to_string(),
+                    vec![],
+                    NearToken::from_yoctonear(0),
+                    Gas::from_tgas(self.config.remove_non_participant_update_votes_tera_gas),
+                )
+                .detach();
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id())
                 .function_call(
                     "clean_tee_status".to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
-                    clean_tee_status_gas,
+                    Gas::from_tgas(self.config.clean_tee_status_tera_gas),
                 )
                 .detach();
-
-            let clean_node_migrations_gas =
-                Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas);
-
             // Spawn a promise to clean up orphaned node migrations for non-participants
             Promise::new(env::current_account_id())
                 .function_call(
                     "cleanup_orphaned_node_migrations".to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
-                    clean_node_migrations_gas,
+                    Gas::from_tgas(self.config.cleanup_orphaned_node_migrations_tera_gas),
                 )
                 .detach();
         }
@@ -961,19 +958,29 @@ impl MpcContract {
             id,
         );
 
-        let ProtocolContractState::Running(_running_state) = &self.protocol_state else {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
 
         let threshold = self.threshold()?;
 
         let voter = self.voter_or_panic();
-        let Some(votes) = self.proposed_updates.vote(&id, voter) else {
+        let Some(all_votes) = self.proposed_updates.vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
 
-        // Not enough votes, wait for more.
-        if (votes.len() as u64) < threshold.value() {
+        // Filter votes to only count current participants. This ensures correctness
+        // even if the cleanup promise in MpcContract::vote_reshared() fails.
+        let valid_votes_count = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .filter(|(id, _, _)| all_votes.contains(id))
+            .count();
+
+        // Not enough votes from current participants, wait for more.
+        if (valid_votes_count as u64) < threshold.value() {
             return Ok(false);
         }
 
@@ -1117,6 +1124,27 @@ impl MpcContract {
                 Ok(true)
             }
         }
+    }
+
+    /// Cleans update votes from non-participants after resharing.
+    /// Can be called by any participant or triggered automatically via promise.
+    #[handle_result]
+    pub fn remove_non_participant_update_votes(&mut self) -> Result<(), Error> {
+        log!(
+            "remove_non_participant_update_votes: signer={}",
+            env::signer_account_id()
+        );
+
+        let participants = match &self.protocol_state {
+            ProtocolContractState::Running(state) => state.parameters.participants(),
+            _ => {
+                return Err(InvalidState::ProtocolStateNotRunning.into());
+            }
+        };
+
+        self.proposed_updates
+            .remove_non_participant_votes(participants);
+        Ok(())
     }
 
     /// Private endpoint to clean up TEE information for non-participants after resharing.
@@ -1624,7 +1652,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{collections::HashSet, str::FromStr};
 
     use super::*;
     use crate::crypto_shared::k256_types;
@@ -2921,6 +2949,22 @@ mod tests {
         }
     }
 
+    fn assert_proposed_update_has_expected_voters(
+        proposed_updates: &ProposedUpdates,
+        expected_update_id: UpdateId,
+        expected_voters: &HashSet<AccountId>,
+    ) {
+        let actual_voters: HashSet<_> = proposed_updates.voters().into_iter().collect();
+        assert_eq!(actual_voters, *expected_voters);
+
+        let all_updates = proposed_updates.all_updates();
+        assert_eq!(all_updates.len(), 1);
+        let (actual_update_id, update, actual_votes) = &all_updates[0];
+        assert_eq!(*actual_update_id, expected_update_id);
+        assert!(matches!(update, Update::Contract(_)));
+        assert_eq!(**actual_votes, *expected_voters);
+    }
+
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
 
@@ -3058,5 +3102,116 @@ mod tests {
             .predecessor_account_id(account_id.as_v1_account_id())
             .build());
         contract.remove_update_vote();
+    }
+
+    /// Test that `vote_update` correctly filters out non-participant votes when checking threshold.
+    ///
+    /// This is a regression test for a bug where votes from accounts that were no longer
+    /// participants (e.g., after resharing) were still counted toward the update threshold.
+    ///
+    /// The test verifies that only votes from current participants are counted:
+    /// - With threshold=2 and 3 participants, we need 2 valid participant votes
+    /// - Adding 2 non-participant votes + 1 participant vote should NOT meet threshold (returns false)
+    /// - Adding a 2nd participant vote should meet threshold (returns true)
+    #[test]
+    pub fn test_vote_update_filters_non_participant_votes() {
+        // given: a running state with 3 participants and threshold of 2
+        let mut running_state = gen_running_state(1);
+        running_state.parameters =
+            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
+
+        let participants = running_state.parameters.participants().participants();
+        let participant_1 = participants[0].0.clone();
+        let participant_2 = participants[1].0.clone();
+
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        let update_id = contract
+            .proposed_updates
+            .propose(Update::Contract([0; 1000].into()));
+
+        // given: 2 non-participant votes + 1 participant vote (simulating old voters from before resharing)
+        contract.proposed_updates.vote(&update_id, gen_account_id());
+        contract.proposed_updates.vote(&update_id, gen_account_id());
+        contract
+            .proposed_updates
+            .vote(&update_id, participant_1.clone());
+
+        // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_1.as_v1_account_id())
+            .predecessor_account_id(participant_1.as_v1_account_id())
+            .build());
+        // then: threshold not met (need 2 valid votes, have only 1)
+        assert!(!contract.vote_update(update_id).unwrap());
+
+        // given: a 2nd participant vote is added
+        contract
+            .proposed_updates
+            .vote(&update_id, participant_2.clone());
+
+        // when: second participant calls vote_update (2 valid participant votes out of 4 total)
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_2.as_v1_account_id())
+            .predecessor_account_id(participant_2.as_v1_account_id())
+            .build());
+        // then: threshold met (have 2 valid votes, need 2)
+        assert!(contract.vote_update(update_id).unwrap());
+    }
+
+    /// Test that `remove_non_participant_update_votes` successfully removes votes from non-participants
+    /// (simulating post-resharing cleanup).
+    #[test]
+    pub fn test_remove_non_participant_update_votes() {
+        let running_state = gen_running_state(2);
+        let participants = running_state.parameters.participants().clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+
+        // Propose an update with 2 non-participant votes
+        let dto_update = propose_and_vote_code(0, &mut contract);
+        let update_id: UpdateId = dto_update.update_id.into();
+
+        // Add votes from 2 current participants
+        let participants = participants.participants();
+        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
+        contract.proposed_updates.vote(&update_id, p1.clone());
+        contract.proposed_updates.vote(&update_id, p2.clone());
+
+        // Sanity check: verify exact set of voters before cleanup
+        let voters_before: HashSet<_> = contract.proposed_updates.voters().into_iter().collect();
+        let non_participants: HashSet<_> = dto_update
+            .votes
+            .iter()
+            .map(|dto_id| dto_id.0.parse().unwrap())
+            .collect();
+        let expected_voters_before: HashSet<_> = [p1.clone(), p2.clone()]
+            .into_iter()
+            .chain(non_participants)
+            .collect();
+        assert_eq!(voters_before, expected_voters_before);
+
+        // verify the update entry reflects participant + non-participant votes
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &expected_voters_before,
+        );
+
+        // when: calling remove_non_participant_update_votes
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(env::current_account_id())
+            .predecessor_account_id(env::current_account_id())
+            .build());
+        contract.remove_non_participant_update_votes().unwrap();
+
+        // then: only the 2 participant votes remain
+        let expected_voters_after = HashSet::from([p1.clone(), p2.clone()]);
+        assert_proposed_update_has_expected_voters(
+            &contract.proposed_updates,
+            update_id,
+            &expected_voters_after,
+        );
     }
 }

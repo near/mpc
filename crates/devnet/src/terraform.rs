@@ -9,9 +9,8 @@ use crate::cli::{
 };
 use crate::constants::DEFAULT_MPC_DOCKER_IMAGE;
 use crate::devnet::OperatingDevnetSetup;
-use crate::types::{near_crypto_compatible_serialization, MpcNetworkSetup, ParsedConfig};
+use crate::types::{MpcNetworkSetup, ParsedConfig};
 use describe::TerraformInfraShowOutput;
-use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -72,52 +71,13 @@ async fn export_terraform_vars(
     name: &str,
     accounts: &OperatingAccounts,
     mpc_setup: &MpcNetworkSetup,
-    not_legacy: bool,
     docker_image: Option<String>,
 ) -> PathBuf {
     let contract = mpc_setup
         .contract
         .clone()
         .expect("Contract is not deployed");
-    let terraform_file = if !not_legacy {
-        // todo: eventually remove [(#710)](https://github.com/near/mpc/issues/710)
-        let mut mpc_nodes = Vec::new();
-        for (i, account_id) in mpc_setup.participants.iter().enumerate() {
-            let account = accounts.account(account_id);
-            let participant = account
-                .get_mpc_participant()
-                .expect("Not an MPC participant");
-            let responding_account = accounts.account(&participant.responding_account_id);
-            let respond_config = RespondConfigFile {
-                account_id: participant.responding_account_id.clone(),
-                access_keys: responding_account
-                    .all_access_keys()
-                    .await
-                    .into_iter()
-                    .map(|k| k.secret_key())
-                    .collect(),
-            };
-
-            let account_sk = account.any_access_key().await.secret_key();
-            let mpc_node = LegacyTerraformMpcNode {
-                account: account_id.clone(),
-                account_pk: account_sk.verifying_key(),
-                account_sk,
-                sign_sk: participant.p2p_private_key.clone(),
-                sign_pk: participant.p2p_private_key.verifying_key(),
-                url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
-                respond_yaml: serde_yaml::to_string(&respond_config).unwrap(),
-            };
-            mpc_nodes.push(mpc_node);
-        }
-        let terraform_file = LegacyTerraformFile {
-            cluster_prefix: name.to_string(),
-            legacy_mpc_nodes: mpc_nodes,
-            mpc_contract_signer: contract,
-            ssd: mpc_setup.ssd,
-        };
-        serde_json::to_string_pretty(&terraform_file).unwrap()
-    } else {
+    let terraform_file = {
         let mut mpc_nodes = Vec::new();
         for (i, account_id) in mpc_setup.participants.iter().enumerate() {
             let responding_account_id = accounts
@@ -165,29 +125,6 @@ struct TerraformDeployInfraFile {
 }
 
 #[derive(Serialize)]
-struct LegacyTerraformFile {
-    cluster_prefix: String,
-    legacy_mpc_nodes: Vec<LegacyTerraformMpcNode>,
-    mpc_contract_signer: AccountId,
-    ssd: bool,
-}
-
-#[derive(Serialize)]
-struct LegacyTerraformMpcNode {
-    account: AccountId,
-    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
-    account_pk: VerifyingKey,
-    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
-    account_sk: SigningKey,
-    #[serde(with = "near_crypto_compatible_serialization::verifying_key")]
-    sign_pk: VerifyingKey,
-    #[serde(with = "near_crypto_compatible_serialization::signing_key")]
-    sign_sk: SigningKey,
-    url: String,
-    respond_yaml: String,
-}
-
-#[derive(Serialize)]
 struct TerraformFile {
     cluster_prefix: String,
     mpc_nodes: Vec<TerraformMpcNode>,
@@ -203,14 +140,6 @@ struct TerraformMpcNode {
     url: String,
     number_of_responder_keys: usize,
     near_responder_account_id: AccountId,
-}
-
-// From MPC code.
-#[derive(Serialize)]
-pub struct RespondConfigFile {
-    pub account_id: AccountId,
-    #[serde(with = "near_crypto_compatible_serialization::signing_keys")]
-    pub access_keys: Vec<SigningKey>,
 }
 
 impl MpcTerraformDeployInfraCmd {
@@ -294,14 +223,9 @@ impl MpcTerraformDeployNomadCmd {
             .mpc_setups
             .get(name)
             .expect(&format!("MPC network {} does not exist", name));
-        let terraform_vars_file = export_terraform_vars(
-            name,
-            &setup.accounts,
-            mpc_setup,
-            self.not_legacy,
-            self.docker_image.clone(),
-        )
-        .await;
+        let terraform_vars_file =
+            export_terraform_vars(name, &setup.accounts, mpc_setup, self.docker_image.clone())
+                .await;
         let nomad_server_url = mpc_setup
             .nomad_server_url
             .clone()
