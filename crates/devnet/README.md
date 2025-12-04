@@ -56,6 +56,7 @@ rpcs:
   - url: https://test.rpc.fastnear.com
     rate_limit: 5
     max_concurrency: 30
+infra_ops_path: path-to-infra-ops-repo
 ```
 
 * (Optional) Configure a `funding_account` to use a specific account for funding operations:
@@ -130,12 +131,8 @@ In addition, You can find the VMs created in GCP under [this link](https://conso
 mpc-devnet mpc $MPC_NETWORK_NAME deploy-nomad
 ```
 
-The docker image to be deployed can be change with the `--docker-image` flag. By
-default, devnet assumes that a legacy docker image is deployed (with node
-version strictly older than 2.2.0). For newer versions, one must pass the
-`--not-legacy` flag, because they require different terraform variables (TODO:
-remove the flag [(#710)](https://github.com/near/mpc/issues/710)). A recent
-docker image can be found in our
+The docker image to be deployed can be change with the `--docker-image` flag. A
+recent docker image can be found in our
 [dockerhub](https://hub.docker.com/r/nearone/mpc-node/tags)
 
 Both the `deploy-infra` and `deploy-nomad` commands can be repeated as needed.
@@ -163,8 +160,6 @@ Finally, initialize the contract
 ```shell
 mpc-devnet mpc $MPC_NETWORK_NAME init-contract --init-participants 2 --threshold 2
 ```
-
-(TODO: [(#710)](https://github.com/near/mpc/issues/710) merge these two steps)
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.

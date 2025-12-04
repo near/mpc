@@ -106,35 +106,11 @@ async fn update_mpc_network(
         accounts
             .account_mut(&account_id)
             .set_mpc_participant(MpcParticipantSetup {
-                p2p_private_key,
                 responding_account_id: funded_accounts[i * 2 + 1].clone(),
-                p2p_public_key: Some(p2p_public_key),
+                p2p_public_key,
             });
         mpc_setup.participants.push(account_id);
     }
-
-    // todo: remove this logic [(#710)](https://github.com/near/mpc/issues/710)
-    println!("Generating responding access keys - this step is not required after update to v2.2.");
-    let responding_accounts = mpc_setup
-        .participants
-        .iter()
-        .map(|participant| {
-            accounts
-                .account(participant)
-                .get_mpc_participant()
-                .unwrap()
-                .responding_account_id
-                .clone()
-        })
-        .collect::<Vec<_>>();
-
-    // Ensure that the responding accounts have enough access keys.
-    let futs = accounts
-        .accounts_mut(&responding_accounts)
-        .into_values()
-        .map(|account| account.ensure_have_n_access_keys(mpc_setup.num_responding_access_keys))
-        .collect::<Vec<_>>();
-    futures::future::join_all(futs).await;
 }
 
 impl NewMpcNetworkCmd {
@@ -241,8 +217,7 @@ impl MpcAddKeysCmd {
             let public_data: StaticWebData = response.json::<StaticWebData>().await.unwrap();
 
             let mpc_participant = MpcParticipantSetup {
-                p2p_private_key: participant.p2p_private_key.clone(), // todo: remove this [(#710)](https://github.com/near/mpc/issues/710)
-                p2p_public_key: Some(public_data.near_p2p_public_key),
+                p2p_public_key: public_data.near_p2p_public_key,
                 responding_account_id: participant.responding_account_id.clone(),
             };
 
@@ -399,10 +374,8 @@ struct InitV2Args {
 
 fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> ParticipantInfo {
     let mpc_setup = account.get_mpc_participant().unwrap();
-    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] = *mpc_setup
-        .p2p_public_key
-        .expect("P2P key is required for all nodes")
-        .as_bytes();
+    let p2p_public_key_bytes: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH] =
+        *mpc_setup.p2p_public_key.as_bytes();
 
     let near_sdk_public_key =
         near_sdk::PublicKey::from_parts(CurveType::ED25519, p2p_public_key_bytes.to_vec())

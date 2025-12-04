@@ -509,6 +509,10 @@ expression: abi
                       [
                         "cleanup_orphaned_node_migrations_tera_gas",
                         "u64"
+                      ],
+                      [
+                        "remove_non_participant_update_votes_tera_gas",
+                        "u64"
                       ]
                     ]
                   },
@@ -641,6 +645,17 @@ expression: abi
             }
           ]
         },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "remove_non_participant_update_votes",
+        "doc": " Cleans update votes from non-participants after resharing.\n Can be called by any participant or triggered automatically via promise.",
+        "kind": "call",
         "result": {
           "serialization_type": "json",
           "type_schema": {
@@ -1385,6 +1400,7 @@ expression: abi
             "contract_upgrade_deposit_tera_gas",
             "fail_on_timeout_tera_gas",
             "key_event_timeout_blocks",
+            "remove_non_participant_update_votes_tera_gas",
             "return_ck_and_clean_state_on_success_call_tera_gas",
             "return_signature_and_clean_state_on_success_call_tera_gas",
             "sign_call_gas_attachment_requirement_tera_gas",
@@ -1423,6 +1439,12 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_update_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -1640,6 +1662,15 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "remove_non_participant_update_votes_tera_gas": {
+              "description": "Prepaid gas for a `remove_non_participant_update_votes` call.",
               "type": [
                 "integer",
                 "null"

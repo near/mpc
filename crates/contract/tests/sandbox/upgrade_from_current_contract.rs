@@ -88,6 +88,7 @@ async fn test_propose_update_config() {
         fail_on_timeout_tera_gas: 88,
         clean_tee_status_tera_gas: 99,
         cleanup_orphaned_node_migrations_tera_gas: 11,
+        remove_non_participant_update_votes_tera_gas: 12,
     };
 
     let mut proposals = Vec::with_capacity(accounts.len());
