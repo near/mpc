@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import base58
 from common_lib.constants import BACKUP_SERVICE_BINARY_PATH, MPC_REPO_DIR
@@ -120,63 +120,3 @@ class BackupService:
         )
         print(f"running command:\n{cmd}\n")
         _ = subprocess.run(cmd, check=True)
-
-
-# def call_backup_service(mpc_node: MpcNode, home_dir: str):
-#    url = mpc_node.migration_service_url
-#    p2p_key = mpc_node.p2p_public_key
-#    backup_encryption_key = mpc_node.backup_key
-#    cmd = (
-#        BACKUP_SERVICE_BINARY_PATH,
-#        "--home-dir",
-#        home_dir,
-#        "get-keyshares",
-#        "--mpc-node-url",
-#        url,
-#        "--mpc-node-p2p-key",
-#        p2p_key,
-#        "--backup-encryption-key-hex",
-#        backup_encryption_key.hex(),
-#    )
-#    print(f"running command:\n{cmd}\n")
-#    subprocess.run(cmd)
-#
-
-
-# def submit_backup_service_info(cluster: MpcCluster, node_id: int):
-#    """
-#    Submits the backup service information to the contract
-#    """
-#
-#    home_dir = os.path.join(MPC_REPO_DIR / "pytest" / "backup-service")
-#    json_path = os.path.join(home_dir, "secrets.json")
-#    with open(json_path, "r") as f:
-#        data = json.load(f)
-#
-#    priv_bytes = bytes(data["p2p_private_key"])
-#
-#    # 3. Derive public key
-#    sk = SigningKey(priv_bytes)
-#    pk_bytes = sk.verify_key.encode()
-#
-#    # Convert to base58
-#    pk_b58 = base58.b58encode(pk_bytes).decode()
-#
-#    near_pubkey = f"ed25519:{pk_b58}"
-#    # pk = sk.verify_key
-#
-#    ## 4. Print results
-#    # print("Private key bytes (len={}):".format(len(priv_bytes)), priv_bytes)
-#    # print("Public key bytes (len={}):".format(len(pk.encode())), list(pk.encode()))
-#    # print("Public key hex:", pk.encode().hex())
-#    # pk_near = "ed25519:" + pk.encode().hex()
-#    # pk_b58 = base58.b58encode(pk_bytes).decode()
-#    # near_pk =
-#    # print("Public key (NEAR format):", pk_near)
-#
-#    backup_service_info = BackupServiceInfo(near_pubkey)
-#    res = cluster.register_backup_service_info(
-#        node_id, backup_service_info=backup_service_info
-#    )
-#    print(res)
-#    return res
