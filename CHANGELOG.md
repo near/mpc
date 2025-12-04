@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.1.0] - 2025-12-04
+
+### 🚀 Features
+
+- [#1552](https://github.com/near/mpc/pull/1552)(@gilcu3): Scale all remaining sandbox tests (#1552)
+
+- [#1554](https://github.com/near/mpc/pull/1554)(@gilcu3): Add cargo-make support (#1554)
+
+- [#1563](https://github.com/near/mpc/pull/1563)(@gilcu3): Embed abi in contract (#1563)
+
+- [#1527](https://github.com/near/mpc/pull/1527)(@barakeinav1): *(launcher)* Add support for multiple MPC hashes with fallback logic (#1527)
+
+- [#1566](https://github.com/near/mpc/pull/1566)(@DSharifi): *(contract)* Make contract configuration values configurable (#1566)
+
+- [#1559](https://github.com/near/mpc/pull/1559)(@pbeza): Clear update votes from non-participants after resharing (#1559)
+
+
+### 🐛 Bug Fixes
+
+- [#1556](https://github.com/near/mpc/pull/1556)(@DSharifi): Only allow contract itself to call `migrate` function (#1556)
+
+- [#1576](https://github.com/near/mpc/pull/1576)(@gilcu3): Check python code quality in CI enabled (#1576)
+
+- [#1594](https://github.com/near/mpc/pull/1594)(@gilcu3): Wrong tag name in gcp image creation (#1594)
+
+
+### 🧪 Testing
+
+- [#1581](https://github.com/near/mpc/pull/1581)(@DSharifi): Fix broken example `pytest` command (#1581)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1501](https://github.com/near/mpc/pull/1501)(@DSharifi): Remove pub migrate function and make gas deposit for upgrades configurable (#1501)
+
+- [#1558](https://github.com/near/mpc/pull/1558)(@gilcu3): Provide cargo-binstall with a token (#1558)
+
+- [#1561](https://github.com/near/mpc/pull/1561)(@gilcu3): Bump attestation submission frequency (#1561)
+
+- [#1569](https://github.com/near/mpc/pull/1569)(@DSharifi): Don't take self needlessly on contract methods (#1569)
+
+- [#1580](https://github.com/near/mpc/pull/1580)(@DSharifi): *(dead-code)* Remove `allowed_code_hashes` and `mig_migration_info` methods from the contract (#1580)
+
+- [#1579](https://github.com/near/mpc/pull/1579)(@DSharifi): Bump `near-sdk` to 5.18.1  (#1579)
+
+- [#1577](https://github.com/near/mpc/pull/1577)(@gilcu3): Create mpc attestation wrapper crate (#1577)
+
+- [#1593](https://github.com/near/mpc/pull/1593)(@netrome): Bump nearcore to 2.10.0 (#1593)
+
+- [#1586](https://github.com/near/mpc/pull/1586)(@DSharifi): Bump project version to `3.1.0` (#1586)
+
+- [#1588](https://github.com/near/mpc/pull/1588)(@gilcu3): Make attestation crate independent of the mpc (#1588)
+
+- [#1551](https://github.com/near/mpc/pull/1551)(@netrome): Document how to make a release (#1551)
+
+- [#1584](https://github.com/near/mpc/pull/1584)(@barakeinav1): Update dockerhub configuration parameter and add integration test for validate_image_hash using Docker Hub image (#1584)
+
+- [#1602](https://github.com/near/mpc/pull/1602)(@DSharifi): Use `jemalloc` as memory allocator (#1602)
+
+- [#1607](https://github.com/near/mpc/pull/1607)(@DSharifi): Remove dead legacy code in contract (#1607)
+
+- [#1603](https://github.com/near/mpc/pull/1603)(@gilcu3): Remove legacy support in devnet (#1603)
+
+- [#1609](https://github.com/near/mpc/pull/1609)(@netrome): Bump nearcore to 2.10.1 (#1609)
+
+
 ## [3.0.6] - 2025-11-25
 
 ### 🚀 Features
@@ -32,6 +98,11 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 ### 📚 Documentation
 
 - [#1467](https://github.com/near/mpc/pull/1467)(@pbeza): Design TEE-enabled backup service (#1467)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1549](https://github.com/near/mpc/pull/1549)(@netrome): Bump crate versions to 3.0.6 and update changelog (#1549)
 
 
 ## [3.0.5] - 2025-11-23
