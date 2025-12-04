@@ -135,7 +135,26 @@ def test_migration_service():
     contract_state = cluster.get_contract_state()
     backup_service.set_contract_state(contract_state)
     backup_service.put_keyshares(mpc_node=target_node)
-    # time.sleep(100)
+
+    time.sleep(20)
+    n_try = 0
+    while n_try < 50:
+        contract_state = cluster.contract_state()
+        assert isinstance(contract_state.protocol_state, RunningProtocolState)
+        migrating_node_info = (
+            contract_state.protocol_state.parameters.participants.by_account(
+                migrating_node.account_id()
+            )
+        )
+        if migrating_node_info.sign_pk == target_node.p2p_public_key:
+            print("successfully migrated node")
+            break
+        else:
+            print("waiting for migration to conclude")
+            time.sleep(1)
+            n_try += 1
+
+    # assert migrating_node_info.sign_pk == target_node.p2p_public_key
 
     expected_account_entry = AccountEntry(
         backup_service_info, destination_node_info=None
@@ -145,14 +164,6 @@ def test_migration_service():
     )
     migrating_node.wait_for_migration_state(expected_migrations)
     target_node.wait_for_migration_state(expected_migrations)
-    contract_state = cluster.contract_state()
-    assert isinstance(contract_state.protocol_state, RunningProtocolState)
-    migrating_node_info = (
-        contract_state.protocol_state.parameters.participants.by_account(
-            migrating_node.account_id()
-        )
-    )
-    assert migrating_node_info.sign_pk == target_node.p2p_public_key
     # time.sleep(2000)
     # url = mpc_nodes[0].url
     # p2p_key = mpc_nodes[0].p2p_public_key

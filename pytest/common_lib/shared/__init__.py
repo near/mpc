@@ -91,6 +91,7 @@ def create_mpc_function_call_access_key_action(
         "vote_abort_key_event_instance",
         "verify_tee",
         "submit_participant_info",
+        "conclude_node_migration",
     ]
 
     return create_function_call_access_key_action(
