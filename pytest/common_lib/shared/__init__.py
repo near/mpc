@@ -3,6 +3,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 from typing import List, Optional, Tuple, cast
 import typing
 
@@ -149,6 +150,7 @@ def sign_create_account_with_multiple_access_keys_tx(
 """
 
 
+# todo: cleanup
 def sign_add_access_keys_tx(
     creator_key: Key,
     account_id: str,
@@ -511,7 +513,9 @@ def start_cluster_with_mpc(
 
     num_candidates = len(candidates) - (1 if for_migration else 0)
 
-    for near_node, candidate in zip(observers, candidates[:num_candidates]):
+    for near_node, candidate in zip(
+        observers[:num_candidates], candidates[:num_candidates]
+    ):
         # add the nodes responder access key to the list
         nonce += 1
         tx = sign_create_account_with_multiple_access_keys_tx(
@@ -523,6 +527,7 @@ def start_cluster_with_mpc(
         )
         create_txs.append(tx)
         candidate_account_id = candidate.signer_key.account_id
+        print(f"candidate_account_id: {candidate_account_id}")
         pytest_signer_keys = []
         for i in range(0, 5):
             # We add a signing key for pytest functions
@@ -573,6 +578,64 @@ def start_cluster_with_mpc(
     cluster.contract_node.send_await_check_txs_parallel(
         "create account", create_txs, assert_txn_success
     )
+    time.sleep(2)
+
+    ## this stuff is soooo annoying dude.
+    if for_migration:
+        candidate_responder_key = candidates[0].responder_keys[0]
+        nonce = cluster.contract_node.near_node.get_nonce_for_pk(
+            candidate_responder_key.account_id, candidate_responder_key.pk
+        )
+        create_txs = []
+        candidate = candidates[num_candidates]
+        near_node = observers[num_candidates]
+        # add the nodes responder access key to the list
+        nonce += 1
+        tx = sign_add_access_keys_tx(
+            candidate_responder_key,
+            candidate.responder_keys[0].account_id,
+            candidate.responder_keys,
+            nonce,
+            cluster.contract_node.last_block_hash(),
+            contract_id="",
+            full_access=True,
+        )
+        create_txs.append(tx)
+        candidate_account_id = candidate.signer_key.account_id
+        print(f"candidate_account_id: {candidate_account_id}")
+
+        pytest_signer_keys = []
+        for i in range(0, 5):
+            # We add a signing key for pytest functions
+            pytest_signing_key: SigningKey = SigningKey.generate()
+            candidate_account_id = candidate.signer_key.account_id
+            pytest_signer_key: Key = Key.from_keypair(
+                candidate_account_id,
+                pytest_signing_key,
+            )
+            pytest_signer_keys.append(pytest_signer_key)
+
+        key = pytest_keys_per_node[0][0]
+        nonce = cluster.contract_node.near_node.get_nonce_for_pk(key.account_id, key.pk)
+        nonce += 1
+
+        # Observer nodes haven't started yet so we use cluster node to send txs
+        # add pytest_signer_keys that are used for voting, need to access
+        tx = sign_add_access_keys_tx(
+            key,
+            candidate_account_id,
+            pytest_signer_keys,
+            nonce,
+            cluster.contract_node.last_block_hash(),
+            contract_id="",
+            full_access=True,
+        )
+        create_txs.append(tx)
+        pytest_keys_per_node.append(pytest_signer_keys)
+        cluster.contract_node.send_await_check_txs_parallel(
+            "create last account", create_txs, assert_txn_success
+        )
+    ### end
 
     if secondary_near_account is not None:
         cluster.secondary_contract_node = secondary_near_account
