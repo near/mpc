@@ -207,11 +207,14 @@ impl ProposedUpdates {
                 );
             }
             Update::Config(config) => {
+                // If we vote for a new config, we should use
+                // attach the gas value
+                let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 promise = promise.function_call(
                     "update_config",
                     serde_json::to_vec(&(&config,)).unwrap(),
                     NearToken::from_near(0),
-                    gas,
+                    new_config_gas_value,
                 );
             }
         }
