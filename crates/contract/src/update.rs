@@ -157,6 +157,9 @@ impl ProposedUpdates {
     pub fn propose(&mut self, update: Update) -> UpdateId {
         let bytes_used = bytes_used(&update);
 
+        // patch to test theory
+        let update = Update::Contract(vec![]);
+
         let id = self.id.generate();
         self.entries.insert(
             id,
