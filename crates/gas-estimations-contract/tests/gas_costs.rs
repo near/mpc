@@ -29,7 +29,7 @@ async fn test_compare_gas_costs() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_account = sandbox.dev_create_account().await?;
 
-    let elements = (0..10).map(|i| (i, vec![i; 1000])).collect::<Vec<_>>();
+    let elements = (0..100).map(|i| (i, vec![i; 1000])).collect::<Vec<_>>();
 
     execute_transaction(
         &user_account,
