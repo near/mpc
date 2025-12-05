@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use criterion::{criterion_group, criterion_main, Criterion};
 use frost_core::Field;
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
@@ -29,8 +28,8 @@ fn bench_lagrange_computation(c: &mut Criterion) {
             |b, (ids, point)| {
                 b.iter(|| {
                     for id in ids {
-                        let coeff =
-                            compute_lagrange_coefficient::<C>(ids, id, point.as_ref()).unwrap();
+                        let coeff = compute_lagrange_coefficient::<C>(ids, id, point.as_ref())
+                            .expect("Lagrange coefficient computation should not abort");
                         black_box(coeff);
                     }
                 });
@@ -42,8 +41,8 @@ fn bench_lagrange_computation(c: &mut Criterion) {
             &(ids.clone(), point),
             |b, (ids, point)| {
                 b.iter(|| {
-                    let coeff =
-                        batch_compute_lagrange_coefficients::<C>(ids, point.as_ref()).unwrap();
+                    let coeff = batch_compute_lagrange_coefficients::<C>(ids, point.as_ref())
+                        .expect("Batch Lagrange coefficient computation should not abort");
                     black_box(coeff);
                 });
             },
@@ -56,8 +55,8 @@ fn bench_lagrange_computation(c: &mut Criterion) {
             &(ids.clone(), point_x0),
             |b, (ids, point)| {
                 b.iter(|| {
-                    let coeff =
-                        batch_compute_lagrange_coefficients::<C>(ids, point.as_ref()).unwrap();
+                    let coeff = batch_compute_lagrange_coefficients::<C>(ids, point.as_ref())
+                        .expect("Batch Lagrange coefficient computation should not abort");
                     black_box(coeff);
                 });
             },

@@ -160,9 +160,7 @@ pub fn run_presign(
         protocols.push((p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols).unwrap();
-    result.sort_by_key(|(p, _)| *p);
-    result
+    run_protocol(protocols).unwrap()
 }
 
 #[test]
@@ -389,8 +387,7 @@ where
         protocols.push((p, Box::new(protocol)));
     }
 
-    let mut two_triples = run_protocol(protocols).unwrap();
-    two_triples.sort_by_key(|(p, _)| *p);
+    let two_triples = run_protocol(protocols).unwrap();
     let (shares, pubs): (Vec<_>, Vec<_>) = two_triples.into_iter().flat_map(|(_, vec)| vec).unzip();
     // split shares into shares0 and shares 1 and pubs into pubs0 and pubs1
     let (mut shares0, mut shares1) = split_even_odd(shares);

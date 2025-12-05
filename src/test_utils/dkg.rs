@@ -29,9 +29,7 @@ where
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols).unwrap();
-    result.sort_by_key(|(p, _)| *p);
-    result
+    run_protocol(protocols).unwrap()
 }
 
 /// Runs distributed refresh
@@ -62,9 +60,7 @@ where
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols).unwrap();
-    result.sort_by_key(|(p, _)| *p);
-    result
+    run_protocol(protocols).unwrap()
 }
 
 /// Runs distributed reshare
@@ -83,7 +79,6 @@ where
     Scalar<C>: Send,
 {
     assert!(!new_participants.is_empty());
-
     let mut setup = vec![];
 
     for new_participant in new_participants {
@@ -118,9 +113,7 @@ where
         protocols.push((*p, Box::new(protocol)));
     }
 
-    let mut result = run_protocol(protocols).unwrap();
-    result.sort_by_key(|(p, _)| *p);
-    result
+    run_protocol(protocols).unwrap()
 }
 
 /// Assert that each participant has the same view of the public key

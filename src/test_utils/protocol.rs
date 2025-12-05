@@ -1,7 +1,7 @@
 use crate::errors::ProtocolError;
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
-use crate::test_utils::ProtocolSnapshot;
+use crate::test_utils::{ProtocolSnapshot, Simulator};
 use std::collections::HashMap;
 
 // +++++++++++++++++ Any Protocol +++++++++++++++++ //
@@ -49,6 +49,7 @@ pub fn run_protocol<T>(
             } {}
         }
     }
+    out.sort_by_key(|(p, _)| *p);
     Ok(out)
 }
 
@@ -164,4 +165,33 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
         out0.ok_or_else(|| ProtocolError::Other("out0 is None".to_string()))?,
         out1.ok_or_else(|| ProtocolError::Other("out1 is None".to_string()))?,
     ))
+}
+
+/// Runs one real participant and one simulation representing the rest of participants
+/// The simulation has an internal storage of what to send to the real participant
+pub fn run_simulated_protocol<T>(
+    real_participant: Participant,
+    mut real_prot: Box<dyn Protocol<Output = T>>,
+    simulator: Simulator,
+) -> Result<T, ProtocolError> {
+    if simulator.real_participant() != real_participant {
+        return Err(ProtocolError::AssertionFailed(
+            "The given real participant does not match the simulator's internal real participant"
+                .to_string(),
+        ));
+    }
+
+    // fill the real_participant's buffer with the recorded messages
+    for (from, data) in simulator.get_recorded_messages() {
+        real_prot.message(from, data);
+    }
+
+    let mut out = None;
+    while out.is_none() {
+        let action = real_prot.poke()?;
+        if let Action::Return(output) = action {
+            out = Some(output);
+        }
+    }
+    out.ok_or_else(|| ProtocolError::Other("out is None".to_string()))
 }

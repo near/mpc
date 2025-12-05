@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use criterion::{criterion_group, criterion_main, Criterion};
 use frost_core::{Field, Group};
 use frost_secp256k1::{Secp256K1ScalarField, Secp256K1Sha256};
@@ -23,14 +22,18 @@ fn bench_inversion(c: &mut Criterion) {
                 .iter()
                 .map(|v| {
                     <<Secp256K1Sha256 as frost_core::Ciphersuite>::Group as Group>::Field::invert(v)
-                        .unwrap()
+                        .expect("Inversion should not abort")
                 })
                 .collect::<Vec<_>>())
         });
     });
 
     group.bench_function("batch_inversion", |b| {
-        b.iter(|| black_box(batch_invert::<Secp256K1Sha256>(&values).unwrap()));
+        b.iter(|| {
+            black_box(
+                batch_invert::<Secp256K1Sha256>(&values).expect("Batch inversion should not abort"),
+            )
+        });
     });
 }
 
