@@ -176,15 +176,28 @@ impl ProposedUpdates {
     /// Returns `Some(votes)` if the given [`UpdateId`] exists, otherwise `None`.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
         // If participant has voted before, remove their vote
+        near_sdk::log!("starting vote: {}", env::used_gas());
+
         self.remove_vote(&voter);
+
+        near_sdk::log!("after remove_vote: {}", env::used_gas());
+
         // ensure that the update the participant is voting for exists
         let Some(update_entry) = self.entries.get_mut(id) else {
             env::log_str(&format!("no update with id {:?} exists", id));
             return None;
         };
+
+        near_sdk::log!("after update_entry: {}", env::used_gas());
+
         // record the vote
         self.vote_by_participant.insert(voter.clone(), *id);
+
+        near_sdk::log!("after vote_by_participant.insert: {}", env::used_gas());
         update_entry.votes.insert(voter);
+
+        near_sdk::log!("after update_entry.votes.insert: {}", env::used_gas());
+
         Some(&update_entry.votes)
     }
 

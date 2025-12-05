@@ -957,6 +957,7 @@ impl MpcContract {
             env::signer_account_id(),
             id,
         );
+        log!("prepaid gas {}", env::prepaid_gas());
 
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
@@ -964,10 +965,14 @@ impl MpcContract {
 
         let threshold = self.threshold()?;
 
+        log!("after threshold used gas {}", env::used_gas());
+
         let voter = self.voter_or_panic();
         let Some(all_votes) = self.proposed_updates.vote(&id, voter) else {
             return Err(InvalidParameters::UpdateNotFound.into());
         };
+
+        log!("after all_votes used gas {}", env::used_gas());
 
         // Filter votes to only count current participants. This ensures correctness
         // even if the cleanup promise in MpcContract::vote_reshared() fails.
@@ -979,12 +984,23 @@ impl MpcContract {
             .filter(|(id, _, _)| all_votes.contains(id))
             .count();
 
+        log!("after valid_votes_count used gas {}", env::used_gas());
+
         // Not enough votes from current participants, wait for more.
         if (valid_votes_count as u64) < threshold.value() {
+            log!("before returning false used gas {}", env::used_gas());
             return Ok(false);
         }
 
+        log!("before contract upgrade used gas {}", env::used_gas());
+        
+
         let update_gas_deposit = Gas::from_tgas(self.config.contract_upgrade_deposit_tera_gas);
+
+        log!(
+            "executing contract upgrade with gas {}",
+            update_gas_deposit,
+        );
 
         let Some(_promise) = self.proposed_updates.do_update(&id, update_gas_deposit) else {
             return Err(InvalidParameters::UpdateNotFound.into());
