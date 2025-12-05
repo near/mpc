@@ -208,7 +208,8 @@ impl ProposedUpdates {
             }
             Update::Config(config) => {
                 // If we vote for a new config, we should use
-                // attach the gas value
+                // the value `contract_upgrade_deposit_tera_gas` from the config
+                // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 promise = promise.function_call(
                     "update_config",
