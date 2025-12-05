@@ -609,12 +609,13 @@ Example digest value:
 DEFAULT_IMAGE_DIGEST=sha256:0e48003c0ac6ec01e79ce47aa094379e7a8fac428512dfeb18d49d558e100a53
 ```
 
-You can retrieve the latest MPC Docker image hash directly from the contract using the NEAR CLI:
+You can retrieve the allowed MPC Docker image hash directly from the contract using the NEAR CLI. The latest allowed image hash 
+will appear first in the returned vector:
 
 ```bash
 near contract call-function as-transaction \
   v1.signer-prod.testnet \
-  latest_code_hash \
+  allowed_docker_image_hashes \
   json-args '{}' \
   prepaid-gas '100.0 Tgas' \
   attached-deposit '0 NEAR' \

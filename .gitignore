@@ -21,3 +21,6 @@ venv
 
 # Generated on MacOs' file explorer - https://en.wikipedia.org/wiki/.DS_Store
 *.DS_Store
+
+# Files for launcher
+**/.app-compose.json
