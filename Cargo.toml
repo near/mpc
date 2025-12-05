@@ -9,6 +9,7 @@ members = [
     "crates/contract-interface",
     "crates/contract_history",
     "crates/devnet",
+    "crates/gas-estimations-contract",
     "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
