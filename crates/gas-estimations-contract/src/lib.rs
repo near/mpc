@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_types)]
 use std::collections::HashMap;
 
-use near_sdk::{near, store::IterableMap};
+use near_sdk::{env, near, store::IterableMap};
 
 #[near(contract_state)]
 pub struct Contract {
@@ -32,7 +32,6 @@ impl Contract {
     }
 
     pub fn insert_many_near_hash_map(&mut self, elements: Vec<(u32, Vec<u32>)>) {
-        self.near_hash_map = IterableMap::new(b"b");
         for (a, b) in elements {
             self.near_hash_map.insert(a, b);
         }
@@ -52,5 +51,13 @@ impl Contract {
 
     pub fn update_from_near_hash_map(&mut self, a: u32, b: Vec<u32>) -> Option<Vec<u32>> {
         self.near_hash_map.insert(a, b)
+    }
+
+    pub fn remove_from_std_hash_map(&mut self, a: u32) -> Option<Vec<u32>> {
+        self.std_hash_map.remove(&a)
+    }
+
+    pub fn remove_from_near_hash_map(&mut self, a: u32) -> Option<Vec<u32>> {
+        self.near_hash_map.remove(&a)
     }
 }

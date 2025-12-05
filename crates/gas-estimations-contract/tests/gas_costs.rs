@@ -29,7 +29,7 @@ async fn test_compare_gas_costs() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_account = sandbox.dev_create_account().await?;
 
-    let elements = (0..100).map(|i| (i, vec![i; 1000])).collect::<Vec<_>>();
+    let elements = (0..100u32).map(|i| (i, vec![i; 1000])).collect::<Vec<_>>();
 
     execute_transaction(
         &user_account,
@@ -86,6 +86,21 @@ async fn test_compare_gas_costs() -> Result<(), Box<dyn std::error::Error>> {
         contract.id(),
         "update_from_near_hash_map",
         json!({"a": 2, "b": elements[3].1}),
+    )
+    .await;
+
+    execute_transaction(
+        &user_account,
+        contract.id(),
+        "remove_from_std_hash_map",
+        json!({"a": 2}),
+    )
+    .await;
+    execute_transaction(
+        &user_account,
+        contract.id(),
+        "remove_from_near_hash_map",
+        json!({"a": 2}),
     )
     .await;
 

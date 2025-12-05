@@ -15,8 +15,8 @@ async fn test_basics_on(contract_wasm: &[u8]) -> Result<(), Box<dyn std::error::
     let user_account = sandbox.dev_create_account().await?;
 
     let outcome = user_account
-        .call(contract.id(), "set_std_hash_map")
-        .args_json(json!({"elements": vec![(1, 1)]}))
+        .call(contract.id(), "insert_many_std_hash_map")
+        .args_json(json!({"elements": vec![(1, vec![1])]}))
         .transact()
         .await?;
     assert!(
