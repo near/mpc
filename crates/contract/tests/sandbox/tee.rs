@@ -98,7 +98,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(
         allowed_hashes,
-        vec![first_hash.clone(), second_hash.clone()]
+        vec![second_hash.clone(), first_hash.clone()]
     );
 
     // Participant 1 also changes vote to second hash
@@ -109,7 +109,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     let allowed_hashes = get_allowed_hashes(&contract).await;
     assert_eq!(
         allowed_hashes,
-        vec![first_hash.clone(), second_hash.clone()]
+        vec![second_hash.clone(), first_hash.clone()]
     );
 
     Ok(())
