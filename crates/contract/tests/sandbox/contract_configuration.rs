@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{init_with_candidates, CURRENT_CONTRACT_DEPLOY_DEPOSIT},
+    common::{init_with_candidates, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
     upgrade_from_current_contract::current_contract_proposal,
 };
 use mpc_contract::update::UpdateId;
@@ -53,7 +53,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         let execution = voter
             .call(contract.id(), "vote_update")
             .args_json(serde_json::json!({ "id": proposal_id }))
-            .max_gas()
+            .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
             .await
             .unwrap();

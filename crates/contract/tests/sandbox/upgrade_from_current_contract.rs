@@ -2,7 +2,7 @@ use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT, PARTICIPANT_LEN,
+    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
 };
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
@@ -123,7 +123,7 @@ async fn test_propose_update_config() {
             .args_json(serde_json::json!({
                 "id": first_proposal,
             }))
-            .max_gas()
+            .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
             .await
             .unwrap();
@@ -230,7 +230,7 @@ async fn test_propose_update_contract_many() {
             .args_json(serde_json::json!({
                 "id": proposal,
             }))
-            .max_gas()
+            .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
             .await
             .unwrap();
@@ -334,7 +334,7 @@ async fn only_one_vote_from_participant() {
         .args_json(serde_json::json!({
             "id": proposal_a,
         }))
-        .max_gas()
+        .gas(GAS_FOR_VOTE_UPDATE)
         .transact()
         .await
         .unwrap();
@@ -348,7 +348,7 @@ async fn only_one_vote_from_participant() {
         .args_json(serde_json::json!({
             "id": proposal_b,
         }))
-        .max_gas()
+        .gas(GAS_FOR_VOTE_UPDATE)
         .transact()
         .await
         .unwrap();
@@ -362,7 +362,7 @@ async fn only_one_vote_from_participant() {
         .args_json(serde_json::json!({
             "id": proposal_a,
         }))
-        .max_gas()
+        .gas(GAS_FOR_VOTE_UPDATE)
         .transact()
         .await
         .unwrap();
@@ -376,7 +376,7 @@ async fn only_one_vote_from_participant() {
         .args_json(serde_json::json!({
             "id": proposal_b,
         }))
-        .max_gas()
+        .gas(GAS_FOR_VOTE_UPDATE)
         .transact()
         .await
         .unwrap();

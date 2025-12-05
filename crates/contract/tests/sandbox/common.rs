@@ -79,6 +79,10 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
+/// TODO(#1571): The `vote_update` contract call requires high gas, most likely due to
+/// deserializing the `mpc_contract::update::UpdateEntry` (which includes the full contract code),
+/// accounting for much of the total TGas used.
+pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(238);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
@@ -825,7 +829,7 @@ pub async fn vote_update_till_completion(
             .args_json(serde_json::json!({
                 "id": proposal_id,
             }))
-            .max_gas()
+            .gas(GAS_FOR_VOTE_UPDATE)
             .transact()
             .await
             .unwrap();
