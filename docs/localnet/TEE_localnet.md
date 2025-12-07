@@ -86,7 +86,7 @@ mkdir -p "/tmp/$USER"
 
 Concfiguratoin fields in `docker-compose.yml`
 
-Update to use the correct launcher image: (note - this must match the luacnher tempalte defined in the MPC contract)
+Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
 
 ```yaml
 image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
@@ -99,7 +99,7 @@ DEFAULT_IMAGE_DIGEST=sha256:abc
 ```
 
 
-#### Define the machine's external IP once  
+Define the machine's external IP once  
 
 ```bash
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine

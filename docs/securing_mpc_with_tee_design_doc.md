@@ -377,10 +377,6 @@ pub struct Contract {
     ///     by the DAO and verified by the TEE.
     pub fn allowed_docker_image_hashes(&mut self) -> Result<Vec<MpcDockerImageHash>, Error>
 
-    /// Returns the last entry in the whitelist of allowed hashes.
-    /// - Panics if the whitelist is empty (there must always be at least one hash).
-    pub fn latest_code_hash(&mut self) -> Result<MpcDockerImageHash, Error>
-
     /// Verifies if all current participants have an accepted TEE state.
     /// Automatically enters a resharing, in case one or more participants do not have an accepted
     /// TEE state.
