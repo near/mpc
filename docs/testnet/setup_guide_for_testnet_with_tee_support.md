@@ -3,14 +3,14 @@
 
 This guide describes how to set up a testnet an MPC cluster using dstack TDX CVMs.
 ## Prerequisites
- 1. 2 TDX-enabled machines
- 2. dstack installed aconfigured
+ 1. Two TDX-enabled machines
+ 2. dstack installed and configured
  3. MPC repository cloned
  4. NEAR CLI installed.
 
 ## High‑Level Steps
 
-1. Create a near account that will be the MPC contract account  
+1. Create a near account that will host the MPC contract.  
 2. Deploy MPC contract  
 3. Start two TDX CVMs: Alice (running MPC node **frodo**) and Bob (running MPC node **sam**)  
 4. Get account and TLS keys from each node  
@@ -126,13 +126,13 @@ export BASE_PATH="dstask base path"
 On Alice run:
 
 ```bash
-./deploy-launcher.sh --env-file ../deployment/testnet/frodo.env   --base-path $BASE_PATH   --python-exec python3
+./deploy-launcher.sh --env-file ../deployment/testnet/frodo.env   --base-path $BASE_PATH   --python-exec python
 ```
 
 On Bob run:
 
 ```bash
-./deploy-launcher.sh --env-file ../deployment/testnet/sam.env   --base-path $BASE_PATH  --python-exec python3
+./deploy-launcher.sh --env-file ../deployment/testnet/sam.env   --base-path $BASE_PATH  --python-exec python
 ```
 
 
