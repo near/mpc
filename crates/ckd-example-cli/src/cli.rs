@@ -12,5 +12,8 @@ pub struct Args {
     pub domain_id: DomainId,
 
     #[arg(long, env)]
+    pub path: String,
+
+    #[arg(long, env)]
     pub signer_account_id: String,
 }

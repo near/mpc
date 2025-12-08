@@ -4,9 +4,10 @@ use elliptic_curve::{Field as _, Group as _, group::prime::PrimeCurveAffine as _
 use hkdf::Hkdf;
 use rand_core::{CryptoRngCore, OsRng};
 use sha2::Sha256;
+use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
-use contract_interface::types::{Bls12381G1PublicKey, Bls12381G2PublicKey};
+use contract_interface::types::{AccountId, AppId, Bls12381G1PublicKey, Bls12381G2PublicKey};
 
 use crate::{
     cli::Args,
@@ -18,11 +19,16 @@ const NEAR_CKD_DOMAIN: &[u8] = b"NEAR BLS12381G1_XMD:SHA-256_SSWU_RO_";
 const OUTPUT_SECRET_SIZE: usize = 32;
 
 pub fn run(args: Args) -> Result<()> {
-    let app_id = args.signer_account_id.as_bytes();
+    let account_id = AccountId(args.signer_account_id);
+    let app_id = derive_app_id(&account_id, &args.path);
 
     let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
 
-    let ckd_params = CKDRequestArgs::new(CKDArgs::new(ephemeral_public_key, args.domain_id));
+    let ckd_params = CKDRequestArgs::new(CKDArgs::new(
+        args.path,
+        ephemeral_public_key,
+        args.domain_id,
+    ));
     let function_name = "request_app_private_key";
     println!("Call the function {function_name} with parameters:");
 
@@ -80,6 +86,7 @@ pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective
         return false;
     }
 
+    // TODO: this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
     let base1 = G1Projective::hash_to_curve(app_id, NEAR_CKD_DOMAIN, &[]).into();
     let base2 = G2Affine::generator();
 
@@ -90,7 +97,7 @@ fn decrypt_secret_and_verify(
     big_y: Bls12381G1PublicKey,
     big_c: Bls12381G1PublicKey,
     private_key: Scalar,
-    app_id: &[u8],
+    app_id: AppId,
     mpc_public_key: Bls12381G2PublicKey,
 ) -> Result<[u8; BLS12381G1_PUBLIC_KEY_SIZE]> {
     let big_y = convert_to_blstrs_type_g1(big_y)?;
@@ -101,7 +108,7 @@ fn decrypt_secret_and_verify(
     let secret = big_c - big_y * private_key;
 
     // verify the secret
-    if !verify(&mpc_public_key, app_id, &secret) {
+    if !verify(&mpc_public_key, app_id.as_ref(), &secret) {
         anyhow::bail!("Verification failed!");
     }
 
@@ -129,4 +136,14 @@ fn derive_strong_key(
     let mut okm = [0u8; OUTPUT_SECRET_SIZE];
     hk.expand(info, &mut okm).map_err(|err| anyhow!("{err}"))?;
     Ok(okm)
+}
+
+const APP_ID_DERIVATION_PREFIX: &str = "near-mpc v0.1.0 app_id derivation:";
+
+pub fn derive_app_id(account_id: &AccountId, path: &str) -> AppId {
+    let derivation_path = format!("{APP_ID_DERIVATION_PREFIX}{},{}", account_id.0, path);
+    let mut hasher = Sha3_256::new();
+    hasher.update(derivation_path);
+    let hash: [u8; 32] = hasher.finalize().into();
+    hash.into()
 }

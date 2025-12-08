@@ -51,6 +51,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         println!("submitting: {account_id}");
 
         let request = CKDRequestArgs {
+            path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -59,7 +60,8 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
             &account.id().as_v2_account_id(),
             app_public_key.clone(),
             &request.domain_id,
-            &sk.private_share.to_scalar(),
+            sk,
+            "",
         );
 
         derive_confidential_key_and_validate(
@@ -79,6 +81,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         .unwrap()
         .unwrap();
     let request = CKDRequestArgs {
+        path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -86,7 +89,8 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         &account.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
 
     derive_confidential_key_and_validate(
@@ -132,6 +136,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -140,7 +145,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
         &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
 
     let status = alice
@@ -208,6 +214,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let contract_balance = contract.view_account().await?.balance;
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        path: "".to_string(),
         app_public_key,
         domain_id: DomainId::default(),
     };
@@ -269,6 +276,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -287,7 +295,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
         &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.

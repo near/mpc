@@ -40,7 +40,7 @@ pub struct SignArgs {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct CKDArgs {
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: AccountId,
+    pub app_id: dtos::AppId,
     pub domain_id: DomainId,
 }
 
@@ -337,8 +337,9 @@ fn try_get_ckd_args(
 
     let ckd_request = CKDRequest::new(
         ckd_args.request.app_public_key,
-        receipt.predecessor_id.clone(),
         ckd_args.request.domain_id,
+        &receipt.predecessor_id,
+        &ckd_args.request.path,
     );
 
     tracing::info!(

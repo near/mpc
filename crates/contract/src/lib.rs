@@ -402,8 +402,13 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let app_id = env::predecessor_account_id().as_v2_account_id();
-        let request = CKDRequest::new(request.app_public_key, app_id, request.domain_id);
+        let account_id = env::predecessor_account_id().as_v2_account_id();
+        let request = CKDRequest::new(
+            request.app_public_key,
+            request.domain_id,
+            &account_id,
+            &request.path,
+        );
 
         let callback_gas = Gas::from_tgas(
             mpc_contract
@@ -1948,13 +1953,15 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.as_v2_account_id(),
+            &request.path,
         );
         contract.request_app_private_key(request);
         contract.get_pending_ckd_request(&ckd_request).unwrap();
@@ -1987,13 +1994,15 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.as_v2_account_id(),
+            &request.path,
         );
         contract.request_app_private_key(request);
         assert!(matches!(
@@ -2279,13 +2288,15 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
-            context.predecessor_account_id.clone().as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.clone().as_v2_account_id(),
+            &request.path,
         );
 
         // Legit participant makes the CKD request

@@ -19,7 +19,7 @@ show how to use the functionality in the simplest possible setting.
 
 ## Example usage
 
-The cli takes 3 parameters:
+The cli takes 4 parameters:
 
 - `signer-account-id`: the account that will be used to call the MPC contract.
   Notice the secret obtained at the end is dependent on this value, the same
@@ -30,14 +30,16 @@ domain is `Bls12381`.
 
 - `mpc-ckd-public-key`: the public key associated to the domain id above.
 
+- `path`: derivation path for the confidential key, which allows a single account to request several keys
+
 Notice that both the latter two parameters can be obtained by querying the state
 of the MPC contract.
 
 ```console
-❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
+❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
 
 Call the function request_app_private_key with parameters:
-{"request":{"app_public_key":"bls12381g1:64PJdGWrTzm5HY7wkXxWWPdaa6rtadsRuz4DxpZKK6nAVFE8xDPrQBLNbApfWM45ar","domain_id":2}}
+{"request":{"path": "mykey", "app_public_key":"bls12381g1:64PJdGWrTzm5HY7wkXxWWPdaa6rtadsRuz4DxpZKK6nAVFE8xDPrQBLNbApfWM45ar","domain_id":2}}
 Please enter a the response in json format (for example {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}):
 Your response: {
   "big_c": "bls12381g1:5qzsECuw1B4oCG78dUwJQ49o5egkNBfPvGfcJLKbznEeL7fpEv4hZYyu9VRt64ucRz",
@@ -49,10 +51,10 @@ The key is: bc73293faedf534d8028d575bcf9cf5455ffe5f468882928305be9d2be2e838d
 If the tool is used again, it will generate a different `app_public_key`, but obtain the same key at the end.
 
 ```console
-❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
+❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
 
 Call the function request_app_private_key with parameters:
-{"request":{"app_public_key":"bls12381g1:5ieM9Vog2JyWnTsHjh2eEMMZzHae8BcGXmdtrgjqkjBDWSSGY2ndv7dRQhGEiZ9BvB","domain_id":2}}
+{"request":{"path": "mykey", "app_public_key":"bls12381g1:5ieM9Vog2JyWnTsHjh2eEMMZzHae8BcGXmdtrgjqkjBDWSSGY2ndv7dRQhGEiZ9BvB","domain_id":2}}
 Please enter a the response in json format (for example {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}):
 Your response: {
   "big_c": "bls12381g1:6AZZQCerkTtGxV7J3AQuzSdghn2uUim41m88hL4NHdxn7GT8GjdBzZ2fGe6WbVkZGS",

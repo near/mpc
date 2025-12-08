@@ -14,7 +14,6 @@ use mpc_contract::{
         signature::Tweak,
     },
 };
-use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use serde::{Deserialize, Serialize};
 use threshold_signatures::ecdsa::Signature;
@@ -61,14 +60,14 @@ impl ChainSignatureRequest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: AccountId,
+    pub app_id: dtos::AppId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
         app_public_key: dtos::Bls12381G1PublicKey,
-        app_id: AccountId,
+        app_id: dtos::AppId,
         domain_id: DomainId,
     ) -> Self {
         ChainCKDRequest {

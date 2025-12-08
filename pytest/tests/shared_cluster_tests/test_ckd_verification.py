@@ -34,7 +34,8 @@ def test_ckd_request_lifecycle(shared_cluster: shared.MpcCluster):
     public_key = keyset.get_key(bls_domain.id).key["Bls12381"]["public_key"]
 
     app_public_key, app_private_key = ckd.generate_app_public_key()
-    ckd_args = ckd.generate_ckd_args(bls_domain, app_public_key)
+    path = "some_path"
+    ckd_args = ckd.generate_ckd_args(bls_domain, app_public_key, path)
     tx = shared_cluster.request_node.sign_tx(
         shared_cluster.mpc_contract_account(),
         "request_app_private_key",
@@ -48,6 +49,4 @@ def test_ckd_request_lifecycle(shared_cluster: shared.MpcCluster):
     ck = ckd.assert_ckd_success(res)
     big_y, big_c = ck["big_y"], ck["big_c"]
 
-    assert ckd.verify_ckd(
-        account_id.encode(), public_key, app_private_key, big_y, big_c
-    )
+    assert ckd.verify_ckd(account_id, path, public_key, app_private_key, big_y, big_c)

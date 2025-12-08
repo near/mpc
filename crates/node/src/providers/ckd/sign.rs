@@ -1,14 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use contract_interface::types::Bls12381G1PublicKey;
-use near_account_id::AccountId;
 use rand::rngs::OsRng;
+use tokio::time::timeout;
+
+use contract_interface::types as dtos;
 use threshold_signatures::{
     confidential_key_derivation::{protocol::ckd, ElementG1, KeygenOutput, VerifyingKey},
     participants::Participant,
 };
-use tokio::time::timeout;
 
 use crate::{metrics, trait_extensions::convert_to_contract_dto::TryIntoNodeType};
 use crate::{
@@ -118,8 +118,8 @@ impl CKDProvider {
 /// The tweak allows key derivation
 pub struct CKDComputation {
     pub keygen_output: KeygenOutput,
-    pub app_public_key: Bls12381G1PublicKey,
-    pub app_id: AccountId,
+    pub app_public_key: dtos::Bls12381G1PublicKey,
+    pub app_id: dtos::AppId,
 }
 
 #[async_trait::async_trait]
@@ -140,7 +140,7 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
             self.keygen_output.private_share,
-            self.app_id.as_bytes(),
+            self.app_id.as_ref(),
             self.app_public_key.try_into_node_type()?,
             OsRng,
         )?;

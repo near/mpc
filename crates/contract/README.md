@@ -107,6 +107,7 @@ Users can submit a ckd request to the MPC network via the
 
 The ckd request takes the following arguments:
 
+- `path` (String): the derivation path (used to derive different keys from the same account).
 - `"app_public_key": "bls12381g1:<base58 encoded point in curve>"`
 - `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to bls12381.
 
@@ -122,6 +123,7 @@ _ckd request_
 ```Json
 {
   "request": {
+    "path": "mykey",
     "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
     "domain_id": 2
   }
@@ -239,6 +241,7 @@ The `sign` request takes the following arguments:
 
 The `request_app_private_key` request takes the following arguments:
 
+- `path` (String): the derivation path.
 - `app_public_key` (String): the ephemeral public key to encrypt the generated confidential key
 - `domain_id` (integer): the domain ID that identifies the key and signature scheme to use to generate the confidential key
 
