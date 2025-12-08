@@ -27,8 +27,9 @@ const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;
+const DEFAUTL_CONTRACT_PROTOCOL_STATE: ContractProtocolState = ContractProtocolState::Running;
 
-enum State {
+enum ContractProtocolState {
     Running,
     Initializing,
     Resharing,
@@ -38,7 +39,7 @@ struct TestSetupBuilder {
     participant_count: Option<usize>,
     threshold: Option<u64>,
     init_config: Option<InitConfig>,
-    contract_protocol_state: State,
+    contract_protocol_state: Option<ContractProtocolState>,
 }
 
 impl TestSetupBuilder {
@@ -47,7 +48,7 @@ impl TestSetupBuilder {
             participant_count: None,
             threshold: None,
             init_config: None,
-            contract_protocol_state: State::Running,
+            contract_protocol_state: None,
         }
     }
 
@@ -66,8 +67,11 @@ impl TestSetupBuilder {
         self
     }
 
-    fn with_contract_protocol_state(mut self, contract_protocol_state: State) -> Self {
-        self.contract_protocol_state = contract_protocol_state;
+    fn with_contract_protocol_state(
+        mut self,
+        contract_protocol_state: ContractProtocolState,
+    ) -> Self {
+        self.contract_protocol_state = Some(contract_protocol_state);
         self
     }
 
@@ -75,7 +79,9 @@ impl TestSetupBuilder {
         // 1. Configuration & Defaults
         let participant_count = self.participant_count.unwrap_or(DEFAULT_PARTICIPANT_COUNT);
         let threshold = self.threshold.unwrap_or(DEFAULT_THRESHOLD_SIZE);
-        let init_config = self.init_config;
+        let contract_protocol_state = self
+            .contract_protocol_state
+            .unwrap_or(DEFAUTL_CONTRACT_PROTOCOL_STATE);
 
         // 2. Data Generation
         let participants = gen_participants(participant_count);
@@ -114,6 +120,7 @@ impl TestSetupBuilder {
 
         testing_env!(context);
 
+        let init_config = self.init_config;
         let contract =
             MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
                 .unwrap();
@@ -133,11 +140,11 @@ impl TestSetupBuilder {
             })
             .collect();
 
-        match self.contract_protocol_state {
+        match contract_protocol_state {
             // Contract is aready in running
-            State::Running => {}
+            ContractProtocolState::Running => {}
             // Start key generation to go into initalization
-            State::Initializing => {
+            ContractProtocolState::Initializing => {
                 for node_id in &all_nodes {
                     let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
@@ -156,7 +163,7 @@ impl TestSetupBuilder {
                     ProtocolContractState::Initializing(_)
                 );
             }
-            State::Resharing => {
+            ContractProtocolState::Resharing => {
                 let threshold_nodes = all_nodes.iter().take(threshold as usize);
 
                 for node_id in threshold_nodes.clone() {
@@ -175,6 +182,8 @@ impl TestSetupBuilder {
                         .vote_new_parameters(EpochId::new(6), parameters.clone())
                         .unwrap();
                 }
+
+                assert_matches!(setup.contract.state(), ProtocolContractState::Running(_));
             }
         };
 
@@ -750,10 +759,10 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 }
 
 #[rstest]
-#[case(State::Running)]
-#[case(State::Initializing)]
-#[case(State::Resharing)]
-fn vote_code_hash_works_in_contract_protocol_states(#[case] state: State) {
+#[case(ContractProtocolState::Running)]
+#[case(ContractProtocolState::Initializing)]
+#[case(ContractProtocolState::Resharing)]
+fn vote_code_hash_works_in_contract_protocol_states(#[case] state: ContractProtocolState) {
     let mut setup = TestSetupBuilder::new()
         .with_contract_protocol_state(state)
         .build();
