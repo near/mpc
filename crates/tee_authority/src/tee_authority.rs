@@ -285,7 +285,7 @@ mod tests {
     ) {
         let tls_key = p2p_tls_key();
         let account_key = account_key();
-        let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+        let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
         let authority =
             TeeAuthority::Local(LocalTeeAuthorityConfig::new(quote_verification_result));

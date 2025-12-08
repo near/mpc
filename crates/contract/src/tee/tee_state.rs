@@ -124,10 +124,8 @@ impl TeeState {
         account_public_key: Ed25519PublicKey,
         tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
-        let expected_report_data = ReportData::V1(ReportDataV1::new(
-            *tls_public_key.as_bytes(),
-            *account_public_key.as_bytes(),
-        ));
+        let expected_report_data: ReportData =
+            ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
 
         match attestation.verify(
             expected_report_data.into(),
@@ -183,7 +181,8 @@ impl TeeState {
             None => [0u8; 32], // TODO(#823): remove this fallback once all nodes must have account_public_key
         };
 
-        let expected_report_data = ReportData::new(*tls_public_key.as_bytes(), account_key_bytes);
+        let expected_report_data: ReportData =
+            ReportDataV1::new(*tls_public_key.as_bytes(), account_key_bytes).into();
 
         // Verify the attestation quote
         let time_stamp_seconds = Self::current_time_seconds();

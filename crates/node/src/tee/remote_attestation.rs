@@ -12,7 +12,7 @@ use backon::{BackoffBuilder, ExponentialBuilder, Retryable};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::{
     attestation::{Attestation, VerificationError},
-    report_data::ReportData,
+    report_data::{ReportData, ReportDataV1},
 };
 use tee_authority::tee_authority::TeeAuthority;
 use tokio_util::time::FutureExt;
@@ -98,8 +98,10 @@ fn validate_remote_attestation(
     allowed_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_compose_hashes: &[LauncherDockerComposeHash],
 ) -> Result<(), VerificationError> {
-    let expected_report_data =
-        ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+    let expected_report_data: ReportData = ReportDataV1::new(
+        *tls_public_key.as_bytes(),
+        *account_public_key.as_bytes(),
+    ).into();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -144,7 +146,10 @@ pub async fn periodic_attestation_submission<T: TransactionSender + Clone, I: Ti
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut interval_ticker: I,
 ) -> anyhow::Result<()> {
-    let report_data = ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+    let report_data: ReportData = ReportDataV1::new(
+        *tls_public_key.as_bytes(),
+        *account_public_key.as_bytes(),
+    ).into();
 
     loop {
         interval_ticker.tick().await;
@@ -220,7 +225,10 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     );
 
     let mut was_available = initially_available;
-    let report_data = ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+    let report_data: ReportData = ReportDataV1::new(
+        *tls_public_key.as_bytes(),
+        *account_public_key.as_bytes(),
+    ).into();
 
     while tee_accounts_receiver.changed().await.is_ok() {
         let is_available = is_node_in_contract_tee_accounts(&mut tee_accounts_receiver, &node_id);
@@ -529,8 +537,10 @@ mod tests {
             .verifying_key()
             .into_contract_interface_type();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::default());
-        let report_data =
-            ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+        let report_data: ReportData = ReportDataV1::new(
+            *tls_public_key.as_bytes(),
+            *account_public_key.as_bytes(),
+        ).into();
         let attestation = tee_authority
             .generate_attestation(report_data)
             .await
@@ -557,8 +567,10 @@ mod tests {
             .verifying_key()
             .into_contract_interface_type();
         let tee_authority = TeeAuthority::from(LocalTeeAuthorityConfig::new(false));
-        let report_data =
-            ReportData::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes());
+        let report_data: ReportData = ReportDataV1::new(
+            *tls_public_key.as_bytes(),
+            *account_public_key.as_bytes(),
+        ).into();
         let attestation = tee_authority
             .generate_attestation(report_data)
             .await
