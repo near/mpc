@@ -185,7 +185,7 @@ def sign_add_access_keys_tx(
 def start_neard_cluster_with_cleanup(
     num_mpc_nodes: int,
 ) -> Tuple[List[LocalNode], List[LocalNode]]:
-    num_validators = 1
+    num_validators = NUMBER_OF_VALIDATORS 
 
     rpc_polling_config = {
         "rpc": {
