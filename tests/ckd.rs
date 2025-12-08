@@ -37,13 +37,13 @@ fn test_ckd() {
     let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
 
     for p in &participants {
-        let private_share = result.get(p).unwrap().private_share;
+        let key_pair = result.get(p).unwrap();
 
         let protocol = ckd(
             &participants,
             coordinator,
             *p,
-            private_share,
+            key_pair.clone(),
             app_id.clone(),
             app_pk,
             OsRng,

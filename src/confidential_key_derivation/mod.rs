@@ -61,3 +61,11 @@ pub type CKDOutputOption = Option<CKDOutput>;
 pub type VerifyingKey = crate::VerifyingKey<BLS12381SHA256>;
 pub type PublicKey = ElementG1;
 pub type Signature = ElementG1;
+
+/// Hashes the app id and the public key as of
+/// H(pk || `app_id`) where H is a random oracle
+pub fn hash_app_id_with_pk(pk: &VerifyingKey, app_id: &[u8]) -> ElementG1 {
+    let compressed_pk = pk.to_element().to_compressed();
+    let input = [compressed_pk.as_slice(), app_id].concat();
+    ciphersuite::hash_to_curve(&input)
+}

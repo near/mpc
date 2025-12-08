@@ -90,8 +90,8 @@ required.
    As a result, $`\texttt{msk}
   = x_1 \cdot λ_1 + \ldots + x_n \cdot λ_n`$, where $λ_i$ are the coefficients
   of the
-  [Lagrange polynomial](https://en.wikipedia.org/wiki/Lagrange_polynomial). Let
-  $`\texttt{pk} \in \mathbb{G_2}`$ the corresponding public key.
+  [Lagrange polynomial](https://en.wikipedia.org/wiki/Lagrange_polynomial).
+- $`\texttt{pk}`$: public key of the *MPC network* corresponding to $\texttt{msk}$. It is a point in $\mathbb{G_2}$.
 - $`s`$: the key obtained by *app* as a result of the CKD, will depend
   on the [BLS signature](https://en.wikipedia.org/wiki/BLS_digital_signature) over
   the hash of $`\texttt{app\_id}`$
@@ -157,7 +157,7 @@ contract.
     computes:
     - $`y_i  \gets^{\$} \mathbb{Z}_q`$
     - $`Y_i \gets y_i \cdot G_1`$
-    - $`S_i = x_i \cdot H(\texttt{app\_id})`$
+    - $`S_i = x_i \cdot H(\texttt{\texttt{pk}, app\_id})`$
     - $`C_i =  S_i + y_i \cdot A`$
   - Node $`i`$ sends $`(λ_i \cdot Y_i, λ_i \cdot C_i)`$ to the *MPC network*
     coordinator
@@ -165,12 +165,12 @@ contract.
     - $`Y \gets λ_1 \cdot Y_1 + \ldots + λ_n \cdot Y_n`$
     - $`C \gets λ_1 \cdot C_1 + \ldots + λ_n \cdot C_n = λ_1 \cdot S_1 + \ldots +
     λ_n \cdot S_n + ({y_1 \cdot λ_1 + \ldots + y_n \cdot λ_n }) \cdot A =
-    \texttt{msk} \cdot H(\texttt{app\_id}) + a \cdot Y`$
+    \texttt{msk} \cdot H(\texttt{pk},\, \texttt{app\_id}) + a \cdot Y`$
     - $`\texttt{es} \gets (Y, C) `$
   - Coordinator sends $`\texttt{es}`$ to *app* on-chain
 - *app* obtains $`\texttt{es} = (Y, C)`$ and computes the BLS signature
   $`\texttt{sig} \gets C + (- a) \cdot  Y`$ and checks its correctness with
   respect to the MPC network public key $`\texttt{pk}`$. If correct, the app can
-  use the computed $`\texttt{sig} = \texttt{msk} \cdot H(\texttt{app\_id})`$ to
+  use the computed $`\texttt{sig} = \texttt{msk} \cdot H(\texttt{pk},\, \texttt{app\_id})`$ to
   compute the key $`s = \texttt{HKDF}(\texttt{sig})`$, using a
   [HKDF](https://en.wikipedia.org/wiki/HKDF) function.
