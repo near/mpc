@@ -322,8 +322,8 @@ impl MpcContract {
             .0 as u32
     }
 
-    /// To avoid overloading  network with too many requests,
-    /// we ask for a small deptheosit for each ckd request.
+    /// To avoid overloading the network with too many requests,
+    /// we ask for a small deposit for each ckd request.
     #[handle_result]
     #[payable]
     pub fn request_app_private_key(&mut self, request: CKDRequestArgs) {
