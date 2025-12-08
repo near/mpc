@@ -38,7 +38,7 @@ def test_interactive_cluster():
         )
     num_respond_access_keys = 5
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2, 6, num_respond_access_keys, load_mpc_contract()
+        6, num_respond_access_keys, load_mpc_contract()
     )
     cluster.init_cluster(mpc_nodes, 4)
     print(

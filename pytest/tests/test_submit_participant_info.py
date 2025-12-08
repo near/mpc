@@ -13,10 +13,9 @@ from common_lib.contracts import load_mpc_contract
 
 def test_submit_participant_info_endpoint():
     initial_participants = 2
-    total_nodes = 4
+    total_mpc_nodes = 4
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2,
-        total_nodes,
+        total_mpc_nodes,
         1,
         load_mpc_contract(),
     )

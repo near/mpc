@@ -31,16 +31,14 @@ def test_cancellation_of_key_resharing():
     # Start cluster with:
     initial_threshold = 2
     initial_running_nodes = 3
-    total_nodes = 5
+    number_of_mpc_nodes = 5
 
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        initial_running_nodes,
-        total_nodes,
+        number_of_mpc_nodes,
         1,
         load_mpc_contract(),
     )
     initial_running_nodes = mpc_nodes[:initial_running_nodes]
-    all_participants = mpc_nodes[:total_nodes]
     cluster.init_cluster(
         participants=initial_running_nodes, threshold=initial_threshold
     )
@@ -50,7 +48,7 @@ def test_cancellation_of_key_resharing():
 
     # Two new nodes join, increase threshold to 3
     cluster.do_resharing(
-        all_participants,
+        mpc_nodes,
         new_threshold=3,
         prospective_epoch_id=initial_prospective_epoch_id,
         wait_for_running=False,
@@ -65,7 +63,7 @@ def test_cancellation_of_key_resharing():
 
     # Vote with nodes that were not in the previous running state.
     # These votes should be reject by the contract.
-    for node in all_participants:
+    for node in mpc_nodes:
         # Our pytest setup will not allow us to run voting commands
         # on nodes that are killed. Thus skip voting with this node.
         node_is_killed = node == killed_node
@@ -114,7 +112,7 @@ def test_cancellation_of_key_resharing():
     killed_node.run()
 
     cluster.do_resharing(
-        all_participants,
+        mpc_nodes,
         new_threshold=3,
         prospective_epoch_id=previously_cancelled_resharing_epoch_id + 1,
         wait_for_running=True,
