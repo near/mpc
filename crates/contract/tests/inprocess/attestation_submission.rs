@@ -26,7 +26,7 @@ const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
-const DEFAULT_TRESHOLD_SIZE: u64 = 2;
+const DEFAULT_THRESHOLD_SIZE: u64 = 2;
 
 enum State {
     Running,
@@ -35,24 +35,24 @@ enum State {
 }
 
 struct TestSetupBuilder {
-    parcitipant_count: Option<usize>,
+    participant_count: Option<usize>,
     threshold: Option<u64>,
     init_config: Option<InitConfig>,
-    state: State,
+    contract_protocol_state: State,
 }
 
 impl TestSetupBuilder {
     fn new() -> Self {
         Self {
-            parcitipant_count: None,
+            participant_count: None,
             threshold: None,
             init_config: None,
-            state: State::Running,
+            contract_protocol_state: State::Running,
         }
     }
 
     fn with_partcipant_count(mut self, participant_count: usize) -> Self {
-        self.parcitipant_count = Some(participant_count);
+        self.participant_count = Some(participant_count);
         self
     }
 
@@ -66,34 +66,37 @@ impl TestSetupBuilder {
         self
     }
 
-    fn with_state(mut self, state: State) -> Self {
-        self.state = state;
+    fn with_contract_protocol_state(mut self, contract_protocol_state: State) -> Self {
+        self.contract_protocol_state = contract_protocol_state;
         self
     }
 
     fn build(self) -> TestSetup {
-        let participant_count = self.parcitipant_count.unwrap_or(DEFAULT_PARTICIPANT_COUNT);
-        let threshold = self.threshold.unwrap_or(DEFAULT_TRESHOLD_SIZE);
+        // 1. Configuration & Defaults
+        let participant_count = self.participant_count.unwrap_or(DEFAULT_PARTICIPANT_COUNT);
+        let threshold = self.threshold.unwrap_or(DEFAULT_THRESHOLD_SIZE);
         let init_config = self.init_config;
 
+        // 2. Data Generation
         let participants = gen_participants(participant_count);
         let participants_list = participants.participants().clone();
 
-        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold)).unwrap();
+        let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
+            .expect("Failed to create threshold parameters");
+
+        // Construct dummy keys for setup
+        let near_public_key =
+            near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, vec![1u8; 64]).unwrap();
+
         let keyset = Keyset::new(
             EpochId::new(5),
             vec![KeyForDomain {
                 domain_id: DomainId::default(),
-                key: PublicKeyExtended::Secp256k1 {
-                    near_public_key: near_sdk::PublicKey::from_parts(
-                        near_sdk::CurveType::SECP256K1,
-                        vec![1u8; 64],
-                    )
-                    .unwrap(),
-                },
+                key: PublicKeyExtended::Secp256k1 { near_public_key },
                 attempt: AttemptId::new(),
             }],
         );
+
         let domains = vec![DomainConfig {
             id: DomainId::default(),
             scheme: SignatureScheme::Secp256k1,
@@ -109,7 +112,7 @@ impl TestSetupBuilder {
             .current_account_id(contract_account_id)
             .build();
 
-        testing_env!(context.clone());
+        testing_env!(context);
 
         let contract =
             MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
@@ -120,22 +123,22 @@ impl TestSetupBuilder {
             participants_list,
         };
 
-        match self.state {
-            State::Running => {}
-            State::Initializing => {
-                let participant_nodes: Vec<NodeId> = setup
-                    .participants_list
-                    .iter()
-                    // .take(threshold as usize)
-                    .cloned()
-                    .map(|(account_id, _, participant_info)| NodeId {
-                        account_id,
-                        tls_public_key: participant_info.sign_pk,
-                        account_public_key: Some(bogus_ed25519_near_public_key()),
-                    })
-                    .collect();
+        let all_nodes: Vec<NodeId> = setup
+            .participants_list
+            .iter()
+            .map(|(account_id, _, participant_info)| NodeId {
+                account_id: account_id.clone(),
+                tls_public_key: participant_info.sign_pk.clone(),
+                account_public_key: Some(bogus_ed25519_near_public_key()),
+            })
+            .collect();
 
-                for node_id in &participant_nodes {
+        match self.contract_protocol_state {
+            // Contract is aready in running
+            State::Running => {}
+            // Start key generation to go into initalization
+            State::Initializing => {
+                for node_id in &all_nodes {
                     let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
 
@@ -154,26 +157,16 @@ impl TestSetupBuilder {
                 );
             }
             State::Resharing => {
-                let participant_nodes: Vec<NodeId> = setup
-                    .participants_list
-                    .iter()
-                    .take(threshold as usize)
-                    .cloned()
-                    .map(|(account_id, _, participant_info)| NodeId {
-                        account_id,
-                        tls_public_key: participant_info.sign_pk,
-                        account_public_key: Some(bogus_ed25519_near_public_key()),
-                    })
-                    .collect();
+                let threshold_nodes = all_nodes.iter().take(threshold as usize);
 
-                for node_id in &participant_nodes {
+                for node_id in threshold_nodes.clone() {
                     setup.submit_attestation_for_node(
                         node_id,
                         Attestation::Mock(MockAttestation::Valid),
                     );
                 }
 
-                for node_id in &participant_nodes {
+                for node_id in threshold_nodes {
                     let context = create_context_for_participant(&node_id.account_id);
                     testing_env!(context);
 
@@ -761,7 +754,9 @@ fn nodes_can_start_with_old_valid_hashes_during_grace_period() {
 #[case(State::Initializing)]
 #[case(State::Resharing)]
 fn vote_code_hash_works_in_contract_protocol_states(#[case] state: State) {
-    let mut setup = TestSetupBuilder::new().with_state(state).build();
+    let mut setup = TestSetupBuilder::new()
+        .with_contract_protocol_state(state)
+        .build();
 
     let code_hash = [1; 32];
 
