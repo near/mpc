@@ -77,15 +77,16 @@ you will need the following files:
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
-#### Define the machine's external IP once  
 
+create a temp folder for the config files:
 ```bash
-export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
+mkdir -p "/tmp/$USER"
 ```
+
 
 Concfiguratoin fields in `docker-compose.yml`
 
-Update to use the correct launcher image: (note - this must match the luacnher tempalte defined in the MPC contract)
+Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
 
 ```yaml
 image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
@@ -97,6 +98,12 @@ Update to use the correct MPC node image hash:
 DEFAULT_IMAGE_DIGEST=sha256:abc
 ```
 
+
+Define the machine's external IP once  
+
+```bash
+export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
+```
 
 #### Environment File (`frodo/sam.conf`, `frodo/sam.env`) )
 
@@ -146,11 +153,11 @@ export BASE_PATH="dstask base path"
 
 #### 4. Replace ${MACHINE_IP} inside the config files
 ```bash
-sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/frodo.conf
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.conf > "/tmp/$USER/frodo.conf"
 ```
 
 ```bash
-sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.conf > "/tmp/$USER/sam.conf"
 ```
 
 #### 5. Start the Frodo MPC Node
@@ -220,7 +227,6 @@ Initialize the MPC contract with the two participants (using the `P2P_KEY` value
 Prepare the arguments for the init call:
 
 ```bash
-mkdir -p "/tmp/$USER"
 envsubst < docs/localnet/args/init_tee.json > "/tmp/$USER/init_args.json"
 ```
 
