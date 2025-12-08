@@ -40,6 +40,7 @@ from key import Key
 
 dot_near = pathlib.Path.home() / ".near"
 SECRETS_JSON = "secrets.json"
+NUMBER_OF_VALIDATORS = 1
 
 
 def create_function_call_access_key_action(
@@ -182,9 +183,10 @@ def sign_add_access_keys_tx(
 
 
 def start_neard_cluster_with_cleanup(
-    num_validators: int,
     num_mpc_nodes: int,
 ) -> Tuple[List[LocalNode], List[LocalNode]]:
+    num_validators = 1
+
     rpc_polling_config = {
         "rpc": {
             "polling_config": {
@@ -347,7 +349,6 @@ def move_mpc_configs(observers: List[LocalNode]):
 
 
 def start_cluster_with_mpc(
-    num_validators,
     num_mpc_nodes,
     num_respond_aks,
     contract,
@@ -355,7 +356,6 @@ def start_cluster_with_mpc(
     start_mpc_nodes=True,
 ):
     validators, observers = start_neard_cluster_with_cleanup(
-        num_validators,
         num_mpc_nodes,
     )
 

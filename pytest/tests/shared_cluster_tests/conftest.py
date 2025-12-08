@@ -16,7 +16,6 @@ def shared_cluster():
     """
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2,
-        2,
         1,
         contracts.load_mpc_contract(),
     )

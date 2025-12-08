@@ -29,7 +29,7 @@ def test_single_domain():
 
     Signature requests are sent after each resharing to verify liveness.
     """
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 1, load_mpc_contract())
     mpc_nodes[0].reserve_key_event_attempt(0, 0, 0)
     mpc_nodes[0].reserve_key_event_attempt(0, 0, 1)
     # start with 2 nodes
@@ -91,7 +91,7 @@ def test_multi_domain():
 
     Afterwards, it adds another domain but cancels the key generation before completion.
     """
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(2, 4, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 1, load_mpc_contract())
 
     # start with 2 nodes
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
