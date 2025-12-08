@@ -29,6 +29,7 @@ use crate::{
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
+    state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -1018,11 +1019,12 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let ProtocolContractState::Running(state) = &self.protocol_state else {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
+        let threshold_parameters = match self.state().threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str("Contract is not initialized. Can not vote for a new image hash before initialization."),
         };
 
-        let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let votes = self.tee_state.vote(code_hash.clone(), &participant);
 
         let tee_upgrade_deadline_duration =

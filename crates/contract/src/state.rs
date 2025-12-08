@@ -176,6 +176,25 @@ impl ProtocolContractState {
             .most_recent_domain_for_protocol(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
     }
+
+    pub(super) fn threshold_parameters(
+        &self,
+    ) -> Result<&ThresholdParameters, ContractNotInitialized> {
+        match self {
+            ProtocolContractState::NotInitialized => Err(ContractNotInitialized),
+            ProtocolContractState::Initializing(initializing_contract_state) => {
+                Ok(initializing_contract_state
+                    .generating_key
+                    .proposed_parameters())
+            }
+            ProtocolContractState::Running(running_contract_state) => {
+                Ok(&running_contract_state.parameters)
+            }
+            ProtocolContractState::Resharing(resharing_contract_state) => {
+                Ok(&resharing_contract_state.previous_running_state.parameters)
+            }
+        }
+    }
 }
 
 impl ProtocolContractState {
@@ -284,3 +303,5 @@ impl ProtocolContractState {
         }
     }
 }
+
+pub(super) struct ContractNotInitialized;
