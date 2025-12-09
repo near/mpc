@@ -37,7 +37,7 @@ fn test_verify_method_signature() {
     let tls_key = p2p_tls_key();
     let account_key = account_key();
 
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let timestamp_s = 1763626832_u64; //Thursday, 20 November 2025 08:20:32
 
     let allowed_mpc_image_digest: MpcDockerImageHash = image_digest();

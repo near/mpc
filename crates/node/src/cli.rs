@@ -21,7 +21,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use mpc_attestation::{attestation::Attestation, report_data::ReportData};
+use mpc_attestation::{attestation::Attestation, report_data::ReportDataV1};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
@@ -263,10 +263,11 @@ impl StartCmd {
 
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
-        let report_data = ReportData::new(
+        let report_data = ReportDataV1::new(
             *tls_public_key.into_contract_interface_type().as_bytes(),
             *account_public_key.into_contract_interface_type().as_bytes(),
-        );
+        )
+        .into();
 
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
