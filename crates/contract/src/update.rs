@@ -122,17 +122,17 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-struct UpdateEntry {
-    update: Update,
-    bytes_used: u128,
+pub(crate) struct UpdateEntry {
+    pub(crate) update: Update,
+    pub(crate) bytes_used: u128,
 }
 
 #[near(serializers=[borsh ])]
 #[derive(Debug)]
 pub struct ProposedUpdates {
-    vote_by_participant: IterableMap<AccountId, UpdateId>,
-    entries: IterableMap<UpdateId, UpdateEntry>,
-    id: UpdateId,
+    pub(crate) vote_by_participant: IterableMap<AccountId, UpdateId>,
+    pub(crate) entries: IterableMap<UpdateId, UpdateEntry>,
+    pub(crate) id: UpdateId,
 }
 
 impl Default for ProposedUpdates {
@@ -259,22 +259,6 @@ impl ProposedUpdates {
             .iter()
             .filter_map(|(account, update_id)| (update_id == id).then(|| account.clone()))
             .collect()
-    }
-
-    // Migration helper methods
-    #[doc(hidden)]
-    pub fn migration_set_id(&mut self, id: UpdateId) {
-        self.id = id;
-    }
-
-    #[doc(hidden)]
-    pub fn migration_insert_entry(&mut self, id: UpdateId, update: Update, bytes_used: u128) {
-        self.entries.insert(id, UpdateEntry { update, bytes_used });
-    }
-
-    #[doc(hidden)]
-    pub fn migration_insert_vote_by_participant(&mut self, participant: AccountId, id: UpdateId) {
-        self.vote_by_participant.insert(participant, id);
     }
 }
 

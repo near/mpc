@@ -60,33 +60,39 @@ pub struct ProposedUpdates {
 
 impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     fn from(old: ProposedUpdates) -> Self {
-        let mut new_proposed_updates = crate::update::ProposedUpdates::default();
+        use crate::storage_keys::StorageKey;
+        use near_sdk::store::IterableMap;
 
-        // Copy the ID
-        new_proposed_updates.migration_set_id(old.id);
+        let mut vote_by_participant = IterableMap::new(StorageKey::ProposedUpdatesVotesV2);
+        let mut entries = IterableMap::new(StorageKey::ProposedUpdatesEntriesV2);
 
-        // Migrate entries (without votes)
+        // Migrate entries and extract votes from each entry
         for (update_id, old_entry) in old.entries.iter() {
-            new_proposed_updates.migration_insert_entry(
+            // Insert entry without votes
+            entries.insert(
                 *update_id,
-                old_entry.update.clone(),
-                old_entry.bytes_used,
+                crate::update::UpdateEntry {
+                    update: old_entry.update.clone(),
+                    bytes_used: old_entry.bytes_used,
+                },
             );
 
-            // Migrate each vote from the entry to vote_by_participant
+            // Extract votes from the old entry and add to vote_by_participant
             for voter in &old_entry.votes {
-                new_proposed_updates
-                    .migration_insert_vote_by_participant(voter.clone(), *update_id);
+                vote_by_participant.insert(voter.clone(), *update_id);
             }
         }
 
-        // Copy vote_by_participant (in case there are any that weren't in entries)
+        // Copy any existing vote_by_participant entries (for completeness)
         for (participant, update_id) in old.vote_by_participant.iter() {
-            new_proposed_updates
-                .migration_insert_vote_by_participant(participant.clone(), *update_id);
+            vote_by_participant.insert(participant.clone(), *update_id);
         }
 
-        new_proposed_updates
+        Self {
+            vote_by_participant,
+            entries,
+            id: old.id,
+        }
     }
 }
 
