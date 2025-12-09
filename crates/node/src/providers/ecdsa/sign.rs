@@ -161,7 +161,6 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
         );
         let rerandomized_presignature = RerandomizedPresignOutput::rerandomize_presign(
             &self.presign_out,
-            &tweak,
             &rerand_args,
         )?;
 
