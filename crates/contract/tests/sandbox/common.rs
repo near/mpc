@@ -57,7 +57,7 @@ use std::{
 };
 use threshold_signatures::{
     blstrs,
-    confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve, hash_app_id_with_pk, BLS12381SHA256},
+    confidential_key_derivation::{self as ckd, hash_app_id_with_pk, BLS12381SHA256},
     ecdsa as ts_ecdsa, eddsa,
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
