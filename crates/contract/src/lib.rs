@@ -3231,7 +3231,7 @@ mod tests {
                 .build());
 
             contract
-                .vote_code_hash(code_hash.clone().into())
+                .vote_code_hash(code_hash.into())
                 .expect("vote succeeds");
         }
 
