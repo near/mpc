@@ -109,7 +109,7 @@ def generate_ckd_args(
         app_public_key, _ = generate_app_public_key()
     return {
         "request": {
-            "path": path,
+            "derivation-path": path,
             "domain_id": domain.id,
             "app_public_key": app_public_key,
         }

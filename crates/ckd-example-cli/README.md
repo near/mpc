@@ -36,10 +36,10 @@ Notice that both the latter two parameters can be obtained by querying the state
 of the MPC contract.
 
 ```console
-❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
+❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --derivation-path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
 
 Call the function request_app_private_key with parameters:
-{"request":{"path": "mykey", "app_public_key":"bls12381g1:64PJdGWrTzm5HY7wkXxWWPdaa6rtadsRuz4DxpZKK6nAVFE8xDPrQBLNbApfWM45ar","domain_id":2}}
+{"request":{"derivation-path": "mykey", "app_public_key":"bls12381g1:64PJdGWrTzm5HY7wkXxWWPdaa6rtadsRuz4DxpZKK6nAVFE8xDPrQBLNbApfWM45ar","domain_id":2}}
 Please enter a the response in json format (for example {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}):
 Your response: {
   "big_c": "bls12381g1:5qzsECuw1B4oCG78dUwJQ49o5egkNBfPvGfcJLKbznEeL7fpEv4hZYyu9VRt64ucRz",
@@ -51,10 +51,10 @@ The key is: bc73293faedf534d8028d575bcf9cf5455ffe5f468882928305be9d2be2e838d
 If the tool is used again, it will generate a different `app_public_key`, but obtain the same key at the end.
 
 ```console
-❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
+❯ cargo run -p ckd-example-cli -- --domain-id 2 --signer-account-id frodo.test.near --derivation-path "mykey" --mpc-ckd-public-key bls12381g2:22AgdyBXAQor5kiToW4frjEksuAhyic1S7CWWX7LFBTXFt1MxjcXwuB73yFCQVQfwMjKQoFFtmxPSUg2fCjhNUNVCFPVdtotAFMkPpoDg9s3QWQSZ2gUfvS3Uw1gaESFCfrw
 
 Call the function request_app_private_key with parameters:
-{"request":{"path": "mykey", "app_public_key":"bls12381g1:5ieM9Vog2JyWnTsHjh2eEMMZzHae8BcGXmdtrgjqkjBDWSSGY2ndv7dRQhGEiZ9BvB","domain_id":2}}
+{"request":{"derivation-path": "mykey", "app_public_key":"bls12381g1:5ieM9Vog2JyWnTsHjh2eEMMZzHae8BcGXmdtrgjqkjBDWSSGY2ndv7dRQhGEiZ9BvB","domain_id":2}}
 Please enter a the response in json format (for example {"big_c": "bls12381g1:...","big_y": "bls12381g1:..."}):
 Your response: {
   "big_c": "bls12381g1:6AZZQCerkTtGxV7J3AQuzSdghn2uUim41m88hL4NHdxn7GT8GjdBzZ2fGe6WbVkZGS",
