@@ -2948,7 +2948,7 @@ mod tests {
         let (actual_update_id, update, actual_votes) = &all_updates[0];
         assert_eq!(*actual_update_id, expected_update_id);
         assert!(matches!(update, Update::Contract(_)));
-        assert_eq!(**actual_votes, *expected_voters);
+        assert_eq!(actual_votes, expected_voters);
     }
 
     fn test_proposed_updates_case_given_state(protocol_contract_state: ProtocolContractState) {

@@ -122,7 +122,7 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct UpdateEntry {
+struct UpdateEntry {
     update: Update,
     bytes_used: u128,
 }
@@ -131,7 +131,6 @@ pub struct UpdateEntry {
 #[derive(Debug)]
 pub struct ProposedUpdates {
     vote_by_participant: IterableMap<AccountId, UpdateId>,
-    votes_by_update: IterableMap<UpdateId, HashSet<AccountId>>,
     entries: IterableMap<UpdateId, UpdateEntry>,
     id: UpdateId,
 }
@@ -140,7 +139,6 @@ impl Default for ProposedUpdates {
     fn default() -> Self {
         Self {
             vote_by_participant: IterableMap::new(StorageKey::ProposedUpdatesVotesV2),
-            votes_by_update: IterableMap::new(StorageKey::ProposedUpdatesVotesByUpdate),
             entries: IterableMap::new(StorageKey::ProposedUpdatesEntriesV2),
             id: UpdateId::default(),
         }
@@ -160,7 +158,6 @@ impl ProposedUpdates {
 
         let id = self.id.generate();
         self.entries.insert(id, UpdateEntry { update, bytes_used });
-        self.votes_by_update.insert(id, HashSet::new());
 
         id
     }
@@ -169,7 +166,7 @@ impl ProposedUpdates {
     /// Sets `voter`s vote for the update with the given id.
     ///
     /// Returns `Some(votes)` if the given [`UpdateId`] exists, otherwise `None`.
-    pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
+    pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<HashSet<AccountId>> {
         // If participant has voted before, remove their vote
         self.remove_vote(&voter);
         // ensure that the update exists (we only check entries, not loading the full update)
@@ -179,8 +176,15 @@ impl ProposedUpdates {
         };
         // record the vote
         self.vote_by_participant.insert(voter.clone(), *id);
-        let votes = self.votes_by_update.get_mut(id)?;
-        votes.insert(voter);
+
+        // Reconstruct votes from vote_by_participant
+        let votes: HashSet<AccountId> = self
+            .vote_by_participant
+            .iter()
+            .filter(|(_, update_id)| *update_id == id)
+            .map(|(account, _)| account.clone())
+            .collect();
+
         Some(votes)
     }
 
@@ -189,7 +193,6 @@ impl ProposedUpdates {
 
         // Clear all entries as they might be no longer valid
         self.entries.clear();
-        self.votes_by_update.clear();
         self.vote_by_participant.clear();
 
         let mut promise = Promise::new(env::current_account_id());
@@ -221,13 +224,7 @@ impl ProposedUpdates {
 
     /// Removes the vote for [`AccountId`]
     pub fn remove_vote(&mut self, voter: &AccountId) {
-        if let Some(previous_id) = self.vote_by_participant.remove(voter) {
-            if let Some(votes) = self.votes_by_update.get_mut(&previous_id) {
-                votes.remove(voter);
-            } else {
-                env::log_str("inconsistent voting set");
-            }
-        }
+        self.vote_by_participant.remove(voter);
     }
 
     /// Removes votes from the specified accounts.
@@ -257,13 +254,17 @@ impl ProposedUpdates {
         self.vote_by_participant.keys().cloned().collect()
     }
 
-    pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
+    pub fn all_updates(&self) -> Vec<(UpdateId, &Update, HashSet<AccountId>)> {
         self.entries
             .iter()
-            .filter_map(|(update_id, entry)| {
-                self.votes_by_update
-                    .get(update_id)
-                    .map(|votes| (*update_id, &entry.update, votes))
+            .map(|(update_id, entry)| {
+                let votes: HashSet<AccountId> = self
+                    .vote_by_participant
+                    .iter()
+                    .filter(|(_, id)| *id == update_id)
+                    .map(|(account, _)| account.clone())
+                    .collect();
+                (*update_id, &entry.update, votes)
             })
             .collect()
     }
@@ -277,11 +278,6 @@ impl ProposedUpdates {
     #[doc(hidden)]
     pub fn migration_insert_entry(&mut self, id: UpdateId, update: Update, bytes_used: u128) {
         self.entries.insert(id, UpdateEntry { update, bytes_used });
-    }
-
-    #[doc(hidden)]
-    pub fn migration_insert_votes(&mut self, id: UpdateId, votes: HashSet<AccountId>) {
-        self.votes_by_update.insert(id, votes);
     }
 
     #[doc(hidden)]
@@ -416,7 +412,7 @@ mod tests {
             proposed_updates
                 .vote(&update_id_0, account_id.clone())
                 .unwrap(),
-            &HashSet::from([account_id.clone()])
+            HashSet::from([account_id.clone()])
         );
 
         let expected = TestUpdateVotes {
@@ -458,7 +454,7 @@ mod tests {
             proposed_updates
                 .vote(&update_id_0, account_id.clone())
                 .unwrap(),
-            &HashSet::from([account_id.clone()])
+            HashSet::from([account_id.clone()])
         );
 
         proposed_updates.remove_vote(&account_id);
@@ -496,7 +492,7 @@ mod tests {
             proposed_updates
                 .vote(&update_id_0, account_id.clone())
                 .unwrap(),
-            &HashSet::from([account_id.clone()])
+            HashSet::from([account_id.clone()])
         );
 
         // change vote
@@ -504,7 +500,7 @@ mod tests {
             proposed_updates
                 .vote(&update_id_1, account_id.clone())
                 .unwrap(),
-            &HashSet::from([account_id.clone()])
+            HashSet::from([account_id.clone()])
         );
 
         let expected = TestUpdateVotes {
@@ -546,7 +542,7 @@ mod tests {
             proposed_updates
                 .vote(&update_id_0, account_id.clone())
                 .unwrap(),
-            &HashSet::from([account_id.clone()])
+            HashSet::from([account_id.clone()])
         );
 
         assert!(proposed_updates
@@ -646,16 +642,18 @@ mod tests {
             let id = value.id.0;
 
             // Convert entries: IterableMap<UpdateId, UpdateEntry> → BTreeMap<u64, TestUpdateEntry>
-            // and merge in votes from votes_by_update
+            // and merge in votes from vote_by_participant
             let entries: BTreeMap<u64, TestUpdateEntry> = value
                 .entries
                 .iter()
                 .map(|(update_id, entry)| {
-                    let votes = value
-                        .votes_by_update
-                        .get(update_id)
-                        .cloned()
-                        .unwrap_or_default();
+                    // Reconstruct votes from vote_by_participant
+                    let votes: HashSet<AccountId> = value
+                        .vote_by_participant
+                        .iter()
+                        .filter(|(_, id)| *id == update_id)
+                        .map(|(account, _)| account.clone())
+                        .collect();
                     let test_entry = TestUpdateEntry {
                         update: entry.update.clone(),
                         votes,
@@ -709,7 +707,7 @@ mod tests {
             let votes_0 = proposed_updates
                 .vote(&update_id_0, account_id.clone())
                 .unwrap();
-            assert_eq!(&expected_votes, votes_0);
+            assert_eq!(expected_votes, votes_0);
             expected_votes
         };
 
@@ -719,7 +717,7 @@ mod tests {
             let votes_1 = proposed_updates
                 .vote(&update_id_1, account_id.clone())
                 .unwrap();
-            assert_eq!(&expected_votes, votes_1);
+            assert_eq!(expected_votes, votes_1);
             expected_votes
         };
 
@@ -729,14 +727,14 @@ mod tests {
             let votes_2 = proposed_updates
                 .vote(&update_id_2, account_id.clone())
                 .unwrap();
-            assert_eq!(&expected_votes, votes_2);
+            assert_eq!(expected_votes, votes_2);
             expected_votes
         };
 
         let expected = vec![
-            (update_id_0, &update_0, &votes_0),
-            (update_id_1, &update_1, &votes_1),
-            (update_id_2, &update_2, &votes_2),
+            (update_id_0, &update_0, votes_0),
+            (update_id_1, &update_1, votes_1),
+            (update_id_2, &update_2, votes_2),
         ];
 
         let mut res = proposed_updates.all_updates();

@@ -65,22 +65,22 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
         // Copy the ID
         new_proposed_updates.migration_set_id(old.id);
 
-        // Migrate entries and votes
+        // Migrate entries (without votes)
         for (update_id, old_entry) in old.entries.iter() {
-            // Create new UpdateEntry without votes
             new_proposed_updates.migration_insert_entry(
                 *update_id,
                 old_entry.update.clone(),
                 old_entry.bytes_used,
             );
 
-            // Store votes separately in votes_by_update
-            if !old_entry.votes.is_empty() {
-                new_proposed_updates.migration_insert_votes(*update_id, old_entry.votes.clone());
+            // Migrate each vote from the entry to vote_by_participant
+            for voter in &old_entry.votes {
+                new_proposed_updates
+                    .migration_insert_vote_by_participant(voter.clone(), *update_id);
             }
         }
 
-        // Copy vote_by_participant
+        // Copy vote_by_participant (in case there are any that weren't in entries)
         for (participant, update_id) in old.vote_by_participant.iter() {
             new_proposed_updates
                 .migration_insert_vote_by_participant(participant.clone(), *update_id);
