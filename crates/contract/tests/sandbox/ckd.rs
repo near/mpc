@@ -11,6 +11,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
+use rand::SeedableRng;
 use rand_core::OsRng;
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
@@ -26,6 +27,8 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+
     let (worker, contract, mpc_nodes, sks) =
         init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
@@ -40,7 +43,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         "a_fake_one".parse().unwrap(),
     ];
 
-    let app_public_key = generate_random_app_public_key(&mut OsRng);
+    let app_public_key = generate_random_app_public_key(&mut rng);
 
     for account_id in account_ids {
         let account = create_account_given_id(&worker, account_id.clone())
@@ -126,7 +129,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
     let request_with_path = CKDRequestArgs {
         derivation_path: "this is a path".to_string(),
-        app_public_key: app_public_key.clone(),
+        app_public_key: generate_random_app_public_key(&mut rng),
         domain_id: DomainId::default(),
     };
 
@@ -140,7 +143,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
     derive_confidential_key_and_validate(
         account,
-        &request,
+        &request_with_path,
         Some((&respond_request_with_path, &respond_response_with_path)),
         &contract,
         attested_account,

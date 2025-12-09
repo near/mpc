@@ -699,11 +699,16 @@ pub fn create_response_ckd(
     app_public_key: dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
     key_package: &KeygenOutput<BLS12381SHA256>,
-    path: &str,
+    derivation_path: &str,
 ) -> (CKDRequest, CKDResponse) {
-    let request = CKDRequest::new(app_public_key.clone(), *domain_id, account_id, path);
+    let request = CKDRequest::new(
+        app_public_key.clone(),
+        *domain_id,
+        account_id,
+        derivation_path,
+    );
 
-    let app_id = derive_app_id(account_id, path);
+    let app_id = derive_app_id(account_id, derivation_path);
     let app_pk: ckd::ElementG1 = app_public_key.into_contract_type();
     let msk = key_package.private_share.to_scalar();
     let pk = key_package.public_key.to_element().to_compressed();
@@ -742,9 +747,9 @@ pub async fn derive_confidential_key_and_validate(
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        assert!(
-            derive_app_id(&account.id().as_v2_account_id(), &request.derivation_path)
-                == respond_req.app_id
+        assert_eq!(
+            derive_app_id(&account.id().as_v2_account_id(), &request.derivation_path),
+            respond_req.app_id
         );
         let respond = attested_account
             .call(contract.id(), "respond_ckd")

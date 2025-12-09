@@ -24,8 +24,9 @@ pub fn derive_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
 // near-mpc with derivation protocol vX.Y.Z.
 const APP_ID_DERIVATION_PREFIX: &str = "near-mpc v0.1.0 app_id derivation:";
 
-pub fn derive_app_id(predecessor_id: &AccountId, path: &str) -> dtos::CkdAppId {
-    let hash: [u8; 32] = derive_from_path(APP_ID_DERIVATION_PREFIX, predecessor_id, path);
+pub fn derive_app_id(predecessor_id: &AccountId, derivation_path: &str) -> dtos::CkdAppId {
+    let hash: [u8; 32] =
+        derive_from_path(APP_ID_DERIVATION_PREFIX, predecessor_id, derivation_path);
     hash.into()
 }
 
