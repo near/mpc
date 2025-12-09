@@ -19,6 +19,7 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
+    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::{Update, UpdateId},
 };
@@ -60,9 +61,6 @@ pub struct ProposedUpdates {
 
 impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     fn from(old: ProposedUpdates) -> Self {
-        use crate::storage_keys::StorageKey;
-        use near_sdk::store::IterableMap;
-
         let mut vote_by_participant = IterableMap::new(StorageKey::ProposedUpdatesVotesV2);
         let mut entries = IterableMap::new(StorageKey::ProposedUpdatesEntriesV2);
 

@@ -257,7 +257,8 @@ impl ProposedUpdates {
     fn votes_for_update(&self, id: &UpdateId) -> HashSet<AccountId> {
         self.vote_by_participant
             .iter()
-            .filter_map(|(account, update_id)| (update_id == id).then(|| account.clone()))
+            .filter(|(_, update_id)| *update_id == id)
+            .map(|(account, _)| account.clone())
             .collect()
     }
 }
