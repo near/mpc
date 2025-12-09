@@ -1675,6 +1675,7 @@ mod tests {
     use rand::SeedableRng;
     use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
+    use rstest::rstest;
     use sha2::{Digest, Sha256};
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -3201,5 +3202,49 @@ mod tests {
             update_id,
             &expected_voters_after,
         );
+    }
+
+    #[rstest]
+    #[case(ProtocolContractState::Running(gen_running_state(2)))]
+    #[case(ProtocolContractState::Resharing(gen_resharing_state(2).1))]
+    #[case(ProtocolContractState::Initializing(gen_initializing_state(2, 1).1))]
+    fn test_contract_stores_allowed_hashes(#[case] protocol_state: ProtocolContractState) {
+        const CURRENT_BLOCK_TIME_STAMP: u64 = 10;
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+        let code_hash = [9; 32];
+
+        let participant_account_ids: Vec<_> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .collect();
+
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id)
+                .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+                .build());
+
+            contract
+                .vote_code_hash(code_hash.clone().into())
+                .expect("vote succeeds");
+        }
+
+        let allowed_docker_image_hashes: Vec<MpcDockerImageHash> = contract
+            .tee_state
+            .get_allowed_mpc_docker_images(Duration::from_secs(10))
+            .into_iter()
+            .map(|allowed_image_hash| allowed_image_hash.image_hash)
+            .collect();
+
+        assert_eq!(
+            allowed_docker_image_hashes,
+            vec![MpcDockerImageHash::from(code_hash)]
+        )
     }
 }

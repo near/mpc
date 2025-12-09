@@ -304,4 +304,5 @@ impl ProtocolContractState {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(super) struct ContractNotInitialized;
