@@ -2,6 +2,7 @@ use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
 use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::{EpochId, KeyEventId, KeyForDomain, Keyset};
+use rand::{CryptoRng, RngCore, SeedableRng};
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::test_utils::TestGenerators;
 
@@ -13,12 +14,13 @@ pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId
     )
 }
 /// returns two shares for the same key
-pub fn generate_dummy_keyshares(
+pub fn generate_dummy_keyshares<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(
     epoch_id: u64,
     domain_id: u64,
     attempt_id: u64,
+    rng: &mut R,
 ) -> (Keyshare, Keyshare) {
-    let keyshares = TestGenerators::new(2, 2).make_ecdsa_keygens();
+    let keyshares = TestGenerators::new(2, 2).make_ecdsa_keygens(rng);
     let mut iter = keyshares.into_iter().map(|share| {
         let key = share.1;
 
@@ -35,7 +37,8 @@ pub fn generate_dummy_keyshares(
 
 #[test]
 pub fn test_generate_dummy_keyshares() {
-    let (keyshare, alternate_keyshare) = generate_dummy_keyshares(0, 1, 0);
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+    let (keyshare, alternate_keyshare) = generate_dummy_keyshares(0, 1, 0, &mut rng);
     assert_ne!(alternate_keyshare, keyshare);
     // ensure that the keyshares are different
     assert_ne!(alternate_keyshare.data, keyshare.data);
@@ -46,9 +49,9 @@ pub fn test_generate_dummy_keyshares() {
     );
 }
 
-pub fn generate_dummy_keyshare(epoch_id: u64, domain_id: u64, attempt_id: u64) -> Keyshare {
+pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(epoch_id: u64, domain_id: u64, attempt_id: u64, rng: &mut R,) -> Keyshare {
     let key = TestGenerators::new(2, 2)
-        .make_ecdsa_keygens()
+        .make_ecdsa_keygens(rng)
         .into_iter()
         .next()
         .unwrap()
@@ -102,11 +105,11 @@ impl KeysetBuilder {
         }
     }
 
-    pub fn new_populated(epoch_id: u64, num_keys: u64) -> Self {
+    pub fn new_populated<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(epoch_id: u64, num_keys: u64, rng: &mut R) -> Self {
         let mut res = KeysetBuilder::new(epoch_id);
         for domain_id in 0..num_keys {
             let attempt_id: u64 = rand::random();
-            let keyshare = generate_dummy_keyshare(epoch_id, domain_id, attempt_id);
+            let keyshare = generate_dummy_keyshare(epoch_id, domain_id, attempt_id, rng);
             res.add_keyshare(keyshare);
         }
         res
