@@ -6,6 +6,7 @@ import base58
 import os
 from blspy import G1Element, G2Element
 from py_arkworks_bls12381 import G1Point, G2Point, Scalar
+from hashlib import sha3_256
 
 from typing import Optional, Tuple
 
@@ -70,12 +71,21 @@ def verify_bls_signature(
     pk = G2Element.from_bytes(bytes(public_key.to_compressed_bytes()))
     sig = G1Element.from_bytes(bytes(signature.to_compressed_bytes()))
     # hash_to_curve
+    # TODO(#1628): this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
     Hm = G1Element.from_message(message, NEAR_CKD_DOMAIN)
     return sig.pair(G2Element.generator()) == Hm.pair(pk)
 
 
+APP_ID_DERIVATION_PREFIX = "near-mpc v0.1.0 app_id derivation:"
+
+
+def derive_app_id(account_id: str, path: str) -> bytes:
+    return sha3_256(f"{APP_ID_DERIVATION_PREFIX}{account_id},{path}".encode()).digest()
+
+
 def verify_ckd(
-    app_id: bytes,
+    account_id: str,
+    path: str,
     public_key: str,
     app_private_key: Scalar,
     big_y: str,
@@ -84,13 +94,23 @@ def verify_ckd(
     public_key = b58decode_g2(public_key)
     big_y = b58decode_g1(big_y)
     big_c = b58decode_g1(big_c)
+
+    app_id = derive_app_id(account_id, path)
     # ElGammal decryption
     k = big_c - big_y * app_private_key
     return verify_bls_signature(public_key, app_id, k)
 
 
-def generate_ckd_args(domain: Domain, app_public_key: Optional[str] = None) -> dict:
+def generate_ckd_args(
+    domain: Domain, app_public_key: Optional[str] = None, path: str = ""
+) -> dict:
     assert domain.scheme == "Bls12381"
     if app_public_key is None:
         app_public_key, _ = generate_app_public_key()
-    return {"request": {"domain_id": domain.id, "app_public_key": app_public_key}}
+    return {
+        "request": {
+            "derivation_path": path,
+            "domain_id": domain.id,
+            "app_public_key": app_public_key,
+        }
+    }

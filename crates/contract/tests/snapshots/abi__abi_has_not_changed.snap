@@ -1263,8 +1263,7 @@ expression: abi
           ],
           "properties": {
             "app_id": {
-              "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-              "type": "string"
+              "$ref": "#/definitions/CkdAppId"
             },
             "app_public_key": {
               "description": "The app ephemeral public key",
@@ -1283,11 +1282,15 @@ expression: abi
           "type": "object",
           "required": [
             "app_public_key",
+            "derivation_path",
             "domain_id"
           ],
           "properties": {
             "app_public_key": {
               "$ref": "#/definitions/Bls12381G1PublicKey"
+            },
+            "derivation_path": {
+              "type": "string"
             },
             "domain_id": {
               "$ref": "#/definitions/DomainId"
@@ -1308,6 +1311,17 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "CkdAppId": {
+          "description": "AppId for CKD",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
         },
         "Collateral": {
           "type": "object",

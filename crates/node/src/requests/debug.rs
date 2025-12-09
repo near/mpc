@@ -252,7 +252,7 @@ mod tests {
                     id: CryptoHash(rand::random()),
                     receipt_id: CryptoHash(rand::random()),
                     app_public_key: "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6".parse().unwrap(),
-                    app_id: "test.near".parse().unwrap(),
+                    app_id: [1u8; 32].into(),
                     entropy: [0; 32],
                     timestamp_nanosec: 0,
                     domain_id: DomainId::legacy_ecdsa_id(),

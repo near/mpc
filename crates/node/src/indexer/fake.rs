@@ -16,6 +16,7 @@ use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::CKDId;
 use crate::types::SignatureId;
 use anyhow::Context;
+use contract_interface::types as dtos;
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
@@ -39,17 +40,17 @@ use tokio::sync::{broadcast, mpsc, watch};
 /// A simplification of the real MPC contract state for testing.
 pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
-    config: contract_interface::types::InitConfig,
+    config: dtos::InitConfig,
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
-    pub pending_ckds: BTreeMap<AccountId, CKDId>,
+    pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub migration_service: NodeMigrations,
 }
 
 impl FakeMpcContractState {
     pub fn new() -> Self {
         let state = ProtocolContractState::NotInitialized;
-        let config = contract_interface::types::InitConfig {
+        let config = dtos::InitConfig {
             key_event_timeout_blocks: Some(10),
             ..Default::default()
         };
@@ -124,12 +125,7 @@ impl FakeMpcContractState {
         });
     }
 
-    pub fn vote_pk(
-        &mut self,
-        account_id: AccountId,
-        key_id: KeyEventId,
-        dto_pk: contract_interface::types::PublicKey,
-    ) {
+    pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, dto_pk: dtos::PublicKey) {
         let contract_extended_pk = dto_pk.try_into().unwrap();
 
         match &mut self.state {

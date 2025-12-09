@@ -357,7 +357,7 @@ pub async fn request_ckd_and_await_response(
                     .parse()
                     .unwrap(),
             domain_id: domain.id,
-            app_id: user.parse().unwrap(),
+            app_id: [1u8; 32].into(),
         },
     };
     tracing::info!(
