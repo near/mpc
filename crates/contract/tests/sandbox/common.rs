@@ -743,7 +743,8 @@ pub async fn derive_confidential_key_and_validate(
 
     if let Some((respond_req, respond_resp)) = respond {
         assert!(
-            derive_app_id(&account.id().as_v2_account_id(), &request.path) == respond_req.app_id
+            derive_app_id(&account.id().as_v2_account_id(), &request.derivation_path)
+                == respond_req.app_id
         );
         let respond = attested_account
             .call(contract.id(), "respond_ckd")
@@ -1223,7 +1224,7 @@ pub async fn make_and_submit_requests(
                         path,
                     );
                     let request_args = CKDRequestArgs {
-                        path: path.to_string(),
+                        derivation_path: path.to_string(),
                         app_public_key: app_public_key.clone(),
                         domain_id: domain.id,
                     };

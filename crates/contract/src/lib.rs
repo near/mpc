@@ -407,7 +407,7 @@ impl MpcContract {
             request.app_public_key,
             request.domain_id,
             &account_id,
-            &request.path,
+            &request.derivation_path,
         );
 
         let callback_gas = Gas::from_tgas(
@@ -1953,7 +1953,7 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
-            path: "".to_string(),
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -1961,7 +1961,7 @@ mod tests {
             app_public_key,
             request.domain_id,
             &context.predecessor_account_id.as_v2_account_id(),
-            &request.path,
+            &request.derivation_path,
         );
         contract.request_app_private_key(request);
         contract.get_pending_ckd_request(&ckd_request).unwrap();
@@ -1994,7 +1994,7 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
-            path: "".to_string(),
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -2002,7 +2002,7 @@ mod tests {
             app_public_key,
             request.domain_id,
             &context.predecessor_account_id.as_v2_account_id(),
-            &request.path,
+            &request.derivation_path,
         );
         contract.request_app_private_key(request);
         assert!(matches!(
@@ -2288,7 +2288,7 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
-            path: "".to_string(),
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -2296,7 +2296,7 @@ mod tests {
             app_public_key.clone(),
             request.domain_id,
             &context.predecessor_account_id.clone().as_v2_account_id(),
-            &request.path,
+            &request.derivation_path,
         );
 
         // Legit participant makes the CKD request

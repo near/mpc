@@ -51,7 +51,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         println!("submitting: {account_id}");
 
         let request = CKDRequestArgs {
-            path: "".to_string(),
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -81,13 +81,13 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         .unwrap()
         .unwrap();
     let request = CKDRequestArgs {
-        path: "".to_string(),
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
     let (respond_req, respond_resp) = create_response_ckd(
         &account.id().as_v2_account_id(),
-        app_public_key,
+        request.app_public_key.clone(),
         &request.domain_id,
         sk,
         "",
@@ -111,13 +111,41 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
     .await?;
 
     // Check that a ckd with no response from MPC network properly errors out:
-    let err =
-        derive_confidential_key_and_validate(account, &request, None, &contract, attested_account)
-            .await
-            .expect_err("should have failed with timeout");
+    let err = derive_confidential_key_and_validate(
+        account.clone(),
+        &request,
+        None,
+        &contract,
+        attested_account,
+    )
+    .await
+    .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
         .contains(&errors::RequestError::Timeout.to_string()));
+
+    let request_with_path = CKDRequestArgs {
+        derivation_path: "this is a path".to_string(),
+        app_public_key: app_public_key.clone(),
+        domain_id: DomainId::default(),
+    };
+
+    let (respond_request_with_path, respond_response_with_path) = create_response_ckd(
+        &account.id().as_v2_account_id(),
+        request_with_path.app_public_key.clone(),
+        &request_with_path.domain_id,
+        sk,
+        &request_with_path.derivation_path,
+    );
+
+    derive_confidential_key_and_validate(
+        account,
+        &request,
+        Some((&respond_request_with_path, &respond_response_with_path)),
+        &contract,
+        attested_account,
+    )
+    .await?;
 
     Ok(())
 }
@@ -136,7 +164,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
-        path: "".to_string(),
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -214,7 +242,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let contract_balance = contract.view_account().await?.balance;
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
-        path: "".to_string(),
+        derivation_path: "".to_string(),
         app_public_key,
         domain_id: DomainId::default(),
     };
@@ -276,7 +304,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
-        path: "".to_string(),
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
