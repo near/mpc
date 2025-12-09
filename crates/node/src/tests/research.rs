@@ -325,8 +325,7 @@ fn signature_network_research_best_case() {
             entropy,
         );
         let rerandomized_presignature =
-            RerandomizedPresignOutput::rerandomize_presign(&presign_out, &rerand_args)
-                .unwrap();
+            RerandomizedPresignOutput::rerandomize_presign(&presign_out, &rerand_args).unwrap();
         let derived_public_key = tweak
             .derive_verifying_key(&public_key)
             .to_element()

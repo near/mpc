@@ -49,7 +49,12 @@ pub fn test_generate_dummy_keyshares() {
     );
 }
 
-pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(epoch_id: u64, domain_id: u64, attempt_id: u64, rng: &mut R,) -> Keyshare {
+pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(
+    epoch_id: u64,
+    domain_id: u64,
+    attempt_id: u64,
+    rng: &mut R,
+) -> Keyshare {
     let key = TestGenerators::new(2, 2)
         .make_ecdsa_keygens(rng)
         .into_iter()
@@ -105,7 +110,11 @@ impl KeysetBuilder {
         }
     }
 
-    pub fn new_populated<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(epoch_id: u64, num_keys: u64, rng: &mut R) -> Self {
+    pub fn new_populated<R: CryptoRng + RngCore + SeedableRng + Send + 'static>(
+        epoch_id: u64,
+        num_keys: u64,
+        rng: &mut R,
+    ) -> Self {
         let mut res = KeysetBuilder::new(epoch_id);
         for domain_id in 0..num_keys {
             let attempt_id: u64 = rand::random();
