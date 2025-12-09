@@ -57,7 +57,7 @@ use std::{
 };
 use threshold_signatures::{
     blstrs,
-    confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve, ElementG1, BLS12381SHA256},
+    confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve, BLS12381SHA256},
     ecdsa as ts_ecdsa, eddsa,
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
@@ -717,7 +717,6 @@ pub fn create_response_ckd(
     let mut hash_input = [0u8; 128];
     hash_input[..96].copy_from_slice(&pk);
     hash_input[96..].copy_from_slice(app_id.as_ref());
-
 
     let big_s = hash_to_curve(&hash_input) * msk;
     let y = ckd::Scalar::random(OsRng);
