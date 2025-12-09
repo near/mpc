@@ -71,7 +71,7 @@ def verify_bls_signature(
     pk = G2Element.from_bytes(bytes(public_key.to_compressed_bytes()))
     sig = G1Element.from_bytes(bytes(signature.to_compressed_bytes()))
     # hash_to_curve
-    # TODO: this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
+    # TODO(#1628): this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
     Hm = G1Element.from_message(message, NEAR_CKD_DOMAIN)
     return sig.pair(G2Element.generator()) == Hm.pair(pk)
 

@@ -22,15 +22,15 @@ show how to use the functionality in the simplest possible setting.
 The cli takes 4 parameters:
 
 - `signer-account-id`: the account that will be used to call the MPC contract.
-  Notice the secret obtained at the end is dependent on this value, the same
-  account will always obtain the same secret.
+  Notice the secret obtained at the end is dependent on this value and the derivation path, the same
+  account and derivation path will always obtain the same secret.
 
 - `domain-id`: the domain id in the MPC contract that supports CKD. The associated scheme of such
 domain is `Bls12381`.
 
 - `mpc-ckd-public-key`: the public key associated to the domain id above.
 
-- `path`: derivation path for the confidential key, which allows a single account to request several keys
+- `derivation-path`: derivation path for the confidential key, which allows a single account to request several keys
 
 Notice that both the latter two parameters can be obtained by querying the state
 of the MPC contract.

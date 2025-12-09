@@ -8,7 +8,7 @@ pub mod types {
     pub use crypto::{
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
-    pub use primitives::{AccountId, AppId};
+    pub use primitives::{AccountId, CkdAppId};
     pub use updates::{ProposedUpdates, Update, UpdateHash};
 
     mod attestation;

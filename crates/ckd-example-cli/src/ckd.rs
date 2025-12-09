@@ -7,7 +7,7 @@ use sha2::Sha256;
 use sha3::{Digest, Sha3_256};
 use std::io::{self, Write as _};
 
-use contract_interface::types::{AccountId, AppId, Bls12381G1PublicKey, Bls12381G2PublicKey};
+use contract_interface::types::{AccountId, Bls12381G1PublicKey, Bls12381G2PublicKey, CkdAppId};
 
 use crate::{
     cli::Args,
@@ -20,12 +20,12 @@ const OUTPUT_SECRET_SIZE: usize = 32;
 
 pub fn run(args: Args) -> Result<()> {
     let account_id = AccountId(args.signer_account_id);
-    let app_id = derive_app_id(&account_id, &args.path);
+    let app_id = derive_app_id(&account_id, &args.derivation_path);
 
     let (ephemeral_private_key, ephemeral_public_key) = generate_ephemeral_key(&mut OsRng);
 
     let ckd_params = CKDRequestArgs::new(CKDArgs::new(
-        args.path,
+        args.derivation_path,
         ephemeral_public_key,
         args.domain_id,
     ));
@@ -86,7 +86,7 @@ pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective
         return false;
     }
 
-    // TODO: this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
+    // TODO(#1628): this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
     let base1 = G1Projective::hash_to_curve(app_id, NEAR_CKD_DOMAIN, &[]).into();
     let base2 = G2Affine::generator();
 
@@ -97,7 +97,7 @@ fn decrypt_secret_and_verify(
     big_y: Bls12381G1PublicKey,
     big_c: Bls12381G1PublicKey,
     private_key: Scalar,
-    app_id: AppId,
+    app_id: CkdAppId,
     mpc_public_key: Bls12381G2PublicKey,
 ) -> Result<[u8; BLS12381G1_PUBLIC_KEY_SIZE]> {
     let big_y = convert_to_blstrs_type_g1(big_y)?;
@@ -140,7 +140,7 @@ fn derive_strong_key(
 
 const APP_ID_DERIVATION_PREFIX: &str = "near-mpc v0.1.0 app_id derivation:";
 
-pub fn derive_app_id(account_id: &AccountId, path: &str) -> AppId {
+pub fn derive_app_id(account_id: &AccountId, path: &str) -> CkdAppId {
     let derivation_path = format!("{APP_ID_DERIVATION_PREFIX}{},{}", account_id.0, path);
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);

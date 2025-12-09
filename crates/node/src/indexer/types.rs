@@ -60,14 +60,14 @@ impl ChainSignatureRequest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChainCKDRequest {
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: dtos::AppId,
+    pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
 
 impl ChainCKDRequest {
     pub fn new(
         app_public_key: dtos::Bls12381G1PublicKey,
-        app_id: dtos::AppId,
+        app_id: dtos::CkdAppId,
         domain_id: DomainId,
     ) -> Self {
         ChainCKDRequest {

@@ -42,4 +42,4 @@ pub struct AccountId(pub String);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
-pub struct AppId(pub [u8; 32]);
+pub struct CkdAppId(pub [u8; 32]);

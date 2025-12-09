@@ -40,7 +40,7 @@ pub struct SignArgs {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct CKDArgs {
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: dtos::AppId,
+    pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
 

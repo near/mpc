@@ -119,7 +119,7 @@ impl CKDProvider {
 pub struct CKDComputation {
     pub keygen_output: KeygenOutput,
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: dtos::AppId,
+    pub app_id: dtos::CkdAppId,
 }
 
 #[async_trait::async_trait]

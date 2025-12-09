@@ -43,7 +43,7 @@ pub struct FakeMpcContractState {
     config: dtos::InitConfig,
     env: Environment,
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
-    pub pending_ckds: BTreeMap<dtos::AppId, CKDId>,
+    pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub migration_service: NodeMigrations,
 }
 

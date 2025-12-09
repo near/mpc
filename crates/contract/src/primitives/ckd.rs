@@ -16,7 +16,7 @@ pub struct CKDRequestArgs {
 pub struct CKDRequest {
     /// The app ephemeral public key
     pub app_public_key: dtos::Bls12381G1PublicKey,
-    pub app_id: dtos::AppId,
+    pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
 }
 
@@ -25,9 +25,9 @@ impl CKDRequest {
         app_public_key: dtos::Bls12381G1PublicKey,
         domain_id: DomainId,
         predecessor_id: &AccountId,
-        path: &str,
+        derivation_path: &str,
     ) -> Self {
-        let app_id = derive_app_id(predecessor_id, path);
+        let app_id = derive_app_id(predecessor_id, derivation_path);
         Self {
             app_public_key,
             app_id,
