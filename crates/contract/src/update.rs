@@ -151,8 +151,6 @@ impl ProposedUpdates {
     }
 
     /// Propose an update given the new contract code and/or config.
-    ///
-    /// Returns UpdateId
     pub fn propose(&mut self, update: Update) -> UpdateId {
         let bytes_used = bytes_used(&update);
 
@@ -162,30 +160,25 @@ impl ProposedUpdates {
         id
     }
 
-    /// Removes any existing vote by `voter`.
-    /// Sets `voter`s vote for the update with the given id.
+    /// Records a vote by [`AccountId`] for the update with the given [`UpdateId`].
     ///
-    /// Returns `Some(votes)` if the given [`UpdateId`] exists, otherwise `None`.
+    /// If the voter has already voted for a different update, that vote is automatically removed
+    /// (each participant can only vote for one update at a time).
+    ///
+    /// Returns `Some(votes)` containing all accounts that have voted for this update if the
+    /// [`UpdateId`] exists, otherwise returns `None` if the update doesn't exist.
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<HashSet<AccountId>> {
-        // If participant has voted before, remove their vote
         self.remove_vote(&voter);
-        // ensure that the update exists (we only check entries, not loading the full update)
+
         if !self.entries.contains_key(id) {
             env::log_str(&format!("no update with id {:?} exists", id));
             return None;
         };
-        // record the vote
+
         self.vote_by_participant.insert(voter.clone(), *id);
 
-        // Reconstruct votes from vote_by_participant
-        let votes: HashSet<AccountId> = self
-            .vote_by_participant
-            .iter()
-            .filter(|(_, update_id)| *update_id == id)
-            .map(|(account, _)| account.clone())
-            .collect();
-
-        Some(votes)
+        // Reconstruct votes for this update (O(n), but n is typically small)
+        Some(self.votes_for_update(id))
     }
 
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
@@ -222,7 +215,7 @@ impl ProposedUpdates {
         Some(promise)
     }
 
-    /// Removes the vote for [`AccountId`]
+    /// Removes the vote for [`AccountId`].
     pub fn remove_vote(&mut self, voter: &AccountId) {
         self.vote_by_participant.remove(voter);
     }
@@ -257,15 +250,14 @@ impl ProposedUpdates {
     pub fn all_updates(&self) -> Vec<(UpdateId, &Update, HashSet<AccountId>)> {
         self.entries
             .iter()
-            .map(|(update_id, entry)| {
-                let votes: HashSet<AccountId> = self
-                    .vote_by_participant
-                    .iter()
-                    .filter(|(_, id)| *id == update_id)
-                    .map(|(account, _)| account.clone())
-                    .collect();
-                (*update_id, &entry.update, votes)
-            })
+            .map(|(update_id, entry)| (*update_id, &entry.update, self.votes_for_update(update_id)))
+            .collect()
+    }
+
+    fn votes_for_update(&self, id: &UpdateId) -> HashSet<AccountId> {
+        self.vote_by_participant
+            .iter()
+            .filter_map(|(account, update_id)| (update_id == id).then(|| account.clone()))
             .collect()
     }
 
