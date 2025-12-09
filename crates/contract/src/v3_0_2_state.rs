@@ -8,7 +8,9 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::store::LookupMap;
+use near_account_id::AccountId;
+use near_sdk::store::{IterableMap, LookupMap};
+use std::collections::HashSet;
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -18,7 +20,7 @@ use crate::{
     },
     state::ProtocolContractState,
     tee::tee_state::TeeState,
-    update::ProposedUpdates,
+    update::{Update, UpdateId},
 };
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -40,6 +42,54 @@ impl From<Config> for crate::config::Config {
     }
 }
 
+/// Old version of UpdateEntry that included votes
+#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+struct UpdateEntry {
+    update: Update,
+    votes: HashSet<AccountId>,
+    bytes_used: u128,
+}
+
+/// Old version of ProposedUpdates that stored votes in each UpdateEntry
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct ProposedUpdates {
+    vote_by_participant: IterableMap<AccountId, UpdateId>,
+    entries: IterableMap<UpdateId, UpdateEntry>,
+    id: UpdateId,
+}
+
+impl From<ProposedUpdates> for crate::update::ProposedUpdates {
+    fn from(old: ProposedUpdates) -> Self {
+        let mut new_proposed_updates = crate::update::ProposedUpdates::default();
+
+        // Copy the ID
+        new_proposed_updates.migration_set_id(old.id);
+
+        // Migrate entries and votes
+        for (update_id, old_entry) in old.entries.iter() {
+            // Create new UpdateEntry without votes
+            new_proposed_updates.migration_insert_entry(
+                *update_id,
+                old_entry.update.clone(),
+                old_entry.bytes_used,
+            );
+
+            // Store votes separately in votes_by_update
+            if !old_entry.votes.is_empty() {
+                new_proposed_updates.migration_insert_votes(*update_id, old_entry.votes.clone());
+            }
+        }
+
+        // Copy vote_by_participant
+        for (participant, update_id) in old.vote_by_participant.iter() {
+            new_proposed_updates
+                .migration_insert_vote_by_participant(participant.clone(), *update_id);
+        }
+
+        new_proposed_updates
+    }
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -58,7 +108,7 @@ impl From<MpcContract> for crate::MpcContract {
             protocol_state: value.protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
-            proposed_updates: value.proposed_updates,
+            proposed_updates: value.proposed_updates.into(),
             config: value.config.into(),
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,

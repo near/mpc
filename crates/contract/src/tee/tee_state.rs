@@ -338,6 +338,7 @@ impl TeeState {
             .get(tls_public_key)
             .map(|(node_id, _)| node_id.clone())
     }
+
     /// Returns true if the caller has at least one participant entry
     /// whose TLS key matches an attested node belonging to the caller account.
     ///

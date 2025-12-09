@@ -122,9 +122,8 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-struct UpdateEntry {
+pub struct UpdateEntry {
     update: Update,
-    votes: HashSet<AccountId>,
     bytes_used: u128,
 }
 
@@ -132,6 +131,7 @@ struct UpdateEntry {
 #[derive(Debug)]
 pub struct ProposedUpdates {
     vote_by_participant: IterableMap<AccountId, UpdateId>,
+    votes_by_update: IterableMap<UpdateId, HashSet<AccountId>>,
     entries: IterableMap<UpdateId, UpdateEntry>,
     id: UpdateId,
 }
@@ -140,6 +140,7 @@ impl Default for ProposedUpdates {
     fn default() -> Self {
         Self {
             vote_by_participant: IterableMap::new(StorageKey::ProposedUpdatesVotesV2),
+            votes_by_update: IterableMap::new(StorageKey::ProposedUpdatesVotesByUpdate),
             entries: IterableMap::new(StorageKey::ProposedUpdatesEntriesV2),
             id: UpdateId::default(),
         }
@@ -158,14 +159,8 @@ impl ProposedUpdates {
         let bytes_used = bytes_used(&update);
 
         let id = self.id.generate();
-        self.entries.insert(
-            id,
-            UpdateEntry {
-                update,
-                votes: HashSet::new(),
-                bytes_used,
-            },
-        );
+        self.entries.insert(id, UpdateEntry { update, bytes_used });
+        self.votes_by_update.insert(id, HashSet::new());
 
         id
     }
@@ -177,15 +172,16 @@ impl ProposedUpdates {
     pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<&HashSet<AccountId>> {
         // If participant has voted before, remove their vote
         self.remove_vote(&voter);
-        // ensure that the update the participant is voting for exists
-        let Some(update_entry) = self.entries.get_mut(id) else {
+        // ensure that the update exists (we only check entries, not loading the full update)
+        if !self.entries.contains_key(id) {
             env::log_str(&format!("no update with id {:?} exists", id));
             return None;
         };
         // record the vote
         self.vote_by_participant.insert(voter.clone(), *id);
-        update_entry.votes.insert(voter);
-        Some(&update_entry.votes)
+        let votes = self.votes_by_update.get_mut(id)?;
+        votes.insert(voter);
+        Some(votes)
     }
 
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
@@ -193,6 +189,7 @@ impl ProposedUpdates {
 
         // Clear all entries as they might be no longer valid
         self.entries.clear();
+        self.votes_by_update.clear();
         self.vote_by_participant.clear();
 
         let mut promise = Promise::new(env::current_account_id());
@@ -225,8 +222,8 @@ impl ProposedUpdates {
     /// Removes the vote for [`AccountId`]
     pub fn remove_vote(&mut self, voter: &AccountId) {
         if let Some(previous_id) = self.vote_by_participant.remove(voter) {
-            if let Some(entry) = self.entries.get_mut(&previous_id) {
-                entry.votes.remove(voter);
+            if let Some(votes) = self.votes_by_update.get_mut(&previous_id) {
+                votes.remove(voter);
             } else {
                 env::log_str("inconsistent voting set");
             }
@@ -263,8 +260,33 @@ impl ProposedUpdates {
     pub fn all_updates(&self) -> Vec<(UpdateId, &Update, &HashSet<AccountId>)> {
         self.entries
             .iter()
-            .map(|(update_id, entry)| (*update_id, &entry.update, &entry.votes))
+            .filter_map(|(update_id, entry)| {
+                self.votes_by_update
+                    .get(update_id)
+                    .map(|votes| (*update_id, &entry.update, votes))
+            })
             .collect()
+    }
+
+    // Migration helper methods
+    #[doc(hidden)]
+    pub fn migration_set_id(&mut self, id: UpdateId) {
+        self.id = id;
+    }
+
+    #[doc(hidden)]
+    pub fn migration_insert_entry(&mut self, id: UpdateId, update: Update, bytes_used: u128) {
+        self.entries.insert(id, UpdateEntry { update, bytes_used });
+    }
+
+    #[doc(hidden)]
+    pub fn migration_insert_votes(&mut self, id: UpdateId, votes: HashSet<AccountId>) {
+        self.votes_by_update.insert(id, votes);
+    }
+
+    #[doc(hidden)]
+    pub fn migration_insert_vote_by_participant(&mut self, participant: AccountId, id: UpdateId) {
+        self.vote_by_participant.insert(participant, id);
     }
 }
 
@@ -295,12 +317,20 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 mod tests {
     use crate::{
         primitives::test_utils::gen_account_id,
-        update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
+        update::{bytes_used, ProposedUpdates, Update, UpdateId},
     };
     use near_account_id::AccountId;
     use near_sdk::Gas;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
     use test_utils::contract_types::dummy_config;
+
+    /// Test-specific version of UpdateEntry that includes votes for easier testing
+    #[derive(Debug, PartialEq, Clone)]
+    struct TestUpdateEntry {
+        update: Update,
+        votes: HashSet<AccountId>,
+        bytes_used: u128,
+    }
 
     /// Helper struct for testing. Similar to [`ProposedUpdates`] but with native types and no
     /// ephemeral vote count by participant id.
@@ -308,8 +338,8 @@ mod tests {
     struct TestUpdateVotes {
         /// the next update id
         id: u64,
-        /// map from update id to UpdateEntry
-        entries: BTreeMap<u64, UpdateEntry>,
+        /// map from update id to TestUpdateEntry (which includes votes)
+        entries: BTreeMap<u64, TestUpdateEntry>,
     }
 
     /// Ensure that the default [`ProposedUpdates`] struct is empty.
@@ -341,7 +371,7 @@ mod tests {
             id: 1, // next update id must have been incremented
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update.clone(),
                     votes: HashSet::new(), // ensure proposal does not come with a vote
                     bytes_used,
@@ -394,7 +424,7 @@ mod tests {
             entries: BTreeMap::from([
                 (
                     0,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_0.clone(),
                         votes: HashSet::from([account_id.clone()]),
                         bytes_used,
@@ -402,7 +432,7 @@ mod tests {
                 ),
                 (
                     1,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_1.clone(),
                         votes: HashSet::new(),
                         bytes_used,
@@ -437,7 +467,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update_0.clone(),
                     votes: HashSet::new(),
                     bytes_used,
@@ -482,7 +512,7 @@ mod tests {
             entries: BTreeMap::from([
                 (
                     0,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_0.clone(),
                         votes: HashSet::new(),
                         bytes_used,
@@ -490,7 +520,7 @@ mod tests {
                 ),
                 (
                     1,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_1.clone(),
                         votes: HashSet::from([account_id.clone()]),
                         bytes_used,
@@ -527,7 +557,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update_0.clone(),
                     votes: HashSet::new(),
                     bytes_used,
@@ -568,7 +598,7 @@ mod tests {
             entries: BTreeMap::from([
                 (
                     0,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_0.clone(),
                         votes: HashSet::from([account_0.clone()]),
                         bytes_used: bytes_used(&update_0),
@@ -576,7 +606,7 @@ mod tests {
                 ),
                 (
                     1,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_1.clone(),
                         votes: HashSet::from([account_1.clone()]),
                         bytes_used: bytes_used(&update_1),
@@ -584,7 +614,7 @@ mod tests {
                 ),
                 (
                     2,
-                    UpdateEntry {
+                    TestUpdateEntry {
                         update: update_2.clone(),
                         votes: HashSet::from([account_2.clone()]),
                         bytes_used: bytes_used(&update_2),
@@ -615,11 +645,24 @@ mod tests {
         fn try_from(value: &ProposedUpdates) -> anyhow::Result<Self> {
             let id = value.id.0;
 
-            // Convert entries: IterableMap<UpdateId, UpdateEntry> → BTreeMap<u64, UpdateEntry>
-            let entries: BTreeMap<u64, UpdateEntry> = value
+            // Convert entries: IterableMap<UpdateId, UpdateEntry> → BTreeMap<u64, TestUpdateEntry>
+            // and merge in votes from votes_by_update
+            let entries: BTreeMap<u64, TestUpdateEntry> = value
                 .entries
                 .iter()
-                .map(|(id, entry)| (id.0, entry.clone()))
+                .map(|(update_id, entry)| {
+                    let votes = value
+                        .votes_by_update
+                        .get(update_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let test_entry = TestUpdateEntry {
+                        update: entry.update.clone(),
+                        votes,
+                        bytes_used: entry.bytes_used,
+                    };
+                    (update_id.0, test_entry)
+                })
                 .collect();
 
             // Record all votes
@@ -719,7 +762,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update.clone(),
                     votes: HashSet::from([acc1]),
                     bytes_used,
@@ -758,7 +801,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update.clone(),
                     votes: HashSet::from([acc0.clone(), acc1.clone()]),
                     bytes_used,
@@ -794,7 +837,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update.clone(),
                     votes: HashSet::from([acc0.clone(), acc1.clone(), acc2.clone()]),
                     bytes_used,
@@ -812,7 +855,7 @@ mod tests {
             id: 1,
             entries: BTreeMap::from([(
                 0,
-                UpdateEntry {
+                TestUpdateEntry {
                     update: update.clone(),
                     votes: HashSet::from([acc0, acc2]),
                     bytes_used,
