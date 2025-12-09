@@ -268,6 +268,9 @@ jobs:
       - name: Build mpc node
         run: cargo build -p mpc-node --release --features=network-hardship-simulation
 
+      - name: Build backup-cli
+        run: cargo build -p backup-cli --release
+
       - name: Install cargo-binstall
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
