@@ -339,7 +339,7 @@ fn try_get_ckd_args(
         ckd_args.request.app_public_key,
         ckd_args.request.domain_id,
         &receipt.predecessor_id,
-        &ckd_args.request.path,
+        &ckd_args.request.derivation_path,
     );
 
     tracing::info!(

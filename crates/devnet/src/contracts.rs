@@ -117,7 +117,7 @@ pub fn make_actions(call: ContractActionCall) -> ActionCall {
                 "request_app_private_key",
                 &serde_json::to_vec(&CKDArgs {
                     request: CKDRequestArgs {
-                        path: "".to_string(),
+                        derivation_path: "".to_string(),
                         domain_id: args.domain_config.id,
                         app_public_key: mpc_contract::utils::random_app_public_key(),
                     },
