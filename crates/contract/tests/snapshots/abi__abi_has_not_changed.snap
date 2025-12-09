@@ -1192,17 +1192,6 @@ expression: abi
             }
           }
         },
-        "AppId": {
-          "description": "AppId for CKD",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
-        },
         "AttemptId": {
           "type": "integer",
           "format": "uint64",
@@ -1274,7 +1263,7 @@ expression: abi
           ],
           "properties": {
             "app_id": {
-              "$ref": "#/definitions/AppId"
+              "$ref": "#/definitions/CkdAppId"
             },
             "app_public_key": {
               "description": "The app ephemeral public key",
@@ -1293,18 +1282,18 @@ expression: abi
           "type": "object",
           "required": [
             "app_public_key",
-            "domain_id",
-            "path"
+            "derivation_path",
+            "domain_id"
           ],
           "properties": {
             "app_public_key": {
               "$ref": "#/definitions/Bls12381G1PublicKey"
             },
+            "derivation_path": {
+              "type": "string"
+            },
             "domain_id": {
               "$ref": "#/definitions/DomainId"
-            },
-            "path": {
-              "type": "string"
             }
           }
         },
@@ -1322,6 +1311,17 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
+        },
+        "CkdAppId": {
+          "description": "AppId for CKD",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
         },
         "Collateral": {
           "type": "object",
