@@ -17,5 +17,4 @@ pub enum StorageKey {
     PendingCKDRequests,
     BackupServicesInfo,
     NodeMigrations,
-    ProposedUpdatesVotesByUpdate,
 }
