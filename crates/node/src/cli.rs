@@ -576,39 +576,42 @@ impl Cli {
                     desired_triples_to_buffer,
                     desired_presignatures_to_buffer,
                     desired_responder_keys_per_participant,
-                    migrating_nodes.clone(),
+                    migrating_nodes,
                 )
                 .await
             }
         }
     }
 
+    fn duplicate_migrating_accounts(
+        mut accounts: Vec<AccountId>,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<Vec<AccountId>> {
+        for i in migrating_nodes {
+            let p: AccountId = accounts
+                .get(*i)
+                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for accounts", i))?
+                .clone();
+
+            accounts.push(p);
+        }
+        Ok(accounts)
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn run_generate_test_configs(
         &self,
         output_dir: &str,
-        mut participants: Vec<AccountId>,
-        mut responders: Vec<AccountId>,
+        participants: Vec<AccountId>,
+        responders: Vec<AccountId>,
         threshold: usize,
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
         desired_responder_keys_per_participant: usize,
-        migrating_nodes: Vec<usize>,
+        migrating_nodes: &[usize],
     ) -> anyhow::Result<()> {
-        for i in migrating_nodes {
-            let p = participants
-                .get(i)
-                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for participants", i))?
-                .clone();
-
-            let r = responders
-                .get(i)
-                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for responders", i))?
-                .clone();
-
-            participants.push(p);
-            responders.push(r);
-        }
+        let participants = Self::duplicate_migrating_accounts(participants, migrating_nodes)?;
+        let responders = Self::duplicate_migrating_accounts(responders, migrating_nodes)?;
 
         let p2p_key_pairs = participants
             .iter()
