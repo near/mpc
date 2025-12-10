@@ -57,7 +57,7 @@ pub async fn keygen_computation_inner(
     );
 
     let (keyshare, public_key) = match domain.scheme {
-        SignatureScheme::Secp256k1 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let keyshare =
                 EcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = keyshare.public_key.into_contract_interface_type();
