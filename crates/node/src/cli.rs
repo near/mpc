@@ -578,7 +578,6 @@ impl Cli {
                     desired_responder_keys_per_participant,
                     migrating_nodes,
                 )
-                .await
             }
         }
     }
@@ -599,7 +598,7 @@ impl Cli {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn run_generate_test_configs(
+    fn run_generate_test_configs(
         &self,
         output_dir: &str,
         participants: Vec<AccountId>,

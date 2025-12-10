@@ -96,7 +96,7 @@ mod tests {
         // Given
         let test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
         let client = MpcP2PClient::new(
-            test_setup.target_address,
+            test_setup.target_address.parse().unwrap(),
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
             test_setup.backup_encryption_key,
@@ -131,7 +131,7 @@ mod tests {
         // Given
         let mut test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
         let client = MpcP2PClient::new(
-            test_setup.target_address,
+            test_setup.target_address.parse().unwrap(),
             test_setup.server_key.verifying_key(),
             test_setup.client_key,
             test_setup.backup_encryption_key,
