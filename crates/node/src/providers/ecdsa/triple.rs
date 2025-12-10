@@ -5,7 +5,7 @@ use crate::db::SecretDB;
 use crate::metrics;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{participants_from_triples, ParticipantId, UniqueId};
+use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::providers::HasParticipants;
@@ -277,8 +277,22 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
     }
 }
 
+pub fn participants_from_triples(
+    triple0: &TripleGenerationOutput,
+    triple1: &TripleGenerationOutput,
+) -> Vec<ParticipantId> {
+    triple0
+        .1
+        .participants
+        .iter()
+        .copied()
+        .filter(|p| triple1.1.participants.contains(p))
+        .map(|p| p.into())
+        .collect()
+}
+
 #[cfg(test)]
-mod tests_many {
+mod tests {
     use super::{ManyTripleGenerationComputation, PairedTriple};
     use crate::cli::LogFormat;
     use crate::network::computation::MpcLeaderCentricComputation;

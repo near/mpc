@@ -9,6 +9,7 @@
 pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
+pub mod robust_ecdsa;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;

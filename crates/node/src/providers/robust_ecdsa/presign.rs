@@ -1,25 +1,26 @@
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
-use crate::config::PresignatureConfig;
+use crate::config::{MpcConfig, PresignatureConfig};
 use crate::db::SecretDB;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
-use crate::providers::ecdsa::triple::participants_from_triples;
-use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
+use crate::providers::robust_ecdsa::{
+    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
+};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
 use crate::{metrics, tracking};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Duration;
-use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
-use threshold_signatures::ecdsa::ot_based_ecdsa::{
+use threshold_signatures::ecdsa::robust_ecdsa::{
     presign::presign, PresignArguments, PresignOutput,
 };
 use threshold_signatures::participants::Participant;
@@ -58,7 +59,7 @@ impl Deref for PresignatureStorage {
     }
 }
 
-impl EcdsaSignatureProvider {
+impl RobustEcdsaSignatureProvider {
     /// Continuously generates presignatures, trying to maintain the desired number of
     /// presignatures available, using the desired number of concurrent computations as
     /// specified in the config. Most of the time, this process would be waiting for
@@ -71,9 +72,8 @@ impl EcdsaSignatureProvider {
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
         client: Arc<MeshNetworkClient>,
-        threshold: usize,
+        mpc_config: Arc<MpcConfig>,
         config: Arc<PresignatureConfig>,
-        triple_store: Arc<TripleStorage>,
         domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
         keygen_out: KeygenOutput,
@@ -83,10 +83,18 @@ impl EcdsaSignatureProvider {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
             presignature_store: presignature_store.clone(),
             in_flight_generations: in_flight_generations.num_in_flight_atomic(),
-            waiting_for_triples: AtomicBool::new(false),
         });
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
+
+        let running_participants: Vec<_> = mpc_config
+            .participants
+            .participants
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        let threshold = mpc_config.participants.threshold as usize;
+
         loop {
             progress_tracker.update_progress();
             metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
@@ -104,15 +112,22 @@ impl EcdsaSignatureProvider {
                 < config.concurrency * 2
             {
                 let id = presignature_store.generate_and_reserve_id();
-                progress_tracker.set_waiting_for_triples(true);
-                let (paired_triple_id, (triple0, triple1)) = triple_store.take_owned().await;
-                progress_tracker.set_waiting_for_triples(false);
-                let participants = participants_from_triples(&triple0, &triple1);
-                let task_id = EcdsaTaskId::Presignature {
-                    id,
-                    domain_id,
-                    paired_triple_id,
+                let participants = match client.select_random_active_participants_including_me(
+                    threshold,
+                    &running_participants,
+                ) {
+                    Ok(participants) => participants,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Can't choose active participants for a triple: {}. Sleeping.",
+                            e
+                        );
+                        // that should not happen often, so sleeping here is okay
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
                 };
+                let task_id = RobustEcdsaTaskId::Presignature { id, domain_id };
                 let channel = client.new_channel_for_task(task_id, participants.clone())?;
                 let in_flight = in_flight_generations.in_flight(1);
                 let parallelism_limiter = parallelism_limiter.clone();
@@ -124,8 +139,6 @@ impl EcdsaSignatureProvider {
                     let _semaphore_guard = parallelism_limiter.acquire().await?;
                     let presignature = PresignComputation {
                         threshold,
-                        triple0,
-                        triple1,
                         keygen_out,
                     }
                     .perform_leader_centric_computation(
@@ -160,15 +173,12 @@ impl EcdsaSignatureProvider {
         channel: NetworkTaskChannel,
         id: UniqueId,
         domain_id: DomainId,
-        paired_triple_id: UniqueId,
     ) -> anyhow::Result<()> {
         let domain_data = self.domain_data(domain_id)?;
 
         FollowerPresignComputation {
             threshold: self.mpc_config.participants.threshold as usize,
             keygen_out: domain_data.keyshare,
-            triple_store: self.triple_store.clone(),
-            paired_triple_id,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
         }
@@ -200,8 +210,6 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// and for passive participants.
 pub struct PresignComputation {
     threshold: usize,
-    triple0: TripleGenerationOutput,
-    triple1: TripleGenerationOutput,
     keygen_out: KeygenOutput,
 }
 
@@ -219,11 +227,10 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             &cs_participants,
             me.into(),
             PresignArguments {
-                triple0: self.triple0,
-                triple1: self.triple1,
                 keygen_out: self.keygen_out,
                 threshold: self.threshold,
             },
+            OsRng,
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
         let presignature = run_protocol("presign", channel, protocol).await?;
@@ -240,9 +247,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
     pub threshold: usize,
-    pub paired_triple_id: UniqueId,
     pub keygen_out: KeygenOutput,
-    pub triple_store: Arc<TripleStorage>,
 
     pub out_presignature_store: Arc<PresignatureStorage>,
     pub out_presignature_id: UniqueId,
@@ -251,11 +256,8 @@ pub struct FollowerPresignComputation {
 #[async_trait::async_trait]
 impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
-        let (triple0, triple1) = self.triple_store.take_unowned(self.paired_triple_id)?;
         let presignature = PresignComputation {
             threshold: self.threshold,
-            triple0,
-            triple1,
             keygen_out: self.keygen_out,
         }
         .compute(channel)
@@ -279,31 +281,16 @@ struct PresignatureGenerationProgressTracker {
     desired_presignatures_to_buffer: usize,
     presignature_store: Arc<PresignatureStorage>,
     in_flight_generations: Arc<AtomicUsize>,
-    waiting_for_triples: AtomicBool,
 }
 
 impl PresignatureGenerationProgressTracker {
-    pub fn set_waiting_for_triples(&self, waiting: bool) {
-        self.waiting_for_triples
-            .store(waiting, std::sync::atomic::Ordering::Relaxed);
-        self.update_progress();
-    }
-
     pub fn update_progress(&self) {
         tracking::set_progress(&format!(
-            "Presignatures: available: {}/{}; generating: {}{}",
+            "Presignatures: available: {}/{}; generating: {}",
             self.presignature_store.num_owned(),
             self.desired_presignatures_to_buffer,
             self.in_flight_generations
                 .load(std::sync::atomic::Ordering::Relaxed),
-            if self
-                .waiting_for_triples
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
-                " (waiting for triples)"
-            } else {
-                ""
-            }
         ))
     }
 }
