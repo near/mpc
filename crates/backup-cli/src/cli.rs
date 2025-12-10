@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use near_account_id::AccountId;
 
 #[derive(clap::Parser, Debug)]
@@ -44,25 +46,26 @@ pub struct RegisterArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct GetKeysharesArgs {
-    /// URL of the MPC node to retrieve keyshares from.
+    /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_url: String,
+    pub mpc_node_address: SocketAddr,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
-
+    /// hex encryption key
     #[arg(long, env)]
-    pub backup_encryption_key: String,
+    pub backup_encryption_key_hex: String,
 }
 
 #[derive(clap::Args, Debug)]
 pub struct PutKeysharesArgs {
-    /// URL of the MPC node to upload keyshares to.
+    /// host address of the MPC node to retrieve keyshares from (`host:port`).
     #[arg(long, env)]
-    pub mpc_node_url: String,
+    pub mpc_node_address: SocketAddr,
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
+    /// hex encryption key
     #[arg(long, env)]
-    pub backup_encryption_key: String,
+    pub backup_encryption_key_hex: String,
 }
