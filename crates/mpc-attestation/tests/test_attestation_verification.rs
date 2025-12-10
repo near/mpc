@@ -1,6 +1,6 @@
+use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use rstest::rstest;
 use test_utils::attestation::{
     account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
 };
@@ -8,26 +8,33 @@ use test_utils::attestation::{
 use mpc_attestation::attestation::{Attestation, MockAttestation};
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 
-#[rstest]
-#[case(MockAttestation::Valid, Ok(()))]
-#[case(
-    MockAttestation::Invalid,
-    Err(VerificationError::InvalidMockAttestation)
-)]
-fn test_mock_attestation_verify(
-    #[case] local_attestation: MockAttestation,
-    #[case] expected_quote_verification_result: Result<(), VerificationError>,
-) {
+#[test]
+fn valid_mock_attestation_succeeds_verification() {
+    let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+
     let timestamp_s = 0u64;
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
-    let attestation = Attestation::Mock(local_attestation);
+    assert_matches!(
+        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[]),
+        Ok(_)
+    );
+}
 
-    assert_eq!(
-        attestation.verify(report_data.into(), timestamp_s, &[], &[]),
-        expected_quote_verification_result
+#[test]
+fn invalid_mock_attestation_fails_verification() {
+    let valid_attestation = Attestation::Mock(MockAttestation::Invalid);
+
+    let timestamp_s = 0u64;
+    let tls_key = p2p_tls_key();
+    let account_key = account_key();
+    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+
+    assert_matches!(
+        valid_attestation.verify(report_data.into(), timestamp_s, &[], &[]),
+        Err(VerificationError::InvalidMockAttestation)
     );
 }
 

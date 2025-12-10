@@ -1,5 +1,5 @@
+use alloc::vec::Vec;
 use attestation::{
-    TcbInfo,
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
     measurements::ExpectedMeasurements,
@@ -7,11 +7,9 @@ use attestation::{
 };
 
 pub use attestation::attestation::{DstackAttestation, VerificationError};
-
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::ops::Deref as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -23,8 +21,64 @@ const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Attestation {
-    Dstack(DstackAttestation),
     Mock(MockAttestation),
+    Dstack(DstackAttestation),
+}
+
+#[derive(Clone, Debug)]
+pub enum ValidatedAttestation {
+    Mock(MockAttestation),
+    Dstack(ValidatedDstackAttestation),
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatedDstackAttestation {
+    mpc_image_hash: MpcDockerImageHash,
+    launcher_compose_hash: LauncherDockerComposeHash,
+    // TODO: This timestamp can not come from the contract,
+    // but should be extracted from the certificate itself.
+    creation_time_stamp_seonds: u64,
+}
+
+impl ValidatedAttestation {
+    pub fn re_verify(
+        &self,
+        timestamp_seconds: u64,
+        max_attestation_age_seconds: u64,
+        allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
+        allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
+    ) -> Result<(), VerificationError> {
+        match self {
+            Self::Dstack(ValidatedDstackAttestation {
+                mpc_image_hash,
+                launcher_compose_hash,
+                creation_time_stamp_seonds,
+            }) => {
+                let expiry_time = creation_time_stamp_seonds + max_attestation_age_seconds;
+                let attestation_has_expired = expiry_time >= timestamp_seconds;
+
+                if attestation_has_expired {
+                    return Err(VerificationError::Custom(
+                        "The attestation has expired.".to_string(),
+                    ));
+                }
+
+                let () = verify_mpc_hash(mpc_image_hash, allowed_mpc_docker_image_hashes)?;
+                let () = verify_launcher_compose_hash(
+                    launcher_compose_hash,
+                    allowed_launcher_docker_compose_hashes,
+                )?;
+
+                Ok(())
+            }
+            Self::Mock(mock_attestation) => verify_mock_attestation(
+                mock_attestation,
+                allowed_mpc_docker_image_hashes,
+                allowed_launcher_docker_compose_hashes,
+                timestamp_seconds,
+            ),
+        }
+    }
 }
 
 impl Attestation {
@@ -34,100 +88,130 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    ) -> Result<(), VerificationError> {
-        let attestation = match self {
+    ) -> Result<ValidatedAttestation, VerificationError> {
+        match self {
             Self::Dstack(dstack_attestation) => {
                 // Makes MPC related attestation verification first
-                if allowed_mpc_docker_image_hashes.is_empty() {
-                    return Err(VerificationError::Custom(
-                        "the allowed mpc image hashes list is empty".to_string(),
-                    ));
-                }
-                if allowed_launcher_docker_compose_hashes.is_empty() {
-                    return Err(VerificationError::Custom(
-                        "the allowed mpc laucher compose hashes list is empty".to_string(),
-                    ));
-                }
-                self.verify_mpc_hash(
-                    &dstack_attestation.tcb_info,
-                    allowed_mpc_docker_image_hashes,
-                )?;
-                self.verify_launcher_compose_hash(
-                    &dstack_attestation.tcb_info,
+                let mpc_image_hash: MpcDockerImageHash = {
+                    let mpc_image_hash_payload = &dstack_attestation
+                        .tcb_info
+                        .get_single_event(MPC_IMAGE_HASH_EVENT)?
+                        .event_payload;
+
+                    let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
+                        .map_err(|err| {
+                            VerificationError::Custom(format!(
+                                "provided mpc image is not hex encoded: {:?}",
+                                err
+                            ))
+                        })?;
+                    let mpc_image_hash_bytes: [u8; 32] =
+                        mpc_image_hash_bytes.try_into().map_err(|_| {
+                            VerificationError::Custom(
+                                "The provided MPC image hash is not 32 bytes".to_string(),
+                            )
+                        })?;
+                    MpcDockerImageHash::from(mpc_image_hash_bytes)
+                };
+
+                let () = verify_mpc_hash(&mpc_image_hash, allowed_mpc_docker_image_hashes)?;
+
+                let launcher_compose_hash: LauncherDockerComposeHash = {
+                    let app_compose: AppCompose =
+                        serde_json::from_str(&dstack_attestation.tcb_info.app_compose)
+                            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
+
+                    let launcher_compose_hash_bytes: [u8; 32] =
+                        Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
+
+                    LauncherDockerComposeHash::from(launcher_compose_hash_bytes)
+                };
+
+                let () = verify_launcher_compose_hash(
+                    &launcher_compose_hash,
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                dstack_attestation
+                // Embedded JSON assets
+                const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
+                // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
+                const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
+
+                let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
+                    TCB_INFO_STRING_PROD,
+                    TCB_INFO_STRING_DEV,
+                ])
+                .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
+
+                dstack_attestation.verify(
+                    expected_report_data,
+                    timestamp_seconds,
+                    &accepted_measurements,
+                )?;
+
+                Ok(ValidatedAttestation::Dstack(ValidatedDstackAttestation {
+                    mpc_image_hash,
+                    launcher_compose_hash,
+                    creation_time_stamp_seonds: timestamp_seconds,
+                }))
             }
             Self::Mock(mock_attestation) => {
                 // Override attestation verification for this case
-                return verify_mock_attestation(
+                verify_mock_attestation(
                     mock_attestation,
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
                     timestamp_seconds,
-                );
+                )?;
+
+                Ok(ValidatedAttestation::Mock(mock_attestation.clone()))
             }
-        };
+        }
+    }
+}
 
-        // Embedded JSON assets
-        const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
-        // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
-
-        let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
-            TCB_INFO_STRING_PROD,
-            TCB_INFO_STRING_DEV,
-        ])
-        .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
-
-        attestation.verify(
-            expected_report_data,
-            timestamp_seconds,
-            &accepted_measurements,
-        )
+/// Verifies MPC node image hash is in allowed list.
+fn verify_mpc_hash(
+    image_hash: &MpcDockerImageHash,
+    allowed_hashes: &[MpcDockerImageHash],
+) -> Result<(), VerificationError> {
+    if allowed_hashes.is_empty() {
+        return Err(VerificationError::Custom(
+            "the allowed mpc image hashes list is empty".to_string(),
+        ));
     }
 
-    /// Verifies MPC node image hash is in allowed list.
-    fn verify_mpc_hash(
-        &self,
-        tcb_info: &TcbInfo,
-        allowed_hashes: &[MpcDockerImageHash],
-    ) -> Result<(), VerificationError> {
-        let event = tcb_info.get_single_event(MPC_IMAGE_HASH_EVENT)?;
-
-        allowed_hashes
-            .iter()
-            .any(|hash| hash.as_hex() == *event.event_payload)
-            .or_err(|| {
-                VerificationError::Custom(format!(
-                    "MPC image hash {} is not in the allowed hashes list",
-                    event.event_payload.clone()
-                ))
-            })
+    let image_hash_is_allowed = allowed_hashes.contains(image_hash);
+    if !image_hash_is_allowed {
+        return Err(VerificationError::Custom(format!(
+            "MPC image hash {:?} is not in the allowed hashes list",
+            image_hash
+        )));
     }
 
-    fn verify_launcher_compose_hash(
-        &self,
-        tcb_info: &TcbInfo,
-        allowed_hashes: &[LauncherDockerComposeHash],
-    ) -> Result<(), VerificationError> {
-        let app_compose: AppCompose = serde_json::from_str(&tcb_info.app_compose)
-            .map_err(|e| VerificationError::AppComposeParsing(e.to_string()))?;
+    Ok(())
+}
 
-        let launcher_bytes: [u8; 32] =
-            Sha256::digest(app_compose.docker_compose_file.as_bytes()).into();
-
-        allowed_hashes
-            .iter()
-            .any(|hash| hash.deref() == &launcher_bytes)
-            .or_err(|| {
-                VerificationError::Custom(format!(
-                    "launcher compose hash {} is not in the allowed hashes list",
-                    hex::encode(launcher_bytes.as_ref(),)
-                ))
-            })
+fn verify_launcher_compose_hash(
+    launcher_compose_hash: &LauncherDockerComposeHash,
+    allowed_hashes: &[LauncherDockerComposeHash],
+) -> Result<(), VerificationError> {
+    if allowed_hashes.is_empty() {
+        return Err(VerificationError::Custom(
+            "the allowed mpc laucher compose hashes list is empty".to_string(),
+        ));
     }
+
+    let launcher_compose_hash_is_allowed = allowed_hashes.contains(launcher_compose_hash);
+
+    if !launcher_compose_hash_is_allowed {
+        return Err(VerificationError::Custom(format!(
+            "MPC launcher compose hash {:?} is not in the allowed hashes list",
+            launcher_compose_hash
+        )));
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
@@ -141,9 +225,8 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<MpcDockerImageHash>,
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
-
-        /// Unix time stamp for when this attestation expires.  
-        expiry_time_stamp_seconds: Option<u64>,
+        /// Unix time stamp for when this attestation was created.  
+        creation_time_stamp_seconds: Option<u64>,
     },
 }
 
@@ -159,7 +242,7 @@ pub(crate) fn verify_mock_attestation(
         MockAttestation::WithConstraints {
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
-            expiry_time_stamp_seconds: expiry_timestamp_seconds,
+            creation_time_stamp_seconds: expiry_timestamp_seconds,
         } => {
             if let Some(hash) = mpc_docker_image_hash {
                 if allowed_mpc_docker_image_hashes.is_empty() {
