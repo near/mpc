@@ -1,17 +1,16 @@
-pub mod key_generation;
+// pub mod key_generation;
 pub mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
-pub mod key_resharing;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::SignatureProvider;
+use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 
@@ -131,7 +130,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        Self::run_key_generation_client_internal(threshold, channel).await
+        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
     }
 
     async fn run_key_resharing_client(
@@ -141,7 +140,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        Self::run_key_resharing_client_internal(
+        EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_threshold,
             my_share,
             public_key,
