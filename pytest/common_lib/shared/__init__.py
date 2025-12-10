@@ -4,7 +4,7 @@ import os
 import pathlib
 import subprocess
 import sys
-from typing import List, cast
+from typing import cast
 
 import base58
 import yaml
@@ -123,7 +123,7 @@ def deserialize_key(account_id: str, key: str) -> Key:
 def sign_create_account_with_multiple_access_keys_tx(
     creator_key: Key,
     new_account_id: str,
-    keys: List[Key],
+    keys: list[Key],
     nonce: int,
     block_hash: bytes,
 ) -> bytes:
@@ -154,7 +154,7 @@ def sign_create_account_with_multiple_access_keys_tx(
 def sign_add_access_keys_tx(
     creator_key: Key,
     account_id: str,
-    keys: List[Key],
+    keys: list[Key],
     nonce: int,
     block_hash: bytes,
     contract_id: str,
@@ -306,6 +306,7 @@ def generate_mpc_configs(
         p2p_public_key_raw = participant[
             "p2p_public_key"
         ]  # note: this is not really how it is done in production...
+        p2p_public_key: str = serialize_key(p2p_public_key_raw)
 
         my_addr = participant["address"]
         my_port = participant["port"]
@@ -319,8 +320,6 @@ def generate_mpc_configs(
         migration_address = SocketAddress.from_config(config.get("migration_web_ui"))
 
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
-
-        p2p_public_key: str = serialize_key(p2p_public_key_raw)
 
         with open(secrets_file_path) as file:
             participant_secrets = json.load(file)
@@ -364,7 +363,7 @@ def adjust_indexing_shard(near_node: LocalNode):
     print(f"Updated near node config: {path}")
 
 
-def move_mpc_configs(observers: List[LocalNode]):
+def move_mpc_configs(observers: list[LocalNode]):
     """
     Rust code generates a folder per each participant, we want to move everything in one place
     Name of each folder is just a node index, e.g. 0, 1, 2, ...

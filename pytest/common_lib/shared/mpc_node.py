@@ -47,6 +47,9 @@ class SocketAddress:
     def __str__(self) -> str:
         return f"{self.host}:{self.port}"
 
+    def __repr__(self) -> str:
+        return f"{self.host}:{self.port}"
+
 
 class MpcNode(NearAccount):
     """
@@ -126,7 +129,7 @@ class MpcNode(NearAccount):
         self.secret_store_key = secret_store_key
 
     def migration_state_from_web(self) -> MigrationState:
-        response = requests.get(f"http://{str(self.web_address)}/debug/migrations")
+        response = requests.get(f"http://{self.web_address}/debug/migrations")
         (_, contract_btree_map) = json.loads(response.text)
         return parse_migration_state(contract_btree_map)
 

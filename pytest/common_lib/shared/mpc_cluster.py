@@ -558,9 +558,7 @@ class MpcCluster:
         res = node.send_txn_and_check_success(tx)
         return json.dumps(
             json.loads(
-                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
-                    "utf-8"
-                )
+                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode()
             )
         )
 
