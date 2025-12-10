@@ -48,7 +48,6 @@ pub async fn run_command(args: cli::Args) {
                     home_dir.as_path(),
                 )
                 .await
-                .inspect_err(|e| eprintln!("Failed to create storage: {e}"))
                 .expect("failed to create secrets storage");
 
             let secrets = ports::SecretsRepository::load_secrets(&secrets_storage)
@@ -166,7 +165,6 @@ pub async fn get_keyshares(
     let keyshare = mpc_p2p_client
         .get_keyshares(&keyset)
         .await
-        .inspect_err(|err| eprintln!("{err:?}"))
         .expect("fail to get key shares");
     keyshares_storage
         .store_keyshares(&keyshare)

@@ -570,13 +570,13 @@ impl Cli {
                 );
                 self.run_generate_test_configs(
                     output_dir,
-                    participants.to_vec(),
-                    responders.to_vec(),
+                    participants.clone(),
+                    responders.clone(),
                     threshold,
                     desired_triples_to_buffer,
                     desired_presignatures_to_buffer,
                     desired_responder_keys_per_participant,
-                    migrating_nodes.to_vec(),
+                    migrating_nodes.clone(),
                 )
                 .await
             }
@@ -610,29 +610,6 @@ impl Cli {
             responders.push(r);
         }
 
-        self._run_generate_test_configs(
-            output_dir,
-            &participants,
-            &responders,
-            threshold,
-            desired_triples_to_buffer,
-            desired_presignatures_to_buffer,
-            desired_responder_keys_per_participant,
-        )
-        .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn _run_generate_test_configs(
-        &self,
-        output_dir: &str,
-        participants: &[AccountId],
-        responders: &[AccountId],
-        threshold: usize,
-        desired_triples_to_buffer: usize,
-        desired_presignatures_to_buffer: usize,
-        desired_responder_keys_per_participant: usize,
-    ) -> anyhow::Result<()> {
         let p2p_key_pairs = participants
             .iter()
             .enumerate()
@@ -646,7 +623,7 @@ impl Cli {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let configs = generate_test_p2p_configs(
-            participants,
+            &participants,
             threshold,
             PortSeed::CLI_FOR_PYTEST,
             Some(p2p_key_pairs),

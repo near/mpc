@@ -47,8 +47,12 @@ def test_migration_service():
 
     NUM_MPC_NODES = 2
     MIGRATING_NODES = [0, 1]
+    NUM_RESPOND_ACC = 1
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        NUM_MPC_NODES, 1, load_mpc_contract(), migrating_nodes=MIGRATING_NODES
+        NUM_MPC_NODES,
+        NUM_RESPOND_ACC,
+        load_mpc_contract(),
+        migrating_nodes=MIGRATING_NODES,
     )
     assert len(mpc_nodes) == NUM_MPC_NODES + len(MIGRATING_NODES)
 
@@ -114,7 +118,6 @@ def test_migration_service():
         backup_service.put_keyshares(mpc_node=target_node)
 
         # 5. assert migration was successful
-        time.sleep(20)
         n_try = 0
         while n_try < 50:
             if running_state_matches_participant_key(

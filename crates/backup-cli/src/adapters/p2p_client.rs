@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_node::{config::AesKey256, keyshare::Keyshare, migration_service::web::client};
@@ -17,7 +19,7 @@ pub enum Error {
 }
 
 pub struct MpcP2PClient {
-    mpc_node_address: String,
+    mpc_node_address: SocketAddr,
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
     backup_encryption_key: AesKey256,
@@ -25,7 +27,7 @@ pub struct MpcP2PClient {
 
 impl MpcP2PClient {
     pub fn new(
-        mpc_node_address: String,
+        mpc_node_address: SocketAddr,
         mpc_node_p2p_key: VerifyingKey,
         p2p_private_key: SigningKey,
         backup_encryption_key: AesKey256,

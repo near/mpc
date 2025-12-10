@@ -415,7 +415,7 @@ def start_cluster_with_mpc(
     create_txs = []
     access_txs = []
     mpc_nodes: list[MpcNode] = []
-    pytest_keys_per_node = [[] for _ in range(len(configs))]
+    pytest_keys_per_node = [[] for _ in configs]
     secondary_near_account: NearAccount | None = None
 
     num_candidates = len(configs) - len(migrating_nodes)
