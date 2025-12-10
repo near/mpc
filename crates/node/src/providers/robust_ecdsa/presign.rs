@@ -62,12 +62,9 @@ impl Deref for PresignatureStorage {
 impl RobustEcdsaSignatureProvider {
     /// Continuously generates presignatures, trying to maintain the desired number of
     /// presignatures available, using the desired number of concurrent computations as
-    /// specified in the config. Most of the time, this process would be waiting for
-    /// more triples to be generated, as presignature generation is significantly faster
-    /// than triple generation.
+    /// specified in the config.
     ///
-    /// Generated triples will be written to `presignature_store` as owned triples. Note
-    /// that this function does not take care of the passive side of presignature
+    /// Note that this function does not take care of the passive side of presignature
     /// generation (i.e. other participants of the computations this function initiates),
     /// so that needs to be separately handled.
     pub(super) async fn run_background_presignature_generation(
