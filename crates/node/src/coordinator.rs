@@ -536,7 +536,7 @@ where
                     clock.clone(),
                     secret_db.clone(),
                     sign_request_store.clone(),
-                    ecdsa_keyshares.clone(),
+                    ecdsa_keyshares,
                 )?);
 
                 let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
@@ -546,7 +546,7 @@ where
                     clock,
                     secret_db,
                     sign_request_store.clone(),
-                    robust_ecdsa_keyshares.clone(),
+                    robust_ecdsa_keyshares,
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -559,14 +559,14 @@ where
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
-                    running_mpc_config.clone().into(),
+                    running_mpc_config.into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
-                    config_file.clone().into(),
+                    config_file.into(),
                     network_client,
                     sign_request_store,
                     ckd_request_store,
