@@ -90,7 +90,11 @@ impl RobustEcdsaSignatureProvider {
             .iter()
             .map(|p| p.id)
             .collect();
+
         let threshold = mpc_config.participants.threshold as usize;
+
+        // TODO: we need to guarantee this is less than the total number of participants in the contract
+        anyhow::ensure!(running_participants.len() >= 2 * threshold + 1);
 
         loop {
             progress_tracker.update_progress();
@@ -110,7 +114,7 @@ impl RobustEcdsaSignatureProvider {
             {
                 let id = presignature_store.generate_and_reserve_id();
                 let participants = match client.select_random_active_participants_including_me(
-                    threshold,
+                    2 * threshold + 1,
                     &running_participants,
                 ) {
                     Ok(participants) => participants,

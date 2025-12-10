@@ -2,8 +2,8 @@ use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;
 use crate::tests::{
-    request_signature_and_await_response, IntegrationTestSetup, DEFAULT_MAX_PROTOCOL_WAIT_TIME,
-    DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    request_ckd_and_await_response, request_signature_and_await_response, IntegrationTestSetup,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
@@ -18,7 +18,7 @@ use super::DEFAULT_BLOCK_TIME;
 async fn test_key_resharing_simple() {
     init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 3;
+    const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -37,15 +37,37 @@ async fn test_key_resharing_simple() {
     let mut initial_participants = setup.participants.clone();
     initial_participants.participants.pop();
 
-    let domain = DomainConfig {
+    let domain0 = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
     };
 
+    let domain1 = DomainConfig {
+        id: DomainId(1),
+        scheme: SignatureScheme::Ed25519,
+    };
+
+    let domain2 = DomainConfig {
+        id: DomainId(2),
+        scheme: SignatureScheme::Bls12381,
+    };
+
+    let domain3 = DomainConfig {
+        id: DomainId(3),
+        scheme: SignatureScheme::V2Secp256k1,
+    };
+
+    let domains = vec![
+        domain0.clone(),
+        domain1.clone(),
+        domain2.clone(),
+        domain3.clone(),
+    ];
+
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(initial_participants);
-        contract.add_domains(vec![domain.clone()]);
+        contract.add_domains(domains.clone());
     }
 
     let _runs = setup
@@ -58,7 +80,7 @@ async fn test_key_resharing_simple() {
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
-        &domain,
+        &domain0,
         DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await
@@ -85,14 +107,32 @@ async fn test_key_resharing_simple() {
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user1",
-        &domain,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    for domain in domains {
+        match domain.scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
+                assert!(request_signature_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some());
+            }
+            SignatureScheme::Bls12381 => {
+                assert!(request_ckd_and_await_response(
+                    &mut setup.indexer,
+                    "user1",
+                    &domain,
+                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
+                )
+                .await
+                .is_some());
+            }
+        }
+    }
 }
 
 // Test two nodes joining and two old nodes leaving.

@@ -14,8 +14,8 @@ use near_time::Clock;
 #[tokio::test]
 async fn test_basic_cluster() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    const NUM_PARTICIPANTS: usize = 5;
+    const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
@@ -45,6 +45,11 @@ async fn test_basic_cluster() {
         scheme: SignatureScheme::Bls12381,
     };
 
+    let signature_domain_robust_ecdsa = DomainConfig {
+        id: DomainId(3),
+        scheme: SignatureScheme::V2Secp256k1,
+    };
+
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
@@ -52,6 +57,7 @@ async fn test_basic_cluster() {
             signature_domain_ecdsa.clone(),
             signature_domain_eddsa.clone(),
             ckd_domain.clone(),
+            signature_domain_robust_ecdsa.clone(),
         ]);
     }
 
@@ -92,6 +98,15 @@ async fn test_basic_cluster() {
         &mut setup.indexer,
         "user0",
         &ckd_domain,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME
+    )
+    .await
+    .is_some());
+
+    assert!(request_signature_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &signature_domain_robust_ecdsa,
         DEFAULT_MAX_SIGNATURE_WAIT_TIME
     )
     .await

@@ -14,7 +14,7 @@ use near_time::Clock;
 #[tokio::test]
 async fn test_basic_multidomain() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 4;
+    const NUM_PARTICIPANTS: usize = 7;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
@@ -42,6 +42,10 @@ async fn test_basic_multidomain() {
         DomainConfig {
             id: DomainId(2),
             scheme: SignatureScheme::Bls12381,
+        },
+        DomainConfig {
+            id: DomainId(3),
+            scheme: SignatureScheme::V2Secp256k1,
         },
     ];
 
@@ -97,16 +101,20 @@ async fn test_basic_multidomain() {
     {
         let new_domains = vec![
             DomainConfig {
-                id: DomainId(3),
+                id: DomainId(4),
                 scheme: SignatureScheme::Ed25519,
             },
             DomainConfig {
-                id: DomainId(4),
+                id: DomainId(5),
                 scheme: SignatureScheme::Secp256k1,
             },
             DomainConfig {
-                id: DomainId(5),
+                id: DomainId(6),
                 scheme: SignatureScheme::Bls12381,
+            },
+            DomainConfig {
+                id: DomainId(7),
+                scheme: SignatureScheme::V2Secp256k1,
             },
         ];
         let mut contract = setup.indexer.contract_mut().await;
