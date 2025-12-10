@@ -356,6 +356,10 @@ impl MpcClient {
                                         "Incorrect protocol for domain: {:?}",
                                         signature_attempt.request.domain.clone()
                                     )),
+                                    Some(SignatureScheme::V2Secp256k1) => {
+                                        // TODO(#1640)
+                                        Err(anyhow::anyhow!("Not implemented"))
+                                    }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
                                         signature_attempt.request.domain.clone()
@@ -434,6 +438,10 @@ impl MpcClient {
                                         Ok(response)
                                     }
                                     Some(SignatureScheme::Secp256k1) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        ckd_attempt.request.domain_id.clone()
+                                    )),
+                                    Some(SignatureScheme::V2Secp256k1) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
