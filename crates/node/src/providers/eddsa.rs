@@ -170,6 +170,7 @@ impl PublicKeyConversion for ed25519_dalek::VerifyingKey {
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng as _;
     use threshold_signatures::frost_ed25519::VerifyingKey;
 
     use crate::{
@@ -178,9 +179,10 @@ mod tests {
     };
     #[test]
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         use threshold_signatures::test_utils::TestGenerators;
         let x = TestGenerators::new(4, 3)
-            .make_eddsa_keygens()
+            .make_eddsa_keygens(&mut rng)
             .values()
             .next()
             .unwrap()

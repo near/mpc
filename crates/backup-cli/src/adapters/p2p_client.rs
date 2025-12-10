@@ -84,6 +84,7 @@ impl ports::P2PClient for MpcP2PClient {
 mod tests {
     use mpc_node::migration_service::web::test_utils;
     use mpc_node::p2p::testing::PortSeed;
+    use rand::SeedableRng as _;
 
     use crate::adapters::p2p_client::MpcP2PClient;
     use crate::ports::P2PClient;
@@ -91,6 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
         let client = MpcP2PClient::new(
@@ -99,7 +101,7 @@ mod tests {
             test_setup.client_key,
             test_setup.backup_encryption_key,
         );
-        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         let keyset = keyset_builder.keyset();
 
         test_setup
@@ -126,6 +128,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_put_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let mut test_setup = test_utils::setup(PortSeed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
         let client = MpcP2PClient::new(
@@ -134,7 +137,7 @@ mod tests {
             test_setup.client_key,
             test_setup.backup_encryption_key,
         );
-        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         let keyshares = keyset_builder.keyshares().to_vec();
 
         // When

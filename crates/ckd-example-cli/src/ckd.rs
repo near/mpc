@@ -86,8 +86,8 @@ pub fn verify(public_key: &G2Projective, app_id: &[u8], signature: &G1Projective
         return false;
     }
 
-    // TODO(#1628): this will need to be updated once ts repo with https://github.com/near/threshold-signatures/pull/246 is merged
-    let base1 = G1Projective::hash_to_curve(app_id, NEAR_CKD_DOMAIN, &[]).into();
+    let hash_input = [public_key.to_compressed().as_slice(), app_id].concat();
+    let base1 = G1Projective::hash_to_curve(&hash_input, NEAR_CKD_DOMAIN, &[]).into();
     let base2 = G2Affine::generator();
 
     blstrs::pairing(&base1, &element2).eq(&blstrs::pairing(&element1, &base2))
