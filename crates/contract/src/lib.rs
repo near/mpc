@@ -606,9 +606,12 @@ impl MpcContract {
             proposed_participant_attestation,
         );
 
-        // Both participants and non-participants can propose. Non-participants must pay for the
-        // storage they use; participants do not.
-        if self.voter_account().is_err() || is_new_attestation {
+        let caller_is_not_participant = self.voter_account().is_err();
+
+        let attestation_storage_must_be_paid_by_caller =
+            is_new_attestation || caller_is_not_participant;
+
+        if attestation_storage_must_be_paid_by_caller {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
             let attached = env::attached_deposit();
