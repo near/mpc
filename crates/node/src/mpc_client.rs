@@ -142,6 +142,13 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
+        let robust_ecdsa_background_tasks = tracking::spawn(
+            "robust_ecdsa_background_tasks",
+            self.robust_ecdsa_signature_provider
+                .clone()
+                .spawn_background_tasks(),
+        );
+
         let eddsa_background_tasks = tracking::spawn(
             "eddsa_background_tasks",
             self.eddsa_signature_provider
@@ -157,6 +164,7 @@ impl MpcClient {
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
+        let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;

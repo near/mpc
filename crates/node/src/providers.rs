@@ -18,6 +18,7 @@ use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
+pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
 
 /// The interface that defines the requirements for a signing schema to be correctly used in the code.
