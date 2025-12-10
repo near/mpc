@@ -3,6 +3,7 @@ name = "mpc-attestation"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
+build = "build.rs"
 
 [dependencies]
 attestation = { workspace = true }
@@ -14,6 +15,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
+
+[build-dependencies]
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 dcap-qvl = { workspace = true }

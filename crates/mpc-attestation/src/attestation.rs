@@ -6,6 +6,16 @@ use attestation::{
     report_data::ReportData,
 };
 
+include!(concat!(env!("OUT_DIR"), "/measurements_generated.rs"));
+
+pub struct ExpectedMeasurementsSet;
+
+impl ExpectedMeasurementsSet {
+    pub fn all() -> &'static [ExpectedMeasurements] {
+        EXPECTED_MEASUREMENTS
+    }
+}
+
 pub use attestation::attestation::{DstackAttestation, VerificationError};
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
@@ -70,21 +80,25 @@ impl Attestation {
             }
         };
 
+        //todo remove this
         // Embedded JSON assets
-        const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
+        // const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
         // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
+        // TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
 
-        let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
-            TCB_INFO_STRING_PROD,
-            TCB_INFO_STRING_DEV,
-        ])
-        .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
+        //todo remove this
+        //let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
+        //    TCB_INFO_STRING_PROD,
+        //    TCB_INFO_STRING_DEV,
+        //])
+        // .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
+
+        let accepted_measurements = ExpectedMeasurementsSet::all();
 
         attestation.verify(
             expected_report_data,
             timestamp_seconds,
-            &accepted_measurements,
+            accepted_measurements,
         )
     }
 
