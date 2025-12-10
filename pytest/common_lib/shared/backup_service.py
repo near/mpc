@@ -1,5 +1,5 @@
 import atexit
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 import os
 import shutil
@@ -38,11 +38,8 @@ class BackupServiceSecrets:
         return f"ed25519:{pk_b58}"
 
 
-@dataclass
 class BackupService:
-    home_dir: str = field(init=False)
-
-    def __post_init__(self):
+    def __init__(self):
         base_dir = os.path.join(MPC_REPO_DIR / "pytest" / ".backup-services")
         os.makedirs(base_dir, exist_ok=True)
         self.home_dir = tempfile.mkdtemp(prefix="instance_", dir=base_dir)
