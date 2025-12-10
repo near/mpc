@@ -357,7 +357,7 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
 
 pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
     match domain_scheme {
-        SignatureScheme::Secp256k1 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
@@ -1181,7 +1181,9 @@ pub async fn make_and_submit_requests(
 
     for (domain, shared_secret_key) in domains.iter().zip(shared_secret_keys.iter()) {
         match domain.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
                 for message in &signature_request_payloads {
                     let (payload, signature_request, signature_response) =
                         create_message_payload_and_response(
