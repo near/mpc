@@ -123,8 +123,8 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
-# Last commit on main branch as of 30-10-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "53f928c9e7d21f5858fd928b7524c8ce8bf8b854" }
+# Last commit on main branch as of 09-12-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "1982f1b4de944d6d3011ee3f4ebbecfc9dd31cd9" }
 tikv-jemallocator = "0.5.4"
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }

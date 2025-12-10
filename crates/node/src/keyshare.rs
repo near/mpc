@@ -473,6 +473,7 @@ pub mod tests {
         domain::DomainId,
         key_state::{AttemptId, EpochId, KeyEventId},
     };
+    use rand::SeedableRng as _;
 
     use super::{generate_key_storage, KeyshareStorage};
     use crate::keyshare::{
@@ -482,6 +483,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_key_storage() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let (mut storage, _tempdir) = generate_key_storage().await;
 
         let mut keyset = KeysetBuilder::new(0);
@@ -494,10 +496,10 @@ pub mod tests {
         assert!(&loaded0.is_empty());
 
         // Store some keyshares.
-        let key_1_epoch_0_non_final = generate_dummy_keyshare(0, 1, 1);
-        let (key_1_epoch_0, key_1_epoch_0_alternate) = generate_dummy_keyshares(0, 1, 2);
-        let (key_2_epoch_0, key_2_epoch_0_alternate) = generate_dummy_keyshares(0, 2, 1);
-        let key_2_epoch_0_final = generate_dummy_keyshare(0, 2, 2);
+        let key_1_epoch_0_non_final = generate_dummy_keyshare(0, 1, 1, &mut rng);
+        let (key_1_epoch_0, key_1_epoch_0_alternate) = generate_dummy_keyshares(0, 1, 2, &mut rng);
+        let (key_2_epoch_0, key_2_epoch_0_alternate) = generate_dummy_keyshares(0, 2, 1, &mut rng);
+        let key_2_epoch_0_final = generate_dummy_keyshare(0, 2, 2, &mut rng);
 
         {
             // Before starting the good path, let's test that start_generating_key fails if called
@@ -577,8 +579,8 @@ pub mod tests {
             key_id: KeyEventId::new(EpochId::new(1), DomainId(1), AttemptId::new().next()),
             data: key_1_epoch_0_alternate.data.clone(),
         };
-        let key_1_epoch_1_invalid = generate_dummy_keyshare(1, 1, 2);
-        let key_2_epoch_1_invalid = generate_dummy_keyshare(1, 2, 1);
+        let key_1_epoch_1_invalid = generate_dummy_keyshare(1, 1, 2, &mut rng);
+        let key_2_epoch_1_invalid = generate_dummy_keyshare(1, 2, 1, &mut rng);
         let key_2_epoch_1 = Keyshare {
             key_id: KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId::new().next().next()),
             data: key_2_epoch_0_alternate.data.clone(),
@@ -660,7 +662,7 @@ pub mod tests {
             .is_err());
 
         // Add another key to the same epoch via key generation; this is fine.
-        let key_3_epoch_1 = generate_dummy_keyshare(1, 3, 1);
+        let key_3_epoch_1 = generate_dummy_keyshare(1, 3, 1, &mut rng);
         storage
             .start_generating_key(&keyset.generated(), key_3_epoch_1.key_id)
             .await
@@ -699,9 +701,10 @@ pub mod tests {
     /// Import keyshares into an empty KeyshareStorage.
     #[tokio::test]
     async fn test_import_backup_success_empty() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1, key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -721,9 +724,10 @@ pub mod tests {
     /// Ensure we import the missing share from backup.
     #[tokio::test]
     async fn test_import_backup_success_existing_shares_permanent() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -749,8 +753,9 @@ pub mod tests {
     /// Ensure we don't change the KeyshareStorage
     #[tokio::test]
     async fn test_import_backup_failure_existing_shares_permanent() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let (keyshare, alternate_keyshare) = generate_dummy_keyshares(epoch_id, 1, 0);
+        let (keyshare, alternate_keyshare) = generate_dummy_keyshares(epoch_id, 1, 0, &mut rng);
         // ensure that the keyshares are different
         assert!(alternate_keyshare.data != keyshare.data);
         // ensure that the keyshares are for the same public key
@@ -781,9 +786,10 @@ pub mod tests {
     /// Ensure we import the missing share from backup.
     #[tokio::test]
     async fn test_import_backup_success_existing_shares_temporary() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
 
         let expected = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_2]);
 
@@ -813,8 +819,9 @@ pub mod tests {
     /// Ensure we don't change the KeyshareStorage.
     #[tokio::test]
     async fn test_import_backup_failure_existing_shares_temporary() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let (key_1, key_1_alternate) = generate_dummy_keyshares(epoch_id, 1, 0);
+        let (key_1, key_1_alternate) = generate_dummy_keyshares(epoch_id, 1, 0, &mut rng);
         // ensure that the keyshares are different
         assert!(key_1_alternate.data != key_1.data);
         // ensure that the keyshares are for the same public key
@@ -822,7 +829,7 @@ pub mod tests {
             key_1_alternate.public_key().unwrap(),
             key_1.public_key().unwrap()
         );
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let keyset_1 = KeysetBuilder::from_keyshares(epoch_id, &[key_1, key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -855,9 +862,10 @@ pub mod tests {
     /// Import keyshares into KeyshareStorage that has an existing share from a previous epoch.
     #[tokio::test]
     async fn test_import_backup_success_basic_previous_epoch() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let previous_epoch = 0;
         let epoch_id = 1;
-        let (current_key_1, previous_key_1) = generate_dummy_keyshares(epoch_id, 1, 0);
+        let (current_key_1, previous_key_1) = generate_dummy_keyshares(epoch_id, 1, 0, &mut rng);
         // ensure that the keyshares are different
         assert!(previous_key_1.data != current_key_1.data);
         // ensure that the keyshares are for the same public key
@@ -875,7 +883,7 @@ pub mod tests {
             data: previous_key_1.data,
         };
 
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let current_keyset = KeysetBuilder::from_keyshares(epoch_id, &[current_key_1, key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -903,16 +911,17 @@ pub mod tests {
     /// Ensure import fails if the public key of the previous epoch is different.
     #[tokio::test]
     async fn test_import_backup_failure_basic_previous_epoch() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let previous_epoch = 0;
 
         // Populate share for a different public key for the previous epoch in permanent storage.
         let (mut storage, _tempdir) = generate_key_storage().await;
         let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
-        let prevous_key = generate_dummy_keyshare(previous_epoch, 1, 8);
+        let prevous_key = generate_dummy_keyshare(previous_epoch, 1, 8, &mut rng);
         populate_permanent_keystore(prevous_key, &mut previous_keyset, &mut storage).await;
 
         let epoch_id = 1;
-        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let dummy_keyset = KeysetBuilder::from_keyshares(epoch_id, &[dummy_key.clone()]);
 
         assert!(storage
@@ -944,11 +953,12 @@ pub mod tests {
     /// case: same key id, different public keys
     #[tokio::test]
     async fn test_import_backup_failure_inconsistent_backup_public_keys() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
 
-        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let dummy_keyset = KeysetBuilder::from_keyshares(epoch_id, &[dummy_key]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -968,11 +978,12 @@ pub mod tests {
     /// case: backup is missing a keyshare
     #[tokio::test]
     async fn test_import_backup_failure_inconsistent_backup_missing_keyshare() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
 
-        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -994,12 +1005,13 @@ pub mod tests {
     /// case: backup has an extra keyshare
     #[tokio::test]
     async fn test_import_backup_failure_inconsistent_backup_extra_keyshare() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
 
-        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
 
-        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
@@ -1018,14 +1030,15 @@ pub mod tests {
     /// Ensure import fails if it has less keys than wat is stored in the KeyshareStorage.
     #[tokio::test]
     async fn test_import_backup_failure_inconsistent_backup_missing_shares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
 
         let mut expected_keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
         let (mut storage_2, _tempdir) = generate_key_storage().await;
 
-        let key = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         populate_permanent_keystore(key.clone(), &mut expected_keyset, &mut storage_2).await;
-        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         populate_permanent_keystore(key_2, &mut expected_keyset, &mut storage_2).await;
 
         let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
@@ -1051,9 +1064,10 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let key_1 = generate_dummy_keyshare(epoch_id, 2, 3);
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_1 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
         let mut keyset = KeysetBuilder::from_keyshares(epoch_id, &[]);
         let (mut storage, _tempdir) = generate_key_storage().await;
         populate_permanent_keystore(key_1.clone(), &mut keyset, &mut storage).await;
@@ -1068,8 +1082,9 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_keyshare_from_temporary() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
         let (mut storage, _tempdir) = generate_key_storage().await;
         storage
             .start_generating_key(&[], key_0.key_id)
@@ -1094,9 +1109,10 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_keyshare_does_not_mutate_state() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0);
-        let key_1 = generate_dummy_keyshare(epoch_id, 2, 1);
+        let key_0 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_1 = generate_dummy_keyshare(epoch_id, 2, 1, &mut rng);
         let keyset0 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone()]);
         let keyset1 = KeysetBuilder::from_keyshares(epoch_id, &[key_0.clone(), key_1.clone()]);
         let keyset2 = KeysetBuilder::from_keyshares(epoch_id, &[key_1.clone(), key_0.clone()]);

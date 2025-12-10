@@ -39,7 +39,6 @@ use tokio::time::timeout;
 pub mod common;
 
 mod basic_cluster;
-mod benchmark;
 mod changing_participant_details;
 mod faulty;
 mod multidomain;

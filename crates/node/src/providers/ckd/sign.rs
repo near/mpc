@@ -6,7 +6,7 @@ use tokio::time::timeout;
 
 use contract_interface::types as dtos;
 use threshold_signatures::{
-    confidential_key_derivation::{protocol::ckd, ElementG1, KeygenOutput, VerifyingKey},
+    confidential_key_derivation::{protocol::ckd, AppId, ElementG1, KeygenOutput, VerifyingKey},
     participants::Participant,
 };
 
@@ -139,8 +139,8 @@ impl MpcLeaderCentricComputation<Option<(ElementG1, ElementG1)>> for CKDComputat
             cs_participants.as_slice(),
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
-            self.keygen_output.private_share,
-            self.app_id.as_ref(),
+            self.keygen_output,
+            AppId::try_new(self.app_id.as_ref())?,
             self.app_public_key.try_into_node_type()?,
             OsRng,
         )?;
