@@ -177,7 +177,6 @@ impl ProposedUpdates {
 
         self.vote_by_participant.insert(voter.clone(), *id);
 
-        // Reconstruct votes for this update (O(n), but n is typically small)
         Some(self.votes_for_update(id))
     }
 
