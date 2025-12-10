@@ -123,16 +123,16 @@ impl TryFrom<ProposeUpdateArgs> for Update {
     derive(schemars::JsonSchema)
 )]
 pub(crate) struct UpdateEntry {
-    pub(crate) update: Update,
-    pub(crate) bytes_used: u128,
+    pub(super) update: Update,
+    pub(super) bytes_used: u128,
 }
 
 #[near(serializers=[borsh ])]
 #[derive(Debug)]
 pub struct ProposedUpdates {
-    pub(crate) vote_by_participant: IterableMap<AccountId, UpdateId>,
-    pub(crate) entries: IterableMap<UpdateId, UpdateEntry>,
-    pub(crate) id: UpdateId,
+    pub(super) vote_by_participant: IterableMap<AccountId, UpdateId>,
+    pub(super) entries: IterableMap<UpdateId, UpdateEntry>,
+    pub(super) id: UpdateId,
 }
 
 impl Default for ProposedUpdates {
