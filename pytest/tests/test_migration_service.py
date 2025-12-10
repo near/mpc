@@ -3,6 +3,7 @@
 Tests node migrations.
 Starts a cluster with 2 participating nodes and two target nodes.
 Migrates nodes #0 to #2 and node #1 to #3
+Ensures liveness of the network by sending signature and ckd requests
 """
 
 import pathlib
@@ -25,6 +26,24 @@ from common_lib.shared.mpc_node import MpcNode
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
+
+
+def running_state_matches_participant_key_retry(
+    cluster: MpcCluster,
+    account_id: str,
+    expected_pk: str,
+    wait_for_s: int = 50,
+):
+    start = time.time()
+    while time.time() - start < wait_for_s:
+        if running_state_matches_participant_key(cluster, account_id, expected_pk):
+            print("successfully migrated node")
+            return True
+        else:
+            print("waiting for migration to conclude")
+            time.sleep(1)
+
+    return False
 
 
 def running_state_matches_participant_key(
@@ -118,17 +137,9 @@ def test_migration_service():
         backup_service.put_keyshares(mpc_node=target_node)
 
         # 5. assert migration was successful
-        n_try = 0
-        while n_try < 50:
-            if running_state_matches_participant_key(
-                cluster, migrating_node.account_id(), target_node.p2p_public_key
-            ):
-                print("successfully migrated node")
-                break
-            else:
-                print("waiting for migration to conclude")
-                time.sleep(1)
-                n_try += 1
+        assert running_state_matches_participant_key_retry(
+            cluster, migrating_node.account_id(), target_node.p2p_public_key
+        ), "timed out waiting for migration to conclude"
 
         # 6. assert migration is removed from contract state
         expected_migrations.state_by_account[migrating_node.account_id()] = (
@@ -137,6 +148,7 @@ def test_migration_service():
         migrating_node.wait_for_migration_state(expected_migrations)
         target_node.wait_for_migration_state(expected_migrations)
 
+        migrating_node.kill(gentle=False)
         # 7. assert signature requests are handled
         cluster.send_and_await_ckd_requests(1)
         cluster.send_and_await_signature_requests(1)

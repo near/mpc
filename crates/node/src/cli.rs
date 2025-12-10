@@ -586,13 +586,15 @@ impl Cli {
         mut accounts: Vec<AccountId>,
         migrating_nodes: &[usize],
     ) -> anyhow::Result<Vec<AccountId>> {
-        for i in migrating_nodes {
-            let p: AccountId = accounts
-                .get(*i)
-                .ok_or_else(|| anyhow::anyhow!("index {} out of bounds for accounts", i))?
+        for migrating_node_idx in migrating_nodes {
+            let migrating_node_account: AccountId = accounts
+                .get(*migrating_node_idx)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
+                })?
                 .clone();
 
-            accounts.push(p);
+            accounts.push(migrating_node_account);
         }
         Ok(accounts)
     }

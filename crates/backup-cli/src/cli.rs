@@ -52,7 +52,7 @@ pub struct GetKeysharesArgs {
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
-    // hex encryption key
+    /// hex encryption key
     #[arg(long, env)]
     pub backup_encryption_key_hex: String,
 }
@@ -65,7 +65,7 @@ pub struct PutKeysharesArgs {
     /// P2P public key of the MPC node for authentication.
     #[arg(long, env)]
     pub mpc_node_p2p_key: String,
-    // hex encryption key
+    /// hex encryption key
     #[arg(long, env)]
     pub backup_encryption_key_hex: String,
 }

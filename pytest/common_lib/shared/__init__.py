@@ -266,14 +266,14 @@ def generate_mpc_configs(
         str(num_respond_aks),
     )
 
-    if len(migrating_nodes) > 0:
-        cmd = cmd + (
+    if migrating_nodes:
+        cmd += (
             "--migrating-nodes",
             ",".join(f"{i}" for i in migrating_nodes),
         )
 
     if presignatures_to_buffer:
-        cmd = cmd + (
+        cmd += (
             "--desired-presignatures-to-buffer",
             str(presignatures_to_buffer),
         )
