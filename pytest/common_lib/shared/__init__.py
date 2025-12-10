@@ -234,17 +234,6 @@ class ConfigValues:
     backup_key: bytes
 
 
-class Loader(yaml.SafeLoader):
-    pass
-
-
-def block_constructor(loader, node):
-    return loader.construct_mapping(node)
-
-
-Loader.add_constructor("!Block", block_constructor)
-
-
 def generate_mpc_configs(
     num_mpc_nodes: int,
     num_respond_aks: int,
@@ -314,7 +303,7 @@ def generate_mpc_configs(
 
         config_file_path = os.path.join(dot_near, str(idx), CONFIG_YAML)
         with open(config_file_path, "r") as f:
-            config = yaml.load(f, Loader=Loader)
+            config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
 
         web_address = SocketAddress.from_config(config.get("web_ui"))
         migration_address = SocketAddress.from_config(config.get("migration_web_ui"))
