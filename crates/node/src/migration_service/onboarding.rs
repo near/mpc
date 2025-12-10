@@ -281,6 +281,7 @@ async fn wait_for_and_import_keyshares(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use rand::SeedableRng as _;
     use tokio::{
         sync::{watch, RwLock},
         time::timeout,
@@ -314,6 +315,7 @@ mod tests {
     #[tokio::test]
     #[traced_test]
     async fn test_wait_for_and_import_keyshares_success() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let wait_for_log = |msg: String| async move {
             timeout(Duration::from_secs(10), async {
                 loop {
@@ -327,12 +329,12 @@ mod tests {
             .expect("Timed out waiting for log message");
         };
         let (config, _temp_dir) = generate_key_storage_config();
-        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS);
+        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let (keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
         let correct_keyshares = builder.keyshares().to_vec();
-        let wrong_builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS);
+        let wrong_builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let wrong_keyshares = wrong_builder.keyshares().to_vec();
 
         // sanity check
@@ -369,8 +371,9 @@ mod tests {
     #[tokio::test]
     #[traced_test]
     async fn test_wait_for_and_import_keyshares_cancel() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let (config, _temp_dir) = generate_key_storage_config();
-        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS);
+        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
@@ -391,8 +394,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_wait_for_and_import_keyshares_drop_sender() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let (config, _temp_dir) = generate_key_storage_config();
-        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS);
+        let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let keyshare_receiver = {
             let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);

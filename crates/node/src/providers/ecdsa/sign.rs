@@ -159,11 +159,8 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             participants,
             self.entropy,
         );
-        let rerandomized_presignature = RerandomizedPresignOutput::rerandomize_presign(
-            &self.presign_out,
-            &tweak,
-            &rerand_args,
-        )?;
+        let rerandomized_presignature =
+            RerandomizedPresignOutput::rerandomize_presign(&self.presign_out, &rerand_args)?;
 
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,

@@ -42,7 +42,7 @@ pub fn decrypt_and_deserialize_keyshares(
 
 #[cfg(test)]
 mod tests {
-    use rand::RngCore;
+    use rand::{RngCore, SeedableRng as _};
 
     use crate::keyshare::test_utils::KeysetBuilder;
 
@@ -50,9 +50,10 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_cycle() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let keyset = KeysetBuilder::new_populated(10, 100);
+        rng.fill_bytes(&mut key);
+        let keyset = KeysetBuilder::new_populated(10, 100, &mut rng);
         let encrypted_and_serialized = serialize_and_encrypt_keyshares(keyset.keyshares(), &key)
             .expect("serialization must succeed");
         let res = decrypt_and_deserialize_keyshares(encrypted_and_serialized.as_bytes(), &key)

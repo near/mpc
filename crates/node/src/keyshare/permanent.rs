@@ -211,11 +211,13 @@ mod tests {
     use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_contract::primitives::key_state::EpochId;
+    use rand::SeedableRng as _;
     use threshold_signatures::frost_secp256k1::keys::SigningShare;
     use threshold_signatures::frost_secp256k1::VerifyingKey;
 
     #[tokio::test]
     async fn test_load_store() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let temp = tempfile::tempdir().unwrap();
         let encryption_key = [2; 16];
         let backend =
@@ -225,8 +227,8 @@ mod tests {
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
         assert!(storage.load().await.unwrap().is_none());
 
-        let (key_1, key_1_alternate) = generate_dummy_keyshares(1, 0, 1);
-        let (key_2, key_2_alternate) = generate_dummy_keyshares(1, 2, 4);
+        let (key_1, key_1_alternate) = generate_dummy_keyshares(1, 0, 1, &mut rng);
+        let (key_2, key_2_alternate) = generate_dummy_keyshares(1, 2, 4, &mut rng);
         let keys = vec![key_1.clone(), key_2];
         let permanent_keyshare = PermanentKeyshareData {
             epoch_id: EpochId::new(1),
@@ -276,7 +278,7 @@ mod tests {
 
         // Can store current epoch with more domains.
         let mut keys = keys;
-        keys.extend(vec![generate_dummy_keyshare(2, 3, 5)]);
+        keys.extend(vec![generate_dummy_keyshare(2, 3, 5, &mut rng)]);
         let permanent_keyshare = KeysetBuilder::from_keyshares(2, &keys).permanent_key_data();
         storage.store(&permanent_keyshare).await.unwrap();
         let loaded = storage.load().await.unwrap().unwrap();
