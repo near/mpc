@@ -10,7 +10,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_account_id::AccountId;
 use near_sdk::store::{IterableMap, LookupMap};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -19,7 +19,6 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    storage_keys::StorageKey,
     tee::tee_state::TeeState,
     update::{Update, UpdateId},
 };
@@ -43,7 +42,7 @@ impl From<Config> for crate::config::Config {
     }
 }
 
-/// Old version of UpdateEntry that included votes
+/// Old version of [`UpdateEntry`] that included votes.
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 struct UpdateEntry {
     update: Update,
@@ -51,7 +50,7 @@ struct UpdateEntry {
     bytes_used: u128,
 }
 
-/// Old version of ProposedUpdates that stored votes in each UpdateEntry
+/// Old version of [`ProposedUpdates`] that used the old [`UpdateEntry`] with votes.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct ProposedUpdates {
     vote_by_participant: IterableMap<AccountId, UpdateId>,
@@ -61,33 +60,42 @@ pub struct ProposedUpdates {
 
 impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     fn from(old: ProposedUpdates) -> Self {
-        let mut vote_by_participant = IterableMap::new(StorageKey::ProposedUpdatesVotesV2);
-        let mut entries = IterableMap::new(StorageKey::ProposedUpdatesEntriesV2);
+        let mut entries =
+            IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV2);
 
-        // Migrate entries and extract votes from each entry
-        for (update_id, old_entry) in old.entries.iter() {
-            // Insert entry without votes
-            entries.insert(
-                *update_id,
-                crate::update::UpdateEntry {
-                    update: old_entry.update.clone(),
-                    bytes_used: old_entry.bytes_used,
-                },
-            );
-
-            // Extract votes from the old entry and add to vote_by_participant
-            for voter in &old_entry.votes {
-                vote_by_participant.insert(voter.clone(), *update_id);
-            }
+        // Build map of update_id -> voters for validation (single pass)
+        let mut votes_by_update: BTreeMap<UpdateId, HashSet<AccountId>> = BTreeMap::new();
+        for (account, update_id) in old.vote_by_participant.iter() {
+            votes_by_update
+                .entry(*update_id)
+                .or_default()
+                .insert(account.clone());
         }
 
-        // Copy any existing vote_by_participant entries (for completeness)
-        for (participant, update_id) in old.vote_by_participant.iter() {
-            vote_by_participant.insert(participant.clone(), *update_id);
+        for (id, entry) in old.entries.iter() {
+            // Validate votes consistency
+            if !votes_by_update
+                .get(id)
+                .map_or(entry.votes.is_empty(), |v| v == &entry.votes)
+            {
+                near_sdk::env::log_str(&format!(
+                    "Migration warning: Inconsistent votes for update {id:?}. Entry votes: {:?}, vote_by_participant: {:?}",
+                    entry.votes,
+                    votes_by_update.get(id)
+                ));
+            }
+
+            entries.insert(
+                *id,
+                crate::update::UpdateEntry {
+                    update: entry.update.clone(),
+                    bytes_used: entry.bytes_used,
+                },
+            );
         }
 
         Self {
-            vote_by_participant,
+            vote_by_participant: old.vote_by_participant,
             entries,
             id: old.id,
         }
