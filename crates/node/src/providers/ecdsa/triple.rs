@@ -163,7 +163,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) async fn run_triple_generation_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         start: UniqueId,
         count: u32,

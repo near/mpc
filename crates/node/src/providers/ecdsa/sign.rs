@@ -22,7 +22,7 @@ use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
     pub(super) async fn make_signature_leader(
-        self: Arc<Self>,
+        &self,
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
@@ -67,7 +67,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) async fn make_signature_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         id: SignatureId,
         presignature_id: UniqueId,

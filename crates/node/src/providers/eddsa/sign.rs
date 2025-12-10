@@ -7,7 +7,6 @@ use crate::types::SignatureId;
 use anyhow::Context;
 use mpc_contract::primitives::signature::Tweak;
 use rand::rngs::OsRng;
-use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::eddsa::sign::sign;
 use threshold_signatures::eddsa::KeygenOutput;
@@ -19,7 +18,7 @@ use tokio::time::timeout;
 
 impl EddsaSignatureProvider {
     pub(super) async fn make_signature_leader(
-        self: Arc<Self>,
+        &self,
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
@@ -79,7 +78,7 @@ impl EddsaSignatureProvider {
     }
 
     pub(super) async fn make_signature_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         id: SignatureId,
     ) -> anyhow::Result<()> {

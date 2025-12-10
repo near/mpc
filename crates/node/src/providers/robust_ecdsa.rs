@@ -119,7 +119,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     type TaskId = RobustEcdsaTaskId;
 
     async fn make_signature(
-        self: Arc<Self>,
+        &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_signature_leader(id).await
@@ -149,7 +149,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         .await
     }
 
-    async fn process_channel(self: Arc<Self>, channel: NetworkTaskChannel) -> anyhow::Result<()> {
+    async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::RobustEcdsaTaskId(task) => match task {
                 RobustEcdsaTaskId::KeyGeneration { .. } => {

@@ -156,7 +156,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) async fn run_presignature_generation_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         id: UniqueId,
         domain_id: DomainId,

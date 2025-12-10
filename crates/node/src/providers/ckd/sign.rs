@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use rand::rngs::OsRng;
@@ -20,7 +20,7 @@ use crate::{
 
 impl CKDProvider {
     pub(super) async fn make_ckd_leader(
-        self: Arc<Self>,
+        &self,
         id: CKDId,
     ) -> anyhow::Result<((ElementG1, ElementG1), VerifyingKey)> {
         let ckd_request = self.ckd_request_store.get(id).await?;
@@ -75,7 +75,7 @@ impl CKDProvider {
     }
 
     pub(super) async fn make_ckd_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         id: CKDId,
     ) -> anyhow::Result<()> {

@@ -37,7 +37,7 @@ pub trait SignatureProvider {
     /// The implementation should handle the key derivation function (KDF) if needed.
     /// Only the leader should call this function.
     async fn make_signature(
-        self: Arc<Self>,
+        &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)>;
 
@@ -68,7 +68,7 @@ pub trait SignatureProvider {
     /// to the respective `SignatureProvider`.
     /// This function is called during the "normal MPC run",
     /// i.e., it should fail if it receives messages from the `KeyGeneration` or `KeyResharing` stage.
-    async fn process_channel(self: Arc<Self>, channel: NetworkTaskChannel) -> anyhow::Result<()>;
+    async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()>;
 
     /// Spawns any auxiliary logic that performs pre-computation (typically meant to optimize signature delay).
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()>;
