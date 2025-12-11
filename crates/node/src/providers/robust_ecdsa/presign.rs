@@ -7,7 +7,8 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    KeygenOutput, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
+    get_number_of_signers, translate_threshold, KeygenOutput, RobustEcdsaSignatureProvider,
+    RobustEcdsaTaskId,
 };
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
@@ -92,9 +93,9 @@ impl RobustEcdsaSignatureProvider {
             .collect();
 
         let threshold = mpc_config.participants.threshold as usize;
-
-        // TODO: we need to guarantee this is less than the total number of participants in the contract
-        anyhow::ensure!(running_participants.len() >= 2 * threshold + 1);
+        let num_signers = get_number_of_signers(threshold, running_participants.len());
+        let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len());
+        anyhow::ensure!(robust_ecdsa_threshold * 2 + 1 <= num_signers);
 
         loop {
             progress_tracker.update_progress();
@@ -114,13 +115,13 @@ impl RobustEcdsaSignatureProvider {
             {
                 let id = presignature_store.generate_and_reserve_id();
                 let participants = match client.select_random_active_participants_including_me(
-                    2 * threshold + 1,
+                    num_signers,
                     &running_participants,
                 ) {
                     Ok(participants) => participants,
                     Err(e) => {
                         tracing::warn!(
-                            "Can't choose active participants for a triple: {}. Sleeping.",
+                            "Can't choose active participants for a robust-ecdsa presignature: {}. Sleeping.",
                             e
                         );
                         // that should not happen often, so sleeping here is okay
@@ -139,7 +140,7 @@ impl RobustEcdsaSignatureProvider {
                     let _in_flight = in_flight;
                     let _semaphore_guard = parallelism_limiter.acquire().await?;
                     let presignature = PresignComputation {
-                        threshold,
+                        threshold: robust_ecdsa_threshold,
                         keygen_out,
                     }
                     .perform_leader_centric_computation(
@@ -177,8 +178,12 @@ impl RobustEcdsaSignatureProvider {
     ) -> anyhow::Result<()> {
         let domain_data = self.domain_data(domain_id)?;
 
+        let number_of_participants = self.mpc_config.participants.participants.len();
+        let threshold = self.mpc_config.participants.threshold as usize;
+        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants);
+
         FollowerPresignComputation {
-            threshold: self.mpc_config.participants.threshold as usize,
+            threshold: robust_ecdsa_threshold,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
@@ -224,6 +229,11 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
+        println!(
+            "computing presign {} {}",
+            self.threshold,
+            cs_participants.len()
+        );
         let protocol = presign(
             &cs_participants,
             me.into(),

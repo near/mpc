@@ -129,7 +129,10 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
+        let number_of_participants = channel.participants().len();
+        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants);
+        EcdsaSignatureProvider::run_key_generation_client_internal(robust_ecdsa_threshold, channel)
+            .await
     }
 
     async fn run_key_resharing_client(
@@ -139,11 +142,23 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
+        let number_of_participants = channel.participants().len();
+        let new_robust_ecdsa_threshold = translate_threshold(new_threshold, number_of_participants);
+
+        // This is a bad hack, but cannot think of a better way to solve it, as the struct
+        // comes directly from generic implementations, so probably this is the best place
+        // to do so anyway
+        let mut old_participants_patched = old_participants.clone();
+        old_participants_patched.threshold = translate_threshold(
+            old_participants.threshold as usize,
+            old_participants.participants.len(),
+        ) as u64;
+
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_threshold,
+            new_robust_ecdsa_threshold,
             my_share,
             public_key,
-            old_participants,
+            &old_participants_patched,
             channel,
         )
         .await
@@ -204,4 +219,20 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
 
         Ok(())
     }
+}
+
+pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: usize) -> usize {
+    // TODO: this is the case for the other schemes, might not be our best choice for this one
+    threshold
+}
+
+/// This function translates the current threshold from the contract
+/// to the threshold expected by the robust-ecdsa scheme, which
+/// is semantically different.
+/// The function should be no longer needed when these issues are solved:
+/// https://github.com/near/threshold-signatures/issues/255
+/// https://github.com/near/mpc/issues/1649
+pub(super) fn translate_threshold(threshold: usize, number_of_participants: usize) -> usize {
+    let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+    (number_of_signers - 1) / 2
 }

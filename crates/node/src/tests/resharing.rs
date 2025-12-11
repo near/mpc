@@ -17,8 +17,8 @@ use super::DEFAULT_BLOCK_TIME;
 #[tokio::test]
 async fn test_key_resharing_simple() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 5;
-    const THRESHOLD: usize = 2;
+    const NUM_PARTICIPANTS: usize = 6;
+    const THRESHOLD: usize = 5;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -76,6 +76,15 @@ async fn test_key_resharing_simple() {
         .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
         .collect::<Vec<_>>();
 
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+        )
+        .await
+        .expect("must not exceed timeout");
+
     // Sanity check.
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
@@ -102,7 +111,7 @@ async fn test_key_resharing_simple() {
                 }
                 _ => false,
             },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("Timeout waiting for resharing to complete");

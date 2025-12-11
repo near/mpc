@@ -68,7 +68,6 @@ pub async fn keygen_computation_inner(
         SignatureScheme::V2Secp256k1 => {
             let keyshare =
                 RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
-            println!("did we compute?");
             let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::V2Secp256k1(keyshare), public_key)
         }

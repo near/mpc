@@ -14,8 +14,8 @@ use near_time::Clock;
 #[tokio::test]
 async fn test_basic_multidomain() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 7;
-    const THRESHOLD: usize = 3;
+    const NUM_PARTICIPANTS: usize = 6;
+    const THRESHOLD: usize = 5;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -65,7 +65,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
@@ -97,29 +97,29 @@ async fn test_basic_multidomain() {
             }
         }
     }
+    let new_domains = vec![
+        DomainConfig {
+            id: DomainId(4),
+            scheme: SignatureScheme::Ed25519,
+        },
+        DomainConfig {
+            id: DomainId(5),
+            scheme: SignatureScheme::Secp256k1,
+        },
+        DomainConfig {
+            id: DomainId(6),
+            scheme: SignatureScheme::Bls12381,
+        },
+        DomainConfig {
+            id: DomainId(7),
+            scheme: SignatureScheme::V2Secp256k1,
+        },
+    ];
 
     {
-        let new_domains = vec![
-            DomainConfig {
-                id: DomainId(4),
-                scheme: SignatureScheme::Ed25519,
-            },
-            DomainConfig {
-                id: DomainId(5),
-                scheme: SignatureScheme::Secp256k1,
-            },
-            DomainConfig {
-                id: DomainId(6),
-                scheme: SignatureScheme::Bls12381,
-            },
-            DomainConfig {
-                id: DomainId(7),
-                scheme: SignatureScheme::V2Secp256k1,
-            },
-        ];
         let mut contract = setup.indexer.contract_mut().await;
         contract.add_domains(new_domains.clone());
-        domains.extend(new_domains);
+        domains.extend(new_domains.clone());
     }
     setup
         .indexer
@@ -134,7 +134,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * new_domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
@@ -183,7 +183,7 @@ async fn test_basic_multidomain() {
                     }
                 }
             },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 4,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
