@@ -1,5 +1,6 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 48
 expression: abi
 ---
 {
@@ -2626,7 +2627,8 @@ expression: abi
           "enum": [
             "Secp256k1",
             "Ed25519",
-            "Bls12381"
+            "Bls12381",
+            "V2Secp256k1"
           ]
         },
         "TcbInfo": {

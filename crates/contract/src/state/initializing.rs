@@ -336,9 +336,10 @@ pub mod tests {
         test_initializing_contract_state_for(3, 2);
     }
 
+    const NUM_DOMAINS: usize = 5;
     #[test]
     fn test_cancel_key_generation() {
-        let (mut env, mut state) = gen_initializing_state(5, 2);
+        let (mut env, mut state) = gen_initializing_state(NUM_DOMAINS, 2);
 
         // Vote for domain #2.
         let leader = find_leader(&state.generating_key);

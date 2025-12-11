@@ -1,3 +1,4 @@
+// todo [#1657](https://github.com/near/mpc/issues/1657): split this file
 use assert_matches::assert_matches;
 use contract_interface::types::{
     self as dtos, Attestation, Bls12381G1PublicKey, Ed25519PublicKey, MockAttestation,
@@ -18,7 +19,7 @@ use mpc_contract::{
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
         domain::{DomainConfig, DomainId, SignatureScheme},
-        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         signature::{Bytes, SignatureRequest, Tweak},
         test_utils::bogus_ed25519_near_public_key,
@@ -33,7 +34,7 @@ use mpc_contract::{
     state::ProtocolContractState,
 };
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_sdk::{log, Gas};
+use near_sdk::Gas;
 
 use near_account_id::AccountId;
 use near_workspaces::{
@@ -66,6 +67,10 @@ use threshold_signatures::{
 pub const PARTICIPANT_LEN: usize = 10;
 use utilities::AccountIdExtV1;
 
+use crate::sandbox::initializing_utils::start_keygen_instance;
+
+use super::initializing_utils::{vote_add_domains, vote_public_key};
+
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 
@@ -79,6 +84,10 @@ const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 /// contract call. This needs to be investigated to understand why the increase was necessary.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);
 pub const GAS_FOR_VOTE_PK: Gas = Gas::from_tgas(22);
+pub const GAS_FOR_VOTE_CANCEL_KEYGEN: Gas = Gas::from_tgas(5);
+pub const GAS_FOR_VOTE_CANCEL_RESHARING: Gas = Gas::from_tgas(5);
+/// todo: figure out the correct value
+pub const GAS_FOR_VOTE_NEW_DOMAIN: Gas = Gas::from_tgas(22);
 pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 /// TODO(#1571): The `vote_update` contract call requires high gas, most likely due to
 /// deserializing the `mpc_contract::update::UpdateEntry` (which includes the full contract code),
@@ -92,6 +101,20 @@ pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(238);
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
 pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13000);
 
+pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
+    SignatureScheme::Secp256k1,
+    SignatureScheme::Ed25519,
+    SignatureScheme::Bls12381,
+    SignatureScheme::V2Secp256k1,
+];
+
+pub fn gen_participant_info() -> ParticipantInfo {
+    ParticipantInfo {
+        url: "127.0.0.1".into(),
+        sign_pk: bogus_ed25519_near_public_key(),
+    }
+}
+
 pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     let mut participants: Participants = Participants::new();
     let names = names.unwrap_or_else(|| {
@@ -103,29 +126,27 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
     });
 
     for account_id in names {
-        let _ = participants.insert(
-            account_id.clone(),
-            ParticipantInfo {
-                url: "127.0.0.1".into(),
-                sign_pk: bogus_ed25519_near_public_key(),
-            },
-        );
+        let _ = participants.insert(account_id.clone(), gen_participant_info());
     }
     participants
+}
+
+pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
+    let account = worker.dev_create_account().await.unwrap();
+    let id = account.id().as_v2_account_id();
+    (account, id)
 }
 
 /// Create `amount` accounts and return them along with the candidate info.
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
     let mut accounts = Vec::with_capacity(amount);
+    let mut account_ids = Vec::with_capacity(amount);
     for _ in 0..amount {
-        log!("attempting to create account");
-        let account = worker.dev_create_account().await.unwrap();
-        log!("created account");
+        let (account, account_id) = gen_account(worker).await;
         accounts.push(account);
+        account_ids.push(account_id);
     }
-    let candidates = candidates(Some(
-        accounts.iter().map(|a| a.id().as_v2_account_id()).collect(),
-    ));
+    let candidates = candidates(Some(account_ids));
     (accounts, candidates)
 }
 
@@ -985,28 +1006,19 @@ pub async fn call_contract_key_generation<const N: usize>(
     contract: &Contract,
     expected_epoch_id: u64,
 ) -> [SharedSecretKey; N] {
-    let account_with_lowest_participant_id = &accounts[0];
     let mut private_key_shares = vec![];
 
     let existing_domains = {
-        let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+        let state: ProtocolContractState = get_state(contract).await;
         match state {
             ProtocolContractState::Running(state) => state.domains.domains().len(),
             _ => panic!("ProtocolContractState must be Running"),
         }
     };
 
-    for account in accounts {
-        let result = account
-            .call(contract.id(), "vote_add_domains")
-            .args_json(json! ({
-                "domains": domains_to_add.to_vec(),
-            }))
-            .transact()
-            .await
-            .unwrap();
-        assert!(result.is_success(), "{result:#?}");
-    }
+    vote_add_domains(contract, accounts, domains_to_add)
+        .await
+        .unwrap();
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     match state {
@@ -1020,44 +1032,22 @@ pub async fn call_contract_key_generation<const N: usize>(
     };
 
     for domain in domains_to_add.iter() {
-        let result = account_with_lowest_participant_id
-            .call(contract.id(), "start_keygen_instance")
-            .args_json(json!({
-                "key_event_id": {
-                    "epoch_id": expected_epoch_id,
-                    "domain_id": domain.id.0,
-                    "attempt_id": 0,
-                },
-            }))
-            .transact()
+        let attempt_id = AttemptId::new();
+        let key_event_id = KeyEventId {
+            epoch_id: EpochId::new(expected_epoch_id),
+            domain_id: domain.id,
+            attempt_id,
+        };
+        start_keygen_instance(contract, accounts, key_event_id)
             .await
             .unwrap();
-        assert!(result.is_success(), "{result:#?}");
-
-        println!("start_keygen_instance completed");
-
         let (public_key, shared_secret_key) = make_key_for_domain(domain.scheme);
 
         private_key_shares.push(shared_secret_key);
 
-        let vote_pk_args = json!( {
-            "key_event_id": {
-                "epoch_id": expected_epoch_id,
-                "domain_id": domain.id.0,
-                "attempt_id": 0,
-            },
-            "public_key": public_key,
-        });
-
-        execute_async_transactions(
-            accounts,
-            contract,
-            "vote_pk",
-            &vote_pk_args,
-            GAS_FOR_VOTE_PK,
-        )
-        .await
-        .unwrap();
+        vote_public_key(contract, accounts, key_event_id, public_key)
+            .await
+            .unwrap();
     }
 
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
@@ -1351,78 +1341,26 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKey {
     }
 }
 
-/// Performs a complete resharing operation with the given parameters.
-/// This includes voting for new parameters, starting reshare instances for each domain,
-/// and voting reshared to complete the transition.
-pub async fn do_resharing(
-    remaining_accounts: &[Account],
+pub async fn get_state(contract: &Contract) -> ProtocolContractState {
+    contract.view("state").await.unwrap().json().unwrap()
+}
+
+pub async fn generate_participant_and_submit_attestation(
+    worker: &Worker<Sandbox>,
     contract: &Contract,
-    new_threshold_parameters: ThresholdParameters,
-    prospective_epoch_id: EpochId,
-    domain_ids: &[DomainId],
-) -> anyhow::Result<()> {
-    // vote for new parameters
-    for account in remaining_accounts {
-        let result = account
-            .call(contract.id(), "vote_new_parameters")
-            .args_json(serde_json::json!({
-                "prospective_epoch_id": prospective_epoch_id,
-                "proposal": new_threshold_parameters,
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-    }
+) -> (Account, AccountId, ParticipantInfo) {
+    let (new_account, account_id) = gen_account(worker).await;
+    let new_participant = gen_participant_info();
 
-    // Verify contract is now in resharing state
-    let state: ProtocolContractState = contract.view("state").await?.json()?;
-    let ProtocolContractState::Resharing(resharing_state) = state else {
-        panic!("Expected contract to be in Resharing state after voting");
-    };
-
-    for domain_id in domain_ids {
-        let key_event_id = serde_json::json!({
-            "epoch_id": prospective_epoch_id.get(),
-            "domain_id": domain_id.0,
-            "attempt_id": 0,
-        });
-
-        let leader = remaining_accounts
-            .iter()
-            .min_by_key(|a| {
-                resharing_state
-                    .resharing_key
-                    .proposed_parameters()
-                    .participants()
-                    .id(&a.id().as_v2_account_id())
-                    .unwrap()
-            })
-            .unwrap();
-
-        let result = leader
-            .call(contract.id(), "start_reshare_instance")
-            .args_json(serde_json::json!({
-                "key_event_id": key_event_id,
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        assert!(result.is_success(), "{result:#?}");
-
-        let vote_reshared_args = serde_json::json!({
-            "key_event_id": key_event_id,
-        });
-
-        execute_async_transactions(
-            remaining_accounts,
-            contract,
-            "vote_reshared",
-            &vote_reshared_args,
-            GAS_FOR_VOTE_RESHARED,
-        )
-        .await
-        .unwrap();
-    }
-    Ok(())
+    // Submit attestation for the new participant, otherwise
+    // the contract will reject the resharing.
+    submit_participant_info(
+        &new_account,
+        contract,
+        &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+        &new_participant.sign_pk.into_interface_type(),
+    )
+    .await
+    .expect("Attestation submission for new account must succeed.");
+    (new_account, account_id, new_participant)
 }
