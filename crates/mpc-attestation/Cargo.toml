@@ -25,3 +25,4 @@ serde_json = { workspace = true }
 dcap-qvl = { workspace = true }
 rstest = { workspace = true }
 test_utils = { workspace = true }
+tempfile = "3"
