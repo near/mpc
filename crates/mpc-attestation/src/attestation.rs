@@ -20,6 +20,16 @@ use crate::alloc::string::ToString;
 
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
+include!(concat!(env!("OUT_DIR"), "/measurements_generated.rs"));
+
+/// Returns all statically compiled TCB measurement sets.
+///
+/// This combines prod/dev (or any future) measurement JSON files
+/// into a single slice generated at build time.
+pub fn all_expected_measurements() -> &'static [ExpectedMeasurements] {
+    EXPECTED_MEASUREMENTS
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum Attestation {
@@ -70,21 +80,12 @@ impl Attestation {
             }
         };
 
-        // Embedded JSON assets
-        const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
-        // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
-
-        let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
-            TCB_INFO_STRING_PROD,
-            TCB_INFO_STRING_DEV,
-        ])
-        .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
+        let accepted_measurements = all_expected_measurements();
 
         attestation.verify(
             expected_report_data,
             timestamp_seconds,
-            &accepted_measurements,
+            accepted_measurements,
         )
     }
 

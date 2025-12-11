@@ -1,13 +1,7 @@
 use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{Bytes, serde_as};
-
-use dstack_sdk_types::dstack::{EventLog, TcbInfo as DstackTcbInfo};
-
-use crate::attestation::KEY_PROVIDER_EVENT;
 
 /// Required measurements for TEE attestation verification (a.k.a. RTMRs checks). These values
 /// define the trusted baseline that TEE environments must match during verification. They
@@ -43,84 +37,6 @@ pub struct ExpectedMeasurements {
     /// Expected digest for the key-provider event.
     #[serde_as(as = "Bytes")]
     pub key_provider_event_digest: [u8; 48],
-}
-
-impl ExpectedMeasurements {
-    /// Loads expected measurements from the embedded TCB info file for TEE attestation verification.
-    /// This implementation uses a cached computation to avoid runtime JSON parsing and hex decoding,
-    /// improving performance especially in smart contract environments where every cycle counts.
-    ///
-    /// The TCB info contains hex-encoded measurement values that are decoded once and cached for
-    /// all subsequent calls, ensuring consistent measurements across both production and test environments.
-    ///
-    /// TODO(#737): Define a process for updating these static RTMRs going forward, since they are already outdated.
-    /// $ git rev-parse HEAD
-    /// fbdf2e76fb6bd9142277fdd84809de87d86548ef
-    ///
-    /// See also: https://github.com/Dstack-TEE/meta-dstack?tab=readme-ov-file#reproducible-build-the-guest-image
-    /// Load all supported TCB info measurement sets (e.g., production + dev).
-    pub fn from_embedded_tcb_info(
-        tcb_info_strings: &[&str],
-    ) -> Result<Vec<Self>, MeasurementsError> {
-        // Helper closure to parse one TCB info JSON
-        let parse_tcb_info = |json_str: &str| -> Result<ExpectedMeasurements, MeasurementsError> {
-            let tcb_info: DstackTcbInfo =
-                serde_json::from_str(json_str).map_err(|_| MeasurementsError::InvalidTcbInfo)?;
-
-            let decode_measurement =
-                |name: &str, hex_value: &str| -> Result<[u8; 48], MeasurementsError> {
-                    let decoded = hex::decode(hex_value).map_err(|_| {
-                        MeasurementsError::InvalidHexValue(name.into(), hex_value.into())
-                    })?;
-                    let decoded_len = decoded.len();
-                    decoded
-                        .try_into()
-                        .map_err(|_| MeasurementsError::InvalidLength(name.into(), decoded_len))
-                };
-
-            let rtmrs = Measurements {
-                rtmr0: decode_measurement("rtmr0", &tcb_info.rtmr0)?,
-                rtmr1: decode_measurement("rtmr1", &tcb_info.rtmr1)?,
-                rtmr2: decode_measurement("rtmr2", &tcb_info.rtmr2)?,
-                mrtd: decode_measurement("mrtd", &tcb_info.mrtd)?,
-            };
-
-            let key_provider_event_digest_encoded =
-                Self::get_key_provider_digest(&tcb_info.event_log)?;
-            let key_provider_event_digest =
-                decode_measurement(KEY_PROVIDER_EVENT, key_provider_event_digest_encoded)?;
-
-            Ok(ExpectedMeasurements {
-                rtmrs,
-                key_provider_event_digest,
-            })
-        };
-
-        let mut results = vec![];
-        for s in tcb_info_strings {
-            results.push(parse_tcb_info(s)?);
-        }
-
-        Ok(results)
-    }
-
-    /// The expected SHA-384 digest for the `key-provider` event, not the event payload.
-    ///
-    /// Digest format:
-    ///   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
-    ///
-    /// If the key provider is `local-sgx` then:
-    /// Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
-    fn get_key_provider_digest(event_log: &[EventLog]) -> Result<&str, MeasurementsError> {
-        let key_provider_events: Vec<&EventLog> = event_log
-            .iter()
-            .filter(|e| e.event == KEY_PROVIDER_EVENT)
-            .collect();
-        if key_provider_events.len() != 1 {
-            return Err(MeasurementsError::InvalidTcbInfo);
-        };
-        Ok(&key_provider_events[0].digest)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
