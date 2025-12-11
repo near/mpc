@@ -80,19 +80,6 @@ impl Attestation {
             }
         };
 
-        //todo remove this
-        // Embedded JSON assets
-        // const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
-        // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-        // TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
-
-        //todo remove this
-        //let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
-        //    TCB_INFO_STRING_PROD,
-        //    TCB_INFO_STRING_DEV,
-        //])
-        // .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
-
         let accepted_measurements = all_expected_measurements();
 
         attestation.verify(
