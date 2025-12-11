@@ -436,7 +436,7 @@ impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
         let updates = all
             .updates
             .into_iter()
-            .map(|(update_id, update)| (update_id.0, update.into_dto_type()))
+            .map(|(update_id, update)| (update_id.0, update))
             .collect();
 
         dtos::ProposedUpdates { votes, updates }

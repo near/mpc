@@ -2,11 +2,13 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 
 use crate::{
+    dto_mapping::IntoInterfaceType,
     errors::{ConversionError, Error},
     primitives::participants::Participants,
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
 use near_sdk::{
@@ -135,7 +137,7 @@ pub(crate) struct UpdateEntry {
 )]
 pub struct UpdateVotes {
     pub votes: BTreeMap<AccountId, UpdateId>,
-    pub updates: BTreeMap<UpdateId, Update>,
+    pub updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
 #[near(serializers=[borsh ])]
@@ -267,7 +269,7 @@ impl ProposedUpdates {
         let updates = self
             .entries
             .iter()
-            .map(|(update_id, entry)| (*update_id, entry.update.clone()))
+            .map(|(update_id, entry)| (*update_id, (&entry.update).into_dto_type()))
             .collect();
 
         UpdateVotes { votes, updates }
@@ -300,6 +302,7 @@ fn required_deposit(bytes_used: u128) -> NearToken {
 #[cfg(test)]
 mod tests {
     use crate::{
+        dto_mapping::IntoInterfaceType,
         primitives::test_utils::gen_account_id,
         update::{bytes_used, ProposedUpdates, Update, UpdateEntry, UpdateId},
     };
@@ -674,9 +677,9 @@ mod tests {
         assert_eq!(result.votes, expected_votes);
 
         let expected_updates = BTreeMap::from([
-            (update_id_0, update_0),
-            (update_id_1, update_1),
-            (update_id_2, update_2),
+            (update_id_0, (&update_0).into_dto_type()),
+            (update_id_1, (&update_1).into_dto_type()),
+            (update_id_2, (&update_2).into_dto_type()),
         ]);
         assert_eq!(result.updates, expected_updates);
     }

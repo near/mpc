@@ -2999,7 +2999,7 @@ mod tests {
 
         assert!(all_updates.updates.contains_key(&expected_update_id));
         let update = all_updates.updates.get(&expected_update_id).unwrap();
-        assert!(matches!(update, Update::Contract(_)));
+        assert!(matches!(update, dtos::UpdateHash::Code(_)));
 
         let actual_voters: HashSet<_> = all_updates
             .votes
