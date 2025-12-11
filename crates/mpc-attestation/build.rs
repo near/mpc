@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 
+/// Build script to generate expected TCB measurements from JSON files.
 fn main() {
     // Location of assets/*.json
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -15,7 +16,12 @@ fn main() {
         let path = entry.path();
 
         if path.extension().and_then(|x| x.to_str()) == Some("json")
-            && path.file_name().unwrap().to_str().unwrap().starts_with("tcb_info")
+            && path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("tcb_info")
         {
             measurement_files.push(path);
         }
@@ -47,19 +53,25 @@ fn main() {
         let rtmr2 = decode_hex(tcb["rtmr2"].as_str().unwrap());
 
         // extract key-provider digest
+
+        // The expected SHA-384 digest for the `key-provider` event, not the event payload.
+        //
+        // Digest format:
+        //   digest = SHA384( event_type + ":" + "key-provider" + ":"+payload) )
+        //
+        // If the key provider is `local-sgx` then:
+        // Payload format: sha256 {"name":"local-sgx", "id": "<mr_enclave of the provider>"}
         let mut key_provider_digest = None;
         if let Some(events) = tcb["event_log"].as_array() {
             for event in events {
                 if event["event"].as_str().unwrap() == "key-provider" {
-                    key_provider_digest =
-                        Some(decode_hex(event["digest"].as_str().unwrap()));
+                    key_provider_digest = Some(decode_hex(event["digest"].as_str().unwrap()));
                     break;
                 }
             }
         }
 
-        let key_provider_digest =
-            key_provider_digest.expect("key-provider event not found");
+        let key_provider_digest = key_provider_digest.expect("key-provider event not found");
 
         // Emit Rust struct
         writeln!(

@@ -8,12 +8,12 @@ use attestation::{
 
 include!(concat!(env!("OUT_DIR"), "/measurements_generated.rs"));
 
-pub struct ExpectedMeasurementsSet;
-
-impl ExpectedMeasurementsSet {
-    pub fn all() -> &'static [ExpectedMeasurements] {
-        EXPECTED_MEASUREMENTS
-    }
+/// Returns all statically compiled TCB measurement sets.
+///
+/// This combines prod/dev (or any future) measurement JSON files
+/// into a single slice generated at build time.
+pub fn all_expected_measurements() -> &'static [ExpectedMeasurements] {
+    EXPECTED_MEASUREMENTS
 }
 
 pub use attestation::attestation::{DstackAttestation, VerificationError};
@@ -93,7 +93,7 @@ impl Attestation {
         //])
         // .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
 
-        let accepted_measurements = ExpectedMeasurementsSet::all();
+        let accepted_measurements = all_expected_measurements();
 
         attestation.verify(
             expected_report_data,
