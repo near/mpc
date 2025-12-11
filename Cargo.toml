@@ -14,6 +14,8 @@ members = [
     "crates/node-types",
     "crates/primitives",
     "crates/tee-authority",
+    "crates/test-macros",
+    "crates/test-macros-tests",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
     "crates/test-utils",
@@ -102,6 +104,9 @@ near-sdk = { version = "5.18.1", features = [
     "unit-testing",
     "unstable",
 ] }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
 near-workspaces = { version = "0.21.0" }
 prometheus = { version = "0.13.4", default-features = false }
 rand = "0.8.5"
