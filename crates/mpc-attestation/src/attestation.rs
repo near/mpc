@@ -6,16 +6,6 @@ use attestation::{
     report_data::ReportData,
 };
 
-include!(concat!(env!("OUT_DIR"), "/measurements_generated.rs"));
-
-/// Returns all statically compiled TCB measurement sets.
-///
-/// This combines prod/dev (or any future) measurement JSON files
-/// into a single slice generated at build time.
-pub fn all_expected_measurements() -> &'static [ExpectedMeasurements] {
-    EXPECTED_MEASUREMENTS
-}
-
 pub use attestation::attestation::{DstackAttestation, VerificationError};
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
@@ -29,6 +19,16 @@ use crate::alloc::format;
 use crate::alloc::string::ToString;
 
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
+
+include!(concat!(env!("OUT_DIR"), "/measurements_generated.rs"));
+
+/// Returns all statically compiled TCB measurement sets.
+///
+/// This combines prod/dev (or any future) measurement JSON files
+/// into a single slice generated at build time.
+pub fn all_expected_measurements() -> &'static [ExpectedMeasurements] {
+    EXPECTED_MEASUREMENTS
+}
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]

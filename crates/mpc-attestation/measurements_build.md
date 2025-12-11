@@ -59,7 +59,6 @@ curl "http://<node-ip>:<port>/public_data" \
 2. Rebuild:
 
 ```bash
-cargo clean -p mpc-attestation
 cargo build -p mpc-attestation
 ```
 
@@ -69,7 +68,7 @@ The build script will:
 - extract the required measurement fields  
 - decode them into fixed byte arrays  
 - generate Rust constants  
-- embed them statically into the WASM contract  
+- those constants will be available in the crate for attestation verification by the mpc contract  
 
 ---
 
@@ -83,7 +82,6 @@ crates/mpc-attestation/assets/
 2. Rebuild:
 
 ```bash
-cargo clean -p mpc-attestation
 cargo build -p mpc-attestation
 ```
 
