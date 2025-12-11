@@ -55,12 +55,13 @@ impl ValidatedAttestation {
                 creation_time_stamp_seonds,
             }) => {
                 let expiry_time = creation_time_stamp_seonds + max_attestation_age_seconds;
-                let attestation_has_expired = expiry_time >= timestamp_seconds;
+                let attestation_has_expired = expiry_time < timestamp_seconds;
 
                 if attestation_has_expired {
-                    return Err(VerificationError::Custom(
-                        "The attestation has expired.".to_string(),
-                    ));
+                    return Err(VerificationError::Custom(format!(
+                        "The attestation expired at t = {:?}, time_now = {:?}",
+                        expiry_time, timestamp_seconds
+                    )));
                 }
 
                 let () = verify_mpc_hash(mpc_image_hash, allowed_mpc_docker_image_hashes)?;

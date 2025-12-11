@@ -11,7 +11,7 @@ use crate::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::Ed25519PublicKey;
 use mpc_attestation::{
-    attestation::{self, Attestation},
+    attestation::{self, Attestation, AttestationCertificatePermit},
     report_data::{ReportData, ReportDataV1},
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
@@ -82,40 +82,38 @@ pub enum TeeValidationResult {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-enum StoredAttestations {
-    Mock(attestation::MockAttestation),
-    Attestation(MpcDockerImageHash),
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct AttestationPermit {
+struct NodeAttestation {
     node_id: NodeId,
-    submission_time: Timestamp,
-    attestation_type: StoredAttestations,
+    attestation_permit: AttestationCertificatePermit,
 }
 
-impl AttestationPermit {
-    fn is_not_expired(&self, attestation_time_to_live: Duration) -> bool {
-        let Some(expiry_time) = self.submission_time.checked_add(attestation_time_to_live) else {
-            near_sdk::log!(
-                "Error: timestamp overflowed when calculating expiry time for attestation."
-            );
-            return false;
-        };
+// impl AttestationPermit {
+//     fn is_not_expired(&self, attestation_time_to_live: Duration) -> bool {
+//         let expiry_time = match self.attestation_type {
+//             StoredAttestations::Mock(mock_attestation) => todo!(),
+//             StoredAttestations::Attestation { image_hash, expiry_time } => todo!(),
+//         }
 
-        let now_time = Timestamp::now();
-        let attestation_is_not_expired = expiry_time <= now_time;
+//         let Some(expiry_time) = self.submission_time.checked_add(attestation_time_to_live) else {
+//             near_sdk::log!(
+//                 "Error: timestamp overflowed when calculating expiry time for attestation."
+//             );
+//             return false;
+//         };
 
-        attestation_is_not_expired
-    }
-}
+//         let now_time = Timestamp::now();
+//         let attestation_is_not_expired = expiry_time <= now_time;
+
+//         attestation_is_not_expired
+//     }
+// }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub participants_attestations: IterableMap<near_sdk::PublicKey, AttestationPermit>,
+    pub participants_attestations: IterableMap<near_sdk::PublicKey, AttestationCertificatePermit>,
 }
 
 impl Default for TeeState {
@@ -146,10 +144,12 @@ impl TeeState {
 
                 participants_attestations.insert(
                     participant_info.sign_pk.clone(),
-                    AttestationPermit {
+                    AttestationCertificatePermit {
                         node_id,
                         submission_time: Timestamp::now(),
-                        attestation_type: StoredAttestations::Mock,
+                        attestation_type: StoredAttestations::Mock(
+                            attestation::MockAttestation::Valid,
+                        ),
                     },
                 );
             });
@@ -187,12 +187,8 @@ impl TeeState {
     //     }
     // }
 
-    /// Adds a participant attestation for the given node.
-    ///
-    /// Returns:
-    /// - `true` if this is the first attestation for the node (i.e., a new participant was added).
-    /// - `false` if the node already had an attestation (the existing one was replaced).
-    pub fn add_participant(
+    /// Adds a participant attestation for the given node iff the attestation succeeds verification.
+    pub(super) fn add_participant(
         &mut self,
         node_id: NodeId,
         attestation: Attestation,
@@ -215,7 +211,6 @@ impl TeeState {
         let tls_pk = node_id.tls_public_key.clone();
         let is_new = !self.participants_attestations.contains_key(&tls_pk);
 
-        // Must pass owned values, not references
         self.participants_attestations
             .insert(tls_pk, (node_id, attestation));
 
