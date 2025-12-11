@@ -1,6 +1,7 @@
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 
 const ASSETS_DIR_NAME: &str = "assets";
@@ -124,7 +125,7 @@ fn main() {
 }
 
 /// Extract a measurement field and decode hex, with good error messages.
-fn decode_measurement(tcb: &serde_json::Value, field: &str, path: &PathBuf) -> [u8; 48] {
+fn decode_measurement(tcb: &serde_json::Value, field: &str, path: &Path) -> [u8; 48] {
     let hex = tcb[field].as_str().unwrap_or_else(|| {
         panic!(
             "Field '{}' missing or not a string in '{}'",
@@ -137,7 +138,7 @@ fn decode_measurement(tcb: &serde_json::Value, field: &str, path: &PathBuf) -> [
 }
 
 /// Extract the key-provider hash with clear diagnostics
-fn extract_key_provider_digest(tcb: &serde_json::Value, path: &PathBuf) -> [u8; 48] {
+fn extract_key_provider_digest(tcb: &serde_json::Value, path: &Path) -> [u8; 48] {
     let events = tcb["event_log"]
         .as_array()
         .unwrap_or_else(|| panic!("event_log missing or not an array in '{}'", path.display()));
@@ -161,7 +162,7 @@ fn extract_key_provider_digest(tcb: &serde_json::Value, path: &PathBuf) -> [u8; 
 }
 
 /// Decode a hex string into a 48-byte array with validation
-fn decode_hex(hex: &str, field: &str, path: &PathBuf) -> [u8; 48] {
+fn decode_hex(hex: &str, field: &str, path: &Path) -> [u8; 48] {
     let bytes = hex::decode(hex).unwrap_or_else(|e| {
         panic!(
             "Invalid hex in field '{}' in '{}': {}",
