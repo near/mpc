@@ -229,11 +229,6 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             .map(Participant::from)
             .collect::<Vec<_>>();
         let me = channel.my_participant_id();
-        println!(
-            "computing presign {} {}",
-            self.threshold,
-            cs_participants.len()
-        );
         let protocol = presign(
             &cs_participants,
             me.into(),

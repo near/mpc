@@ -70,11 +70,6 @@ async fn test_basic_multidomain() {
         .await
         .expect("must not exceed timeout");
 
-    // TODO: remove this, my best guess of why is it needed is that during
-    // presignature/triple generation the network is overloaded, which makes
-    // the test fail otherwise in CI
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
     tracing::info!("requesting signature");
     for domain in &domains {
         match domain.scheme {

@@ -78,11 +78,6 @@ async fn test_basic_cluster() {
         .await
         .expect("timeout waiting for keygen to complete");
 
-    // TODO: remove this, my best guess of why is it needed is that during
-    // presignature/triple generation the network is overloaded, which makes
-    // the test fail otherwise in CI
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
     assert!(request_signature_and_await_response(
         &mut setup.indexer,
         "user0",
