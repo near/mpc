@@ -36,5 +36,4 @@ jobs:
 
       - name: Run contract verification tests
         run: |
-          cd crates/contract_history
-          cargo test --features external-services-tests --release
+          cargo test -p contract-history --features external-services-tests --release
