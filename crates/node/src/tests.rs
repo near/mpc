@@ -203,7 +203,7 @@ impl IntegrationTestSetup {
                 ckd: CKDConfig { timeout_sec: 60 },
                 triple: TripleConfig {
                     concurrency: 1,
-                    desired_triples_to_buffer: 5,
+                    desired_triples_to_buffer: 10,
                     parallel_triple_generation_stagger_time_sec: 1,
                     timeout_sec: 60,
                 },
