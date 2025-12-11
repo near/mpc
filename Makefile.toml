@@ -1,6 +1,7 @@
 [tasks.check-all-fast]
 description = "Run all fast checks"
 dependencies = [
+  "crate-names",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -14,6 +15,7 @@ dependencies = [
 [tasks.check-all]
 description = "Run all checks"
 dependencies = [
+  "crate-names",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -76,6 +78,10 @@ args = ["check", "--diff", "--exclude", "libs/nearcore"]
 [tasks.zizmor]
 command = "zizmor"
 args = [".github/"]
+
+[tasks.crate-names]
+command = "sh"
+args = ["scripts/check-crates-kebab-case.sh"]
 
 [config]
 default_to_workspace = false
