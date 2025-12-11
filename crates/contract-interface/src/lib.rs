@@ -9,7 +9,7 @@ pub mod types {
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
     pub use primitives::{AccountId, CkdAppId};
-    pub use updates::{ProposedUpdates, Update, UpdateHash};
+    pub use updates::{ProposedUpdates, UpdateHash};
 
     mod attestation;
     mod config;
