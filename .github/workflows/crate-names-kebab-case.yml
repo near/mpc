@@ -9,8 +9,8 @@ on:
       - main
 
 jobs:
-  ruff-linter:
-    name: "Python ruff linter"
+  crate-name-check:
+    name: "Check that crate names follow kebab-case"
     runs-on: warp-ubuntu-2204-x64-2x
     permissions:
       contents: read
