@@ -1,5 +1,5 @@
 [package]
-name = "contract_history"
+name = "contract-history"
 version = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
