@@ -100,7 +100,7 @@ async fn test_basic_multidomain() {
         },
         DomainConfig {
             id: DomainId(4),
-            scheme: SignatureScheme::V2Secp256k1,
+            scheme: SignatureScheme::Secp256k1,
         },
         DomainConfig {
             id: DomainId(5),
