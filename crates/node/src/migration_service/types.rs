@@ -486,7 +486,7 @@ pub mod tests {
 
     const BLOCK_HEIGHT: u64 = 6;
     const PORT_OVERRIDE: Option<u16> = None;
-    const NUM_DOMAINS: usize = 1;
+    const NUM_DOMAINS: usize = 5;
     pub(crate) fn make_resharing_contract_case(
         onboarding_node_p2p_public_key: VerifyingKey,
     ) -> ContractCase {

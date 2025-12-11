@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use crate::sandbox::common::{
     call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
     gen_accounts, get_participants, get_tee_accounts, init, make_and_submit_requests,
-    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response,
-    SharedSecretKey, PARTICIPANT_LEN,
+    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response, DomainKey,
+    PARTICIPANT_LEN,
 };
 use mpc_contract::crypto_shared::CKDResponse;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
@@ -228,20 +228,15 @@ async fn upgrade_preserves_state_and_requests(
         "State of the contract should remain the same post upgrade."
     );
     for pending in injected_contract_state.pending_sign_requests {
-        submit_signature_response(
-            &pending.signature_request,
-            &pending.signature_response,
-            &contract,
-            attested_account,
-        )
-        .await
-        .unwrap();
+        submit_signature_response(&pending.response, &contract, attested_account)
+            .await
+            .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
         let returned: SignatureResponse = execution.json().unwrap();
 
         assert_eq!(
-            returned, pending.signature_response,
+            returned, pending.response.response,
             "Returned signature response does not match"
         );
     }
@@ -346,7 +341,7 @@ async fn upgrade_allows_new_request_types(
         "State of the contract should remain the same post upgrade."
     );
 
-    let first_available_domain_id = injected_contract_state.added_domains.len() as u64;
+    let first_available_domain_id = injected_contract_state.domain_keys.len() as u64;
 
     // 2. Add new domains
     let domains_to_add = [
@@ -361,52 +356,34 @@ async fn upgrade_allows_new_request_types(
     ];
 
     const EPOCH_ID: u64 = 0;
-    let shared_secret_keys =
+    let added_domain_keys =
         call_contract_key_generation(&domains_to_add, &accounts, &contract, EPOCH_ID).await;
 
-    let current_domains: Vec<DomainConfig> = injected_contract_state
-        .added_domains
+    let current_keys: Vec<DomainKey> = injected_contract_state
+        .domain_keys
         .clone()
         .iter()
-        .chain(domains_to_add.iter())
-        .cloned()
-        .collect();
-    let current_shared_secret_keys: Vec<SharedSecretKey> = injected_contract_state
-        .shared_secret_keys
-        .clone()
-        .iter()
-        .chain(shared_secret_keys.iter())
+        .chain(added_domain_keys.iter())
         .cloned()
         .collect();
 
-    let (pending_sign_requests, pending_ckd_requests) = make_and_submit_requests(
-        &current_domains,
-        &current_shared_secret_keys,
-        &contract,
-        &worker,
-        rng,
-    )
-    .await;
+    let (pending_sign_requests, pending_ckd_requests) =
+        make_and_submit_requests(&current_keys, &contract, &worker, rng).await;
 
     for pending in injected_contract_state
         .pending_sign_requests
         .into_iter()
         .chain(pending_sign_requests.into_iter())
     {
-        submit_signature_response(
-            &pending.signature_request,
-            &pending.signature_response,
-            &contract,
-            attested_account,
-        )
-        .await
-        .unwrap();
+        submit_signature_response(&pending.response, &contract, attested_account)
+            .await
+            .unwrap();
 
         let execution = pending.transaction.await.unwrap().into_result().unwrap();
         let returned: SignatureResponse = execution.json().unwrap();
 
         assert_eq!(
-            returned, pending.signature_response,
+            returned, pending.response.response,
             "Returned signature response does not match"
         );
     }

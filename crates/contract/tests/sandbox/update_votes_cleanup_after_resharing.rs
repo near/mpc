@@ -7,16 +7,17 @@ use sha2::Digest;
 use std::collections::BTreeMap;
 use utilities::AccountIdExtV1;
 
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, do_resharing,
-    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE,
-    PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        assert_running_return_participants, assert_running_return_threshold,
+        execute_async_transactions, init_env, ContractSetup, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+        GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
+    },
+    resharing_utils::do_resharing,
 };
 use mpc_contract::{
     primitives::{
-        domain::{DomainId, SignatureScheme},
-        key_state::EpochId,
-        participants::Participants,
+        domain::SignatureScheme, key_state::EpochId, participants::Participants,
         thresholds::ThresholdParameters,
     },
     update::{ProposeUpdateArgs, UpdateId},
@@ -26,15 +27,18 @@ use mpc_contract::{
 #[tokio::test]
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
-    let (_, contract, env_accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
 
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
-    let update_id: UpdateId = env_accounts[0]
+    let update_id: UpdateId = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(ProposeUpdateArgs {
             code: Some(code.clone()),
@@ -46,7 +50,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .json()?;
 
     execute_async_transactions(
-        &env_accounts[0..2],
+        &mpc_signer_accounts[0..2],
         &contract,
         "vote_update",
         &json!({"id": update_id}),
@@ -57,7 +61,12 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let proposals_before: dtos::ProposedUpdates =
         contract.view("proposed_updates").await?.json()?;
 
-    assert_expected_proposed_update(&proposals_before, &update_id, &code, &env_accounts[0..2]);
+    assert_expected_proposed_update(
+        &proposals_before,
+        &update_id,
+        &code,
+        &mpc_signer_accounts[0..2],
+    );
 
     // when: resharing completes with new participants that exclude participant 0
     // Reshare with threshold participants, excluding participant 0 who voted
@@ -83,11 +92,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &env_accounts[1..threshold.value() as usize + 1],
+        &mpc_signer_accounts[1..threshold.value() as usize + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
-        &[DomainId(0)],
     )
     .await?;
 
@@ -95,7 +103,12 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let final_participants = assert_running_return_participants(&contract).await?;
     let proposals_after: dtos::ProposedUpdates = contract.view("proposed_updates").await?.json()?;
 
-    assert_expected_proposed_update(&proposals_after, &update_id, &code, &env_accounts[1..2]);
+    assert_expected_proposed_update(
+        &proposals_after,
+        &update_id,
+        &code,
+        &mpc_signer_accounts[1..2],
+    );
 
     // Verify the remaining voter is still a participant
     let votes_for_update: Vec<_> = proposals_after

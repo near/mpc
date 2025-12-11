@@ -2,10 +2,10 @@ use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE,
-    MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
+    ContractSetup, ALL_SIGNATURE_SCHEMES, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
+    GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE,
+    PARTICIPANT_LEN,
 };
-use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
@@ -35,11 +35,15 @@ pub fn current_contract_proposal() -> ProposeUpdateArgs {
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((ProposeUpdateArgs {
             code: Some(vec![0; 1536 * 1024 - 224]), //3900 seems to not work locally
@@ -59,7 +63,11 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -92,8 +100,8 @@ async fn test_propose_update_config() {
         remove_non_participant_update_votes_tera_gas: 12,
     };
 
-    let mut proposals = Vec::with_capacity(accounts.len());
-    for account in &accounts {
+    let mut proposals = Vec::with_capacity(mpc_signer_accounts.len());
+    for account in &mpc_signer_accounts {
         let propose_execution = account
             .call(contract.id(), "propose_update")
             .args_borsh((ProposeUpdateArgs {
@@ -117,7 +125,7 @@ async fn test_propose_update_config() {
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
     let first_proposal = &proposals[0];
-    for (i, voter) in accounts.iter().enumerate() {
+    for (i, voter) in mpc_signer_accounts.iter().enumerate() {
         dbg!(voter.id());
         let execution = voter
             .call(contract.id(), "vote_update")
@@ -153,19 +161,27 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
-    propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
 
     // Let's propose a contract update instead now.
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((invalid_contract_proposal(),))
         .max_gas()
@@ -176,12 +192,12 @@ async fn test_invalid_contract_deploy() {
     dbg!(&execution);
     assert!(execution.is_success());
     let proposal_id: UpdateId = execution.json().unwrap();
-    vote_update_till_completion(&contract, &accounts, &proposal_id).await;
+    vote_update_till_completion(&contract, &mpc_signer_accounts, &proposal_id).await;
 
     // Try calling into state and see if it works after the contract updates with an invalid
     // contract. It will fail in `migrate` so a state rollback on the contract code should have
     // happened.
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "state")
         .transact()
         .await
@@ -195,7 +211,11 @@ async fn test_invalid_contract_deploy() {
 // TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 3;
@@ -203,7 +223,7 @@ async fn test_propose_update_contract_many() {
     // Try to propose multiple updates to check if they are being proposed correctly
     // and that we can have many at once living in the contract state.
     for i in 0..PROPOSAL_COUNT {
-        let execution = accounts[i % accounts.len()]
+        let execution = mpc_signer_accounts[i % mpc_signer_accounts.len()]
             .call(contract.id(), "propose_update")
             .args_borsh(current_contract_proposal())
             .max_gas()
@@ -221,11 +241,11 @@ async fn test_propose_update_contract_many() {
     }
 
     // Vote for the last proposal
-    vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
+    vote_update_till_completion(&contract, &mpc_signer_accounts, proposals.last().unwrap()).await;
 
     // Ensure all proposals are removed after update
     for proposal in proposals {
-        let voter = accounts.first().unwrap();
+        let voter = mpc_signer_accounts.first().unwrap();
         let execution = voter
             .call(contract.id(), "vote_update")
             .args_json(serde_json::json!({
@@ -249,9 +269,13 @@ async fn test_propose_update_contract_many() {
 /// threshold) is cheap.
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(current_contract_proposal())
         .max_gas()
@@ -264,7 +288,7 @@ async fn test_vote_update_gas_before_threshold() {
     let proposal_id: UpdateId = execution.json().unwrap();
 
     // Cast votes until threshold is reached (need 6 total votes)
-    for (idx, account) in accounts[1..=5].iter().enumerate() {
+    for (idx, account) in mpc_signer_accounts[1..=5].iter().enumerate() {
         let execution = account
             .call(contract.id(), "vote_update")
             .args_json(serde_json::json!({
@@ -292,7 +316,7 @@ async fn test_vote_update_gas_before_threshold() {
     }
 
     // Cast the threshold vote (6th vote) that will trigger the update
-    let threshold_execution = accounts[6]
+    let threshold_execution = mpc_signer_accounts[6]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
             "id": proposal_id,
@@ -319,13 +343,17 @@ async fn test_vote_update_gas_before_threshold() {
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     let dummy_config = contract_interface::types::InitConfig::default();
 
     // Can not propose update both to code and config
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((dummy_contract_proposal(), dummy_config))
         .max_gas()
@@ -337,7 +365,7 @@ async fn test_propose_incorrect_updates() {
     assert!(execution.is_failure());
 
     // Should propose something
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(())
         .max_gas()
@@ -354,12 +382,15 @@ async fn test_propose_incorrect_updates() {
 #[tokio::test]
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
-    let (_, contract, accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
-        propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
+        propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, current_contract()).await;
     }
 }
 
@@ -374,11 +405,14 @@ async fn many_sequential_updates() {
 #[tokio::test]
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
-    let (_, contract, accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
+    let ContractSetup {
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
     dbg!(contract.id());
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(current_contract_proposal())
         .max_gas()
@@ -390,7 +424,7 @@ async fn only_one_vote_from_participant() {
     assert!(execution.is_success());
     let proposal_a: UpdateId = execution.json().unwrap();
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh(current_contract_proposal())
         .max_gas()
@@ -402,7 +436,7 @@ async fn only_one_vote_from_participant() {
     assert!(execution.is_success());
     let proposal_b: UpdateId = execution.json().unwrap();
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
             "id": proposal_a,
@@ -416,7 +450,7 @@ async fn only_one_vote_from_participant() {
     let update_occurred: bool = execution.json().unwrap();
     assert!(!update_occurred);
 
-    let execution = accounts[0]
+    let execution = mpc_signer_accounts[0]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
             "id": proposal_b,
@@ -430,7 +464,7 @@ async fn only_one_vote_from_participant() {
     let update_occurred: bool = execution.json().unwrap();
     assert!(!update_occurred);
 
-    let execution = accounts[1]
+    let execution = mpc_signer_accounts[1]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
             "id": proposal_a,
@@ -444,7 +478,7 @@ async fn only_one_vote_from_participant() {
     let update_occurred: bool = execution.json().unwrap();
     assert!(!update_occurred);
 
-    let execution = accounts[1]
+    let execution = mpc_signer_accounts[1]
         .call(contract.id(), "vote_update")
         .args_json(serde_json::json!({
             "id": proposal_b,
@@ -465,28 +499,29 @@ async fn only_one_vote_from_participant() {
 async fn update_from_current_contract_to_migration_contract() {
     // We don't add any initial domains on init, since we will domains
     // in add_dummy_state_and_pending_sign_requests call below.
-    let (worker, contract, accounts) = init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_signer_accounts, _) =
+        init_with_candidates(vec![], None, PARTICIPANT_LEN).await;
 
     let participants = assert_running_return_participants(&contract)
         .await
         .expect("Contract must be in running state.");
 
     execute_key_generation_and_add_random_state(
-        &accounts,
+        &mpc_signer_accounts,
         participants,
         &contract,
         &worker,
         &mut OsRng,
     )
     .await;
-    propose_and_vote_contract_binary(&accounts, &contract, migration_contract()).await;
+    propose_and_vote_contract_binary(&mpc_signer_accounts, &contract, migration_contract()).await;
 }
 
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
-    let (_worker, contract, accounts) = init_with_candidates(vec![], None, 2).await;
+    let (_worker, contract, mpc_signer_accounts, _) = init_with_candidates(vec![], None, 2).await;
 
-    let execution_error = accounts[0]
+    let execution_error = mpc_signer_accounts[0]
         .call(contract.id(), "migrate")
         .max_gas()
         .transact()

@@ -32,7 +32,7 @@ async fn run_upgrade_scenario(min_gas: u64) -> (bool, bool) {
         ..Default::default()
     };
 
-    let (_, contract, accounts) = init_with_candidates(vec![], Some(init_config), 3).await;
+    let (_, contract, accounts, _) = init_with_candidates(vec![], Some(init_config), 3).await;
 
     let execution = accounts[0]
         .call(contract.id(), "propose_update")
@@ -92,7 +92,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         remove_non_participant_update_votes_tera_gas: Some(12),
     };
 
-    let (_, contract, _) = init_with_candidates(vec![], Some(init_config.clone()), 2).await;
+    let (_, contract, _, _) = init_with_candidates(vec![], Some(init_config.clone()), 2).await;
 
     let stored_config: contract_interface::types::InitConfig =
         contract.view("config").await.unwrap().json().unwrap();
