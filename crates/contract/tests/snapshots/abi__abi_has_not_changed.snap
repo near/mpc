@@ -1170,10 +1170,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AccountId": {
-          "description": "A Near AccountId",
-          "type": "string"
-        },
         "AddDomainsVotes": {
           "description": "Tracks votes to add domains. Each participant can at any given time vote for a list of domains to add.",
           "type": "object",
@@ -2190,10 +2186,26 @@ expression: abi
           ]
         },
         "ProposedUpdates": {
-          "description": "A vector of proposed updates",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Update"
+          "type": "object",
+          "required": [
+            "updates",
+            "votes"
+          ],
+          "properties": {
+            "updates": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/UpdateHash"
+              }
+            },
+            "votes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
           }
         },
         "ProtocolContractState": {
@@ -2736,31 +2748,6 @@ expression: abi
           },
           "maxItems": 32,
           "minItems": 32
-        },
-        "Update": {
-          "description": "A proposed update",
-          "type": "object",
-          "required": [
-            "update_hash",
-            "update_id",
-            "votes"
-          ],
-          "properties": {
-            "update_hash": {
-              "$ref": "#/definitions/UpdateHash"
-            },
-            "update_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "votes": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/AccountId"
-              }
-            }
-          }
         },
         "UpdateHash": {
           "description": "An update hash",
