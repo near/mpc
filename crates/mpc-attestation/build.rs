@@ -1,7 +1,6 @@
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
 use std::path::PathBuf;
 
 const ASSETS_DIR_NAME: &str = "assets";
@@ -96,13 +95,23 @@ fn main() {
             .unwrap_or_else(|e| panic!("Failed to parse JSON file '{}': {}", path.display(), e));
 
         // Extract RTMRs + MRTD
-        let mrtd = decode_measurement(&tcb, "mrtd", &path);
-        let rtmr0 = decode_measurement(&tcb, "rtmr0", &path);
-        let rtmr1 = decode_measurement(&tcb, "rtmr1", &path);
-        let rtmr2 = decode_measurement(&tcb, "rtmr2", &path);
+        let mrtd = decode_measurement(&tcb, "mrtd")
+            .map_err(|e| format!("Error in file '{}': {}", path.display(), e))
+            .unwrap();
+        let rtmr0 = decode_measurement(&tcb, "rtmr0")
+            .map_err(|e| format!("Error in file '{}': {}", path.display(), e))
+            .unwrap();
+        let rtmr1 = decode_measurement(&tcb, "rtmr1")
+            .map_err(|e| format!("Error in file '{}': {}", path.display(), e))
+            .unwrap();
+        let rtmr2 = decode_measurement(&tcb, "rtmr2")
+            .map_err(|e| format!("Error in file '{}': {}", path.display(), e))
+            .unwrap();
 
         // Extract key-provider digest
-        let key_provider_digest = extract_key_provider_digest(&tcb, &path);
+        let key_provider_digest = extract_key_provider_digest(&tcb)
+            .map_err(|e| format!("Error in file '{}': {}", path.display(), e))
+            .unwrap();
 
         // Emit Rust struct
         writeln!(
@@ -124,64 +133,47 @@ fn main() {
     writeln!(f, "];").expect("failed writing closing bracket");
 }
 
-/// Extract a measurement field and decode hex, with good error messages.
-fn decode_measurement(tcb: &serde_json::Value, field: &str, path: &Path) -> [u8; 48] {
-    let hex = tcb[field].as_str().unwrap_or_else(|| {
-        panic!(
-            "Field '{}' missing or not a string in '{}'",
-            field,
-            path.display()
-        )
-    });
+/// Extract 48-byte measurement from JSON (mrtd, rtmr0, rtmr1, rtmr2)
+fn decode_measurement(tcb: &serde_json::Value, field: &str) -> Result<[u8; 48], String> {
+    let hex = tcb[field]
+        .as_str()
+        .ok_or_else(|| format!("Field '{}' missing or not a string", field))?;
 
-    decode_hex(hex, field, path)
+    decode_hex(hex, field)
 }
 
-/// Extract the key-provider hash with clear diagnostics
-fn extract_key_provider_digest(tcb: &serde_json::Value, path: &Path) -> [u8; 48] {
+/// Extract the key-provider event digest
+fn extract_key_provider_digest(tcb: &serde_json::Value) -> Result<[u8; 48], String> {
     let events = tcb["event_log"]
         .as_array()
-        .unwrap_or_else(|| panic!("event_log missing or not an array in '{}'", path.display()));
+        .ok_or_else(|| "event_log missing or not an array".to_string())?;
 
     for event in events {
-        let event_name = event["event"].as_str().unwrap_or("");
+        if event["event"].as_str().unwrap_or("") == "key-provider" {
+            let digest_hex = event["digest"]
+                .as_str()
+                .ok_or_else(|| "key-provider event missing digest".to_string())?;
 
-        if event_name == "key-provider" {
-            let digest_hex = event["digest"].as_str().unwrap_or_else(|| {
-                panic!(
-                    "key-provider event in '{}' does not contain a valid digest",
-                    path.display()
-                )
-            });
-
-            return decode_hex(digest_hex, "key-provider digest", path);
+            return decode_hex(digest_hex, "key-provider digest");
         }
     }
 
-    panic!("No key-provider event found in '{}'", path.display());
+    Err("No key-provider event found".to_string())
 }
 
-/// Decode a hex string into a 48-byte array with validation
-fn decode_hex(hex: &str, field: &str, path: &Path) -> [u8; 48] {
-    let bytes = hex::decode(hex).unwrap_or_else(|e| {
-        panic!(
-            "Invalid hex in field '{}' in '{}': {}",
-            field,
-            path.display(),
-            e
-        )
-    });
+/// Decode a hex field into a 48-byte array
+fn decode_hex(hex: &str, field: &str) -> Result<[u8; 48], String> {
+    let bytes = hex::decode(hex).map_err(|e| format!("Invalid hex in '{}': {}", field, e))?;
 
     if bytes.len() != 48 {
-        panic!(
-            "Expected 48-byte measurement for field '{}' in '{}', got {} bytes",
+        return Err(format!(
+            "Expected 48-byte measurement for '{}', got {} bytes",
             field,
-            path.display(),
             bytes.len()
-        );
+        ));
     }
 
     let mut arr = [0u8; 48];
     arr.copy_from_slice(&bytes);
-    arr
+    Ok(arr)
 }
