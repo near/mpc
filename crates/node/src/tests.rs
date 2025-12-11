@@ -47,8 +47,8 @@ mod research;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
-const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
-const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
+const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(30);
+const DEFAULT_MAX_SIGNATURE_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Data needed to start running a test node.
 pub struct OneNodeTestConfig {

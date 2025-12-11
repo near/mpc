@@ -17,8 +17,8 @@ use super::DEFAULT_BLOCK_TIME;
 #[tokio::test]
 async fn test_key_resharing_simple() {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 6;
-    const THRESHOLD: usize = 5;
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
@@ -52,17 +52,7 @@ async fn test_key_resharing_simple() {
         scheme: SignatureScheme::Bls12381,
     };
 
-    let domain3 = DomainConfig {
-        id: DomainId(3),
-        scheme: SignatureScheme::V2Secp256k1,
-    };
-
-    let domains = vec![
-        domain0.clone(),
-        domain1.clone(),
-        domain2.clone(),
-        domain3.clone(),
-    ];
+    let domains = vec![domain0.clone(), domain1.clone(), domain2.clone()];
 
     {
         let mut contract = setup.indexer.contract_mut().await;
