@@ -48,7 +48,7 @@ All other fields are ignored.
 
 ## ➕ Adding a New Measurements File
 
-1. Obtain the new TCB info JSON from a node:
+1. Obtain the new TCB info JSON from a node and extract the relevant section:
 
 ```bash
 curl "http://<node-ip>:<port>/public_data" \
