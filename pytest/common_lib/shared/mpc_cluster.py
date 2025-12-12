@@ -4,6 +4,7 @@ import json
 import pathlib
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 
 from common_lib import constants
@@ -45,8 +46,8 @@ class MpcCluster:
             node.run()
 
     def kill_all(self):
-        for node in self.mpc_nodes:
-            node.kill(False)
+        with ThreadPoolExecutor(max_workers=len(self.mpc_nodes)) as executor:
+            executor.map(lambda node: node.kill(False), self.mpc_nodes)
 
     def kill_nodes(self, node_idxs: List[int], gentle=True):
         """
