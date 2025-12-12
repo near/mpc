@@ -15,6 +15,7 @@ class IntMetricName(str, Enum):
     MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED = (
         "mpc_pending_ckds_queue_attempts_generated"
     )
+    MPC_CLUSTER_FAILED_SIGNATURES_COUNT = "mpc_cluster_failed_signatures_count"
 
 
 class DictMetricName(str, Enum):
@@ -28,6 +29,7 @@ class NodeMetrics:
     requests_indexed: int
     responses_indexed: int
     matching_responses_indexed: int
+    mpc_cluster_failed_signatures_count: int
 
     def __sub__(self, other):
         if isinstance(other, NodeMetrics):
@@ -38,4 +40,12 @@ class NodeMetrics:
             res.matching_responses_indexed = (
                 self.matching_responses_indexed - other.matching_responses_indexed
             )
+            (
+                res.mpc_cluster_failed_signatures_count
+                - self.mpc_cluster_failed_signatures_count
+                - other.mpc_cluster_failed_signatures_count
+            )
             return res
+
+    def __repr__(self):
+        return f"NodeMetrics(queue_size={self.queue_size}, requests_indexed={self.requests_indexed}, responses_indexed={self.responses_indexed}, matching_responses_indexed={self.matching_responses_indexed}, mpc_cluster_failed_signatures_count={self.mpc_cluster_failed_signatures_count})"

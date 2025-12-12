@@ -591,6 +591,12 @@ def get_node_metrics_all_nodes(cluster: MpcCluster):
             cluster, "mpc_pending_signatures_queue_matching_responses_indexed", i
         )
 
+        network_metrics[
+            i
+        ].mpc_cluster_failed_signatures_count = get_metric_value_for_node(
+            cluster, IntMetricName.MPC_CLUSTER_FAILED_SIGNATURES_COUNT, i
+        )
+
         network_metrics[i].queue_size += get_metric_value_for_node(
             cluster, "mpc_pending_ckds_queue_size", i
         )
@@ -603,9 +609,7 @@ def get_node_metrics_all_nodes(cluster: MpcCluster):
         network_metrics[i].matching_responses_indexed += get_metric_value_for_node(
             cluster, "mpc_pending_ckds_queue_matching_responses_indexed", i
         )
-        print(
-            f"Node {i}: queue_size={network_metrics[i].queue_size}, requests_indexed={network_metrics[i].requests_indexed}, responses_indexed={network_metrics[i].responses_indexed}, matching_responses_indexed={network_metrics[i].matching_responses_indexed}"
-        )
+        print(f"Node {i}: {network_metrics[i]}")
     return network_metrics
 
 
