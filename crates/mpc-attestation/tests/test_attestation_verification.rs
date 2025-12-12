@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use attestation::attestation::VerificationError;
-use mpc_attestation::attestation::{Attestation, MockAttestation, ValidatedAttestation};
+use mpc_attestation::attestation::{Attestation, MockAttestation, VerifiedAttestation};
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use test_utils::attestation::{
     account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
@@ -17,7 +17,7 @@ fn valid_mock_attestation_succeeds_verification() {
 
     assert_matches!(
         valid_attestation.verify(report_data.into(), timestamp_s, &[], &[]),
-        Ok(ValidatedAttestation::Mock(MockAttestation::Valid))
+        Ok(VerifiedAttestation::Mock(MockAttestation::Valid))
     );
 }
 

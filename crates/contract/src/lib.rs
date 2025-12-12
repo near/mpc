@@ -49,11 +49,11 @@ use k256::elliptic_curve::PrimeField;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::{
+    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
     store::LookupMap,
-    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -63,10 +63,10 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 
-use state::{running::RunningContractState, ProtocolContractState};
+use state::{ProtocolContractState, running::RunningContractState};
 use tee::{
     proposal::MpcDockerImageHash,
-    tee_state::{NodeId, TeeValidationResult},
+    tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
@@ -576,33 +576,33 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        // Verify the TEE quote (including TLS and account keys) and Docker image for the proposed participant
-        let account_key_dto = account_key.clone().try_into_dto_type()?;
-        let status = self.tee_state.verify_proposed_participant_attestation(
-            &proposed_participant_attestation,
-            tls_public_key.clone(),
-            account_key_dto,
-            tee_upgrade_deadline_duration,
-        );
-
-        if let TeeQuoteStatus::Invalid(reason) = status {
-            return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message(format!("TeeQuoteStatus is invalid: {reason}")));
-        }
-
         // Add the participant information to the contract state
-        let is_new_attestation = self.tee_state.add_participant(
-            NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: tls_public_key.into_contract_type(),
-                account_public_key: Some(account_key),
-            },
-            proposed_participant_attestation,
+        let attestation_insertion_result = self
+            .tee_state
+            .add_participant(
+                NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: tls_public_key.into_contract_type(),
+                    account_public_key: Some(account_key),
+                },
+                proposed_participant_attestation,
+                tee_upgrade_deadline_duration,
+            )
+            .map_err(|err| {
+                InvalidParameters::InvalidTeeRemoteAttestation
+                    .message(format!("TeeQuoteStatus is invalid: {err}"))
+            })?;
+
+        let caller_is_not_participant = self.voter_account().is_err();
+        let is_new_attestation = matches!(
+            attestation_insertion_result,
+            ParticipantInsertion::NewlyInsertedParticipant
         );
 
-        // Both participants and non-participants can propose. Non-participants must pay for the
-        // storage they use; participants do not.
-        if self.voter_account().is_err() || is_new_attestation {
+        let attestation_storage_must_be_paid_by_caller =
+            is_new_attestation || caller_is_not_participant;
+
+        if attestation_storage_must_be_paid_by_caller {
             let storage_used = env::storage_usage() - initial_storage;
             let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
             let attached = env::attached_deposit();
@@ -632,15 +632,19 @@ impl MpcContract {
     pub fn get_attestation(
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<Option<dtos::Attestation>, Error> {
+    ) -> Result<Option<dtos::VerifiedAttestation>, Error> {
         let tls_public_key = tls_public_key.into_contract_type();
 
         Ok(self
             .tee_state
             .participants_attestations
-            .iter()
-            .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
-            .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
+            .get(&tls_public_key)
+            .map(|node_attestation| {
+                node_attestation
+                    .verified_attestation
+                    .clone()
+                    .into_dto_type()
+            }))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -664,10 +668,14 @@ impl MpcContract {
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let attestation_max_validity_duration =
+            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
 
-        let validation_result = self
-            .tee_state
-            .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
+        let validation_result = self.tee_state.re_veirfy_participants(
+            proposal.participants(),
+            tee_upgrade_deadline_duration,
+            attestation_max_validity_duration,
+        );
 
         let proposed_participants = proposal.participants();
         match validation_result {
@@ -1063,11 +1071,14 @@ impl MpcContract {
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let attestation_max_validity_duration =
+            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
 
-        match self
-            .tee_state
-            .validate_tee(current_params.participants(), tee_upgrade_deadline_duration)
-        {
+        match self.tee_state.re_veirfy_participants(
+            current_params.participants(),
+            tee_upgrade_deadline_duration,
+            attestation_max_validity_duration,
+        ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1581,10 +1592,13 @@ impl MpcContract {
                 .clone(),
         };
 
+        let attestation_max_validity_duration =
+            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
         if !(matches!(
-            self.tee_state.verify_tee_participant(
+            self.tee_state.re_verify_tee_participant(
                 &node_id,
-                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds)
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+                attestation_max_validity_duration
             ),
             TeeQuoteStatus::Valid
         )) {
@@ -1665,13 +1679,13 @@ mod tests {
         self,
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
-        {elliptic_curve, AffinePoint, Secp256k1},
+        {AffinePoint, Secp256k1, elliptic_curve},
     };
-    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
     use primitives::key_state::{AttemptId, KeyForDomain};
-    use rand::seq::SliceRandom;
     use rand::SeedableRng;
-    use rand::{rngs::OsRng, RngCore};
+    use rand::seq::SliceRandom;
+    use rand::{RngCore, rngs::OsRng};
     use rand_core::CryptoRngCore;
     use sha2::{Digest, Sha256};
     use test_utils::contract_types::dummy_config;
@@ -2189,7 +2203,7 @@ mod tests {
     #[should_panic(expected = "Caller must be the signer account")]
     fn test_submit_participant_info_panics_if_predecessor_differs() {
         use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{testing_env, NearToken};
+        use near_sdk::{NearToken, testing_env};
 
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
@@ -2227,7 +2241,7 @@ mod tests {
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
         use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{testing_env, NearToken};
+        use near_sdk::{NearToken, testing_env};
 
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
@@ -2257,7 +2271,7 @@ mod tests {
 
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
-        use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken};
+        use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
         use std::panic;
 
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
@@ -2289,11 +2303,13 @@ mod tests {
         );
 
         // Legit participant makes the CKD request
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(context.predecessor_account_id.clone())
-            .predecessor_account_id(context.predecessor_account_id.clone())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(context.predecessor_account_id.clone())
+                .predecessor_account_id(context.predecessor_account_id.clone())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
         contract.request_app_private_key(request);
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
 
@@ -2302,11 +2318,13 @@ mod tests {
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(outsider_id.clone().as_v1_account_id())
+                .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
@@ -2325,11 +2343,13 @@ mod tests {
             .expect("Participant should be allowed to respond_ckd");
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
-            .attached_deposit(NearToken::from_near(1))
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(outsider_id.clone().as_v1_account_id())
+                .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+                .attached_deposit(NearToken::from_near(1))
+                .build()
+        );
 
         let outsider_response = CKDResponse {
             big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
@@ -3027,10 +3047,12 @@ mod tests {
                 dtos::ProposedUpdates(vec![expected_with_participant_vote])
             );
 
-            testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
-                .build());
+            testing_env!(
+                VMContextBuilder::new()
+                    .signer_account_id(account_id.as_v1_account_id())
+                    .predecessor_account_id(account_id.as_v1_account_id())
+                    .build()
+            );
 
             contract.remove_update_vote();
             let mut expected_without_participant_vote = expected.clone();
@@ -3055,10 +3077,12 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = expected.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.as_v1_account_id())
+                .predecessor_account_id(account_id.as_v1_account_id())
+                .build()
+        );
 
         contract.remove_update_vote();
     }
@@ -3069,10 +3093,12 @@ mod tests {
         let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.as_v1_account_id())
+                .predecessor_account_id(account_id.as_v1_account_id())
+                .build()
+        );
         contract.remove_update_vote();
     }
 
@@ -3083,10 +3109,12 @@ mod tests {
             ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.as_v1_account_id())
+                .predecessor_account_id(account_id.as_v1_account_id())
+                .build()
+        );
         contract.remove_update_vote();
     }
 
@@ -3125,10 +3153,12 @@ mod tests {
             .vote(&update_id, participant_1.clone());
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_1.as_v1_account_id())
-            .predecessor_account_id(participant_1.as_v1_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(participant_1.as_v1_account_id())
+                .predecessor_account_id(participant_1.as_v1_account_id())
+                .build()
+        );
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
 
@@ -3138,10 +3168,12 @@ mod tests {
             .vote(&update_id, participant_2.clone());
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
-        testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_2.as_v1_account_id())
-            .predecessor_account_id(participant_2.as_v1_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(participant_2.as_v1_account_id())
+                .predecessor_account_id(participant_2.as_v1_account_id())
+                .build()
+        );
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
     }
@@ -3186,10 +3218,12 @@ mod tests {
         );
 
         // when: calling remove_non_participant_update_votes
-        testing_env!(VMContextBuilder::new()
-            .current_account_id(env::current_account_id())
-            .predecessor_account_id(env::current_account_id())
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .current_account_id(env::current_account_id())
+                .predecessor_account_id(env::current_account_id())
+                .build()
+        );
         contract.remove_non_participant_update_votes().unwrap();
 
         // then: only the 2 participant votes remain

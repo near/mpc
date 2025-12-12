@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use alloc::vec::Vec;
 use attestation::{
     app_compose::AppCompose,
@@ -25,26 +27,27 @@ pub enum Attestation {
     Dstack(DstackAttestation),
 }
 
-#[derive(Clone, Debug)]
-pub enum ValidatedAttestation {
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+pub enum VerifiedAttestation {
     Mock(MockAttestation),
     Dstack(ValidatedDstackAttestation),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct ValidatedDstackAttestation {
-    mpc_image_hash: MpcDockerImageHash,
-    launcher_compose_hash: LauncherDockerComposeHash,
+    pub mpc_image_hash: MpcDockerImageHash,
+    pub launcher_compose_hash: LauncherDockerComposeHash,
     // TODO: This timestamp can not come from the contract,
     // but should be extracted from the certificate itself.
-    creation_time_stamp_seonds: u64,
+    pub creation_time_stamp_seonds: u64,
 }
 
-impl ValidatedAttestation {
+impl VerifiedAttestation {
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,
-        max_attestation_age_seconds: u64,
+        max_attestation_age_duration: Duration,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> Result<(), VerificationError> {
@@ -54,6 +57,7 @@ impl ValidatedAttestation {
                 launcher_compose_hash,
                 creation_time_stamp_seonds,
             }) => {
+                let max_attestation_age_seconds = max_attestation_age_duration.as_secs();
                 let expiry_time = creation_time_stamp_seonds + max_attestation_age_seconds;
                 let attestation_has_expired = expiry_time < timestamp_seconds;
 
@@ -89,7 +93,7 @@ impl Attestation {
         timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    ) -> Result<ValidatedAttestation, VerificationError> {
+    ) -> Result<VerifiedAttestation, VerificationError> {
         match self {
             Self::Dstack(dstack_attestation) => {
                 // Makes MPC related attestation verification first
@@ -150,7 +154,7 @@ impl Attestation {
                     &accepted_measurements,
                 )?;
 
-                Ok(ValidatedAttestation::Dstack(ValidatedDstackAttestation {
+                Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
                     mpc_image_hash,
                     launcher_compose_hash,
                     creation_time_stamp_seonds: timestamp_seconds,
@@ -165,7 +169,7 @@ impl Attestation {
                     timestamp_seconds,
                 )?;
 
-                Ok(ValidatedAttestation::Mock(mock_attestation.clone()))
+                Ok(VerifiedAttestation::Mock(mock_attestation.clone()))
             }
         }
     }

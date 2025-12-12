@@ -1,7 +1,6 @@
-use near_sdk::near;
 use std::time::Duration;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, borsh::BorshDeserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Timestamp {
     duration_since_unix_epoch: Duration,
 }

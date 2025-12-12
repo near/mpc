@@ -12,5 +12,6 @@ pub fn dummy_config(value: u64) -> contract_interface::types::Config {
         clean_tee_status_tera_gas: value + 8,
         cleanup_orphaned_node_migrations_tera_gas: value + 9,
         remove_non_participant_update_votes_tera_gas: value + 10,
+        attestation_max_validity_duration_seconds: value + 11,
     }
 }

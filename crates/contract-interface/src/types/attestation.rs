@@ -31,6 +31,54 @@ pub enum Attestation {
 
 #[derive(
     Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum VerifiedAttestation {
+    Dtack(VerifiedDstackAttestation),
+    Mock(MockAttestation),
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct VerifiedDstackAttestation {
+    /// The digest of the MPC image running.
+    pub mpc_image_hash: [u8; 32],
+    /// The digest of the MPC image running.
+    pub launcher_compose_hash: [u8; 32],
+    /// Unix timestamp for when the attestation was created.
+    pub creation_time_stamp_seonds: u64,
+}
+
+#[derive(
+    Clone,
     Eq,
     PartialEq,
     Ord,

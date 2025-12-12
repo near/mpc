@@ -6,14 +6,14 @@
 
 use contract_interface::types as dtos;
 use mpc_attestation::{
-    attestation::{Attestation, DstackAttestation, MockAttestation},
-    collateral::{Collateral, QuoteCollateralV3},
     EventLog, TcbInfo,
+    attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
+    collateral::{Collateral, QuoteCollateralV3},
 };
 
 use k256::{
-    elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
     EncodedPoint,
+    elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
 };
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
@@ -179,14 +179,21 @@ impl IntoContractType<EventLog> for dtos::EventLog {
     }
 }
 
-impl IntoInterfaceType<dtos::Attestation> for Attestation {
-    fn into_dto_type(self) -> dtos::Attestation {
+impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
+    fn into_dto_type(self) -> dtos::VerifiedAttestation {
         match self {
-            Attestation::Dstack(dstack_attestation) => {
-                dtos::Attestation::Dstack(dstack_attestation.into_dto_type())
+            VerifiedAttestation::Mock(mock_attestation) => {
+                dtos::VerifiedAttestation::Mock(mock_attestation.into_dto_type())
             }
-            Attestation::Mock(mock_attestation) => {
-                dtos::Attestation::Mock(mock_attestation.into_dto_type())
+            VerifiedAttestation::Dstack(validated_dstack_attestation) => {
+                dtos::VerifiedAttestation::Dtack(dtos::VerifiedDstackAttestation {
+                    mpc_image_hash: validated_dstack_attestation.mpc_image_hash.into(),
+                    launcher_compose_hash: validated_dstack_attestation
+                        .launcher_compose_hash
+                        .into(),
+                    creation_time_stamp_seonds: validated_dstack_attestation
+                        .creation_time_stamp_seonds,
+                })
             }
         }
     }
@@ -206,106 +213,6 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
                 expiry_time_stamp_seconds,
             },
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::DstackAttestation> for DstackAttestation {
-    fn into_dto_type(self) -> dtos::DstackAttestation {
-        let DstackAttestation {
-            quote,
-            collateral,
-            tcb_info,
-        } = self;
-
-        dtos::DstackAttestation {
-            quote: quote.into(),
-            collateral: collateral.into_dto_type(),
-            tcb_info: tcb_info.into_dto_type(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::Collateral> for Collateral {
-    fn into_dto_type(self) -> dtos::Collateral {
-        // Collateral is a newtype wrapper around QuoteCollateralV3
-        let QuoteCollateralV3 {
-            pck_crl_issuer_chain,
-            root_ca_crl,
-            pck_crl,
-            tcb_info_issuer_chain,
-            tcb_info,
-            tcb_info_signature,
-            qe_identity_issuer_chain,
-            qe_identity,
-            qe_identity_signature,
-        } = self.into();
-
-        dtos::Collateral {
-            pck_crl_issuer_chain,
-            root_ca_crl,
-            pck_crl,
-            tcb_info_issuer_chain,
-            tcb_info,
-            tcb_info_signature,
-            qe_identity_issuer_chain,
-            qe_identity,
-            qe_identity_signature,
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::TcbInfo> for TcbInfo {
-    fn into_dto_type(self) -> dtos::TcbInfo {
-        let TcbInfo {
-            mrtd,
-            rtmr0,
-            rtmr1,
-            rtmr2,
-            rtmr3,
-            os_image_hash,
-            compose_hash,
-            device_id,
-            app_compose,
-            event_log,
-        } = self;
-
-        let event_log = event_log
-            .into_iter()
-            .map(IntoInterfaceType::into_dto_type)
-            .collect();
-
-        dtos::TcbInfo {
-            mrtd,
-            rtmr0,
-            rtmr1,
-            rtmr2,
-            rtmr3,
-            os_image_hash,
-            compose_hash,
-            device_id,
-            app_compose,
-            event_log,
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::EventLog> for EventLog {
-    fn into_dto_type(self) -> dtos::EventLog {
-        let EventLog {
-            imr,
-            event_type,
-            digest,
-            event,
-            event_payload,
-        } = self;
-
-        dtos::EventLog {
-            imr,
-            event_type,
-            digest,
-            event,
-            event_payload,
         }
     }
 }
@@ -478,6 +385,9 @@ impl From<contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.remove_non_participant_update_votes_tera_gas {
             config.remove_non_participant_update_votes_tera_gas = v;
         }
+        if let Some(v) = config_ext.attestation_max_validity_duration_seconds {
+            config.attestation_max_validity_duration_seconds = v;
+        }
 
         config
     }
@@ -503,6 +413,8 @@ impl From<&Config> for contract_interface::types::Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            attestation_max_validity_duration_seconds: value
+                .attestation_max_validity_duration_seconds,
         }
     }
 }
@@ -527,6 +439,8 @@ impl From<contract_interface::types::Config> for Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
+            attestation_max_validity_duration_seconds: value
+                .attestation_max_validity_duration_seconds,
         }
     }
 }

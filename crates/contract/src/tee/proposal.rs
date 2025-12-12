@@ -54,7 +54,6 @@ impl CodeHashesVotes {
 
 /// An allowed Docker image configuration entry containing both the MPC image hash and its
 /// corresponding launcher compose hash, along with when it was added to the allowlist.
-#[near(serializers=[json])]
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct AllowedMpcDockerImage {
     pub(crate) image_hash: MpcDockerImageHash,
@@ -63,7 +62,6 @@ pub struct AllowedMpcDockerImage {
 }
 /// Collection of whitelisted Docker code hashes that are the only ones MPC nodes are allowed to
 /// run.
-#[near(serializers=[json])]
 #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct AllowedDockerImageHashes {
     /// Whitelisted code hashes, sorted by when they were added (oldest first). Expired entries are
@@ -188,17 +186,21 @@ mod tests {
     fn test_insert_and_get() {
         let mut allowed = AllowedDockerImageHashes::default();
         let mut current_time_nano_seconds = 0;
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(current_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(current_time_nano_seconds)
+                .build()
+        );
 
         // Insert a new proposal
         allowed.insert(dummy_code_hash(1), TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
         current_time_nano_seconds += NANOS_IN_SECOND;
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(current_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(current_time_nano_seconds)
+                .build()
+        );
 
         // Insert the same code hash again
         allowed.insert(
@@ -207,9 +209,11 @@ mod tests {
         );
 
         current_time_nano_seconds += NANOS_IN_SECOND;
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(current_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(current_time_nano_seconds)
+                .build()
+        );
 
         // Insert a different code hash
         allowed.insert(
@@ -218,9 +222,11 @@ mod tests {
         );
 
         current_time_nano_seconds += NANOS_IN_SECOND;
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(current_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(current_time_nano_seconds)
+                .build()
+        );
 
         // Get proposals (should return both)
         allowed.cleanup_expired_hashes(TEST_TEE_UPGRADE_DEADLINE_DURATION);
@@ -235,17 +241,21 @@ mod tests {
         let mut allowed = AllowedDockerImageHashes::default();
         let first_entry_time_nano_seconds = NANOS_IN_SECOND;
 
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(first_entry_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(first_entry_time_nano_seconds)
+                .build()
+        );
 
         // Insert two proposals at different time intervals
         allowed.insert(dummy_code_hash(1), TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
         let second_entry_time_nano_seconds = first_entry_time_nano_seconds + NANOS_IN_SECOND;
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(second_entry_time_nano_seconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(second_entry_time_nano_seconds)
+                .build()
+        );
 
         allowed.insert(dummy_code_hash(2), TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
@@ -253,9 +263,11 @@ mod tests {
             + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos() as u64
             + 1;
 
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(first_entry_expiry_time_nanoseconds)
-            .build());
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(first_entry_expiry_time_nanoseconds)
+                .build()
+        );
 
         allowed.cleanup_expired_hashes(TEST_TEE_UPGRADE_DEADLINE_DURATION);
         let proposals: Vec<_> = allowed.get(TEST_TEE_UPGRADE_DEADLINE_DURATION);
