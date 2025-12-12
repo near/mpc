@@ -212,7 +212,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Run cargo-nextest
-        run: cargo nextest run --release --locked
+        run: cargo nextest run --release --locked --test-threads 4
 
   mpc-pytests:
     name: "MPC Node: pytests"
