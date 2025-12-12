@@ -23,7 +23,7 @@ from common_lib.migration_state import (
     MigrationState,
     parse_migration_state,
 )
-from common_lib.shared.metrics import IntMetricName, NodeMetrics
+from common_lib.shared.metrics import IntMetricName
 from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
@@ -583,53 +583,3 @@ class MpcCluster:
                 )
             )
         )
-
-
-def get_metric_value_for_node(cluster: MpcCluster, metric_name: str, node_id: int):
-    result = cluster.get_int_metric_value_for_node(metric_name, node_id)
-    return result if result is not None else 0
-
-
-def get_node_metrics_all_nodes(cluster: MpcCluster):
-    number_nodes = len(cluster.mpc_nodes)
-
-    network_metrics = [NodeMetrics(0, 0, 0, 0) for _ in range(number_nodes)]
-    for i in range(len(cluster.mpc_nodes)):
-        network_metrics[i].queue_size = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_size", i
-        )
-        network_metrics[i].requests_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_requests_indexed", i
-        )
-        network_metrics[i].responses_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_responses_indexed", i
-        )
-        network_metrics[i].matching_responses_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_matching_responses_indexed", i
-        )
-
-        network_metrics[i].queue_size += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_size", i
-        )
-        network_metrics[i].requests_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_requests_indexed", i
-        )
-        network_metrics[i].responses_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_responses_indexed", i
-        )
-        network_metrics[i].matching_responses_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_matching_responses_indexed", i
-        )
-        print(
-            f"Node {i}: queue_size={network_metrics[i].queue_size}, requests_indexed={network_metrics[i].requests_indexed}, responses_indexed={network_metrics[i].responses_indexed}, matching_responses_indexed={network_metrics[i].matching_responses_indexed}"
-        )
-    return network_metrics
-
-
-def get_queue_attemps_generated(cluster: MpcCluster):
-    led_requests = cluster.get_int_metric_value(
-        IntMetricName.MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED
-    ) + cluster.get_int_metric_value(
-        IntMetricName.MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED
-    )
-    return sum(a for a in led_requests if a is not None)

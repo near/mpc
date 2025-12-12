@@ -13,7 +13,7 @@ import time
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared, constants
-from common_lib.shared import metrics, mpc_cluster
+from common_lib.shared import metrics
 from common_lib.contracts import load_parallel_sign_contract
 
 
@@ -32,8 +32,8 @@ def test_parallel_sign_calls(
     started = time.time()
     while True:
         assert time.time() - started < constants.SHORT_TIMEOUT, "Waiting for metrics"
-        initial_node_metrics = mpc_cluster.get_node_metrics_all_nodes(shared_cluster)
-        initial_queue_attempts = mpc_cluster.get_queue_attemps_generated(shared_cluster)
+        initial_node_metrics = shared.get_node_metrics_all_nodes(shared_cluster)
+        initial_queue_attempts = shared.get_queue_attemps_generated(shared_cluster)
         if sum(node_metric.queue_size for node_metric in initial_node_metrics) == 0:
             break
         time.sleep(1)
@@ -68,13 +68,12 @@ def test_parallel_sign_calls(
     while True:
         assert time.time() - started < constants.SHORT_TIMEOUT, "Waiting for metrics"
         metrics_good = True
-        current_metrics = mpc_cluster.get_node_metrics_all_nodes(shared_cluster)
+        current_metrics = shared.get_node_metrics_all_nodes(shared_cluster)
         for i in range(len(shared_cluster.mpc_nodes)):
             if current_metrics[i] - initial_node_metrics[i] != target_metrics:
                 metrics_good = False
         led_requests = (
-            mpc_cluster.get_queue_attemps_generated(shared_cluster)
-            - initial_queue_attempts
+            shared.get_queue_attemps_generated(shared_cluster) - initial_queue_attempts
         )
 
         print(f"led_signatures={led_requests}")
