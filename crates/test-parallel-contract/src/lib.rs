@@ -66,6 +66,7 @@ impl TestContract {
         ecdsa_calls_by_domain: BTreeMap<u64, u64>,
         eddsa_calls_by_domain: BTreeMap<u64, u64>,
         ckd_calls_by_domain: BTreeMap<u64, u64>,
+        robust_ecdsa_calls_by_domain: BTreeMap<u64, u64>,
         seed: u64,
     ) -> Promise {
         fn build_signature_calls<F>(
@@ -148,6 +149,12 @@ impl TestContract {
             &target_contract,
             &ckd_calls_by_domain,
             seed,
+        ));
+        promises.extend(build_signature_calls(
+            &target_contract,
+            &robust_ecdsa_calls_by_domain,
+            seed,
+            &|hex| Payload::Ecdsa(hex),
         ));
 
         // Combine the calls using promise::and

@@ -9,7 +9,7 @@ class ProtocolState(str, Enum):
     RESHARING = "Resharing"
 
 
-SignatureScheme = Literal["Secp256k1", "Ed25519", "Bls12381"]
+SignatureScheme = Literal["Secp256k1", "Ed25519", "Bls12381", "V2Secp256k1"]
 
 
 @dataclass

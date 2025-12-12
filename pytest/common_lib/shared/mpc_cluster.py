@@ -4,6 +4,7 @@ import json
 import pathlib
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 
 from common_lib import constants
@@ -45,8 +46,8 @@ class MpcCluster:
             node.run()
 
     def kill_all(self):
-        for node in self.mpc_nodes:
-            node.kill(False)
+        with ThreadPoolExecutor(max_workers=len(self.mpc_nodes)) as executor:
+            executor.map(lambda node: node.kill(False), self.mpc_nodes)
 
     def kill_nodes(self, node_idxs: List[int], gentle=True):
         """
@@ -153,7 +154,7 @@ class MpcCluster:
             args,
             gas=300 * TGAS,
         )
-        return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
+        return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 40)
 
     def init_cluster(
         self,
@@ -434,7 +435,11 @@ class MpcCluster:
         deposit = constants.SIGNATURE_DEPOSIT + (add_deposit or 0)
         domains = self.contract_state().get_running_domains()
         for domain in domains:
-            if domain.scheme == "Secp256k1" or domain.scheme == "Ed25519":
+            if (
+                domain.scheme == "Secp256k1"
+                or domain.scheme == "Ed25519"
+                or domain.scheme == "V2Secp256k1"
+            ):
                 print(
                     f"\033[91mGenerating \033[93m{requests_per_domains}\033[91m sign requests for {domain}.\033[0m"
                 )

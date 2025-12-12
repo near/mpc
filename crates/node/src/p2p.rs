@@ -511,6 +511,7 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
+// TODO: move this inside test feature, not possible atm
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
@@ -520,51 +521,82 @@ pub mod testing {
 
     /// A unique seed for each integration test to avoid port conflicts during testing.
     #[derive(Copy, Clone)]
-    pub struct PortSeed(u16);
+    pub struct PortSeed {
+        port_number: u16,
+        case: u16,
+    }
 
     impl PortSeed {
+        // The base port number used, hoping the OS is not using ports in this range
+        pub const BASE_PORT: u16 = 10000;
+        // This constant must be equal to the total number of ports defined below
+        pub const TOTAL_DEFINED_PORTS: u16 = 19;
+        // Maximum number of nodes that can be handled without port collisions
+        pub const MAX_NODES: u16 = 10;
+        // Maximum number of cases that can be handled without port collisions
+        pub const MAX_CASES: u16 = 4;
+        // Each function below corresponds to a port per node. Each defines an offset,
+        // and all offsets must be different
+        pub const TOTAL_PORTS_PER_NODE: u16 = 3;
+
+        pub const fn new(port_number: u16) -> Self {
+            Self {
+                port_number,
+                case: 0,
+            }
+        }
+
+        pub fn with_case(&self, case: u16) -> Self {
+            Self {
+                port_number: self.port_number,
+                case,
+            }
+        }
+
+        fn compute_port(&self, node_index: u16, offset: u16) -> u16 {
+            Self::BASE_PORT
+                + self.port_number * Self::MAX_NODES * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
+                + node_index * Self::MAX_CASES * Self::TOTAL_PORTS_PER_NODE
+                + self.case * Self::TOTAL_PORTS_PER_NODE
+                + offset
+        }
+
         pub fn p2p_port(&self, node_index: usize) -> u16 {
-            (10000_usize + self.0 as usize * 100 + node_index)
-                .try_into()
-                .unwrap()
+            self.compute_port(node_index as u16, 0)
         }
 
         pub fn web_port(&self, node_index: usize) -> u16 {
-            (20000_usize + self.0 as usize * 100 + node_index)
-                .try_into()
-                .unwrap()
+            self.compute_port(node_index as u16, 1)
         }
 
         pub fn migration_web_port(&self, node_index: usize) -> u16 {
-            (30000_usize + self.0 as usize * 100 + node_index)
-                .try_into()
-                .unwrap()
+            self.compute_port(node_index as u16, 2)
         }
 
-        pub const CLI_FOR_PYTEST: Self = Self(0);
+        pub const CLI_FOR_PYTEST: Self = Self::new(0);
     }
 
     #[cfg(any(test, feature = "test-utils"))]
     impl PortSeed {
         // Each place that passes a PortSeed in should define a unique one here.
-        pub const P2P_BASIC_TEST: Self = Self(1);
-        pub const P2P_WAIT_FOR_READY_TEST: Self = Self(2);
-        pub const BASIC_CLUSTER_TEST: Self = Self(3);
-        pub const FAULTY_CLUSTER_TEST: Self = Self(4);
-        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self(5);
-        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self(6);
-        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self(7);
-        pub const BASIC_MULTIDOMAIN_TEST: Self = Self(8);
-        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self(9);
-        pub const RECOVERY_TEST: Self = Self(10);
-        pub const ONBOARDING_TEST: Self = Self(11);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self(12);
-        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self(13);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self(14);
-        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self(15);
-        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self(16);
-        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self(17);
-        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self(18);
+        pub const P2P_BASIC_TEST: Self = Self::new(1);
+        pub const P2P_WAIT_FOR_READY_TEST: Self = Self::new(2);
+        pub const BASIC_CLUSTER_TEST: Self = Self::new(3);
+        pub const FAULTY_CLUSTER_TEST: Self = Self::new(4);
+        pub const KEY_RESHARING_SIMPLE_TEST: Self = Self::new(5);
+        pub const KEY_RESHARING_MULTISTAGE_TEST: Self = Self::new(6);
+        pub const KEY_RESHARING_SIGNATURE_BUFFERING_TEST: Self = Self::new(7);
+        pub const BASIC_MULTIDOMAIN_TEST: Self = Self::new(8);
+        pub const FAULTY_STUCK_INDEXER_TEST: Self = Self::new(9);
+        pub const RECOVERY_TEST: Self = Self::new(10);
+        pub const ONBOARDING_TEST: Self = Self::new(11);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST: Self = Self::new(12);
+        pub const MIGRATION_WEBSERVER_FAILURE_TEST: Self = Self::new(13);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES: Self = Self::new(14);
+        pub const MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES: Self = Self::new(15);
+        pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self::new(16);
+        pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
+        pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
     }
 
     pub fn generate_test_p2p_configs(

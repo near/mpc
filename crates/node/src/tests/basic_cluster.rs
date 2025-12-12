@@ -45,14 +45,16 @@ async fn test_basic_cluster() {
         scheme: SignatureScheme::Bls12381,
     };
 
+    let domains = vec![
+        signature_domain_ecdsa.clone(),
+        signature_domain_eddsa.clone(),
+        ckd_domain.clone(),
+    ];
+
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(setup.participants.clone());
-        contract.add_domains(vec![
-            signature_domain_ecdsa.clone(),
-            signature_domain_eddsa.clone(),
-            ckd_domain.clone(),
-        ]);
+        contract.add_domains(domains.clone());
     }
 
     let _runs = setup
@@ -65,7 +67,7 @@ async fn test_basic_cluster() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("timeout waiting for keygen to complete");

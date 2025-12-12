@@ -67,7 +67,7 @@ impl SignatureProvider for CKDProvider {
     type TaskId = CKDTaskId;
 
     async fn make_signature(
-        self: Arc<Self>,
+        &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         self.make_ckd_leader(id).await
@@ -97,7 +97,7 @@ impl SignatureProvider for CKDProvider {
         .await
     }
 
-    async fn process_channel(self: Arc<Self>, channel: NetworkTaskChannel) -> anyhow::Result<()> {
+    async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
             MpcTaskId::CKDTaskId(task) => match task {
                 CKDTaskId::KeyGeneration { .. } => {

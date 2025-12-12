@@ -53,6 +53,13 @@ def load_mpc_contract() -> bytearray:
     return load_binary_file(MPC_CONTRACT_BINARY_PATH)
 
 
+def load_parallel_sign_contract() -> bytearray:
+    """
+    Returns test contract for parallel sign
+    """
+    return load_binary_file(PARALLEL_CONTRACT_BINARY_PATH)
+
+
 class ConfigV2:
     def __init__(self, max_num_requests_to_remove, request_timeout_blocks):
         self.max_num_requests_to_remove = max_num_requests_to_remove
