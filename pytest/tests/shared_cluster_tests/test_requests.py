@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Starts 2 near validators and 2 mpc nodes.
+Starts 1 near validators and 2 mpc nodes.
 Deploys the mpc contract.
 Sends signature/ckd requests.
 Verifies that the mpc nodes index the signature/ckd request.

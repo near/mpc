@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 """
-Starts 2 near validators and 2 mpc nodes.
+Starts 1 near validators and 2 mpc nodes.
 Deploys mpc contract.
 Deploys a test contract with a function that makes parallel sign calls.
 Calls the test function and ensures a successful response.
