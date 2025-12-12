@@ -7,6 +7,7 @@ import sys
 from typing import cast
 import time
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 import base58
 import yaml
@@ -187,6 +188,12 @@ def sign_add_access_keys_tx(
     return serialize_transaction(signed_tx)
 
 
+def kill_observer(observer: LocalNode):
+    observer.kill(gentle=True)
+    observer.reset_data()
+    adjust_indexing_shard(observer)
+
+
 def start_neard_cluster_with_cleanup(
     num_mpc_nodes: int,
 ) -> tuple[list[LocalNode], list[LocalNode]]:
@@ -218,10 +225,8 @@ def start_neard_cluster_with_cleanup(
     validators = nodes[:num_validators]
     observers = nodes[num_validators:]
 
-    for observer in observers:
-        observer.kill(gentle=True)
-        observer.reset_data()
-        adjust_indexing_shard(observer)
+    with ThreadPoolExecutor(max_workers=len(observers)) as executor:
+        executor.map(lambda observer: kill_observer(observer), observers)
 
     return validators, observers
 
