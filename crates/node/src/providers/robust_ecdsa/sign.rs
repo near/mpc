@@ -4,7 +4,8 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider, RobustEcdsaTaskId
+    EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider,
+    RobustEcdsaTaskId,
 };
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -38,9 +39,9 @@ impl RobustEcdsaSignatureProvider {
         )?;
 
         let msg_hash = *sign_request
-                .payload
-                .as_ecdsa()
-                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
+            .payload
+            .as_ecdsa()
+            .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
@@ -84,9 +85,9 @@ impl RobustEcdsaSignatureProvider {
 
         let domain_data = self.domain_data(sign_request.domain)?;
         let msg_hash = *sign_request
-                .payload
-                .as_ecdsa()
-                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
+            .payload
+            .as_ecdsa()
+            .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
