@@ -8,7 +8,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 from common_lib import shared, contracts, contract_state
 from common_lib.constants import TIMEOUT
 
-PRESIGNATURES_TO_BUFFER = 8
+PRESIGNATURES_TO_BUFFER = 6
 
 
 @pytest.fixture(scope="package")
