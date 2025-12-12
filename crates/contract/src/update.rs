@@ -131,7 +131,7 @@ pub(crate) struct UpdateEntry {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UpdateVotes {
+pub(super) struct UpdateVotes {
     pub(super) votes: BTreeMap<AccountId, UpdateId>,
     pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
 }
