@@ -77,7 +77,7 @@ def test_parallel_sign_calls(
         )
 
         print(f"led_signatures={led_requests}")
-        if led_requests == num_parallel_requests:
+        if led_requests != num_parallel_requests:
             metrics_good = False
         if metrics_good:
             break
