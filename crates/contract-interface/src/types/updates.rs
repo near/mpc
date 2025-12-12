@@ -1,4 +1,3 @@
-use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,7 +22,6 @@ type Sha256Digest = [u8; 32];
     derive(schemars::JsonSchema)
 )]
 pub struct ProposedUpdates {
-    pub votes: BTreeMap<AccountId, u64>,
     pub updates: BTreeMap<u64, UpdateHash>,
 }
 
