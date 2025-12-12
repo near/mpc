@@ -15,6 +15,7 @@ PayloadType = Literal["Ecdsa", "Eddsa"]
 signature_scheme_to_payload: Dict[SignatureScheme, PayloadType] = {
     "Secp256k1": "Ecdsa",
     "Ed25519": "Eddsa",
+    "V2Secp256k1": "Ecdsa",
 }
 
 

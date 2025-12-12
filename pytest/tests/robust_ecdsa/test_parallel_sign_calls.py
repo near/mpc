@@ -13,18 +13,19 @@ import pathlib
 import time
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-from common_lib import shared, constants, contracts
-from common_lib.shared import mpc_cluster, metrics
+from common_lib import shared, constants
+from common_lib.shared import metrics, mpc_cluster
+from common_lib.contracts import load_parallel_sign_contract
 
 
-@pytest.mark.parametrize("num_parallel_requests", [6])
+# TODO: this test is almost the same as the general parallel signs test. Eventually they should be unified
+@pytest.mark.parametrize("num_parallel_requests", [3])
 @pytest.mark.no_atexit_cleanup
 def test_parallel_sign_calls(
     compile_parallel_contract, num_parallel_requests, shared_cluster: shared.MpcCluster
 ):
-    assert num_parallel_requests % 3 == 0, "expected number multiple of 3"
     # start cluster and deploy mpc contract
-    contract = contracts.load_parallel_sign_contract()
+    contract = load_parallel_sign_contract()
 
     print("Deploying parallel contract")
     shared_cluster.deploy_secondary_contract(contract)
@@ -44,10 +45,10 @@ def test_parallel_sign_calls(
         function_name="make_parallel_sign_calls",
         args={
             "target_contract": shared_cluster.mpc_contract_account(),
-            "ecdsa_calls_by_domain": {0: num_parallel_requests // 3},
-            "eddsa_calls_by_domain": {1: num_parallel_requests // 3},
-            "ckd_calls_by_domain": {2: num_parallel_requests // 3},
-            "robust_ecdsa_calls_by_domain": {3: 0},
+            "ecdsa_calls_by_domain": {1: 0},
+            "eddsa_calls_by_domain": {1: 0},
+            "ckd_calls_by_domain": {1: 0},
+            "robust_ecdsa_calls_by_domain": {0: num_parallel_requests},
             "seed": 23,
         },
     )

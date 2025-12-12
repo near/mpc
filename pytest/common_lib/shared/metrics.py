@@ -1,4 +1,5 @@
 from enum import Enum
+from dataclasses import dataclass
 
 
 class IntMetricName(str, Enum):
@@ -19,3 +20,22 @@ class IntMetricName(str, Enum):
 class DictMetricName(str, Enum):
     MPC_PEERS_INDEXER_BLOCK_HEIGHTS = "mpc_peers_indexer_block_heights"
     MPC_NETWORK_LIVE_CONNECTIONS = "mpc_network_live_connections"
+
+
+@dataclass
+class NodeMetrics:
+    queue_size: int
+    requests_indexed: int
+    responses_indexed: int
+    matching_responses_indexed: int
+
+    def __sub__(self, other):
+        if isinstance(other, NodeMetrics):
+            res = NodeMetrics(0, 0, 0, 0)
+            res.queue_size = self.queue_size - other.queue_size
+            res.requests_indexed = self.requests_indexed - other.requests_indexed
+            res.responses_indexed = self.responses_indexed - other.responses_indexed
+            res.matching_responses_indexed = (
+                self.matching_responses_indexed - other.matching_responses_indexed
+            )
+            return res
