@@ -23,10 +23,19 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
 
+TRIPLES_TO_BUFFER = 20
+PRESIGNATURES_TO_BUFFER = 10
+
 
 def test_threshold_from_previous_running_state_is_maintained():
     # Have the nodes disabled
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 1, load_mpc_contract())
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        4,
+        1,
+        load_mpc_contract(),
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
+        triples_to_buffer=TRIPLES_TO_BUFFER,
+    )
 
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
 
@@ -65,7 +74,11 @@ def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only()
     threshold = 5
 
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        number_of_nodes, 1, load_mpc_contract()
+        number_of_nodes,
+        1,
+        load_mpc_contract(),
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
+        triples_to_buffer=0,
     )
 
     cluster.init_cluster(
@@ -81,7 +94,7 @@ def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only()
     )
 
     # Kill one node such that resharing does not finish.
-    mpc_nodes[1].kill()
+    mpc_nodes[-1].kill()
 
     # sanity check
     assert cluster.wait_for_state(ProtocolState.RESHARING), (
