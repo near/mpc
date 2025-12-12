@@ -130,14 +130,10 @@ pub(crate) struct UpdateEntry {
     pub(super) bytes_used: u128,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UpdateVotes {
-    pub votes: BTreeMap<AccountId, UpdateId>,
-    pub updates: BTreeMap<UpdateId, UpdateHash>,
+    pub(super) votes: BTreeMap<AccountId, UpdateId>,
+    pub(super) updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
 #[near(serializers=[borsh ])]
