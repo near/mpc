@@ -83,7 +83,7 @@ pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 /// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
-pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(212);
+pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(232);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
