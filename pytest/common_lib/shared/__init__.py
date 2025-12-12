@@ -241,6 +241,7 @@ def generate_mpc_configs(
     num_mpc_nodes: int,
     num_respond_aks: int,
     presignatures_to_buffer: int | None,
+    triples_to_buffer: int | None,
     migrating_nodes: list[int],
 ) -> list[ConfigValues]:
     """
@@ -280,6 +281,13 @@ def generate_mpc_configs(
             "--desired-presignatures-to-buffer",
             str(presignatures_to_buffer),
         )
+
+    if triples_to_buffer:
+        cmd += (
+            "--desired-triples-to-buffer",
+            str(triples_to_buffer),
+        )
+
     subprocess.run(cmd)
 
     for i in migrating_nodes:
@@ -377,6 +385,7 @@ def start_cluster_with_mpc(
     num_respond_aks,
     contract,
     presignatures_to_buffer=None,
+    triples_to_buffer=None,
     start_mpc_nodes=True,
     migrating_nodes=[],
 ):
@@ -390,6 +399,7 @@ def start_cluster_with_mpc(
         num_mpc_nodes,
         num_respond_aks,
         presignatures_to_buffer,
+        triples_to_buffer,
         migrating_nodes,
     )
 

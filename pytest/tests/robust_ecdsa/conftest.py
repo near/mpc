@@ -23,6 +23,7 @@ def shared_cluster():
         1,
         contracts.load_mpc_contract(),
         presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
+        triples_to_buffer=0,
     )
     cluster.init_cluster(mpc_nodes, 5, ["V2Secp256k1"])
     cluster.wait_for_state(contract_state.ProtocolState.RUNNING)
