@@ -576,7 +576,7 @@ def get_metric_value_for_node(cluster: MpcCluster, metric_name: str, node_id: in
 def get_node_metrics_all_nodes(cluster: MpcCluster):
     number_nodes = len(cluster.mpc_nodes)
 
-    network_metrics = [NodeMetrics(0, 0, 0, 0) for _ in range(number_nodes)]
+    network_metrics = [NodeMetrics(0, 0, 0, 0, 0) for _ in range(number_nodes)]
     for i in range(len(cluster.mpc_nodes)):
         network_metrics[i].queue_size = get_metric_value_for_node(
             cluster, "mpc_pending_signatures_queue_size", i

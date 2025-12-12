@@ -33,16 +33,15 @@ class NodeMetrics:
 
     def __sub__(self, other):
         if isinstance(other, NodeMetrics):
-            res = NodeMetrics(0, 0, 0, 0)
+            res = NodeMetrics(0, 0, 0, 0, 0)
             res.queue_size = self.queue_size - other.queue_size
             res.requests_indexed = self.requests_indexed - other.requests_indexed
             res.responses_indexed = self.responses_indexed - other.responses_indexed
             res.matching_responses_indexed = (
                 self.matching_responses_indexed - other.matching_responses_indexed
             )
-            (
-                res.mpc_cluster_failed_signatures_count
-                - self.mpc_cluster_failed_signatures_count
+            res.mpc_cluster_failed_signatures_count = (
+                self.mpc_cluster_failed_signatures_count
                 - other.mpc_cluster_failed_signatures_count
             )
             return res
