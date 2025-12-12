@@ -60,10 +60,7 @@ pub struct ProposedUpdates {
 
 impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     fn from(old: ProposedUpdates) -> Self {
-        let mut entries =
-            IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV2);
-
-        // Build map of update_id -> voters for validation (single pass)
+        // Build map of update_id -> voters for validation
         let mut votes_by_update: BTreeMap<UpdateId, HashSet<AccountId>> = BTreeMap::new();
         for (account, update_id) in old.vote_by_participant.iter() {
             votes_by_update
@@ -72,26 +69,36 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
                 .insert(account.clone());
         }
 
-        for (id, entry) in old.entries.iter() {
-            // Validate votes consistency
-            if !votes_by_update
-                .get(id)
-                .map_or(entry.votes.is_empty(), |v| v == &entry.votes)
-            {
-                near_sdk::env::log_str(&format!(
-                    "Migration warning: Inconsistent votes for update {id:?}. Entry votes: {:?}, vote_by_participant: {:?}",
-                    entry.votes,
-                    votes_by_update.get(id)
-                ));
-            }
+        let entries_to_migrate: Vec<(UpdateId, crate::update::UpdateEntry)> = old
+            .entries
+            .iter()
+            .map(|(id, entry)| {
+                // Validate votes consistency
+                if !votes_by_update
+                    .get(id)
+                    .map_or(entry.votes.is_empty(), |v| v == &entry.votes)
+                {
+                    near_sdk::env::log_str(&format!(
+                        "Migration warning: Inconsistent votes for update {id:?}. Entry votes: {:?}, vote_by_participant: {:?}",
+                        entry.votes,
+                        votes_by_update.get(id)
+                    ));
+                }
 
-            entries.insert(
-                *id,
-                crate::update::UpdateEntry {
-                    update: entry.update.clone(),
-                    bytes_used: entry.bytes_used,
-                },
-            );
+                (
+                    *id,
+                    crate::update::UpdateEntry {
+                        update: entry.update.clone(),
+                        bytes_used: entry.bytes_used,
+                    },
+                )
+            })
+            .collect();
+
+        let mut entries =
+            IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV2);
+        for (id, entry) in entries_to_migrate {
+            entries.insert(id, entry);
         }
 
         Self {
