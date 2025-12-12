@@ -216,7 +216,7 @@ jobs:
 
   mpc-pytests:
     name: "MPC Node: pytests"
-    runs-on: warp-ubuntu-2204-x64-8x
+    runs-on: warp-ubuntu-2204-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
