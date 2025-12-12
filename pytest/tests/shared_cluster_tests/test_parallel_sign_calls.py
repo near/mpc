@@ -62,7 +62,7 @@ def test_parallel_sign_calls(
     decoded_value = base64.b64decode(encoded_value).decode("utf-8")
     assert int(decoded_value) == num_parallel_requests
 
-    target_metrics = metrics.NodeMetrics(0, *[num_parallel_requests] * 4)
+    target_metrics = metrics.NodeMetrics(0, *[num_parallel_requests] * 3, 0)
     # check metrics to make sure signature requests are handled properly.
     started = time.time()
     while True:
