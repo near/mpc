@@ -15,11 +15,11 @@ def shared_cluster():
     domains. Returns the cluster in a running state.
     """
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        2,
+        6,
         1,
         contracts.load_mpc_contract(),
     )
-    cluster.init_cluster(mpc_nodes, 2)
+    cluster.init_cluster(mpc_nodes, 5)
     cluster.wait_for_state(contract_state.ProtocolState.RUNNING)
 
     yield cluster
