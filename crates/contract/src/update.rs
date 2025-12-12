@@ -136,7 +136,6 @@ pub(crate) struct UpdateEntry {
     derive(schemars::JsonSchema)
 )]
 pub struct UpdateVotes {
-    pub votes: BTreeMap<AccountId, UpdateId>,
     pub updates: BTreeMap<UpdateId, UpdateHash>,
 }
 
@@ -260,19 +259,13 @@ impl ProposedUpdates {
     }
 
     pub fn all_updates(&self) -> UpdateVotes {
-        let votes = self
-            .vote_by_participant
-            .iter()
-            .map(|(account, update_id)| (account.clone(), *update_id))
-            .collect();
-
         let updates = self
             .entries
             .iter()
             .map(|(update_id, entry)| (*update_id, (&entry.update).into_dto_type()))
             .collect();
 
-        UpdateVotes { votes, updates }
+        UpdateVotes { updates }
     }
 }
 
