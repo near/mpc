@@ -65,9 +65,10 @@ pub(crate) enum AttestationSubmissionError {
     InvalidTlsKey,
 }
 
+#[derive(Debug)]
 pub(crate) enum ParticipantInsertion {
     NewlyInsertedParticipant,
-    ExistingParticipant,
+    UpdatedExistingParticipant,
 }
 
 #[derive(Debug)]
@@ -82,7 +83,7 @@ pub enum TeeValidationResult {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub(crate) struct NodeAttestation {
-    node_id: NodeId,
+    pub(crate) node_id: NodeId,
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
@@ -123,7 +124,7 @@ impl TeeState {
                 participants_attestations.insert(
                     participant_info.sign_pk.clone(),
                     NodeAttestation {
-                        node_id: node_id,
+                        node_id,
                         verified_attestation: VerifiedAttestation::Mock(
                             attestation::MockAttestation::Valid,
                         ),
@@ -196,7 +197,7 @@ impl TeeState {
         );
 
         Ok(match insertion {
-            Some(_previous_attestation) => ParticipantInsertion::ExistingParticipant,
+            Some(_previous_attestation) => ParticipantInsertion::UpdatedExistingParticipant,
             None => ParticipantInsertion::NewlyInsertedParticipant,
         })
     }
@@ -221,7 +222,7 @@ impl TeeState {
         let time_stamp_seconds = Self::current_time_seconds();
         match participant_attestation.verified_attestation.re_verify(
             time_stamp_seconds,
-            attestation_max_validity_duration,
+            attestation_max_validity_duration.as_secs(),
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
         ) {
@@ -389,6 +390,7 @@ impl TeeState {
 #[cfg(test)]
 mod tests {
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
+    use assert_matches::assert_matches;
 
     use super::*;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
@@ -396,6 +398,8 @@ mod tests {
 
     #[test]
     fn test_clean_non_participants() {
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
+
         let mut tee_state = TeeState::default();
 
         // Create some test participants using test utils
@@ -423,9 +427,26 @@ mod tests {
         };
 
         for node_id in &participant_nodes {
-            tee_state.add_participant(node_id.clone(), local_attestation.clone());
+            let insertion_result = tee_state.add_participant(
+                node_id.clone(),
+                local_attestation.clone(),
+                TEE_UPGRADE_DURATION,
+            );
+
+            assert_matches!(
+                insertion_result,
+                Ok(ParticipantInsertion::NewlyInsertedParticipant)
+            );
         }
-        tee_state.add_participant(non_participant_uid.clone(), local_attestation.clone());
+        let insertion_result = tee_state.add_participant(
+            non_participant_uid.clone(),
+            local_attestation.clone(),
+            TEE_UPGRADE_DURATION,
+        );
+        assert_matches!(
+            insertion_result,
+            Ok(ParticipantInsertion::NewlyInsertedParticipant)
+        );
 
         // Verify all 4 accounts have TEE info initially
         assert_eq!(tee_state.participants_attestations.len(), 4);
@@ -458,6 +479,45 @@ mod tests {
             !tee_state
                 .participants_attestations
                 .contains_key(&non_participant_uid.tls_public_key)
+        );
+    }
+
+    #[test]
+    fn updating_existing_participant_returns_existing_participant() {
+        // given
+        const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
+        let mut tee_state = TeeState::default();
+
+        let participant: AccountId = "dave.near".parse().unwrap();
+        let local_attestation = Attestation::Mock(MockAttestation::Valid);
+
+        let participant_id = NodeId {
+            account_id: participant.clone(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+            tls_public_key: bogus_ed25519_near_public_key(),
+        };
+
+        let insertion_result = tee_state.add_participant(
+            participant_id.clone(),
+            local_attestation.clone(),
+            TEE_UPGRADE_DURATION,
+        );
+        assert_matches!(
+            insertion_result,
+            Ok(ParticipantInsertion::NewlyInsertedParticipant)
+        );
+
+        // when
+        let re_insertion_result = tee_state.add_participant(
+            participant_id.clone(),
+            local_attestation.clone(),
+            TEE_UPGRADE_DURATION,
+        );
+
+        // then
+        assert_matches!(
+            re_insertion_result,
+            Ok(ParticipantInsertion::UpdatedExistingParticipant)
         );
     }
 }
