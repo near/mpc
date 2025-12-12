@@ -13,10 +13,11 @@ use std::collections::BTreeMap;
 
 use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 
-const ALL_PROTOCOLS: [SignatureScheme; 3] = [
+const ALL_PROTOCOLS: [SignatureScheme; 4] = [
     SignatureScheme::Secp256k1,
     SignatureScheme::Ed25519,
     SignatureScheme::Bls12381,
+    SignatureScheme::V2Secp256k1,
 ];
 
 /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.

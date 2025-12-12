@@ -19,11 +19,12 @@ use utilities::AccountIdExtV1;
 // Domain id 0 is always present if we have at least one domain on the contract.
 // In all tests below we initialize at least one domain to test sign requests against.
 const DOMAIN_ID_ZERO: DomainId = DomainId(0);
+const SIGNATURE_SCHEMES: &[SignatureScheme] =
+    &[SignatureScheme::Secp256k1, SignatureScheme::V2Secp256k1];
 
 #[tokio::test]
 async fn test_contract_sign_request() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) =
-        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let path = "test";
@@ -112,8 +113,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let (worker, contract, mpc_nodes, sks) =
-        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, mpc_nodes, sks) = init_env(SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let alice = worker.dev_create_account().await?;
@@ -197,7 +197,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
-    let (worker, contract, _, sks) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (worker, contract, _, sks) = init_env(SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -267,8 +267,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let (_, contract, mpc_nodes, sks) =
-        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, mpc_nodes, sks) = init_env(SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
 
     let predecessor_id = contract.id();

@@ -6,16 +6,17 @@ use serde_json::json;
 use sha2::Digest;
 use utilities::AccountIdExtV1;
 
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, do_resharing,
-    execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE,
-    PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        assert_running_return_participants, assert_running_return_threshold,
+        execute_async_transactions, init_env, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE,
+        PARTICIPANT_LEN,
+    },
+    resharing_utils::do_resharing,
 };
 use mpc_contract::{
     primitives::{
-        domain::{DomainId, SignatureScheme},
-        key_state::EpochId,
-        participants::Participants,
+        domain::SignatureScheme, key_state::EpochId, participants::Participants,
         thresholds::ThresholdParameters,
     },
     update::{ProposeUpdateArgs, UpdateId},
@@ -86,7 +87,6 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
-        &[DomainId(0)],
     )
     .await?;
 

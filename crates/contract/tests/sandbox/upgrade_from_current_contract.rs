@@ -2,9 +2,8 @@ use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
+    ALL_SIGNATURE_SCHEMES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
 };
-use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
@@ -34,7 +33,7 @@ pub fn current_contract_proposal() -> ProposeUpdateArgs {
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     // check that we can propose an update with the maximum contract size.
@@ -58,7 +57,7 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     dbg!(contract.id());
 
@@ -152,13 +151,13 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 }
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const CONTRACT_DEPLOY: NearToken = NearToken::from_near(1);
@@ -194,7 +193,7 @@ async fn test_invalid_contract_deploy() {
 // TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     const PROPOSAL_COUNT: usize = 3;
@@ -246,7 +245,7 @@ async fn test_propose_update_contract_many() {
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
-    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
     let dummy_config = contract_interface::types::InitConfig::default();
@@ -281,8 +280,7 @@ async fn test_propose_incorrect_updates() {
 #[tokio::test]
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
-    let (_, contract, accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
     dbg!(contract.id());
     let number_of_updates = 3;
     for _ in 0..number_of_updates {
@@ -301,8 +299,7 @@ async fn many_sequential_updates() {
 #[tokio::test]
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
-    let (_, contract, accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], number_of_participants).await;
+    let (_, contract, accounts, _) = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
     dbg!(contract.id());
 
     let execution = accounts[0]

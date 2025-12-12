@@ -2,18 +2,18 @@ use anyhow::Result;
 use contract_interface::types::{Attestation, MockAttestation};
 use utilities::AccountIdExtV1;
 
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, do_resharing,
-    gen_accounts, get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
-    IntoInterfaceType, PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        assert_running_return_participants, assert_running_return_threshold, gen_accounts,
+        get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
+        IntoInterfaceType, PARTICIPANT_LEN,
+    },
+    resharing_utils::do_resharing,
 };
 use mpc_contract::{
     primitives::{
-        domain::{DomainId, SignatureScheme},
-        key_state::EpochId,
-        participants::Participants,
-        test_utils::bogus_ed25519_near_public_key,
-        thresholds::ThresholdParameters,
+        domain::SignatureScheme, key_state::EpochId, participants::Participants,
+        test_utils::bogus_ed25519_near_public_key, thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
 };
@@ -102,7 +102,6 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
-        &[DomainId(0)],
     )
     .await?;
 
