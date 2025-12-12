@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::{
@@ -178,9 +178,8 @@ impl ProposedUpdates {
     /// If the voter has already voted for a different update, that vote is automatically removed
     /// (each participant can only vote for one update at a time).
     ///
-    /// Returns `Some(votes)` containing all accounts that have voted for any update if the
-    /// [`UpdateId`] exists, otherwise returns `None` if the update doesn't exist.
-    pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<HashSet<AccountId>> {
+    /// Returns `None` if the [`UpdateId`] doesn't exist.
+    pub fn vote(&mut self, id: &UpdateId, voter: AccountId) -> Option<()> {
         self.remove_vote(&voter);
 
         if !self.entries.contains_key(id) {
@@ -190,7 +189,7 @@ impl ProposedUpdates {
 
         self.vote_by_participant.insert(voter.clone(), *id);
 
-        Some(self.vote_by_participant.keys().cloned().collect())
+        Some(())
     }
 
     pub fn do_update(&mut self, id: &UpdateId, gas: Gas) -> Option<Promise> {
@@ -391,12 +390,9 @@ mod tests {
         assert_eq!(update_id_1.0, 1);
 
         let account_id = gen_account_id();
-        assert_eq!(
-            proposed_updates
-                .vote(&update_id_0, account_id.clone())
-                .unwrap(),
-            HashSet::from([account_id.clone()])
-        );
+        proposed_updates
+            .vote(&update_id_0, account_id.clone())
+            .unwrap();
 
         let expected = TestUpdateVotes {
             id: 2,
@@ -432,18 +428,13 @@ mod tests {
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let account_id = gen_account_id();
-        assert_eq!(
-            proposed_updates
-                .vote(&update_id_0, account_id.clone())
-                .unwrap(),
-            HashSet::from([account_id.clone()])
-        );
+        proposed_updates
+            .vote(&update_id_0, account_id.clone())
+            .unwrap();
 
-        proposed_updates.remove_vote(&account_id);
-
-        let expected = TestUpdateVotes {
+        let mut expected = TestUpdateVotes {
             id: 1,
-            votes: BTreeMap::new(),
+            votes: BTreeMap::from([(account_id.clone(), 0)]),
             entries: BTreeMap::from([(
                 0,
                 UpdateEntry {
@@ -452,12 +443,17 @@ mod tests {
                 },
             )]),
         };
+        let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(found, expected);
 
+        proposed_updates.remove_vote(&account_id);
+
+        expected.votes = BTreeMap::new();
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(found, expected);
     }
 
-    /// asserts that a vote by [`AccountId`] can be changed
+    /// Asserts that a vote by [`AccountId`] can be changed.
     #[test]
     fn test_proposed_updates_change_vote() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -470,24 +466,13 @@ mod tests {
         assert_eq!(update_id_1.0, 1);
 
         let account_id = gen_account_id();
-        assert_eq!(
-            proposed_updates
-                .vote(&update_id_0, account_id.clone())
-                .unwrap(),
-            HashSet::from([account_id.clone()])
-        );
+        proposed_updates
+            .vote(&update_id_0, account_id.clone())
+            .unwrap();
 
-        // change vote
-        assert_eq!(
-            proposed_updates
-                .vote(&update_id_1, account_id.clone())
-                .unwrap(),
-            HashSet::from([account_id.clone()])
-        );
-
-        let expected = TestUpdateVotes {
+        let mut expected = TestUpdateVotes {
             id: 2,
-            votes: BTreeMap::from([(account_id.clone(), 1)]),
+            votes: BTreeMap::from([(account_id.clone(), 0)]),
             entries: BTreeMap::from([
                 (
                     0,
@@ -508,9 +493,18 @@ mod tests {
 
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(found, expected);
+
+        // change vote
+        proposed_updates
+            .vote(&update_id_1, account_id.clone())
+            .unwrap();
+
+        expected.votes = BTreeMap::from([(account_id.clone(), 1)]);
+        let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(found, expected);
     }
 
-    /// asserts that a vote for a non-existing update id by [`AccountId`] removes any previous vote by [`AccountId`]
+    /// Asserts that a vote for a non-existing [`UpdateId`] by [`AccountId`] removes any previous vote by [`AccountId`].
     #[test]
     fn test_proposed_updates_invalid_vote_removes_previous_vote() {
         let mut proposed_updates = ProposedUpdates::default();
@@ -519,20 +513,13 @@ mod tests {
         let update_id_0 = proposed_updates.propose(update_0.clone());
         assert_eq!(update_id_0.0, 0);
         let account_id = gen_account_id();
-        assert_eq!(
-            proposed_updates
-                .vote(&update_id_0, account_id.clone())
-                .unwrap(),
-            HashSet::from([account_id.clone()])
-        );
+        proposed_updates
+            .vote(&update_id_0, account_id.clone())
+            .unwrap();
 
-        assert!(proposed_updates
-            .vote(&100.into(), account_id.clone())
-            .is_none());
-
-        let expected = TestUpdateVotes {
+        let mut expected = TestUpdateVotes {
             id: 1,
-            votes: BTreeMap::new(),
+            votes: BTreeMap::from([(account_id.clone(), 0)]),
             entries: BTreeMap::from([(
                 0,
                 UpdateEntry {
@@ -541,7 +528,14 @@ mod tests {
                 },
             )]),
         };
+        let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
+        assert_eq!(found, expected);
 
+        assert!(proposed_updates
+            .vote(&100.into(), account_id.clone())
+            .is_none());
+
+        expected.votes = BTreeMap::new();
         let found: TestUpdateVotes = (&proposed_updates).try_into().unwrap();
         assert_eq!(found, expected);
     }
@@ -616,11 +610,9 @@ mod tests {
         assert_eq!(after, expected_after);
     }
 
-    /// Helper function
     impl TryFrom<&ProposedUpdates> for TestUpdateVotes {
         type Error = anyhow::Error;
 
-        /// Converts [`ProposedUpdates`] to [`TestUpdateVotes`].
         fn try_from(value: &ProposedUpdates) -> anyhow::Result<Self> {
             let id = value.id.0;
 
