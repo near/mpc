@@ -81,7 +81,7 @@ def test_parallel_sign_calls(
         # This means that something strange is happening in the queue, not sure
         # if it is expected when there are failures, although the metric for failures
         # stayed at 0 for those cases
-        if led_requests >= num_parallel_requests:
+        if led_requests < num_parallel_requests:
             metrics_good = False
         if metrics_good:
             break
