@@ -153,7 +153,7 @@ class MpcCluster:
             args,
             gas=300 * TGAS,
         )
-        return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 40)
+        return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
 
     def init_cluster(
         self,
