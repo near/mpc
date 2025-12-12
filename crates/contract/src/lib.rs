@@ -1811,12 +1811,15 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
     pub fn with_attested_context(contract: &MpcContract) -> AccountId {
-        let (_account_id, (node_id, _)) = contract
+        let node_id = contract
             .tee_state
             .participants_attestations
             .iter()
             .next()
-            .expect("No attested participants in tee_state");
+            .expect("No attested participants in tee_state")
+            .1
+            .node_id
+            .clone();
 
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
@@ -2823,13 +2826,22 @@ mod tests {
             let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
                 mpc_attestation::attestation::MockAttestation::Valid,
             );
-            contract.tee_state.add_participant(
+
+            let tee_upgrade_duration =
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
+
+            let insertion_result = contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone().into_contract_type(),
                     account_public_key: Some(self.signer_account_pk.clone()),
                 },
                 valid_participant_attestation,
+                tee_upgrade_duration,
+            );
+            assert_matches::assert_matches!(
+                insertion_result,
+                Ok(ParticipantInsertion::NewlyInsertedParticipant)
             );
         }
 

@@ -1,5 +1,3 @@
-use core::time::Duration;
-
 use alloc::vec::Vec;
 use attestation::{
     app_compose::AppCompose,
@@ -21,7 +19,7 @@ use crate::alloc::string::ToString;
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Attestation {
     Mock(MockAttestation),
     Dstack(DstackAttestation),
@@ -47,7 +45,7 @@ impl VerifiedAttestation {
     pub fn re_verify(
         &self,
         timestamp_seconds: u64,
-        max_attestation_age_duration: Duration,
+        max_attestation_age_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> Result<(), VerificationError> {
@@ -57,7 +55,6 @@ impl VerifiedAttestation {
                 launcher_compose_hash,
                 creation_time_stamp_seonds,
             }) => {
-                let max_attestation_age_seconds = max_attestation_age_duration.as_secs();
                 let expiry_time = creation_time_stamp_seonds + max_attestation_age_seconds;
                 let attestation_has_expired = expiry_time < timestamp_seconds;
 
@@ -76,12 +73,16 @@ impl VerifiedAttestation {
 
                 Ok(())
             }
-            Self::Mock(mock_attestation) => verify_mock_attestation(
-                mock_attestation,
-                allowed_mpc_docker_image_hashes,
-                allowed_launcher_docker_compose_hashes,
-                timestamp_seconds,
-            ),
+            Self::Mock(mock_attestation) => {
+                // Only kick out enforce max age of attestation, if it's constrained
+                verify_mock_attestation(
+                    mock_attestation,
+                    allowed_mpc_docker_image_hashes,
+                    allowed_launcher_docker_compose_hashes,
+                    timestamp_seconds,
+                    Some(max_attestation_age_seconds),
+                )
+            }
         }
     }
 }
@@ -90,7 +91,7 @@ impl Attestation {
     pub fn verify(
         &self,
         expected_report_data: ReportData,
-        timestamp_seconds: u64,
+        creation_timestamp_seconds: u64,
         allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
         allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     ) -> Result<VerifiedAttestation, VerificationError> {
@@ -150,14 +151,14 @@ impl Attestation {
 
                 dstack_attestation.verify(
                     expected_report_data,
-                    timestamp_seconds,
+                    creation_timestamp_seconds,
                     &accepted_measurements,
                 )?;
 
                 Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
                     mpc_image_hash,
                     launcher_compose_hash,
-                    creation_time_stamp_seonds: timestamp_seconds,
+                    creation_time_stamp_seonds: creation_timestamp_seconds,
                 }))
             }
             Self::Mock(mock_attestation) => {
@@ -166,7 +167,8 @@ impl Attestation {
                     mock_attestation,
                     allowed_mpc_docker_image_hashes,
                     allowed_launcher_docker_compose_hashes,
-                    timestamp_seconds,
+                    creation_timestamp_seconds,
+                    None,
                 )?;
 
                 Ok(VerifiedAttestation::Mock(mock_attestation.clone()))
@@ -239,7 +241,9 @@ pub(crate) fn verify_mock_attestation(
     mock_attestation: &MockAttestation,
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
-    timestamp_seconds: u64,
+    time_now_seconds: u64,
+    creation_timestamp_seconds: u64,
+    max_attestation_age_seconds: Option<u64>,
 ) -> Result<(), VerificationError> {
     match mock_attestation {
         MockAttestation::Valid => Ok(()),
@@ -247,7 +251,7 @@ pub(crate) fn verify_mock_attestation(
         MockAttestation::WithConstraints {
             mpc_docker_image_hash,
             launcher_docker_compose_hash,
-            creation_time_stamp_seconds: expiry_timestamp_seconds,
+            creation_time_stamp_seconds,
         } => {
             if let Some(hash) = mpc_docker_image_hash {
                 if allowed_mpc_docker_image_hashes.is_empty() {
@@ -278,14 +282,20 @@ pub(crate) fn verify_mock_attestation(
                         ))
                     })?;
             };
-            if let Some(expiry_timestamp) = expiry_timestamp_seconds {
-                (timestamp_seconds < *expiry_timestamp).or_err(|| {
-                    VerificationError::ExpiredCertificate {
-                        attestation_time: timestamp_seconds,
-                        expiry_time: *expiry_timestamp,
-                    }
-                })?;
-            };
+
+            match (max_attestation_age_seconds, creation_time_stamp_seconds) {
+                (Some(max_attestation_age_seconds), Some(creation_time_stamp_seconds)) => {
+                    let expiration_time = creation_time_stamp_seconds + max_attestation_age_seconds;
+                    let is_expired = time_now_seconds
+                        > (creation_timestamp_seconds < *expiry_timestamp).or_err(|| {
+                            VerificationError::ExpiredCertificate {
+                                attestation_time: creation_timestamp_seconds,
+                                expiry_time: *expiry_timestamp,
+                            }
+                        })?;
+                }
+                _ => {}
+            }
 
             Ok(())
         }
