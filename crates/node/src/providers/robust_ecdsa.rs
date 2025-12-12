@@ -37,6 +37,19 @@ pub(super) struct PerDomainData {
     pub presignature_store: Arc<PresignatureStorage>,
 }
 
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into)]
+pub struct EcdsaMessageHash([u8; 32]);
+
+impl EcdsaMessageHash {
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
 impl RobustEcdsaSignatureProvider {
     pub fn new(
         config: Arc<ConfigFile>,

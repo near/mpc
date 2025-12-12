@@ -4,7 +4,7 @@ use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
 use crate::providers::robust_ecdsa::{
-    KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider, RobustEcdsaTaskId,
+    EcdsaMessageHash, KeygenOutput, PresignatureStorage, RobustEcdsaSignatureProvider, RobustEcdsaTaskId
 };
 use crate::types::SignatureId;
 use anyhow::Context;
@@ -37,13 +37,15 @@ impl RobustEcdsaSignatureProvider {
             presignature.participants,
         )?;
 
+        let msg_hash = *sign_request
+                .payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
+
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
             presign_out: presignature.presignature,
-            msg_hash: *sign_request
-                .payload
-                .as_ecdsa()
-                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+            msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
         }
@@ -81,16 +83,17 @@ impl RobustEcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
+        let msg_hash = *sign_request
+                .payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?;
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
-            msg_hash: *sign_request
-                .payload
-                .as_ecdsa()
-                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+            msg_hash: msg_hash.into(),
             tweak: sign_request.tweak,
             entropy: sign_request.entropy,
         }
@@ -118,7 +121,7 @@ impl RobustEcdsaSignatureProvider {
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
     pub presign_out: PresignOutput,
-    pub msg_hash: [u8; 32],
+    pub msg_hash: EcdsaMessageHash,
     pub tweak: Tweak,
     pub entropy: [u8; 32],
 }
@@ -141,7 +144,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .context("Couldn't construct k256 point")?;
         let tweak = threshold_signatures::Tweak::new(tweak);
 
-        let msg_hash = Scalar::from_repr(self.msg_hash.into())
+        let msg_hash = Scalar::from_repr(self.msg_hash.as_bytes().into())
             .into_option()
             .context("Couldn't construct k256 point")?;
 
@@ -154,7 +157,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
         let rerand_args = RerandomizationArguments::new(
             self.keygen_out.public_key.to_element().to_affine(),
             tweak,
-            self.msg_hash,
+            self.msg_hash.into(),
             self.presign_out.big_r,
             participants,
             self.entropy,
@@ -186,7 +189,7 @@ pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
-    pub msg_hash: [u8; 32],
+    pub msg_hash: EcdsaMessageHash,
     pub tweak: Tweak,
     pub entropy: [u8; 32],
 }
