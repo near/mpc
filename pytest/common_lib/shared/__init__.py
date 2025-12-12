@@ -651,6 +651,9 @@ def assert_num_presignatures_available(
                 return
         except requests.exceptions.ConnectionError:
             pass
+        except ValueError:
+            # this case might happen if the metric is not yet available
+            pass
         time.sleep(0.1)
 
 
