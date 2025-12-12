@@ -9,27 +9,36 @@ use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
+use rstest::rstest;
 use serial_test::serial;
 
 use super::DEFAULT_BLOCK_TIME;
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
 #[tokio::test]
-async fn test_key_resharing_simple() {
+#[rstest]
+#[case(0, SignatureScheme::Secp256k1, 3)]
+#[case(1, SignatureScheme::Ed25519, 3)]
+#[case(2, SignatureScheme::Bls12381, 3)]
+#[case(3, SignatureScheme::V2Secp256k1, 5)]
+async fn test_key_resharing_simple(
+    #[case] case: u16,
+    #[case] scheme: SignatureScheme,
+    #[case] threshold: usize,
+) {
     init_integration_logger();
-    const NUM_PARTICIPANTS: usize = 4;
-    const THRESHOLD: usize = 3;
+    let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
         temp_dir.path(),
-        (0..NUM_PARTICIPANTS)
+        (0..num_participants)
             .map(|i| format!("test{}", i).parse().unwrap())
             .collect(),
-        THRESHOLD,
+        threshold,
         TXN_DELAY_BLOCKS,
-        PortSeed::KEY_RESHARING_SIMPLE_TEST,
+        PortSeed::KEY_RESHARING_SIMPLE_TEST.with_case(case),
         DEFAULT_BLOCK_TIME,
     );
 
@@ -37,27 +46,15 @@ async fn test_key_resharing_simple() {
     let mut initial_participants = setup.participants.clone();
     initial_participants.participants.pop();
 
-    let domain0 = DomainConfig {
+    let domain = DomainConfig {
         id: DomainId(0),
-        scheme: SignatureScheme::Secp256k1,
+        scheme,
     };
-
-    let domain1 = DomainConfig {
-        id: DomainId(1),
-        scheme: SignatureScheme::Ed25519,
-    };
-
-    let domain2 = DomainConfig {
-        id: DomainId(2),
-        scheme: SignatureScheme::Bls12381,
-    };
-
-    let domains = vec![domain0.clone(), domain1.clone(), domain2.clone()];
 
     {
         let mut contract = setup.indexer.contract_mut().await;
         contract.initialize(initial_participants);
-        contract.add_domains(domains.clone());
+        contract.add_domains(vec![domain.clone()]);
     }
 
     let _runs = setup
@@ -70,20 +67,34 @@ async fn test_key_resharing_simple() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
         )
         .await
         .expect("must not exceed timeout");
 
     // Sanity check.
-    assert!(request_signature_and_await_response(
-        &mut setup.indexer,
-        "user0",
-        &domain0,
-        DEFAULT_MAX_SIGNATURE_WAIT_TIME
-    )
-    .await
-    .is_some());
+    match domain.scheme {
+        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
+            assert!(request_signature_and_await_response(
+                &mut setup.indexer,
+                "user1",
+                &domain,
+                DEFAULT_MAX_SIGNATURE_WAIT_TIME
+            )
+            .await
+            .is_some());
+        }
+        SignatureScheme::Bls12381 => {
+            assert!(request_ckd_and_await_response(
+                &mut setup.indexer,
+                "user1",
+                &domain,
+                DEFAULT_MAX_SIGNATURE_WAIT_TIME
+            )
+            .await
+            .is_some());
+        }
+    }
 
     setup
         .indexer
@@ -97,39 +108,35 @@ async fn test_key_resharing_simple() {
             |state| match state {
                 ContractState::Running(running) => {
                     running.keyset.epoch_id.get() == 1
-                        && running.participants.participants.len() == NUM_PARTICIPANTS
+                        && running.participants.participants.len() == num_participants
                 }
                 _ => false,
             },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME,
         )
         .await
         .expect("Timeout waiting for resharing to complete");
 
-    for domain in domains {
-        match domain.scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => {
-                assert!(request_signature_and_await_response(
-                    &mut setup.indexer,
-                    "user1",
-                    &domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
-            }
-            SignatureScheme::Bls12381 => {
-                assert!(request_ckd_and_await_response(
-                    &mut setup.indexer,
-                    "user1",
-                    &domain,
-                    DEFAULT_MAX_SIGNATURE_WAIT_TIME
-                )
-                .await
-                .is_some());
-            }
+    match domain.scheme {
+        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
+            assert!(request_signature_and_await_response(
+                &mut setup.indexer,
+                "user1",
+                &domain,
+                DEFAULT_MAX_SIGNATURE_WAIT_TIME
+            )
+            .await
+            .is_some());
+        }
+        SignatureScheme::Bls12381 => {
+            assert!(request_ckd_and_await_response(
+                &mut setup.indexer,
+                "user1",
+                &domain,
+                DEFAULT_MAX_SIGNATURE_WAIT_TIME
+            )
+            .await
+            .is_some());
         }
     }
 }
