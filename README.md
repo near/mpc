@@ -84,7 +84,7 @@ The following functionalities are provided:
 threshold ECDSA due to the mathematical formula behind the signature
 computation. Our Ed25519 implementation does not necessitate an offline phase of
 computation. More details in
-[docs](docs/ecdsa/robust_ecdsa/signing.md).
+[docs](docs/eddsa/signing.md).
 
 ### CKD Functionalities
 
@@ -179,7 +179,22 @@ This ensures:
 
 ## Benchmarks
 
-* Benchmarks with 8 nodes – TODO([#8](https://github.com/near/threshold-signatures/issues/8))
+To run all the benchmarks, simply type the following command in your terminal:
+
+```sh
+cargo bench
+```
+
+Some benchmarks accept additional features that one can fix such as the maximum number of malicious parties `MAX_MALICIOUS`, the number of iterations to be executed `SAMPLE_SIZE`, and the network latency `LATENCY`. All three variables have to be added as environment variables. Example:
+
+```sh
+MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- robust_ecdsa_presign_advanced
+```
+
+By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
+The detailed numbers and analysis can be found in the [docs/benches/model.md](docs/benches/model.md) documentation.
+
+In a nutshell, our results show that the Robust ECDSA scheme is better to deploy than the OT based ECDSA in terms of efficiency and network bandwidth. In fact, with 15 maximum malicious parties and 100 ms of latency, the Robust ECDSA offline phase is roughly **4.7 times** faster than the OT based ECDSA offline phase and transmits **130 times** less bytes over the network before completing.
 
 ## Acknowledgments
 
