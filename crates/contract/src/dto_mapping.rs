@@ -425,19 +425,21 @@ impl IntoInterfaceType<dtos::UpdateHash> for &Update {
 
 impl IntoInterfaceType<dtos::ProposedUpdates> for &ProposedUpdates {
     fn into_dto_type(self) -> dtos::ProposedUpdates {
-        let updates = self
-            .all_updates()
-            .iter()
-            .map(|(update_id, update, votes)| dtos::Update {
-                update_id: update_id.0,
-                update_hash: update.into_dto_type(),
-                votes: votes
-                    .iter()
-                    .map(|account_id| account_id.into_dto_type())
-                    .collect(),
-            })
+        let all = self.all_updates();
+
+        let votes = all
+            .votes
+            .into_iter()
+            .map(|(account, update_id)| (account.into_dto_type(), update_id.0))
             .collect();
-        dtos::ProposedUpdates(updates)
+
+        let updates = all
+            .updates
+            .into_iter()
+            .map(|(update_id, update)| (update_id.0, update))
+            .collect();
+
+        dtos::ProposedUpdates { votes, updates }
     }
 }
 
