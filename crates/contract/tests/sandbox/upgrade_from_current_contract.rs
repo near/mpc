@@ -215,12 +215,33 @@ async fn test_propose_update_contract_many() {
             execution.is_success(),
             "failed to propose update [i={i}]; {execution:#?}"
         );
-        let proposal_id = execution.json().expect("unable to convert into UpdateId");
+        let proposal_id: UpdateId = execution.json().expect("unable to convert into UpdateId");
         proposals.push(proposal_id);
     }
 
-    // Vote for the last proposal
-    vote_update_till_completion(&contract, &accounts, proposals.last().unwrap()).await;
+    // Vote for the last proposal and check gas usage
+    let proposal_id = proposals.last().unwrap();
+    for (i, voter) in accounts.iter().enumerate() {
+        let execution = voter
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal_id,
+            }))
+            .gas(GAS_FOR_VOTE_UPDATE)
+            .transact()
+            .await
+            .unwrap();
+
+        let gas_burnt = execution.total_gas_burnt;
+        let update_occurred: bool = execution.json().expect("Vote cast was unsuccessful");
+        
+        println!("Vote {} gas burnt: {} TGas", i + 1, gas_burnt.as_tgas());
+        
+        if update_occurred {
+            println!("Update triggered on vote {}", i + 1);
+            break;
+        }
+    }
 
     // Ensure all proposals are removed after update
     for proposal in proposals {
