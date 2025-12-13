@@ -9,6 +9,7 @@ members = [
     "crates/contract-history",
     "crates/contract-interface",
     "crates/devnet",
+    "crates/include-measurements",
     "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
@@ -31,6 +32,7 @@ license = "MIT"
 attestation = { path = "crates/attestation" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
+include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
