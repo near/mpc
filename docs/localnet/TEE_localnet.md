@@ -69,8 +69,6 @@ If you change these ports, make sure to update them in all of the above files.
 
 There are additional ports defined in frodo/sam.env, but you may change those to any values you prefer.
 
-
-
 Those are the recommended configuration settings:
 you will need the following files:
 
@@ -79,90 +77,49 @@ you will need the following files:
 * [frodo.env](../../deployment/localnet/tee/frodo.env)/ [sam.env](../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
 
-#### Define the machine's external IP once  
+
+create a temp folder for the config files:
+```bash
+mkdir -p "/tmp/$USER"
+```
+
+
+Concfiguratoin fields in `docker-compose.yml`
+
+Update to use the correct launcher image: (note - this must match the launcher template defined in the MPC contract)
+
+```yaml
+image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
+```
+
+Update to use the correct MPC node image hash:
+
+```yaml
+DEFAULT_IMAGE_DIGEST=sha256:abc
+```
+
+
+Define the machine's external IP once  
 
 ```bash
 export MACHINE_IP=$(curl -4 -s ifconfig.me)  # or use known IP for the machine
 ```
 
-#### Example `docker-compose.yml`
+#### Environment File (`frodo/sam.conf`, `frodo/sam.env`) )
 
-```yaml
-version: '3.8'
+Update Sam/Frodo.conf fields: 
 
-services:
-  launcher:
-    image: nearone/mpc-launcher@sha256:bab4577e61bebcbcbed9fff22dd5fa741ded51465671638873af8a43e8f7373b
-    container_name: launcher
-    environment:
-      - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/run/dstack.sock:/var/run/dstack.sock
-      - /tapp:/tapp:ro
-      - shared-volume:/mnt/shared:ro
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-
-volumes:
-  shared-volume:
-    name: shared-volume
-```
-
-
-#### Environment File (`.env` , `user.conf` )
-
-Frodo 
 
 ```env
-# MPC Docker image override
-MPC_IMAGE_NAME=nearone/mpc-node
-MPC_IMAGE_TAGS=1356-more-detailed-error-messages-when-attestation-validation-fails-3a12c28
-MPC_REGISTRY=registry.hub.docker.com
-
-# MPC node settings
-MPC_ACCOUNT_ID=frodo.test.near
-MPC_LOCAL_ADDRESS=127.0.0.1
-MPC_SECRET_STORE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-MPC_CONTRACT_ID=mpc-contract.test.near
-MPC_ENV=mpc-localnet
-MPC_HOME_DIR=/data
-RUST_BACKTRACE=full
-RUST_LOG=info
-
-NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
-
-# Port forwarding
-PORTS=8080:8080,24566:24566,13001:13001
+MPC_IMAGE_TAGS=main_3.0.3
 ```
 
+The MPC_IMAGE_TAGS should match the MPC node image hash used in the docker-compose file.
+e.g:
 
-Sam:
-
-```env
-# MPC Docker image override
-MPC_IMAGE_NAME=nearone/mpc-node
-MPC_IMAGE_TAGS=1356-more-detailed-error-messages-when-attestation-validation-fails-3a12c28
-MPC_REGISTRY=registry.hub.docker.com
-
-# MPC node settings
-MPC_ACCOUNT_ID=frodo.test.near
-MPC_LOCAL_ADDRESS=127.0.0.1
-MPC_SECRET_STORE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-MPC_CONTRACT_ID=mpc-contract.test.near
-MPC_ENV=mpc-localnet
-MPC_HOME_DIR=/data
-RUST_BACKTRACE=full
-RUST_LOG=info
-
-NEAR_BOOT_NODES=ed25519:BGa4WiBj43Mr66f9Ehf6swKtR6wZmWuwCsV3s4PSR3nx@${MACHINE_IP}:24566
-
-# Port forwarding
-PORTS=8080:8080,24566:24566,13002:13002
+```shell
+$Docker inspect nearone/mpc-node:main_3.0.3 | grep "Id"
+"Id": "sha256:abc",
 ```
 
 ---
@@ -196,11 +153,11 @@ export BASE_PATH="dstask base path"
 
 #### 4. Replace ${MACHINE_IP} inside the config files
 ```bash
-sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/frodo.conf
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/frodo.conf > "/tmp/$USER/frodo.conf"
 ```
 
 ```bash
-sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
+envsubst '${MACHINE_IP}' < deployment/localnet/tee/sam.conf > "/tmp/$USER/sam.conf"
 ```
 
 #### 5. Start the Frodo MPC Node
@@ -209,7 +166,7 @@ sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/frodo.env \
   --base-path $BASE_PATH \
-  --python-exec python3
+  --python-exec python
 ```
 
 #### 5. Start the Sam MPC Node
@@ -218,7 +175,7 @@ sed -i "s|\${MACHINE_IP}|$MACHINE_IP|g" ../deployment/localnet/tee/sam.conf
 ./deploy-launcher.sh \
   --env-file ../deployment/localnet/tee/sam.env \
   --base-path $BASE_PATH \
-  --python-exec python3
+  --python-exec python
 ```
 
 If successful, each command will output an **App ID** and confirm creation of a **CVM instance** (e.g., `Created VM with ID: …`).  
@@ -270,7 +227,6 @@ Initialize the MPC contract with the two participants (using the `P2P_KEY` value
 Prepare the arguments for the init call:
 
 ```bash
-mkdir -p "/tmp/$USER"
 envsubst < docs/localnet/args/init_tee.json > "/tmp/$USER/init_args.json"
 ```
 
@@ -351,7 +307,7 @@ near contract call-function as-read-only mpc-contract.test.near state json-args 
 Or view the allowed code hashes
 
 ```bash
-near contract call-function as-transaction mpc-contract.test.near allowed_code_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+near contract call-function as-transaction mpc-contract.test.near allowed_docker_image_hashes json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Check That Valid Attestations Are Registered
