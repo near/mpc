@@ -5,7 +5,7 @@
       "next_id": 2,
       "participants": [
         [
-          "frodo.test.near",
+          "$FRODO_ACCOUNT",
           0,
           {
             "sign_pk": "$FRODO_P2P_KEY",
@@ -13,7 +13,7 @@
           }
         ],
         [
-          "sam.test.near", 
+          "$SAM_ACCOUNT", 
           1,
           {
             "sign_pk": "$SAM_P2P_KEY",

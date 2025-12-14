@@ -29,23 +29,45 @@ This guide describes how to set up a testnet MPC cluster using dstack TDX CVMs.
 
 ## Step 1: Create MPC Account
 
+
+First, set a unique network name for the MPC cluster:
+
+```bash
+# Pick a globally unique name within the team.
+# Include your username to avoid collisions.
+export MPC_NETWORK_NAME=yourusername-test
+```
+
+Define the NEAR accounts to be used:
+```bash
+export ROOT_ACCOUNT=${MPC_NETWORK_NAME}.testnet
+export MPC_CONTRACT_ACCOUNT=${MPC_NETWORK_NAME}_mpc.testnet
+export FRODO_ACCOUNT=${MPC_NETWORK_NAME}_frodo.testnet
+export SAM_ACCOUNT=${MPC_NETWORK_NAME}_sam.testnet
+```
+
+
 Since the faucet gives only **10 NEAR per account** (and the MPC contract storage costs **15 NEAR**),  
 we need to create two accounts and then transfer funds between them.
 
 ```bash
-near account create-account sponsor-by-faucet-service barak_tee_test1.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service $ROOT_ACCOUNT \
+  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 
-near account create-account sponsor-by-faucet-service barak_tee_test1_mpc.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+
+near account create-account sponsor-by-faucet-service $MPC_CONTRACT_ACCOUNT \
+  autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+
 ```
 
 ```bash
-export ACCOUNT_ID=barak_tee_test1.testnet
-export RECEIVER_ID=barak_tee_test1_mpc.testnet
+export ACCOUNT_ID=$ROOT_ACCOUNT
+export RECEIVER_ID=$MPC_CONTRACT_ACCOUNT
 
 near tokens $ACCOUNT_ID send-near $RECEIVER_ID '9 NEAR' network-config testnet sign-with-keychain send
 ```
 
-After this, **barak_tee_test1_mpc.testnet** has **19 NEAR**, enough to deploy the MPC contract.
+After this, **$MPC_CONTRACT_ACCOUNT ** has **19 NEAR**, enough to deploy the MPC contract.
 
 ---
 
@@ -66,13 +88,13 @@ export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
 Deploy the MPC contract:
 
 ```bash
-near contract deploy barak_tee_test1_mpc.testnet use-file "$MPC_CONTRACT_PATH" without-init-call network-config testnet sign-with-keychain send
+near contract deploy $MPC_CONTRACT_ACCOUNT use-file "$MPC_CONTRACT_PATH" without-init-call network-config testnet sign-with-keychain send
 ```
 
 Inspect the deployed contract:
 
 ```bash
-near contract inspect barak_tee_test1_mpc.testnet network-config testnet now
+near contract inspect $MPC_CONTRACT_ACCOUNT network-config testnet now
 ```
 
 ---
@@ -82,9 +104,9 @@ near contract inspect barak_tee_test1_mpc.testnet network-config testnet now
 Create two accounts for the MPC nodes:
 
 ```bash
-near account create-account sponsor-by-faucet-service barak_tee_test1_frodo.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service $FRODO_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 
-near account create-account sponsor-by-faucet-service barak_tee_test1_sam.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 ```
 
 ### Update Bootnodes
@@ -176,18 +198,18 @@ export SAM_P2P_KEY=$(curl -s http://$SERVER_IP_2:18082/public_data | jq -r '.nea
 Add keys to each NEAR account:
 
 ```bash
-near account add-key barak_tee_test1_frodo.testnet grant-full-access \
+near account add-key $FRODO_ACCOUNT grant-full-access \
   use-manually-provided-public-key "$FRODO_PUBKEY" network-config testnet sign-with-keychain send
 
-near account add-key barak_tee_test1_frodo.testnet grant-full-access \
+near account add-key $FRODO_ACCOUNT grant-full-access \
   use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
 ```bash
-near account add-key barak_tee_test1_sam.testnet grant-full-access \
+near account add-key $SAM_ACCOUNT grant-full-access \
   use-manually-provided-public-key "$SAM_PUBKEY" network-config testnet sign-with-keychain send
 
-near account add-key barak_tee_test1_sam.testnet grant-full-access \
+near account add-key $SAM_ACCOUNT grant-full-access \
   use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config testnet sign-with-keychain send
 ```
 
@@ -208,7 +230,7 @@ mkdir -p "/tmp/$USER"
 envsubst < docs/testnet/args/init_testnet_tee.json > "/tmp/$USER/init_args.json"
 ```
 
-**Note:** Ensure `/tmp/$USER/init_args.json` has correct IPs, keys, accounts.
+**Note:** Ensure `/tmp/$USER/init_args.json` has correct IPs, keys, accounts before proceeding.
 
 Example:
 
@@ -244,16 +266,16 @@ Example:
 Initialize the contract:
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet init \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  init \
   file-args /tmp/$USER/init_args.json prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' sign-as barak_tee_test1_mpc.testnet \
+  attached-deposit '0 NEAR' sign-as $MPC_CONTRACT_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
 
 Verify:
 
 ```bash
-near contract call-function as-read-only barak_tee_test1_mpc.testnet state \
+near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
   json-args '{}' network-config testnet now
 ```
 
@@ -300,27 +322,27 @@ export CODE_HASH=<hash used to start the nodes>
 ### Frodo votes
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet vote_code_hash \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
   json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' sign-as barak_tee_test1_frodo.testnet \
+  attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
 
 ### Sam votes
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet vote_code_hash \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_code_hash \
   json-args "{\"code_hash\": \"$CODE_HASH\"}" prepaid-gas '100.0 Tgas' \
-  attached-deposit '0 NEAR' sign-as barak_tee_test1_sam.testnet \
+  attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
 
 Check the hash:
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet allowed_docker_image_hashes \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker_image_hashes \
   json-args '{}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' \
-  sign-as barak_tee_test1_sam.testnet network-config testnet sign-with-keychain send
+  sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
 ---
@@ -328,9 +350,9 @@ near contract call-function as-transaction barak_tee_test1_mpc.testnet allowed_d
 ## Step 8: Check Attestation Submission
 
 ```bash
-near contract call-function as-transaction barak_tee_test1.testnet get_tee_accounts \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accounts \
   json-args '{}' prepaid-gas '300 Tgas' attached-deposit '0 NEAR' \
-  sign-as barak_tee_test1_sam.testnet network-config testnet sign-with-keychain send
+  sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
 *Note:* If attestation public key is **null**, the contract uses the default mock attestation.
@@ -342,19 +364,19 @@ near contract call-function as-transaction barak_tee_test1.testnet get_tee_accou
 ## Step 9: Add Domain to Contract
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet vote_add_domains \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
   file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' sign-as barak_tee_test1_frodo.testnet network-config testnet sign-with-keychain send
+  attached-deposit '0 NEAR' sign-as $FRODO_ACCOUNT network-config testnet sign-with-keychain send
 
-near contract call-function as-transaction barak_tee_test1_mpc.testnet vote_add_domains \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
   file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' \
-  attached-deposit '0 NEAR' sign-as barak_tee_test1_sam.testnet network-config testnet sign-with-keychain send
+  attached-deposit '0 NEAR' sign-as $SAM_ACCOUNT network-config testnet sign-with-keychain send
 ```
 
 Check status:
 
 ```bash
-near contract call-function as-read-only barak_tee_test1_mpc.testnet state \
+near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
   json-args '{}' network-config testnet now
 ```
 
@@ -365,8 +387,8 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 ## Step 10: Submit Signing Request
 
 ```bash
-near contract call-function as-transaction barak_tee_test1_mpc.testnet sign \
+near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \
   file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' \
-  attached-deposit '100 yoctoNEAR' sign-as barak_tee_test1_frodo.testnet \
+  attached-deposit '100 yoctoNEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
