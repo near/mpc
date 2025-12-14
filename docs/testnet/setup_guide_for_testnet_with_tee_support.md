@@ -113,20 +113,26 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 Run this command to get the current testnet bootnodes:
 
+
 ```bash
-curl -X POST https://rpc.testnet.near.org \
+export BOOTNODES=$(curl -X POST https://rpc.testnet.near.org \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "network_info", "params": [], "id": "dontcare"}' |
   jq -r '.result.active_peers[] as $p | "\($p.id)@\($p.addr)"' |
-  paste -sd',' -
+  paste -sd',' -)
 ```
 
-Update the resulting bootnodes in:
-
-- `../deployment/testnet/frodo.conf` (Alice)  
-- `../deployment/testnet/sam.conf` (Bob)
-
 ---
+
+### Replace config placeholders inside the config files
+
+```bash
+envsubst < deployment/localnet/tee/frodo.conf > "/tmp/$USER/frodo.conf"
+```
+
+```bash
+envsubst < deployment/localnet/tee/sam.conf > "/tmp/$USER/sam.conf"
+```
 
 Start the CVMs via `../tee_launcher/deploy-launcher.sh`.
 
