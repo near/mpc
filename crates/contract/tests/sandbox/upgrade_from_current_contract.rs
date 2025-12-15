@@ -2,12 +2,13 @@ use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
+    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE,
+    MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
 };
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
-use near_workspaces::types::{Gas, NearToken};
+use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 
 pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
@@ -261,12 +262,6 @@ async fn test_vote_update_gas_before_threshold() {
 
     assert!(execution.is_success(), "failed to propose update");
     let proposal_id: UpdateId = execution.json().unwrap();
-
-    // Cast votes before threshold with minimal gas
-    const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(4);
-    // Maximum gas expected for the threshold vote that triggers the contract update (including
-    // deployment and migration)
-    const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in accounts[1..=5].iter().enumerate() {
