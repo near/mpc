@@ -4659,7 +4659,6 @@ dependencies = [
  "derive_more 2.0.1",
  "hex",
  "mpc-primitives",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
