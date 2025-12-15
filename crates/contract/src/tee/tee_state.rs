@@ -394,6 +394,10 @@ mod tests {
     use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
 
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+    use std::time::Duration;
+
     #[test]
     fn test_clean_non_participants() {
         const TEE_UPGRADE_DURATION: Duration = Duration::from_secs(10000);
@@ -509,5 +513,322 @@ mod tests {
             re_insertion_result,
             Ok(ParticipantInsertion::UpdatedExistingParticipant)
         );
+    }
+
+    #[test]
+    fn add_participant_increases_storage_size() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // when
+        tee_state
+            .add_participant(node_id, attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // then
+        assert_eq!(
+            tee_state.participants_attestations.len(),
+            1,
+            "Internal storage count should increase by exactly one"
+        );
+    }
+
+    #[test]
+    fn add_participant_indexes_by_tls_key() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // when
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // then
+        assert!(
+            tee_state
+                .participants_attestations
+                .contains_key(&node_id.tls_public_key),
+            "Entry should be strictly retrievable using the TLS public key"
+        );
+    }
+
+    #[test]
+    fn add_participant_preserves_node_id_integrity() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+
+        // when
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // then
+        let stored_entry = tee_state
+            .participants_attestations
+            .get(&node_id.tls_public_key)
+            .unwrap();
+
+        assert_eq!(
+            stored_entry.node_id, node_id,
+            "The stored NodeId struct must exactly match the inserted one"
+        );
+    }
+
+    #[test]
+    fn internal_storage_distinguishes_participants_by_tls_key() {
+        // given
+        let mut tee_state = TeeState::default();
+
+        let node_1 = NodeId {
+            account_id: "alice.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        let node_2 = NodeId {
+            account_id: "bob.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        // when
+        tee_state
+            .add_participant(
+                node_1.clone(),
+                Attestation::Mock(MockAttestation::Valid),
+                Duration::from_secs(0),
+            )
+            .unwrap();
+        tee_state
+            .add_participant(
+                node_2.clone(),
+                Attestation::Mock(MockAttestation::Valid),
+                Duration::from_secs(0),
+            )
+            .unwrap();
+
+        // then
+        assert_eq!(tee_state.participants_attestations.len(), 2);
+        assert!(tee_state
+            .participants_attestations
+            .contains_key(&node_1.tls_public_key));
+        assert!(tee_state
+            .participants_attestations
+            .contains_key(&node_2.tls_public_key));
+    }
+
+    #[test]
+    fn re_verify_validates_fresh_attestation() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "fresh.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        const NOW_SECONDS: u64 = 1000;
+        const MAX_AGE_SECONDS: u64 = 300; // 5 minutes
+
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(Duration::from_secs(NOW_SECONDS).as_nanos() as u64)
+            .build());
+
+        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            creation_time_stamp_seconds: Some(NOW_SECONDS),
+        });
+
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // when
+        let status = tee_state.re_verify_tee_participant(
+            &node_id,
+            Duration::from_secs(0),
+            Duration::from_secs(MAX_AGE_SECONDS),
+        );
+
+        // then
+        assert_eq!(status, TeeQuoteStatus::Valid);
+    }
+
+    #[test]
+    fn test_re_verify_rejects_expired_attestation() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "expired.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        const CREATION_TIME_SECONDS: u64 = 1000;
+        const MAX_AGE_SECONDS: u64 = 100;
+
+        // Set context to creation time
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
+            .build());
+
+        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+        });
+
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // when
+        // Fast forward to 1101s (Creation 1000 + Max Age 100 + 1)
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(
+                Duration::from_secs(CREATION_TIME_SECONDS + MAX_AGE_SECONDS + 1).as_nanos() as u64
+            )
+            .build());
+
+        let status = tee_state.re_verify_tee_participant(
+            &node_id,
+            Duration::from_secs(0),
+            Duration::from_secs(MAX_AGE_SECONDS),
+        );
+
+        // then
+        assert_matches!(status, TeeQuoteStatus::Invalid(_));
+    }
+
+    #[test]
+    fn re_verify_succeeds_when_within_max_validity() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "valid_check.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        const CREATION_TIME_SECONDS: u64 = 1000;
+        const ELAPSED_SECONDS: u64 = 200;
+        const MAX_VALIDITY_SECONDS: u64 = 300; // 200 elapsed < 300 allowed
+
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
+            .build());
+
+        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+        });
+
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // when
+        // Move time forward by 200 seconds
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(
+                Duration::from_secs(CREATION_TIME_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
+            )
+            .build());
+
+        let status = tee_state.re_verify_tee_participant(
+            &node_id,
+            Duration::from_secs(0),
+            Duration::from_secs(MAX_VALIDITY_SECONDS),
+        );
+
+        // then
+        assert_eq!(status, TeeQuoteStatus::Valid);
+    }
+
+    #[test]
+    fn test_re_verify_fails_when_exceeding_max_validity() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "invalid_check.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        const CREATION_TIME_SECONDS: u64 = 1000;
+        const ELAPSED_SECONDS: u64 = 200;
+        const MAX_VALIDITY_SECONDS: u64 = 100; // 200 elapsed > 100 allowed
+
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
+            .build());
+
+        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+        });
+
+        tee_state
+            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
+            .unwrap();
+
+        // when
+        // Move time forward by 200 seconds
+        testing_env!(VMContextBuilder::new()
+            .block_timestamp(
+                Duration::from_secs(CREATION_TIME_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
+            )
+            .build());
+
+        let status = tee_state.re_verify_tee_participant(
+            &node_id,
+            Duration::from_secs(0),
+            Duration::from_secs(MAX_VALIDITY_SECONDS),
+        );
+
+        // then
+        assert_matches!(status, TeeQuoteStatus::Invalid(_));
+    }
+
+    #[test]
+    fn test_re_verify_returns_invalid_for_missing_node() {
+        // given
+        let mut tee_state = TeeState::default();
+        let node_id = NodeId {
+            account_id: "ghost.near".parse().unwrap(),
+            tls_public_key: bogus_ed25519_near_public_key(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+
+        // when
+        let status = tee_state.re_verify_tee_participant(
+            &node_id,
+            Duration::from_secs(0),
+            Duration::from_secs(100),
+        );
+
+        // then
+        assert_matches!(status, TeeQuoteStatus::Invalid(msg) if msg.contains("participant has no attestation"));
     }
 }
