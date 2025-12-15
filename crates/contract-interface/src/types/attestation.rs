@@ -126,8 +126,8 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<Sha256Digest>,
         launcher_docker_compose_hash: Option<Sha256Digest>,
-        /// Unix time stamp for when this attestation expires.  
-        expiry_time_stamp_seconds: Option<u64>,
+        /// Unix time stamp for when this attestation was created.  
+        creation_time_stamp_seconds: Option<u64>,
     },
 }
 
