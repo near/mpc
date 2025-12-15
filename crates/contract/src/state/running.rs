@@ -184,8 +184,10 @@ impl RunningContractState {
 
 #[cfg(test)]
 pub mod running_tests {
+    use rstest::rstest;
+
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::gen_threshold_params;
+    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
@@ -306,28 +308,13 @@ pub mod running_tests {
         }
     }
 
-    #[test]
-    fn test_running_0() {
-        test_running_for(0);
-    }
-
-    #[test]
-    fn test_running_1() {
-        test_running_for(1);
-    }
-
-    #[test]
-    fn test_running_2() {
-        test_running_for(2);
-    }
-
-    #[test]
-    fn test_running_3() {
-        test_running_for(3);
-    }
-
-    #[test]
-    fn test_running_4() {
-        test_running_for(4);
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    #[case(NUM_PROTOCOLS)]
+    fn test_running(#[case] n: usize) {
+        test_running_for(n);
     }
 }

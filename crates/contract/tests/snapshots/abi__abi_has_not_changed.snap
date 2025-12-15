@@ -1,6 +1,5 @@
 ---
 source: crates/contract/tests/abi.rs
-assertion_line: 48
 expression: abi
 ---
 {

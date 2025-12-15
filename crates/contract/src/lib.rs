@@ -1653,6 +1653,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
+        NUM_PROTOCOLS,
     };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -2393,8 +2394,9 @@ mod tests {
             }
         }
     }
+
     const NUM_GENERATED_DOMAINS: usize = 1;
-    const NUM_DOMAINS: usize = 5;
+    const NUM_DOMAINS: usize = 2 * NUM_PROTOCOLS;
     #[test]
     fn test_start_node_migration_failure_not_participant() {
         let running_state = ProtocolContractState::Running(gen_running_state(NUM_DOMAINS));

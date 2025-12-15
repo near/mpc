@@ -310,7 +310,7 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(state) => {
                 state.previous_running_state.domains.next_domain_id()
             }
-            _ => panic!("should be in initializing state"),
+            _ => panic!("protocol state must be initialized"),
         }
     }
 
@@ -319,7 +319,7 @@ impl ProtocolContractState {
             ProtocolContractState::Running(state) => state.keyset.epoch_id,
             ProtocolContractState::Initializing(state) => state.epoch_id,
             ProtocolContractState::Resharing(state) => state.previous_running_state.keyset.epoch_id,
-            _ => panic!("should be in initializing state"),
+            _ => panic!("protocol state must be initialized"),
         }
     }
 }
