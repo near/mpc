@@ -190,7 +190,7 @@ expression: abi
           "type_schema": {
             "anyOf": [
               {
-                "$ref": "#/definitions/Attestation"
+                "$ref": "#/definitions/VerifiedAttestation"
               },
               {
                 "type": "null"
@@ -494,6 +494,10 @@ expression: abi
                       ],
                       [
                         "remove_non_participant_update_votes_tera_gas",
+                        "u64"
+                      ],
+                      [
+                        "attestation_max_validity_duration_seconds",
                         "u64"
                       ]
                     ]
@@ -1263,7 +1267,8 @@ expression: abi
           ],
           "properties": {
             "app_id": {
-              "$ref": "#/definitions/CkdAppId"
+              "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+              "type": "string"
             },
             "app_public_key": {
               "description": "The app ephemeral public key",
@@ -1282,15 +1287,11 @@ expression: abi
           "type": "object",
           "required": [
             "app_public_key",
-            "derivation_path",
             "domain_id"
           ],
           "properties": {
             "app_public_key": {
               "$ref": "#/definitions/Bls12381G1PublicKey"
-            },
-            "derivation_path": {
-              "type": "string"
             },
             "domain_id": {
               "$ref": "#/definitions/DomainId"
@@ -1311,17 +1312,6 @@ expression: abi
               "$ref": "#/definitions/Bls12381G1PublicKey"
             }
           }
-        },
-        "CkdAppId": {
-          "description": "AppId for CKD",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
         },
         "Collateral": {
           "type": "object",
@@ -1390,6 +1380,7 @@ expression: abi
           "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
+            "attestation_max_validity_duration_seconds",
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
@@ -1403,6 +1394,12 @@ expression: abi
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
+            "attestation_max_validity_duration_seconds": {
+              "description": "Contract defined time to live for node attestations. Participants must refresh their attestations before `attestation_max_validity_duration_seconds` to avoid their attestation being invalidated.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": "integer",
@@ -1611,6 +1608,15 @@ expression: abi
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
+            "attestation_max_validity_duration_seconds": {
+              "description": "Contract defined time to live for node attestations. Participants must refresh their attestations before `attestation_max_validity_duration_seconds` to avoid their attestation being invalidated.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": [
@@ -2809,6 +2815,72 @@ expression: abi
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "VerifiedAttestation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Dtack"
+              ],
+              "properties": {
+                "Dtack": {
+                  "$ref": "#/definitions/VerifiedDstackAttestation"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Mock"
+              ],
+              "properties": {
+                "Mock": {
+                  "$ref": "#/definitions/MockAttestation"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "VerifiedDstackAttestation": {
+          "type": "object",
+          "required": [
+            "creation_time_stamp_seonds",
+            "launcher_compose_hash",
+            "mpc_image_hash"
+          ],
+          "properties": {
+            "creation_time_stamp_seonds": {
+              "description": "Unix timestamp for when the attestation was created.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_compose_hash": {
+              "description": "The digest of the MPC image running.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            },
+            "mpc_image_hash": {
+              "description": "The digest of the MPC image running.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
         },
         "YieldIndex": {
           "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",
