@@ -148,7 +148,7 @@ impl Default for ProposedUpdates {
     fn default() -> Self {
         Self {
             vote_by_participant: IterableMap::new(StorageKey::ProposedUpdatesVotesV2),
-            entries: IterableMap::new(StorageKey::ProposedUpdatesEntriesV3),
+            entries: IterableMap::new(StorageKey::ProposedUpdatesEntriesV2),
             id: UpdateId::default(),
         }
     }

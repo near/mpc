@@ -60,22 +60,17 @@ pub struct ProposedUpdates {
 
 impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     fn from(old: ProposedUpdates) -> Self {
-        let ProposedUpdates {
-            mut entries,
-            vote_by_participant,
-            id,
-        } = old;
-
         // Build map of update_id -> voters for validation
         let mut votes_by_update: BTreeMap<UpdateId, HashSet<AccountId>> = BTreeMap::new();
-        for (account, update_id) in vote_by_participant.iter() {
+        for (account, update_id) in old.vote_by_participant.iter() {
             votes_by_update
                 .entry(*update_id)
                 .or_default()
                 .insert(account.clone());
         }
 
-        let entries_to_migrate: Vec<(UpdateId, crate::update::UpdateEntry)> = entries
+        let entries_to_migrate: Vec<(UpdateId, crate::update::UpdateEntry)> = old
+            .entries
             .iter()
             .map(|(id, entry)| {
                 // Validate votes consistency
@@ -100,22 +95,16 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
             })
             .collect();
 
-        // Load keys from storage and explicitly delete all old entries from V2
-        let old_keys: Vec<UpdateId> = entries.keys().cloned().collect();
-        for key in old_keys {
-            entries.remove(&key);
-        }
-
-        let mut new_entries =
-            IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV3);
+        let mut entries =
+            IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV2);
         for (id, entry) in entries_to_migrate {
-            new_entries.insert(id, entry);
+            entries.insert(id, entry);
         }
 
         Self {
-            vote_by_participant,
-            entries: new_entries,
-            id,
+            vote_by_participant: old.vote_by_participant,
+            entries,
+            id: old.id,
         }
     }
 }
@@ -282,49 +271,5 @@ mod tests {
                 .count()
         });
         assert_eq!(vote_counts, [1, 2, 3]);
-    }
-
-    #[test]
-    fn test_migration_removes_v2_entries_from_storage() {
-        // given: Create old ProposedUpdates with entries in V2 storage
-        let mut old = create_old_proposed_updates(0);
-        let id1 = UpdateId(1);
-        let id2 = UpdateId(2);
-
-        old.entries.insert(
-            id1,
-            UpdateEntry {
-                update: Update::Contract(vec![1, 2, 3]),
-                votes: HashSet::new(),
-                bytes_used: 100,
-            },
-        );
-        old.entries.insert(
-            id2,
-            UpdateEntry {
-                update: Update::Contract(vec![4, 5, 6]),
-                votes: HashSet::new(),
-                bytes_used: 200,
-            },
-        );
-
-        // Verify V2 storage has entries before migration
-        assert_eq!(old.entries.len(), 2);
-
-        // when: Perform migration (which should remove V2 entries)
-        let _new: crate::update::ProposedUpdates = old.into();
-
-        // then: Create a new IterableMap with V2 storage key and verify it's empty
-        let v2_entries_after_migration: IterableMap<UpdateId, UpdateEntry> =
-            IterableMap::new(StorageKey::ProposedUpdatesEntriesV2);
-
-        // This proves .remove() deleted from storage, not just memory
-        assert_eq!(
-            v2_entries_after_migration.len(),
-            0,
-            "V2 storage should be empty after migration"
-        );
-        assert!(v2_entries_after_migration.get(&id1).is_none());
-        assert!(v2_entries_after_migration.get(&id2).is_none());
     }
 }
