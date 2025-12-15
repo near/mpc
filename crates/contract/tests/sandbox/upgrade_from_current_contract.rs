@@ -1,8 +1,8 @@
 use crate::sandbox::common::{
-    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
     assert_running_return_participants, assert_running_return_threshold, current_contract,
     execute_key_generation_and_add_random_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
+    CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
 };
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
@@ -70,13 +70,11 @@ async fn test_propose_update_config() {
         .await
         .unwrap();
     dbg!(&execution);
-    assert!(
-        execution
-            .into_result()
-            .unwrap_err()
-            .to_string()
-            .contains("not a voter")
-    );
+    assert!(execution
+        .into_result()
+        .unwrap_err()
+        .to_string()
+        .contains("not a voter"));
 
     // have each participant propose a new update:
     let new_config = contract_interface::types::Config {
