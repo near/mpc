@@ -18,5 +18,4 @@ sha3 = { workspace = true }
 [dev-dependencies]
 assert_matches = { workspace = true }
 dcap-qvl = { workspace = true }
-rstest = { workspace = true }
 test-utils = { workspace = true }
