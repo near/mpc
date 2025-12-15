@@ -249,7 +249,7 @@ impl TestSetup {
         Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: Some(hash),
             launcher_docker_compose_hash: None,
-            expiry_time_stamp_seconds: None,
+            creation_time_stamp_seconds: None,
         })
     }
 }
@@ -268,9 +268,9 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
         .build());
 }
 /// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This test demonstrates the complete kickout mechanism using direct contract calls:
-/// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s
+/// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s, and max validity of attestations to 10s.
 /// 2. Submit valid attestations for first 2 participants at time T=1s
-/// 3. Submit expiring attestation for 3rd participant created at T=1s with 10s validity
+/// 3. Submit expiring attestation for 3rd participant created at T=1s
 /// 4. Fast-forward blockchain time to T+20s using VMContextBuilder
 /// 5. Call verify_tee() which detects expired attestation and returns false
 /// 6. Contract automatically transitions from Running to Resharing state
@@ -295,6 +295,10 @@ fn test_participant_kickout_after_expiration() {
     let mut setup = TestSetupBuilder::new()
         .with_partcipant_count(PARTICIPANT_COUNT)
         .with_threshold(THRESHOLD)
+        .with_init_config(InitConfig {
+            attestation_max_validity_duration_seconds: Some(MAX_ATTESTATION_AGE_SECONDS),
+            ..Default::default()
+        })
         .build();
 
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
