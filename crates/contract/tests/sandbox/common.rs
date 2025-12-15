@@ -36,6 +36,8 @@ use mpc_contract::{
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::Gas;
 
+use super::initializing_utils::{vote_add_domains, vote_public_key};
+use crate::sandbox::initializing_utils::start_keygen_instance;
 use near_account_id::AccountId;
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, result::ExecutionFinalResult,
@@ -64,13 +66,9 @@ use threshold_signatures::{
     frost_secp256k1::{self, Secp256K1Group},
     KeygenOutput,
 };
-pub const PARTICIPANT_LEN: usize = 10;
 use utilities::AccountIdExtV1;
 
-use crate::sandbox::initializing_utils::start_keygen_instance;
-
-use super::initializing_utils::{vote_add_domains, vote_public_key};
-
+pub const PARTICIPANT_LEN: usize = 10;
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 
