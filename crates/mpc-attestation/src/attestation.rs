@@ -242,7 +242,6 @@ pub(crate) fn verify_mock_attestation(
     allowed_mpc_docker_image_hashes: &[MpcDockerImageHash],
     allowed_launcher_docker_compose_hashes: &[LauncherDockerComposeHash],
     time_now_seconds: u64,
-    creation_timestamp_seconds: u64,
     max_attestation_age_seconds: Option<u64>,
 ) -> Result<(), VerificationError> {
     match mock_attestation {
@@ -283,18 +282,17 @@ pub(crate) fn verify_mock_attestation(
                     })?;
             };
 
-            match (max_attestation_age_seconds, creation_time_stamp_seconds) {
-                (Some(max_attestation_age_seconds), Some(creation_time_stamp_seconds)) => {
-                    let expiration_time = creation_time_stamp_seconds + max_attestation_age_seconds;
-                    let is_expired = time_now_seconds
-                        > (creation_timestamp_seconds < *expiry_timestamp).or_err(|| {
-                            VerificationError::ExpiredCertificate {
-                                attestation_time: creation_timestamp_seconds,
-                                expiry_time: *expiry_timestamp,
-                            }
-                        })?;
-                }
-                _ => {}
+            // Check for expiry
+            if let (Some(max_attestation_age_seconds), Some(creation_time_stamp_seconds)) =
+                (max_attestation_age_seconds, creation_time_stamp_seconds)
+            {
+                let expiry_time = creation_time_stamp_seconds + max_attestation_age_seconds;
+                let is_valid = expiry_time < time_now_seconds;
+
+                is_valid.or_err(|| VerificationError::ExpiredCertificate {
+                    attestation_time: *creation_time_stamp_seconds,
+                    expiry_time,
+                })?
             }
 
             Ok(())
