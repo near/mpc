@@ -42,7 +42,7 @@ fn validated_dstack_attestation_can_be_reverified() {
     let attestation = mock_dstack_attestation();
     let tls_key = p2p_tls_key();
     let account_key = account_key();
-    let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
+    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = 1763626832_u64;
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
@@ -87,7 +87,7 @@ fn validated_mock_attestation_passes_reverification() {
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
     let tls_key = p2p_tls_key();
     let account_key = account_key();
-    let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
+    let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
         .verify(report_data.into(), 0, &[], &[])
