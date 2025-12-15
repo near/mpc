@@ -19,7 +19,7 @@ use crate::alloc::string::ToString;
 const MPC_IMAGE_HASH_EVENT: &str = "mpc-image-digest";
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
     Mock(MockAttestation),
     Dstack(DstackAttestation),

@@ -117,22 +117,22 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
 struct TeeState {
-    allowed_docker_image_hashes: AllowedDockerImageHashes,
-    allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
-    votes: CodeHashesVotes,
-    participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
+    _allowed_docker_image_hashes: AllowedDockerImageHashes,
+    _allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    _votes: CodeHashesVotes,
+    _participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     config: Config,
-    tee_state: TeeState,
+    _tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
 }
