@@ -40,6 +40,7 @@ pub async fn run_command(args: cli::Args) {
             )
             .await;
         }
+
         cli::Command::GetKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
             let secrets_storage =
@@ -55,10 +56,10 @@ pub async fn run_command(args: cli::Args) {
 
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let backup_encryption_key =
-                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
+                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key_hex)
                     .expect("require valid hex key");
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
-                subcommand_args.mpc_node_url,
+                subcommand_args.mpc_node_address,
                 mpc_node_p2p_key,
                 secrets.p2p_private_key,
                 backup_encryption_key,
@@ -90,10 +91,10 @@ pub async fn run_command(args: cli::Args) {
 
             let mpc_node_p2p_key = verifying_key_from_str(&subcommand_args.mpc_node_p2p_key);
             let backup_encryption_key =
-                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key)
+                mpc_node::config::hex_to_binary_key(&subcommand_args.backup_encryption_key_hex)
                     .expect("require valid hex key");
             let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
-                subcommand_args.mpc_node_url,
+                subcommand_args.mpc_node_address,
                 mpc_node_p2p_key,
                 secrets.p2p_private_key,
                 backup_encryption_key,

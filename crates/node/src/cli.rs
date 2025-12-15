@@ -21,7 +21,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use mpc_attestation::{attestation::Attestation, report_data::ReportData};
+use mpc_attestation::{attestation::Attestation, report_data::ReportDataV1};
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
@@ -98,6 +98,9 @@ pub enum CliCommand {
         desired_presignatures_to_buffer: usize,
         #[arg(long, default_value = "1")]
         desired_responder_keys_per_participant: usize,
+        /// optional argument. If set, generates additional config for participants[id] for each id in migrating_nodes.
+        #[arg(long, value_delimiter = ',')]
+        migrating_nodes: Vec<usize>,
     },
 }
 
@@ -263,10 +266,11 @@ impl StartCmd {
 
         let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
-        let report_data = ReportData::new(
+        let report_data = ReportDataV1::new(
             *tls_public_key.into_contract_interface_type().as_bytes(),
             *account_public_key.into_contract_interface_type().as_bytes(),
-        );
+        )
+        .into();
 
         let attestation = tee_authority.generate_attestation(report_data).await?;
 
@@ -558,6 +562,7 @@ impl Cli {
                 desired_triples_to_buffer,
                 desired_presignatures_to_buffer,
                 desired_responder_keys_per_participant,
+                ref migrating_nodes,
             } => {
                 anyhow::ensure!(
                     participants.len() == responders.len(),
@@ -565,29 +570,50 @@ impl Cli {
                 );
                 self.run_generate_test_configs(
                     output_dir,
-                    participants,
-                    responders,
+                    participants.clone(),
+                    responders.clone(),
                     threshold,
                     desired_triples_to_buffer,
                     desired_presignatures_to_buffer,
                     desired_responder_keys_per_participant,
+                    migrating_nodes,
                 )
-                .await
             }
         }
     }
 
+    fn duplicate_migrating_accounts(
+        mut accounts: Vec<AccountId>,
+        migrating_nodes: &[usize],
+    ) -> anyhow::Result<Vec<AccountId>> {
+        for migrating_node_idx in migrating_nodes {
+            let migrating_node_account: AccountId = accounts
+                .get(*migrating_node_idx)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
+                })?
+                .clone();
+
+            accounts.push(migrating_node_account);
+        }
+        Ok(accounts)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    async fn run_generate_test_configs(
+    fn run_generate_test_configs(
         &self,
         output_dir: &str,
-        participants: &[AccountId],
-        responders: &[AccountId],
+        participants: Vec<AccountId>,
+        responders: Vec<AccountId>,
         threshold: usize,
         desired_triples_to_buffer: usize,
         desired_presignatures_to_buffer: usize,
         desired_responder_keys_per_participant: usize,
+        migrating_nodes: &[usize],
     ) -> anyhow::Result<()> {
+        let participants = Self::duplicate_migrating_accounts(participants, migrating_nodes)?;
+        let responders = Self::duplicate_migrating_accounts(responders, migrating_nodes)?;
+
         let p2p_key_pairs = participants
             .iter()
             .enumerate()
@@ -601,7 +627,7 @@ impl Cli {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let configs = generate_test_p2p_configs(
-            participants,
+            &participants,
             threshold,
             PortSeed::CLI_FOR_PYTEST,
             Some(p2p_key_pairs),

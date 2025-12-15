@@ -14,6 +14,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use mpc_contract::node_migrations::BackupServiceInfo;
     use rand::rngs::OsRng;
+    use rand::SeedableRng as _;
 
     use super::test_utils::setup;
     use crate::keyshare::{test_utils::KeysetBuilder, Keyshare};
@@ -68,6 +69,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_success_get_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_GET_KEYSHARES).await;
 
         let mut send_request = connect_to_web_server(
@@ -88,7 +90,7 @@ mod tests {
         let expected: Vec<Keyshare> = Vec::new();
         assert_eq!(expected, res);
 
-        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
 
         test_setup
             .keyshare_storage
@@ -112,6 +114,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_success_set_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let mut test_setup = setup(PortSeed::MIGRATION_WEBSERVER_SUCCESS_TEST_SET_KEYSHARES).await;
 
         let mut send_request = connect_to_web_server(
@@ -129,7 +132,7 @@ mod tests {
         let expected: Vec<Keyshare> = Vec::new();
         assert_eq!(expected, received);
 
-        let keyset_builder = KeysetBuilder::new_populated(0, 8);
+        let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         make_set_keyshares_request(
             &mut send_request,
             keyset_builder.keyshares(),

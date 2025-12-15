@@ -1,6 +1,7 @@
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
 use rand::rngs::OsRng;
+use rand::SeedableRng as _;
 use serde::Serialize;
 use std::collections::VecDeque;
 use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, RerandomizedPresignOutput};
@@ -250,10 +251,11 @@ fn triple_network_research_worst_case() {
 
 #[test]
 fn presignature_network_research_best_case() {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let generator = TestGenerators::new_contiguous_participant_ids(NUM_PARTICIPANTS, THRESHOLD);
-    let keygens = generator.make_ecdsa_keygens();
-    let triple0s = generator.make_triples();
-    let triple1s = generator.make_triples();
+    let keygens = generator.make_ecdsa_keygens(&mut rng);
+    let triple0s = generator.make_triples(&mut rng);
+    let triple1s = generator.make_triples(&mut rng);
 
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
@@ -289,10 +291,11 @@ fn presignature_network_research_best_case() {
 
 #[test]
 fn signature_network_research_best_case() {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let generator = TestGenerators::new_contiguous_participant_ids(NUM_PARTICIPANTS, THRESHOLD);
-    let keygens = generator.make_ecdsa_keygens();
-    let triple0s = generator.make_triples();
-    let triple1s = generator.make_triples();
+    let keygens = generator.make_ecdsa_keygens(&mut rng);
+    let triple0s = generator.make_triples(&mut rng);
+    let triple1s = generator.make_triples(&mut rng);
     let presignatures = generator.make_presignatures(&triple0s, &triple1s, &keygens);
 
     let mut protocols = Vec::new();
@@ -322,8 +325,7 @@ fn signature_network_research_best_case() {
             entropy,
         );
         let rerandomized_presignature =
-            RerandomizedPresignOutput::rerandomize_presign(&presign_out, &tweak, &rerand_args)
-                .unwrap();
+            RerandomizedPresignOutput::rerandomize_presign(&presign_out, &rerand_args).unwrap();
         let derived_public_key = tweak
             .derive_verifying_key(&public_key)
             .to_element()

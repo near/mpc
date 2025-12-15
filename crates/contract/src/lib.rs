@@ -29,6 +29,7 @@ use crate::{
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
+    state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
     update::{ProposeUpdateArgs, ProposedUpdates, Update, UpdateId},
@@ -49,11 +50,11 @@ use k256::elliptic_curve::PrimeField;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::{
-    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
     store::LookupMap,
+    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -63,7 +64,7 @@ use primitives::{
     thresholds::{Threshold, ThresholdParameters},
 };
 
-use state::{ProtocolContractState, running::RunningContractState};
+use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
@@ -402,8 +403,13 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let app_id = env::predecessor_account_id().as_v2_account_id();
-        let request = CKDRequest::new(request.app_public_key, app_id, request.domain_id);
+        let account_id = env::predecessor_account_id().as_v2_account_id();
+        let request = CKDRequest::new(
+            request.app_public_key,
+            request.domain_id,
+            &account_id,
+            &request.derivation_path,
+        );
 
         let callback_gas = Gas::from_tgas(
             mpc_contract
@@ -695,7 +701,7 @@ impl MpcContract {
                     .participants()
                     .iter()
                     .filter(|(account_id, _, _)| {
-                        participants_with_valid_attestation.is_participant(account_id)
+                        !participants_with_valid_attestation.is_participant(account_id)
                     })
                     .collect();
 
@@ -1026,11 +1032,12 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let ProtocolContractState::Running(state) = &self.protocol_state else {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
+        let threshold_parameters = match self.state().threshold_parameters() {
+            Ok(threshold_parameters) => threshold_parameters,
+            Err(ContractNotInitialized) => env::panic_str("Contract is not initialized. Can not vote for a new image hash before initialization."),
         };
 
-        let participant = AuthenticatedParticipantId::new(state.parameters.participants())?;
+        let participant = AuthenticatedParticipantId::new(threshold_parameters.participants())?;
         let votes = self.tee_state.vote(code_hash.clone(), &participant);
 
         let tee_upgrade_deadline_duration =
@@ -1679,14 +1686,15 @@ mod tests {
         self,
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
-        {AffinePoint, Secp256k1, elliptic_curve},
+        {elliptic_curve, AffinePoint, Secp256k1},
     };
-    use near_sdk::{NearToken, VMContext, test_utils::VMContextBuilder, testing_env};
+    use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
-    use rand::SeedableRng;
     use rand::seq::SliceRandom;
-    use rand::{RngCore, rngs::OsRng};
+    use rand::SeedableRng;
+    use rand::{rngs::OsRng, RngCore};
     use rand_core::CryptoRngCore;
+    use rstest::rstest;
     use sha2::{Digest, Sha256};
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -1965,13 +1973,15 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.as_v2_account_id(),
+            &request.derivation_path,
         );
         contract.request_app_private_key(request);
         contract.get_pending_ckd_request(&ckd_request).unwrap();
@@ -2004,13 +2014,15 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key,
-            context.predecessor_account_id.as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.as_v2_account_id(),
+            &request.derivation_path,
         );
         contract.request_app_private_key(request);
         assert!(matches!(
@@ -2206,7 +2218,7 @@ mod tests {
     #[should_panic(expected = "Caller must be the signer account")]
     fn test_submit_participant_info_panics_if_predecessor_differs() {
         use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{NearToken, testing_env};
+        use near_sdk::{testing_env, NearToken};
 
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
@@ -2244,7 +2256,7 @@ mod tests {
     #[should_panic(expected = "Caller must be an attested participant")]
     fn test_attested_but_not_participant_panics() {
         use near_sdk::test_utils::VMContextBuilder;
-        use near_sdk::{NearToken, testing_env};
+        use near_sdk::{testing_env, NearToken};
 
         let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
 
@@ -2274,7 +2286,7 @@ mod tests {
 
     #[test]
     fn test_respond_ckd_fails_for_attested_non_participant() {
-        use near_sdk::{NearToken, test_utils::VMContextBuilder, testing_env};
+        use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken};
         use std::panic;
 
         // --- Step 1: Setup standard contract with Bls domain and threshold=2 ---
@@ -2296,23 +2308,23 @@ mod tests {
                 .parse()
                 .unwrap();
         let request = CKDRequestArgs {
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
-            context.predecessor_account_id.clone().as_v2_account_id(),
             request.domain_id,
+            &context.predecessor_account_id.clone().as_v2_account_id(),
+            &request.derivation_path,
         );
 
         // Legit participant makes the CKD request
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(context.predecessor_account_id.clone())
-                .predecessor_account_id(context.predecessor_account_id.clone())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(context.predecessor_account_id.clone())
+            .predecessor_account_id(context.predecessor_account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
         contract.request_app_private_key(request);
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
 
@@ -2321,13 +2333,11 @@ mod tests {
         let tls_key = bogus_ed25519_near_public_key();
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(outsider_id.clone().as_v1_account_id())
-                .predecessor_account_id(outsider_id.clone().as_v1_account_id())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
@@ -2346,13 +2356,11 @@ mod tests {
             .expect("Participant should be allowed to respond_ckd");
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(outsider_id.clone().as_v1_account_id())
-                .predecessor_account_id(outsider_id.clone().as_v1_account_id())
-                .attached_deposit(NearToken::from_near(1))
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(outsider_id.clone().as_v1_account_id())
+            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
 
         let outsider_response = CKDResponse {
             big_y: dtos::Bls12381G1PublicKey([3u8; 48]),
@@ -3059,12 +3067,10 @@ mod tests {
                 dtos::ProposedUpdates(vec![expected_with_participant_vote])
             );
 
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.as_v1_account_id())
-                    .predecessor_account_id(account_id.as_v1_account_id())
-                    .build()
-            );
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(account_id.as_v1_account_id())
+                .predecessor_account_id(account_id.as_v1_account_id())
+                .build());
 
             contract.remove_update_vote();
             let mut expected_without_participant_vote = expected.clone();
@@ -3089,12 +3095,10 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let account_id = expected.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
 
         contract.remove_update_vote();
     }
@@ -3105,12 +3109,10 @@ mod tests {
         let protocol_contract_state = ProtocolContractState::Resharing(gen_resharing_state(2).1);
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
         contract.remove_update_vote();
     }
 
@@ -3121,12 +3123,10 @@ mod tests {
             ProtocolContractState::Initializing(gen_initializing_state(2, 1).1);
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.as_v1_account_id())
+            .predecessor_account_id(account_id.as_v1_account_id())
+            .build());
         contract.remove_update_vote();
     }
 
@@ -3165,12 +3165,10 @@ mod tests {
             .vote(&update_id, participant_1.clone());
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(participant_1.as_v1_account_id())
-                .predecessor_account_id(participant_1.as_v1_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_1.as_v1_account_id())
+            .predecessor_account_id(participant_1.as_v1_account_id())
+            .build());
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
 
@@ -3180,12 +3178,10 @@ mod tests {
             .vote(&update_id, participant_2.clone());
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(participant_2.as_v1_account_id())
-                .predecessor_account_id(participant_2.as_v1_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(participant_2.as_v1_account_id())
+            .predecessor_account_id(participant_2.as_v1_account_id())
+            .build());
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
     }
@@ -3230,12 +3226,10 @@ mod tests {
         );
 
         // when: calling remove_non_participant_update_votes
-        testing_env!(
-            VMContextBuilder::new()
-                .current_account_id(env::current_account_id())
-                .predecessor_account_id(env::current_account_id())
-                .build()
-        );
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(env::current_account_id())
+            .predecessor_account_id(env::current_account_id())
+            .build());
         contract.remove_non_participant_update_votes().unwrap();
 
         // then: only the 2 participant votes remain
@@ -3245,5 +3239,49 @@ mod tests {
             update_id,
             &expected_voters_after,
         );
+    }
+
+    #[rstest]
+    #[case(ProtocolContractState::Running(gen_running_state(2)))]
+    #[case(ProtocolContractState::Resharing(gen_resharing_state(2).1))]
+    #[case(ProtocolContractState::Initializing(gen_initializing_state(2, 1).1))]
+    fn test_contract_stores_allowed_hashes(#[case] protocol_state: ProtocolContractState) {
+        const CURRENT_BLOCK_TIME_STAMP: u64 = 10;
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+        let code_hash = [9; 32];
+
+        let participant_account_ids: Vec<_> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .collect();
+
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id)
+                .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+                .build());
+
+            contract
+                .vote_code_hash(code_hash.into())
+                .expect("vote succeeds");
+        }
+
+        let allowed_docker_image_hashes: Vec<MpcDockerImageHash> = contract
+            .tee_state
+            .get_allowed_mpc_docker_images(Duration::from_secs(10))
+            .into_iter()
+            .map(|allowed_image_hash| allowed_image_hash.image_hash)
+            .collect();
+
+        assert_eq!(
+            allowed_docker_image_hashes,
+            vec![MpcDockerImageHash::from(code_hash)]
+        )
     }
 }

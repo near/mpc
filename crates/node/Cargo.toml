@@ -52,9 +52,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }
-tee_authority = { workspace = true }
+tee-authority = { workspace = true }
 tempfile = { workspace = true }
-test_utils = { workspace = true }
+test-utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
 tikv-jemallocator = { workspace = true }

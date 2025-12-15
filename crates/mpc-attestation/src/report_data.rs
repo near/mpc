@@ -138,20 +138,6 @@ pub enum ReportData {
     V1(ReportDataV1),
 }
 impl ReportData {
-    /// Creates a new ReportData instance.
-    ///
-    /// * `tls_public_key`: The TLS key of the MPC node
-    /// * `account_public_key`: The NEAR account signing key
-    pub fn new(
-        tls_public_key: impl Into<Ed25519PublicKey>,
-        account_public_key: impl Into<Ed25519PublicKey>,
-    ) -> Self {
-        ReportData::V1(ReportDataV1::new(
-            tls_public_key.into(),
-            account_public_key.into(),
-        ))
-    }
-
     pub fn version(&self) -> ReportDataVersion {
         match self {
             ReportData::V1(_) => ReportDataVersion::V1,
@@ -163,6 +149,12 @@ impl ReportData {
         match self {
             ReportData::V1(v1) => v1.to_bytes(),
         }
+    }
+}
+
+impl From<ReportDataV1> for ReportData {
+    fn from(v1: ReportDataV1) -> Self {
+        ReportData::V1(v1)
     }
 }
 
@@ -190,7 +182,7 @@ mod tests {
 
         let p2p_tls_public_key = p2p_tls_key();
         let account_key = account_key();
-        let report_data = ReportData::V1(ReportDataV1::new(p2p_tls_public_key, account_key));
+        let report_data: ReportData = ReportDataV1::new(p2p_tls_public_key, account_key).into();
         assert_eq!(report_data.to_bytes(), td_report.report_data);
     }
 

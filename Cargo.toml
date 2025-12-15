@@ -6,17 +6,17 @@ members = [
     "crates/backup-cli",
     "crates/ckd-example-cli",
     "crates/contract",
+    "crates/contract-history",
     "crates/contract-interface",
-    "crates/contract_history",
     "crates/devnet",
     "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
     "crates/primitives",
-    "crates/tee_authority",
-    "crates/test_migration_contract",
-    "crates/test_parallel_contract",
-    "crates/test_utils",
+    "crates/tee-authority",
+    "crates/test-migration-contract",
+    "crates/test-parallel-contract",
+    "crates/test-utils",
     "crates/tls",
     "crates/utilities",
 ]
@@ -29,8 +29,8 @@ license = "MIT"
 [workspace.dependencies]
 #workspace members
 attestation = { path = "crates/attestation" }
+contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
-contract_history = { path = "crates/contract_history" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
@@ -39,8 +39,8 @@ mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
 node-types = { path = "crates/node-types" }
-tee_authority = { path = "crates/tee_authority" }
-test_utils = { path = "crates/test_utils" }
+tee-authority = { path = "crates/tee-authority" }
+test-utils = { path = "crates/test-utils" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
@@ -123,8 +123,8 @@ sha3 = "0.10.8"
 signature = "2.2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
-# Last commit on main branch as of 30-10-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "53f928c9e7d21f5858fd928b7524c8ce8bf8b854" }
+# Last commit on main branch as of 09-12-2025
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "1982f1b4de944d6d3011ee3f4ebbecfc9dd31cd9" }
 tikv-jemallocator = "0.5.4"
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
@@ -144,14 +144,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.1" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
 
 [profile.dev-release]
 inherits = "release"

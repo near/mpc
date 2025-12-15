@@ -143,7 +143,6 @@ mod tests {
         domain::DomainId,
         signature::{Payload, Tweak},
     };
-    use near_account_id::AccountId;
     use near_indexer_primitives::CryptoHash;
 
     use crate::types::CKDRequest;
@@ -152,7 +151,6 @@ mod tests {
         storage::{CKDRequestStorage, SignRequestStorage},
         types::SignatureRequest,
     };
-    use std::str::FromStr;
 
     #[tokio::test]
     async fn test_sig_request_storage() {
@@ -202,7 +200,7 @@ mod tests {
                 "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                     .parse()
                     .unwrap(),
-            app_id: AccountId::from_str("test-app").unwrap(),
+            app_id: [1u8; 32].into(),
             entropy: [0; 32],
             timestamp_nanosec: 0,
             domain_id: DomainId::legacy_ecdsa_id(),
@@ -218,7 +216,7 @@ mod tests {
                 "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
                     .parse()
                     .unwrap(),
-            app_id: AccountId::from_str("test-app").unwrap(),
+            app_id: [1u8; 32].into(),
             entropy: [0; 32],
             timestamp_nanosec: 0,
             domain_id: DomainId::legacy_ecdsa_id(),

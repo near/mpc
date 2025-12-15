@@ -53,10 +53,12 @@ impl KeyShareRepository for KeyshareStorageAdapter {
 mod tests {
     use super::*;
     use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
+    use rand::SeedableRng;
     use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_store_and_load_keyshares() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
         let encryption_key = [42u8; 16];
@@ -64,8 +66,8 @@ mod tests {
             .await
             .unwrap();
         let keyshares = vec![
-            generate_dummy_keyshare(1, 0, 1),
-            generate_dummy_keyshare(1, 1, 1),
+            generate_dummy_keyshare(1, 0, 1, &mut rng),
+            generate_dummy_keyshare(1, 1, 1, &mut rng),
         ];
 
         // When
@@ -100,6 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_inconsistent_epochs_fails() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
         let encryption_key = [42u8; 16];
@@ -107,8 +110,8 @@ mod tests {
             .await
             .unwrap();
         let keyshares = vec![
-            generate_dummy_keyshare(1, 0, 1),
-            generate_dummy_keyshare(2, 1, 1), // Different epoch!
+            generate_dummy_keyshare(1, 0, 1, &mut rng),
+            generate_dummy_keyshare(2, 1, 1, &mut rng), // Different epoch!
         ];
 
         // When
@@ -138,17 +141,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_cannot_downgrade_epoch() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
         let encryption_key = [42u8; 16];
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
-        let keyshares1 = vec![generate_dummy_keyshare(2, 0, 1)];
+        let keyshares1 = vec![generate_dummy_keyshare(2, 0, 1, &mut rng)];
         storage.store_keyshares(&keyshares1).await.unwrap();
 
         // When
-        let keyshares2 = vec![generate_dummy_keyshare(1, 0, 1)];
+        let keyshares2 = vec![generate_dummy_keyshare(1, 0, 1, &mut rng)];
         let result = storage.store_keyshares(&keyshares2).await;
 
         // Then

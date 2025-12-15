@@ -11,6 +11,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, result::Execution, types::NearToken, Account, Worker};
+use rand::SeedableRng;
 use rand_core::OsRng;
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
@@ -26,6 +27,8 @@ async fn create_account_given_id(
 
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+
     let (worker, contract, mpc_nodes, sks) =
         init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let attested_account = &mpc_nodes[0];
@@ -40,7 +43,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         "a_fake_one".parse().unwrap(),
     ];
 
-    let app_public_key = generate_random_app_public_key(&mut OsRng);
+    let app_public_key = generate_random_app_public_key(&mut rng);
 
     for account_id in account_ids {
         let account = create_account_given_id(&worker, account_id.clone())
@@ -51,6 +54,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         println!("submitting: {account_id}");
 
         let request = CKDRequestArgs {
+            derivation_path: "".to_string(),
             app_public_key: app_public_key.clone(),
             domain_id: DomainId::default(),
         };
@@ -59,7 +63,8 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
             &account.id().as_v2_account_id(),
             app_public_key.clone(),
             &request.domain_id,
-            &sk.private_share.to_scalar(),
+            sk,
+            "",
         );
 
         derive_confidential_key_and_validate(
@@ -79,14 +84,16 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
         .unwrap()
         .unwrap();
     let request = CKDRequestArgs {
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
     let (respond_req, respond_resp) = create_response_ckd(
         &account.id().as_v2_account_id(),
-        app_public_key,
+        request.app_public_key.clone(),
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
 
     derive_confidential_key_and_validate(
@@ -107,13 +114,41 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
     .await?;
 
     // Check that a ckd with no response from MPC network properly errors out:
-    let err =
-        derive_confidential_key_and_validate(account, &request, None, &contract, attested_account)
-            .await
-            .expect_err("should have failed with timeout");
+    let err = derive_confidential_key_and_validate(
+        account.clone(),
+        &request,
+        None,
+        &contract,
+        attested_account,
+    )
+    .await
+    .expect_err("should have failed with timeout");
     assert!(err
         .to_string()
         .contains(&errors::RequestError::Timeout.to_string()));
+
+    let request_with_path = CKDRequestArgs {
+        derivation_path: "this is a path".to_string(),
+        app_public_key: generate_random_app_public_key(&mut rng),
+        domain_id: DomainId::default(),
+    };
+
+    let (respond_request_with_path, respond_response_with_path) = create_response_ckd(
+        &account.id().as_v2_account_id(),
+        request_with_path.app_public_key.clone(),
+        &request_with_path.domain_id,
+        sk,
+        &request_with_path.derivation_path,
+    );
+
+    derive_confidential_key_and_validate(
+        account,
+        &request_with_path,
+        Some((&respond_request_with_path, &respond_response_with_path)),
+        &contract,
+        attested_account,
+    )
+    .await?;
 
     Ok(())
 }
@@ -132,6 +167,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -140,7 +176,8 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
         &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
 
     let status = alice
@@ -208,6 +245,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
     let contract_balance = contract.view_account().await?.balance;
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        derivation_path: "".to_string(),
         app_public_key,
         domain_id: DomainId::default(),
     };
@@ -269,6 +307,7 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
     };
     let app_public_key = generate_random_app_public_key(&mut OsRng);
     let request = CKDRequestArgs {
+        derivation_path: "".to_string(),
         app_public_key: app_public_key.clone(),
         domain_id: DomainId::default(),
     };
@@ -287,7 +326,8 @@ async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
         &alice.id().as_v2_account_id(),
         app_public_key,
         &request.domain_id,
-        &sk.private_share.to_scalar(),
+        sk,
+        "",
     );
     // Responding to the request should fail with missing request because the deposit is too low,
     // so the request should have never made it into the request queue and subsequently the MPC network.

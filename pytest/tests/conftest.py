@@ -38,7 +38,7 @@ def set_config():
     Sets the environment variable for the nearcore config if not already set.
     """
     if CONFIG_ENV_VAR not in os.environ:
-        os.environ[CONFIG_ENV_VAR] = constants.CONFIG_PATH
+        os.environ[CONFIG_ENV_VAR] = str(constants.CONFIG_PATH)
 
 
 def pytest_addoption(parser):

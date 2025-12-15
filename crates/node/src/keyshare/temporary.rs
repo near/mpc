@@ -150,21 +150,23 @@ mod tests {
     use crate::keyshare::temporary::TemporaryKeyStorage;
     use crate::keyshare::test_utils::generate_dummy_keyshare;
     use mpc_contract::primitives::key_state::EpochId;
+    use rand::SeedableRng as _;
 
     #[tokio::test]
     async fn test_temporary_key_storage() {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let home_dir = tempfile::tempdir().unwrap();
         let local_encryption_key = [3; 16];
         let storage =
             TemporaryKeyStorage::new(home_dir.path().to_path_buf(), local_encryption_key).unwrap();
 
-        let key1 = generate_dummy_keyshare(1, 2, 1);
-        let key2 = generate_dummy_keyshare(1, 2, 2);
-        let key3 = generate_dummy_keyshare(1, 2, 3);
-        let key4 = generate_dummy_keyshare(1, 3, 2);
-        let key5 = generate_dummy_keyshare(2, 1, 1);
-        let key6 = generate_dummy_keyshare(2, 2, 1);
-        let key7 = generate_dummy_keyshare(3, 1, 7);
+        let key1 = generate_dummy_keyshare(1, 2, 1, &mut rng);
+        let key2 = generate_dummy_keyshare(1, 2, 2, &mut rng);
+        let key3 = generate_dummy_keyshare(1, 2, 3, &mut rng);
+        let key4 = generate_dummy_keyshare(1, 3, 2, &mut rng);
+        let key5 = generate_dummy_keyshare(2, 1, 1, &mut rng);
+        let key6 = generate_dummy_keyshare(2, 2, 1, &mut rng);
+        let key7 = generate_dummy_keyshare(3, 1, 7, &mut rng);
 
         assert!(storage.load_keyshare(key1.key_id).await.unwrap().is_none());
 

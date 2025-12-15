@@ -1,10 +1,10 @@
 use crate::{
-    TryIntoInterfaceType,
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
     storage_keys::StorageKey,
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
+    TryIntoInterfaceType,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::{
@@ -174,10 +174,8 @@ impl TeeState {
             None => [0u8; 32], // TODO(#823): remove this fallback once all nodes must have account_public_key
         };
 
-        let expected_report_data = ReportData::V1(ReportDataV1::new(
-            *tls_public_key.as_bytes(),
-            account_key_bytes,
-        ));
+        let expected_report_data: ReportData =
+            ReportDataV1::new(*tls_public_key.as_bytes(), account_key_bytes).into();
 
         let verified_attestation = attestation.verify(
             expected_report_data.into(),
@@ -451,17 +449,13 @@ mod tests {
         // Verify all 4 accounts have TEE info initially
         assert_eq!(tee_state.participants_attestations.len(), 4);
         for node_id in &participant_nodes {
-            assert!(
-                tee_state
-                    .participants_attestations
-                    .contains_key(&node_id.tls_public_key)
-            );
-        }
-        assert!(
-            tee_state
+            assert!(tee_state
                 .participants_attestations
-                .contains_key(&non_participant_uid.tls_public_key)
-        );
+                .contains_key(&node_id.tls_public_key));
+        }
+        assert!(tee_state
+            .participants_attestations
+            .contains_key(&non_participant_uid.tls_public_key));
 
         // Clean non-participants
         tee_state.clean_non_participants(&participants);
@@ -469,17 +463,13 @@ mod tests {
         // Verify only participants remain
         assert_eq!(tee_state.participants_attestations.len(), 3);
         for node_id in &participant_nodes {
-            assert!(
-                tee_state
-                    .participants_attestations
-                    .contains_key(&node_id.tls_public_key)
-            );
-        }
-        assert!(
-            !tee_state
+            assert!(tee_state
                 .participants_attestations
-                .contains_key(&non_participant_uid.tls_public_key)
-        );
+                .contains_key(&node_id.tls_public_key));
+        }
+        assert!(!tee_state
+            .participants_attestations
+            .contains_key(&non_participant_uid.tls_public_key));
     }
 
     #[test]

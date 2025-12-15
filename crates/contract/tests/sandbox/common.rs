@@ -11,11 +11,6 @@ use k256::{
     AffinePoint, FieldBytes, Secp256k1,
 };
 use mpc_contract::{
-    crypto_shared::k256_types::SerializableAffinePoint,
-    primitives::signature::{Payload, SignRequestArgs},
-    state::ProtocolContractState,
-};
-use mpc_contract::{
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         CKDResponse, SerializableScalar, SignatureResponse,
@@ -31,6 +26,11 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
+};
+use mpc_contract::{
+    crypto_shared::{k256_types::SerializableAffinePoint, kdf::derive_app_id},
+    primitives::signature::{Payload, SignRequestArgs},
+    state::ProtocolContractState,
 };
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_sdk::{log, Gas};
@@ -57,10 +57,11 @@ use std::{
 };
 use threshold_signatures::{
     blstrs,
-    confidential_key_derivation::{self as ckd, ciphersuite::hash_to_curve},
+    confidential_key_derivation::{self as ckd, hash_app_id_with_pk, BLS12381SHA256},
     ecdsa as ts_ecdsa, eddsa,
     frost_ed25519::{self, keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
+    KeygenOutput,
 };
 pub const PARTICIPANT_LEN: usize = 10;
 use utilities::AccountIdExtV1;
@@ -697,14 +698,21 @@ pub fn create_response_ckd(
     account_id: &AccountId,
     app_public_key: dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
-    signing_key: &ckd::Scalar,
+    key_package: &KeygenOutput<BLS12381SHA256>,
+    derivation_path: &str,
 ) -> (CKDRequest, CKDResponse) {
-    let request = CKDRequest::new(app_public_key.clone(), account_id.clone(), *domain_id);
+    let request = CKDRequest::new(
+        app_public_key.clone(),
+        *domain_id,
+        account_id,
+        derivation_path,
+    );
 
-    let app_id = account_id.as_bytes();
+    let app_id = derive_app_id(account_id, derivation_path);
     let app_pk: ckd::ElementG1 = app_public_key.into_contract_type();
-    let msk = signing_key;
-    let big_s = hash_to_curve(app_id) * msk;
+    let msk = key_package.private_share.to_scalar();
+
+    let big_s = hash_app_id_with_pk(&key_package.public_key, app_id.as_ref()) * msk;
     let y = ckd::Scalar::random(OsRng);
     let big_y = ckd::ElementG1::generator() * y;
     let big_c = big_s + app_pk * y;
@@ -734,7 +742,10 @@ pub async fn derive_confidential_key_and_validate(
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
     if let Some((respond_req, respond_resp)) = respond {
-        assert!(account.id().as_v2_account_id() == respond_req.app_id);
+        assert_eq!(
+            derive_app_id(&account.id().as_v2_account_id(), &request.derivation_path),
+            respond_req.app_id
+        );
         let respond = attested_account
             .call(contract.id(), "respond_ckd")
             .args_json(serde_json::json!({
@@ -1209,9 +1220,11 @@ pub async fn make_and_submit_requests(
                         &alice.id().as_v2_account_id(),
                         app_public_key.clone(),
                         &domain.id,
-                        &sk.private_share.to_scalar(),
+                        sk,
+                        path,
                     );
                     let request_args = CKDRequestArgs {
+                        derivation_path: path.to_string(),
                         app_public_key: app_public_key.clone(),
                         domain_id: domain.id,
                     };

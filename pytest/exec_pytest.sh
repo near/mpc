@@ -120,6 +120,12 @@ if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p
     exit 1
 fi
 
+printf "\nBuilding backup cli"
+if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p backup-cli --release"; then
+    echo "Cargo failed to complete backup cli compilation:"
+    exit 1
+fi
+
 printf "\nChecking if virtual environment exists"
 if [ ! -d "$VENV_DIR" ]; then
     echo "Virtual enviroment not found. Creating new one."
@@ -166,7 +172,7 @@ fi
 # set the NEAR config ensuring that the release version of nearcore is run.
 export NEAR_PYTEST_CONFIG="config.json"
 
-if ! log_output pytest $PYTEST_FLAGS; then
+if ! log_output pytest "$PYTEST_FLAGS"; then
     printf '\nError: one or more tests failed. Check output.log for details.\n'
     exit 1
 else
