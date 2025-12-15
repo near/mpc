@@ -4,6 +4,7 @@ use near_account_id::AccountId;
 use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
+use std::collections::BTreeMap;
 use utilities::AccountIdExtV1;
 
 use crate::sandbox::common::{
@@ -97,9 +98,14 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     assert_expected_proposed_update(&proposals_after, &update_id, &code, &env_accounts[1..2]);
 
     // Verify the remaining voter is still a participant
-    let votes = &proposals_after.0[0].votes;
-    assert_eq!(votes.len(), 1);
-    let voter_id: AccountId = votes[0].0.parse().unwrap();
+    let votes_for_update: Vec<_> = proposals_after
+        .votes
+        .iter()
+        .filter(|(_, uid)| **uid == *update_id)
+        .map(|(account, _)| account)
+        .collect();
+    assert_eq!(votes_for_update.len(), 1);
+    let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
     assert!(final_participants.is_participant(&voter_id));
 
     Ok(())
@@ -117,14 +123,23 @@ pub fn assert_expected_proposed_update(
         .collect();
     expected_votes.sort();
 
-    let expected_update = dtos::Update {
-        update_id: **expected_update_id,
-        update_hash: dtos::UpdateHash::Code(sha2::Sha256::digest(expected_update_code).into()),
-        votes: expected_votes,
+    // Build expected votes map
+    let expected_votes_map: BTreeMap<dtos::AccountId, u64> = expected_votes
+        .into_iter()
+        .map(|account_id| (account_id, **expected_update_id))
+        .collect();
+
+    // Build expected updates map
+    let mut expected_updates_map = BTreeMap::new();
+    expected_updates_map.insert(
+        **expected_update_id,
+        dtos::UpdateHash::Code(sha2::Sha256::digest(expected_update_code).into()),
+    );
+
+    let expected = dtos::ProposedUpdates {
+        votes: expected_votes_map,
+        updates: expected_updates_map,
     };
 
-    let mut actual_updates = actual_proposed_updates.clone();
-    actual_updates.0.iter_mut().for_each(|u| u.votes.sort());
-
-    assert_eq!(actual_updates, dtos::ProposedUpdates(vec![expected_update]));
+    assert_eq!(*actual_proposed_updates, expected);
 }

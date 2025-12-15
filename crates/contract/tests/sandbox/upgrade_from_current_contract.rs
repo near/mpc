@@ -7,7 +7,7 @@ use crate::sandbox::common::{
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
-use near_workspaces::types::NearToken;
+use near_workspaces::types::{Gas, NearToken};
 use rand_core::OsRng;
 
 pub fn dummy_contract_proposal() -> ProposeUpdateArgs {
@@ -242,6 +242,84 @@ async fn test_propose_update_contract_many() {
     // Let's check that we can call into the state and see all the proposals.
     let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
     dbg!(state);
+}
+
+/// Regression test for issue #1617: ensures that voting on contract updates (before reaching
+/// threshold) is cheap.
+#[tokio::test]
+async fn test_vote_update_gas_before_threshold() {
+    let (_, contract, accounts, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+
+    let execution = accounts[0]
+        .call(contract.id(), "propose_update")
+        .args_borsh(current_contract_proposal())
+        .max_gas()
+        .deposit(CURRENT_CONTRACT_DEPLOY_DEPOSIT)
+        .transact()
+        .await
+        .unwrap();
+
+    assert!(execution.is_success(), "failed to propose update");
+    let proposal_id: UpdateId = execution.json().unwrap();
+
+    // Cast votes before threshold with minimal gas
+    const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(4);
+    // Maximum gas expected for the threshold vote that triggers the contract update (including
+    // deployment and migration)
+    const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
+
+    // Cast votes until threshold is reached (need 6 total votes)
+    for (idx, account) in accounts[1..=5].iter().enumerate() {
+        let execution = account
+            .call(contract.id(), "vote_update")
+            .args_json(serde_json::json!({
+                "id": proposal_id,
+            }))
+            .gas(GAS_FOR_VOTE_BEFORE_THRESHOLD)
+            .transact()
+            .await
+            .unwrap();
+
+        let gas_burnt = execution.total_gas_burnt;
+
+        assert!(execution.is_success());
+
+        let update_occurred: bool = execution.json().unwrap();
+        assert!(!update_occurred);
+
+        assert!(
+            gas_burnt.as_tgas() <= GAS_FOR_VOTE_BEFORE_THRESHOLD.as_tgas(),
+            "Gas usage for vote {} ({} TGas) should be <= {} TGas",
+            idx + 1,
+            gas_burnt.as_tgas(),
+            GAS_FOR_VOTE_BEFORE_THRESHOLD.as_tgas()
+        );
+    }
+
+    // Cast the threshold vote (6th vote) that will trigger the update
+    let threshold_execution = accounts[6]
+        .call(contract.id(), "vote_update")
+        .args_json(serde_json::json!({
+            "id": proposal_id,
+        }))
+        .max_gas()
+        .transact()
+        .await
+        .unwrap();
+
+    let threshold_gas_burnt = threshold_execution.total_gas_burnt;
+
+    assert!(threshold_execution.is_success());
+
+    let update_occurred: bool = threshold_execution.json().unwrap();
+    assert!(update_occurred);
+
+    assert!(
+        threshold_gas_burnt.as_tgas() <= MAX_GAS_FOR_THRESHOLD_VOTE.as_tgas(),
+        "Gas usage for threshold vote ({} TGas) should be <= {} TGas",
+        threshold_gas_burnt.as_tgas(),
+        MAX_GAS_FOR_THRESHOLD_VOTE.as_tgas()
+    );
 }
 
 #[tokio::test]
