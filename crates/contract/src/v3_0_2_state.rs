@@ -9,7 +9,10 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_account_id::AccountId;
-use near_sdk::store::{IterableMap, LookupMap};
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 use std::collections::{BTreeMap, HashSet};
 
 use crate::{
@@ -123,13 +126,25 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
+        let protocol_state = value.protocol_state.into();
+
+        let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
+        // For the soft release we give every participant a mocked attestation.
+        // Since this upgrade has a non-backwards compatible change, instead of manually mapping the attestations
+        // we give everyone a new mock attestation again instead.
+        let threshold_parameters = &running_state.parameters.participants();
+        let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
+
         Self {
-            protocol_state: value.protocol_state,
+            protocol_state: protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             proposed_updates: value.proposed_updates.into(),
             config: value.config.into(),
-            tee_state: value.tee_state,
+            tee_state: tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
         }
