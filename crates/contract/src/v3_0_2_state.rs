@@ -8,6 +8,8 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::Attestation;
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::store::{IterableMap, LookupMap};
 use std::collections::{BTreeMap, HashSet};
@@ -19,7 +21,10 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::TeeState,
+    tee::{
+        proposal::{AllowedDockerImageHashes, CodeHashesVotes},
+        tee_state::NodeId,
+    },
     update::{Update, UpdateId},
 };
 
@@ -107,6 +112,14 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
             id: old.id,
         }
     }
+}
+
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct TeeState {
+    allowed_docker_image_hashes: AllowedDockerImageHashes,
+    allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    votes: CodeHashesVotes,
+    participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
