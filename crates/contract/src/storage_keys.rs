@@ -1,8 +1,8 @@
 use near_sdk::{near, BorshStorageKey};
 
-// !!! IMPORTANT !!!
-// for backwards compatibility, ensure the order is preserved and only append to this list
-// Renaming is OK.
+/// !!! IMPORTANT !!!
+/// for backwards compatibility, ensure the order is preserved and only append to this list
+/// Renaming is OK.
 #[near(serializers=[borsh] )]
 #[derive(Hash, Clone, Debug, PartialEq, Eq, BorshStorageKey)]
 pub enum StorageKey {
@@ -17,4 +17,5 @@ pub enum StorageKey {
     PendingCKDRequests,
     BackupServicesInfo,
     NodeMigrations,
+    ProposedUpdatesEntriesV3,
 }
