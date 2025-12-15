@@ -97,9 +97,10 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
 
         let mut entries =
             IterableMap::new(crate::storage_keys::StorageKey::ProposedUpdatesEntriesV2);
-        for (id, entry) in entries_to_migrate {
-            entries.insert(id, entry);
-        }
+        assert_eq!(entries.len(), 0);
+        //for (id, entry) in entries_to_migrate {
+        //    assert_eq!(entries.insert(id, entry), None);
+        //}
 
         Self {
             vote_by_participant: old.vote_by_participant,
@@ -194,6 +195,9 @@ mod tests {
             new.vote_by_participant.get(&accounts[2]),
             Some(&UpdateId(2))
         );
+
+        assert_eq!(new.vote_by_participant.len(), 3);
+        assert_eq!(new.entries.len(), 2);
 
         // Verification #2: Entries migrated to new storage WITHOUT redundant votes field.
         // Old UpdateEntry.votes field is NOT carried over, eliminating duplicate data.
