@@ -321,10 +321,8 @@ fn test_participant_kickout_after_expiration() {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
-    // Submit expiring attestation for 3rd participant
-    // UPDATED: Instead of an absolute expiry timestamp, we now provide:
-    // 1. The creation timestamp (INITIAL_TIME_SECONDS)
-    // 2. The max validity age (EXPIRY_OFFSET_SECONDS)
+    // Submit attestation for 3rd participant with a
+    // creation_time_stamp_seconds such that it gets expired by the contract.
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
@@ -353,7 +351,6 @@ fn test_participant_kickout_after_expiration() {
     testing_env!(create_context_for_participant(
         &participant_nodes[0].account_id
     ));
-    // This returns false because the third node's attestation has expired
     assert!(setup.contract.verify_tee().unwrap());
 
     let resharing_state = match setup.contract.state() {
