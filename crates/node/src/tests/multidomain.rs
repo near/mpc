@@ -61,7 +61,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
@@ -93,25 +93,25 @@ async fn test_basic_multidomain() {
             }
         }
     }
+    let new_domains = vec![
+        DomainConfig {
+            id: DomainId(3),
+            scheme: SignatureScheme::Ed25519,
+        },
+        DomainConfig {
+            id: DomainId(4),
+            scheme: SignatureScheme::Secp256k1,
+        },
+        DomainConfig {
+            id: DomainId(5),
+            scheme: SignatureScheme::Bls12381,
+        },
+    ];
 
     {
-        let new_domains = vec![
-            DomainConfig {
-                id: DomainId(3),
-                scheme: SignatureScheme::Ed25519,
-            },
-            DomainConfig {
-                id: DomainId(4),
-                scheme: SignatureScheme::Secp256k1,
-            },
-            DomainConfig {
-                id: DomainId(5),
-                scheme: SignatureScheme::Bls12381,
-            },
-        ];
         let mut contract = setup.indexer.contract_mut().await;
         contract.add_domains(new_domains.clone());
-        domains.extend(new_domains);
+        domains.extend(new_domains.clone());
     }
     setup
         .indexer
@@ -126,7 +126,7 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 3,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * new_domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
@@ -175,7 +175,7 @@ async fn test_basic_multidomain() {
                     }
                 }
             },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * 4,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
         )
         .await
         .expect("must not exceed timeout");
