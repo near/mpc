@@ -1981,8 +1981,8 @@ expression: abi
                 "WithConstraints": {
                   "type": "object",
                   "properties": {
-                    "creation_time_stamp_seconds": {
-                      "description": "Unix time stamp for when this attestation was created.",
+                    "expiry_timestamp_seconds": {
+                      "description": "Unix time stamp for when this attestation will be expired.",
                       "type": [
                         "integer",
                         "null"
@@ -2848,13 +2848,13 @@ expression: abi
         "VerifiedDstackAttestation": {
           "type": "object",
           "required": [
-            "creation_time_stamp_seonds",
+            "expiry_timestamp_seconds",
             "launcher_compose_hash",
             "mpc_image_hash"
           ],
           "properties": {
-            "creation_time_stamp_seonds": {
-              "description": "Unix timestamp for when the attestation was created.",
+            "expiry_timestamp_seconds": {
+              "description": "Unix time stamp for when this attestation will be expired.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
