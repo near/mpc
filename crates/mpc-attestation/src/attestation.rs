@@ -24,15 +24,15 @@ pub const DEFAULT_EXPIRATION_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum Attestation {
-    Mock(MockAttestation),
     Dstack(DstackAttestation),
+    Mock(MockAttestation),
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub enum VerifiedAttestation {
-    Mock(MockAttestation),
     Dstack(ValidatedDstackAttestation),
+    Mock(MockAttestation),
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]

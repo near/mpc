@@ -101,7 +101,7 @@ impl Default for TeeState {
             allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
             allowed_launcher_compose_hashes: vec![],
             votes: CodeHashesVotes::default(),
-            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
+            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestationV2),
         }
     }
 }
@@ -109,7 +109,8 @@ impl Default for TeeState {
 impl TeeState {
     /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
-        let mut participants_attestations = IterableMap::new(StorageKey::TeeParticipantAttestation);
+        let mut participants_attestations =
+            IterableMap::new(StorageKey::TeeParticipantAttestationV2);
 
         participants
             .participants()
@@ -137,6 +138,7 @@ impl TeeState {
             ..Default::default()
         }
     }
+
     fn current_time_seconds() -> u64 {
         let current_time_milliseconds = env::block_timestamp_ms();
         current_time_milliseconds / 1_000
