@@ -314,6 +314,7 @@ pub mod running_tests {
     #[case(2)]
     #[case(3)]
     #[case(NUM_PROTOCOLS)]
+    #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
     }

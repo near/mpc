@@ -9,7 +9,7 @@ use crate::sandbox::{
     resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
 };
 use assert_matches::assert_matches;
-use contract_interface::types::{self as dtos};
+use contract_interface::types as dtos;
 use mpc_contract::{
     errors::{DomainError, InvalidParameters},
     primitives::{
@@ -144,7 +144,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
     // ensure we return to running state and that no key was registered
     let state = get_state(&contract).await;
-    assert!(matches!(state, ProtocolContractState::Running(_)));
+    assert_matches!(state, ProtocolContractState::Running(_));
     assert_eq!(
         state.public_key(domain_id.into()).unwrap_err(),
         DomainError::NoSuchDomain.into()
@@ -661,7 +661,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
     let state = get_state(&contract).await;
-    assert!(matches!(state, ProtocolContractState::Running(_)));
+    assert_matches!(state, ProtocolContractState::Running(_));
     let threshold = state.threshold().unwrap();
     let epoch_id = state.current_epoch();
     let mut proposed_participants = state.active_participants().clone();

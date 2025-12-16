@@ -318,8 +318,11 @@ pub mod tests {
     #[case(3, 2)]
     #[case(NUM_PROTOCOLS, 1)]
     #[case(NUM_PROTOCOLS, 2)]
-    fn test_initializing_contract_state(#[case] domains: usize, #[case] index: usize) {
-        test_initializing_contract_state_for(domains, index);
+    fn test_initializing_contract_state(
+        #[case] domains: usize,
+        #[case] num_already_generated: usize,
+    ) {
+        test_initializing_contract_state_for(domains, num_already_generated);
     }
 
     #[test]

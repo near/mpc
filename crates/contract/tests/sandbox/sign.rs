@@ -14,9 +14,6 @@ use mpc_contract::{
 use near_workspaces::types::NearToken;
 use utilities::AccountIdExtV1;
 
-// TODO: #1194
-// Domain id 0 is always present if we have at least one domain on the contract.
-// In all tests below we initialize at least one domain to test sign requests against.
 const ECDSA_SIGNATURE_SCHEMES: &[SignatureScheme] =
     &[SignatureScheme::Secp256k1, SignatureScheme::V2Secp256k1];
 
@@ -29,19 +26,19 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
         keys,
     } = init_env(ECDSA_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
-    for key in &keys {
-        let attested_account = &mpc_signer_accounts[0];
-        let path = "test";
-        let alice = worker.dev_create_account().await.unwrap();
-        let predecessor_id = alice.id();
-        let messages = [
-            "hello world",
-            "hello world!",
-            "hello world!!",
-            "hello world!!!",
-            "hello world!!!!",
-        ];
+    let attested_account = &mpc_signer_accounts[0];
+    let path = "test";
+    let alice = worker.dev_create_account().await.unwrap();
+    let predecessor_id = alice.id();
+    let messages = [
+        "hello world",
+        "hello world!",
+        "hello world!!",
+        "hello world!!!",
+        "hello world!!!!",
+    ];
 
+    for key in &keys {
         for msg in messages {
             println!("submitting: {msg}");
             let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
