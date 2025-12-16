@@ -261,7 +261,7 @@ pub async fn request_signature_and_await_response(
     timeout_sec: std::time::Duration,
 ) -> Option<std::time::Duration> {
     let payload = match domain.scheme {
-        SignatureScheme::Secp256k1 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let mut payload = [0; 32];
             rand::thread_rng().fill_bytes(payload.as_mut());
             Payload::Ecdsa(Bytes::new(payload.to_vec()).unwrap())

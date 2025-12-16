@@ -3,8 +3,11 @@ use attestation::{
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
     measurements::ExpectedMeasurements,
+    measurements::Measurements,
     report_data::ReportData,
 };
+
+use include_measurements::include_measurements;
 
 pub use attestation::attestation::{DstackAttestation, VerificationError};
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
@@ -151,16 +154,11 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                // Embedded JSON assets
-                const TCB_INFO_STRING_PROD: &str = include_str!("../assets/tcb_info.json");
-                // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
-                const TCB_INFO_STRING_DEV: &str = include_str!("../assets/tcb_info_dev.json");
-
-                let accepted_measurements = ExpectedMeasurements::from_embedded_tcb_info(&[
-                    TCB_INFO_STRING_PROD,
-                    TCB_INFO_STRING_DEV,
-                ])
-                .map_err(VerificationError::EmbeddedMeasurementsParsing)?;
+                let accepted_measurements = [
+                    include_measurements!("assets/tcb_info.json"),
+                    // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
+                    include_measurements!("assets/tcb_info_dev.json"),
+                ];
 
                 dstack_attestation.verify(
                     expected_report_data,

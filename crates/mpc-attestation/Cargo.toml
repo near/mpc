@@ -9,6 +9,7 @@ attestation = { workspace = true }
 borsh = { workspace = true }
 derive_more = { workspace = true }
 hex = { workspace = true }
+include-measurements = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

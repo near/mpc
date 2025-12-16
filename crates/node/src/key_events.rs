@@ -74,6 +74,10 @@ pub async fn keygen_computation_inner(
             let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Bls12381(keyshare), public_key)
         }
+        SignatureScheme::V2Secp256k1 => {
+            // TODO(#1640): integration of robust ecdsa provider
+            todo!()
+        }
     };
 
     tracing::info!("Key generation attempt {:?}: committing keyshare.", key_id);

@@ -10,7 +10,7 @@ pub struct CKDResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize, derive_more::Constructor)]
 pub struct CKDArgs {
-    pub path: String,
+    pub derivation_path: String,
     pub app_public_key: Bls12381G1PublicKey,
     pub domain_id: DomainId,
 }

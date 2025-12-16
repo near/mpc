@@ -9,6 +9,7 @@ members = [
     "crates/contract-history",
     "crates/contract-interface",
     "crates/devnet",
+    "crates/include-measurements",
     "crates/mpc-attestation",
     "crates/node",
     "crates/node-types",
@@ -31,6 +32,7 @@ license = "MIT"
 attestation = { path = "crates/attestation" }
 contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
+include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
 mpc-contract = { path = "crates/contract", features = [
     "dev-utils",
@@ -103,7 +105,9 @@ near-sdk = { version = "5.18.1", features = [
     "unstable",
 ] }
 near-workspaces = { version = "0.21.0" }
+proc-macro2 = "1.0"
 prometheus = { version = "0.13.4", default-features = false }
+quote = "1.0"
 rand = "0.8.5"
 rand_chacha = "0.3"
 rand_core = "0.6.4"
@@ -121,6 +125,7 @@ serial_test = "3.2.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
+syn = "2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
 # Last commit on main branch as of 09-12-2025
