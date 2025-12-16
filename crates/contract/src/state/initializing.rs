@@ -316,6 +316,7 @@ pub mod tests {
     #[case(3, 0)]
     #[case(3, 1)]
     #[case(3, 2)]
+    #[case(NUM_PROTOCOLS, 0)]
     #[case(NUM_PROTOCOLS, 1)]
     #[case(NUM_PROTOCOLS, 2)]
     fn test_initializing_contract_state(
