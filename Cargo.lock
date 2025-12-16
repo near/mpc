@@ -3966,6 +3966,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "include-measurements"
+version = "3.1.0"
+dependencies = [
+ "anyhow",
+ "attestation",
+ "hex",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.108",
+]
+
+[[package]]
 name = "indenter"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4657,6 +4670,7 @@ dependencies = [
  "dcap-qvl",
  "derive_more 2.0.1",
  "hex",
+ "include-measurements",
  "mpc-primitives",
  "rstest",
  "serde",

@@ -9,5 +9,6 @@ pub mod collateral;
 pub mod measurements;
 pub mod quote;
 pub mod report_data;
+pub mod tcb_info;
 
 pub use dstack_sdk_types::dstack::{EventLog, TcbInfo};
