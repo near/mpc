@@ -16,12 +16,13 @@ use mpc_contract::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types, kdf::check_ec_signature,
         types::PublicKeyExtended, CKDResponse, SerializableScalar, SignatureResponse,
     },
+    errors,
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
-        signature::{Bytes, SignatureRequest, Tweak},
+        signature::{Bytes, SignatureRequest, Tweak, YieldIndex},
         test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -56,7 +57,7 @@ use std::{
     path::Path,
     process::Command,
     sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use threshold_signatures::{
     blstrs,
@@ -479,13 +480,61 @@ impl SignRequestSetup {
     pub fn expected_response(&self) -> &SignatureResponse {
         &self.response.response
     }
+
     pub fn request_json_args(&self) -> serde_json::Value {
         serde_json::json!({
             "request": self.args,
         })
     }
+
     pub fn payload(&self) -> &Payload {
         &self.response.request.payload
+    }
+
+    pub async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        let execution = status.await?;
+        dbg!(&execution);
+        let execution = execution.into_result()?;
+        let returned_resp: SignatureResponse = execution.json()?;
+        assert_eq!(
+            &returned_resp, &self.response.response,
+            "Returned signature request does not match"
+        );
+        Ok(())
+    }
+
+    pub async fn verify_timeout(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        let execution = status.await?;
+        dbg!(&execution);
+        assert!(execution.is_failure());
+        let err = execution
+            .into_result()
+            .expect_err("expect execution failure");
+        assert!(err
+            .to_string()
+            .contains(&errors::RequestError::Timeout.to_string()));
+        Ok(())
+    }
+
+    pub async fn sign_ensure_included(
+        &self,
+        account: &Account,
+        contract: &Contract,
+    ) -> anyhow::Result<TransactionStatus> {
+        let status = submit_sign_request(account, &self.args, contract).await?;
+        wait_for_request(contract, &self.response.request, None).await?;
+        Ok(status)
+    }
+
+    pub async fn sign_and_validate(
+        &self,
+        account: &Account,
+        contract: &Contract,
+        attested_account: &Account,
+    ) -> anyhow::Result<()> {
+        let status = self.sign_ensure_included(account, contract).await?;
+        submit_signature_response(&self.response, contract, attested_account).await?;
+        self.verify_execution_outcome(status).await
     }
 }
 
@@ -736,7 +785,7 @@ pub async fn submit_signature_response(
         .transact()
         .await?;
     dbg!(&respond);
-
+    respond.into_result()?;
     Ok(())
 }
 
@@ -761,35 +810,38 @@ pub async fn submit_ckd_response(
     Ok(())
 }
 
-pub async fn sign_and_validate(
-    account: &Account,
-    request: &SignRequestArgs,
-    respond: Option<&SignResponseArgs>,
+pub async fn request_is_in_queue(
     contract: &Contract,
-    attested_account: &Account,
+    request: &SignatureRequest,
+) -> Option<YieldIndex> {
+    contract
+        .view("get_pending_request")
+        .args_json(serde_json::json!({"request": request}))
+        .await
+        .unwrap()
+        .json()
+        .unwrap()
+}
+
+pub async fn wait_for_request(
+    contract: &Contract,
+    request: &SignatureRequest,
+    max_timeout: Option<Duration>,
 ) -> anyhow::Result<()> {
-    let status = submit_sign_request(account, request, contract).await?;
+    let timeout = max_timeout.unwrap_or(Duration::from_secs(3));
+    let start = std::time::Instant::now();
 
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    loop {
+        if request_is_in_queue(contract, request).await.is_some() {
+            return Ok(());
+        }
 
-    if let Some(response) = respond {
-        submit_signature_response(response, contract, attested_account).await?;
+        if start.elapsed() >= timeout {
+            anyhow::bail!("timed out waiting for request to appear in queue");
+        }
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
-
-    let execution = status.await?;
-    dbg!(&execution);
-    let execution = execution.into_result()?;
-
-    // Finally wait the result:
-    let returned_resp: SignatureResponse = execution.json()?;
-
-    if let Some(response) = respond {
-        assert_eq!(
-            &returned_resp, &response.response,
-            "Returned signature request does not match"
-        );
-    }
-    Ok(())
 }
 
 pub fn generate_random_app_public_key(rng: &mut impl CryptoRngCore) -> Bls12381G1PublicKey {
