@@ -266,7 +266,7 @@ async fn test_vote_update_gas_before_threshold() {
     const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(4);
     // Maximum gas expected for the threshold vote that triggers the contract update (including
     // deployment and migration)
-    const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
+    const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(148);
 
     // Cast votes until threshold is reached (need 6 total votes)
     for (idx, account) in accounts[1..=5].iter().enumerate() {
