@@ -52,7 +52,7 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
             .await?;
         }
 
-        // todo [#1666]: below "test" is nonsense.
+        // TODO(#1666): below "test" is nonsense.
         // check duplicate requests can also be signed:
         let duplicate_msg = "welp";
         let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), duplicate_msg, path);
@@ -412,7 +412,7 @@ async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
         .await?;
     }
 
-    // todo #1666, remove
+    // TODO(#1666): remove
     // check duplicate requests can also be signed:
     let duplicate_msg = "welp";
     let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), duplicate_msg, path);

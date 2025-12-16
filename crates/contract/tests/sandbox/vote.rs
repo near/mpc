@@ -1,4 +1,4 @@
-// todo [#1657](https://github.com/near/mpc/issues/1657): split this file
+// TODO(#1657): split this file
 use crate::sandbox::{
     common::{
         execute_async_transactions, gen_account, gen_participant_info,

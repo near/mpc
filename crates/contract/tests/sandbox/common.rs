@@ -1,4 +1,4 @@
-// todo [#1657](https://github.com/near/mpc/issues/1657): split this file
+// TODO(#1657): split this file
 use assert_matches::assert_matches;
 use contract_interface::types::{
     self as dtos, Attestation, Bls12381G1PublicKey, Ed25519PublicKey, MockAttestation,
