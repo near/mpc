@@ -35,6 +35,22 @@ pub enum VerifiedAttestation {
     Dstack(ValidatedDstackAttestation),
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
+pub enum MockAttestation {
+    #[default]
+    /// Always pass validation
+    Valid,
+    /// Always fails validation
+    Invalid,
+    /// Pass validation depending on the set constraints
+    WithConstraints {
+        mpc_docker_image_hash: Option<MpcDockerImageHash>,
+        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
+        /// Unix time stamp for when this attestation will be expired.  
+        expiry_timestamp_seconds: Option<u64>,
+    },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
 pub struct ValidatedDstackAttestation {
     pub mpc_image_hash: MpcDockerImageHash,
@@ -218,22 +234,6 @@ fn verify_launcher_compose_hash(
     }
 
     Ok(())
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, BorshDeserialize, BorshSerialize)]
-pub enum MockAttestation {
-    #[default]
-    /// Always pass validation
-    Valid,
-    /// Always fails validation
-    Invalid,
-    /// Pass validation depending on the set constraints
-    WithConstraints {
-        mpc_docker_image_hash: Option<MpcDockerImageHash>,
-        launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
-        /// Unix time stamp for when this attestation will be expired.  
-        expiry_timestamp_seconds: Option<u64>,
-    },
 }
 
 pub(crate) fn verify_mock_attestation(
