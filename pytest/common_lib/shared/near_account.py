@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from key import Key
 
-from common_lib.constants import TGAS
+from common_lib.constants import TGAS, TRANSACTION_TIMEOUT
 from common_lib.shared.transaction_status import assert_txn_success, verify_txs
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -88,7 +88,7 @@ class NearAccount:
                 print(e)
             time.sleep(1)
 
-    def send_txn_and_check_success(self, txn, timeout=20):
+    def send_txn_and_check_success(self, txn, timeout=TRANSACTION_TIMEOUT):
         res = self.near_node.send_tx_and_wait(txn, timeout)
         assert_txn_success(res)
         return res

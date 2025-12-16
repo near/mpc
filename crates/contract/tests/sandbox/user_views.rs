@@ -3,11 +3,12 @@ use near_sdk::{CurveType, PublicKey};
 use serde_json::json;
 use std::str::FromStr;
 
-use crate::sandbox::common::{init_env, PARTICIPANT_LEN};
+use crate::sandbox::common::{init_env, ContractSetup, PARTICIPANT_LEN};
 
 #[tokio::test]
 async fn test_key_version() -> anyhow::Result<()> {
-    let (_, contract, _, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup { contract, .. } =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let version: u32 = contract
         .view("latest_key_version")
@@ -22,7 +23,8 @@ async fn test_key_version() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_public_key() -> anyhow::Result<()> {
-    let (_, contract, _, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup { contract, .. } =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let key: String = contract
         .view("public_key")
@@ -39,7 +41,8 @@ async fn test_public_key() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_derived_public_key() -> anyhow::Result<()> {
-    let (_, contract, _, _) = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup { contract, .. } =
+        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     let key: String = contract
         .view("derived_public_key")

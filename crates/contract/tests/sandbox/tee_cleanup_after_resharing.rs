@@ -2,18 +2,18 @@ use anyhow::Result;
 use contract_interface::types::{Attestation, MockAttestation};
 use utilities::AccountIdExtV1;
 
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, do_resharing,
-    gen_accounts, get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
-    IntoInterfaceType, PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        assert_running_return_participants, assert_running_return_threshold, gen_accounts,
+        get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
+        ContractSetup, IntoInterfaceType, PARTICIPANT_LEN,
+    },
+    resharing_utils::do_resharing,
 };
 use mpc_contract::{
     primitives::{
-        domain::{DomainId, SignatureScheme},
-        key_state::EpochId,
-        participants::Participants,
-        test_utils::bogus_ed25519_near_public_key,
-        thresholds::ThresholdParameters,
+        domain::SignatureScheme, key_state::EpochId, participants::Participants,
+        test_utils::bogus_ed25519_near_public_key, thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
 };
@@ -29,8 +29,12 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let (worker, contract, env_accounts, _) =
-        init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let ContractSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
 
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
@@ -56,13 +60,13 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // add a new TEE quote for an existing participant, but with a different signer key
     let new_uid = NodeId {
-        account_id: env_accounts[0].id().as_v2_account_id(),
+        account_id: mpc_signer_accounts[0].id().as_v2_account_id(),
         tls_public_key: bogus_ed25519_near_public_key(),
         account_public_key: Some(bogus_ed25519_near_public_key()),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
     submit_participant_info(
-        &env_accounts[0],
+        &mpc_signer_accounts[0],
         &contract,
         &attestation,
         &new_uid.tls_public_key.into_interface_type(),
@@ -98,11 +102,10 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let prospective_epoch_id = EpochId::new(6);
 
     do_resharing(
-        &env_accounts[..threshold.value() as usize],
+        &mpc_signer_accounts[..threshold.value() as usize],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
-        &[DomainId(0)],
     )
     .await?;
 

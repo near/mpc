@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 from typing import cast
+from concurrent.futures import ThreadPoolExecutor
 
 import base58
 import yaml
@@ -184,6 +185,12 @@ def sign_add_access_keys_tx(
     return serialize_transaction(signed_tx)
 
 
+def kill_observer(observer: LocalNode):
+    observer.kill(gentle=True)
+    observer.reset_data()
+    adjust_indexing_shard(observer)
+
+
 def start_neard_cluster_with_cleanup(
     num_mpc_nodes: int,
 ) -> tuple[list[LocalNode], list[LocalNode]]:
@@ -215,10 +222,8 @@ def start_neard_cluster_with_cleanup(
     validators = nodes[:num_validators]
     observers = nodes[num_validators:]
 
-    for observer in observers:
-        observer.kill(gentle=True)
-        observer.reset_data()
-        adjust_indexing_shard(observer)
+    with ThreadPoolExecutor(max_workers=len(observers)) as executor:
+        executor.map(lambda observer: kill_observer(observer), observers)
 
     return validators, observers
 
@@ -237,7 +242,8 @@ class ConfigValues:
 def generate_mpc_configs(
     num_mpc_nodes: int,
     num_respond_aks: int,
-    presignatures_to_buffer: int | None,
+    presignatures_to_buffer: int,
+    triples_to_buffer: int,
     migrating_nodes: list[int],
 ) -> list[ConfigValues]:
     """
@@ -277,6 +283,13 @@ def generate_mpc_configs(
             "--desired-presignatures-to-buffer",
             str(presignatures_to_buffer),
         )
+
+    if triples_to_buffer:
+        cmd += (
+            "--desired-triples-to-buffer",
+            str(triples_to_buffer),
+        )
+
     subprocess.run(cmd)
 
     for i in migrating_nodes:
@@ -373,7 +386,8 @@ def start_cluster_with_mpc(
     num_mpc_nodes,
     num_respond_aks,
     contract,
-    presignatures_to_buffer=None,
+    presignatures_to_buffer=20,
+    triples_to_buffer=40,
     start_mpc_nodes=True,
     migrating_nodes=[],
 ):
@@ -387,6 +401,7 @@ def start_cluster_with_mpc(
         num_mpc_nodes,
         num_respond_aks,
         presignatures_to_buffer,
+        triples_to_buffer,
         migrating_nodes,
     )
 

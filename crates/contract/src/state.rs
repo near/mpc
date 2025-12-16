@@ -302,6 +302,26 @@ impl ProtocolContractState {
             _ => None,
         }
     }
+
+    pub fn next_domain_id(&self) -> u64 {
+        match self {
+            ProtocolContractState::Running(state) => state.domains.next_domain_id(),
+            ProtocolContractState::Initializing(state) => state.domains.next_domain_id(),
+            ProtocolContractState::Resharing(state) => {
+                state.previous_running_state.domains.next_domain_id()
+            }
+            _ => panic!("protocol state must be initialized"),
+        }
+    }
+
+    pub fn current_epoch(&self) -> EpochId {
+        match self {
+            ProtocolContractState::Running(state) => state.keyset.epoch_id,
+            ProtocolContractState::Initializing(state) => state.epoch_id,
+            ProtocolContractState::Resharing(state) => state.previous_running_state.keyset.epoch_id,
+            _ => panic!("protocol state must be initialized"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

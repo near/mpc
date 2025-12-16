@@ -190,6 +190,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
+    use crate::primitives::test_utils::NUM_PROTOCOLS;
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
@@ -202,6 +203,7 @@ pub mod tests {
         state::test_utils::gen_resharing_state,
     };
     use near_account_id::AccountId;
+    use rstest::rstest;
     use std::collections::BTreeSet;
 
     fn test_resharing_contract_state_for(num_domains: usize) {
@@ -335,26 +337,19 @@ pub mod tests {
         assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
 
-    #[test]
-    fn test_resharing_contract_state_1() {
-        test_resharing_contract_state_for(1);
-    }
-    #[test]
-    fn test_resharing_contract_state_2() {
-        test_resharing_contract_state_for(2);
-    }
-    #[test]
-    fn test_resharing_contract_state_3() {
-        test_resharing_contract_state_for(3);
-    }
-    #[test]
-    fn test_resharing_contract_state_4() {
-        test_resharing_contract_state_for(4);
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    #[case(NUM_PROTOCOLS)]
+    #[case(2*NUM_PROTOCOLS)]
+    fn test_resharing_contract_state(#[case] num_domains: usize) {
+        test_resharing_contract_state_for(num_domains);
     }
 
     #[test]
     fn test_resharing_reproposal() {
-        let (mut env, mut state) = gen_resharing_state(3);
+        let (mut env, mut state) = gen_resharing_state(NUM_PROTOCOLS);
 
         // Vote for first domain's key.
         let leader = find_leader(&state.resharing_key);
