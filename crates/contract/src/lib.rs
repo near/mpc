@@ -163,7 +163,7 @@ impl MpcContract {
         // It's important we fail here because the MPC nodes will fail in an identical way.
         // This allows users to get the error message
         match domain_config.scheme {
-            SignatureScheme::Secp256k1 => {
+            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
                 let hash = *request.payload.as_ecdsa().expect("Payload is not Ecdsa");
                 k256::Scalar::from_repr(hash.into())
                     .into_option()
@@ -173,10 +173,7 @@ impl MpcContract {
                 request.payload.as_eddsa().expect("Payload is not EdDSA");
             }
             SignatureScheme::Bls12381 => {
-                env::panic_str(
-                    &InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function")
-                    .to_string(),
-                );
+                env::panic_str(&InvalidParameters::InvalidDomainId.message("Selected domain is used for Bls12381, which is not compatible with this function").to_string(),);
             }
         }
 
@@ -1763,7 +1760,7 @@ mod tests {
         rng: &mut impl CryptoRngCore,
     ) -> (dtos::PublicKey, SharedSecretKey) {
         match domain_scheme {
-            SignatureScheme::Secp256k1 => {
+            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
                 let (pk, sk) = new_secp256k1(rng);
                 (pk.into(), SharedSecretKey::Secp256k1(sk))
             }
