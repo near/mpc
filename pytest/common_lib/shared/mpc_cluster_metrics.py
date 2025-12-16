@@ -10,44 +10,34 @@ def get_metric_value_for_node(cluster: MpcCluster, metric_name: str, node_id: in
     return result if result is not None else 0
 
 
-def get_node_metrics_all_nodes(cluster: MpcCluster):
+def get_node_metrics_all_nodes(cluster: MpcCluster) -> list[NodeMetrics]:
     number_nodes = len(cluster.mpc_nodes)
 
     network_metrics = [NodeMetrics(0, 0, 0, 0, 0) for _ in range(number_nodes)]
     for i in range(len(cluster.mpc_nodes)):
-        network_metrics[i].queue_size = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_size", i
-        )
-        network_metrics[i].requests_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_requests_indexed", i
-        )
-        network_metrics[i].responses_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_responses_indexed", i
-        )
-        network_metrics[i].matching_responses_indexed = get_metric_value_for_node(
-            cluster, "mpc_pending_signatures_queue_matching_responses_indexed", i
-        )
-
-        network_metrics[
-            i
-        ].mpc_cluster_failed_signatures_count = get_metric_value_for_node(
-            cluster, IntMetricName.MPC_CLUSTER_FAILED_SIGNATURES_COUNT, i
-        )
-
-        network_metrics[i].queue_size += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_size", i
-        )
-        network_metrics[i].requests_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_requests_indexed", i
-        )
-        network_metrics[i].responses_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_responses_indexed", i
-        )
-        network_metrics[i].matching_responses_indexed += get_metric_value_for_node(
-            cluster, "mpc_pending_ckds_queue_matching_responses_indexed", i
-        )
+        network_metrics[i] = get_network_metrics_for_node(cluster, i)
         print(f"Node {i}: {network_metrics[i]}")
     return network_metrics
+
+
+def get_network_metrics_for_node(cluster: MpcCluster, node_id: int):
+    queue_size = get_queue_size_per_node(cluster, node_id)
+    requests_indexed = get_requests_indexed_per_node(cluster, node_id)
+    responses_indexed = get_responses_indexed_per_node(cluster, node_id)
+    matching_responses_indexed = get_matching_responses_indexed_per_node(
+        cluster, node_id
+    )
+
+    mpc_cluster_failed_signatures_count = get_metric_value_for_node(
+        cluster, IntMetricName.MPC_CLUSTER_FAILED_SIGNATURES_COUNT, node_id
+    )
+    return NodeMetrics(
+        queue_size,
+        requests_indexed,
+        responses_indexed,
+        matching_responses_indexed,
+        mpc_cluster_failed_signatures_count,
+    )
 
 
 def get_queue_attemps_generated(cluster: MpcCluster):
@@ -57,6 +47,42 @@ def get_queue_attemps_generated(cluster: MpcCluster):
         IntMetricName.MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED
     )
     return sum(a for a in led_requests if a is not None)
+
+
+def get_queue_size_per_node(cluster: MpcCluster, node_id: int):
+    return get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_SIGNATURES_QUEUE_SIZE, node_id
+    ) + get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_CKDS_QUEUE_SIZE, node_id
+    )
+
+
+def get_requests_indexed_per_node(cluster: MpcCluster, node_id: int):
+    return get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED, node_id
+    ) + get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED, node_id
+    )
+
+
+def get_responses_indexed_per_node(cluster: MpcCluster, node_id: int):
+    return get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED, node_id
+    ) + get_metric_value_for_node(
+        cluster, IntMetricName.MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED, node_id
+    )
+
+
+def get_matching_responses_indexed_per_node(cluster: MpcCluster, node_id: int):
+    return get_metric_value_for_node(
+        cluster,
+        IntMetricName.MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
+        node_id,
+    ) + get_metric_value_for_node(
+        cluster,
+        IntMetricName.MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED,
+        node_id,
+    )
 
 
 def assert_num_presignatures_available(

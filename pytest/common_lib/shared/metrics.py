@@ -12,8 +12,26 @@ class IntMetricName(str, Enum):
     MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED = (
         "mpc_pending_signatures_queue_attempts_generated"
     )
+    MPC_PENDING_SIGNATURES_QUEUE_SIZE = "mpc_pending_signatures_queue_size"
+    MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED = (
+        "mpc_pending_signatures_queue_requests_indexed"
+    )
+    MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED = (
+        "mpc_pending_signatures_queue_responses_indexed"
+    )
+    MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED = (
+        "mpc_pending_signatures_queue_matching_responses_indexed"
+    )
     MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED = (
         "mpc_pending_ckds_queue_attempts_generated"
+    )
+    MPC_PENDING_CKDS_QUEUE_SIZE = "mpc_pending_ckds_queue_size"
+    MPC_PENDING_CKDS_QUEUE_REQUESTS_INDEXED = "mpc_pending_ckds_queue_requests_indexed"
+    MPC_PENDING_CKDS_QUEUE_RESPONSES_INDEXED = (
+        "mpc_pending_ckds_queue_responses_indexed"
+    )
+    MPC_PENDING_CKDS_QUEUE_MATCHING_RESPONSES_INDEXED = (
+        "mpc_pending_ckds_queue_matching_responses_indexed"
     )
     MPC_CLUSTER_FAILED_SIGNATURES_COUNT = "mpc_cluster_failed_signatures_count"
 

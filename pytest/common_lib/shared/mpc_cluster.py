@@ -30,6 +30,7 @@ from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.signature import generate_sign_args
 from common_lib.ckd import generate_ckd_args
+from common_lib.constants import TRANSACTION_TIMEOUT
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -154,7 +155,9 @@ class MpcCluster:
             args,
             gas=300 * TGAS,
         )
-        return self.secondary_contract_node.near_node.send_tx_and_wait(tx)
+        return self.secondary_contract_node.near_node.send_tx_and_wait(
+            tx, timeout=TRANSACTION_TIMEOUT
+        )
 
     def init_cluster(
         self,
