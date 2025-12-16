@@ -8,6 +8,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib.shared.transaction_status import assert_txn_execution_error
 from common_lib import shared
 from common_lib.contracts import load_mpc_contract
+from common_lib.constants import TRANSACTION_TIMEOUT
 from common_lib.contract_state import (
     ProtocolState,
     RunningProtocolState,
@@ -73,7 +74,7 @@ def test_cancellation_of_key_resharing():
             continue
 
         tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_resharing", {})
-        response = node.near_node.send_tx_and_wait(tx)
+        response = node.near_node.send_tx_and_wait(tx, timeout=TRANSACTION_TIMEOUT)
         assert_txn_execution_error(response, expected_error_msg="Not a participant")
 
     # Vote with a threshold number of the running nodes
