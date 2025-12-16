@@ -16,6 +16,7 @@ from common_lib.shared import MpcCluster, metrics
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
+from common_lib.shared import mpc_cluster_metrics
 from common_lib.contracts import load_mpc_contract
 from common_lib.constants import INDEXER_MAX_HEIGHT_DIFF, TIMEOUT
 
@@ -58,7 +59,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     )
 
     # Wait for nodes to have assets with everyone else
-    shared.assert_num_presignatures_available(
+    mpc_cluster_metrics.assert_num_presignatures_available(
         lost_assets_cluster, PRESIGNATURES_TO_BUFFER, TIMEOUT
     )
 
@@ -70,10 +71,12 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     lost_assets_cluster.reset_mpc_data([faulty_node_idx])
 
     # Assert that node is noticed as offline
-    shared.assert_num_live_connections(lost_assets_cluster, node_idxs_alive, 2, TIMEOUT)
+    mpc_cluster_metrics.assert_num_live_connections(
+        lost_assets_cluster, node_idxs_alive, 2, TIMEOUT
+    )
 
     # Ensure alive nodes clean up assets involving dead node (the key behavior we want to test)
-    shared.assert_num_offline_online_presignatures(
+    mpc_cluster_metrics.assert_num_offline_online_presignatures(
         lost_assets_cluster,
         node_idxs_alive,
         expected_num_presignatures_online=PRESIGNATURES_TO_BUFFER,
@@ -88,7 +91,9 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     lost_assets_cluster.run_nodes([faulty_node_idx])
     node_idxs_alive.append(faulty_node_idx)
     # Wait for nodes to connect
-    shared.assert_num_live_connections(lost_assets_cluster, node_idxs_alive, 3, TIMEOUT)
+    mpc_cluster_metrics.assert_num_live_connections(
+        lost_assets_cluster, node_idxs_alive, 3, TIMEOUT
+    )
 
     # Send some signature requests as a sanity check.
     presignatures_available = sum(
@@ -114,7 +119,7 @@ def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
     )
 
     # Wait for nodes to have assets with everyone else
-    shared.assert_num_presignatures_available(
+    mpc_cluster_metrics.assert_num_presignatures_available(
         lost_assets_cluster, PRESIGNATURES_TO_BUFFER, TIMEOUT
     )
 
@@ -124,12 +129,12 @@ def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
     lost_assets_cluster.set_block_ingestion([faulty_node_idx], False)
 
     # Ensure the node falls the required number of blocks behind to be considered offline
-    shared.assert_indexer_lag(
+    mpc_cluster_metrics.assert_indexer_lag(
         lost_assets_cluster, faulty_node_idx, node_idxs_alive, INDEXER_MAX_HEIGHT_DIFF
     )
 
     # Ensure the asset cleanup mechanism kicks in
-    shared.assert_num_offline_online_presignatures(
+    mpc_cluster_metrics.assert_num_offline_online_presignatures(
         lost_assets_cluster,
         node_idxs_alive,
         expected_num_presignatures_online=PRESIGNATURES_TO_BUFFER,
