@@ -105,58 +105,60 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
     let epoch_id: u64 = init_state.current_epoch().get();
-    let domain_id: u64 = init_state.next_domain_id();
-    let threshold = init_state.threshold().unwrap().value() as usize;
-    let scheme = SignatureScheme::Ed25519;
+    let mut next_domain_id: u64 = init_state.next_domain_id();
+    for scheme in ALL_SIGNATURE_SCHEMES {
+        let threshold = init_state.threshold().unwrap().value() as usize;
 
-    // vote to start key generation
-    vote_add_domains(
-        &contract,
-        &mpc_signer_accounts,
-        &[DomainConfig {
-            id: domain_id.into(),
-            scheme,
-        }],
-    )
-    .await
-    .unwrap();
+        // vote to start key generation
+        vote_add_domains(
+            &contract,
+            &mpc_signer_accounts,
+            &[DomainConfig {
+                id: next_domain_id.into(),
+                scheme: *scheme,
+            }],
+        )
+        .await
+        .unwrap();
 
-    let state = get_state(&contract).await;
-    assert_eq!(state.next_domain_id(), domain_id + 1);
-    assert!(matches!(state, ProtocolContractState::Initializing(_)));
-    let expected_domain_config = DomainConfig {
-        id: domain_id.into(),
-        scheme,
-    };
-    let found = state.get_domain_config(domain_id.into()).unwrap();
-    assert_eq!(expected_domain_config, found);
+        let state = get_state(&contract).await;
+        assert_eq!(state.next_domain_id(), next_domain_id + 1);
+        assert!(matches!(state, ProtocolContractState::Initializing(_)));
+        let expected_domain_config = DomainConfig {
+            id: next_domain_id.into(),
+            scheme: *scheme,
+        };
+        let found = state.get_domain_config(next_domain_id.into()).unwrap();
+        assert_eq!(expected_domain_config, found);
 
-    // send threshold votes to abort key generation
-    execute_async_transactions(
-        &mpc_signer_accounts[0..threshold],
-        &contract,
-        "vote_cancel_keygen",
-        &json!({"next_domain_id": domain_id+1}),
-        GAS_FOR_VOTE_CANCEL_KEYGEN,
-    )
-    .await
-    .unwrap();
+        // send threshold votes to abort key generation
+        execute_async_transactions(
+            &mpc_signer_accounts[0..threshold],
+            &contract,
+            "vote_cancel_keygen",
+            &json!({"next_domain_id": next_domain_id+1}),
+            GAS_FOR_VOTE_CANCEL_KEYGEN,
+        )
+        .await
+        .unwrap();
 
-    // ensure we return to running state and that no key was registered
-    let state = get_state(&contract).await;
-    assert_matches!(state, ProtocolContractState::Running(_));
-    assert_eq!(
-        state.public_key(domain_id.into()).unwrap_err(),
-        DomainError::NoSuchDomain.into()
-    );
-    assert_eq!(
-        state.domain_registry().unwrap().domains().len(),
-        ALL_SIGNATURE_SCHEMES.len()
-    );
+        // ensure we return to running state and that no key was registered
+        let state = get_state(&contract).await;
+        assert_matches!(state, ProtocolContractState::Running(_));
+        assert_eq!(
+            state.public_key(next_domain_id.into()).unwrap_err(),
+            DomainError::NoSuchDomain.into()
+        );
+        assert_eq!(
+            state.domain_registry().unwrap().domains().len(),
+            ALL_SIGNATURE_SCHEMES.len()
+        );
 
-    // assert that the epoch id did not change
-    assert_eq!(state.current_epoch().get(), epoch_id);
-    assert_eq!(state.next_domain_id(), domain_id + 1);
+        // assert that the epoch id did not change
+        assert_eq!(state.current_epoch().get(), epoch_id);
+        assert_eq!(state.next_domain_id(), next_domain_id + 1);
+        next_domain_id += 1;
+    }
     Ok(())
 }
 
