@@ -15,6 +15,7 @@ use serial_test::serial;
 use super::DEFAULT_BLOCK_TIME;
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
+// TODO(#1640): add robust ecdsa here
 #[tokio::test]
 #[rstest]
 #[case(0, SignatureScheme::Secp256k1, 3)]
@@ -73,7 +74,7 @@ async fn test_key_resharing_simple(
 
     // Sanity check.
     match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",
@@ -117,7 +118,7 @@ async fn test_key_resharing_simple(
         .expect("Timeout waiting for resharing to complete");
 
     match domain.scheme {
-        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 | SignatureScheme::V2Secp256k1 => {
             assert!(request_signature_and_await_response(
                 &mut setup.indexer,
                 "user1",

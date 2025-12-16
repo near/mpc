@@ -84,6 +84,14 @@ pub const GAS_FOR_VOTE_NEW_PARAMETERS: Gas = Gas::from_tgas(22);
 /// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
 /// room for further optimization.
 pub const GAS_FOR_VOTE_UPDATE: Gas = Gas::from_tgas(232);
+/// Gas required for votes cast before the threshold is reached (votes 1 through N-1).
+/// These votes are cheap because they only record the vote without triggering the actual
+/// contract update deployment and migration.
+pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(4);
+/// Maximum gas expected for the threshold vote that triggers the contract update.
+/// This vote is more expensive because it deploys the new contract code and executes
+/// the migration function.
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
 
 /// This is the current deposit required for a contract deploy. This is subject to change but make
 /// sure that it's not larger than 2mb. We can go up to 4mb technically but our contract should
@@ -357,7 +365,7 @@ pub fn new_secp256k1() -> (dtos::PublicKey, ts_ecdsa::KeygenOutput) {
 
 pub fn make_key_for_domain(domain_scheme: SignatureScheme) -> (dtos::PublicKey, SharedSecretKey) {
     match domain_scheme {
-        SignatureScheme::Secp256k1 => {
+        SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
             let (pk, sk) = new_secp256k1();
             (pk, SharedSecretKey::Secp256k1(sk))
         }
@@ -1181,7 +1189,9 @@ pub async fn make_and_submit_requests(
 
     for (domain, shared_secret_key) in domains.iter().zip(shared_secret_keys.iter()) {
         match domain.scheme {
-            SignatureScheme::Secp256k1 | SignatureScheme::Ed25519 => {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => {
                 for message in &signature_request_payloads {
                     let (payload, signature_request, signature_response) =
                         create_message_payload_and_response(
