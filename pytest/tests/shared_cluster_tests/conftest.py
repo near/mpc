@@ -7,6 +7,9 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[2]))
 
 from common_lib import shared, contracts, contract_state
 
+TRIPLES_TO_BUFFER = 200
+PRESIGNATURES_TO_BUFFER = 100
+
 
 @pytest.fixture(scope="package")
 def shared_cluster():
@@ -18,6 +21,8 @@ def shared_cluster():
         2,
         1,
         contracts.load_mpc_contract(),
+        triples_to_buffer=TRIPLES_TO_BUFFER,
+        presignatures_to_buffer=PRESIGNATURES_TO_BUFFER,
     )
     cluster.init_cluster(mpc_nodes, 2)
     cluster.wait_for_state(contract_state.ProtocolState.RUNNING)

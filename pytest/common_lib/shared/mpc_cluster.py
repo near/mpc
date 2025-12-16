@@ -4,6 +4,7 @@ import json
 import pathlib
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 
 from common_lib import constants
@@ -29,6 +30,7 @@ from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.signature import generate_sign_args
 from common_lib.ckd import generate_ckd_args
+from common_lib.constants import TRANSACTION_TIMEOUT
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -45,8 +47,8 @@ class MpcCluster:
             node.run()
 
     def kill_all(self):
-        for node in self.mpc_nodes:
-            node.kill(False)
+        with ThreadPoolExecutor(max_workers=len(self.mpc_nodes)) as executor:
+            executor.map(lambda node: node.kill(False), self.mpc_nodes)
 
     def kill_nodes(self, node_idxs: List[int], gentle=True):
         """
@@ -153,7 +155,9 @@ class MpcCluster:
             args,
             gas=300 * TGAS,
         )
-        return self.secondary_contract_node.near_node.send_tx_and_wait(tx, 20)
+        return self.secondary_contract_node.near_node.send_tx_and_wait(
+            tx, timeout=TRANSACTION_TIMEOUT
+        )
 
     def init_cluster(
         self,
