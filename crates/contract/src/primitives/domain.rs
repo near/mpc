@@ -220,11 +220,11 @@ pub mod tests {
         let domains2 = vec![
             DomainConfig {
                 id: DomainId(2),
-                scheme: SignatureScheme::Secp256k1,
+                scheme: SignatureScheme::Bls12381,
             },
             DomainConfig {
                 id: DomainId(3),
-                scheme: SignatureScheme::Ed25519,
+                scheme: SignatureScheme::V2Secp256k1,
             },
         ];
         let new_registry = new_registry.add_domains(domains2.clone()).unwrap();
@@ -254,57 +254,32 @@ pub mod tests {
 
     #[test]
     fn test_retain_domains() {
-        let mut registry = DomainRegistry::from_raw_validated(
-            vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
-                },
-                DomainConfig {
-                    id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
-                },
-            ],
-            6,
-        )
-        .unwrap();
+        let expected = vec![
+            DomainConfig {
+                id: DomainId(0),
+                scheme: SignatureScheme::Secp256k1,
+            },
+            DomainConfig {
+                id: DomainId(2),
+                scheme: SignatureScheme::Ed25519,
+            },
+            DomainConfig {
+                id: DomainId(3),
+                scheme: SignatureScheme::Bls12381,
+            },
+            DomainConfig {
+                id: DomainId(4),
+                scheme: SignatureScheme::V2Secp256k1,
+            },
+        ];
+        let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
+        assert_eq!(registry.domains, expected);
+        assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(3);
-        assert_eq!(
-            registry.domains,
-            vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
-                },
-                DomainConfig {
-                    id: DomainId(3),
-                    scheme: SignatureScheme::Secp256k1,
-                },
-            ]
-        );
+        assert_eq!(registry.domains, expected[0..3]);
         assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(2);
-        assert_eq!(
-            registry.domains,
-            vec![
-                DomainConfig {
-                    id: DomainId(0),
-                    scheme: SignatureScheme::Secp256k1,
-                },
-                DomainConfig {
-                    id: DomainId(2),
-                    scheme: SignatureScheme::Ed25519,
-                },
-            ]
-        );
+        assert_eq!(registry.domains, expected[0..2]);
         assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(0);
         assert_eq!(registry.domains, Vec::new());
