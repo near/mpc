@@ -488,7 +488,7 @@ pub fn derive_secret_key_ed25519(
     }
 }
 
-pub async fn create_message_payload_and_response(
+pub fn create_message_payload_and_response(
     domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
@@ -675,19 +675,25 @@ pub async fn submit_ckd_response(
     Ok(())
 }
 
+// todo change interface: attested_account is only used if respond is set
+// note; we solve https://github.com/near/mpc/issues/1666
 pub async fn sign_and_validate(
+    worker: &Worker<Sandbox>,
     account: &Account,
     request: &SignRequestArgs,
-    respond: Option<(&SignatureRequest, &SignatureResponse)>,
+    respond: Option<(&SignatureRequest, &SignatureResponse)>, // todos. rename to response
     contract: &Contract,
     attested_account: &Account,
+    // todo: add "fast forward to timeout" as an argument here
 ) -> anyhow::Result<()> {
     let status = submit_sign_request(account, request, contract).await?;
 
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    worker.fast_forward(1).await.unwrap();
 
     if let Some((respond_req, respond_resp)) = respond {
         submit_signature_response(respond_req, respond_resp, contract, attested_account).await?;
+    } else {
+        worker.fast_forward(200).await.unwrap();
     }
 
     let execution = status.await?;
@@ -1180,8 +1186,7 @@ pub async fn make_and_submit_requests(
                             message,
                             path,
                             shared_secret_key,
-                        )
-                        .await;
+                        );
 
                     let request = SignRequestArgs {
                         payload_v2: Some(payload),
