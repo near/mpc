@@ -39,6 +39,7 @@ pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
     Bls12381,
+    V2Secp256k1, // Robust ECDSA
 }
 
 impl Default for SignatureScheme {
