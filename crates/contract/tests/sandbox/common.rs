@@ -1031,7 +1031,7 @@ pub async fn assert_running_return_participants(
 }
 
 pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
-    let final_state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let final_state: ProtocolContractState = get_state(contract).await;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
             "Expected contract to be in Running state: {:?}",
@@ -1138,7 +1138,7 @@ pub async fn call_contract_key_generation<const N: usize>(
             .unwrap();
     }
 
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = get_state(contract).await;
     match state {
         ProtocolContractState::Running(state) => {
             assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);

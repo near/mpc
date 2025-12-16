@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::sandbox::common::{
     call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
-    gen_accounts, get_participants, get_tee_accounts, init, make_and_submit_requests,
+    gen_accounts, get_participants, get_state, get_tee_accounts, init, make_and_submit_requests,
     propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response, DomainKey,
     PARTICIPANT_LEN,
 };
@@ -162,13 +162,11 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
-    let state_post_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -211,8 +209,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -220,8 +217,7 @@ async fn upgrade_preserves_state_and_requests(
         .await
         .expect("❌ migration() failed");
 
-    let state_post_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -324,8 +320,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -333,8 +328,7 @@ async fn upgrade_allows_new_request_types(
         .await
         .expect("❌ migration() failed");
 
-    let state_post_upgrade: ProtocolContractState =
-        contract.view("state").await.unwrap().json().unwrap();
+    let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,

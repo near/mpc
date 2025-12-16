@@ -179,7 +179,7 @@ async fn test_resharing() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Running(state) => {
             assert_eq!(state.parameters.participants().len(), PARTICIPANT_LEN + 1);
@@ -212,7 +212,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     .await
     .unwrap();
 
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(state) => {
             assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
@@ -244,7 +244,7 @@ async fn setup_resharing_state(
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, number_of_participants).await;
 
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = get_state(&contract).await;
     let ProtocolContractState::Running(initial_running_state) = state else {
         panic!("State is not running: {:#?}", state)
     };
@@ -275,7 +275,7 @@ async fn setup_resharing_state(
     .unwrap();
 
     // Verify we're in resharing state
-    match contract.view("state").await.unwrap().json().unwrap() {
+    match get_state(&contract).await {
         ProtocolContractState::Resharing(state) => {
             assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
             assert_eq!(state.resharing_key.epoch_id(), prospective_epoch_id);
@@ -376,7 +376,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
     .unwrap();
 
     // Verify still in resharing state (not cancelled yet)
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     assert!(
         matches!(state, ProtocolContractState::Resharing(_)),
         "Should still be in resharing state with insufficient votes"
@@ -390,7 +390,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
     assert!(result.is_success(), "{result:#?}");
 
     // Verify transition back to running state
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     assert!(
         matches!(state, ProtocolContractState::Running(_)),
         "Should transition to running state after threshold votes"
@@ -591,7 +591,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     let prospective_epoch_id = cancelled_epoch_id.next();
 
     // Verify cancellation tracked
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     if let ProtocolContractState::Running(running_state) = state {
         assert_eq!(
             running_state.previously_cancelled_resharing_epoch_id,
@@ -631,7 +631,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         .unwrap();
 
     // Step 5: Verify final state
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json()?;
+    let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Running(running_state) => {
             assert_eq!(
@@ -702,7 +702,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         assert!(error_message.contains(&expected_error_message));
     }
 
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = get_state(&contract).await;
 
     assert_matches!(
         state,

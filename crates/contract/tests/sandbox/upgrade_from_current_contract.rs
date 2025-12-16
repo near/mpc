@@ -1,6 +1,6 @@
 use crate::sandbox::common::{
     assert_running_return_participants, assert_running_return_threshold, current_contract,
-    execute_key_generation_and_add_random_state, init_env, init_with_candidates,
+    execute_key_generation_and_add_random_state, get_state, init_env, init_with_candidates,
     migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
     ContractSetup, ALL_SIGNATURE_SCHEMES, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
     GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE,
@@ -121,7 +121,7 @@ async fn test_propose_update_config() {
 
     let old_config: contract_interface::types::Config =
         contract.view("config").await.unwrap().json().unwrap();
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = get_state(&contract).await;
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
     let first_proposal = &proposals[0];
@@ -261,7 +261,7 @@ async fn test_propose_update_contract_many() {
     }
 
     // Let's check that we can call into the state and see all the proposals.
-    let state: ProtocolContractState = contract.view("state").await.unwrap().json().unwrap();
+    let state: ProtocolContractState = get_state(&contract).await;
     dbg!(state);
 }
 
@@ -519,7 +519,9 @@ async fn update_from_current_contract_to_migration_contract() {
 
 #[tokio::test]
 async fn migration_function_rejects_external_callers() {
-    let (_worker, contract, mpc_signer_accounts, _) = init_with_candidates(vec![], None, 2).await;
+    let number_of_participants: usize = 2;
+    let (_worker, contract, mpc_signer_accounts, _) =
+        init_with_candidates(vec![], None, number_of_participants).await;
 
     let execution_error = mpc_signer_accounts[0]
         .call(contract.id(), "migrate")
