@@ -2841,7 +2841,7 @@ expression: abi
               "minimum": 0.0
             },
             "launcher_compose_hash": {
-              "description": "The digest of the MPC image running.",
+              "description": "The digest of the launcher compose file running.",
               "type": "array",
               "items": {
                 "type": "integer",
