@@ -135,7 +135,7 @@
       3
     ],
     "produce_empty_blocks": true,
-    "block_fetch_horizon": 50,
+    "block_fetch_horizon": 100000,
     "block_header_fetch_horizon": 50,
     "catchup_step_period": {
       "secs": 0,
