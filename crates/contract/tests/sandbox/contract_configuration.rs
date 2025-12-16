@@ -90,7 +90,6 @@ async fn contract_configuration_can_be_set_on_initialization() {
         clean_tee_status_tera_gas: Some(99),
         cleanup_orphaned_node_migrations_tera_gas: Some(11),
         remove_non_participant_update_votes_tera_gas: Some(12),
-        attestation_max_validity_duration_seconds: Some(13),
     };
 
     let (_, contract, _) = init_with_candidates(vec![], Some(init_config.clone()), 2).await;

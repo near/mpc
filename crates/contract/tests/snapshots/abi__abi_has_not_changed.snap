@@ -495,10 +495,6 @@ expression: abi
                       [
                         "remove_non_participant_update_votes_tera_gas",
                         "u64"
-                      ],
-                      [
-                        "attestation_max_validity_duration_seconds",
-                        "u64"
                       ]
                     ]
                   },
@@ -1390,7 +1386,6 @@ expression: abi
           "description": "Configuration parameters of the contract.",
           "type": "object",
           "required": [
-            "attestation_max_validity_duration_seconds",
             "ckd_call_gas_attachment_requirement_tera_gas",
             "clean_tee_status_tera_gas",
             "cleanup_orphaned_node_migrations_tera_gas",
@@ -1404,12 +1399,6 @@ expression: abi
             "tee_upgrade_deadline_duration_seconds"
           ],
           "properties": {
-            "attestation_max_validity_duration_seconds": {
-              "description": "Contract defined time to live for node attestations. Participants must refresh their attestations before `attestation_max_validity_duration_seconds` to avoid their attestation being invalidated.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": "integer",
@@ -1618,15 +1607,6 @@ expression: abi
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
           "type": "object",
           "properties": {
-            "attestation_max_validity_duration_seconds": {
-              "description": "Contract defined time to live for node attestations. Participants must refresh their attestations before `attestation_max_validity_duration_seconds` to avoid their attestation being invalidated.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            },
             "ckd_call_gas_attachment_requirement_tera_gas": {
               "description": "Prepaid gas for a `return_signature_and_clean_state_on_success` call.",
               "type": [

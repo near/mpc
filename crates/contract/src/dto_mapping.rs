@@ -387,9 +387,6 @@ impl From<contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.remove_non_participant_update_votes_tera_gas {
             config.remove_non_participant_update_votes_tera_gas = v;
         }
-        if let Some(v) = config_ext.attestation_max_validity_duration_seconds {
-            config.attestation_max_validity_duration_seconds = v;
-        }
 
         config
     }
@@ -415,8 +412,6 @@ impl From<&Config> for contract_interface::types::Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
-            attestation_max_validity_duration_seconds: value
-                .attestation_max_validity_duration_seconds,
         }
     }
 }
@@ -441,8 +436,6 @@ impl From<contract_interface::types::Config> for Config {
                 .cleanup_orphaned_node_migrations_tera_gas,
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
-            attestation_max_validity_duration_seconds: value
-                .attestation_max_validity_duration_seconds,
         }
     }
 }

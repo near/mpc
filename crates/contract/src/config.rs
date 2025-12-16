@@ -29,10 +29,6 @@ const DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS: u64 = 3;
 /// Prepaid gas for a `remove_non_participant_update_votes` call
 const DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS: u64 = 5;
 
-// --- TEE configs --
-/// The maximum duration a given attestation will be considered valid by the contract.
-const DEFDAULT_ATTESTATION_MAX_VALIDITY_DURATION_SECONDS: u64 = 60 * 60 * 24 * 7; // 7 days
-
 /// Config for V2 of the contract.
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,10 +38,6 @@ pub(crate) struct Config {
     pub(crate) key_event_timeout_blocks: u64,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub(crate) tee_upgrade_deadline_duration_seconds: u64,
-    /// Contract defined time to live for node attestations. Participants
-    /// must refresh their attestations before `attestation_max_validity_duration_seconds`
-    /// to avoid their attestation being invalidated.
-    pub(crate) attestation_max_validity_duration_seconds: u64,
     /// Amount of gas to deposit for contract and config updates.
     pub(crate) contract_upgrade_deposit_tera_gas: u64,
     /// Gas required for a sign request.
@@ -86,8 +78,6 @@ impl Default for Config {
                 DEFAULT_CLEANUP_ORPHANED_NODE_MIGRATIONS_TERA_GAS,
             remove_non_participant_update_votes_tera_gas:
                 DEFAULT_REMOVE_NON_PARTICIPANT_UPDATE_VOTES_TERA_GAS,
-            attestation_max_validity_duration_seconds:
-                DEFDAULT_ATTESTATION_MAX_VALIDITY_DURATION_SECONDS,
         }
     }
 }
