@@ -158,11 +158,10 @@ near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.1
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
 
-[profile.test]
+[profile.test-release]
 inherits = "release"
-debug-assertions = true
 overflow-checks = true
-debug = 1 # Keep symbols for stack traces
+debug = true
 
 [profile.release-contract]
 inherits = "release"
