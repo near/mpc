@@ -1598,7 +1598,7 @@ impl MpcContract {
         };
 
         if !(matches!(
-            self.tee_state.re_verify_tee_participant(
+            self.tee_state.reverify_and_cleanup_participants(
                 &node_id,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
             ),

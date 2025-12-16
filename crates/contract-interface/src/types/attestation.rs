@@ -71,7 +71,7 @@ pub enum VerifiedAttestation {
 pub struct VerifiedDstackAttestation {
     /// The digest of the MPC image running.
     pub mpc_image_hash: Sha256Digest,
-    /// The digest of the MPC image running.
+    /// The digest of the launcher compose file running.
     pub launcher_compose_hash: Sha256Digest,
     /// Unix time stamp for when this attestation will be expired.  
     pub expiry_timestamp_seconds: u64,
