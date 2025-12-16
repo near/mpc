@@ -655,7 +655,7 @@ mod tests {
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            creation_time_stamp_seconds: Some(NOW_SECONDS),
+            expiry_timestamp_seconds: Some(NOW_SECONDS),
         });
 
         tee_state
@@ -694,7 +694,7 @@ mod tests {
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
         });
 
         tee_state
@@ -740,7 +740,7 @@ mod tests {
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
         });
 
         tee_state
@@ -786,7 +786,7 @@ mod tests {
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            creation_time_stamp_seconds: Some(CREATION_TIME_SECONDS),
+            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
         });
 
         tee_state

@@ -74,7 +74,7 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
             } => MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
-                creation_time_stamp_seconds,
+                expiry_timestamp_seconds: creation_time_stamp_seconds,
             },
         }
     }
@@ -192,7 +192,7 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
                         .launcher_compose_hash
                         .into(),
                     creation_time_stamp_seonds: validated_dstack_attestation
-                        .creation_time_stamp_seonds,
+                        .expiration_timestamp_seconds,
                 })
             }
         }
@@ -207,7 +207,7 @@ impl IntoInterfaceType<dtos::MockAttestation> for MockAttestation {
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
-                creation_time_stamp_seconds,
+                expiry_timestamp_seconds: creation_time_stamp_seconds,
             } => dtos::MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
