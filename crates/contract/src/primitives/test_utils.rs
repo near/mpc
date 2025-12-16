@@ -1,3 +1,4 @@
+use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -11,16 +12,13 @@ use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
 
-use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
-
-pub const NUM_PROTOCOLS: usize = 4;
-
-const ALL_PROTOCOLS: [SignatureScheme; NUM_PROTOCOLS] = [
+const ALL_PROTOCOLS: [SignatureScheme; 4] = [
     SignatureScheme::Secp256k1,
     SignatureScheme::Ed25519,
     SignatureScheme::Bls12381,
     SignatureScheme::V2Secp256k1,
 ];
+pub const NUM_PROTOCOLS: usize = ALL_PROTOCOLS.len();
 
 /// Generates a valid DomainRegistry with various signature schemes, with num_domains total.
 pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {

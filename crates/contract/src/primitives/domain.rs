@@ -273,6 +273,8 @@ pub mod tests {
             },
         ];
         let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
+        assert_eq!(registry.domains, expected);
+        assert_eq!(registry.next_domain_id, 6);
         registry.retain_domains(3);
         assert_eq!(registry.domains, expected[0..3]);
         assert_eq!(registry.next_domain_id, 6);

@@ -279,6 +279,7 @@ pub struct DomainPublicKey {
     public_key: PublicKeyExtended,
     config: DomainConfig,
 }
+
 /// Initializes the contract with `pks` as public keys, a set of participants and a threshold.
 pub async fn init_with_candidates(
     pks: Vec<dtos::PublicKey>,
@@ -456,16 +457,16 @@ pub struct DomainKey {
     pub domain_secret_key: SharedSecretKey,
     pub domain_public_key: PublicKeyExtended,
 }
+
+#[derive(Serialize)]
 pub struct SignResponseArgs {
     pub request: SignatureRequest,
     pub response: SignatureResponse,
 }
+
 impl SignResponseArgs {
     pub fn json_args(&self) -> serde_json::Value {
-        serde_json::json!({
-            "request": self.request,
-            "response": self.response
-        })
+        serde_json::to_value(self).unwrap()
     }
 }
 
@@ -473,6 +474,7 @@ pub struct SignRequestSetup {
     pub response: SignResponseArgs,
     pub args: SignRequestArgs,
 }
+
 impl SignRequestSetup {
     pub fn expected_response(&self) -> &SignatureResponse {
         &self.response.response

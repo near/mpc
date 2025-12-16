@@ -343,8 +343,8 @@ pub mod tests {
     #[case(3)]
     #[case(NUM_PROTOCOLS)]
     #[case(2*NUM_PROTOCOLS)]
-    fn test_resharing_contract_state(#[case] n: usize) {
-        test_resharing_contract_state_for(n);
+    fn test_resharing_contract_state(#[case] num_domains: usize) {
+        test_resharing_contract_state_for(num_domains);
     }
 
     #[test]
