@@ -675,9 +675,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let validation_result = self
-            .tee_state
-            .re_veirfy_participants(proposal.participants(), tee_upgrade_deadline_duration);
+        let validation_result = self.tee_state.reverify_and_cleanup_participants(
+            proposal.participants(),
+            tee_upgrade_deadline_duration,
+        );
 
         let proposed_participants = proposal.participants();
         match validation_result {
@@ -1080,10 +1081,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        match self
-            .tee_state
-            .re_veirfy_participants(current_params.participants(), tee_upgrade_deadline_duration)
-        {
+        match self.tee_state.reverify_and_cleanup_participants(
+            current_params.participants(),
+            tee_upgrade_deadline_duration,
+        ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1598,7 +1599,7 @@ impl MpcContract {
         };
 
         if !(matches!(
-            self.tee_state.reverify_and_cleanup_participants(
+            self.tee_state.reverify_participants(
                 &node_id,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
             ),

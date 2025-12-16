@@ -192,12 +192,9 @@ impl TeeState {
         })
     }
 
-    /// re-verifies stored participant attestations and removes any participant attestation
-    /// from the internal state that fails reverifications. Reverification can fail for example
-    /// the MPC image hash the attestation was tied to is no longer allowed, or due to certificate
-    /// expiries.
-    pub(crate) fn reverify_and_cleanup_participants(
-        &mut self,
+    /// reverifies stored participant attestations.
+    pub(crate) fn reverify_participants(
+        &self,
         node_id: &NodeId,
         tee_upgrade_deadline_duration: Duration,
     ) -> TeeQuoteStatus {
@@ -222,7 +219,11 @@ impl TeeState {
         }
     }
 
-    pub fn re_veirfy_participants(
+    /// reverifies stored participant attestations and removes any participant attestation
+    /// from the internal state that fails reverifications. Reverification can fail for example
+    /// the MPC image hash the attestation was tied to is no longer allowed, or due to certificate
+    /// expiries.
+    pub fn reverify_and_cleanup_participants(
         &mut self,
         participants: &Participants,
         tee_upgrade_deadline_duration: Duration,
@@ -249,7 +250,7 @@ impl TeeState {
                 };
 
                 let tee_status =
-                    self.reverify_and_cleanup_participants(&node_id, tee_upgrade_deadline_duration);
+                    self.reverify_participants(&node_id, tee_upgrade_deadline_duration);
 
                 matches!(tee_status, TeeQuoteStatus::Valid)
             })
@@ -649,7 +650,7 @@ mod tests {
             .unwrap();
 
         // when
-        let status = tee_state.reverify_and_cleanup_participants(&node_id, Duration::from_secs(0));
+        let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
         // then
         assert_eq!(status, TeeQuoteStatus::Valid);
@@ -687,7 +688,7 @@ mod tests {
             )
             .build());
 
-        let status = tee_state.reverify_and_cleanup_participants(&node_id, Duration::from_secs(0));
+        let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
         // then
         assert_matches!(status, TeeQuoteStatus::Invalid(_));
@@ -724,7 +725,7 @@ mod tests {
             .block_timestamp(Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS - 1).as_nanos() as u64)
             .build());
 
-        let status = tee_state.reverify_and_cleanup_participants(&node_id, Duration::from_secs(0));
+        let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
         // then
         assert_eq!(status, TeeQuoteStatus::Valid);
@@ -733,7 +734,7 @@ mod tests {
     #[test]
     fn test_re_verify_returns_invalid_for_missing_node() {
         // given
-        let mut tee_state = TeeState::default();
+        let tee_state = TeeState::default();
         let node_id = NodeId {
             account_id: "ghost.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_near_public_key(),
@@ -741,7 +742,7 @@ mod tests {
         };
 
         // when
-        let status = tee_state.reverify_and_cleanup_participants(&node_id, Duration::from_secs(0));
+        let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));
 
         // then
         assert_matches!(status, TeeQuoteStatus::Invalid(msg) if msg.contains("participant has no attestation"));
