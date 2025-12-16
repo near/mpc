@@ -470,7 +470,6 @@ impl SignResponseArgs {
 }
 
 pub struct SignRequestSetup {
-    pub payload: Payload,
     pub response: SignResponseArgs,
     pub args: SignRequestArgs,
 }
@@ -482,6 +481,9 @@ impl SignRequestSetup {
         serde_json::json!({
             "request": self.args,
         })
+    }
+    pub fn payload(&self) -> &Payload {
+        &self.response.request.payload
     }
 }
 
@@ -512,7 +514,6 @@ impl DomainKey {
             ..Default::default()
         };
         SignRequestSetup {
-            payload,
             response: SignResponseArgs { request, response },
             args,
         }

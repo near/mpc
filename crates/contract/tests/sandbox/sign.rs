@@ -286,7 +286,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
             .call("sign")
             .args_json(serde_json::json!({
                 "request": {
-                    "payload": *req.payload.as_ecdsa().unwrap(),
+                    "payload": req.payload().as_ecdsa().unwrap(),
                     "path": path,
                     "key_version": LEGACY_KEY_VERSION,
                 },
