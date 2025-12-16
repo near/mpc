@@ -9,6 +9,7 @@ LISTEN_BLOCKS_FILE = "listen_blocks.flag"
 
 TIMEOUT = 90
 SHORT_TIMEOUT = 10
+TRANSACTION_TIMEOUT = 20
 NEAR_BASE = 10**24
 TGAS = 10**12
 # Tgas required by the contract for a sign call. If this needs modification, ENSURE THE CONSTANT IN THE CONTRACT AND THE TX-BENCH TOOL ALSO GETS ADJUSTED!

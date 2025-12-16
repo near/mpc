@@ -242,8 +242,8 @@ class ConfigValues:
 def generate_mpc_configs(
     num_mpc_nodes: int,
     num_respond_aks: int,
-    presignatures_to_buffer: int | None,
-    triples_to_buffer: int | None,
+    presignatures_to_buffer: int,
+    triples_to_buffer: int,
     migrating_nodes: list[int],
 ) -> list[ConfigValues]:
     """
@@ -386,8 +386,8 @@ def start_cluster_with_mpc(
     num_mpc_nodes,
     num_respond_aks,
     contract,
-    presignatures_to_buffer=None,
-    triples_to_buffer=None,
+    presignatures_to_buffer=20,
+    triples_to_buffer=40,
     start_mpc_nodes=True,
     migrating_nodes=[],
 ):

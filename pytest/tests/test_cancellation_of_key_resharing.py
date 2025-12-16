@@ -73,7 +73,7 @@ def test_cancellation_of_key_resharing():
             continue
 
         tx = node.sign_tx(cluster.mpc_contract_account(), "vote_cancel_resharing", {})
-        response = node.near_node.send_tx_and_wait(tx, timeout=20)
+        response = node.near_node.send_tx_and_wait(tx)
         assert_txn_execution_error(response, expected_error_msg="Not a participant")
 
     # Vote with a threshold number of the running nodes
