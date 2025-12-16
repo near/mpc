@@ -71,7 +71,7 @@ impl IntoContractInterfaceType<contract_interface::types::MockAttestation> for M
             } => contract_interface::types::MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
-                creation_time_stamp_seconds,
+                expiry_timestamp_seconds: creation_time_stamp_seconds,
             },
         }
     }

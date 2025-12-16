@@ -70,11 +70,11 @@ pub enum VerifiedAttestation {
 )]
 pub struct VerifiedDstackAttestation {
     /// The digest of the MPC image running.
-    pub mpc_image_hash: [u8; 32],
+    pub mpc_image_hash: Sha256Digest,
     /// The digest of the MPC image running.
-    pub launcher_compose_hash: [u8; 32],
-    /// Unix timestamp for when the attestation was created.
-    pub creation_time_stamp_seonds: u64,
+    pub launcher_compose_hash: Sha256Digest,
+    /// Unix timestamp for when the attestation expires.
+    pub expiry_timestamp_seconds: u64,
 }
 
 #[derive(
@@ -126,8 +126,8 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<Sha256Digest>,
         launcher_docker_compose_hash: Option<Sha256Digest>,
-        /// Unix time stamp for when this attestation was created.  
-        creation_time_stamp_seconds: Option<u64>,
+        /// Unix time stamp for when this attestation will be expired.  
+        expiry_timestamp_seconds: Option<u64>,
     },
 }
 

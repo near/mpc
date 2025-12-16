@@ -249,7 +249,7 @@ impl TestSetup {
         Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: Some(hash),
             launcher_docker_compose_hash: None,
-            creation_time_stamp_seconds: None,
+            expiry_timestamp_seconds: None,
         })
     }
 }
@@ -267,10 +267,11 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
         .block_timestamp(nano_seconds_since_unix_epoch)
         .build());
 }
+
 /// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This test demonstrates the complete kickout mechanism using direct contract calls:
-/// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s, and max validity of attestations to 10s.
+/// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s
 /// 2. Submit valid attestations for first 2 participants at time T=1s
-/// 3. Submit expiring attestation for 3rd participant created at T=1s
+/// 3. Submit expiring attestation for 3rd participant with expiry at time T+10s
 /// 4. Fast-forward blockchain time to T+20s using VMContextBuilder
 /// 5. Call verify_tee() which detects expired attestation and returns false
 /// 6. Contract automatically transitions from Running to Resharing state
@@ -284,7 +285,7 @@ fn test_participant_kickout_after_expiration() {
         Duration::from_secs(INITIAL_TIME_SECONDS).as_nanos() as u64;
     const PARTICIPANT_COUNT: usize = 3;
     const THRESHOLD: u64 = 2;
-    const MAX_ATTESTATION_AGE_SECONDS: u64 = 10; // Attestation is valid for 10 seconds
+    const EXPIRY_OFFSET_SECONDS: u64 = 10; // Attestation expires 10 seconds after start
     const POST_EXPIRY_WAIT_SECONDS: u64 = 20; // Wait 20 seconds after start to trigger resharing
 
     testing_env!(VMContextBuilder::new()
@@ -295,10 +296,6 @@ fn test_participant_kickout_after_expiration() {
     let mut setup = TestSetupBuilder::new()
         .with_partcipant_count(PARTICIPANT_COUNT)
         .with_threshold(THRESHOLD)
-        .with_init_config(InitConfig {
-            attestation_max_validity_duration_seconds: Some(MAX_ATTESTATION_AGE_SECONDS),
-            ..Default::default()
-        })
         .build();
 
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
@@ -321,14 +318,13 @@ fn test_participant_kickout_after_expiration() {
         setup.submit_attestation_for_node(node_id, valid_attestation.clone());
     }
 
-    // Submit attestation for 3rd participant with a
-    // creation_time_stamp_seconds such that it gets expired by the contract.
+    // Submit expiring attestation for 3rd participant
+    const EXPIRY_SECONDS: u64 = INITIAL_TIME_SECONDS + EXPIRY_OFFSET_SECONDS;
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        creation_time_stamp_seconds: Some(INITIAL_TIME_SECONDS),
+        expiry_timestamp_seconds: Some(EXPIRY_SECONDS),
     });
-
     let third_node = NodeId {
         account_id: setup.participants_list[2].0.clone(),
         tls_public_key: setup.participants_list[2].2.sign_pk.clone(),
@@ -340,7 +336,6 @@ fn test_participant_kickout_after_expiration() {
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
     // Fast-forward time past expiry and trigger resharing
-    // Current Time (21s) > Creation Time (1s) + Max Age (10s)
     const EXPIRED_TIMESTAMP: u64 =
         INITIAL_TIMESTAMP_NANOS + Duration::from_secs(POST_EXPIRY_WAIT_SECONDS).as_nanos() as u64;
     testing_env!(VMContextBuilder::new()
