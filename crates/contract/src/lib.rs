@@ -674,14 +674,10 @@ impl MpcContract {
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let attestation_max_validity_duration =
-            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
 
-        let validation_result = self.tee_state.re_veirfy_participants(
-            proposal.participants(),
-            tee_upgrade_deadline_duration,
-            attestation_max_validity_duration,
-        );
+        let validation_result = self
+            .tee_state
+            .re_veirfy_participants(proposal.participants(), tee_upgrade_deadline_duration);
 
         let proposed_participants = proposal.participants();
         match validation_result {
@@ -1083,14 +1079,11 @@ impl MpcContract {
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let attestation_max_validity_duration =
-            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
 
-        match self.tee_state.re_veirfy_participants(
-            current_params.participants(),
-            tee_upgrade_deadline_duration,
-            attestation_max_validity_duration,
-        ) {
+        match self
+            .tee_state
+            .re_veirfy_participants(current_params.participants(), tee_upgrade_deadline_duration)
+        {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1604,13 +1597,10 @@ impl MpcContract {
                 .clone(),
         };
 
-        let attestation_max_validity_duration =
-            Duration::from_secs(self.config.attestation_max_validity_duration_seconds);
         if !(matches!(
             self.tee_state.re_verify_tee_participant(
                 &node_id,
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
-                attestation_max_validity_duration
             ),
             TeeQuoteStatus::Valid
         )) {

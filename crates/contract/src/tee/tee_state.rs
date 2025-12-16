@@ -205,7 +205,6 @@ impl TeeState {
         &mut self,
         node_id: &NodeId,
         tee_upgrade_deadline_duration: Duration,
-        attestation_max_validity_duration: Duration,
     ) -> TeeQuoteStatus {
         let allowed_mpc_docker_image_hashes =
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
@@ -220,7 +219,6 @@ impl TeeState {
         let time_stamp_seconds = Self::current_time_seconds();
         match participant_attestation.verified_attestation.re_verify(
             time_stamp_seconds,
-            attestation_max_validity_duration.as_secs(),
             &allowed_mpc_docker_image_hashes,
             allowed_launcher_compose_hashes,
         ) {
@@ -233,7 +231,6 @@ impl TeeState {
         &mut self,
         participants: &Participants,
         tee_upgrade_deadline_duration: Duration,
-        attestation_max_validity_duration: Duration,
     ) -> TeeValidationResult {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
@@ -256,11 +253,8 @@ impl TeeState {
                     account_public_key: maybe_node.and_then(|n| n.account_public_key.clone()),
                 };
 
-                let tee_status = self.re_verify_tee_participant(
-                    &node_id,
-                    tee_upgrade_deadline_duration,
-                    attestation_max_validity_duration,
-                );
+                let tee_status =
+                    self.re_verify_tee_participant(&node_id, tee_upgrade_deadline_duration);
 
                 matches!(tee_status, TeeQuoteStatus::Valid)
             })
@@ -646,11 +640,8 @@ mod tests {
         };
 
         const NOW_SECONDS: u64 = 1000;
-        const MAX_AGE_SECONDS: u64 = 300; // 5 minutes
 
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(NOW_SECONDS).as_nanos() as u64)
-            .build());
+        testing_env!(VMContextBuilder::new().block_timestamp(NOW_SECONDS).build());
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
@@ -663,11 +654,7 @@ mod tests {
             .unwrap();
 
         // when
-        let status = tee_state.re_verify_tee_participant(
-            &node_id,
-            Duration::from_secs(0),
-            Duration::from_secs(MAX_AGE_SECONDS),
-        );
+        let status = tee_state.re_verify_tee_participant(&node_id, Duration::from_secs(0));
 
         // then
         assert_eq!(status, TeeQuoteStatus::Valid);
@@ -678,23 +665,20 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
-            account_id: "expired.near".parse().unwrap(),
+            account_id: "about_to_be_expired.near".parse().unwrap(),
             tls_public_key: bogus_ed25519_near_public_key(),
             account_public_key: Some(bogus_ed25519_near_public_key()),
         };
 
-        const CREATION_TIME_SECONDS: u64 = 1000;
-        const MAX_AGE_SECONDS: u64 = 100;
+        const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
+        const ELAPSED_SECONDS: u64 = 200;
 
-        // Set context to creation time
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
-            .build());
+        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
+            expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
         });
 
         tee_state
@@ -702,25 +686,20 @@ mod tests {
             .unwrap();
 
         // when
-        // Fast forward to 1101s (Creation 1000 + Max Age 100 + 1)
         testing_env!(VMContextBuilder::new()
             .block_timestamp(
-                Duration::from_secs(CREATION_TIME_SECONDS + MAX_AGE_SECONDS + 1).as_nanos() as u64
+                Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
             )
             .build());
 
-        let status = tee_state.re_verify_tee_participant(
-            &node_id,
-            Duration::from_secs(0),
-            Duration::from_secs(MAX_AGE_SECONDS),
-        );
+        let status = tee_state.re_verify_tee_participant(&node_id, Duration::from_secs(0));
 
         // then
         assert_matches!(status, TeeQuoteStatus::Invalid(_));
     }
 
     #[test]
-    fn re_verify_succeeds_when_within_max_validity() {
+    fn re_verify_succeeds_within_expiry_time() {
         // given
         let mut tee_state = TeeState::default();
         let node_id = NodeId {
@@ -729,18 +708,16 @@ mod tests {
             account_public_key: Some(bogus_ed25519_near_public_key()),
         };
 
-        const CREATION_TIME_SECONDS: u64 = 1000;
-        const ELAPSED_SECONDS: u64 = 200;
-        const MAX_VALIDITY_SECONDS: u64 = 300; // 200 elapsed < 300 allowed
+        const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
 
         testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
+            .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
             .build());
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
+            expiry_timestamp_seconds: Some(EXPIRY_TIMESTAMP_SECONDS),
         });
 
         tee_state
@@ -748,67 +725,14 @@ mod tests {
             .unwrap();
 
         // when
-        // Move time forward by 200 seconds
         testing_env!(VMContextBuilder::new()
-            .block_timestamp(
-                Duration::from_secs(CREATION_TIME_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
-            )
+            .block_timestamp(Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS - 1).as_nanos() as u64)
             .build());
 
-        let status = tee_state.re_verify_tee_participant(
-            &node_id,
-            Duration::from_secs(0),
-            Duration::from_secs(MAX_VALIDITY_SECONDS),
-        );
+        let status = tee_state.re_verify_tee_participant(&node_id, Duration::from_secs(0));
 
         // then
         assert_eq!(status, TeeQuoteStatus::Valid);
-    }
-
-    #[test]
-    fn test_re_verify_fails_when_exceeding_max_validity() {
-        // given
-        let mut tee_state = TeeState::default();
-        let node_id = NodeId {
-            account_id: "invalid_check.near".parse().unwrap(),
-            tls_public_key: bogus_ed25519_near_public_key(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
-        };
-
-        const CREATION_TIME_SECONDS: u64 = 1000;
-        const ELAPSED_SECONDS: u64 = 200;
-        const MAX_VALIDITY_SECONDS: u64 = 100; // 200 elapsed > 100 allowed
-
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(CREATION_TIME_SECONDS).as_nanos() as u64)
-            .build());
-
-        let attestation = Attestation::Mock(MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(CREATION_TIME_SECONDS),
-        });
-
-        tee_state
-            .add_participant(node_id.clone(), attestation, Duration::from_secs(0))
-            .unwrap();
-
-        // when
-        // Move time forward by 200 seconds
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(
-                Duration::from_secs(CREATION_TIME_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
-            )
-            .build());
-
-        let status = tee_state.re_verify_tee_participant(
-            &node_id,
-            Duration::from_secs(0),
-            Duration::from_secs(MAX_VALIDITY_SECONDS),
-        );
-
-        // then
-        assert_matches!(status, TeeQuoteStatus::Invalid(_));
     }
 
     #[test]
@@ -822,11 +746,7 @@ mod tests {
         };
 
         // when
-        let status = tee_state.re_verify_tee_participant(
-            &node_id,
-            Duration::from_secs(0),
-            Duration::from_secs(100),
-        );
+        let status = tee_state.re_verify_tee_participant(&node_id, Duration::from_secs(0));
 
         // then
         assert_matches!(status, TeeQuoteStatus::Invalid(msg) if msg.contains("participant has no attestation"));
