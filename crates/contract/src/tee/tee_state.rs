@@ -1,6 +1,5 @@
 use crate::{
     primitives::{key_state::AuthenticatedParticipantId, participants::Participants},
-    storage_keys::StorageKey,
     tee::proposal::{
         AllowedDockerImageHashes, AllowedMpcDockerImage, CodeHashesVotes, MpcDockerImageHash,
     },
@@ -13,8 +12,11 @@ use mpc_attestation::{
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
-use near_sdk::{env, near, store::IterableMap};
-use std::hash::{Hash, Hasher};
+use near_sdk::{env, near};
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 use std::{collections::HashSet, time::Duration};
 use utilities::AccountIdExtV1;
 
@@ -87,30 +89,18 @@ pub(crate) struct NodeAttestation {
     pub(crate) verified_attestation: VerifiedAttestation,
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Default, Debug, BorshSerialize, BorshDeserialize)]
 pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) participants_attestations: IterableMap<near_sdk::PublicKey, NodeAttestation>,
-}
-
-impl Default for TeeState {
-    fn default() -> Self {
-        Self {
-            allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
-            allowed_launcher_compose_hashes: vec![],
-            votes: CodeHashesVotes::default(),
-            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestationV2),
-        }
-    }
+    pub(crate) participants_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
 }
 
 impl TeeState {
     /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
-        let mut participants_attestations =
-            IterableMap::new(StorageKey::TeeParticipantAttestationV2);
+        let mut participants_attestations = BTreeMap::new();
 
         participants
             .participants()

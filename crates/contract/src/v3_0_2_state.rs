@@ -139,7 +139,7 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
-        let protocol_state = value.protocol_state.into();
+        let protocol_state = value.protocol_state;
 
         let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
@@ -152,12 +152,12 @@ impl From<MpcContract> for crate::MpcContract {
         let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
 
         Self {
-            protocol_state: protocol_state,
+            protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             proposed_updates: value.proposed_updates.into(),
             config: value.config.into(),
-            tee_state: tee_state,
+            tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
         }
