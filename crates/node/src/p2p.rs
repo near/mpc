@@ -511,7 +511,7 @@ impl MeshNetworkTransportReceiver for TlsMeshReceiver {
     }
 }
 
-// TODO: move this inside test feature, not possible atm
+// TODO(#1675): move this inside test feature
 pub mod testing {
     use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig};
     use crate::primitives::ParticipantId;
