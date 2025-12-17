@@ -161,7 +161,7 @@ impl TestContract {
             promises.extend(build_signature_calls(
                 &target_contract,
                 &robust_ecdsa_calls_by_domain,
-                seed,
+                seed + 2_000_000,
                 &|hex| Payload::Ecdsa(hex),
             ));
         };
