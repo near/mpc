@@ -4,8 +4,9 @@ use crate::config::PresignatureConfig;
 use crate::db::SecretDB;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{participants_from_triples, ParticipantId, UniqueId};
+use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::run_protocol;
+use crate::providers::ecdsa::triple::participants_from_triples;
 use crate::providers::ecdsa::{EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, TripleStorage};
 use crate::providers::HasParticipants;
 use crate::tracking::AutoAbortTaskCollection;
@@ -13,7 +14,6 @@ use crate::{metrics, tracking};
 use mpc_contract::primitives::domain::DomainId;
 use near_time::Clock;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,6 +23,7 @@ use threshold_signatures::ecdsa::ot_based_ecdsa::{
 };
 use threshold_signatures::participants::Participant;
 
+#[derive(derive_more::Deref)]
 pub struct PresignatureStorage(DistributedAssetStorage<PresignOutputWithParticipants>);
 
 impl PresignatureStorage {
@@ -46,14 +47,6 @@ impl PresignatureStorage {
             },
             alive_participant_ids_query,
         )?))
-    }
-}
-
-impl Deref for PresignatureStorage {
-    type Target = DistributedAssetStorage<PresignOutputWithParticipants>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
@@ -155,7 +148,7 @@ impl EcdsaSignatureProvider {
     }
 
     pub(super) async fn run_presignature_generation_follower(
-        self: Arc<Self>,
+        &self,
         channel: NetworkTaskChannel,
         id: UniqueId,
         domain_id: DomainId,
@@ -225,7 +218,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             },
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
-        let presignature = run_protocol("presign", channel, protocol).await?;
+        let presignature = run_protocol("presign cait-sith", channel, protocol).await?;
         Ok(presignature)
     }
 
