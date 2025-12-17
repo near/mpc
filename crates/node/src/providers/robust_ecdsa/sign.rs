@@ -144,8 +144,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             .into_option()
             .context("Couldn't construct k256 point")?;
         let tweak = threshold_signatures::Tweak::new(tweak);
-
-        let msg_hash = Scalar::from_repr(self.msg_hash.as_bytes().into())
+        let msg_hash = Scalar::from_repr(self.msg_hash.to_bytes().into())
             .into_option()
             .context("Couldn't construct k256 point")?;
 

@@ -86,7 +86,7 @@ pub(super) async fn run_background_presignature_generation(
 
     let threshold = mpc_config.participants.threshold as usize;
     let num_signers = get_number_of_signers(threshold, running_participants.len());
-    let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len());
+    let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len())?;
     anyhow::ensure!(robust_ecdsa_threshold * 2 + 1 <= num_signers);
 
     loop {
@@ -172,7 +172,7 @@ impl RobustEcdsaSignatureProvider {
 
         let number_of_participants = self.mpc_config.participants.participants.len();
         let threshold = self.mpc_config.participants.threshold as usize;
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants);
+        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
 
         FollowerPresignComputation {
             threshold: robust_ecdsa_threshold,

@@ -37,16 +37,14 @@ pub(super) struct PerDomainData {
     pub presignature_store: Arc<PresignatureStorage>,
 }
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into)]
+#[derive(
+    Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into,
+)]
 pub struct EcdsaMessageHash([u8; 32]);
 
 impl EcdsaMessageHash {
-    pub fn as_bytes(&self) -> [u8; 32] {
+    pub fn to_bytes(self) -> [u8; 32] {
         self.0
-    }
-
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
     }
 }
 
@@ -145,7 +143,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
-        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants);
+        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
         EcdsaSignatureProvider::run_key_generation_client_internal(robust_ecdsa_threshold, channel)
             .await
     }
@@ -158,16 +156,18 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
         let number_of_participants = channel.participants().len();
-        let new_robust_ecdsa_threshold = translate_threshold(new_threshold, number_of_participants);
+        let new_robust_ecdsa_threshold =
+            translate_threshold(new_threshold, number_of_participants)?;
 
         // This is a bad hack, but cannot think of a better way to solve it, as the struct
         // comes directly from generic implementations, so probably this is the best place
         // to do so anyway
         let mut old_participants_patched = old_participants.clone();
         old_participants_patched.threshold = translate_threshold(
-            old_participants.threshold as usize,
+            old_participants.threshold.try_into()?,
             old_participants.participants.len(),
-        ) as u64;
+        )?
+        .try_into()?;
 
         EcdsaSignatureProvider::run_key_resharing_client_internal(
             new_robust_ecdsa_threshold,
@@ -236,8 +236,12 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
     }
 }
 
+/// Although currently the threshold is always equal to the number of signers, if in
+/// the future we might want to change that invariant, for example to achieve
+/// higher security guarantees for robust-ecdsa. In that case,
+/// this function enforces that the number of signers and the threshold
+/// computed below in `translate_threshold` stay consistent
 pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: usize) -> usize {
-    // TODO: this is the case for the other schemes, might not be our best choice for this one
     threshold
 }
 
@@ -247,23 +251,29 @@ pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: u
 /// The function should be no longer needed when these issues are solved:
 /// https://github.com/near/threshold-signatures/issues/255
 /// https://github.com/near/mpc/issues/1649
-pub(super) fn translate_threshold(threshold: usize, number_of_participants: usize) -> usize {
+pub(super) fn translate_threshold(
+    threshold: usize,
+    number_of_participants: usize,
+) -> anyhow::Result<usize> {
     let number_of_signers = get_number_of_signers(threshold, number_of_participants);
-    (number_of_signers - 1) / 2
+    anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers to be at least 5");
+    Ok((number_of_signers - 1) / 2)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
     // The resulting threshold for robust-ecdsa must always satisfy
     // the underlying invariant that 2 * threshold + 1 <= number of signers
     #[test]
     fn test_translate_threshold() {
         let max_size = 30;
-        for threshold in 2..max_size {
+        for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
                 let number_of_signers = get_number_of_signers(threshold, number_of_participants);
-                let new_threshold = translate_threshold(threshold, number_of_participants);
+                let new_threshold = translate_threshold(threshold, number_of_participants).unwrap();
                 assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
             }
         }
@@ -274,11 +284,28 @@ mod tests {
     #[test]
     fn test_get_number_of_signers_not_lower_than_threshold() {
         let max_size = 30;
-        for threshold in 2..max_size {
+        for threshold in 5..max_size {
             for number_of_participants in threshold..max_size {
                 let number_of_signers = get_number_of_signers(threshold, number_of_participants);
                 assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
             }
         }
+    }
+
+    #[rstest]
+    #[case(0, 10, true)]
+    #[case(1, 10, true)]
+    #[case(2, 10, true)]
+    #[case(3, 10, true)]
+    #[case(4, 10, true)]
+    #[case(5, 10, false)]
+    #[case(6, 10, false)]
+    fn test_translate_threshold_special_cases(
+        #[case] threshold: usize,
+        #[case] number_of_participants: usize,
+        #[case] is_err: bool,
+    ) {
+        let result = translate_threshold(threshold, number_of_participants);
+        assert_eq!(result.is_err(), is_err);
     }
 }
