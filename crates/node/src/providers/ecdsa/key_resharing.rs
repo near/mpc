@@ -10,7 +10,7 @@ use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::participants::Participant;
 
 impl EcdsaSignatureProvider {
-    pub(super) async fn run_key_resharing_client_internal(
+    pub(crate) async fn run_key_resharing_client_internal(
         new_threshold: usize,
         my_share: Option<SigningShare>,
         public_key: VerifyingKey,
