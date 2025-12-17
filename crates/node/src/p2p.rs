@@ -18,6 +18,7 @@ use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -25,7 +26,7 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-/// Implements MeshNetworkTransportSender for sending messages over a TLS-based
+/// Implements [`MeshNetworkTransportSender`] for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
     my_id: ParticipantId,
@@ -34,7 +35,7 @@ pub struct TlsMeshSender {
     connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
-/// Implements MeshNetworkTransportReceiver.
+/// Implements [`MeshNetworkTransportReceiver`].
 pub struct TlsMeshReceiver {
     receiver: UnboundedReceiver<PeerMessage>,
     _incoming_connections_task: AutoAbortTask<()>,
@@ -67,9 +68,9 @@ struct TlsConnection {
     /// sends it over the TLS connection. This task owns the connection, so
     /// dropping it closes the connection.
     _sender_task: AutoAbortTask<()>,
-    /// Task that periodically sends a Ping message to the other side. It does
-    /// not expect a Pong, it simply keeps the connection alive (so we can
-    /// quickly detect if the connection is broken).
+    /// Task that periodically sends Ping messages with incrementing sequence numbers.
+    /// This task only sends pings; the sender_task handles receiving Pong responses
+    /// and closing the connection if no pongs are received within PONG_TIMEOUT.
     _keepalive_task: AutoAbortTask<()>,
     /// This is cancelled when the connection is closed. Used to wait for the
     /// connection to close.
@@ -87,7 +88,8 @@ impl Drop for DropToCancel {
 
 #[derive(BorshSerialize, BorshDeserialize)]
 enum Packet {
-    Ping,
+    Ping(u64),
+    Pong(u64),
     MpcMessage(MpcMessage),
     IndexerHeight(IndexerHeightMessage),
 }
@@ -96,6 +98,12 @@ impl TlsConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// Interval between ping messages.
+    const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+    /// If we don't receive a pong response within this time, consider the connection dead.
+    const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
@@ -136,7 +144,20 @@ impl TlsConnection {
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 let mut sent_bytes: u64 = 0;
+                let mut received_bytes: u64 = 0;
+                let mut last_pong_time = Instant::now();
+                let mut last_pong_seq: u64 = 0;
                 loop {
+                    // Check if we've timed out waiting for pong
+                    if last_pong_time.elapsed() > Self::PONG_TIMEOUT {
+                        tracing::warn!(
+                            "No pong received from {} for {:?}, closing connection",
+                            target_participant_id,
+                            last_pong_time.elapsed()
+                        );
+                        break;
+                    }
+
                     tokio::select! {
                         data = receiver.recv() => {
                             let Some(data) = data else {
@@ -150,13 +171,50 @@ impl TlsConnection {
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
-                        _ = tls_conn.read_u8() => {
-                            // We do not expect any data from the other side. However,
-                            // selecting on it will quickly return error if the connection
-                            // is broken before we have data to send. That way we can
-                            // immediately quit the loop as soon as the connection is broken
-                            // (so we can reconnect).
-                            break;
+                        result = tokio::time::timeout(
+                            std::time::Duration::from_millis(100),
+                            async {
+                                let len = tls_conn.read_u32().await?;
+                                if len >= MAX_MESSAGE_LEN {
+                                    anyhow::bail!("Message too long");
+                                }
+                                let mut buf = vec![0; len as usize];
+                                tls_conn.read_exact(&mut buf).await?;
+                                received_bytes += 4 + len as u64;
+
+                                let packet = Packet::try_from_slice(&buf)
+                                    .context("Failed to deserialize packet")?;
+                                anyhow::Ok(packet)
+                            }
+                        ) => {
+                            match result {
+                                Ok(Ok(Packet::Pong(seq))) => {
+                                    if seq > last_pong_seq {
+                                        last_pong_seq = seq;
+                                        let elapsed = last_pong_time.elapsed();
+                                        last_pong_time = Instant::now();
+                                        tracking::set_progress(&format!(
+                                            "Received pong {} from {}, RTT: {:?}",
+                                            seq,
+                                            target_participant_id,
+                                            elapsed
+                                        ));
+                                    }
+                                }
+                                Ok(Ok(_)) => {
+                                    tracing::warn!(
+                                        "Received unexpected packet type from {} on outgoing connection",
+                                        target_participant_id
+                                    );
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::warn!("Error reading from connection: {}", e);
+                                    break;
+                                }
+                                Err(_) => {
+                                    // Timeout is expected when no data is available
+                                }
+                            }
                         }
                     }
                 }
@@ -165,11 +223,13 @@ impl TlsConnection {
         );
         let sender_clone = sender.clone();
         let keepalive_task = tracking::spawn(
-            &format!("TCP keepalive for {}", target_participant_id),
+            &format!("Ping sender for {}", target_participant_id),
             async move {
+                let mut seq: u64 = 0;
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sender_clone.send(Packet::Ping).is_err() {
+                    tokio::time::sleep(Self::PING_INTERVAL).await;
+                    seq += 1;
+                    if sender_clone.send(Packet::Ping(seq)).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
                         break;
@@ -393,8 +453,19 @@ pub async fn new_tls_mesh_network(
                     let packet =
                         Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
                     match packet {
-                        Packet::Ping => {
-                            // Do nothing. Pings are just for TCP keepalive.
+                        Packet::Ping(seq) => {
+                            // Respond with Pong to echo the sequence number back
+                            let pong = borsh::to_vec(&Packet::Pong(seq))?;
+                            let len: u32 = pong.len().try_into().context("Message too long")?;
+                            stream.write_u32(len).await?;
+                            stream.write_all(&pong).await?;
+                        }
+                        Packet::Pong(_) => {
+                            // Pong messages should not be received on incoming connections
+                            tracing::warn!(
+                                "Received unexpected Pong from {} on incoming connection",
+                                peer_id
+                            );
                         }
                         Packet::MpcMessage(mpc_message) => {
                             message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
