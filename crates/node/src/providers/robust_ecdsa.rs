@@ -216,7 +216,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
             .map(|(domain_id, data)| {
                 tracking::spawn(
                     &format!("generate presignatures for domain {}", domain_id.0),
-                    Self::run_background_presignature_generation(
+                    presign::run_background_presignature_generation(
                         self.client.clone(),
                         self.mpc_config.clone(),
                         self.config.presignature.clone().into(),
@@ -250,4 +250,35 @@ pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: u
 pub(super) fn translate_threshold(threshold: usize, number_of_participants: usize) -> usize {
     let number_of_signers = get_number_of_signers(threshold, number_of_participants);
     (number_of_signers - 1) / 2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // The resulting threshold for robust-ecdsa must always satisfy
+    // the underlying invariant that 2 * threshold + 1 <= number of signers
+    #[test]
+    fn test_translate_threshold() {
+        let max_size = 30;
+        for threshold in 2..max_size {
+            for number_of_participants in threshold..max_size {
+                let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+                let new_threshold = translate_threshold(threshold, number_of_participants);
+                assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
+            }
+        }
+    }
+
+    // Tests that the number of signers is below the threshold,
+    // guaranteeing that security is not reduced
+    #[test]
+    fn test_get_number_of_signers_not_lower_than_threshold() {
+        let max_size = 30;
+        for threshold in 2..max_size {
+            for number_of_participants in threshold..max_size {
+                let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+                assert!(threshold <= number_of_signers && number_of_signers <= number_of_participants, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
+            }
+        }
+    }
 }
