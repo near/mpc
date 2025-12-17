@@ -162,6 +162,7 @@ near-time = { git = "https://github.com/near/nearcore", tag = "2.10.2" }
 inherits = "release"
 overflow-checks = true
 debug = true
+debug-assertions = true
 
 [profile.release-contract]
 inherits = "release"
