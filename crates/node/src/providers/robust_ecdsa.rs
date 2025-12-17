@@ -256,7 +256,7 @@ pub(super) fn translate_threshold(
     number_of_participants: usize,
 ) -> anyhow::Result<usize> {
     let number_of_signers = get_number_of_signers(threshold, number_of_participants);
-    anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers to be at least 5");
+    anyhow::ensure!(number_of_signers >= 5, "Robust ECDSA requires the threshold to be at least 2, which implies that the number of signers needs to be at least 5");
     Ok((number_of_signers - 1) / 2)
 }
 
@@ -293,19 +293,24 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 10, true)]
-    #[case(1, 10, true)]
-    #[case(2, 10, true)]
-    #[case(3, 10, true)]
-    #[case(4, 10, true)]
-    #[case(5, 10, false)]
-    #[case(6, 10, false)]
+    #[case(0, 10, true, 0)]
+    #[case(1, 10, true, 0)]
+    #[case(2, 10, true, 0)]
+    #[case(3, 10, true, 0)]
+    #[case(4, 10, true, 0)]
+    #[case(5, 10, false, 2)]
+    #[case(6, 10, false, 2)]
+    #[case(7, 10, false, 3)]
     fn test_translate_threshold_special_cases(
         #[case] threshold: usize,
         #[case] number_of_participants: usize,
         #[case] is_err: bool,
+        #[case] expected_threshold: usize,
     ) {
         let result = translate_threshold(threshold, number_of_participants);
         assert_eq!(result.is_err(), is_err);
+        if !is_err {
+            assert_eq!(result.unwrap(), expected_threshold);
+        }
     }
 }
