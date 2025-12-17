@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::sandbox::common::{
     candidates, init, init_env, submit_signature_response, ContractSetup, PARTICIPANT_LEN,
 };
@@ -64,6 +66,8 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
                 .await
                 .unwrap();
             let status_2 = req.sign_ensure_included(&alice, &contract).await?;
+            // unfortunately, we still can't completely get rid of this sleep
+            tokio::time::sleep(Duration::from_secs(3)).await;
             worker
                 .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
                 .await
