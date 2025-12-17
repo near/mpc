@@ -26,11 +26,7 @@ from common_lib.contracts import load_mpc_contract
 
 def test_threshold_from_previous_running_state_is_maintained():
     # Have the nodes disabled
-    cluster, mpc_nodes = shared.start_cluster_with_mpc(
-        4,
-        1,
-        load_mpc_contract(),
-    )
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(4, 1, load_mpc_contract())
 
     cluster.init_cluster(participants=mpc_nodes[:2], threshold=2)
 
