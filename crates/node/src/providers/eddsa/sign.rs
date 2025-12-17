@@ -164,7 +164,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
         )?;
 
         // TODO(#306): metrics
-        let signature: Option<Signature> = run_protocol("eddsa sign", channel, protocol).await?;
+        let signature: Option<Signature> = run_protocol("sign eddsa", channel, protocol).await?;
 
         Ok(signature.map(|signature| (signature, derived_keygen_output.public_key)))
     }

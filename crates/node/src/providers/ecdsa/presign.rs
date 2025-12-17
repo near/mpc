@@ -218,7 +218,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             },
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();
-        let presignature = run_protocol("presign", channel, protocol).await?;
+        let presignature = run_protocol("presign cait-sith", channel, protocol).await?;
         Ok(presignature)
     }
 

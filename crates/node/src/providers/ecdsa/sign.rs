@@ -171,7 +171,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
             msg_hash,
         )?;
         let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
-        let signature = run_protocol("sign", channel, protocol).await?;
+        let signature = run_protocol("sign cait-sith", channel, protocol).await?;
         Ok((signature, VerifyingKey::new(derived_public_key.into())))
     }
 
