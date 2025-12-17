@@ -1,9 +1,9 @@
+use std::time::Duration;
+
 use crate::sandbox::common::{
-    candidates, init, init_env, sign_and_validate, submit_sign_request, submit_signature_response,
-    ContractSetup, PARTICIPANT_LEN,
+    candidates, init, init_env, submit_signature_response, ContractSetup, PARTICIPANT_LEN,
 };
 use mpc_contract::{
-    crypto_shared::SignatureResponse,
     errors,
     primitives::{
         domain::SignatureScheme,
@@ -14,17 +14,23 @@ use mpc_contract::{
 use near_workspaces::types::NearToken;
 use utilities::AccountIdExtV1;
 
-const ECDSA_SIGNATURE_SCHEMES: &[SignatureScheme] =
-    &[SignatureScheme::Secp256k1, SignatureScheme::V2Secp256k1];
+const NON_CKD_SCHEMES: &[SignatureScheme] = &[
+    SignatureScheme::Secp256k1,
+    SignatureScheme::V2Secp256k1,
+    SignatureScheme::Ed25519,
+];
+
+const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
+const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 
 #[tokio::test]
-async fn test_contract_sign_request() -> anyhow::Result<()> {
+async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
     let ContractSetup {
         worker,
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ECDSA_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
 
     let attested_account = &mpc_signer_accounts[0];
     let path = "test";
@@ -40,46 +46,51 @@ async fn test_contract_sign_request() -> anyhow::Result<()> {
 
     for key in &keys {
         for msg in messages {
-            println!("submitting: {msg}");
-            let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
-            sign_and_validate(
-                &alice,
-                &req.args,
-                Some(&req.response),
-                &contract,
-                attested_account,
-            )
-            .await?;
+            {
+                println!("submitting: {msg}");
+                let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+                req.sign_and_validate(&alice, &contract, attested_account)
+                    .await
+                    .unwrap();
+            }
         }
 
-        // TODO(#1666): below "test" is nonsense.
-        // check duplicate requests can also be signed:
-        let duplicate_msg = "welp";
-        let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), duplicate_msg, path);
-        sign_and_validate(
-            &alice,
-            &req.args,
-            Some(&req.response),
-            &contract,
-            attested_account,
-        )
-        .await?;
-        sign_and_validate(
-            &alice,
-            &req.args,
-            Some(&req.response),
-            &contract,
-            attested_account,
-        )
-        .await?;
+        {
+            // check that in case of duplicate request, only the most recent will be signed:
+            let msg = "welp";
+            println!("submitting: {msg}");
+            let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+            let status_1 = req.sign_ensure_included(&alice, &contract).await?;
+            worker
+                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+                .await
+                .unwrap();
+            let status_2 = req.sign_ensure_included(&alice, &contract).await?;
+            // unfortunately, we still can't completely get rid of this sleep
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            worker
+                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+                .await
+                .unwrap();
+            submit_signature_response(&req.response, &contract, attested_account).await?;
+            req.verify_execution_outcome(status_2)
+                .await
+                .expect("most recent signature request should succeed");
+            worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
+            req.verify_timeout(status_1)
+                .await
+                .expect("initial signature request should time out");
+        }
 
-        // Check that a sign with no response from MPC network properly errors out:
-        let err = sign_and_validate(&alice, &req.args, None, &contract, attested_account)
-            .await
-            .expect_err("should have failed with timeout");
-        assert!(err
-            .to_string()
-            .contains(&errors::RequestError::Timeout.to_string()));
+        {
+            // Check that a sign with no response from MPC network properly errors out:
+            let msg = "this should timeout";
+            println!("submitting: {msg}");
+            let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+            let status = req.sign_ensure_included(&alice, &contract).await?;
+            worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
+            req.verify_timeout(status).await.unwrap();
+        }
     }
     Ok(())
 }
@@ -91,7 +102,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(ECDSA_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
 
     let alice = worker.dev_create_account().await?;
@@ -99,29 +110,12 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
     let contract_balance = contract.view_account().await?.balance;
     let path = "test";
     let msg = "hello world!";
-    println!("submitting: {msg}");
 
     for key in &keys {
+        println!("submitting: {msg}");
         let req = key.create_sign_request(&alice.id().as_v2_account_id(), msg, path);
-        let status = submit_sign_request(&alice, &req.args, &contract).await?;
-        dbg!(&status);
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        // Call `respond` as an attested node.
-        submit_signature_response(&req.response, &contract, attested_account).await?;
-
-        let execution = status.await?;
-        dbg!(&execution);
-
-        let execution = execution.into_result()?;
-
-        // Finally wait the result:
-        let returned_resp: SignatureResponse = execution.json()?;
-        assert_eq!(
-            &returned_resp,
-            req.expected_response(),
-            "Returned signature request does not match"
-        );
+        req.sign_and_validate(&alice, &contract, attested_account)
+            .await?;
 
         let new_balance = alice.view_account().await?.balance;
         let new_contract_balance = contract.view_account().await?.balance;
@@ -129,19 +123,16 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
         );
-        println!(
-            "{} {} {} {}",
-            balance.as_millinear(),
-            new_balance.as_millinear(),
-            contract_balance.as_millinear(),
-            new_contract_balance.as_millinear(),
-        );
         assert!(
             contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
             "contract balance should not decrease after refunding deposit"
         );
+        // probably not necessary, but better safe than race condition
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
     }
-
     Ok(())
 }
 
@@ -152,7 +143,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
         contract,
         keys,
         ..
-    } = init_env(ECDSA_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
@@ -162,37 +153,13 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
     println!("submitting: {msg}");
     for key in &keys {
         let req = key.create_sign_request(&alice.id().as_v2_account_id(), msg, path);
-
-        let status = alice
-            .call(contract.id(), "sign")
-            .args_json(req.request_json_args())
-            .deposit(NearToken::from_near(1))
-            .max_gas()
-            .transact_async()
-            .await?;
-        dbg!(&status);
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
+        let status = req.sign_ensure_included(&alice, &contract).await?;
+        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
         // we do not respond, sign will fail due to timeout
-        let execution = status.await;
-        dbg!(&execution);
-        let err = execution
-            .unwrap()
-            .into_result()
-            .expect_err("should have failed with timeout");
-        assert!(err
-            .to_string()
-            .contains(&errors::RequestError::Timeout.to_string()));
+        req.verify_timeout(status).await?;
 
         let new_balance = alice.view_account().await?.balance;
         let new_contract_balance = contract.view_account().await?.balance;
-        println!(
-            "{} {} {} {}",
-            balance.as_millinear(),
-            new_balance.as_millinear(),
-            contract_balance.as_yoctonear(),
-            new_contract_balance.as_yoctonear(),
-        );
         assert!(balance >= new_balance, "user balance should not increase");
         assert!(
             balance.as_millinear() - new_balance.as_millinear() < 10,
@@ -213,7 +180,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(ECDSA_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
     let predecessor_id = contract.id();
     let path = "testing-no-deposit";
@@ -232,15 +199,9 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
         // Responding to the request should fail with missing request because the deposit is too low,
         // so the request should have never made it into the request queue and subsequently the MPC network.
-        let respond = attested_account
-            .call(contract.id(), "respond")
-            .args_json(req.response.json_args())
-            .max_gas()
-            .transact()
-            .await?;
+        let respond = submit_signature_response(&req.response, &contract, attested_account).await;
         dbg!(&respond);
         assert!(respond
-            .into_result()
             .unwrap_err()
             .to_string()
             .contains(&errors::InvalidParameters::RequestNotFound.to_string()));
@@ -300,25 +261,8 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         // Call `respond` as if we are the MPC network itself.
-        let respond = attested_account
-            .call(contract.id(), "respond")
-            .args_json(req.response.json_args())
-            .max_gas()
-            .transact()
-            .await?;
-        dbg!(&respond);
-
-        let execution = status.await?;
-        dbg!(&execution);
-        let execution = execution.into_result()?;
-
-        // Finally wait the result:
-        let returned_resp: SignatureResponse = execution.json()?;
-        assert_eq!(
-            &returned_resp,
-            req.expected_response(),
-            "Returned signature request does not match"
-        );
+        submit_signature_response(&req.response, &contract, attested_account).await?;
+        req.verify_execution_outcome(status).await?;
     }
     Ok(())
 }
@@ -370,76 +314,6 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         result.is_failure(),
         "initializing with valid candidates again should fail"
     );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_contract_sign_request_eddsa() -> anyhow::Result<()> {
-    let ContractSetup {
-        worker,
-        contract,
-        mpc_signer_accounts,
-        keys,
-    } = init_env(&[SignatureScheme::Ed25519], PARTICIPANT_LEN).await;
-
-    let attested_account = &mpc_signer_accounts[0];
-
-    let path = "test";
-
-    let alice = worker.dev_create_account().await.unwrap();
-    let predecessor_id = alice.id();
-
-    let messages = [
-        "hello world",
-        "hello world!",
-        "hello world!!",
-        "hello world!!!",
-        "hello world!!!!",
-    ];
-
-    let key = &keys[0];
-    for msg in messages {
-        println!("submitting: {msg}");
-        let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
-        sign_and_validate(
-            &alice,
-            &req.args,
-            Some(&req.response),
-            &contract,
-            attested_account,
-        )
-        .await?;
-    }
-
-    // TODO(#1666): remove
-    // check duplicate requests can also be signed:
-    let duplicate_msg = "welp";
-    let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), duplicate_msg, path);
-    sign_and_validate(
-        &alice,
-        &req.args,
-        Some(&req.response),
-        &contract,
-        attested_account,
-    )
-    .await?;
-    sign_and_validate(
-        &alice,
-        &req.args,
-        Some(&req.response),
-        &contract,
-        attested_account,
-    )
-    .await?;
-
-    // Check that a sign with no response from MPC network properly errors out:
-    let err = sign_and_validate(&alice, &req.args, None, &contract, attested_account)
-        .await
-        .expect_err("should have failed with timeout");
-    assert!(err
-        .to_string()
-        .contains(&errors::RequestError::Timeout.to_string()));
 
     Ok(())
 }
