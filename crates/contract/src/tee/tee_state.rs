@@ -352,27 +352,42 @@ impl TeeState {
     /// whose TLS key matches an attested node belonging to the caller account.
     ///
     /// Handles multiple participants per account and supports legacy mock nodes.
-    pub fn is_caller_an_attested_participant(&self, participants: &Participants) -> bool {
+    pub(crate) fn is_caller_an_attested_participant(
+        &self,
+        participants: &Participants,
+    ) -> Result<(), AttestationCheckError> {
         let signer_pk = env::signer_account_pk();
         let signer_id = env::signer_account_id().as_v2_account_id();
 
-        match participants.info(&signer_id) {
-            None => false,
-            Some(info) => {
-                match self.participants_attestations.get(&info.sign_pk) {
-                    None => false,
-                    Some(NodeAttestation { node_id, .. }) => {
-                        node_id.account_id == signer_id
-                            && node_id
-                                .account_public_key
-                                .as_ref()
-                                .map(|pk| pk == &signer_pk)
-                                .unwrap_or(true) // TODO (#823) Legacy fallback for mock nodes
-                    }
-                }
+        let info = participants
+            .info(&signer_id)
+            .ok_or(AttestationCheckError::CallerNotParticipant)?;
+
+        let attestation = self
+            .participants_attestations
+            .get(&info.sign_pk)
+            .ok_or(AttestationCheckError::AttestationNotFound)?;
+
+        if attestation.node_id.account_id != signer_id {
+            return Err(AttestationCheckError::AttestationOwnerMismatch);
+        }
+
+        if let Some(node_pk) = &attestation.node_id.account_public_key {
+            if node_pk != &signer_pk {
+                return Err(AttestationCheckError::AttestationKeyMismatch);
             }
         }
+
+        Ok(())
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum AttestationCheckError {
+    CallerNotParticipant,
+    AttestationNotFound,
+    AttestationOwnerMismatch,
+    AttestationKeyMismatch,
 }
 
 #[cfg(test)]

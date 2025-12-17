@@ -1426,12 +1426,15 @@ impl MpcContract {
 
         Self::assert_caller_is_signer();
 
-        if !self
+        let attestation_check = self
             .tee_state
-            .is_caller_an_attested_participant(participants)
-        {
-            panic!("Caller must be an attested participant");
-        }
+            .is_caller_an_attested_participant(participants);
+
+        assert_matches::assert_matches!(
+            attestation_check,
+            Ok(()),
+            "Caller must be an attested participant"
+        );
     }
 
     /// Ensures the current call originates from the signer account itself.
@@ -2319,8 +2322,11 @@ mod tests {
             .predecessor_account_id(context.predecessor_account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
+        println!("get APP private key");
         contract.request_app_private_key(request);
+        println!("get pending requests");
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
+        println!("got pending requests");
 
         // --- Step 3: Attested outsider (not a participant) joins ---
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
@@ -2332,9 +2338,12 @@ mod tests {
             .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
+
+        println!("Submit participant info");
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
+        println!("Submitted participant info");
 
         // --- Step 4: Verify that a participant can still respond successfully ---
         with_attested_context(&contract); // sets env to a real attested participant
@@ -2345,9 +2354,13 @@ mod tests {
         };
 
         // This should succeed (attested participant)
+        println!("Respond CKD");
+        // TODO: THIS RESPOND IS FLAKY
         contract
             .respond_ckd(ckd_request.clone(), valid_response.clone())
             .expect("Participant should be allowed to respond_ckd");
+
+        println!("Responded CKD");
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
