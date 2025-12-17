@@ -1,20 +1,15 @@
-pub mod key_generation;
 pub mod presign;
 mod sign;
 
 use mpc_contract::primitives::key_state::KeyEventId;
 pub use presign::PresignatureStorage;
 use std::collections::HashMap;
-pub mod key_resharing;
-pub mod triple;
-
-pub use triple::TripleStorage;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
-use crate::providers::SignatureProvider;
+use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
 
@@ -28,11 +23,10 @@ use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-pub struct EcdsaSignatureProvider {
+pub struct RobustEcdsaSignatureProvider {
     config: Arc<ConfigFile>,
     mpc_config: Arc<MpcConfig>,
     client: Arc<MeshNetworkClient>,
-    triple_store: Arc<TripleStorage>,
     sign_request_store: Arc<SignRequestStorage>,
     per_domain_data: HashMap<DomainId, PerDomainData>,
 }
@@ -43,7 +37,22 @@ pub(super) struct PerDomainData {
     pub presignature_store: Arc<PresignatureStorage>,
 }
 
-impl EcdsaSignatureProvider {
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, derive_more::From, derive_more::Into)]
+pub struct EcdsaMessageHash([u8; 32]);
+
+impl EcdsaMessageHash {
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl RobustEcdsaSignatureProvider {
+    // TODO(#1640): remove as part of the provider integration
+    #[allow(unused)]
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
@@ -57,13 +66,6 @@ impl EcdsaSignatureProvider {
             let network_client = client.clone();
             Arc::new(move || network_client.all_alive_participant_ids())
         };
-
-        let triple_store = Arc::new(TripleStorage::new(
-            clock.clone(),
-            db.clone(),
-            client.my_participant_id(),
-            active_participants_query.clone(),
-        )?);
 
         let mut per_domain_data = HashMap::new();
         for (domain_id, keyshare) in keyshares {
@@ -87,7 +89,6 @@ impl EcdsaSignatureProvider {
             config,
             mpc_config,
             client,
-            triple_store,
             sign_request_store,
             per_domain_data,
         })
@@ -102,21 +103,16 @@ impl EcdsaSignatureProvider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub enum EcdsaTaskId {
+pub enum RobustEcdsaTaskId {
     KeyGeneration {
         key_event: KeyEventId,
     },
     KeyResharing {
         key_event: KeyEventId,
     },
-    ManyTriples {
-        start: UniqueId,
-        count: u32,
-    },
     Presignature {
         id: UniqueId,
         domain_id: DomainId,
-        paired_triple_id: UniqueId,
     },
     Signature {
         id: SignatureId,
@@ -124,18 +120,18 @@ pub enum EcdsaTaskId {
     },
 }
 
-impl From<EcdsaTaskId> for MpcTaskId {
-    fn from(val: EcdsaTaskId) -> Self {
-        MpcTaskId::EcdsaTaskId(val)
+impl From<RobustEcdsaTaskId> for MpcTaskId {
+    fn from(val: RobustEcdsaTaskId) -> Self {
+        MpcTaskId::RobustEcdsaTaskId(val)
     }
 }
 
-impl SignatureProvider for EcdsaSignatureProvider {
+impl SignatureProvider for RobustEcdsaSignatureProvider {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
     type Signature = Signature;
-    type TaskId = EcdsaTaskId;
+    type TaskId = RobustEcdsaTaskId;
 
     async fn make_signature(
         &self,
@@ -148,7 +144,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
         threshold: usize,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        EcdsaSignatureProvider::run_key_generation_client_internal(threshold, channel).await
+        let number_of_participants = channel.participants().len();
+        let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants);
+        EcdsaSignatureProvider::run_key_generation_client_internal(robust_ecdsa_threshold, channel)
+            .await
     }
 
     async fn run_key_resharing_client(
@@ -158,11 +157,23 @@ impl SignatureProvider for EcdsaSignatureProvider {
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
+        let number_of_participants = channel.participants().len();
+        let new_robust_ecdsa_threshold = translate_threshold(new_threshold, number_of_participants);
+
+        // This is a bad hack, but cannot think of a better way to solve it, as the struct
+        // comes directly from generic implementations, so probably this is the best place
+        // to do so anyway
+        let mut old_participants_patched = old_participants.clone();
+        old_participants_patched.threshold = translate_threshold(
+            old_participants.threshold as usize,
+            old_participants.participants.len(),
+        ) as u64;
+
         EcdsaSignatureProvider::run_key_resharing_client_internal(
-            new_threshold,
+            new_robust_ecdsa_threshold,
             my_share,
             public_key,
-            old_participants,
+            &old_participants_patched,
             channel,
         )
         .await
@@ -170,31 +181,18 @@ impl SignatureProvider for EcdsaSignatureProvider {
 
     async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::EcdsaTaskId(task) => match task {
-                EcdsaTaskId::KeyGeneration { .. } => {
+            MpcTaskId::RobustEcdsaTaskId(task) => match task {
+                RobustEcdsaTaskId::KeyGeneration { .. } => {
                     anyhow::bail!("Key generation rejected in normal node operation");
                 }
-                EcdsaTaskId::KeyResharing { .. } => {
+                RobustEcdsaTaskId::KeyResharing { .. } => {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
-                EcdsaTaskId::ManyTriples { start, count } => {
-                    self.run_triple_generation_follower(channel, start, count)
+                RobustEcdsaTaskId::Presignature { id, domain_id } => {
+                    self.run_presignature_generation_follower(channel, id, domain_id)
                         .await?;
                 }
-                EcdsaTaskId::Presignature {
-                    id,
-                    domain_id,
-                    paired_triple_id,
-                } => {
-                    self.run_presignature_generation_follower(
-                        channel,
-                        id,
-                        domain_id,
-                        paired_triple_id,
-                    )
-                    .await?;
-                }
-                EcdsaTaskId::Signature {
+                RobustEcdsaTaskId::Signature {
                     id,
                     presignature_id,
                 } => {
@@ -212,16 +210,6 @@ impl SignatureProvider for EcdsaSignatureProvider {
     }
 
     async fn spawn_background_tasks(self: Arc<Self>) -> anyhow::Result<()> {
-        let generate_triples = tracking::spawn(
-            "generate triples",
-            Self::run_background_triple_generation(
-                self.client.clone(),
-                self.mpc_config.clone(),
-                self.config.triple.clone().into(),
-                self.triple_store.clone(),
-            ),
-        );
-
         let generate_presignatures = self
             .per_domain_data
             .iter()
@@ -230,9 +218,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     &format!("generate presignatures for domain {}", domain_id.0),
                     Self::run_background_presignature_generation(
                         self.client.clone(),
-                        self.mpc_config.participants.threshold as usize,
+                        self.mpc_config.clone(),
                         self.config.presignature.clone().into(),
-                        self.triple_store.clone(),
                         *domain_id,
                         data.presignature_store.clone(),
                         data.keyshare.clone(),
@@ -241,11 +228,26 @@ impl SignatureProvider for EcdsaSignatureProvider {
             })
             .collect::<Vec<_>>();
 
-        generate_triples.await??;
         for task in generate_presignatures {
             task.await??;
         }
 
         Ok(())
     }
+}
+
+pub(super) fn get_number_of_signers(threshold: usize, _number_of_participants: usize) -> usize {
+    // TODO: this is the case for the other schemes, might not be our best choice for this one
+    threshold
+}
+
+/// This function translates the current threshold from the contract
+/// to the threshold expected by the robust-ecdsa scheme, which
+/// is semantically different.
+/// The function should be no longer needed when these issues are solved:
+/// https://github.com/near/threshold-signatures/issues/255
+/// https://github.com/near/mpc/issues/1649
+pub(super) fn translate_threshold(threshold: usize, number_of_participants: usize) -> usize {
+    let number_of_signers = get_number_of_signers(threshold, number_of_participants);
+    (number_of_signers - 1) / 2
 }

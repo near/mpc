@@ -1,11 +1,11 @@
 use crate::providers::ckd::CKDTaskId;
 use crate::providers::eddsa::EddsaTaskId;
+use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
 use crate::providers::EcdsaTaskId;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
-use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
 
 /// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
@@ -210,20 +210,7 @@ pub enum MpcTaskId {
     EcdsaTaskId(EcdsaTaskId),
     EddsaTaskId(EddsaTaskId),
     CKDTaskId(CKDTaskId),
-}
-
-pub fn participants_from_triples(
-    triple0: &TripleGenerationOutput,
-    triple1: &TripleGenerationOutput,
-) -> Vec<ParticipantId> {
-    triple0
-        .1
-        .participants
-        .iter()
-        .copied()
-        .filter(|p| triple1.1.participants.contains(p))
-        .map(|p| p.into())
-        .collect()
+    RobustEcdsaTaskId(RobustEcdsaTaskId),
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
