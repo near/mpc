@@ -107,6 +107,8 @@ pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
 pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13000);
 
+pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);
+
 pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
     SignatureScheme::Secp256k1,
     SignatureScheme::Ed25519,
@@ -828,7 +830,7 @@ pub async fn wait_for_request(
     request: &SignatureRequest,
     max_timeout: Option<Duration>,
 ) -> anyhow::Result<()> {
-    let timeout = max_timeout.unwrap_or(Duration::from_secs(3));
+    let timeout = max_timeout.unwrap_or(DEFAULT_MAX_TIMEOUT_TX_INCLUDED);
     let start = std::time::Instant::now();
 
     loop {
@@ -840,7 +842,7 @@ pub async fn wait_for_request(
             anyhow::bail!("timed out waiting for request to appear in queue");
         }
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 

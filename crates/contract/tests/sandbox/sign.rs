@@ -19,6 +19,7 @@ const NON_CKD_SCHEMES: &[SignatureScheme] = &[
 ];
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
+const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 
 #[tokio::test]
 async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
@@ -58,9 +59,15 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
             println!("submitting: {msg}");
             let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
             let status_1 = req.sign_ensure_included(&alice, &contract).await?;
-            worker.fast_forward(2).await.unwrap();
+            worker
+                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+                .await
+                .unwrap();
             let status_2 = req.sign_ensure_included(&alice, &contract).await?;
-            worker.fast_forward(2).await.unwrap();
+            worker
+                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+                .await
+                .unwrap();
             submit_signature_response(&req.response, &contract, attested_account).await?;
             req.verify_execution_outcome(status_2)
                 .await
@@ -117,7 +124,10 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
             "contract balance should not decrease after refunding deposit"
         );
         // probably not necessary, but better safe than race condition
-        worker.fast_forward(1).await.unwrap();
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
     }
     Ok(())
 }
