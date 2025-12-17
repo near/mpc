@@ -1816,11 +1816,19 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
     pub fn with_attested_context(contract: &MpcContract) -> AccountId {
+        let active_participant_pks: Vec<_> = contract
+            .protocol_state
+            .active_participants()
+            .participants()
+            .iter()
+            .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
+            .collect();
+
         let node_id = contract
             .tee_state
             .participants_attestations
             .iter()
-            .next()
+            .find(|(public_key, _)| active_participant_pks.contains(public_key))
             .expect("No attested participants in tee_state")
             .1
             .node_id
@@ -2322,11 +2330,8 @@ mod tests {
             .predecessor_account_id(context.predecessor_account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
-        println!("get APP private key");
         contract.request_app_private_key(request);
-        println!("get pending requests");
         assert!(contract.get_pending_ckd_request(&ckd_request).is_some());
-        println!("got pending requests");
 
         // --- Step 3: Attested outsider (not a participant) joins ---
         let outsider_id: AccountId = "outsider.near".parse().unwrap();
@@ -2339,11 +2344,9 @@ mod tests {
             .attached_deposit(NearToken::from_near(1))
             .build());
 
-        println!("Submit participant info");
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
-        println!("Submitted participant info");
 
         // --- Step 4: Verify that a participant can still respond successfully ---
         with_attested_context(&contract); // sets env to a real attested participant
@@ -2354,13 +2357,9 @@ mod tests {
         };
 
         // This should succeed (attested participant)
-        println!("Respond CKD");
-        // TODO: THIS RESPOND IS FLAKY
         contract
             .respond_ckd(ckd_request.clone(), valid_response.clone())
             .expect("Participant should be allowed to respond_ckd");
-
-        println!("Responded CKD");
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
