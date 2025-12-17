@@ -19,6 +19,7 @@ use crate::p2p::new_tls_mesh_network;
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
 use crate::storage::CKDRequestStorage;
@@ -497,6 +498,8 @@ where
                 let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
+                let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
+                    HashMap::new();
                 let mut eddsa_keyshares: HashMap<DomainId, eddsa::KeygenOutput> = HashMap::new();
                 let mut ckd_keyshares: HashMap<
                     DomainId,
@@ -519,6 +522,10 @@ where
                             ckd_keyshares.insert(keyshare.key_id.domain_id, data);
                             domain_to_scheme.insert(domain_id, SignatureScheme::Bls12381);
                         }
+                        KeyshareData::V2Secp256k1(data) => {
+                            robust_ecdsa_keyshares.insert(keyshare.key_id.domain_id, data);
+                            domain_to_scheme.insert(domain_id, SignatureScheme::V2Secp256k1);
+                        }
                     }
                 }
 
@@ -526,10 +533,20 @@ where
                     config_file.clone().into(),
                     running_mpc_config.clone().into(),
                     network_client.clone(),
+                    clock.clone(),
+                    secret_db.clone(),
+                    sign_request_store.clone(),
+                    ecdsa_keyshares,
+                )?);
+
+                let robust_ecdsa_signature_provider = Arc::new(RobustEcdsaSignatureProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.clone().into(),
+                    network_client.clone(),
                     clock,
                     secret_db,
                     sign_request_store.clone(),
-                    ecdsa_keyshares.clone(),
+                    robust_ecdsa_keyshares,
                 )?);
 
                 let eddsa_signature_provider = Arc::new(EddsaSignatureProvider::new(
@@ -542,18 +559,19 @@ where
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
-                    running_mpc_config.clone().into(),
+                    running_mpc_config.into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
-                    config_file.clone().into(),
+                    config_file.into(),
                     network_client,
                     sign_request_store,
                     ckd_request_store,
                     ecdsa_signature_provider,
+                    robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
                     ckd_provider,
                     domain_to_scheme,
