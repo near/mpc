@@ -516,6 +516,8 @@ impl MpcClient {
                     .await?
             }
             MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
+            // TODO(#1640): implement as part of the provider integration
+            MpcTaskId::RobustEcdsaTaskId(_robust_ecdsa_task_id) => {}
         }
 
         Ok(())
