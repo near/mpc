@@ -108,7 +108,7 @@ At times it happens that we have different views on some matter regarding the co
 and disagree about how things should be done.
 This may be a disagreement about how to apply/interpret our engineering standards,
 or how to approach some fundamental tradeoff.
-It is tempting as a reviewer to withold your approval to get it your way,
+It is tempting as a reviewer to withhold your approval to get it your way,
 and as a PR author it's tempting to refuse to listen to suggestions.
 
 Naturally, for any conflict it's good to explore and understand what's
