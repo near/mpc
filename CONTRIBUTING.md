@@ -77,7 +77,7 @@ Instead, we prefer PR reviewers to explicitly request changes
 on anything that prevents the PR from being merged.
 This can be small things, as long as they are objective.
 A good PR reviewer will make it very easy to understand
-which requested changes are blocking and needs to be addressed
+which requested changes are blocking and need to be addressed
 for an approval and which requested changes/comments are optional.
 
 ### Don't fear the green button
