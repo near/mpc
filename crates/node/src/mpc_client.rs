@@ -9,6 +9,7 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
+use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
@@ -44,6 +45,7 @@ pub struct MpcClient {
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+    robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
@@ -57,6 +59,7 @@ impl MpcClient {
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
+        robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
@@ -67,6 +70,7 @@ impl MpcClient {
             sign_request_store,
             ckd_request_store,
             ecdsa_signature_provider,
+            robust_ecdsa_signature_provider,
             eddsa_signature_provider,
             ckd_provider,
             domain_to_scheme,
@@ -138,6 +142,13 @@ impl MpcClient {
                 .spawn_background_tasks(),
         );
 
+        let robust_ecdsa_background_tasks = tracking::spawn(
+            "robust_ecdsa_background_tasks",
+            self.robust_ecdsa_signature_provider
+                .clone()
+                .spawn_background_tasks(),
+        );
+
         let eddsa_background_tasks = tracking::spawn(
             "eddsa_background_tasks",
             self.eddsa_signature_provider
@@ -153,6 +164,7 @@ impl MpcClient {
         let _ = monitor_passive_channels.await?;
         metrics_emitter.await?;
         monitor_chain.await?;
+        let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
         let _ = ckd_background_tasks.await?;
@@ -357,8 +369,21 @@ impl MpcClient {
                                         signature_attempt.request.domain.clone()
                                     )),
                                     Some(SignatureScheme::V2Secp256k1) => {
-                                        // TODO(#1640): integration of robust ecdsa provider
-                                        todo!()
+                                        let (signature, public_key) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.robust_ecdsa_signature_provider
+                                                .clone()
+                                                .make_signature(signature_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainSignatureRespondArgs::new_ecdsa(
+                                            &signature_attempt.request,
+                                            &signature,
+                                            &public_key,
+                                        )?;
+
+                                        Ok(response)
                                     }
                                     None => Err(anyhow::anyhow!(
                                         "Signature scheme is not found for domain: {:?}",
@@ -438,8 +463,8 @@ impl MpcClient {
                                         Ok(response)
                                     }
                                     Some(SignatureScheme::Secp256k1)
-                                    | Some(SignatureScheme::Ed25519)
-                                    | Some(SignatureScheme::V2Secp256k1) => Err(anyhow::anyhow!(
+                                    | Some(SignatureScheme::V2Secp256k1)
+                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
                                         "Signature scheme is not allowed for domain: {:?}",
                                         ckd_attempt.request.domain_id.clone()
                                     )),
@@ -516,8 +541,12 @@ impl MpcClient {
                     .await?
             }
             MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
-            // TODO(#1640): implement as part of the provider integration
-            MpcTaskId::RobustEcdsaTaskId(_robust_ecdsa_task_id) => {}
+            MpcTaskId::RobustEcdsaTaskId(_) => {
+                self.robust_ecdsa_signature_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
+            }
         }
 
         Ok(())

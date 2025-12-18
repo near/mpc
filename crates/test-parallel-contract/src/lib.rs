@@ -63,9 +63,10 @@ impl TestContract {
     pub fn make_parallel_sign_calls(
         &self,
         target_contract: AccountId,
-        ecdsa_calls_by_domain: BTreeMap<u64, u64>,
-        eddsa_calls_by_domain: BTreeMap<u64, u64>,
-        ckd_calls_by_domain: BTreeMap<u64, u64>,
+        ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
+        eddsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
+        ckd_calls_by_domain: Option<BTreeMap<u64, u64>>,
+        robust_ecdsa_calls_by_domain: Option<BTreeMap<u64, u64>>,
         seed: u64,
     ) -> Promise {
         fn build_signature_calls<F>(
@@ -132,23 +133,38 @@ impl TestContract {
         }
 
         let mut promises = Vec::new();
-        promises.extend(build_signature_calls(
-            &target_contract,
-            &ecdsa_calls_by_domain,
-            seed,
-            &|hex| Payload::Ecdsa(hex),
-        ));
-        promises.extend(build_signature_calls(
-            &target_contract,
-            &eddsa_calls_by_domain,
-            seed + 1_000_000, // tweak seed offset to avoid collision if needed
-            &|hex| Payload::Eddsa(hex),
-        ));
-        promises.extend(build_ckd_calls(
-            &target_contract,
-            &ckd_calls_by_domain,
-            seed,
-        ));
+        if let Some(ecdsa_calls_by_domain) = ecdsa_calls_by_domain {
+            promises.extend(build_signature_calls(
+                &target_contract,
+                &ecdsa_calls_by_domain,
+                seed,
+                &|hex| Payload::Ecdsa(hex),
+            ));
+        };
+
+        if let Some(eddsa_calls_by_domain) = eddsa_calls_by_domain {
+            promises.extend(build_signature_calls(
+                &target_contract,
+                &eddsa_calls_by_domain,
+                seed + 1_000_000, // tweak seed offset to avoid collision if needed
+                &|hex| Payload::Eddsa(hex),
+            ));
+        };
+        if let Some(ckd_calls_by_domain) = ckd_calls_by_domain {
+            promises.extend(build_ckd_calls(
+                &target_contract,
+                &ckd_calls_by_domain,
+                seed,
+            ));
+        };
+        if let Some(robust_ecdsa_calls_by_domain) = robust_ecdsa_calls_by_domain {
+            promises.extend(build_signature_calls(
+                &target_contract,
+                &robust_ecdsa_calls_by_domain,
+                seed + 2_000_000,
+                &|hex| Payload::Ecdsa(hex),
+            ));
+        };
 
         // Combine the calls using promise::and
         promises.reverse();
