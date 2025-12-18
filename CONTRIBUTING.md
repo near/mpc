@@ -311,7 +311,7 @@ because how do you test this system?
 The naive way of testing this would be to add a configuration value for
 the endpoint and auto-advance tokio time in the test.
 The tests could spin up their own web server which receives the request
-and asserts that it matches the expecation.
+and asserts that it matches the expectation.
 
 Doing all this work just for a simple test case is both very complex,
 and completely fails to test half of the functionality in this function.
