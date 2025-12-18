@@ -72,7 +72,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    /// Mapping of TLS public key of a participant to its NodeId and Attestation.
+    /// Mapping of TLS public key of a participant to its [`NodeId`] and [`Attestation`].
     /// Attestations are stored for any valid participant that has submitted one, not
     /// just for the currently active participants.
     pub(crate) stored_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
