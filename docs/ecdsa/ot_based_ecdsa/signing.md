@@ -3,7 +3,7 @@ The protocol is split into two phases, a pre-signing phase and a signing phase.
 
 *Note: Due to the complexity of generating presignatures using multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
 
-### Note: the threshold $t =$ *number_malicious_parties* $+ 1$
+### Note: the threshold $t = \mathsf{MaxMalicious} + 1$
 
 # Presigning
 
@@ -34,8 +34,8 @@ x'_i &\gets \lambda(\mathcal{P}_1)_i \cdot x_i\cr
 \end{aligned}
 $$
 
-2. $\star$ Each $P_i$ sends $e_i$ to every other party.
-3. $\bullet$ Each $P_i$ waits to receive $e_j$ from each other $P_j$.
+2. $\star$ Each $P_i$ sends $e_i$ to every party.
+3. $\bullet$ Each $P_i$ waits to receive $e_j$ from each $P_j$.
 4. Each $P_i$ sets $e \gets \sum_j e_j$.
 5. $\blacktriangle$ Each $P_i$ *asserts* that $e \cdot G = E$.
 
@@ -50,9 +50,9 @@ $$
 \end{aligned}
 $$
 
-2. $\star$ Each $P_i$ sends $\alpha_i$ and $\beta_i$ to every other party.
+2. $\star$ Each $P_i$ sends $\alpha_i$ and $\beta_i$ to every party.
 
-3. $\bullet$ Each $P_i$ waits to receive $\alpha_j$ and $\beta_j$ from from every other party $P_j$.
+3. $\bullet$ Each $P_i$ waits to receive $\alpha_j$ and $\beta_j$ from from every party $P_j$.
 4. Each $P_i$ sets $\alpha \gets \sum_j \alpha_j$ and $\beta \gets \sum_j \beta_j$.
 5. $\blacktriangle$ Each $P_i$ asserts that:
 
@@ -92,11 +92,15 @@ The inputs to this phase are:
 1. Each $P_i$ linearizes their share of $k$, setting $k_i \gets \lambda(\mathcal{P}_2)_i \cdot k_i$.
 2. Each $P_i$ linearizes their share of $\sigma$, setting $\sigma_i \gets \lambda(\mathcal{P}_2)_i \cdot \sigma_i$.
 3. Each $P_i$ sets $s_i \gets h \cdot k_i + R_\mathsf{x} \cdot \sigma_i$ where $R_\mathsf{x}$ is the x coordinate of $R$
-4. $\star$ Each $P_i$ sends $s_i$ to every other party.
-5. $\bullet$ Each $P_i$ waits to receive $s_j$ from every other party.
-6. Each $P_i$ sums the received elements $s \gets \sum_j s_j$.
+4. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
+
+
+**Round 1 (Coordinator):**
+
+5. $\bullet$ The coordinator waits to receive $s_j$ from every party.
+6. The coordinator sums the received elements $s \gets \sum_j s_j$.
 7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
-8. $\blacktriangle$ Each $P_i$ asserts that $(R, s)$ is a valid ECDSA signature for $h$.
+8. $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid ECDSA signature for $h$.
 
 **Output:** the signature $(R, s)$.
 

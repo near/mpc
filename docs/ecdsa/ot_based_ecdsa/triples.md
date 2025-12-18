@@ -114,7 +114,7 @@ has $\Delta_i$ and $K_{ij}^{\Delta_i}$ from that setup phase.
 
 $\mathcal{R}$ has an input matrix $X_{ij}$, with $i \in [\kappa]$, and $j \in [\lambda]$.
 
-We also require a pseudo-random generator $\text{PRG} : \mathbb{F}_2^{\lambda} \to \mathbb{F}_2^{\kappa}$. 
+We also require a pseudo-random generator $\text{PRG} : \mathbb{F}_2^{\lambda} \to \mathbb{F}_2^{\kappa}$.
 This generator is parameterized by a session id $\text{sid}$, allowing the same
 setup to be used for multiple extensions, so long as $\text{sid}$ is **unique**
 for each execution.
@@ -263,7 +263,7 @@ instance) $\kappa$ elements of the previous step, as well as their respective in
 $a$ and $b$.
 
 3. $\mathcal{S}$ receives $\gamma_j^0, \gamma_j^1$, and $\mathcal{R}$ receives
-$\gamma_i^0, \gamma_i^1$. (Writing it this way means that each party has 
+$\gamma_i^0, \gamma_i^1$. (Writing it this way means that each party has
 one instance of $\gamma$ for every other party they're interacting with).
 
 After all the p2p interactions are done:
@@ -287,7 +287,7 @@ which want to generate a triple with threshold $t$.
 3. Each $P_ i$ sets $l(0) = 0$.
 3. Each $P_i$ sets $E_i \gets e \cdot G, F_i \gets f \cdot G, L_i \gets l \cdot G$.
 4. Each $P_i$ sets $(\text{Com}_i, r_i) \gets \text{Commit}((E_i, F_i, L_i))$.
-5. $\star$ Each $P_i$ sends $\text{Com}_i$ to all other parties.
+5. $\star$ Each $P_i$ sends $\text{Com}_i$ to all parties.
 
 **Round 2:**
 
@@ -296,7 +296,7 @@ which want to generate a triple with threshold $t$.
 3. $T.\text{Add}(\text{Confirm}_i)$
 4. In *parallel* to the following steps, the parties run `Multiplication` using
 $\text{Confirm}_i$ as the session id, and using $e(0)$ and $f(0)$ as their personal shares.
-5. $\star$ Each $P_i$ sends $\text{Confirm}_i$ to every other party.
+5. $\star$ Each $P_i$ sends $\text{Confirm}_i$ to every party.
 6. Each $P_i$ generates the proofs:
 
 $$
@@ -306,8 +306,8 @@ $$
 \end{aligned}
 $$
 
-7. $\star$ Each $P_i$ sends $(E_i, F_i, L_i, r_i, \pi^0_i, \pi^1_i)$ to every other party.
-7. $\textcolor{red}{\star}$ Each $P_i$ *privately* sends $a_i^j = e(j)$ and $b_i^j$ = $f(j)$ to every other party $P_j$.
+7. $\star$ Each $P_i$ sends $(E_i, F_i, L_i, r_i, \pi^0_i, \pi^1_i)$ to every party.
+7. $\textcolor{red}{\star}$ Each $P_i$ *privately* sends $a_i^j = e(j)$ and $b_i^j$ = $f(j)$ to every party $P_j$.
 
 **Round 3:**
 
@@ -336,7 +336,7 @@ $$
 \pi_i \gets \text{Prove}(T.\text{Cloned}(\texttt{dlogeq0}, i), \text{Mau}((- \cdot G, - \cdot F(0)), (E_i(0), C_i); e(0))
 $$
 
-10. $\star$ Each $P_i$ sends $(C_i, \pi_i)$ to every other party.
+10. $\star$ Each $P_i$ sends $(C_i, \pi_i)$ to every party.
 
 **Round 4:**
 
@@ -358,12 +358,12 @@ $$
 \end{aligned}
 $$
 
-7. $\star$ Each $P_i$ sends $(\hat{C}_i, \pi_i)$ to every other party.
+7. $\star$ Each $P_i$ sends $(\hat{C}_i, \pi_i)$ to every party.
 8. $\textcolor{red}{\star}$ Each $P_i$ *privately* sends $c_i^j \gets l_0 + l_i(j)$ to every other $P_j$.
 
 **Round 5:**
 
-1. $\bullet$ Each $P_i$ waits to receive $(\hat{C}_j, \pi_j)$ from every other party.
+1. $\bullet$ Each $P_i$ waits to receive $(\hat{C}_j, \pi_j)$ from every party.
 2. $\blacktriangle$ Each $P_i$ *asserts* that (for all $j$):
 
 $$
