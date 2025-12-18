@@ -245,7 +245,7 @@ well defined behavior when used with these operators.
 
 ```rust
 // Don't
-let z = x + y
+let z = x + y;
 
 // Do
 if let Some(z) = x.checked_add(y) {
