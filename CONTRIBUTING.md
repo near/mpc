@@ -1,7 +1,7 @@
 # Contributing to NEAR MPC
 Thanks for considering contributing to the NEAR MPC network.
 Whether you're an external developer looking to make a contribution
-or a member of the Near One MPC team working in this repo every day,
+or a member of the NEAR One MPC team working in this repo every day,
 this guide should help you understand our workflow and our expectations on contributions.
 
 There are several ways to contribute to the MPC network.
@@ -38,7 +38,7 @@ Now, please do the following things:
 
 1. Assign yourself to the issue to ensure it's visible you're working on it.
 2. Create a branch and link it to the issue.
-   We recommend using the github UI to create the branch as it will automatically link it and use a canonical format for the branch name.
+   We recommend using the GitHub UI to create the branch as it will automatically link it and use a canonical format for the branch name.
 3. Check out the branch and get to work.
 
 Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](#engineering-standards),
@@ -77,7 +77,7 @@ Instead, we prefer PR reviewers to explicitly request changes
 on anything that prevents the PR from being merged.
 This can be small things, as long as they are objective.
 A good PR reviewer will make it very easy to understand
-which requested changes are blocking and needs to be addressed
+which requested changes are blocking and need to be addressed
 for an approval and which requested changes/comments are optional.
 
 ### Don't fear the green button
@@ -137,16 +137,16 @@ a good climate to sort these out without blocking critical work:
    explain and motivate their proposals on the same terms as any other
    developer would.
 3. **The PR author has spent the most time with this code and has the final say.**
-   The person with most insight in the current code is the PR author.
+   The person with the most insight in the current code is the PR author.
    As already stated, we should never block a PR unless there are objective
-   reasons to do so. If there are any doubt, we should err on the liberal
+   reasons to do so. If there is any doubt, we should err on the liberal
    side and accept the PR. A single PR is not the end of the world, and
    we'll be able to fix any sub-optimal design decisions in the future.
-4. **Security concerns trumps everything else.**
+4. **Security concerns trump everything else.**
    The exception to the above is if there's any concern about the security of the system.
    Letting through a critical vulnerability may very well be the end of this system.
    We should never merge a PR if there's any doubt about the security of it.
-   These doubts needs to be cleared out first, and even a suspicion of a
+   These doubts need to be cleared out first, and even a suspicion of a
    security issue is legitimate grounds to block a PR.
 
 # Engineering Standards
@@ -348,7 +348,7 @@ the change was reverted, these tests would fail.
 Currently, we have three types of tests:
 
 - **Unit tests**: Illustrate and assert behavior of individual pieces of functionality.
-- **Crate integration tests**: Test the public interface of a crate to ensure different parts of it works nicely together.
+- **Crate integration tests**: Test the public interface of a crate to ensure different parts of it work nicely together.
 - **System tests**: Test the whole system as a single unit.
 
 All of these are important as they serve different purposes.
@@ -390,7 +390,7 @@ prevent the optimization from regressing in future iterations.
 # Concluding remarks
 I hope this guide helps maintain a good climate for contributors in this repo,
 and helps us guide ourselves towards more performant, robust and maintainable code
-so that we can continue deliver all exciting features we want to support.
+so that we can continue to deliver all exciting features we want to support.
 
 This guide only scratches the surface of all our collective thoughts
 and opinions on what constitutes good practices. We'll maintain this as a living
