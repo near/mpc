@@ -84,7 +84,7 @@ for an approval and which requested changes/comments are optional.
 If there are no explicit objective blocking changes requested
 for a PR, it should be approved.
 Even if you as a reviewer don't like the code.
-It is not acceptable to withold an approval for a PR,
+It is not acceptable to withhold an approval for a PR,
 because you prefer another way of doing something if
 the way implemented in the PR is correct.
 
