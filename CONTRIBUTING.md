@@ -66,7 +66,7 @@ Concrete code suggestions or even stacked PRs are encouraged.
 ### Don't fear the red button
 It can sometimes feel harsh to press the red button to request changes.
 Therefore, it's common in many projects for people to add their comments
-and withold their approval instead of explicitly requesting changes.
+and withhold their approval instead of explicitly requesting changes.
 
 In our project, this is discouraged. This is because it can often be
 frustrating as a PR author to end up in this limbo state where
