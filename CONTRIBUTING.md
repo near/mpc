@@ -390,7 +390,7 @@ prevent the optimization from regressing in future iterations.
 # Concluding remarks
 I hope this guide helps maintain a good climate for contributors in this repo,
 and helps us guide ourselves towards more performant, robust and maintainable code
-so that we can continue deliver all exciting features we want to support.
+so that we can continue to deliver all exciting features we want to support.
 
 This guide only scratches the surface of all our collective thoughts
 and opinions on what constitutes good practices. We'll maintain this as a living
