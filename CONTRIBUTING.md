@@ -165,7 +165,7 @@ The Rust library team maintains a set of [API guidelines](https://rust-lang.gith
 We should also try to follow these to the greatest extent possible where applicable.
 
 ## Don't panic
-While there are a few exections to this rule, most of our code should be panic-free.
+While there are a few exceptions to this rule, most of our code should be panic-free.
 Therefore we should avoid calling `.expect()`, `.unwrap()` in production code, as
 well as any other methods that may implicitly or explicitly panic.
 
