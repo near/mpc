@@ -26,54 +26,139 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-/// Implements [`MeshNetworkTransportSender`] for sending messages over a TLS-based
-/// mesh network.
+/// This struct manages **outgoing connections only** - one persistent TLS connection to each
+/// peer in the network. When the application wants to send a message to a peer, it queues the
+/// message through the corresponding [`PersistentConnection`], which handles automatic
+/// reconnection if the connection drops. Each connection runs two background tasks: one for
+/// sending/receiving data, and one for sending periodic ping heartbeats.
+///
+/// Implements the [`MeshNetworkTransportSender`] trait to provide a high-level API for sending
+/// messages (`.send()`, `.send_indexer_height()`) and checking connectivity status
+/// (`.connectivity()`, `.wait_for_ready()`), while handling low-level connection management.
 pub struct TlsMeshSender {
+    /// The participant ID of this node.
     my_id: ParticipantId,
+    /// List of all participant IDs in the network (including this node).
     participants: Vec<ParticipantId>,
+    /// Outgoing connections to all peers (excludes this node). Each connection automatically
+    /// retries on failure. This is where actual message sending happens - when you call
+    /// `.send()`, it looks up the connection here and queues the message.
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
+    /// Tracks connection state (incoming and outgoing) for all peers. This is separate from
+    /// `connections` because it monitors *both directions* - while `connections` only manages
+    /// our outgoing connections, `connectivities` tracks whether both our outgoing connection
+    /// to a peer AND their incoming connection to us are alive. Used by `.wait_for_ready()`
+    /// and `.connectivity()` to check bidirectional connectivity status.
     connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
-/// Implements [`MeshNetworkTransportReceiver`].
+/// This struct manages **incoming connections only** - it accepts TLS connections from all
+/// peers and multiplexes their messages into a single channel. The application calls
+/// `.receive()` to get the next message from any peer. Each incoming connection runs its own
+/// background task that reads from the TLS stream, responds to Ping packets, and forwards
+/// MPC/IndexerHeight messages to the unified receiver channel.
+///
+/// Implements [`MeshNetworkTransportReceiver`] to receive messages from all peers in the
+/// mesh network.
 pub struct TlsMeshReceiver {
+    /// Unified message queue receiving messages from all peers' incoming connections.
+    /// When any peer sends us a message, it gets queued here. The application calls
+    /// `.receive()` to dequeue the next message (which includes the sender's ID).
     receiver: UnboundedReceiver<PeerMessage>,
+    /// Background task running the TCP acceptor loop on our listening port. It continuously
+    /// accepts incoming TCP connections and spawns a new task for each one that:
+    /// 1) Performs TLS handshake and authenticates the peer's identity
+    /// 2) Registers the connection with `connectivities` for bidirectional tracking
+    /// 3) Reads messages from the peer in a loop
+    /// 4) Responds to Ping packets by echoing back Pong packets
+    /// 5) Forwards MpcMessage and IndexerHeight to the unified `receiver` channel
+    /// The `AutoAbortTask` wrapper ensures automatic cleanup on drop.
     _incoming_connections_task: AutoAbortTask<()>,
 }
 
-/// Maps public keys to participant IDs. Used to identify incoming connections.
+/// Maps public keys to [`ParticipantId`]s for authenticating incoming connections.
+///
+/// This struct is populated at startup with the known public keys of all participants in the
+/// network. When a peer establishes an incoming TLS connection, we extract their public key
+/// from their TLS certificate and look it up in this map to determine their [`ParticipantId`].
+/// This ensures that only known participants can connect, and we can correctly attribute
+/// incoming messages to the right peer. If a connection presents an unknown public key, it is
+/// rejected during the authentication phase.
 #[derive(Default)]
 struct ParticipantIdentities {
     key_to_participant_id: HashMap<VerifyingKey, ParticipantId>,
 }
 
-/// A retrying connection that will automatically reconnect if the TCP
-/// connection is broken.
+/// Maintains a persistent outgoing TLS connection to a single peer with automatic reconnection.
+///
+/// This struct wraps a [`TlsConnection`] and ensures it stays alive throughout the lifetime of
+/// the node. If the underlying TCP/TLS connection drops (due to network issues, peer restart,
+/// etc.), the background task automatically attempts to reconnect after a 1-second delay. Each
+/// [`TlsMeshSender`] owns one `PersistentConnection` per peer in the network (N-1 total).
 struct PersistentConnection {
     target_participant_id: ParticipantId,
     connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
-    // The task that loops to connect to the target. When `PersistentConnection`
-    // is dropped, this task is aborted. The task owns any active connection,
-    // so dropping it also frees any connection currently alive.
+    /// Background reconnection task that maintains the connection lifecycle.
+    ///
+    /// This task runs an infinite loop that:
+    /// 1. Attempts to establish a new [`TlsConnection`] to `target_participant_id`
+    /// 2. On success: Registers the connection with `connectivity` and blocks waiting for it
+    ///    to close (via `wait_for_close()`)
+    /// 3. On failure: Logs the error and sleeps for [`CONNECTION_RETRY_DELAY`] before retrying
+    /// 4. When a connection closes (step 2 completes): Loops back to step 1
+    ///
+    /// The task owns the active [`TlsConnection`] (wrapped in Arc), so when the task is
+    /// aborted (via dropping this `PersistentConnection`), the connection is automatically
+    /// cleaned up. The [`AutoAbortTask`] wrapper ensures the task is aborted when this struct
+    /// is dropped, providing RAII-style cleanup on node shutdown.
     _task: AutoAbortTask<()>,
 }
 
-/// State for a single TLS/TCP connection to one participant. We only ever send
-/// messages through this connection, so there is nothing to handle receiving.
-/// Dropping this struct will automatically close the connection.
+/// Represents an active outgoing TLS/TCP connection to a single peer participant.
+///
+/// This struct encapsulates a single established TCP connection with TLS encryption to one peer.
+/// It is **send-only** from the application's perspective - when you want to send a message to
+/// a peer, you queue it through the `sender` channel, and the background `_sender_task` reads
+/// from the channel and writes to the TLS stream.
 struct TlsConnection {
-    /// Used to send messages via the connection.
+    /// Channel for queuing outbound packets ([`Packet::Ping`], [`Packet::MpcMessage`],
+    /// [`Packet::IndexerHeight`]) to be sent.
+    ///
+    /// The application sends messages by calling `.send_mpc_message()` or `.send_indexer_height()`,
+    /// which queue packets into this channel. The `_sender_task` continuously reads from the
+    /// receiver end of this channel and writes packets to the TLS stream. This decouples message
+    /// sending from I/O operations, allowing the application to queue messages without blocking
+    /// on network writes.
     sender: UnboundedSender<Packet>,
-    /// Task that reads messages from the channel (other side of `sender`) and
-    /// sends it over the TLS connection. This task owns the connection, so
-    /// dropping it closes the connection.
+    /// Background task that owns the TLS stream and handles I/O operations.
+    ///
+    /// This task performs two main responsibilities:
+    /// 1. **Outbound**: Reads all packet types from the `sender` channel and writes them to
+    ///    the TLS stream
+    /// 2. **Inbound (Pong only)**: Reads from the TLS stream specifically looking for
+    ///    [`Packet::Pong`] responses to verify the connection is alive. Other packet types
+    ///    are ignored since application messages arrive via the separate incoming connection.
+    ///
+    /// The task tracks the last received Pong timestamp and closes the connection if no Pong is
+    /// received within [`Self::PONG_TIMEOUT`]. When this task is aborted (via [`AutoAbortTask`]
+    /// drop), it closes the underlying TLS/TCP stream, which triggers [`PersistentConnection`]
+    /// to reconnect.
     _sender_task: AutoAbortTask<()>,
-    /// Task that periodically sends Ping messages with incrementing sequence numbers.
-    /// This task only sends pings; the sender_task handles receiving Pong responses
-    /// and closing the connection if no pongs are received within PONG_TIMEOUT.
+    /// Background task that sends periodic Ping heartbeats to detect dead connections.
+    ///
+    /// Every [`Self::PING_INTERVAL`] (1 second), this task sends a Ping packet with an
+    /// incrementing sequence number through the `sender` channel. The peer is expected to
+    /// respond with a Pong containing the same sequence number. If the `_sender_task` doesn't
+    /// receive Pong responses within [`Self::PONG_TIMEOUT`] (5 seconds), it considers the
+    /// connection dead and closes it. This task only sends Pings; Pong validation is handled
+    /// by `_sender_task`.
     _keepalive_task: AutoAbortTask<()>,
-    /// This is cancelled when the connection is closed. Used to wait for the
-    /// connection to close.
+    /// Token that gets cancelled when the connection closes, allowing waiters to be notified.
+    ///
+    /// Used by [`PersistentConnection`] via the `wait_for_close()` method to block until the
+    /// connection dies (either due to network failure, timeout, or intentional shutdown). When
+    /// `_sender_task` exits, the [`DropToCancel`] guard automatically cancels this token,
+    /// unblocking any tasks waiting on it.
     closed: CancellationToken,
 }
 
