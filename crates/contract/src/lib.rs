@@ -1811,12 +1811,23 @@ mod tests {
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
     pub fn with_attested_context(contract: &MpcContract) -> AccountId {
-        let (_account_id, (node_id, _)) = contract
+        let active_participant_pks: Vec<_> = contract
+            .protocol_state
+            .active_participants()
+            .participants()
+            .iter()
+            .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
+            .collect();
+
+        let node_id = contract
             .tee_state
             .participants_attestations
             .iter()
-            .next()
-            .expect("No attested participants in tee_state");
+            .find(|(public_key, _)| active_participant_pks.contains(public_key))
+            .expect("No attested participants in tee_state")
+            .1
+             .0
+            .clone();
 
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
