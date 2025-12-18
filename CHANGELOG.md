@@ -41,6 +41,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1668](https://github.com/near/mpc/pull/1668)(@pbeza): Move gas constants for voting from test to common module (#1668)
 
+- [#1695](https://github.com/near/mpc/pull/1695)(@DSharifi): Clarify that `tee_state` contains attestations for not just active participants (#1695)
+
 
 ### 📚 Documentation
 
@@ -88,6 +90,12 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1676](https://github.com/near/mpc/pull/1676)(@DSharifi): Run test profile on cargo nextest invocation (#1676)
 
 - [#1681](https://github.com/near/mpc/pull/1681)(@DSharifi): Enable debug-asserttions on CI test profile (#1681)
+
+- [#1692](https://github.com/near/mpc/pull/1692)(@gilcu3): Update version and changelog for 3.2.0 release  (#1692)
+
+- [#1683](https://github.com/near/mpc/pull/1683)(@kevindeforth): *(contract)* Sandbox code organization (#1683)
+
+- [#1698](https://github.com/near/mpc/pull/1698)(@gilcu3): bump nearcore to 2.10.3 (#1698)
 
 
 ## [3.1.0] - 2025-12-04
