@@ -72,7 +72,7 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
+    pub(crate) participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
 impl Default for TeeState {
