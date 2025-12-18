@@ -236,7 +236,7 @@ depending on the compiler. This can lead to unintended behavior and
 it's best to completely avoid them for primitive types in favor of
 explicit methods (`checked_add`, `wrapping_add` etc.).
 
-Note that for custom types these operators may be still fine,
+Note that for custom types these operators may still be fine,
 if they are implemented so that they don't overflow.
 
 For example, typical implementations of cryptographic scalars
