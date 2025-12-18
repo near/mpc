@@ -224,7 +224,7 @@ fn increment_first_number(numbers: &mut [u8]) {
 
 we'd have no sequential dependencies.
 This code cannot become incorrect by some externally maintained
-invariant being broken because it does't make any assumptions
+invariant being broken because it doesn't make any assumptions
 about any surrounding code.
 
 Therefore we recognize the variant as the better alternative.
