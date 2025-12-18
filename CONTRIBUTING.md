@@ -38,7 +38,7 @@ Now, please do the following things:
 
 1. Assign yourself to the issue to ensure it's visible you're working on it.
 2. Create a branch and link it to the issue.
-   We recommend using the github UI to create the branch as it will automatically link it and use a canonical format for the branch name.
+   We recommend using the GitHub UI to create the branch as it will automatically link it and use a canonical format for the branch name.
 3. Check out the branch and get to work.
 
 Once you've made the relevant changes to fulfill the acceptance criteria and the code lives up to our [engineering standards](#engineering-standards),
