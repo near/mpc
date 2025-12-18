@@ -201,7 +201,7 @@ the "Don't panic" principle.
 
 ## Maintain Local Reasonability
 It's often tempting to write code that has implicit sequential dependencies.
-In these scenarios, the correctness of one expressions depends on
+In these scenarios, the correctness of one expression depends on
 the presence of other expressions.
 
 Considering the code example from the [Don't panic](#dont-panic) section,
