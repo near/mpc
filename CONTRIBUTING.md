@@ -139,7 +139,7 @@ a good climate to sort these out without blocking critical work:
 3. **The PR author has spent the most time with this code and has the final say.**
    The person with the most insight in the current code is the PR author.
    As already stated, we should never block a PR unless there are objective
-   reasons to do so. If there is any doubt, we should err on the liberal
+   reasons to do so. If there are any doubts, we should err on the liberal
    side and accept the PR. A single PR is not the end of the world, and
    we'll be able to fix any sub-optimal design decisions in the future.
 4. **Security concerns trump everything else.**
