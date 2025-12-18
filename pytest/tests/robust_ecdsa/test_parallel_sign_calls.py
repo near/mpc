@@ -17,7 +17,6 @@ from common_lib.shared import metrics, mpc_cluster_metrics
 from common_lib.contracts import load_parallel_sign_contract
 
 
-# TODO: this test is almost the same as the general parallel signs test. Eventually they should be unified
 @pytest.mark.parametrize("num_parallel_requests", [3])
 @pytest.mark.no_atexit_cleanup
 def test_parallel_sign_calls(
