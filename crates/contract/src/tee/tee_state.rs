@@ -72,7 +72,10 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
+    /// Mapping of TLS public key of a participant to its NodeId and Attestation.
+    /// Attestations are stored for any valid participant that has submitted one, not
+    /// just for the currently active participants.
+    pub(crate) stored_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
 impl Default for TeeState {
@@ -81,7 +84,7 @@ impl Default for TeeState {
             allowed_docker_image_hashes: AllowedDockerImageHashes::default(),
             allowed_launcher_compose_hashes: vec![],
             votes: CodeHashesVotes::default(),
-            participants_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
+            stored_attestations: IterableMap::new(StorageKey::TeeParticipantAttestation),
         }
     }
 }
@@ -108,7 +111,7 @@ impl TeeState {
             });
 
         Self {
-            participants_attestations,
+            stored_attestations: participants_attestations,
             ..Default::default()
         }
     }
@@ -148,7 +151,7 @@ impl TeeState {
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
-        let participant_attestation = self.participants_attestations.get(&node_id.tls_public_key);
+        let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
             return TeeQuoteStatus::Invalid("participant has no attestation".to_string());
         };
@@ -251,10 +254,10 @@ impl TeeState {
     pub fn add_participant(&mut self, node_id: NodeId, attestation: Attestation) -> bool {
         let tls_pk = node_id.tls_public_key.clone();
 
-        let is_new = !self.participants_attestations.contains_key(&tls_pk);
+        let is_new = !self.stored_attestations.contains_key(&tls_pk);
 
         // Must pass owned values, not references
-        self.participants_attestations
+        self.stored_attestations
             .insert(tls_pk, (node_id, attestation));
 
         is_new
@@ -311,7 +314,7 @@ impl TeeState {
 
         // Collect TLS keys that are *not* in the active participants list
         let stale_keys: Vec<near_sdk::PublicKey> = self
-            .participants_attestations
+            .stored_attestations
             .keys()
             .filter(|tls_pk| !active_tls_keys.contains(*tls_pk))
             .cloned()
@@ -319,14 +322,14 @@ impl TeeState {
 
         // Remove all stale TEE entries
         for tls_pk in stale_keys {
-            self.participants_attestations.remove(&tls_pk);
+            self.stored_attestations.remove(&tls_pk);
         }
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
     /// Note: This may include accounts that are no longer active protocol participants.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {
-        self.participants_attestations
+        self.stored_attestations
             .values()
             .map(|(node_id, _)| node_id.clone())
             .collect()
@@ -334,7 +337,7 @@ impl TeeState {
 
     /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &near_sdk::PublicKey) -> Option<NodeId> {
-        self.participants_attestations
+        self.stored_attestations
             .get(tls_public_key)
             .map(|(node_id, _)| node_id.clone())
     }
@@ -350,7 +353,7 @@ impl TeeState {
         match participants.info(&signer_id) {
             None => false,
             Some(info) => {
-                match self.participants_attestations.get(&info.sign_pk) {
+                match self.stored_attestations.get(&info.sign_pk) {
                     None => false,
                     Some((node_id, _attestation)) => {
                         node_id.account_id == signer_id
@@ -408,28 +411,28 @@ mod tests {
         tee_state.add_participant(non_participant_uid.clone(), local_attestation.clone());
 
         // Verify all 4 accounts have TEE info initially
-        assert_eq!(tee_state.participants_attestations.len(), 4);
+        assert_eq!(tee_state.stored_attestations.len(), 4);
         for node_id in &participant_nodes {
             assert!(tee_state
-                .participants_attestations
+                .stored_attestations
                 .contains_key(&node_id.tls_public_key));
         }
         assert!(tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&non_participant_uid.tls_public_key));
 
         // Clean non-participants
         tee_state.clean_non_participants(&participants);
 
         // Verify only participants remain
-        assert_eq!(tee_state.participants_attestations.len(), 3);
+        assert_eq!(tee_state.stored_attestations.len(), 3);
         for node_id in &participant_nodes {
             assert!(tee_state
-                .participants_attestations
+                .stored_attestations
                 .contains_key(&node_id.tls_public_key));
         }
         assert!(!tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&non_participant_uid.tls_public_key));
     }
 }

@@ -643,7 +643,7 @@ impl MpcContract {
 
         Ok(self
             .tee_state
-            .participants_attestations
+            .stored_attestations
             .iter()
             .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
             .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
@@ -1821,7 +1821,7 @@ mod tests {
 
         let node_id = contract
             .tee_state
-            .participants_attestations
+            .stored_attestations
             .iter()
             .find(|(public_key, _)| active_participant_pks.contains(public_key))
             .expect("No attested participants in tee_state")
