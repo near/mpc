@@ -18,7 +18,6 @@ use threshold_signatures::{
     frost_secp256k1::{self, Secp256K1Group},
 };
 
-// todo: rename this
 #[derive(Debug, Clone)]
 pub struct DomainKey {
     pub domain_config: DomainConfig,

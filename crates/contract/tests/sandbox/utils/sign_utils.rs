@@ -128,7 +128,6 @@ impl SignRequestTest {
         Ok(())
     }
 
-    // todo: rename to "request_ensure_included"
     pub async fn sign_ensure_included(
         &self,
         account: &Account,
@@ -139,7 +138,6 @@ impl SignRequestTest {
         Ok(status)
     }
 
-    // todo: rename to "respond_ensure_included"
     pub async fn sign_and_validate(
         &self,
         account: &Account,
