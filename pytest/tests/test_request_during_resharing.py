@@ -57,3 +57,41 @@ def test_threshold_from_previous_running_state_is_maintained():
     assert cluster.wait_for_state(ProtocolState.RESHARING), (
         "State should still be in resharing. 4th node was killed."
     )
+
+
+def test_threshold_from_previous_running_state_is_maintained_robust_ecdsa_only():
+    number_of_nodes = 6
+    threshold = 5
+
+    cluster, mpc_nodes = shared.start_cluster_with_mpc(
+        number_of_nodes,
+        1,
+        load_mpc_contract(),
+        triples_to_buffer=0,
+    )
+
+    cluster.init_cluster(
+        participants=mpc_nodes[:-1], threshold=threshold, domains=["V2Secp256k1"]
+    )
+
+    # One more node join, increase threshold
+    cluster.do_resharing(
+        new_participants=mpc_nodes[:],
+        new_threshold=threshold + 1,
+        prospective_epoch_id=1,
+        wait_for_running=False,
+    )
+
+    # Kill one node such that resharing does not finish.
+    mpc_nodes[-1].kill()
+
+    # sanity check
+    assert cluster.wait_for_state(ProtocolState.RESHARING), (
+        "State should still be in resharing. last node was killed."
+    )
+
+    cluster.send_and_await_signature_requests(3)
+    # sanity check
+    assert cluster.wait_for_state(ProtocolState.RESHARING), (
+        "State should still be in resharing. last node was killed."
+    )

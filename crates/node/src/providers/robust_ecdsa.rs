@@ -49,8 +49,6 @@ impl EcdsaMessageHash {
 }
 
 impl RobustEcdsaSignatureProvider {
-    // TODO(#1640): remove as part of the provider integration
-    #[allow(unused)]
     pub fn new(
         config: Arc<ConfigFile>,
         mpc_config: Arc<MpcConfig>,
@@ -275,6 +273,7 @@ mod tests {
                 let number_of_signers = get_number_of_signers(threshold, number_of_participants);
                 let new_threshold = translate_threshold(threshold, number_of_participants).unwrap();
                 assert!(2 * new_threshold < number_of_signers, "Failed for threshold={threshold}, number_of_participants={number_of_participants}");
+                assert!(new_threshold >= (threshold - 1) / 2, "The new threshold should not decrease security more than necessary: new_threshold={new_threshold}, threshold={threshold}");
             }
         }
     }

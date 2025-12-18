@@ -18,8 +18,6 @@ use crate::types::SignatureId;
 pub use ckd::CKDProvider;
 pub use ecdsa::EcdsaSignatureProvider;
 pub use ecdsa::EcdsaTaskId;
-// TODO(#1640): remove as part of the provider integration
-#[allow(unused)]
 pub use robust_ecdsa::RobustEcdsaSignatureProvider;
 use std::sync::Arc;
 
