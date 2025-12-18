@@ -1,20 +1,14 @@
+use crate::sandbox::{
+    common::{init_env, SandboxTestSetup},
+    utils::{
+        consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+        mpc_contract::{assert_running_return_participants, assert_running_return_threshold},
+        resharing_utils::do_resharing,
+        transactions::execute_async_transactions,
+    },
+};
 use anyhow::Result;
 use contract_interface::types as dtos;
-use near_account_id::AccountId;
-use near_workspaces::Account;
-use serde_json::json;
-use sha2::Digest;
-use std::collections::BTreeMap;
-use utilities::AccountIdExtV1;
-
-use crate::sandbox::{
-    common::{
-        assert_running_return_participants, assert_running_return_threshold,
-        execute_async_transactions, init_env, ContractSetup, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
-        GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN,
-    },
-    resharing_utils::do_resharing,
-};
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, key_state::EpochId, participants::Participants,
@@ -22,12 +16,18 @@ use mpc_contract::{
     },
     update::{ProposeUpdateArgs, UpdateId},
 };
+use near_account_id::AccountId;
+use near_workspaces::Account;
+use serde_json::json;
+use sha2::Digest;
+use std::collections::BTreeMap;
+use utilities::AccountIdExtV1;
 
 /// Tests that update votes from non-participants are cleared after resharing.
 #[tokio::test]
 async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // given: a running contract with PARTICIPANT_LEN participants and an update proposal with 2 votes
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..

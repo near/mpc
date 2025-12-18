@@ -1,7 +1,9 @@
-use std::time::Duration;
-
-use crate::sandbox::common::{
-    candidates, init, init_env, submit_signature_response, ContractSetup, PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{candidates, init, init_env, SandboxTestSetup},
+    utils::{
+        consts::PARTICIPANT_LEN,
+        sign_utils::{submit_signature_response, SignRequestTest},
+    },
 };
 use mpc_contract::{
     errors,
@@ -12,6 +14,7 @@ use mpc_contract::{
     },
 };
 use near_workspaces::types::NearToken;
+use std::time::Duration;
 use utilities::AccountIdExtV1;
 
 const NON_CKD_SCHEMES: &[SignatureScheme] = &[
@@ -25,7 +28,7 @@ const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 
 #[tokio::test]
 async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
@@ -48,7 +51,7 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
         for msg in messages {
             {
                 println!("submitting: {msg}");
-                let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+                let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
                 req.sign_and_validate(&alice, &contract, attested_account)
                     .await
                     .unwrap();
@@ -59,7 +62,7 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
             // check that in case of duplicate request, only the most recent will be signed:
             let msg = "welp";
             println!("submitting: {msg}");
-            let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+            let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
             let status_1 = req.sign_ensure_included(&alice, &contract).await?;
             worker
                 .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
@@ -86,7 +89,7 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
             // Check that a sign with no response from MPC network properly errors out:
             let msg = "this should timeout";
             println!("submitting: {msg}");
-            let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+            let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
             let status = req.sign_ensure_included(&alice, &contract).await?;
             worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
             req.verify_timeout(status).await.unwrap();
@@ -97,7 +100,7 @@ async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
@@ -113,7 +116,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
     for key in &keys {
         println!("submitting: {msg}");
-        let req = key.create_sign_request(&alice.id().as_v2_account_id(), msg, path);
+        let req = SignRequestTest::new(key, &alice.id().as_v2_account_id(), msg, path);
         req.sign_and_validate(&alice, &contract, attested_account)
             .await?;
 
@@ -138,7 +141,7 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         keys,
@@ -152,7 +155,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
     let msg = "hello world!";
     println!("submitting: {msg}");
     for key in &keys {
-        let req = key.create_sign_request(&alice.id().as_v2_account_id(), msg, path);
+        let req = SignRequestTest::new(key, &alice.id().as_v2_account_id(), msg, path);
         let status = req.sign_ensure_included(&alice, &contract).await?;
         worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
         // we do not respond, sign will fail due to timeout
@@ -175,7 +178,7 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         keys,
@@ -188,7 +191,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
     for key in &keys {
         // Try to sign with no deposit, should fail.
         let msg = "without-deposit";
-        let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+        let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
         let status = contract
             .call("sign")
             .args_json(req.request_json_args())
@@ -219,7 +222,7 @@ async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         keys,
@@ -242,7 +245,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 
     for msg in messages {
         println!("submitting: {msg}");
-        let req = key.create_sign_request(&predecessor_id.as_v2_account_id(), msg, path);
+        let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
         let status = contract
             .call("sign")
             .args_json(serde_json::json!({
