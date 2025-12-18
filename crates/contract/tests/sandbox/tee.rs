@@ -1,7 +1,12 @@
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, gen_accounts,
-    get_participant_attestation, get_tee_accounts, init_env, submit_participant_info,
-    submit_tee_attestations, vote_for_hash, ContractSetup, ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
+    utils::{
+        consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
+        mpc_contract::{
+            assert_running_return_participants, assert_running_return_threshold,
+            get_participant_attestation, get_tee_accounts, submit_participant_info, vote_for_hash,
+        },
+    },
 };
 use anyhow::Result;
 use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
@@ -18,7 +23,7 @@ use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls
 /// and additional votes don't change the allowed state or latest hash.
 #[tokio::test]
 async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -70,7 +75,7 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
 /// it remains in the allowed list even when participants change their votes away from it.
 #[tokio::test]
 async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -138,7 +143,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
 /// account id that is not in the participant list
 #[tokio::test]
 async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker, contract, ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let random_account = &gen_accounts(&worker, 1).await.0[0];
@@ -162,7 +167,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
 
 #[tokio::test]
 async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -231,7 +236,7 @@ async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> R
 /// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
 /// This is a helper function that provides all the common components needed for TEE-related tests.
 async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -270,7 +275,7 @@ async fn test_submit_participant_info_test_method_available_in_integration_tests
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
 #[tokio::test]
 async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -313,7 +318,7 @@ async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
 /// This verifies the security boundary: only the contract itself should be able to perform internal cleanup operations.
 #[tokio::test]
 async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker, contract, ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
@@ -347,7 +352,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 /// TEE data for accounts that are no longer participants. Uses the test method to populate initial TEE state.
 #[tokio::test]
 async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mut mpc_signer_accounts,
@@ -397,7 +402,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
 #[tokio::test]
 async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verification(
 ) -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -452,7 +457,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
 #[tokio::test]
 async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_attestation() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -484,7 +489,7 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
 
 #[tokio::test]
 async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestation() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -548,7 +553,7 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
 
 #[tokio::test]
 async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -607,7 +612,7 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
 
 #[tokio::test]
 async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..

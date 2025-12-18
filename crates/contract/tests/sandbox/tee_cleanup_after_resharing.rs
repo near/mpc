@@ -1,15 +1,17 @@
+use crate::sandbox::{
+    common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
+    utils::{
+        consts::PARTICIPANT_LEN,
+        interface::IntoInterfaceType,
+        mpc_contract::{
+            assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
+            submit_participant_info,
+        },
+        resharing_utils::do_resharing,
+    },
+};
 use anyhow::Result;
 use contract_interface::types::{Attestation, MockAttestation};
-use utilities::AccountIdExtV1;
-
-use crate::sandbox::{
-    common::{
-        assert_running_return_participants, assert_running_return_threshold, gen_accounts,
-        get_tee_accounts, init_env, submit_participant_info, submit_tee_attestations,
-        ContractSetup, IntoInterfaceType, PARTICIPANT_LEN,
-    },
-    resharing_utils::do_resharing,
-};
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, key_state::EpochId, participants::Participants,
@@ -17,6 +19,7 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
 };
+use utilities::AccountIdExtV1;
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -29,7 +32,7 @@ use mpc_contract::{
 /// 6. Confirms only the new participant set remains in TEE state
 #[tokio::test]
 async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,

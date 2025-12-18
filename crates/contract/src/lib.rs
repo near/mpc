@@ -643,7 +643,7 @@ impl MpcContract {
 
         Ok(self
             .tee_state
-            .participants_attestations
+            .stored_attestations
             .iter()
             .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
             .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
@@ -1810,13 +1810,24 @@ mod tests {
     /// Temporarily sets the testing environment so that calls appear
     /// to come from an attested MPC node registered in the contract's `tee_state`.
     /// Returns the `AccountId` of the node used.
-    pub fn with_attested_context(contract: &MpcContract) -> AccountId {
-        let (_account_id, (node_id, _)) = contract
-            .tee_state
-            .participants_attestations
+    pub fn with_active_participant_and_attested_context(contract: &MpcContract) -> AccountId {
+        let active_participant_pks: Vec<_> = contract
+            .protocol_state
+            .active_participants()
+            .participants()
             .iter()
-            .next()
-            .expect("No attested participants in tee_state");
+            .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
+            .collect();
+
+        let node_id = contract
+            .tee_state
+            .stored_attestations
+            .iter()
+            .find(|(public_key, _)| active_participant_pks.contains(public_key))
+            .expect("No attested participants in tee_state")
+            .1
+             .0
+            .clone();
 
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
@@ -1894,7 +1905,7 @@ mod tests {
             ))
         };
 
-        with_attested_context(&contract);
+        with_active_participant_and_attested_context(&contract);
 
         match contract.respond(signature_request.clone(), signature_response.clone()) {
             Ok(_) => {
@@ -1980,7 +1991,7 @@ mod tests {
             big_c: dtos::Bls12381G1PublicKey([2u8; 48]),
         };
 
-        with_attested_context(&contract);
+        with_active_participant_and_attested_context(&contract);
 
         match contract.respond_ckd(ckd_request.clone(), response.clone()) {
             Ok(_) => {
@@ -2332,7 +2343,7 @@ mod tests {
             .unwrap();
 
         // --- Step 4: Verify that a participant can still respond successfully ---
-        with_attested_context(&contract); // sets env to a real attested participant
+        with_active_participant_and_attested_context(&contract); // sets env to a real attested participant
 
         let valid_response = CKDResponse {
             big_y: dtos::Bls12381G1PublicKey([1u8; 48]),
