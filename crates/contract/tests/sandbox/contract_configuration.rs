@@ -1,6 +1,7 @@
 use crate::sandbox::{
-    common::{init_with_candidates, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    common::init_with_candidates,
     upgrade_from_current_contract::current_contract_proposal,
+    utils::consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
 };
 use mpc_contract::update::UpdateId;
 

@@ -20,7 +20,7 @@ use rstest::rstest;
 use std::{str::FromStr, time::Duration};
 use utilities::AccountIdExtV2;
 
-use crate::sandbox::common::IntoInterfaceType;
+use crate::sandbox::utils::interface::IntoInterfaceType;
 
 const SECOND: Duration = Duration::from_secs(1);
 const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;

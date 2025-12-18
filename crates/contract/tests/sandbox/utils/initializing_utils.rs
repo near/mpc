@@ -4,8 +4,10 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 use utilities::AccountIdExtV1;
 
-use super::common::{
-    execute_async_transactions, get_state, GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_PK,
+use super::{
+    consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_PK},
+    mpc_contract::get_state,
+    transactions::execute_async_transactions,
 };
 
 pub async fn vote_add_domains(

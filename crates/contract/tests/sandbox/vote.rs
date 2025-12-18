@@ -1,12 +1,17 @@
 // TODO(#1657): split this file
 use crate::sandbox::{
     common::{
-        execute_async_transactions, gen_account, gen_participant_info,
-        generate_participant_and_submit_attestation, get_state, init_env, ContractSetup,
-        IntoContractType, ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN,
+        gen_account, gen_participant_info, generate_participant_and_submit_attestation, init_env,
+        SandboxTestSetup,
     },
-    initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-    resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
+    utils::{
+        consts::{ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
+        initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
+        interface::IntoContractType,
+        mpc_contract::get_state,
+        resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
+        transactions::execute_async_transactions,
+    },
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
@@ -25,7 +30,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn test_keygen() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -98,7 +103,7 @@ async fn test_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_cancel_keygen() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -237,7 +242,7 @@ struct ResharingTestContext {
 async fn setup_resharing_state(
     #[default(PARTICIPANT_LEN)] number_of_participants: usize,
 ) -> ResharingTestContext {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
@@ -655,7 +660,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
 
 #[tokio::test]
 async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestation() {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mut mpc_signer_accounts,
