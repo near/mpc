@@ -7,10 +7,10 @@ this guide should help you understand our workflow and our expectations on contr
 There are several ways to contribute to the MPC network.
 The following are the most common:
 
-1. Running an MPC node.
-2. Spotting a problem or potential improvement and raise an issue.
+1. Run an MPC node.
+2. Spot a problem or potential improvement and raise an issue.
 3. Open PRs to resolve issues.
-4. Review PRs to verify they are correct and follows our standards.
+4. Review PRs to verify they are correct and follow our standards.
 
 If you're interested in running an MPC node, please reach out to us directly at [mpc@nearone.org](mailto:mpc@nearone.org).
 The rest of this guide is focused on our flow for creating issues and PRs.
