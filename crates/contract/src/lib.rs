@@ -1424,12 +1424,15 @@ impl MpcContract {
 
         Self::assert_caller_is_signer();
 
-        if !self
+        let attestation_check = self
             .tee_state
-            .is_caller_an_attested_participant(participants)
-        {
-            panic!("Caller must be an attested participant");
-        }
+            .is_caller_an_attested_participant(participants);
+
+        assert_matches::assert_matches!(
+            attestation_check,
+            Ok(()),
+            "Caller must be an attested participant"
+        );
     }
 
     /// Ensures the current call originates from the signer account itself.
