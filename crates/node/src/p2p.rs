@@ -169,9 +169,11 @@ impl TlsConnection {
             async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tracing::debug!("Sending ping");
                     if sender_clone.send(Packet::Ping).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
+                        tracing::debug!("Sending ping failed");
                         break;
                     }
                 }
@@ -360,7 +362,7 @@ pub async fn new_tls_mesh_network(
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
-            tasks.spawn_checked::<_, ()>("connection handler", async move {
+            tasks.spawn_checked::<_, ()>("connection handler tls mesh network", async move {
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
@@ -624,13 +626,15 @@ mod tests {
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
     use crate::primitives::{
-        ChannelId, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId,
+        ChannelId, IndexerHeightMessage, MpcMessage, MpcStartMessage, MpcTaskId, ParticipantId, PeerMessage, UniqueId
     };
+    use crate::providers::ckd::CKDTaskId;
     use crate::providers::EcdsaTaskId;
     use crate::tracing::init_logging;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+    use near_indexer_primitives::CryptoHash;
     use rand::Rng;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -865,5 +869,98 @@ mod tests {
         let mut ids = ids.to_vec();
         ids.sort();
         ids
+    }
+
+    #[tokio::test]
+    async fn test_asymmetric_disconnections() {
+        init_logging(LogFormat::Plain);
+        let configs = generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            None,
+        )
+        .unwrap();
+
+        let all_participants = |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+        start_root_task_with_periodic_dump(async move {
+            let (sender0, _receiver0) = super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
+                .await
+                .unwrap();
+            let (sender1, receiver1) =
+                super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                    .await
+                    .unwrap();
+
+            let participants = all_participants(&configs[0].0);
+            assert_eq!(&participants, &all_participants(&configs[1].0));
+            let p0 = participants[0];
+            let p1 = participants[1];
+
+            sender0.wait_for_ready(2, &participants).await.unwrap();
+            sender1.wait_for_ready(2, &participants).await.unwrap();
+
+            tracing::debug!(
+                "{} {}",
+                sender0.connectivity(p1).is_bidirectionally_connected(),
+                sender1.connectivity(p0).is_bidirectionally_connected()
+            );
+
+            drop(receiver1);
+            tracing::debug!(
+                "{} {}",
+                sender0.connectivity(p1).is_bidirectionally_connected(),
+                sender1.connectivity(p0).is_bidirectionally_connected()
+            );
+
+            // here bidirectional connectivity should fail, but it doesnt
+            assert!(sender0.connectivity(p1).is_bidirectionally_connected());
+            assert!(sender1.connectivity(p0).is_bidirectionally_connected());
+
+            // Now we send an MPC message
+            let msg0to1 = MpcMessage {
+                channel_id: ChannelId(UniqueId::new(p0, 123, 1)),
+                kind: crate::primitives::MpcMessageKind::Start(MpcStartMessage {
+                    task_id: MpcTaskId::CKDTaskId(CKDTaskId::Ckd {
+                        id: CryptoHash([0u8; 32]),
+                    }),
+                    participants,
+                }),
+            };
+            sender0.send_indexer_height(IndexerHeightMessage {height: 1});
+
+            sender0
+                .send(
+                    p1,
+                    msg0to1.clone(),
+                    sender0.connectivity(p1).connection_version(),
+                )
+                .unwrap();
+
+            // it must fail at least once
+            timeout(Duration::from_secs(3), async {
+                while sender0.connectivity(p1).is_bidirectionally_connected(){
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }).await.unwrap();
+
+            tracing::debug!("Bidirectional connectivity was lost");
+
+            // it must recover afterwards
+            timeout(Duration::from_secs(6), async {
+                while !sender0.connectivity(p1).is_bidirectionally_connected(){
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }).await.unwrap();
+            tracing::debug!("Bidirectional connectivity was recovered");
+        })
+        .await;
     }
 }
