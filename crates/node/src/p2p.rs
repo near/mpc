@@ -87,7 +87,8 @@ pub struct TlsMeshReceiver {
     /// 4) On Ping: Sends Pong via our outgoing connection to maintain unidirectional I/O
     /// 5) On Pong: Updates the outgoing connection's pong_state directly for health tracking
     /// 6) Forwards MpcMessage and IndexerHeight to the unified `receiver` channel
-    /// The `AutoAbortTask` wrapper ensures automatic cleanup on drop.
+    ///
+    /// The [`AutoAbortTask`] wrapper ensures automatic cleanup on drop.
     _incoming_connections_task: AutoAbortTask<()>,
 }
 
@@ -315,23 +316,14 @@ impl TlsConnection {
                 let _watchdog_task = watchdog_task;
                 let _watchdog_cancel = watchdog_cancel;
                 let mut sent_bytes: u64 = 0;
-                loop {
-                    match receiver.recv().await {
-                        Some(data) => {
-                            let serialized = borsh::to_vec(&data)?;
-                            let len: u32 =
-                                serialized.len().try_into().context("Message too long")?;
-                            tls_conn.write_u32(len).await?;
-                            tls_conn.write_all(&serialized).await?;
-                            sent_bytes += 4 + len as u64;
+                while let Some(data) = receiver.recv().await {
+                    let serialized = borsh::to_vec(&data)?;
+                    let len: u32 = serialized.len().try_into().context("Message too long")?;
+                    tls_conn.write_u32(len).await?;
+                    tls_conn.write_all(&serialized).await?;
+                    sent_bytes += 4 + len as u64;
 
-                            tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
-                        }
-                        None => {
-                            // Channel closed
-                            break;
-                        }
-                    }
+                    tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                 }
                 anyhow::Ok(())
             },
