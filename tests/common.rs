@@ -1,4 +1,5 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
 use std::collections::HashMap;
 
 use rand::Rng;

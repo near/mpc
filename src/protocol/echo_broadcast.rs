@@ -1,3 +1,6 @@
+// # TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::ProtocolError;
 use crate::protocol::{

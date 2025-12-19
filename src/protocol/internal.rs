@@ -41,6 +41,10 @@
 //! agree on what the identifier for the channels in each part of the protocol is.
 //! This is why we have to take great care that the identifiers a protocol will produce
 //! are deterministic, even in the presence of concurrent tasks.
+
+// # TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
 use futures::future::BoxFuture;
 use futures::lock::Mutex;

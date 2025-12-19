@@ -111,11 +111,8 @@ many-single-char-names = "allow"
 must-use-candidate = "allow"
 return-self-not-must-use = "allow"
 
-# TODO: this also hit too many cases https://github.com/near/threshold-signatures/issues/122
-# should be removed
-indexing-slicing = "allow"
-
 # Part of clippy restriction group
+indexing-slicing = "deny"
 panic = "deny"
 panic-in-result-fn = "warn"
 unwrap-used = "warn"

@@ -1,4 +1,8 @@
 //! This module serves as a wrapper for ECDSA scheme.
+
+// # TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 pub mod ot_based_ecdsa;
 pub mod robust_ecdsa;
 

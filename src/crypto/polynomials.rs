@@ -1,3 +1,6 @@
+// # TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 use frost_core::{
     keys::CoefficientCommitment, serialization::SerializableScalar, Field, Group, Scalar,
 };
@@ -9,7 +12,7 @@ use crate::{errors::ProtocolError, participants::Participant};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Polynomial structure of non-empty or non-zero coefficiants
+/// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.
 pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,

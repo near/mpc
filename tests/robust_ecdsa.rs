@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod common;
 
 use common::{choose_coordinator_at_random, generate_participants, run_keygen};

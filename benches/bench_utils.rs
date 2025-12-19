@@ -1,5 +1,5 @@
-#![allow(dead_code)]
-#![allow(clippy::missing_panics_doc)]
+#![allow(dead_code, clippy::missing_panics_doc, clippy::indexing_slicing)]
+
 use frost_secp256k1::VerifyingKey;
 use k256::AffinePoint;
 use rand::Rng;

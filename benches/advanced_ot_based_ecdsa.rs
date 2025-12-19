@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing)]
+
 use criterion::{criterion_group, Criterion};
 use frost_secp256k1::VerifyingKey;
 use rand::{Rng, RngCore};

@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing)]
+
 use criterion::{criterion_group, Criterion};
 mod bench_utils;
 use crate::bench_utils::{

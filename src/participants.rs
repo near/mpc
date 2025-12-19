@@ -4,6 +4,9 @@
 //! or getting the field values corresponding to each participant, etc.
 //! This module tries to provide useful data structures for doing that.
 
+// # TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 use std::collections::HashMap;
 
 use frost_core::serialization::SerializableScalar;
