@@ -126,6 +126,21 @@ You'll need:
 - **MPC node address**: The host:port where your node is running (e.g., `node.example.com:3000`)
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
 
+### Get Contract State
+
+Before backing up keyshares, you need to query the current contract state and save it:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  state \
+  json-args {} \
+  network-config testnet \
+  now > $BACKUP_HOME_DIR/contract_state.json
+```
+
+This saves the contract state to `contract_state.json`, which the backup-cli uses to determine which keyshares to request.
+
 ### Run the Backup
 
 ```bash
