@@ -584,7 +584,13 @@ pub async fn new_tls_mesh_network(
                                 if let Some(outgoing_conn) =
                                     conn.connectivity.any_outgoing_connection()
                                 {
-                                    let _ = outgoing_conn.sender.send(Packet::Pong(seq));
+                                    if outgoing_conn.sender.send(Packet::Pong(seq)).is_err() {
+                                        tracing::info!(
+                                            "Outgoing connection to {} is dead, closing incoming connection for clean reconnect",
+                                            peer_id
+                                        );
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -635,6 +641,7 @@ pub async fn new_tls_mesh_network(
                         received_bytes, peer_id
                     ));
                 }
+                anyhow::Ok(())
             });
         }
     });
