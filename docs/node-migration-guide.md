@@ -24,14 +24,13 @@ First, you'll need to set up the backup CLI tool and generate keys for the backu
 
 ### Install backup-cli
 
-Build the backup-cli from the repository:
+Install the backup-cli tool using cargo:
 
 ```bash
-cd /path/to/mpc/repository
-cargo build --release -p backup-cli
+cargo install --path /path/to/mpc/repository/crates/backup-cli
 ```
 
-The binary will be available at `target/release/backup-cli`.
+This installs the `backup-cli` binary to your cargo bin directory (typically `~/.cargo/bin`), which should be in your `PATH`.
 
 ### Generate Backup Service Keys
 
@@ -41,7 +40,7 @@ Create a home directory for the backup service and generate its keys:
 export BACKUP_HOME_DIR=/path/to/backup/home
 mkdir -p $BACKUP_HOME_DIR
 
-./target/release/backup-cli \
+backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   generate-keys
 ```
@@ -61,7 +60,7 @@ Before you can backup keyshares, you must register your backup service's public 
 Run the following command to generate the NEAR CLI command for registration:
 
 ```bash
-./target/release/backup-cli \
+backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   register \
   --mpc-contract-account-id v1.signer-prod.testnet \
@@ -105,6 +104,12 @@ echo "Your encryption key: $BACKUP_ENCRYPTION_KEY"
 2. Your **new MPC node** (via the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable)
 3. The **backup-cli** commands (via the `--backup-encryption-key-hex` parameter)
 
+**Note:** If your node has been running without the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable set, the node automatically generates an encryption key and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME` directory. You can retrieve it with:
+
+```bash
+export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME/backup_encryption_key.hex)
+```
+
 Set this environment variable on both your old and new MPC nodes before proceeding:
 
 ```bash
@@ -124,7 +129,7 @@ You'll need:
 ### Run the Backup
 
 ```bash
-./target/release/backup-cli \
+backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
   --mpc-node-address node.example.com:3000 \
@@ -194,7 +199,7 @@ near contract call-function as-transaction \
 Start your new node (which should have `MPC_BACKUP_ENCRYPTION_KEY_HEX` set), then transfer the keyshares:
 
 ```bash
-./target/release/backup-cli \
+backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   put-keyshares \
   --mpc-node-address new-node.example.com:3000 \
