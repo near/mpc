@@ -5,6 +5,7 @@ members = [
     "crates/attestation",
     "crates/backup-cli",
     "crates/ckd-example-cli",
+    "crates/ckd-example-contract",
     "crates/contract",
     "crates/contract-history",
     "crates/contract-interface",
