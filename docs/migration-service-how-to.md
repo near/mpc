@@ -7,3 +7,7 @@ Node operators are responsible for:
 4. **Managing Environment Variables**: Ensure `MPC_BACKUP_ENCRYPTION_KEY_HEX` is consistently set on both MPC node and `backup-cli`
 
 > **Hard Launch**: In hard launch, the backup service runs autonomously in a TEE and requires no manual intervention from operators beyond initial registration.
+
+## Detailed Guide
+
+For complete step-by-step instructions on how to perform a node migration, see the [Node Migration Guide](./node-migration-guide.md).
