@@ -11,18 +11,17 @@ use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
 use frost_ed25519::{aggregate, rand_core, round1, round2, VerifyingKey};
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
     threshold: usize,
     me: Participant,
-    signing_share: &SigningShare,
+    signing_share: SigningShare,
     verifying_key: &VerifyingKey,
 ) -> Result<KeyPackage, ProtocolError> {
     let identifier = me.to_identifier()?;
-    let signing_share = *signing_share;
     let verifying_share = signing_share.into();
 
     Ok(KeyPackage::new(
@@ -63,7 +62,8 @@ async fn do_sign_coordinator(
     let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
 
     // Step 1.1 (and implicitely 1.2)
-    let (mut nonces, commitments) = round1::commit(&signing_share, rng);
+    let (nonces, commitments) = round1::commit(&signing_share, rng);
+    let nonces = Zeroizing::new(nonces);
     commitments_map.insert(me.to_identifier()?, commitments);
 
     // Step 1.3
@@ -87,13 +87,10 @@ async fn do_sign_coordinator(
     // * Wait for each other's signature share
     // Step 2.3 (2.1 and 2.2 are implicit)
     let vk_package = keygen_output.public_key;
-    let mut key_package = construct_key_package(threshold, me, &signing_share, &vk_package)?;
+    let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
+    let key_package = Zeroizing::new(key_package);
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
         .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
-
-    // These contain secret values, so should not remain in memory after this step
-    nonces.zeroize();
-    key_package.zeroize();
 
     // Step 2.5 (2.4 is implicit)
     signature_shares.insert(me.to_identifier()?, signature_share);
@@ -184,7 +181,7 @@ async fn do_sign_participant(
 
     // Step 2.3
     let vk_package = keygen_output.public_key;
-    let key_package = construct_key_package(threshold, me, &signing_share, &vk_package)?;
+    let key_package = construct_key_package(threshold, me, signing_share, &vk_package)?;
     // Ensures the values are zeroized on drop
     let key_package = Zeroizing::new(key_package);
     let signature_share = round2::sign(&signing_package, &nonces, &key_package)
