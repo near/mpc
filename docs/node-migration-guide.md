@@ -178,7 +178,16 @@ near contract call-function as-transaction \
   send
 ```
 
-**Note:** Replace the public keys and URL with your actual new node's values. The `sign_pk` is the P2P public key (Ed25519), and `signer_account_pk` is the NEAR account public key used for signing contract transactions. Note that the JSON has a nested `destination_node_info` field - this matches the contract's structure.
+**Note:** Replace the public keys and URL with your actual new node's values.
+
+**Field Explanations:**
+- `signer_account_pk`: The NEAR account public key (Ed25519) the new node will use to sign contract transactions
+- `destination_node_info` (outer): The complete destination node information struct required by the contract
+- `destination_node_info` (inner/nested): The participant information containing the node's URL and P2P signing key
+- `url`: The HTTP/HTTPS endpoint where the new node will be accessible
+- `sign_pk`: The P2P public key (Ed25519) used for mutual TLS authentication between nodes
+
+**Why the nested naming?** The contract's `DestinationNodeInfo` type has a field named `destination_node_info` of type `ParticipantInfo`. While the naming may seem redundant, it matches the contract's structure and must be used exactly as shown.
 
 ## Step 7: Restore Keyshares to New Node
 
