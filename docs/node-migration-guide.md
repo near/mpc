@@ -24,10 +24,10 @@ First, you'll need to set up the backup CLI tool and generate keys for the backu
 
 ### Install backup-cli
 
-Install the backup-cli tool using cargo:
+Install the backup-cli tool using cargo (run from the repository root):
 
 ```bash
-cargo install --path /path/to/mpc/repository/crates/backup-cli
+cargo install --path crates/backup-cli --locked
 ```
 
 This installs the `backup-cli` binary to your cargo bin directory (typically `~/.cargo/bin`), which should be in your `PATH`.
