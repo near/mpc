@@ -1,7 +1,7 @@
 # Contributing to NEAR MPC
 Thanks for considering contributing to the NEAR MPC network.
 Whether you're an external developer looking to make a contribution
-or a member of the Near One MPC team working in this repo every day,
+or a member of the NEAR One MPC team working in this repo every day,
 this guide should help you understand our workflow and our expectations on contributions.
 
 There are several ways to contribute to the MPC network.
@@ -137,12 +137,12 @@ a good climate to sort these out without blocking critical work:
    explain and motivate their proposals on the same terms as any other
    developer would.
 3. **The PR author has spent the most time with this code and has the final say.**
-   The person with most insight in the current code is the PR author.
+   The person with the most insight in the current code is the PR author.
    As already stated, we should never block a PR unless there are objective
    reasons to do so. If there are any doubts, we should err on the liberal
    side and accept the PR. A single PR is not the end of the world, and
    we'll be able to fix any sub-optimal design decisions in the future.
-4. **Security concerns trumps everything else.**
+4. **Security concerns trump everything else.**
    The exception to the above is if there's any concern about the security of the system.
    Letting through a critical vulnerability may very well be the end of this system.
    We should never merge a PR if there's any doubt about the security of it.
@@ -236,7 +236,7 @@ depending on the compiler. This can lead to unintended behavior and
 it's best to completely avoid them for primitive types in favor of
 explicit methods (`checked_add`, `wrapping_add` etc.).
 
-Note that for custom types these operators may be still fine,
+Note that for custom types these operators may still be fine,
 if they are implemented so that they don't overflow.
 
 For example, typical implementations of cryptographic scalars
@@ -348,7 +348,7 @@ the change was reverted, these tests would fail.
 Currently, we have three types of tests:
 
 - **Unit tests**: Illustrate and assert behavior of individual pieces of functionality.
-- **Crate integration tests**: Test the public interface of a crate to ensure different parts of it works nicely together.
+- **Crate integration tests**: Test the public interface of a crate to ensure different parts of it work nicely together.
 - **System tests**: Test the whole system as a single unit.
 
 All of these are important as they serve different purposes.
