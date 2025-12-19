@@ -316,14 +316,29 @@ impl TlsConnection {
                 let _watchdog_task = watchdog_task;
                 let _watchdog_cancel = watchdog_cancel;
                 let mut sent_bytes: u64 = 0;
-                while let Some(data) = receiver.recv().await {
-                    let serialized = borsh::to_vec(&data)?;
-                    let len: u32 = serialized.len().try_into().context("Message too long")?;
-                    tls_conn.write_u32(len).await?;
-                    tls_conn.write_all(&serialized).await?;
-                    sent_bytes += 4 + len as u64;
+                loop {
+                    tokio::select! {
+                        data = receiver.recv() => {
+                            let Some(data) = data else {
+                                break;
+                            };
+                            let serialized = borsh::to_vec(&data)?;
+                            let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            tls_conn.write_u32(len).await?;
+                            tls_conn.write_all(&serialized).await?;
+                            sent_bytes += 4 + len as u64;
 
-                    tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
+                            tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
+                        }
+                        _ = tls_conn.read_u8() => {
+                            // We do not expect any data from the other side. However,
+                            // selecting on it will quickly return error if the connection
+                            // is broken before we have data to send. That way we can
+                            // immediately quit the loop as soon as the connection is broken
+                            // (so we can reconnect).
+                            break;
+                        }
+                    }
                 }
                 anyhow::Ok(())
             },
@@ -582,6 +597,13 @@ pub async fn new_tls_mesh_network(
                                     let mut state = outgoing_conn.pong_state.lock().unwrap();
                                     if seq > state.last_pong_seq {
                                         let elapsed = state.last_pong_time.elapsed();
+                                        let expected_seq = state.last_pong_seq + 1;
+                                        if seq != expected_seq {
+                                            tracing::warn!(
+                                                "Received pong {} from {}, expected {}, lost {} pong(s)",
+                                                seq, peer_id, expected_seq, seq - expected_seq
+                                            );
+                                        }
                                         state.last_pong_seq = seq;
                                         state.last_pong_time = Instant::now();
                                         tracking::set_progress(&format!(
