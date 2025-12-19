@@ -166,8 +166,7 @@ near contract call-function as-transaction \
       "signer_account_pk": "ed25519:NewNodeSignerPublicKey...",
       "destination_node_info": {
         "url": "https://new-node.example.com:3000",
-        "sign_pk": "ed25519:NewNodeP2PPublicKey...",
-        "cipher_pk": "secp256k1:NewNodeCipherPublicKey..."
+        "sign_pk": "ed25519:NewNodeP2PPublicKey..."
       }
     }
   }' \
@@ -179,7 +178,7 @@ near contract call-function as-transaction \
   send
 ```
 
-**Note:** Replace the public keys and URL with your actual new node's values. The `sign_pk` is the P2P public key, and `signer_account_pk` is the account public key used for signing contract transactions.
+**Note:** Replace the public keys and URL with your actual new node's values. The `sign_pk` is the P2P public key (Ed25519), and `signer_account_pk` is the NEAR account public key used for signing contract transactions. Note that the JSON has a nested `destination_node_info` field - this matches the contract's structure.
 
 ## Step 7: Restore Keyshares to New Node
 
