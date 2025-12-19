@@ -154,31 +154,6 @@ if let Some(z) = x.checked_add(y) {
 }
 ```
 
-## Don't be an `as`
-Many `as` conversions can have unintended behavior.
-Therefore we should not use them in production code.
-Instead, use explicit conversion methods.
-
-```rust
-let x: u64;
-
-// Don't
-let y = x as u128;
-
-// Do
-let y = u128::from(x);
-
-// Don't
-let z = y as u64;
-
-// Do
-if let Ok(z) = u64::try_from(y) {
-   // Do stuff with z
-} else {
-   // Handle error or explain why this will never happen and panic
-}
-```
-
 ## Separate business logic from I/O
 Imagine you're asked to implement a function that
 posts incrementing fibonacci numbers after waiting the
