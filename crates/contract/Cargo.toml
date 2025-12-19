@@ -50,6 +50,7 @@ __abi-generate = ["near-sdk/__abi-generate"]
 
 [dependencies]
 anyhow = { workspace = true }
+assert_matches = { workspace = true }
 borsh = { workspace = true }
 contract-interface = { workspace = true }
 curve25519-dalek = { workspace = true }
@@ -85,7 +86,6 @@ utilities = { workspace = true }
 getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
-assert_matches = { workspace = true }
 cargo-near-build = { workspace = true }
 contract-history = { workspace = true }
 digest = { workspace = true }
