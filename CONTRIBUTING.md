@@ -68,15 +68,18 @@ While there are a few exceptions to this rule, most of our code should be panic-
 Therefore we should avoid calling `.expect()`, `.unwrap()` in production code, as
 well as any other methods that may implicitly or explicitly panic.
 
-The two exceptions to this rule are:
+The three exceptions to this rule are:
 
 1. The top level main function may panic if it is not able to parse arguments,
    configuration or anything else needed to start the node in the first place.
-2. Code paths that are guaranteed to be dead by runtime invariants.
+2. In the smart contract, as panicking ensures no side-effects happen in the transaction.
+3. Code paths that are guaranteed to be dead by runtime invariants.
+
 
 In the first case there's no harm in panicking since the node hasn't started.
+The second one is the convention of NEAR smart contracts.
 
-The second case is more subtle and debatable.
+However, the third case is more subtle and debatable.
 We should minimize dead code paths, but occasionally it's possible to hit
 scenarios when you can guarantee that a panic won't occur.
 
