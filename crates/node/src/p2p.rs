@@ -30,6 +30,10 @@ use tracing::info;
 ///  the cost of higher packet overhead.
 const TCP_NODELAY: bool = true;
 
+// const TCP_CONNECTION_KEEPALIVE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+// const TCP_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+// const TCP_CONNECTION_RETRIES: u32 = 3;
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -114,6 +118,17 @@ impl TlsConnection {
             .await
             .context("TCP connect")?;
 
+        // let socket = socket2::Socket::from(conn.into_std()?);
+        // let keepalive = socket2::TcpKeepalive::new()
+        //     .with_time(TCP_CONNECTION_KEEPALIVE_DELAY)
+        //     .with_interval(TCP_CONNECTION_RETRY_DELAY)
+        //     .with_retries(TCP_CONNECTION_RETRIES);
+
+        // socket
+        //     .set_tcp_keepalive(&keepalive)
+        //     .context("failed to set TCP keepalive")?;
+        // let conn = TcpStream::from_std(socket.into())?;
+
         conn.set_nodelay(TCP_NODELAY)
             .context("failed to enable `TCP_NODELAY`")?;
 
@@ -178,9 +193,11 @@ impl TlsConnection {
             async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tracing::debug!("Sending ping");
                     if sender_clone.send(Packet::Ping).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
+                        tracing::debug!("Sending ping failed");
                         break;
                     }
                 }
@@ -369,7 +386,19 @@ pub async fn new_tls_mesh_network(
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
-            tasks.spawn_checked::<_, ()>("Handle connection", async move {
+            tasks.spawn_checked::<_, ()>("connection handler tls mesh network", async move {
+                // let socket = socket2::Socket::from(tcp_stream.into_std()?);
+
+                // let keepalive = socket2::TcpKeepalive::new()
+                //     .with_time(TCP_CONNECTION_KEEPALIVE_DELAY)
+                //     .with_interval(TCP_CONNECTION_RETRY_DELAY)
+                //     .with_retries(TCP_CONNECTION_RETRIES);
+
+                // socket
+                //     .set_tcp_keepalive(&keepalive)
+                //     .context("failed to set TCP keepalive")?;
+
+                // let tcp_stream = tokio::net::TcpStream::from_std(socket.into())?;
                 tcp_stream
                     .set_nodelay(TCP_NODELAY)
                     .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
@@ -914,5 +943,62 @@ mod tests {
         let mut ids = ids.to_vec();
         ids.sort();
         ids
+    }
+
+    #[tokio::test]
+    async fn test_asymmetric_disconnections() {
+        init_logging(LogFormat::Plain);
+        let mut configs = generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            None,
+        )
+        .unwrap();
+
+        let all_participants = |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+        start_root_task_with_periodic_dump(async move {
+            let (sender0, _receiver0) = super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
+                .await
+                .unwrap();
+            let (sender1, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
+
+            let participants = all_participants(&configs[0].0);
+            assert_eq!(&participants, &all_participants(&configs[1].0));
+            let p0 = participants[0];
+            let p1 = participants[1];
+
+            sender0.wait_for_ready(2, &participants).await.unwrap();
+            sender1.wait_for_ready(2, &participants).await.unwrap();
+
+            assert!(sender0.connectivity(p1).is_bidirectionally_connected());
+            assert!(sender1.connectivity(p0).is_bidirectionally_connected());
+
+            tracing::debug!(
+                "{} {}",
+                sender0.connectivity(p1).is_bidirectionally_connected(),
+                sender1.connectivity(p0).is_bidirectionally_connected()
+            );
+
+            configs[1].0.participants.participants[1].port += 100;
+            let (sender1_2, _receiver1) = super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            assert!(sender0.connectivity(p1).is_bidirectionally_connected());
+            assert!(sender1.connectivity(p0).is_bidirectionally_connected());
+            assert!(!sender1_2.connectivity(p0).is_bidirectionally_connected());
+        })
+        .await;
     }
 }
