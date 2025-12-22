@@ -48,6 +48,18 @@ def pytest_addoption(parser):
         default=False,
         help="Enable non-reproducible contract build",
     )
+    parser.addoption(
+        "--skip-mpc-node-build",
+        action="store_true",
+        default=False,
+        help="Enable mpc-node build",
+    )
+    parser.addoption(
+        "--skip-nearcore-build",
+        action="store_true",
+        default=False,
+        help="Enable nearcore build",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -67,6 +79,87 @@ def current_contracts():
         }
 
 
+@pytest.fixture(scope="session", autouse=True)
+def compile_mpc_node(request):
+    """
+    This function compiles the mpc-node
+    """
+    skip_mpc_node_build = request.config.getoption("--skip-mpc-node-build")
+
+    if not skip_mpc_node_build:
+        print("compiling mpc-node")
+
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "-p",
+                "mpc-node",
+                "--release",
+                "--features",
+                "network-hardship-simulation",
+                "--locked",
+            ],
+            check=True,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def compile_nearcore(request):
+    """
+    This function compiles the mpc-node
+    """
+    skip_nearcore_build = request.config.getoption("--skip-nearcore-build")
+
+    if not skip_nearcore_build:
+        nearcore_path = git_root() / "libs" / "nearcore"
+        current_path = os.getcwd()
+        os.chdir(nearcore_path)
+
+        print("compiling nearcore")
+
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "-p",
+                "neard",
+                "--release",
+                "--locked",
+            ],
+            check=True,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+
+        os.chdir(current_path)
+
+
+@pytest.fixture(scope="session")
+def compile_backup_cli():
+    """
+    This function compiles the backup-cli
+    """
+
+    print("compiling backup-cli")
+
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "-p",
+            "backup-cli",
+            "--release",
+            "--locked",
+        ],
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+
 def compile_contract_common(contract_package_name: str):
     """
     This function compiles a contract using cargo build and wasm-opt for optimization.
@@ -82,6 +175,7 @@ def compile_contract_common(contract_package_name: str):
             contract_package_name,
             "--target=wasm32-unknown-unknown",
             "--profile=release-contract",
+            "--locked",
         ],
         check=True,
         stdout=sys.stdout,

@@ -11,6 +11,8 @@
 #   --reset-submodules : Resets git submodules.
 #   --verbose          : Enables detailed log output.
 #   --non-reproducible : Disables reproducible contract build
+#   --skip-mpc-node-build : Disables mpc-node build
+#   --skip-nearcore-build : Disables nearcore build
 #
 # Example:
 #   bash exec_pytest.sh --reset-submodules --verbose --non-reproducible
@@ -72,6 +74,8 @@ REQ_DIRS=(
 RESET_SUBMODULES=false
 VERBOSE=false
 NON_REPRODUCIBLE=false
+SKIP_MPC_NODE_BUILD=false
+SKIP_NEARCORE_BUILD=false
 for arg in "$@"; do
     case $arg in
     --reset-submodules)
@@ -83,6 +87,12 @@ for arg in "$@"; do
         ;;
     --non-reproducible)
         NON_REPRODUCIBLE=true
+        ;;
+    --skip-mpc-node-build)
+        SKIP_MPC_NODE_BUILD=true
+        ;;
+    --skip-nearcore-build)
+        SKIP_NEARCORE_BUILD=true
         ;;
     *)
         printf "\nError: Unknown argument: %s, $arg\n"
@@ -108,22 +118,13 @@ if [ $RESET_SUBMODULES == true ]; then
     fi
 fi
 
-printf "\nBuilding nearcore"
-if ! log_output bash -c "cd '$LIB_DIR/nearcore' && cargo build --quiet --color=always -p neard --release"; then
-    echo "Cargo failed to complete nearcore compilation"
-    exit 1
+
+if ! $SKIP_NEARCORE_BUILD; then
+    PYTEST_FLAGS+=" --skip-nearcore-build"
 fi
 
-printf "\nBuilding main node"
-if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p mpc-node --release --features=network-hardship-simulation"; then
-    echo "Cargo failed to complete mpc node compilation:"
-    exit 1
-fi
-
-printf "\nBuilding backup cli"
-if ! log_output bash -c "cd '$GIT_ROOT' && cargo build --quiet --color=always -p backup-cli --release"; then
-    echo "Cargo failed to complete backup cli compilation:"
-    exit 1
+if ! $SKIP_MPC_NODE_BUILD; then
+    PYTEST_FLAGS+=" --skip-mpc-node-build"
 fi
 
 printf "\nChecking if virtual environment exists"

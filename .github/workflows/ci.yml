@@ -265,12 +265,6 @@ jobs:
           cd libs/nearcore
           cargo build -p neard --release
 
-      - name: Build mpc node
-        run: cargo build -p mpc-node --release --features=network-hardship-simulation --locked
-
-      - name: Build backup-cli
-        run: cargo build -p backup-cli --release --locked
-
       - name: Install cargo-binstall
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
@@ -308,7 +302,7 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest 
-          pytest -m "not ci_excluded" -s -x
+          pytest -m "not ci_excluded" -s -x --skip-nearcore-build
 
   tee-launcher-tests:
     name: "TEE Launcher: pytests"

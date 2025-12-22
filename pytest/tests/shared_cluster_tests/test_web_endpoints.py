@@ -58,7 +58,7 @@ def test_web_endpoints(shared_cluster: shared.MpcCluster):
 
 
 @pytest.mark.no_atexit_cleanup
-def test_migration_endpiont(shared_cluster: shared.MpcCluster):
+def test_migration_endpoint(shared_cluster: shared.MpcCluster):
     expected_migrations = MigrationState(state_by_account={})
     for node in shared_cluster.mpc_nodes:
         socket_address: str = str(node.web_address)
