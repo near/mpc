@@ -315,6 +315,11 @@ impl TlsConnection {
                                     "Received pong {} from {}, RTT: {:?}",
                                     pong_info.seq, target_participant_id, rtt
                                 ));
+                            } else {
+                                tracing::warn!(
+                                    "Received stale pong {} from {}, already received {}",
+                                    pong_info.seq, target_participant_id, last_received_pong_seq
+                                );
                             }
                             continue;
                         }
