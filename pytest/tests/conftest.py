@@ -139,7 +139,6 @@ def compile_nearcore(request):
 
 @pytest.fixture(scope="session")
 def compile_backup_cli():
-
     print("compiling backup-cli")
 
     subprocess.run(
