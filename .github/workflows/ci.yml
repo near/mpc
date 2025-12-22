@@ -302,6 +302,7 @@ jobs:
         run: |
           source pytest/venv/bin/activate
           cd pytest 
+          # `neard` is already downloaded in the step, `download-neard`, above
           pytest -m "not ci_excluded" -s -x --skip-nearcore-build
 
   tee-launcher-tests:
