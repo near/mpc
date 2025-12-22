@@ -39,7 +39,7 @@ use crate::{
 /// peer in the network. When the application wants to send a message to a peer, it queues the
 /// message through the corresponding [`PersistentConnection`], which handles automatic
 /// reconnection if the connection drops. Each connection runs two background tasks: one for
-/// sending data, and one for sending periodic ping heartbeats and monitoring pong responses.
+/// sending data, and one for sending 1-second interval ping heartbeats and monitoring pong responses.
 ///
 /// Implements the [`MeshNetworkTransportSender`] trait to provide a high-level API for sending
 /// messages (`.send()`, `.send_indexer_height()`) and checking connectivity status
@@ -157,12 +157,13 @@ struct TlsConnection {
     _sender_task: AutoAbortTask<()>,
     /// Background task that sends Ping heartbeats and monitors Pong responses.
     ///
-    /// Unlike classical ping which sends at fixed intervals, this task sends a Ping with an
-    /// incrementing sequence number and then waits for either a Pong response (via the `pong_tx`
-    /// watch channel) or a timeout. When a Pong is received, it validates the sequence number,
-    /// calculates RTT, and immediately sends the next Ping. If no Pong is received within
-    /// [`Self::PONG_TIMEOUT`] (5 seconds), it closes the connection by cancelling the `closed`
-    /// token. This approach ensures pings are only sent when the connection is responsive.
+    /// This task sends a Ping with an incrementing sequence number and then waits for either a
+    /// Pong response (via the `pong_tx` watch channel) or a timeout. When a Pong is received,
+    /// it validates the sequence number, calculates RTT, and waits until [`Self::PING_INTERVAL`]
+    /// (1 second) has elapsed since the ping was sent before sending the next one. If no Pong is
+    /// received within [`Self::PONG_TIMEOUT`] (5 seconds), it closes the connection by cancelling
+    /// the `closed` token. This ensures pings are sent at exactly 1-second intervals while only
+    /// sending when the previous ping received a response.
     _keepalive_task: AutoAbortTask<()>,
     /// Watch channel sender for receiving pong notifications from the incoming connection handler.
     ///
@@ -211,6 +212,10 @@ impl TlsConnection {
 
     /// If we don't receive a pong response within this time, consider the connection dead.
     const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    /// Interval between consecutive pings. A new ping is sent 1 second after the previous
+    /// ping was sent, but only after receiving its pong response.
+    const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
@@ -300,7 +305,7 @@ impl TlsConnection {
                     tokio::select! {
                         _ = pong_rx.changed() => {
                             // Pong received, validate and calculate RTT
-                            let pong_info = pong_rx.borrow();
+                            let pong_info = *pong_rx.borrow_and_update();
                             if pong_info.seq > last_received_pong_seq {
                                 let expected_seq = last_received_pong_seq + 1;
                                 if pong_info.seq != expected_seq {
@@ -316,12 +321,16 @@ impl TlsConnection {
                                     pong_info.seq, target_participant_id, rtt
                                 ));
                             } else {
-                                tracing::warn!(
+                                tracing::debug!(
                                     "Received stale pong {} from {}, already received {}",
                                     pong_info.seq, target_participant_id, last_received_pong_seq
                                 );
                             }
-                            continue;
+                            // Wait until PING_INTERVAL has elapsed since ping was sent
+                            let elapsed = ping_sent_at.elapsed();
+                            if elapsed < Self::PING_INTERVAL {
+                                tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
+                            }
                         }
                         _ = tokio::time::sleep(Self::PONG_TIMEOUT) => {
                             tracing::warn!(
@@ -413,7 +422,7 @@ impl PersistentConnection {
                                 my_id,
                                 target_participant_id
                             );
-                            new_conn
+                            Arc::new(new_conn)
                         }
                         Err(e) => {
                             tracing::info!(
@@ -428,7 +437,6 @@ impl PersistentConnection {
                             continue;
                         }
                     };
-                    let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
                 }
@@ -579,7 +587,11 @@ pub async fn new_tls_mesh_network(
                                 {
                                     // Send the new pong info via watch channel
                                     let _ = outgoing_conn.pong_tx.send(PongInfo { seq });
+                                } else {
+                                    tracing::warn!("No outgoing connection to {} to forward Pong({})", peer_id, seq);
                                 }
+                            } else {
+                                tracing::warn!("No connection found for peer {} to forward Pong({})", peer_id, seq);
                             }
                         }
                         Packet::MpcMessage(mpc_message) => {
