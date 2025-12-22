@@ -274,47 +274,11 @@ impl TlsConnection {
         }));
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
-        let pong_state_clone = pong_state.clone();
-
-        // Watchdog task that monitors for pong timeouts
-        let watchdog_cancel = CancellationToken::new();
-        let watchdog_cancel_clone = watchdog_cancel.clone();
-        let closed_for_watchdog = closed.clone();
-        let watchdog_task = tracking::spawn(
-            &format!("Pong watchdog for {}", target_participant_id),
-            async move {
-                loop {
-                    tokio::select! {
-                        _ = tokio::time::sleep(Self::PONG_TIMEOUT) => {
-                            // Timeout - close the connection
-                            let elapsed = {
-                                let state = pong_state_clone.lock().unwrap();
-                                state.last_pong_time.elapsed()
-                            };
-                            if elapsed > Self::PONG_TIMEOUT {
-                                tracing::warn!(
-                                    "No pong received from {} for {:?}, closing connection",
-                                    target_participant_id,
-                                    elapsed
-                                );
-                                closed_for_watchdog.cancel();
-                                break;
-                            }
-                        }
-                        _ = watchdog_cancel_clone.cancelled() => {
-                            break;
-                        }
-                    }
-                }
-            },
-        );
 
         let sender_task = tracking::spawn_checked(
             &format!("TLS connection to {}", target_participant_id),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
-                let _watchdog_task = watchdog_task;
-                let _watchdog_cancel = watchdog_cancel;
                 let mut sent_bytes: u64 = 0;
                 loop {
                     tokio::select! {
@@ -344,12 +308,30 @@ impl TlsConnection {
             },
         );
         let sender_clone = sender.clone();
+        let pong_state_clone = pong_state.clone();
+        let closed_for_keepalive = closed.clone();
         let keepalive_task = tracking::spawn(
             &format!("Ping sender for {}", target_participant_id),
             async move {
                 let mut seq: u64 = 0;
                 loop {
                     tokio::time::sleep(Self::PING_INTERVAL).await;
+
+                    // Check for pong timeout
+                    let elapsed = {
+                        let state = pong_state_clone.lock().unwrap();
+                        state.last_pong_time.elapsed()
+                    };
+                    if elapsed > Self::PONG_TIMEOUT {
+                        tracing::warn!(
+                            "No pong received from {} for {:?}, closing connection",
+                            target_participant_id,
+                            elapsed
+                        );
+                        closed_for_keepalive.cancel();
+                        break;
+                    }
+
                     seq += 1;
                     if sender_clone.send(Packet::Ping(seq)).is_err() {
                         // The receiver side will be dropped when the sender task is
