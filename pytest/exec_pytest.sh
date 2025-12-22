@@ -66,7 +66,6 @@ fi
 echo "Git repository root: $GIT_ROOT"
 PYTEST_DIR="$GIT_ROOT/pytest"
 VENV_DIR="$PYTEST_DIR/venv"
-LIB_DIR="$GIT_ROOT/libs"
 
 REQ_DIRS=(
     "$PYTEST_DIR/requirements.txt"
@@ -119,11 +118,11 @@ if [ $RESET_SUBMODULES == true ]; then
 fi
 
 
-if ! $SKIP_NEARCORE_BUILD; then
+if $SKIP_NEARCORE_BUILD; then
     PYTEST_FLAGS+=" --skip-nearcore-build"
 fi
 
-if ! $SKIP_MPC_NODE_BUILD; then
+if $SKIP_MPC_NODE_BUILD; then
     PYTEST_FLAGS+=" --skip-mpc-node-build"
 fi
 

@@ -82,7 +82,7 @@ def current_contracts():
 @pytest.fixture(scope="session", autouse=True)
 def compile_mpc_node(request):
     """
-    This function compiles the mpc-node
+    This function compiles the mpc-node unless `--skip-mpc-node-build` is present
     """
     skip_mpc_node_build = request.config.getoption("--skip-mpc-node-build")
 
@@ -109,7 +109,7 @@ def compile_mpc_node(request):
 @pytest.fixture(scope="session", autouse=True)
 def compile_nearcore(request):
     """
-    This function compiles the mpc-node
+    This function compiles nearcore unless `--skip-nearcore-build` is present
     """
     skip_nearcore_build = request.config.getoption("--skip-nearcore-build")
 
@@ -139,9 +139,6 @@ def compile_nearcore(request):
 
 @pytest.fixture(scope="session")
 def compile_backup_cli():
-    """
-    This function compiles the backup-cli
-    """
 
     print("compiling backup-cli")
 
