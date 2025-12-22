@@ -405,3 +405,25 @@ jobs:
       - name: Check github actions with zizmor
         run: |
           zizmor .github/
+
+  cargo-deny:
+    name: "cargo-deny check"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
+        with:
+          tool: cargo-deny@0.18.9
+
+      - name: cargo-deny check
+        run: |
+          cargo deny --all-features check
