@@ -7,6 +7,7 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
+  "cargo-deny",
   "zizmor",
   "check",
   "clippy",
@@ -21,6 +22,7 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
+  "cargo-deny",
   "zizmor",
   "check",
   "clippy",
@@ -82,6 +84,11 @@ args = [".github/"]
 [tasks.crate-names]
 command = "sh"
 args = ["scripts/check-crates-kebab-case.sh"]
+
+[tasks.cargo-deny]
+description = "Run cargo deny"
+command = "cargo"
+args = ["deny", "--all-features", "check"]
 
 [config]
 default_to_workspace = false
