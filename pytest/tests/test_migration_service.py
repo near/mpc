@@ -58,7 +58,7 @@ def running_state_matches_participant_key(
     return False
 
 
-def test_migration_service():
+def test_migration_service(compile_backup_cli):
     """
     Spawns a cluster with two nodes.
     Migrates each node one by one to a new node.
