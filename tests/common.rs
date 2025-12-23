@@ -8,10 +8,11 @@ use rand_core::OsRng;
 use threshold_signatures::{
     self,
     errors::ProtocolError,
+    frost_core::VerifyingKey,
     keygen,
     participants::Participant,
     protocol::{Action, Protocol},
-    Ciphersuite, Element, KeygenOutput, Scalar,
+    reshare, Ciphersuite, Element, KeygenOutput, Scalar,
 };
 
 pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
@@ -87,6 +88,59 @@ where
         .map(|p| {
             let protocol: Box<dyn Protocol<Output = KeygenOutput<C>>> =
                 Box::new(keygen::<C>(participants, *p, threshold, OsRng).unwrap());
+            (*p, protocol)
+        })
+        .collect();
+
+    run_protocol(protocols).unwrap().into_iter().collect()
+}
+
+#[allow(clippy::missing_panics_doc)]
+pub fn run_reshare<C: Ciphersuite>(
+    participants: &[Participant],
+    pub_key: &VerifyingKey<C>,
+    keys: &[(Participant, KeygenOutput<C>)],
+    old_threshold: usize,
+    new_threshold: usize,
+    new_participants: &[Participant],
+) -> HashMap<Participant, KeygenOutput<C>>
+where
+    Element<C>: Send,
+    Scalar<C>: Send,
+{
+    assert!(!new_participants.is_empty());
+    let mut setup = vec![];
+
+    for new_participant in new_participants {
+        let mut is_break = false;
+        for (p, k) in keys {
+            if p == new_participant {
+                setup.push((*p, (Some(k.private_share), k.public_key)));
+                is_break = true;
+                break;
+            }
+        }
+        if !is_break {
+            setup.push((*new_participant, (None, *pub_key)));
+        }
+    }
+
+    let protocols: GenProtocol<KeygenOutput<C>> = setup
+        .iter()
+        .map(|(p, out)| {
+            let protocol: Box<dyn Protocol<Output = KeygenOutput<C>>> = Box::new(
+                reshare(
+                    participants,
+                    old_threshold,
+                    out.0,
+                    out.1,
+                    new_participants,
+                    new_threshold,
+                    *p,
+                    OsRng,
+                )
+                .unwrap(),
+            );
             (*p, protocol)
         })
         .collect();

@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod common;
 
-use common::{choose_coordinator_at_random, generate_participants, run_keygen};
+use common::{choose_coordinator_at_random, generate_participants, run_keygen, run_reshare};
 use std::collections::HashMap;
 
 use rand_core::{OsRng, RngCore};
@@ -20,7 +20,7 @@ use threshold_signatures::{
     Element, ParticipantList,
 };
 
-// TODO: This is required to use Scalar::from_repr
+// Note: This is required to use Scalar::from_repr
 use elliptic_curve::ff::PrimeField;
 
 use crate::common::{run_protocol, GenProtocol};
@@ -153,7 +153,7 @@ fn test_sign() {
     let keys = run_keygen(&participants, threshold);
     assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
-    let presign_result = run_presign(keys, max_malicious);
+    let presign_result = run_presign(keys.clone(), max_malicious);
 
     let msg_hash = *b"hello worldhello worldhello worl";
     // generate a random tweak
@@ -166,7 +166,7 @@ fn test_sign() {
     let signature =
         run_sign_with_rerandomization(&presign_result, public_key, msg_hash, tweak, entropy);
 
-    // TODO: this interface to check a signature is clearly sub-optimal
+    // Note: this interface to check a signature is clearly sub-optimal
     let msg_hash_scalar = Scalar::from_repr(msg_hash.into())
         .into_option()
         .expect("Couldn't construct k256 point");
@@ -178,4 +178,22 @@ fn test_sign() {
 
     let derived_pk = tweak.derive_verifying_key(&public_key).to_element();
     assert!(signature.verify(&derived_pk.to_affine(), &msg_hash_scalar));
+
+    let participant_keys = keys.into_iter().collect::<Vec<_>>();
+
+    let mut new_participants = participants.clone();
+    new_participants.push(Participant::from(20u32));
+    let new_threshold = 6;
+
+    let new_keys = run_reshare(
+        &participants,
+        &public_key,
+        participant_keys.as_slice(),
+        threshold,
+        new_threshold,
+        &new_participants,
+    );
+    let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;
+
+    assert_eq!(public_key, new_public_key);
 }

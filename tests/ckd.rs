@@ -2,11 +2,14 @@ mod common;
 
 use rand_core::OsRng;
 
-use common::{choose_coordinator_at_random, generate_participants, run_keygen};
-use threshold_signatures::confidential_key_derivation::{
-    ciphersuite::{verify_signature, Field, G1Projective, Group},
-    protocol::ckd,
-    AppId, CKDOutputOption,
+use common::{choose_coordinator_at_random, generate_participants, run_keygen, run_reshare};
+use threshold_signatures::{
+    confidential_key_derivation::{
+        ciphersuite::{verify_signature, Field, G1Projective, Group},
+        protocol::ckd,
+        AppId, CKDOutputOption,
+    },
+    participants::Participant,
 };
 
 use crate::common::{run_protocol, GenProtocol};
@@ -26,18 +29,18 @@ fn test_ckd() {
     let threshold = 2;
     let participants = generate_participants(3);
 
-    let result = run_keygen(&participants, threshold);
+    let keys = run_keygen(&participants, threshold);
 
-    assert!(result.len() == participants.len());
+    assert!(keys.len() == participants.len());
 
-    let public_key = result.get(&participants[0]).unwrap().public_key;
+    let public_key = keys.get(&participants[0]).unwrap().public_key;
 
     let coordinator = choose_coordinator_at_random(&participants);
 
     let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
 
     for p in &participants {
-        let key_pair = result.get(p).unwrap();
+        let key_pair = keys.get(p).unwrap();
 
         let protocol = ckd(
             &participants,
@@ -70,4 +73,22 @@ fn test_ckd() {
     // compute msk . H(app_id)
     let confidential_key = ckd.unmask(app_sk);
     assert!(verify_signature(&public_key, &app_id, &confidential_key).is_ok());
+
+    let participant_keys = keys.into_iter().collect::<Vec<_>>();
+
+    let mut new_participants = participants.clone();
+    new_participants.push(Participant::from(20u32));
+    let new_threshold = 3;
+
+    let new_keys = run_reshare(
+        &participants,
+        &public_key,
+        participant_keys.as_slice(),
+        threshold,
+        new_threshold,
+        &new_participants,
+    );
+    let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;
+
+    assert_eq!(public_key, new_public_key);
 }

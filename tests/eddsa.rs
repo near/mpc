@@ -1,7 +1,10 @@
 #![allow(clippy::unwrap_used)]
 mod common;
 
-use common::{choose_coordinator_at_random, generate_participants, run_keygen};
+use common::{
+    choose_coordinator_at_random, generate_participants, run_keygen, run_protocol, run_reshare,
+    GenProtocol,
+};
 
 use rand_core::OsRng;
 
@@ -10,8 +13,6 @@ use threshold_signatures::{
     eddsa::{sign::sign, Ed25519Sha512, SignatureOption},
     participants::Participant,
 };
-
-use crate::common::{run_protocol, GenProtocol};
 
 type C = Ed25519Sha512;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;
@@ -46,16 +47,20 @@ fn run_sign(
 #[test]
 fn test_sign() {
     let participants = generate_participants(5);
-    let max_malicious = 3;
-    let threshold = max_malicious + 1;
+    let threshold = 4;
     let keys = run_keygen::<C>(&participants, threshold);
     assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
 
     let msg_hash = *b"hello worldhello worldhello worlregerghwhrth";
     let coordinator = choose_coordinator_at_random(&participants);
-    let participants = keys.into_iter().collect::<Vec<_>>();
-    let all_sigs = run_sign(threshold, participants.as_slice(), coordinator, &msg_hash);
+    let participant_keys = keys.into_iter().collect::<Vec<_>>();
+    let all_sigs = run_sign(
+        threshold,
+        participant_keys.as_slice(),
+        coordinator,
+        &msg_hash,
+    );
 
     let signature = all_sigs
         .into_iter()
@@ -67,4 +72,20 @@ fn test_sign() {
         .unwrap();
 
     assert!(public_key.verify(&msg_hash, &signature).is_ok());
+
+    let mut new_participants = participants.clone();
+    new_participants.push(Participant::from(20u32));
+    let new_threshold = 5;
+
+    let new_keys = run_reshare(
+        &participants,
+        &public_key,
+        participant_keys.as_slice(),
+        threshold,
+        new_threshold,
+        &new_participants,
+    );
+    let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;
+
+    assert_eq!(public_key, new_public_key);
 }
