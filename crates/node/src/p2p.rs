@@ -441,12 +441,12 @@ impl PersistentConnection {
                         }
                     };
                     connectivity.set_outgoing_connection(&new_conn);
-                    
+
                     // Drain buffered Pongs and send them now that connection is available
                     while let Ok(seq) = pong_buffer_rx.try_recv() {
                         let _ = new_conn.sender.send(Packet::Pong(seq));
                     }
-                    
+
                     new_conn.wait_for_close().await;
                 }
             },
