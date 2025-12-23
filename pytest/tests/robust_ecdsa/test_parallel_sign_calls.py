@@ -19,7 +19,6 @@ from common_lib.contracts import load_parallel_sign_contract
 
 @pytest.mark.parametrize("num_parallel_requests", [3])
 @pytest.mark.no_atexit_cleanup
-@pytest.mark.skip
 def test_parallel_sign_calls(
     compile_parallel_contract, num_parallel_requests, shared_cluster: shared.MpcCluster
 ):
