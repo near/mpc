@@ -1,3 +1,6 @@
+// TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 pub mod presign;
 pub mod sign;
 pub mod triples;

@@ -1,6 +1,3 @@
-// # TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use frost_core::{
     keys::CoefficientCommitment, serialization::SerializableScalar, Field, Group, Scalar,
 };
@@ -34,15 +31,21 @@ impl<C: Ciphersuite> Polynomial<C> {
             .rev()
             .take_while(|x| *x == &<C::Group as Group>::Field::zero())
             .count();
-        if count == coefficients.len() {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
+
         // get the degree + 1 of the polynomial
         let last_non_null = coefficients.len() - count;
 
-        Ok(Self {
-            coefficients: coefficients[..last_non_null].to_vec(),
-        })
+        let new_coefficients = coefficients
+            .get(..last_non_null)
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)?
+            .to_vec();
+        if new_coefficients.is_empty() {
+            Err(ProtocolError::EmptyOrZeroCoefficients)
+        } else {
+            Ok(Self {
+                coefficients: new_coefficients,
+            })
+        }
     }
 
     /// Returns the coefficients of the polynomial
@@ -88,10 +91,12 @@ impl<C: Ciphersuite> Polynomial<C> {
 
     /// Returns the constant term or error in case the polynomial is empty
     pub fn eval_at_zero(&self) -> Result<SerializableScalar<C>, ProtocolError> {
-        if self.coefficients.is_empty() {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
-        Ok(SerializableScalar(self.coefficients[0]))
+        let result = self
+            .coefficients
+            .first()
+            .copied()
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)?;
+        Ok(SerializableScalar(result))
     }
 
     /// Evaluates a polynomial at a certain scalar
@@ -172,15 +177,19 @@ impl<C: Ciphersuite> Polynomial<C> {
     }
 
     /// Set the constant value of this polynomial to a new scalar
-    /// Abort if the output polynomial is zero or empty
+    /// Abort if the output polynomial would be zero or empty
     pub fn set_nonzero_constant(&mut self, v: Scalar<C>) -> Result<(), ProtocolError> {
-        if self.coefficients.is_empty()
-            || (self.coefficients.len() == 1 && v == <C::Group as Group>::Field::zero())
-        {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
-        self.coefficients[0] = v;
-        Ok(())
+        let coefficients_len = self.coefficients.len();
+        self.coefficients
+            .first_mut()
+            .map_or(Err(ProtocolError::EmptyOrZeroCoefficients), |first| {
+                if v == <C::Group as Group>::Field::zero() && coefficients_len == 1 {
+                    Err(ProtocolError::EmptyOrZeroCoefficients)
+                } else {
+                    *first = v;
+                    Ok(())
+                }
+            })
     }
 
     /// Extends the Polynomial with an extra value as a constant
@@ -198,7 +207,7 @@ impl<C: Ciphersuite> Polynomial<C> {
 }
 
 /******************* Polynomial Commitment *******************/
-/// Contains the commited coefficients of a polynomial i.e. coeff * G
+/// Contains the committed coefficients of a polynomial i.e. coeff * G
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolynomialCommitment<C: Ciphersuite> {
     /// The committed coefficients which are group elements
@@ -210,22 +219,20 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
     /// Creates a `PolynomialCommitment` out of a vector of `CoefficientCommitment`
     /// This function raises Error if the vector is empty or if it is the all identity vector
     pub fn new(coefcommitments: &[CoefficientCommitment<C>]) -> Result<Self, ProtocolError> {
-        if coefcommitments.is_empty() {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
-        // count the number of zero coeffs before spotting the first non-zero
+        // count the number of zero coeffs before spotting the first non-zero from the back
         let count = coefcommitments
             .iter()
-            .rev()
-            .take_while(|x| x.value() == C::Group::identity())
-            .count();
-        if count == coefcommitments.len() {
+            .rposition(|x| x.value() != C::Group::identity())
+            .map_or(0, |i| i + 1);
+
+        if count == 0 {
             return Err(ProtocolError::EmptyOrZeroCoefficients);
         }
-        // get the number of non-identity coeffs
-        let last_non_id = coefcommitments.len() - count;
+
+        let new_coefficients: Vec<_> = coefcommitments.iter().take(count).copied().collect();
+
         Ok(Self {
-            coefficients: coefcommitments[..last_non_id].to_vec(),
+            coefficients: new_coefficients,
         })
     }
 
@@ -234,7 +241,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         self.coefficients.clone()
     }
 
-    /// Outputs the degree of the commited polynomial
+    /// Outputs the degree of the committed polynomial
     pub fn degree(&self) -> usize {
         self.coefficients.len() - 1
     }
@@ -267,16 +274,16 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         Self::new(&coefficients)
     }
 
-    /// Evaluates the commited polynomial on zero (outputs the constant term)
+    /// Evaluates the committed polynomial on zero (outputs the constant term)
     /// Returns error if the polynomial is empty
     pub fn eval_at_zero(&self) -> Result<CoefficientCommitment<C>, ProtocolError> {
-        if self.coefficients.is_empty() {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
-        Ok(self.coefficients[0])
+        self.coefficients
+            .first()
+            .copied()
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)
     }
 
-    /// Evaluates the commited polynomial at a specific value
+    /// Evaluates the committed polynomial at a specific value
     pub fn eval_at_point(
         &self,
         point: Scalar<C>,
@@ -291,7 +298,7 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
         Ok(CoefficientCommitment::new(out))
     }
 
-    /// Evaluates the commited polynomial at a participant identifier.
+    /// Evaluates the committed polynomial at a participant identifier.
     pub fn eval_at_participant(
         &self,
         participant: Participant,
@@ -301,12 +308,12 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
     }
 
     /// Computes polynomial interpolation on the exponent at a specific point
-    /// using a sequence of sorted coefficient commitments
+    /// using a sequence of sorted coefficient commitments.
     /// Input requirements:
     ///     * identifiers MUST be pairwise distinct and of length greater than 1
     ///     * shares and identifiers must be of same length
     ///     * identifier[i] corresponds to share[i]
-    // Returns error if shares' and identifiers' lengths are distinct or less than or equals to 1
+    // Returns error if shares' and identifiers' lengths are distinct or less than or equals to 1.
     pub fn eval_exponent_interpolation(
         identifiers: &[Scalar<C>],
         shares: &[CoefficientCommitment<C>],
@@ -343,19 +350,22 @@ impl<C: Ciphersuite> PolynomialCommitment<C> {
     }
 
     /// Set the constant value of this polynomial to a new group element
-    /// Aborts if the output polynomial is the identity or empty
+    /// Aborts if the output polynomial would be the identity or empty
     pub fn set_non_identity_constant(
         &mut self,
         v: CoefficientCommitment<C>,
     ) -> Result<(), ProtocolError> {
-        if self.coefficients.is_empty()
-            || (self.coefficients.len() == 1 && v.value() == C::Group::identity())
-        {
-            return Err(ProtocolError::EmptyOrZeroCoefficients);
-        }
-        self.coefficients[0] = v;
-
-        Ok(())
+        let coefficients_len = self.coefficients.len();
+        self.coefficients
+            .first_mut()
+            .map_or(Err(ProtocolError::EmptyOrZeroCoefficients), |first| {
+                if v.value() == C::Group::identity() && coefficients_len == 1 {
+                    Err(ProtocolError::EmptyOrZeroCoefficients)
+                } else {
+                    *first = v;
+                    Ok(())
+                }
+            })
     }
 }
 
@@ -502,8 +512,12 @@ where
     if let Some(kronecker_index_value) = kronecker_index.into_option() {
         let kronecker_index_value = usize::try_from(kronecker_index_value)
             .map_err(|_| ProtocolError::InvalidInterpolationArguments)?;
+
         let mut coeffs = vec![SerializableScalar(<C::Group as Group>::Field::zero()); n];
-        coeffs[kronecker_index_value] = SerializableScalar(<C::Group as Group>::Field::one());
+
+        if let Some(coeff_value) = coeffs.get_mut(kronecker_index_value) {
+            *coeff_value = SerializableScalar(<C::Group as Group>::Field::one());
+        }
         return Ok(coeffs);
     }
 
@@ -513,13 +527,13 @@ where
     // By computing all d_i here, we can invert them in a single batch later, which
     // is much faster than inverting each individually.
     let mut denominators = Vec::with_capacity(n);
-    for i in 0..n {
+    for (i, point_set_i) in points_set.iter().enumerate() {
         let mut den = <C::Group as Group>::Field::one();
-        for j in 0..n {
+        for (j, point_set_j) in points_set.iter().enumerate() {
             if i == j {
                 continue;
             }
-            den = den * (points_set[i] - points_set[j]);
+            den = den * (*point_set_i - *point_set_j);
         }
         denominators.push(den);
     }
@@ -557,12 +571,12 @@ where
 
     // Compute final Lagrange coefficients
     let mut lagrange_coeffs = Vec::with_capacity(n);
-    for i in 0..n {
+    for (inv_factors_i, inv_denominators_i) in inv_factors.into_iter().zip(inv_denominators) {
         // For each i, compute the numerator n_i = N / (x - x_i), where N = Prod_j (x - x_j).
         // This is done by multiplying the total product `numerator_prod` by the pre-computed
         // inverse of the term `(x - x_i)` (or `x_i` if x is zero).
-        let num_i = numerator_prod * inv_factors[i];
-        lagrange_coeffs.push(SerializableScalar(num_i * inv_denominators[i]));
+        let num_i = numerator_prod * inv_factors_i;
+        lagrange_coeffs.push(SerializableScalar(num_i * inv_denominators_i));
     }
 
     Ok(lagrange_coeffs)
@@ -570,7 +584,7 @@ where
 
 /// Batch inversion of a list of field elements.
 /// Returns a vector of inverses in the same order.
-/// Uses the standard prefix-product / suffix-product trick for O(n) inversions instead of O(n²).
+/// Uses the standard prefix-product / suffix-product trick for O(n) inversions instead of O(n^2).
 pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C>>, ProtocolError> {
     if values.is_empty() {
         return Err(ProtocolError::InvalidInterpolationArguments);
@@ -589,11 +603,20 @@ pub fn batch_invert<C: Ciphersuite>(values: &[Scalar<C>]) -> Result<Vec<Scalar<C
 
     // Compute individual inverses usin suffix products
     let mut inverted = vec![<C::Group as Group>::Field::one(); values.len()];
-    for i in (1..values.len()).rev() {
-        inverted[i] = products[i - 1] * inv_last;
-        inv_last = inv_last * values[i];
+    for ((inverted_i, products_i_1), values_i) in inverted
+        .iter_mut()
+        .skip(1)
+        .rev()
+        .zip(products.iter().rev().skip(1))
+        .zip(values.iter().skip(1).rev())
+    {
+        *inverted_i = *products_i_1 * inv_last;
+        inv_last = inv_last * *values_i;
     }
-    inverted[0] = inv_last;
+    let inverted_0 = inverted
+        .first_mut()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+    *inverted_0 = inv_last;
 
     Ok(inverted)
 }
@@ -1252,7 +1275,7 @@ mod test {
 
                 let compoly = poly.commit_polynomial().unwrap();
 
-                // build all commited shares
+                // build all committed shares
                 let com_shares = participants
                     .iter()
                     .map(|p| compoly.eval_at_participant(*p).unwrap())
@@ -1301,7 +1324,7 @@ mod test {
 
                 let compoly = poly.commit_polynomial().unwrap();
 
-                // build all commited shares
+                // build all committed shares
                 let com_shares = participants
                     .iter()
                     .map(|p| compoly.eval_at_participant(*p).unwrap())

@@ -1,8 +1,5 @@
 //! This module serves as a wrapper for ECDSA scheme.
 
-// # TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 pub mod ot_based_ecdsa;
 pub mod robust_ecdsa;
 
@@ -180,7 +177,10 @@ impl RerandomizationArguments {
                 Scalar::ZERO,
             );
             // Increment the counter, the probability that this overflows is astronomically low
-            concatenation[0] += 1;
+            let concatenation_0 = concatenation
+                .first_mut()
+                .ok_or(ProtocolError::InvalidIndex)?;
+            *concatenation_0 += 1;
         }
         Ok(delta)
     }

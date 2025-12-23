@@ -4,9 +4,6 @@
 //! or getting the field values corresponding to each participant, etc.
 //! This module tries to provide useful data structures for doing that.
 
-// # TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use std::collections::HashMap;
 
 use frost_core::serialization::SerializableScalar;
@@ -144,10 +141,7 @@ impl ParticipantList {
     // Return a participant of a given index from the order they
     // appear in the sorted list
     pub fn get_participant(&self, index: usize) -> Option<Participant> {
-        if index >= self.participants.len() {
-            return None;
-        }
-        Some(self.participants[index])
+        self.participants.get(index).copied()
     }
 
     /// Get the lagrange coefficient for a participant, relative to this list.
@@ -241,12 +235,12 @@ impl<'a, T> ParticipantMap<'a, T> {
     /// This will do nothing if the participant is unknown, or already has a value
     pub fn put(&mut self, participant: Participant, data: T) {
         if let Some(&i) = self.participants.indices.get(&participant) {
-            if self.data[i].is_some() {
-                return;
+            if let Some(data_i) = self.data.get_mut(i) {
+                if data_i.is_none() {
+                    *data_i = Some(data);
+                    self.count += 1;
+                }
             }
-
-            self.data[i] = Some(data);
-            self.count += 1;
         }
     }
 
@@ -319,11 +313,15 @@ impl<'a> ParticipantCounter<'a> {
         };
 
         // Need the old value to be false.
-        let inserted = !std::mem::replace(&mut self.seen[i], true);
-        if inserted {
-            self.counter -= 1;
+        if let Some(seen_i) = self.seen.get_mut(i) {
+            let inserted = !std::mem::replace(seen_i, true);
+            if inserted {
+                self.counter -= 1;
+            }
+            inserted
+        } else {
+            false
         }
-        inserted
     }
 
     /// Check if this counter contains all participants

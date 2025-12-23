@@ -42,7 +42,7 @@
 //! This is why we have to take great care that the identifiers a protocol will produce
 //! are deterministic, even in the presence of concurrent tasks.
 
-// # TODO(#122): remove this exception
+// TODO(#122): remove this exception
 #![allow(clippy::indexing_slicing)]
 
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};

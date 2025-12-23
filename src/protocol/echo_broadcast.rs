@@ -1,4 +1,4 @@
-// # TODO(#122): remove this exception
+// TODO(#122): remove this exception
 #![allow(clippy::indexing_slicing)]
 
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};

@@ -1,3 +1,6 @@
+// TODO(#122): remove this exception
+#![allow(clippy::indexing_slicing)]
+
 use super::{PresignArguments, PresignOutput};
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
