@@ -265,13 +265,13 @@ class MpcCluster:
         n_attempts = 120
         n = 0
         contract_state = self.contract_state()
-        time.sleep(0.1)
+        time.sleep(0.2)
         while not contract_state.is_state(state) and n < n_attempts:
             n += 1
             if n % 10 == 0:
                 contract_state.print()
             contract_state = self.contract_state()
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         # Note: without this line, or by doing `contract_state.print()` instead,
         # tests fail with:
