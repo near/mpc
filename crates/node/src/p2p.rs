@@ -113,6 +113,8 @@ struct ParticipantIdentities {
 struct PersistentConnection {
     target_participant_id: ParticipantId,
     connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
+    /// Channel for buffering Pongs when outgoing connection is temporarily unavailable.
+    pong_buffer: UnboundedSender<u64>,
     /// Background reconnection task that maintains the connection lifecycle.
     ///
     /// This task runs an infinite loop that:
@@ -404,6 +406,7 @@ impl PersistentConnection {
         connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
+        let (pong_buffer_tx, mut pong_buffer_rx) = mpsc::unbounded_channel::<u64>();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
@@ -438,6 +441,12 @@ impl PersistentConnection {
                         }
                     };
                     connectivity.set_outgoing_connection(&new_conn);
+                    
+                    // Drain buffered Pongs and send them now that connection is available
+                    while let Ok(seq) = pong_buffer_rx.try_recv() {
+                        let _ = new_conn.sender.send(Packet::Pong(seq));
+                    }
+                    
                     new_conn.wait_for_close().await;
                 }
             },
@@ -445,6 +454,7 @@ impl PersistentConnection {
         Ok(PersistentConnection {
             target_participant_id,
             connectivity: connectivity_clone,
+            pong_buffer: pong_buffer_tx,
             _task: task,
         })
     }
@@ -564,7 +574,8 @@ pub async fn new_tls_mesh_network(
                         Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
                     match packet {
                         Packet::Ping(seq) => {
-                            // Send Pong via our outgoing connection to the peer
+                            // Send Pong via our outgoing connection to the peer, maintaining
+                            // unidirectional I/O design. If outgoing isn't ready, buffer the Pong.
                             if let Some(conn) = connections.get(&peer_id) {
                                 if let Some(outgoing_conn) =
                                     conn.connectivity.any_outgoing_connection()
@@ -576,7 +587,20 @@ pub async fn new_tls_mesh_network(
                                         );
                                         break;
                                     }
+                                } else {
+                                    // Outgoing connection not ready yet, buffer the Pong
+                                    if conn.pong_buffer.send(seq).is_err() {
+                                        tracing::warn!(
+                                            "Cannot buffer Pong({}) for {}: pong buffer channel closed",
+                                            seq, peer_id
+                                        );
+                                    }
                                 }
+                            } else {
+                                tracing::warn!(
+                                    "Cannot send Pong({}) to {}: connection not found in HashMap",
+                                    seq, peer_id
+                                );
                             }
                         }
                         Packet::Pong(seq) => {
