@@ -13,114 +13,51 @@ use std::collections::HashMap;
 /// In practice each protocol participant is likely running on a different machine,
 /// and so orchestrating the protocol would happen differently.
 pub fn run_protocol<T>(
-    mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
+    ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
 ) -> Result<Vec<(Participant, T)>, ProtocolError> {
-    let indices: HashMap<Participant, usize> =
-        ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
-
-    let size = ps.len();
-    let mut out = Vec::with_capacity(size);
-    while out.len() < size {
-        for i in 0..size {
-            while {
-                let action = ps[i].1.poke()?;
-                match action {
-                    Action::Wait => false,
-                    Action::SendMany(m) => {
-                        for j in 0..size {
-                            if i == j {
-                                continue;
-                            }
-                            let from = ps[i].0;
-                            ps[j].1.message(from, m.clone());
-                        }
-                        true
-                    }
-                    Action::SendPrivate(to, m) => {
-                        let from = ps[i].0;
-                        ps[indices[&to]].1.message(from, m);
-                        true
-                    }
-                    Action::Return(r) => {
-                        out.push((ps[i].0, r));
-                        false
-                    }
-                }
-            } {}
-        }
-    }
-    out.sort_by_key(|(p, _)| *p);
-    Ok(out)
+    run_protocol_common(ps, false).map(|(v, _)| v)
 }
 
 /// Like [`run_protocol()`], except that it snapshots all the communication.
 pub fn run_protocol_and_take_snapshots<T>(
-    mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
+    ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
 ) -> Result<(Vec<(Participant, T)>, ProtocolSnapshot), ProtocolError> {
-    // Get the participants
-    let participants: Vec<_> = ps.iter().map(|(p, _)| *p).collect();
-    // Build the snapshot
-    let mut protocol_snapshots = ProtocolSnapshot::new_empty(participants);
+    run_protocol_common(ps, true).map(|(v, snapshot)| (v, snapshot.unwrap()))
+}
 
-    // Compute the participants indices
-    let indices: HashMap<Participant, usize> =
-        ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
+/// Runs one real participant and one simulation representing the rest of participants
+/// The simulation has an internal storage of what to send to the real participant
+pub fn run_simulated_protocol<T>(
+    real_participant: Participant,
+    mut real_prot: Box<dyn Protocol<Output = T>>,
+    simulator: Simulator,
+) -> Result<T, ProtocolError> {
+    if simulator.real_participant() != real_participant {
+        return Err(ProtocolError::AssertionFailed(
+            "The given real participant does not match the simulator's internal real participant"
+                .to_string(),
+        ));
+    }
 
-    // run the protocol
-    let size = ps.len();
-    let mut out = Vec::with_capacity(size);
-    while out.len() < size {
-        for i in 0..size {
-            while {
-                let action = ps[i].1.poke()?;
-                match action {
-                    Action::Wait => false,
-                    Action::SendMany(m) => {
-                        for j in 0..size {
-                            if i == j {
-                                continue;
-                            }
-                            let from = ps[i].0;
-                            let to = ps[j].0;
-                            // snapshot the message
-                            protocol_snapshots
-                                .push_message(to, from, m.clone())
-                                .ok_or_else(|| {
-                                    ProtocolError::Other(
-                                        "Participant not found in snapshot".to_string(),
-                                    )
-                                })?;
-                            ps[j].1.message(from, m.clone());
-                        }
-                        true
-                    }
-                    Action::SendPrivate(to, m) => {
-                        let from = ps[i].0;
-                        // snapshot the message
-                        protocol_snapshots
-                            .push_message(to, from, m.clone())
-                            .ok_or_else(|| {
-                                ProtocolError::Other(
-                                    "Participant not found in snapshot".to_string(),
-                                )
-                            })?;
-                        ps[indices[&to]].1.message(from, m);
-                        true
-                    }
-                    Action::Return(r) => {
-                        out.push((ps[i].0, r));
-                        false
-                    }
-                }
-            } {}
+    // fill the real_participant's buffer with the recorded messages
+    for (from, data) in simulator.get_recorded_messages() {
+        real_prot.message(from, data);
+    }
+
+    let mut out = None;
+    while out.is_none() {
+        let action = real_prot.poke()?;
+        if let Action::Return(output) = action {
+            out = Some(output);
         }
     }
-    Ok((out, protocol_snapshots))
+    out.ok_or_else(|| ProtocolError::Other("out is None".to_string()))
 }
 
 /// Like [`run_protocol()`], except for just two parties.
+/// Currently only used for Cait-Sith
 ///
-/// This is more useful for testing two party protocols with assymetric results,
+/// This is more useful for testing two party protocols with asymmetric results,
 /// since the return types for the two protocols can be different.
 pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
     p0: Participant,
@@ -167,31 +104,77 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
     ))
 }
 
-/// Runs one real participant and one simulation representing the rest of participants
-/// The simulation has an internal storage of what to send to the real participant
-pub fn run_simulated_protocol<T>(
-    real_participant: Participant,
-    mut real_prot: Box<dyn Protocol<Output = T>>,
-    simulator: Simulator,
-) -> Result<T, ProtocolError> {
-    if simulator.real_participant() != real_participant {
-        return Err(ProtocolError::AssertionFailed(
-            "The given real participant does not match the simulator's internal real participant"
-                .to_string(),
-        ));
-    }
+#[allow(clippy::type_complexity)]
+fn run_protocol_common<T>(
+    mut ps: Vec<(Participant, Box<dyn Protocol<Output = T>>)>,
+    take_snapshots: bool,
+) -> Result<(Vec<(Participant, T)>, Option<ProtocolSnapshot>), ProtocolError> {
+    let indices: HashMap<Participant, usize> =
+        ps.iter().enumerate().map(|(i, (p, _))| (*p, i)).collect();
 
-    // fill the real_participant's buffer with the recorded messages
-    for (from, data) in simulator.get_recorded_messages() {
-        real_prot.message(from, data);
-    }
+    let mut protocol_snapshots = {
+        if take_snapshots {
+            let participants: Vec<_> = ps.iter().map(|(p, _)| *p).collect();
+            Some(ProtocolSnapshot::new_empty(participants))
+        } else {
+            None
+        }
+    };
 
-    let mut out = None;
-    while out.is_none() {
-        let action = real_prot.poke()?;
-        if let Action::Return(output) = action {
-            out = Some(output);
+    let size = ps.len();
+    let mut out = Vec::with_capacity(size);
+    while out.len() < size {
+        for i in 0..size {
+            while {
+                let action = ps[i].1.poke()?;
+                match action {
+                    Action::Wait => false,
+                    Action::SendMany(m) => {
+                        for j in 0..size {
+                            if i == j {
+                                continue;
+                            }
+                            let from = ps[i].0;
+                            let to = ps[j].0;
+
+                            if let Some(protocol_snapshots) = &mut protocol_snapshots {
+                                // snapshot the message
+                                protocol_snapshots
+                                    .push_message(to, from, m.clone())
+                                    .ok_or_else(|| {
+                                        ProtocolError::Other(
+                                            "Participant not found in snapshot".to_string(),
+                                        )
+                                    })?;
+                            }
+
+                            ps[j].1.message(from, m.clone());
+                        }
+                        true
+                    }
+                    Action::SendPrivate(to, m) => {
+                        let from = ps[i].0;
+                        if let Some(protocol_snapshots) = &mut protocol_snapshots {
+                            // snapshot the message
+                            protocol_snapshots
+                                .push_message(to, from, m.clone())
+                                .ok_or_else(|| {
+                                    ProtocolError::Other(
+                                        "Participant not found in snapshot".to_string(),
+                                    )
+                                })?;
+                        }
+                        ps[indices[&to]].1.message(from, m);
+                        true
+                    }
+                    Action::Return(r) => {
+                        out.push((ps[i].0, r));
+                        false
+                    }
+                }
+            } {}
         }
     }
-    out.ok_or_else(|| ProtocolError::Other("out is None".to_string()))
+    out.sort_by_key(|(p, _)| *p);
+    Ok((out, protocol_snapshots))
 }
