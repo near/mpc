@@ -1,78 +1,184 @@
-use crate::config::MpcConfig;
-use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
-};
-use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
-use crate::network::handshake::p2p_handshake;
-use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
-use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
-};
-use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::VerifyingKey;
 use rustls::{ClientConfig, CommonState};
-use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+    time::Instant,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+};
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-/// Implements MeshNetworkTransportSender for sending messages over a TLS-based
-/// mesh network.
+use crate::{
+    config::MpcConfig,
+    network::{
+        conn::{
+            AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
+        },
+        constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS},
+        handshake::p2p_handshake,
+        MeshNetworkTransportReceiver, MeshNetworkTransportSender,
+    },
+    primitives::{
+        IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
+        PeerMessage,
+    },
+    tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
+};
+
+/// This struct manages **outgoing connections only** - one persistent TLS connection to each
+/// peer in the network. When the application wants to send a message to a peer, it queues the
+/// message through the corresponding [`PersistentConnection`], which handles automatic
+/// reconnection if the connection drops. Each connection runs two background tasks: one for
+/// sending data, and one for sending 1-second interval ping heartbeats and monitoring pong responses.
+///
+/// Implements the [`MeshNetworkTransportSender`] trait to provide a high-level API for sending
+/// messages (`.send()`, `.send_indexer_height()`) and checking connectivity status
+/// (`.connectivity()`, `.wait_for_ready()`), while handling low-level connection management.
 pub struct TlsMeshSender {
+    /// The participant ID of this node.
     my_id: ParticipantId,
+    /// List of all participant IDs in the network (including this node).
     participants: Vec<ParticipantId>,
+    /// Outgoing connections to all peers (excludes this node). Each connection automatically
+    /// retries on failure. This is where actual message sending happens - when you call
+    /// `.send()`, it looks up the connection here and queues the message.
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
+    /// Tracks connection state (incoming and outgoing) for all peers. This is separate from
+    /// `connections` because it monitors *both directions* - while `connections` only manages
+    /// our outgoing connections, `connectivities` tracks whether both our outgoing connection
+    /// to a peer AND their incoming connection to us are alive. Used by `.wait_for_ready()`
+    /// and `.connectivity()` to check bidirectional connectivity status.
     connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
-/// Implements MeshNetworkTransportReceiver.
+/// This struct manages **incoming connections only** - it accepts TLS connections from all
+/// peers and multiplexes their messages into a single channel. The application calls
+/// `.receive()` to get the next message from any peer. Each incoming connection runs its own
+/// background task that reads from the TLS stream, handles Ping/Pong packets, and forwards
+/// MPC/IndexerHeight messages to the unified receiver channel.
+///
+/// Ping/Pong handling uses cross-stream communication to maintain unidirectional I/O: when
+/// receiving a Ping, this handler sends Pong via the outgoing connection to that peer; when
+/// receiving a Pong, it notifies the outgoing connection's keepalive task via a watch channel.
+///
+/// Implements [`MeshNetworkTransportReceiver`] to receive messages from all peers in the
+/// mesh network.
 pub struct TlsMeshReceiver {
+    /// Unified message queue receiving messages from all peers' incoming connections.
+    /// When any peer sends us a message, it gets queued here. The application calls
+    /// `.receive()` to dequeue the next message (which includes the sender's ID).
     receiver: UnboundedReceiver<PeerMessage>,
+    /// Background task running the TCP acceptor loop on our listening port. It continuously
+    /// accepts incoming TCP connections and spawns a new task for each one that:
+    /// 1) Performs TLS handshake and authenticates the peer's identity
+    /// 2) Registers the connection with `connectivities` for bidirectional tracking
+    /// 3) Reads messages from the peer in a loop (read-only stream usage)
+    /// 4) On Ping: Sends Pong via our outgoing connection to maintain unidirectional I/O
+    /// 5) On Pong: Notifies the outgoing connection's keepalive task via watch channel
+    /// 6) Forwards MpcMessage and IndexerHeight to the unified `receiver` channel
+    ///
+    /// The [`AutoAbortTask`] wrapper ensures automatic cleanup on drop.
     _incoming_connections_task: AutoAbortTask<()>,
 }
 
-/// Maps public keys to participant IDs. Used to identify incoming connections.
+/// Maps public keys to [`ParticipantId`]s for authenticating incoming connections.
+///
+/// This struct is populated at startup with the known public keys of all participants in the
+/// network. When a peer establishes an incoming TLS connection, we extract their public key
+/// from their TLS certificate and look it up in this map to determine their [`ParticipantId`].
+/// This ensures that only known participants can connect, and we can correctly attribute
+/// incoming messages to the right peer. If a connection presents an unknown public key, it is
+/// rejected during the authentication phase.
 #[derive(Default)]
 struct ParticipantIdentities {
     key_to_participant_id: HashMap<VerifyingKey, ParticipantId>,
 }
 
-/// A retrying connection that will automatically reconnect if the TCP
-/// connection is broken.
+/// Maintains a persistent outgoing TLS connection to a single peer with automatic reconnection.
+///
+/// This struct wraps a [`TlsConnection`] and ensures it stays alive throughout the lifetime of
+/// the node. If the underlying TCP/TLS connection drops (due to network issues, peer restart,
+/// etc.), the background task automatically attempts to reconnect after a 1-second delay. Each
+/// [`TlsMeshSender`] owns one `PersistentConnection` per peer in the network (N-1 total).
 struct PersistentConnection {
     target_participant_id: ParticipantId,
     connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
-    // The task that loops to connect to the target. When `PersistentConnection`
-    // is dropped, this task is aborted. The task owns any active connection,
-    // so dropping it also frees any connection currently alive.
+    /// Channel for buffering Pongs when outgoing connection is temporarily unavailable.
+    pong_buffer: UnboundedSender<u64>,
+    /// Background reconnection task that maintains the connection lifecycle.
+    ///
+    /// This task runs an infinite loop that:
+    /// 1. Attempts to establish a new [`TlsConnection`] to `target_participant_id`
+    /// 2. On success: Registers the connection with `connectivity` and blocks waiting for it
+    ///    to close (via `wait_for_close()`)
+    /// 3. On failure: Logs the error and sleeps for [`CONNECTION_RETRY_DELAY`] before retrying
+    /// 4. When a connection closes (step 2 completes): Loops back to step 1
+    ///
+    /// The task owns the active [`TlsConnection`] (wrapped in Arc), so when the task is
+    /// aborted (via dropping this `PersistentConnection`), the connection is automatically
+    /// cleaned up. The [`AutoAbortTask`] wrapper ensures the task is aborted when this struct
+    /// is dropped, providing RAII-style cleanup on node shutdown.
     _task: AutoAbortTask<()>,
 }
 
-/// State for a single TLS/TCP connection to one participant. We only ever send
-/// messages through this connection, so there is nothing to handle receiving.
-/// Dropping this struct will automatically close the connection.
+/// Represents an active outgoing TLS/TCP connection to a single peer participant.
+///
+/// This struct encapsulates a single established TCP connection with TLS encryption to one peer.
+/// It uses **unidirectional I/O** - the TLS stream is write-only from this connection's
+/// perspective. When you want to send a message to a peer, you queue it through the `sender`
+/// channel, and the background `_sender_task` reads from the channel and writes to the TLS
+/// stream. Pong responses arrive via the separate incoming connection and are forwarded to
+/// the keepalive task via the `pong_tx` watch channel for health monitoring.
 struct TlsConnection {
-    /// Used to send messages via the connection.
+    /// Channel for queuing outbound packets ([`Packet::Ping`], [`Packet::MpcMessage`],
+    /// [`Packet::IndexerHeight`]) to be sent.
+    ///
+    /// The application sends messages by calling `.send_mpc_message()` or `.send_indexer_height()`,
+    /// which queue packets into this channel. The `_sender_task` continuously reads from the
+    /// receiver end of this channel and writes packets to the TLS stream. This decouples message
+    /// sending from I/O operations, allowing the application to queue messages without blocking
+    /// on network writes.
     sender: UnboundedSender<Packet>,
-    /// Task that reads messages from the channel (other side of `sender`) and
-    /// sends it over the TLS connection. This task owns the connection, so
-    /// dropping it closes the connection.
+    /// Background task that owns the TLS stream and handles write-only I/O operations.
+    ///
+    /// This task continuously reads packets from the `sender` channel and writes them to the
+    /// TLS stream. The stream is used unidirectionally - only for sending. Connection health
+    /// monitoring is handled by the keepalive task which cancels the `closed` token when
+    /// a pong timeout occurs. When this task is aborted (via [`AutoAbortTask`] drop), it closes
+    /// the underlying TLS/TCP stream, which triggers [`PersistentConnection`] to reconnect.
     _sender_task: AutoAbortTask<()>,
-    /// Task that periodically sends a Ping message to the other side. It does
-    /// not expect a Pong, it simply keeps the connection alive (so we can
-    /// quickly detect if the connection is broken).
+    /// Background task that sends Ping heartbeats and monitors Pong responses.
+    ///
+    /// This task sends a Ping with an incrementing sequence number and then waits for either a
+    /// Pong response (via the `pong_tx` watch channel) or a timeout. When a Pong is received,
+    /// it validates the sequence number, calculates RTT, and waits until [`Self::PING_INTERVAL`]
+    /// (1 second) has elapsed since the ping was sent before sending the next one. If no Pong is
+    /// received within [`Self::PONG_TIMEOUT`] (5 seconds), it closes the connection by cancelling
+    /// the `closed` token. This ensures pings are sent at exactly 1-second intervals while only
+    /// sending when the previous ping received a response.
     _keepalive_task: AutoAbortTask<()>,
-    /// This is cancelled when the connection is closed. Used to wait for the
-    /// connection to close.
+    /// Watch channel sender for receiving pong notifications from the incoming connection handler.
+    ///
+    /// The incoming handler sends PongInfo when it receives a Pong packet. The keepalive task
+    /// monitors this channel to detect connection health and calculate RTT. This enables clean
+    /// async communication without mutexes.
+    pong_tx: tokio::sync::watch::Sender<PongInfo>,
+    /// Token that gets cancelled when the connection closes, allowing waiters to be notified.
+    ///
+    /// Used by [`PersistentConnection`] via the `wait_for_close()` method to block until the
+    /// connection dies (either due to network failure, timeout, or intentional shutdown). When
+    /// `_sender_task` exits, the [`DropToCancel`] guard automatically cancels this token,
+    /// unblocking any tasks waiting on it.
     closed: CancellationToken,
 }
 
@@ -85,9 +191,18 @@ impl Drop for DropToCancel {
     }
 }
 
+/// Information about the last received pong, sent via watch channel from incoming handler
+/// to keepalive task for health monitoring.
+#[derive(Clone, Copy)]
+struct PongInfo {
+    /// Sequence number of the most recent Pong received.
+    seq: u64,
+}
+
 #[derive(BorshSerialize, BorshDeserialize)]
 enum Packet {
-    Ping,
+    Ping(u64),
+    Pong(u64),
     MpcMessage(MpcMessage),
     IndexerHeight(IndexerHeightMessage),
 }
@@ -96,6 +211,13 @@ impl TlsConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// If we don't receive a pong response within this time, consider the connection dead.
+    const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+    /// Interval between consecutive pings. A new ping is sent 1 second after the previous
+    /// ping was sent, but only after receiving its pong response.
+    const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Makes a TLS/TCP connection to the given address, authenticating the
     /// other side as the given participant.
@@ -129,8 +251,10 @@ impl TlsConnection {
             .context("p2p handshake")?;
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
+        let (pong_tx, mut pong_rx) = tokio::sync::watch::channel(PongInfo { seq: 0 });
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
+
         let sender_task = tracking::spawn_checked(
             &format!("TLS connection to {}", target_participant_id),
             async move {
@@ -164,15 +288,61 @@ impl TlsConnection {
             },
         );
         let sender_clone = sender.clone();
+        let closed_for_keepalive = closed.clone();
         let keepalive_task = tracking::spawn(
-            &format!("TCP keepalive for {}", target_participant_id),
+            &format!("Ping sender for {}", target_participant_id),
             async move {
+                let mut seq: u64 = 0;
+                let mut last_received_pong_seq: u64 = 0;
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if sender_clone.send(Packet::Ping).is_err() {
+                    seq += 1;
+                    let ping_sent_at = Instant::now();
+                    if sender_clone.send(Packet::Ping(seq)).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
                         break;
+                    }
+
+                    // Wait for either a pong response or timeout
+                    tokio::select! {
+                        _ = pong_rx.changed() => {
+                            // Pong received, validate and calculate RTT
+                            let pong_info = *pong_rx.borrow_and_update();
+                            if pong_info.seq > last_received_pong_seq {
+                                let expected_seq = last_received_pong_seq + 1;
+                                if pong_info.seq != expected_seq {
+                                    tracing::warn!(
+                                        "Received pong {} from {}, expected {}, lost {} pong(s)",
+                                        pong_info.seq, target_participant_id, expected_seq, pong_info.seq - expected_seq
+                                    );
+                                }
+                                last_received_pong_seq = pong_info.seq;
+                                let rtt = ping_sent_at.elapsed();
+                                tracking::set_progress(&format!(
+                                    "Received pong {} from {}, RTT: {:?}",
+                                    pong_info.seq, target_participant_id, rtt
+                                ));
+                            } else {
+                                tracing::debug!(
+                                    "Received stale pong {} from {}, already received {}",
+                                    pong_info.seq, target_participant_id, last_received_pong_seq
+                                );
+                            }
+                            // Wait until PING_INTERVAL has elapsed since ping was sent
+                            let elapsed = ping_sent_at.elapsed();
+                            if elapsed < Self::PING_INTERVAL {
+                                tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
+                            }
+                        }
+                        _ = tokio::time::sleep(Self::PONG_TIMEOUT) => {
+                            tracing::warn!(
+                                "No pong received from {} for {:?}, closing connection",
+                                target_participant_id,
+                                Self::PONG_TIMEOUT
+                            );
+                            closed_for_keepalive.cancel();
+                            break;
+                        }
                     }
                 }
             },
@@ -181,6 +351,7 @@ impl TlsConnection {
             sender,
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
+            pong_tx,
             closed,
         })
     }
@@ -235,6 +406,7 @@ impl PersistentConnection {
         connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
+        let (pong_buffer_tx, mut pong_buffer_rx) = mpsc::unbounded_channel::<u64>();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
@@ -253,7 +425,7 @@ impl PersistentConnection {
                                 my_id,
                                 target_participant_id
                             );
-                            new_conn
+                            Arc::new(new_conn)
                         }
                         Err(e) => {
                             tracing::info!(
@@ -268,8 +440,13 @@ impl PersistentConnection {
                             continue;
                         }
                     };
-                    let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
+
+                    // Drain buffered Pongs and send them now that connection is available
+                    while let Ok(seq) = pong_buffer_rx.try_recv() {
+                        let _ = new_conn.sender.send(Packet::Pong(seq));
+                    }
+
                     new_conn.wait_for_close().await;
                 }
             },
@@ -277,6 +454,7 @@ impl PersistentConnection {
         Ok(PersistentConnection {
             target_participant_id,
             connectivity: connectivity_clone,
+            pong_buffer: pong_buffer_tx,
             _task: task,
         })
     }
@@ -352,6 +530,7 @@ pub async fn new_tls_mesh_network(
 
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
+    let connections_for_incoming = connections.clone();
     info!("Spawning incoming connections handler.");
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
@@ -360,6 +539,7 @@ pub async fn new_tls_mesh_network(
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
+            let connections = connections_for_incoming.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
@@ -393,8 +573,50 @@ pub async fn new_tls_mesh_network(
                     let packet =
                         Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
                     match packet {
-                        Packet::Ping => {
-                            // Do nothing. Pings are just for TCP keepalive.
+                        Packet::Ping(seq) => {
+                            // Send Pong via our outgoing connection to the peer, maintaining
+                            // unidirectional I/O design. If outgoing isn't ready, buffer the Pong.
+                            if let Some(conn) = connections.get(&peer_id) {
+                                if let Some(outgoing_conn) =
+                                    conn.connectivity.any_outgoing_connection()
+                                {
+                                    if outgoing_conn.sender.send(Packet::Pong(seq)).is_err() {
+                                        tracing::info!(
+                                            "Outgoing connection to {} is dead, closing incoming connection for clean reconnect",
+                                            peer_id
+                                        );
+                                        break;
+                                    }
+                                } else {
+                                    // Outgoing connection not ready yet, buffer the Pong
+                                    if conn.pong_buffer.send(seq).is_err() {
+                                        tracing::warn!(
+                                            "Cannot buffer Pong({}) for {}: pong buffer channel closed",
+                                            seq, peer_id
+                                        );
+                                    }
+                                }
+                            } else {
+                                tracing::warn!(
+                                    "Cannot send Pong({}) to {}: connection not found in HashMap",
+                                    seq, peer_id
+                                );
+                            }
+                        }
+                        Packet::Pong(seq) => {
+                            // Notify the keepalive task of the pong via the watch channel
+                            if let Some(conn) = connections.get(&peer_id) {
+                                if let Some(outgoing_conn) =
+                                    conn.connectivity.any_outgoing_connection()
+                                {
+                                    // Send the new pong info via watch channel
+                                    let _ = outgoing_conn.pong_tx.send(PongInfo { seq });
+                                } else {
+                                    tracing::warn!("No outgoing connection to {} to forward Pong({})", peer_id, seq);
+                                }
+                            } else {
+                                tracing::warn!("No connection found for peer {} to forward Pong({})", peer_id, seq);
+                            }
                         }
                         Packet::MpcMessage(mpc_message) => {
                             message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
@@ -417,6 +639,7 @@ pub async fn new_tls_mesh_network(
                         received_bytes, peer_id
                     ));
                 }
+                anyhow::Ok(())
             });
         }
     });
