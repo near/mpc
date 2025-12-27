@@ -100,7 +100,7 @@ struct TeeState {
     _allowed_docker_image_hashes: AllowedDockerImageHashes,
     _allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     _votes: CodeHashesVotes,
-    _participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
+    participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
 #[derive(Debug, BorshDeserialize)]
@@ -110,7 +110,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     config: Config,
-    _tee_state: TeeState,
+    tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
 }
@@ -126,6 +126,11 @@ impl From<MpcContract> for crate::MpcContract {
         // For the soft release we give every participant a mocked attestation.
         // Since this upgrade has a non-backwards compatible change, instead of manually mapping the attestations
         // we give everyone a new mock attestation again instead.
+
+        // clear previous attestations from the storage trie
+        let mut previous_tee_state = value.tee_state;
+        previous_tee_state.participants_attestations.clear();
+
         let threshold_parameters = &running_state.parameters.participants();
         let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
 
