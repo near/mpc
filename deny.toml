@@ -27,9 +27,9 @@ ignore = [
   "RUSTSEC-2025-0119", # number_prefix is unmaintained
   "RUSTSEC-2024-0384", # instant is unmaintained
   "RUSTSEC-2023-0089", # atomic-polyfill is unmaintained
-  # ruint reciprocal_mg10 OOB - no fix available.
-  # The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
-  # https://rustsec.org/advisories/RUSTSEC-2025-0137
+  # - `ruint::algorithms::div::reciprocal_mg10` has undefined behavior, no fix available as of now.
+  # - `ruint` is a transitive dependency through `alloy`.
+  # - The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
   "RUSTSEC-2025-0137",
 ]
 
