@@ -15,12 +15,12 @@ use serial_test::serial;
 use super::DEFAULT_BLOCK_TIME;
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
-// TODO(#1640): add robust ecdsa here
 #[tokio::test]
 #[rstest]
 #[case(0, SignatureScheme::Secp256k1, 3)]
 #[case(1, SignatureScheme::Ed25519, 3)]
 #[case(2, SignatureScheme::Bls12381, 3)]
+#[case(3, SignatureScheme::V2Secp256k1, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] scheme: SignatureScheme,

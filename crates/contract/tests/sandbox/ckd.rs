@@ -1,8 +1,9 @@
-use crate::sandbox::common::{
-    create_response_ckd, derive_confidential_key_and_validate, generate_random_app_public_key,
-    ContractSetup, PARTICIPANT_LEN,
+use crate::sandbox::common::{init_env, SandboxTestSetup};
+use crate::sandbox::utils::consts::PARTICIPANT_LEN;
+use crate::sandbox::utils::shared_key_utils::{generate_random_app_public_key, SharedSecretKey};
+use crate::sandbox::utils::sign_utils::{
+    create_response_ckd, derive_confidential_key_and_validate,
 };
-use crate::sandbox::common::{init_env, SharedSecretKey};
 use mpc_contract::primitives::domain::SignatureScheme;
 use mpc_contract::{
     crypto_shared::CKDResponse,
@@ -28,7 +29,7 @@ async fn create_account_given_id(
 #[tokio::test]
 async fn test_contract_ckd_request() -> anyhow::Result<()> {
     let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
@@ -159,7 +160,7 @@ async fn test_contract_ckd_request() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
@@ -247,7 +248,7 @@ async fn test_contract_ckd_success_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker, contract, ..
     } = init_env(&[SignatureScheme::Bls12381], PARTICIPANT_LEN).await;
     let alice = worker.dev_create_account().await?;
@@ -307,7 +308,7 @@ async fn test_contract_ckd_fail_refund() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_contract_ckd_request_deposits() -> anyhow::Result<()> {
-    let ContractSetup {
+    let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,

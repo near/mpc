@@ -1,17 +1,22 @@
-use std::collections::HashSet;
-
-use crate::sandbox::common::{
-    call_contract_key_generation, current_contract, execute_key_generation_and_add_random_state,
-    gen_accounts, get_participants, get_state, get_tee_accounts, init, make_and_submit_requests,
-    propose_and_vote_contract_binary, submit_ckd_response, submit_signature_response, DomainKey,
-    PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
+        init, propose_and_vote_contract_binary,
+    },
+    utils::{
+        consts::PARTICIPANT_LEN,
+        contract_build::current_contract,
+        mpc_contract::{get_participants, get_state, get_tee_accounts},
+        shared_key_utils::DomainKey,
+        sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
+    },
 };
-use mpc_contract::crypto_shared::CKDResponse;
-use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
-use mpc_contract::primitives::key_state::{EpochId, Keyset};
 use mpc_contract::{
+    crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
     primitives::{
+        domain::{DomainConfig, SignatureScheme},
+        key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -21,6 +26,7 @@ use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
+use std::collections::HashSet;
 
 enum Network {
     Testnet,

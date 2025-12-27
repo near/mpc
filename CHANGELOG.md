@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.2.0] - 2025-12-18
+
+### 🚀 Features
+
+- [#1627](https://github.com/near/mpc/pull/1627)(@gilcu3): Add derivation path support for ckd (#1627)
+
+- [#1670](https://github.com/near/mpc/pull/1670)(@gilcu3): Add robust ecdsa SignatureScheme variant (#1670)
+
+- [#1658](https://github.com/near/mpc/pull/1658)(@kevindeforth): Add new signature scheme variant to contract (#1658)
+
+- [#1679](https://github.com/near/mpc/pull/1679)(@gilcu3): Robust_ecdsa provider implementation (#1679)
+
+
+### 🐛 Bug Fixes
+
+- [#1614](https://github.com/near/mpc/pull/1614)(@DSharifi): Use gas value in the new config for the update promise (#1614)
+
+- [#1620](https://github.com/near/mpc/pull/1620)(@DSharifi): Code hashes can now be be voted for in all code protocol states (#1620)
+
+- [#1635](https://github.com/near/mpc/pull/1635)(@barakeinav1): Correct error reporting of invalid TEE participants (#1635)
+
+- [#1636](https://github.com/near/mpc/pull/1636)(@pbeza): Remove votes from `UpdateEntry` (#1636)
+
+- [#1665](https://github.com/near/mpc/pull/1665)(@pbeza): Bump `ProposedUpdatesEntries` to `V3` and clean up `V2` (#1665)
+
+- [#1673](https://github.com/near/mpc/pull/1673)(@gilcu3): Fix derivation_path params in ckd-example-cli (#1673)
+
+
+### 🚜 Refactor
+
+- [#1626](https://github.com/near/mpc/pull/1626)(@pbeza): Remove `ReportData::new()` (#1626)
+
+- [#1642](https://github.com/near/mpc/pull/1642)(@DSharifi): Remove stale comment and improve if condition for charging of attestation storage (#1642)
+
+- [#1668](https://github.com/near/mpc/pull/1668)(@pbeza): Move gas constants for voting from test to common module (#1668)
+
+- [#1695](https://github.com/near/mpc/pull/1695)(@DSharifi): Clarify that `tee_state` contains attestations for not just active participants (#1695)
+
+
+### 📚 Documentation
+
+- [#1456](https://github.com/near/mpc/pull/1456)(@barakeinav1): Create a guide for localnet + MPC node running in TEE setup (#1456)
+
+- [#1604](https://github.com/near/mpc/pull/1604)(@barakeinav1): Testnet with tee support guide (#1604)
+
+
+### ⚡ Performance
+
+- [#1659](https://github.com/near/mpc/pull/1659)(@netrome): Use procedural macro to include expected measurements at compile time (#1659)
+
+
+### 🧪 Testing
+
+- [#1623](https://github.com/near/mpc/pull/1623)(@DSharifi): *(pytest)* Run all pytests with 1 validator (#1623)
+
+- [#1637](https://github.com/near/mpc/pull/1637)(@kevindeforth): Migration system test (#1637)
+
+- [#1671](https://github.com/near/mpc/pull/1671)(@gilcu3): Refactor pytests, several improvements preparing for robust ecdsa integration (#1671)
+
+- [#1672](https://github.com/near/mpc/pull/1672)(@gilcu3): Refactor integration test in the node, improve PortSeed struct (#1672)
+
+- [#1678](https://github.com/near/mpc/pull/1678)(@kevindeforth): Fix sign sandbox tests (#1678)
+
+- [#1682](https://github.com/near/mpc/pull/1682)(@gilcu3): Add tests for robust ecdsa (#1682)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1613](https://github.com/near/mpc/pull/1613)(@DSharifi): Remove `latest_code_hash` method from contract (#1613)
+
+- [#1612](https://github.com/near/mpc/pull/1612)(@pbeza): Introduce a gas constant for `vote_update` (#1612)
+
+- [#1618](https://github.com/near/mpc/pull/1618)(@barakeinav1): Update config files (#1618)
+
+- [#1633](https://github.com/near/mpc/pull/1633)(@gilcu3): Update reference to ts repo (#1633)
+
+- [#1648](https://github.com/near/mpc/pull/1648)(@gilcu3): Enforce kebab-case for crate names (#1648)
+
+- [#1651](https://github.com/near/mpc/pull/1651)(@gilcu3): Broken contract verification (#1651)
+
+- [#1653](https://github.com/near/mpc/pull/1653)(@netrome): Bump nearcore to 2.10.2 (#1653)
+
+- [#1676](https://github.com/near/mpc/pull/1676)(@DSharifi): Run test profile on cargo nextest invocation (#1676)
+
+- [#1681](https://github.com/near/mpc/pull/1681)(@DSharifi): Enable debug-asserttions on CI test profile (#1681)
+
+- [#1692](https://github.com/near/mpc/pull/1692)(@gilcu3): Update version and changelog for 3.2.0 release  (#1692)
+
+- [#1683](https://github.com/near/mpc/pull/1683)(@kevindeforth): *(contract)* Sandbox code organization (#1683)
+
+- [#1698](https://github.com/near/mpc/pull/1698)(@gilcu3): bump nearcore to 2.10.3 (#1698)
+
+
 ## [3.1.0] - 2025-12-04
 
 ### 🚀 Features
@@ -31,9 +124,16 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1594](https://github.com/near/mpc/pull/1594)(@gilcu3): Wrong tag name in gcp image creation (#1594)
 
 
+### 📚 Documentation
+
+- [#1610](https://github.com/near/mpc/pull/1610)(@DSharifi): Create release changelog for `3.1.0` release (#1610)
+
+
 ### 🧪 Testing
 
 - [#1581](https://github.com/near/mpc/pull/1581)(@DSharifi): Fix broken example `pytest` command (#1581)
+
+- [#1538](https://github.com/near/mpc/pull/1538)(@DSharifi): *(pytest fix)* Remove 1 validator override in pytests (#1538)
 
 
 ### ⚙️ Miscellaneous Tasks

@@ -1,3 +1,8 @@
+use crate::sandbox::utils::{
+    consts::{GAS_FOR_VOTE_CANCEL_RESHARING, GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED},
+    mpc_contract::get_state,
+    transactions::execute_async_transactions,
+};
 use mpc_contract::{
     primitives::{
         key_state::{AttemptId, EpochId, KeyEventId},
@@ -8,11 +13,6 @@ use mpc_contract::{
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 use utilities::AccountIdExtV1;
-
-use super::common::{
-    execute_async_transactions, get_state, GAS_FOR_VOTE_CANCEL_RESHARING,
-    GAS_FOR_VOTE_NEW_PARAMETERS, GAS_FOR_VOTE_RESHARED,
-};
 
 pub async fn conclude_resharing(
     contract: &Contract,

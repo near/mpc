@@ -1,13 +1,23 @@
-use crate::sandbox::common::{
-    assert_running_return_participants, assert_running_return_threshold, current_contract,
-    execute_key_generation_and_add_random_state, get_state, init_env, init_with_candidates,
-    migration_contract, propose_and_vote_contract_binary, vote_update_till_completion,
-    ContractSetup, ALL_SIGNATURE_SCHEMES, CURRENT_CONTRACT_DEPLOY_DEPOSIT,
-    GAS_FOR_VOTE_BEFORE_THRESHOLD, GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE,
-    PARTICIPANT_LEN,
+use crate::sandbox::{
+    common::{
+        execute_key_generation_and_add_random_state, init_env, init_with_candidates,
+        propose_and_vote_contract_binary, vote_update_till_completion, SandboxTestSetup,
+    },
+    utils::{
+        consts::{
+            ALL_SIGNATURE_SCHEMES, CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_BEFORE_THRESHOLD,
+            GAS_FOR_VOTE_UPDATE, MAX_GAS_FOR_THRESHOLD_VOTE, PARTICIPANT_LEN,
+        },
+        contract_build::{current_contract, migration_contract},
+        mpc_contract::{
+            assert_running_return_participants, assert_running_return_threshold, get_state,
+        },
+    },
 };
-use mpc_contract::state::ProtocolContractState;
-use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
+use mpc_contract::{
+    state::ProtocolContractState,
+    update::{ProposeUpdateArgs, UpdateId},
+};
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 
@@ -35,7 +45,7 @@ pub fn current_contract_proposal() -> ProposeUpdateArgs {
 
 #[tokio::test]
 async fn test_propose_contract_max_size_upload() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -63,7 +73,7 @@ async fn test_propose_contract_max_size_upload() {
 
 #[tokio::test]
 async fn test_propose_update_config() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -161,7 +171,7 @@ async fn test_propose_update_config() {
 
 #[tokio::test]
 async fn test_propose_update_contract() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -171,7 +181,7 @@ async fn test_propose_update_contract() {
 
 #[tokio::test]
 async fn test_invalid_contract_deploy() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -211,7 +221,7 @@ async fn test_invalid_contract_deploy() {
 // TODO(#496) Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -269,7 +279,7 @@ async fn test_propose_update_contract_many() {
 /// threshold) is cheap.
 #[tokio::test]
 async fn test_vote_update_gas_before_threshold() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -343,7 +353,7 @@ async fn test_vote_update_gas_before_threshold() {
 
 #[tokio::test]
 async fn test_propose_incorrect_updates() {
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -382,7 +392,7 @@ async fn test_propose_incorrect_updates() {
 #[tokio::test]
 async fn many_sequential_updates() {
     let number_of_participants = PARTICIPANT_LEN;
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..
@@ -405,7 +415,7 @@ async fn many_sequential_updates() {
 #[tokio::test]
 async fn only_one_vote_from_participant() {
     let number_of_participants = 3;
-    let ContractSetup {
+    let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         ..

@@ -1,0 +1,47 @@
+[licenses]
+clarify = [
+  { name = "near-chain", expression = "MIT OR Apache-2.0", license-files = [
+  ] },
+]
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "MPL-2.0",
+  "Zlib",
+  "Apache-2.0 WITH LLVM-exception",
+  "ISC",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+]
+
+
+[advisories]
+ignore = [
+  "RUSTSEC-2022-0054", # wee_alloc is unmaintained
+  "RUSTSEC-2025-0134", # rustls-pemfile is unmaintained
+  "RUSTSEC-2024-0370", # proc-macro-error is unmaintained
+  "RUSTSEC-2024-0436", # paste is unmaintained
+  "RUSTSEC-2025-0119", # number_prefix is unmaintained
+  "RUSTSEC-2024-0384", # instant is unmaintained
+  "RUSTSEC-2023-0089", # atomic-polyfill is unmaintained
+]
+
+[bans]
+multiple-versions = "deny"
+skip = [{ name = "prost-types" }]
+skip-tree = [
+  { name = "reqwest" },
+  { name = "axum" },
+  { name = "near-jsonrpc-client" },
+  { name = "near-vm-runner" },
+]
+
+[sources]
+unknown-git = "deny"
+allow-git = [
+  "https://github.com/near/nearcore",
+  "https://github.com/near/threshold-signatures",
+]

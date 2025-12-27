@@ -94,7 +94,10 @@ pub struct TeeState {
     pub(crate) allowed_docker_image_hashes: AllowedDockerImageHashes,
     pub(crate) allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
     pub(crate) votes: CodeHashesVotes,
-    pub(crate) participants_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
+    /// Mapping of TLS public key of a participant to its [`NodeAttestation`].
+    /// Attestations are stored for any valid participant that has submitted one, not
+    /// just for the currently active participants.
+    pub(crate) stored_attestations: BTreeMap<near_sdk::PublicKey, NodeAttestation>,
 }
 
 impl TeeState {
@@ -124,7 +127,7 @@ impl TeeState {
             });
 
         Self {
-            participants_attestations,
+            stored_attestations: participants_attestations,
             ..Default::default()
         }
     }
@@ -178,7 +181,7 @@ impl TeeState {
 
         let tls_pk = node_id.tls_public_key.clone();
 
-        let insertion = self.participants_attestations.insert(
+        let insertion = self.stored_attestations.insert(
             tls_pk,
             NodeAttestation {
                 node_id,
@@ -202,7 +205,7 @@ impl TeeState {
             self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration);
         let allowed_launcher_compose_hashes = &self.allowed_launcher_compose_hashes;
 
-        let participant_attestation = self.participants_attestations.get(&node_id.tls_public_key);
+        let participant_attestation = self.stored_attestations.get(&node_id.tls_public_key);
         let Some(participant_attestation) = participant_attestation else {
             return TeeQuoteStatus::Invalid("participant has no attestation".to_string());
         };
@@ -320,7 +323,7 @@ impl TeeState {
 
         // Collect TLS keys that are *not* in the active participants list
         let stale_keys: Vec<near_sdk::PublicKey> = self
-            .participants_attestations
+            .stored_attestations
             .keys()
             .filter(|tls_pk| !active_tls_keys.contains(*tls_pk))
             .cloned()
@@ -328,14 +331,14 @@ impl TeeState {
 
         // Remove all stale TEE entries
         for tls_pk in stale_keys {
-            self.participants_attestations.remove(&tls_pk);
+            self.stored_attestations.remove(&tls_pk);
         }
     }
 
     /// Returns the list of accounts that currently have TEE attestations stored.
     /// Note: This may include accounts that are no longer active protocol participants.
     pub fn get_tee_accounts(&self) -> Vec<NodeId> {
-        self.participants_attestations
+        self.stored_attestations
             .values()
             .map(|node_attestation| node_attestation.node_id.clone())
             .collect()
@@ -343,12 +346,12 @@ impl TeeState {
 
     /// Find a NodeId by its TLS public key.
     pub fn find_node_id_by_tls_key(&self, tls_public_key: &near_sdk::PublicKey) -> Option<NodeId> {
-        self.participants_attestations
+        self.stored_attestations
             .get(tls_public_key)
             .map(|node_attestation| node_attestation.node_id.clone())
     }
 
-    /// Returns true if the caller has at least one participant entry
+    /// Returns Ok(()) if the caller has at least one participant entry
     /// whose TLS key matches an attested node belonging to the caller account.
     ///
     /// Handles multiple participants per account and supports legacy mock nodes.
@@ -364,7 +367,7 @@ impl TeeState {
             .ok_or(AttestationCheckError::CallerNotParticipant)?;
 
         let attestation = self
-            .participants_attestations
+            .stored_attestations
             .get(&info.sign_pk)
             .ok_or(AttestationCheckError::AttestationNotFound)?;
 
@@ -392,16 +395,25 @@ pub(crate) enum AttestationCheckError {
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::test_utils::bogus_ed25519_near_public_key;
-    use assert_matches::assert_matches;
-
     use super::*;
+    use crate::primitives::test_utils::bogus_ed25519_near_public_key;
+    use crate::primitives::test_utils::gen_participants;
+    use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
-
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
+    use utilities::AccountIdExtV2;
+
+    /// Helper to set up the testing environment with a specific signer
+    fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
+        let mut builder = VMContextBuilder::new();
+        builder
+            .signer_account_id(account_id.as_v1_account_id())
+            .signer_account_pk(public_key.clone());
+        testing_env!(builder.build());
+    }
 
     #[test]
     fn test_clean_non_participants() {
@@ -456,28 +468,28 @@ mod tests {
         );
 
         // Verify all 4 accounts have TEE info initially
-        assert_eq!(tee_state.participants_attestations.len(), 4);
+        assert_eq!(tee_state.stored_attestations.len(), 4);
         for node_id in &participant_nodes {
             assert!(tee_state
-                .participants_attestations
+                .stored_attestations
                 .contains_key(&node_id.tls_public_key));
         }
         assert!(tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&non_participant_uid.tls_public_key));
 
         // Clean non-participants
         tee_state.clean_non_participants(&participants);
 
         // Verify only participants remain
-        assert_eq!(tee_state.participants_attestations.len(), 3);
+        assert_eq!(tee_state.stored_attestations.len(), 3);
         for node_id in &participant_nodes {
             assert!(tee_state
-                .participants_attestations
+                .stored_attestations
                 .contains_key(&node_id.tls_public_key));
         }
         assert!(!tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&non_participant_uid.tls_public_key));
     }
 
@@ -538,7 +550,7 @@ mod tests {
 
         // then
         assert_eq!(
-            tee_state.participants_attestations.len(),
+            tee_state.stored_attestations.len(),
             1,
             "Internal storage count should increase by exactly one"
         );
@@ -563,7 +575,7 @@ mod tests {
         // then
         assert!(
             tee_state
-                .participants_attestations
+                .stored_attestations
                 .contains_key(&node_id.tls_public_key),
             "Entry should be strictly retrievable using the TLS public key"
         );
@@ -587,7 +599,7 @@ mod tests {
 
         // then
         let stored_entry = tee_state
-            .participants_attestations
+            .stored_attestations
             .get(&node_id.tls_public_key)
             .unwrap();
 
@@ -631,12 +643,12 @@ mod tests {
             .unwrap();
 
         // then
-        assert_eq!(tee_state.participants_attestations.len(), 2);
+        assert_eq!(tee_state.stored_attestations.len(), 2);
         assert!(tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&node_1.tls_public_key));
         assert!(tee_state
-            .participants_attestations
+            .stored_attestations
             .contains_key(&node_2.tls_public_key));
     }
 
@@ -761,5 +773,170 @@ mod tests {
 
         // then
         assert_matches!(status, TeeQuoteStatus::Invalid(msg) if msg.contains("participant has no attestation"));
+    }
+
+    #[test]
+    fn test_is_caller_attested_success() {
+        let mut tee_state = TeeState::default();
+        let tee_upgrade_duration = Duration::MAX;
+        // Generate 1 participant
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+
+        // 1. Define the Signer's NEAR Public Key (Wallet Key)
+        let signer_pk = bogus_ed25519_near_public_key();
+
+        // 2. Set the environment so the caller is the participant
+        set_signer(account_id, &signer_pk);
+
+        // 3. Register the attestation in TeeState
+        // The TLS key comes from participant_info, the Account Key must match the signer_pk
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: participant_info.sign_pk.clone(),
+            account_public_key: Some(signer_pk),
+        };
+        tee_state
+            .add_participant(
+                node_id,
+                Attestation::Mock(MockAttestation::Valid),
+                tee_upgrade_duration,
+            )
+            .expect("Attestation is valid on insertion");
+
+        // 4. Verify check passes
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_caller_attested_success_legacy_no_account_key() {
+        // Tests the case where account_public_key is None (legacy/mock nodes)
+        let tee_upgrade_duration = Duration::MAX;
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+
+        let signer_pk = bogus_ed25519_near_public_key();
+        set_signer(account_id, &signer_pk);
+
+        // Register attestation with None for account_public_key
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: participant_info.sign_pk.clone(),
+            account_public_key: None,
+        };
+        tee_state
+            .add_participant(
+                node_id,
+                Attestation::Mock(MockAttestation::Valid),
+                tee_upgrade_duration,
+            )
+            .expect("Attestation is valid on insertion");
+
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+        assert_matches!(result, Ok(()));
+    }
+
+    #[test]
+    fn test_err_caller_not_participant() {
+        let tee_state = TeeState::default();
+        let participants = gen_participants(1);
+
+        // Caller is NOT in the participants list
+        let random_account: AccountId = "random_guy.near".parse().unwrap();
+        let random_pk = bogus_ed25519_near_public_key();
+        set_signer(&random_account, &random_pk);
+
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+
+        assert_matches!(result, Err(AttestationCheckError::CallerNotParticipant));
+    }
+
+    #[test]
+    fn test_err_attestation_not_found() {
+        let tee_state = TeeState::default();
+        let participants = gen_participants(1);
+        let (account_id, _, _) = participants.participants().iter().next().unwrap();
+
+        let signer_pk = bogus_ed25519_near_public_key();
+        set_signer(account_id, &signer_pk);
+
+        // We do NOT add the participant to tee_state.stored_attestations
+
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+
+        assert_matches!(result, Err(AttestationCheckError::AttestationNotFound));
+    }
+
+    #[test]
+    fn test_err_attestation_owner_mismatch() {
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let tee_upgrade_duration = Duration::MAX;
+
+        let signer_pk = bogus_ed25519_near_public_key();
+        set_signer(account_id, &signer_pk);
+
+        // Create a data integrity issue:
+        // The TLS key in `participants` points to an entry in `tee_state`...
+        // ...but that entry claims it belongs to a different AccountId.
+        let other_account: AccountId = "imposter.near".parse().unwrap();
+
+        let node_id = NodeId {
+            account_id: other_account, // Mismatch here
+            tls_public_key: participant_info.sign_pk.clone(),
+            account_public_key: Some(signer_pk),
+        };
+        tee_state
+            .add_participant(
+                node_id,
+                Attestation::Mock(MockAttestation::Valid),
+                tee_upgrade_duration,
+            )
+            .expect("Attestation is valid on insertion");
+
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+
+        assert_matches!(result, Err(AttestationCheckError::AttestationOwnerMismatch));
+    }
+
+    #[test]
+    fn test_err_attestation_key_mismatch() {
+        // given
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(1);
+        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let tee_upgrade_duration = Duration::MAX;
+
+        let signer_pk = bogus_ed25519_near_public_key();
+        set_signer(account_id, &signer_pk);
+
+        // Generate a different key for the stored attestation
+        // (e.g., The user rotated their wallet key, but hasn't updated the TEE registry)
+        let old_signer_pk: near_sdk::PublicKey =
+            "ed25519:3t4M1gXg2Qd5g6X8z1g2X3t4M1gXg2Qd5g6X8z1g2X3t"
+                .parse()
+                .unwrap();
+
+        let node_id = NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: participant_info.sign_pk.clone(),
+            account_public_key: Some(old_signer_pk), // Mismatch here
+        };
+        tee_state
+            .add_participant(
+                node_id,
+                Attestation::Mock(MockAttestation::Valid),
+                tee_upgrade_duration,
+            )
+            .expect("Attestation is valid on insertion");
+
+        // when
+        let result = tee_state.is_caller_an_attested_participant(&participants);
+
+        // then
+        assert_matches!(result, Err(AttestationCheckError::AttestationKeyMismatch));
     }
 }

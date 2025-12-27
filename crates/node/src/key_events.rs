@@ -18,7 +18,9 @@ use crate::{
     },
     keyshare::{Keyshare, KeyshareData, KeyshareStorage},
     network::NetworkTaskChannel,
-    providers::{CKDProvider, EcdsaSignatureProvider, SignatureProvider},
+    providers::{
+        CKDProvider, EcdsaSignatureProvider, RobustEcdsaSignatureProvider, SignatureProvider,
+    },
 };
 use contract_interface::types as dtos;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
@@ -63,6 +65,12 @@ pub async fn keygen_computation_inner(
             let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Secp256k1(keyshare), public_key)
         }
+        SignatureScheme::V2Secp256k1 => {
+            let keyshare =
+                RobustEcdsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
+            let public_key = keyshare.public_key.into_contract_interface_type();
+            (KeyshareData::V2Secp256k1(keyshare), public_key)
+        }
         SignatureScheme::Ed25519 => {
             let keyshare =
                 EddsaSignatureProvider::run_key_generation_client(threshold, channel).await?;
@@ -73,10 +81,6 @@ pub async fn keygen_computation_inner(
             let keyshare = CKDProvider::run_key_generation_client(threshold, channel).await?;
             let public_key = keyshare.public_key.into_contract_interface_type();
             (KeyshareData::Bls12381(keyshare), public_key)
-        }
-        SignatureScheme::V2Secp256k1 => {
-            // TODO(#1640): integration of robust ecdsa provider
-            todo!()
         }
     };
 
@@ -219,6 +223,27 @@ async fn resharing_computation_inner(
             )
             .await?;
             KeyshareData::Secp256k1(res)
+        }
+        (
+            contract_interface::types::PublicKey::Secp256k1(inner_public_key),
+            SignatureScheme::V2Secp256k1,
+        ) => {
+            let public_key = inner_public_key.try_into_node_type()?;
+            let my_share = existing_keyshare
+                .map(|keyshare| match keyshare.data {
+                    KeyshareData::V2Secp256k1(data) => Ok(data.private_share),
+                    _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
+                })
+                .transpose()?;
+            let res = RobustEcdsaSignatureProvider::run_key_resharing_client(
+                args.new_threshold,
+                my_share,
+                public_key,
+                &args.old_participants,
+                channel,
+            )
+            .await?;
+            KeyshareData::V2Secp256k1(res)
         }
         (
             contract_interface::types::PublicKey::Ed25519(inner_public_key),
