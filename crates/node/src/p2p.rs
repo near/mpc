@@ -108,6 +108,12 @@ impl TlsConnection {
         let conn = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
+
+        // Disable Nagle's algorithm, TCP_NODELAY, to send small packets immediately.
+        // This reduces latency for node messages at the cost of higher packet overhead.
+        conn.set_nodelay(true)
+            .context("failed to enable `TCP_NODELAY`")?;
+
         let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
             .connect("dummy".try_into().unwrap(), conn)
             .await
