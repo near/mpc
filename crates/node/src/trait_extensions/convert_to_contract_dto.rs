@@ -67,11 +67,11 @@ impl IntoContractInterfaceType<contract_interface::types::MockAttestation> for M
             MockAttestation::WithConstraints {
                 mpc_docker_image_hash,
                 launcher_docker_compose_hash,
-                expiry_time_stamp_seconds,
+                expiry_timestamp_seconds,
             } => contract_interface::types::MockAttestation::WithConstraints {
                 mpc_docker_image_hash: mpc_docker_image_hash.map(Into::into),
                 launcher_docker_compose_hash: launcher_docker_compose_hash.map(Into::into),
-                expiry_time_stamp_seconds,
+                expiry_timestamp_seconds,
             },
         }
     }
