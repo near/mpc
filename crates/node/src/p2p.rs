@@ -25,6 +25,11 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+/// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
+/// This will send small packets immediately, reducing latency for node messages at
+///  the cost of higher packet overhead.
+const TCP_NODELAY: bool = true;
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -109,9 +114,7 @@ impl TlsConnection {
             .await
             .context("TCP connect")?;
 
-        // Disable Nagle's algorithm, TCP_NODELAY, to send small packets immediately.
-        // This reduces latency for node messages at the cost of higher packet overhead.
-        conn.set_nodelay(true)
+        conn.set_nodelay(TCP_NODELAY)
             .context("failed to enable `TCP_NODELAY`")?;
 
         let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
@@ -362,6 +365,9 @@ pub async fn new_tls_mesh_network(
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
+            tcp_stream
+                .set_nodelay(TCP_NODELAY)
+                .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
