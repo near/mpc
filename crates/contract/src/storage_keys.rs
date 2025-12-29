@@ -13,7 +13,7 @@ pub enum StorageKey {
     PendingSignatureRequestsV2,
     ProposedUpdatesEntriesV2,
     ProposedUpdatesVotesV2,
-    TeeParticipantAttestation,
+    _DeprecatedTeeParticipantAttestation,
     PendingCKDRequests,
     BackupServicesInfo,
     NodeMigrations,
