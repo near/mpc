@@ -365,14 +365,15 @@ pub async fn new_tls_mesh_network(
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-            tcp_stream
-                .set_nodelay(TCP_NODELAY)
-                .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
             let message_sender = message_sender.clone();
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
+                tcp_stream
+                    .set_nodelay(TCP_NODELAY)
+                    .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
+
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
