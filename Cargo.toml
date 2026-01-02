@@ -105,13 +105,16 @@ near-sdk = { version = "5.18.1", features = [
     "unstable",
 ] }
 near-workspaces = { version = "0.21.0" }
+pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"], default-features = false }
 proc-macro2 = "1.0"
+prost = "0.14.1"
 prometheus = { version = "0.13.4", default-features = false }
 quote = "1.0"
 rand = "0.8.5"
 rand_chacha = "0.3"
 rand_core = "0.6.4"
 rcgen = "0.13.1"
+regex = "1.12.2"
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rocksdb = "0.21.0"
 rstest = "0.25.0"
