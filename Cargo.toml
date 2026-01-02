@@ -105,7 +105,7 @@ near-sdk = { version = "5.18.1", features = [
     "unstable",
 ] }
 near-workspaces = { version = "0.21.0" }
-pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"], default-features = false }
+pprof = { version = "0.15.0", features = ["cpp", "flamegraph"], default-features = false }
 proc-macro2 = "1.0"
 prost = "0.14.1"
 prometheus = { version = "0.13.4", default-features = false }
