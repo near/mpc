@@ -13,12 +13,11 @@ use mpc_attestation::attestation::Attestation;
 use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use node_types::http_server::StaticWebData;
-use pprof::flamegraph;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
-use tokio::task::spawn_blocking;
 use tower::limit::GlobalConcurrencyLimitLayer;
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
@@ -179,8 +178,7 @@ pub fn static_web_data(
         tee_participant_info,
     }
 }
-
-async fn flamegraph() {
+async fn flamegraph() -> impl IntoResponse {
     const DURATION: Duration = Duration::from_secs(30);
     const FREQUENCY_HZ: i32 = 1000;
 
@@ -188,20 +186,31 @@ async fn flamegraph() {
 
     match pprof_report {
         Ok(report) => {
-            let flamegraph_svg = Vec::new();
-            let flamegraph_svg = report.flamegraph(flamegraph_svg);
-            // Return the SVG as the response
-            (
-                StatusCode::OK,
-                [("Content-Type", "image/svg+xml")],
-                flamegraph_svg,
-            )
+            let mut flamegraph_svg = Vec::new();
+            if let Err(e) = report.flamegraph(&mut flamegraph_svg) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Error generating flamegraph: {:?}", e),
+                )
+                    .into_response();
+            }
+
+            // Using the Html helper converts the Vec<u8> to a String
+            // Note: This sets Content-Type to text/html
+            match String::from_utf8(flamegraph_svg) {
+                Ok(svg_str) => Html(svg_str).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Error encoding SVG as UTF-8: {:?}", e),
+                )
+                    .into_response(),
+            }
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            [("Content-Type", "text/plain")],
-            format!("Error collecting flamegraph: {:?}", e),
-        ),
+            format!("Error collecting pprof: {:?}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -232,7 +241,7 @@ pub async fn start_web_server(
     );
 
     let pprof_router = axum::Router::new()
-        .route("/pprof/flamegraph", flamegraph)
+        .route("/pprof/flamegraph", axum::routing::get(flamegraph))
         .layer(GlobalConcurrencyLimitLayer::new(1));
 
     let router = axum::Router::new()
@@ -252,9 +261,7 @@ pub async fn start_web_server(
             protocol_state_receiver,
             migration_state_receiver,
             static_web_data,
-        })
-        .route_layer(layer)
-        .route(path, method_router);
+        });
 
     let router = router.merge(pprof_router);
 
