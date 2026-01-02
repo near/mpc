@@ -38,13 +38,13 @@ pub(crate) async fn collect_pprof(
     guard
         .report()
         .frames_post_processor(move |frames| {
-            frames.thread_name = normalize_thread_name(&frames.thread_name);
+            frames.thread_name = normalized_thread_name(&frames.thread_name);
         })
         .build()
         .map_err(Into::into)
 }
 
-fn normalize_thread_name(thread_name: &str) -> String {
+fn normalized_thread_name(thread_name: &str) -> String {
     let is_purely_numeric = thread_name.chars().all(|char| char.is_ascii_digit());
 
     if is_purely_numeric {
@@ -68,13 +68,13 @@ mod tests {
 
     #[test]
     fn leaves_thread_name_unchanged_when_no_trailing_numeric_id_exists() {
-        assert_eq!(normalize_thread_name("main"), "main");
+        assert_eq!(normalized_thread_name("main"), "main");
     }
 
     #[test]
     fn removes_numeric_suffix_from_tokio_worker_thread_name() {
         assert_eq!(
-            normalize_thread_name("tokio-runtime-worker-1"),
+            normalized_thread_name("tokio-runtime-worker-1"),
             "tokio-runtime-worker"
         );
     }
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn replaces_underscores_with_dashes_and_strips_trailing_numeric_id() {
         assert_eq!(
-            normalize_thread_name("db_connection_pool_01"),
+            normalized_thread_name("db_connection_pool_01"),
             "db-connection-pool"
         );
     }
@@ -90,33 +90,33 @@ mod tests {
     #[test]
     fn replaces_spaces_with_dashes_in_multi_word_thread_names() {
         assert_eq!(
-            normalize_thread_name("Search Engine Worker"),
+            normalized_thread_name("Search Engine Worker"),
             "Search-Engine-Worker"
         );
     }
 
     #[test]
     fn preserves_character_casing_while_removing_trailing_numeric_id() {
-        assert_eq!(normalize_thread_name("IO-Manager-1"), "IO-Manager");
+        assert_eq!(normalized_thread_name("IO-Manager-1"), "IO-Manager");
     }
 
     #[test]
     fn results_in_empty_string_when_input_is_entirely_numeric() {
-        assert_eq!(normalize_thread_name("12345"), "");
+        assert_eq!(normalized_thread_name("12345"), "");
     }
 
     #[test]
     fn does_not_strip_trailing_numbers_if_no_separator_is_present() {
-        assert_eq!(normalize_thread_name("worker123"), "worker123");
+        assert_eq!(normalized_thread_name("worker123"), "worker123");
     }
 
     #[test]
     fn handles_multiple_successive_separators_correctly_when_stripping_ids() {
-        assert_eq!(normalize_thread_name("db-pool-_01"), "db-pool");
+        assert_eq!(normalized_thread_name("db-pool-_01"), "db-pool");
     }
 
     #[test]
     fn does_not_strip_numeric_parts_of_version_strings_at_the_start() {
-        assert_eq!(normalize_thread_name("v2-engine"), "v2-engine");
+        assert_eq!(normalized_thread_name("v2-engine"), "v2-engine");
     }
 }
