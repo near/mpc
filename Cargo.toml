@@ -139,6 +139,7 @@ tokio = { version = "1.41.0", features = ["full"] }
 tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
+tower = "0.5.2"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.20", features = [
     "env-filter",
