@@ -264,12 +264,20 @@ class MpcCluster:
         """
         n_attempts = 120
         n = 0
-        while not self.contract_state().is_state(state) and n < n_attempts:
-            time.sleep(0.1)
+        contract_state = self.contract_state()
+        time.sleep(0.2)
+        while not contract_state.is_state(state) and n < n_attempts:
             n += 1
             if n % 10 == 0:
-                self.contract_state().print()
+                contract_state.print()
+            contract_state = self.contract_state()
+            time.sleep(0.2)
 
+        # Note: without this line, or by doing `contract_state.print()` instead,
+        # tests fail with:
+        # >       assert nonce is not None
+        # E       AssertionError
+        # common_lib/shared/near_account.py:105: AssertionError
         self.contract_state().print()
         return n < n_attempts
 
@@ -350,42 +358,37 @@ class MpcCluster:
             )
             self.update_participant_status()
 
-    def get_contract_state(self) -> Any:
-        cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.STATE, {})
-        res = cn.send_txn_and_check_success(txn)
+    def call_contract_function_with_account_assert_success(
+        self, account: NearAccount, function_name: str, args: dict = {}
+    ) -> Any:
+        txn = account.sign_tx(self.mpc_contract_account(), function_name, args)
+        res = account.send_txn_and_check_success(txn)
         assert "error" not in res, res
         res = res["result"]["status"]["SuccessValue"]
         res = base64.b64decode(res)
         res = json.loads(res)
         return res
 
+    def call_contract_function_assert_success(
+        self, function_name: str, args: dict = {}
+    ) -> Any:
+        return self.call_contract_function_with_account_assert_success(
+            self.contract_node, function_name, args
+        )
+
+    def get_contract_state(self) -> Any:
+        res = self.call_contract_function_assert_success(ContractMethod.STATE)
+        return res
+
     def get_migrations(self) -> MigrationState:
-        cn = self.contract_node
-        txn = cn.sign_tx(self.mpc_contract_account(), ContractMethod.MIGRATION_INFO, {})
-        res = cn.send_txn_and_check_success(txn)
-        assert "error" not in res, res
-        res = res["result"]["status"]["SuccessValue"]
-        res = base64.b64decode(res)
-        res = json.loads(res)
+        res = self.call_contract_function_assert_success(ContractMethod.MIGRATION_INFO)
         return parse_migration_state(res)
 
     def get_tee_approved_accounts(self) -> List[str]:
-        contract_node = self.contract_node
-        get_tee_accounts_transaction = contract_node.sign_tx(
-            self.mpc_contract_account(), ContractMethod.GET_TEE_ACCOUNTS, {}
+        node_ids = self.call_contract_function_assert_success(
+            ContractMethod.GET_TEE_ACCOUNTS
         )
-        transaction_response = contract_node.send_txn_and_check_success(
-            get_tee_accounts_transaction
-        )
-        assert "error" not in transaction_response, transaction_response
-
-        node_ids = transaction_response["result"]["status"]["SuccessValue"]
-        node_ids = base64.b64decode(node_ids)
-        node_ids = json.loads(node_ids)
-
         tls_public_keys = [node_id["tls_public_key"] for node_id in node_ids]
-
         return tls_public_keys
 
     def wait_for_nodes_to_have_attestation(self, participants: List[MpcNode]) -> bool:
@@ -540,46 +543,27 @@ class MpcCluster:
 
     def get_config(self, node_id=0):
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(self.mpc_contract_account(), "config", {})
-        res = node.send_txn_and_check_success(tx)
-        return json.dumps(
-            json.loads(
-                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
-                    "utf-8"
-                )
-            )
+        res = self.call_contract_function_with_account_assert_success(
+            node, ContractMethod.CONFIG
         )
+        return json.dumps(res)
 
     def register_backup_service_info(
         self, node_id: int, backup_service_info: BackupServiceInfo
     ):
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(
-            self.mpc_contract_account(),
-            "register_backup_service",
-            {"backup_service_info": asdict(backup_service_info)},
+        args = {"backup_service_info": asdict(backup_service_info)}
+        res = self.call_contract_function_with_account_assert_success(
+            node, ContractMethod.REGISTER_BACKUP_SERVICE, args
         )
-        res = node.send_txn_and_check_success(tx)
-        return json.dumps(
-            json.loads(
-                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode()
-            )
-        )
+        return json.dumps(res)
 
     def start_node_migration(
         self, node_id: int, destination_node_info: DestinationNodeInfo
     ):
         node = self.mpc_nodes[node_id]
-        tx = node.sign_tx(
-            self.mpc_contract_account(),
-            "start_node_migration",
-            {"destination_node_info": asdict(destination_node_info)},
+        args = {"destination_node_info": asdict(destination_node_info)}
+        res = self.call_contract_function_with_account_assert_success(
+            node, ContractMethod.START_NODE_MIGRATION, args
         )
-        res = node.send_txn_and_check_success(tx)
-        return json.dumps(
-            json.loads(
-                base64.b64decode(res["result"]["status"]["SuccessValue"]).decode(
-                    "utf-8"
-                )
-            )
-        )
+        return json.dumps(res)
