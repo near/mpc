@@ -6,6 +6,40 @@ use tokio::task::{spawn_blocking, JoinError};
 
 static THREAD_ID_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_-]\d+$").unwrap());
 
+// Use a blocklist to ensure async-signal safety.
+// This prevents deadlocks if a profiling signal interrupts a thread
+// while it holds internal locks in libc/libgcc (e.g., during unwinding).
+// Ref: https://github.com/tikv/pprof-rs#backtrace
+const SYS_CALL_BLOCK_LIST: &[&str] = &[
+    "libc",
+    "libgcc",
+    "pthread",
+    "vdso",
+    // macOS (especially Apple Silicon) requires a much stricter blocklist.
+    // The hardware uses Pointer Authentication (PAC), which triggers SIGTRAP
+    // if a stack trace is attempted while the stack is in an inconsistent state.
+    #[cfg(target_os = "macos")]
+    "libsystem",
+    #[cfg(target_os = "macos")]
+    "libobjc",
+    #[cfg(target_os = "macos")]
+    "dyld",
+    #[cfg(target_os = "macos")]
+    "libunwind",
+    #[cfg(target_os = "macos")]
+    "libsystem_platform",
+    #[cfg(target_os = "macos")]
+    "libsystem_kernel",
+    #[cfg(target_os = "macos")]
+    "libsystem_malloc",
+    #[cfg(target_os = "macos")]
+    "libsystem_c",
+    #[cfg(target_os = "macos")]
+    "CoreFoundation",
+    #[cfg(target_os = "macos")]
+    "Foundation",
+];
+
 /// Errors returned by `profile()` and `flamegraph()`.
 #[derive(Debug, Error)]
 pub(crate) enum ProfileCollectionError {
@@ -24,11 +58,7 @@ pub(crate) async fn collect_pprof(
     let guard = spawn_blocking(move || {
         ProfilerGuardBuilder::default()
             .frequency(frequency_hz)
-            // Use a blocklist to ensure async-signal safety.
-            // This prevents deadlocks if a profiling signal interrupts a thread
-            // while it holds internal locks in libc/libgcc (e.g., during unwinding).
-            // Ref: https://github.com/tikv/pprof-rs#backtrace
-            .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+            .blocklist(&SYS_CALL_BLOCK_LIST)
             .build()
     })
     .await??;
