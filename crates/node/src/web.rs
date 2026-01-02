@@ -4,7 +4,7 @@ use crate::profiling::collect_pprof;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Response, StatusCode};
+use axum::http::{header, Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
@@ -19,6 +19,8 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
 use tower::limit::GlobalConcurrencyLimitLayer;
+
+pub const CONTENT_TYPE_SVG: &str = "image/svg+xml";
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -178,39 +180,23 @@ pub fn static_web_data(
         tee_participant_info,
     }
 }
-async fn flamegraph() -> impl IntoResponse {
-    const DURATION: Duration = Duration::from_secs(30);
-    const FREQUENCY_HZ: i32 = 1000;
 
-    let pprof_report = collect_pprof(DURATION, FREQUENCY_HZ).await;
+async fn flamegraph() -> impl IntoResponse {
+    let pprof_report = collect_pprof(Duration::from_secs(30), 1000).await;
 
     match pprof_report {
         Ok(report) => {
-            let mut flamegraph_svg = Vec::new();
-            if let Err(e) = report.flamegraph(&mut flamegraph_svg) {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Error generating flamegraph: {:?}", e),
-                )
-                    .into_response();
-            }
+            let mut svg_buffer = Vec::new();
+            report.flamegraph(&mut svg_buffer).unwrap();
 
-            // Using the Html helper converts the Vec<u8> to a String
-            // Note: This sets Content-Type to text/html
-            match String::from_utf8(flamegraph_svg) {
-                Ok(svg_str) => Html(svg_str).into_response(),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Error encoding SVG as UTF-8: {:?}", e),
-                )
-                    .into_response(),
-            }
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, CONTENT_TYPE_SVG)],
+                svg_buffer,
+            )
+                .into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error collecting pprof: {:?}", e),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {:?}", e)).into_response(),
     }
 }
 
