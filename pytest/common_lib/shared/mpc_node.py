@@ -1,10 +1,10 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import enum
 import json
 import pathlib
 import sys
 import time
-from typing import Any, cast
+from typing import cast
 
 from key import Key
 from ruamel.yaml import YAML
@@ -33,24 +33,6 @@ import requests
 DUMMY_MPC_IMAGE_HASH = "deadbeef" * 8
 
 
-@dataclass
-class SocketAddress:
-    host: str
-    port: str
-
-    @staticmethod
-    def from_config(config_section: Any) -> "SocketAddress":
-        return SocketAddress(
-            host=config_section.get("host"), port=config_section.get("port")
-        )
-
-    def __str__(self) -> str:
-        return f"{self.host}:{self.port}"
-
-    def __repr__(self) -> str:
-        return f"{self.host}:{self.port}"
-
-
 class MpcNode(NearAccount):
     """
     MPC Node interface to keep track of the current status in the Chain-Signatures contract.
@@ -74,16 +56,16 @@ class MpcNode(NearAccount):
         near_node: LocalNode,
         signer_key: Key,
         p2p_url: str,
-        web_address: SocketAddress,
-        migration_address: SocketAddress,
+        web_address: str,
+        migration_address: str,
         p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
     ):
         super().__init__(near_node, signer_key, pytest_signer_keys)
         self.p2p_url: str = p2p_url
-        self.web_address: SocketAddress = web_address
-        self.migration_address: SocketAddress = migration_address
+        self.web_address = web_address
+        self.migration_address = migration_address
         self.p2p_public_key: str = p2p_public_key
         self.status: MpcNode.NodeStatus = MpcNode.NodeStatus.IDLE
         self.participant_id: int | None = None
