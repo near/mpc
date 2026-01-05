@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
@@ -7,7 +7,7 @@ use tokio::sync::{watch, RwLock};
 use types::MigrationInfo;
 
 use crate::{
-    config::{AesKey256, SecretsConfig, WebUIConfig},
+    config::{AesKey256, SecretsConfig},
     indexer::{participants::ContractState, tx_sender::TransactionSender},
     keyshare::KeyshareStorage,
 };
@@ -31,7 +31,7 @@ impl From<&SecretsConfig> for MigrationSecrets {
 }
 
 pub async fn spawn_recovery_server_and_run_onboarding(
-    migration_web_ui: WebUIConfig,
+    migration_web_ui: SocketAddr,
     migration_secrets: MigrationSecrets,
     my_near_account_id: AccountId,
     keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -48,7 +48,7 @@ pub async fn spawn_recovery_server_and_run_onboarding(
 
     web::server::start_web_server(
         web_server_state.into(),
-        migration_web_ui.clone(),
+        migration_web_ui,
         my_migration_info_receiver.clone(),
         &migration_secrets.p2p_private_key,
     )
