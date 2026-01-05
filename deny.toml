@@ -31,6 +31,10 @@ ignore = [
   # - `ruint` is a transitive dependency through `alloy`.
   # - The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
   "RUSTSEC-2025-0137",
+  # - `rkyv` has potential UB in Arc/Rc impls on OOM (ref: rkyv/rkyv#644).
+  # - `rkyv` is a transitive dependency through `nearcore`.
+  # - We cannot update it directly; waiting for nearcore to bump their dependency.
+  "RUSTSEC-2026-0001",
 ]
 
 [bans]
