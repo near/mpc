@@ -1,6 +1,6 @@
 use crate::config::{SecretsConfig, WebUIConfig};
 use crate::indexer::migrations::ContractMigrationInfo;
-use crate::profiler::collect_pprof;
+use crate::profiler::pprof::collect_pprof;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
