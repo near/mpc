@@ -18,6 +18,11 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+/// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
+/// This will send small packets immediately, reducing latency for node messages at
+///  the cost of higher packet overhead.
+const TCP_NODELAY: bool = true;
+
 use crate::{
     config::MpcConfig,
     network::{
@@ -230,6 +235,10 @@ impl TlsConnection {
         let conn = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
+
+        conn.set_nodelay(TCP_NODELAY)
+            .context("failed to enable `TCP_NODELAY`")?;
+
         let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
             .connect("dummy".try_into().unwrap(), conn)
             .await
@@ -541,6 +550,10 @@ pub async fn new_tls_mesh_network(
             let connectivities = connectivities_clone.clone();
             let connections = connections_for_incoming.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
+                tcp_stream
+                    .set_nodelay(TCP_NODELAY)
+                    .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
+
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
