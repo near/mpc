@@ -213,7 +213,7 @@ impl TlsConnection {
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
     /// If we don't receive a pong response within this time, consider the connection dead.
-    const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
     /// Interval between consecutive pings. A new ping is sent 1 second after the previous
     /// ping was sent, but only after receiving its pong response.
