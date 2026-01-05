@@ -15,23 +15,29 @@ macro_rules! define_block_list {
     };
 }
 
-// Use a blocklist to ensure async-signal safety.
-// This prevents deadlocks if a profiling signal interrupts a thread
-// while it holds internal locks in libc/libgcc (e.g., during unwinding).
-// Ref: https://github.com/tikv/pprof-rs#backtrace
+/// Use a blocklist to ensure async-signal safety.
+/// This prevents deadlocks if a profiling signal interrupts a thread
+/// while it holds internal locks in libc/libgcc (e.g., during unwinding).
+/// Ref: https://github.com/tikv/pprof-rs#backtrace
 const SYS_CALL_BLOCK_LIST: &[&str] = define_block_list! {
     common: ["libc", "libgcc", "pthread", "vdso"],
-    // macOS (especially Apple Silicon) requires a much stricter blocklist.
-    // The hardware uses Pointer Authentication (PAC), which triggers SIGTRAP
+    // macOS, especially Apple Silicon, requires a much stricter blocklist.
+    // Apple's ARM CPUs use Pointer Authentication (PAC), which triggers SIGTRAP
     // if a stack trace is attempted while the stack is in an inconsistent state.
     macos_extra: [
-        "libsystem", "libobjc", "dyld", "libunwind",
-        "libsystem_platform", "libsystem_kernel", "libsystem_malloc",
-        "libsystem_c", "CoreFoundation", "Foundation"
+        "libsystem",
+        "libobjc",
+        "dyld",
+        "libunwind",
+        "libsystem_platform",
+        "libsystem_kernel",
+        "libsystem_malloc",
+        "libsystem_c",
+        "CoreFoundation",
+        "Foundation"
     ]
 };
 
-/// Errors returned by `profile()` and `flamegraph()`.
 #[derive(Debug, Error)]
 pub(crate) enum ProfileCollectionError {
     #[error("pprof profiling error")]
