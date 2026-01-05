@@ -29,6 +29,14 @@ pub static MAX_MALICIOUS: LazyLock<usize> = std::sync::LazyLock::new(|| {
         .unwrap_or(6)
 });
 
+// fix number of samples
+pub static SAMPLE_SIZE: LazyLock<usize> = std::sync::LazyLock::new(|| {
+    env::var("SAMPLE_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(15)
+});
+
 /// This helps defining a generic type for the benchmarks prepared outputs
 pub struct PreparedOutputs<T> {
     pub participant: Participant,
