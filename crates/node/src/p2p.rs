@@ -414,49 +414,46 @@ impl PersistentConnection {
         participant_identities: Arc<ParticipantIdentities>,
         connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
-        let connectivity_clone = connectivity.clone();
+        let connectivity_clone = Arc::clone(&connectivity);
         let (pong_buffer_tx, mut pong_buffer_rx) = mpsc::unbounded_channel::<u64>();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 loop {
-                    let new_conn = match TlsConnection::new(
-                        client_config.clone(),
+                    match TlsConnection::new(
+                        Arc::clone(&client_config),
                         &target_address,
                         target_participant_id,
                         &participant_identities,
                     )
                     .await
                     {
-                        Ok(new_conn) => {
+                        Ok(conn) => {
+                            let new_conn = Arc::new(conn);
                             tracing::info!(
                                 "Outgoing {} --> {} connected",
                                 my_id,
                                 target_participant_id
                             );
-                            Arc::new(new_conn)
+
+                            // Register connection and drain any buffered Pongs
+                            connectivity.set_outgoing_connection(&new_conn);
+                            while let Ok(seq) = pong_buffer_rx.try_recv() {
+                                let _ = new_conn.sender.send(Packet::Pong(seq));
+                            }
+
+                            new_conn.wait_for_close().await;
                         }
                         Err(e) => {
-                            tracing::info!(
-                                "Could not connect to {}, retrying: {}, me {}",
+                            tracing::warn!(
+                                "Could not connect to {}: {:#}, retrying (me: {})",
                                 target_participant_id,
                                 e,
                                 my_id
                             );
-                            // Don't immediately retry, to avoid spamming the network with
-                            // connection attempts.
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
-                            continue;
                         }
-                    };
-                    connectivity.set_outgoing_connection(&new_conn);
-
-                    // Drain buffered Pongs and send them now that connection is available
-                    while let Ok(seq) = pong_buffer_rx.try_recv() {
-                        let _ = new_conn.sender.send(Packet::Pong(seq));
                     }
-
-                    new_conn.wait_for_close().await;
                 }
             },
         );
