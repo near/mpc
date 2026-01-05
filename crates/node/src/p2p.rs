@@ -160,10 +160,10 @@ struct TlsConnection {
     /// Background task that sends Ping heartbeats and monitors Pong responses.
     ///
     /// This task sends a Ping with an incrementing sequence number and then waits for either a
-    /// Pong response (via the `pong_tx` watch channel) or a timeout. When a Pong is received,
+    /// Pong response (via the `pong_rx` watch channel) or a timeout. When a Pong is received,
     /// it validates the sequence number, calculates RTT, and waits until [`Self::PING_INTERVAL`]
     /// (1 second) has elapsed since the ping was sent before sending the next one. If no Pong is
-    /// received within [`Self::PONG_TIMEOUT`] (5 seconds), it closes the connection by cancelling
+    /// received within [`Self::PONG_TIMEOUT`] (20 seconds), it closes the connection by cancelling
     /// the `closed` token. This ensures pings are sent at exactly 1-second intervals while only
     /// sending when the previous ping received a response.
     _keepalive_task: AutoAbortTask<()>,
