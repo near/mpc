@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
 
-use std::path::Path;
+use std::{net::SocketAddr, path::Path};
 
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
@@ -150,6 +150,7 @@ pub struct ConfigFile {
 
     pub web_ui: WebUIConfig,
     pub migration_web_ui: WebUIConfig,
+    pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,

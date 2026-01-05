@@ -6,16 +6,8 @@ use tokio::task::{spawn_blocking, JoinError};
 
 static THREAD_ID_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_-]\d+$").unwrap());
 
-#[derive(Debug, Error)]
-pub(crate) enum ProfileCollectionError {
-    #[error("pprof profiling error")]
-    Pprof(#[from] pprof::Error),
-    #[error("runtime shutdown before profiling could complete")]
-    RuntimeShutdown(#[from] JoinError),
-}
-
 /// Collects a pprof profile for the specified duration and frequency (Hz).
-pub(crate) async fn collect_pprof(
+pub(super) async fn collect_pprof(
     duration: Duration,
     frequency_hz: i32,
 ) -> Result<Report, ProfileCollectionError> {
@@ -37,6 +29,14 @@ pub(crate) async fn collect_pprof(
         })
         .build()
         .map_err(Into::into)
+}
+
+#[derive(Debug, Error)]
+pub(super) enum ProfileCollectionError {
+    #[error("pprof profiling error")]
+    Pprof(#[from] pprof::Error),
+    #[error("runtime shutdown before profiling could complete")]
+    RuntimeShutdown(#[from] JoinError),
 }
 
 macro_rules! define_block_list {

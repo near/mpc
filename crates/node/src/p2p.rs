@@ -573,6 +573,10 @@ pub mod testing {
             self.compute_port(node_index as u16, 2)
         }
 
+        pub fn pprof_web_port(&self, node_index: usize) -> u16 {
+            self.compute_port(node_index as u16, 3)
+        }
+
         pub const CLI_FOR_PYTEST: Self = Self::new(0);
     }
 

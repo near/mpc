@@ -96,6 +96,7 @@ web_ui:
 migration_web_ui:
   host: 0.0.0.0
   port: 8079
+pprof_bind_address: 0.0.0.0:34001
 triple:
   concurrency: 2
   desired_triples_to_buffer: 1000000

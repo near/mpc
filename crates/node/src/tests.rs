@@ -3,6 +3,7 @@ use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
+use std::net::{Ipv4Addr, SocketAddr};
 
 use tokio::sync::{watch, RwLock};
 
@@ -216,6 +217,10 @@ impl IntegrationTestSetup {
                     host: "0.0.0.0".to_string(),
                     port: port_seed.migration_web_port(i),
                 },
+                pprof_bind_address: SocketAddr::new(
+                    Ipv4Addr::UNSPECIFIED.into(),
+                    port_seed.pprof_web_port(i),
+                ),
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {

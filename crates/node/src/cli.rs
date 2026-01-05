@@ -15,6 +15,7 @@ use crate::{
     },
     migration_service::spawn_recovery_server_and_run_onboarding,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
+    profiler,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -26,7 +27,11 @@ use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_time::Clock;
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Mutex,
+};
 use std::{path::PathBuf, sync::Arc, sync::OnceLock, time::Duration};
 use tee_authority::tee_authority::{
     DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, DEFAULT_DSTACK_ENDPOINT,
@@ -244,6 +249,8 @@ impl StartCmd {
             &home_dir,
             config.number_of_responder_keys,
         )?;
+
+        profiler::web_server::start_web_server(config.pprof_bind_address).await?;
 
         // TODO (#1296)
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
@@ -675,6 +682,10 @@ impl Cli {
                 host: "127.0.0.1".to_owned(),
                 port: PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
             },
+            pprof_bind_address: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
+            ),
             indexer: IndexerConfig {
                 validate_genesis: true,
                 sync_mode: SyncMode::Block(BlockArgs { height: 0 }),

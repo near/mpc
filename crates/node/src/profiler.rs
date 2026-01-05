@@ -1,1 +1,2 @@
-pub(crate) mod pprof;
+mod pprof;
+pub(crate) mod web_server;

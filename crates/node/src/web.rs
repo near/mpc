@@ -1,10 +1,9 @@
 use crate::config::{SecretsConfig, WebUIConfig};
 use crate::indexer::migrations::ContractMigrationInfo;
-use crate::profiler::pprof::collect_pprof;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, Response, StatusCode};
+use axum::http::{Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::{serve, Json};
 use ed25519_dalek::VerifyingKey;
@@ -15,12 +14,8 @@ use mpc_contract::utils::protocol_state_to_string;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
-use tower::limit::GlobalConcurrencyLimitLayer;
-
-pub const CONTENT_TYPE_SVG: &str = "image/svg+xml";
 
 /// Wrapper to make Axum understand how to convert anyhow::Error into a 500
 /// response.
@@ -181,25 +176,6 @@ pub fn static_web_data(
     }
 }
 
-async fn flamegraph() -> impl IntoResponse {
-    let pprof_report = collect_pprof(Duration::from_secs(30), 1000).await;
-
-    match pprof_report {
-        Ok(report) => {
-            let mut svg_buffer = Vec::new();
-            report.flamegraph(&mut svg_buffer).unwrap();
-
-            (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, CONTENT_TYPE_SVG)],
-                svg_buffer,
-            )
-                .into_response()
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {:?}", e)).into_response(),
-    }
-}
-
 async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
     state.static_web_data.clone().into()
 }
@@ -226,10 +202,6 @@ pub async fn start_web_server(
         "Attempting to bind web server to host",
     );
 
-    let pprof_router = axum::Router::new()
-        .route("/pprof/flamegraph", axum::routing::get(flamegraph))
-        .layer(GlobalConcurrencyLimitLayer::new(1));
-
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
         .route("/debug/tasks", axum::routing::get(debug_tasks))
@@ -248,8 +220,6 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
         });
-
-    let router = router.merge(pprof_router);
 
     let bind_address = format!("{}:{}", config.host, config.port);
 
