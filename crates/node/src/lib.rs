@@ -34,7 +34,7 @@ mod mpc_client;
 mod network;
 pub mod p2p;
 pub mod primitives;
-pub(crate) mod profiling;
+pub(crate) mod profiler;
 mod protocol;
 mod protocol_version;
 mod providers;
