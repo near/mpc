@@ -68,7 +68,11 @@ near tokens $ACCOUNT_ID send-near $RECEIVER_ID '9 NEAR' network-config testnet s
 ```
 
 After this, **$MPC_CONTRACT_ACCOUNT ** has **19 NEAR**, enough to deploy the MPC contract.
+you can review the account balance:
 
+```bash
+near account view-account-summary $MPC_CONTRACT_ACCOUNT network-config testnet now
+```
 ---
 
 ## Step 2: Deploy MPC Contract
@@ -127,14 +131,14 @@ export BOOTNODES=$(curl -X POST https://rpc.testnet.near.org \
 ### Replace config placeholders inside the config files
 
 ```bash
-envsubst < deployment/localnet/tee/frodo.conf > "/tmp/$USER/frodo.conf"
+envsubst < deployment/testnet/frodo.conf > "/tmp/$USER/frodo.conf"
 ```
 
 ```bash
-envsubst < deployment/localnet/tee/sam.conf > "/tmp/$USER/sam.conf"
+envsubst < deployment/testnet/sam.conf > "/tmp/$USER/sam.conf"
 ```
 
-Start the CVMs via `../tee_launcher/deploy-launcher.sh`.
+### deploy the CVMs using script
 
 #### 1. Move into the `tee_launcher` directory
 

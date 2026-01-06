@@ -193,12 +193,8 @@ cat > ~/.near/mpc-frodo/config.yaml << 'EOF'
 my_near_account_id: frodo.test.near
 near_responder_account_id: frodo.test.near
 number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8081
-migration_web_ui:
-  host: localhost
-  port: 8079
+web_ui: 127.0.0.1:8081
+migration_web_ui: 127.0.0.1:8079
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
@@ -247,12 +243,8 @@ cat > ~/.near/mpc-sam/config.yaml << 'EOF'
 my_near_account_id: sam.test.near
 near_responder_account_id: sam.test.near
 number_of_responder_keys: 1
-web_ui:
-  host: localhost
-  port: 8082
-migration_web_ui:
-  host: localhost
-  port: 8078
+web_ui: 127.0.0.1:8082
+migration_web_ui: 127.0.0.1:8078
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
