@@ -46,7 +46,6 @@ near-time = { workspace = true }
 node-types = { workspace = true }
 pprof.workspace = true
 prometheus = { workspace = true }
-prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 rocksdb = { workspace = true }
