@@ -6,43 +6,11 @@ use tokio::task::{spawn_blocking, JoinError};
 
 static THREAD_ID_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_-]\d+$").unwrap());
 
-/// Collects a pprof profile for the specified duration and frequency (Hz).
-pub(super) async fn collect_pprof(
-    duration: Duration,
-    frequency_hz: i32,
-) -> Result<Report, ProfileCollectionError> {
-    // building a profile guard is blocking, ~50ms
-    let guard = spawn_blocking(move || {
-        ProfilerGuardBuilder::default()
-            .frequency(frequency_hz)
-            .blocklist(&SYS_CALL_BLOCK_LIST)
-            .build()
-    })
-    .await??;
-
-    tokio::time::sleep(duration).await;
-
-    guard
-        .report()
-        .frames_post_processor(move |frames| {
-            frames.thread_name = normalized_thread_name(&frames.thread_name);
-        })
-        .build()
-        .map_err(Into::into)
-}
-
-#[derive(Debug, Error)]
-pub(super) enum ProfileCollectionError {
-    #[error("pprof profiling error")]
-    Pprof(#[from] pprof::Error),
-    #[error("runtime shutdown before profiling could complete")]
-    RuntimeShutdown(#[from] JoinError),
-}
-
 macro_rules! define_block_list {
     (common: [$($common:expr),*], macos_extra: [$($macos:expr),*]) => {
         &[
             $($common),*,
+            // macOS specific entries
             $( #[cfg(target_os = "macos")] $macos ),*
         ]
     };
@@ -70,6 +38,39 @@ const SYS_CALL_BLOCK_LIST: &[&str] = define_block_list! {
         "Foundation"
     ]
 };
+
+/// Collects a pprof profile for the specified duration and frequency (Hz).
+pub(super) async fn collect_pprof(
+    duration: Duration,
+    frequency_hz: i32,
+) -> Result<Report, ProfileCollectionError> {
+    // building a profile guard is blocking, ~50ms
+    let guard = spawn_blocking(move || {
+        ProfilerGuardBuilder::default()
+            .frequency(frequency_hz)
+            .blocklist(SYS_CALL_BLOCK_LIST)
+            .build()
+    })
+    .await??;
+
+    tokio::time::sleep(duration).await;
+
+    guard
+        .report()
+        .frames_post_processor(move |frames| {
+            frames.thread_name = normalized_thread_name(&frames.thread_name);
+        })
+        .build()
+        .map_err(Into::into)
+}
+
+#[derive(Debug, Error)]
+pub(super) enum ProfileCollectionError {
+    #[error("pprof profiling error")]
+    Pprof(#[from] pprof::Error),
+    #[error("runtime shutdown before profiling could complete")]
+    RuntimeShutdown(#[from] JoinError),
+}
 
 fn normalized_thread_name(thread_name: &str) -> String {
     let is_purely_numeric = thread_name.chars().all(|char| char.is_ascii_digit());
