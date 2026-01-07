@@ -31,11 +31,20 @@ ignore = [
   # - `ruint` is a transitive dependency through `alloy`.
   # - The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
   "RUSTSEC-2025-0137",
+  # Transitive via nearcore (lru 0.12.x); upgrade blocked without bumping nearcore
+  "RUSTSEC-2026-0002",
 ]
 
 [bans]
 multiple-versions = "deny"
-skip = [{ name = "prost-types" }]
+skip = [
+  { name = "prost-types" },
+  # Allow multiple versions pulled transitively by near-sdk/nearcore
+  { name = "lru" },
+  { name = "near-fmt" },
+  { name = "near-primitives" },
+  { name = "near-time" },
+]
 skip-tree = [
   { name = "reqwest" },
   { name = "axum" },
