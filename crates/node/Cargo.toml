@@ -83,3 +83,8 @@ rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }
+
+# Use frame-pointer to get the back-trace on macOS
+# see: https://github.com/tikv/pprof-rs/issues/131#issuecomment-1146991294
+[target.'cfg(target_os = "macos")'.dependencies]
+pprof = { workspace = true, features = ["frame-pointer"] }
