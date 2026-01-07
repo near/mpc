@@ -29,6 +29,7 @@ humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true }
+lru = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }

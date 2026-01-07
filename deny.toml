@@ -30,19 +30,12 @@ ignore = [
   # - `ruint::algorithms::div::reciprocal_mg10` has undefined behavior, no fix available as of now.
   # - `ruint` is a transitive dependency through `alloy`.
   # - The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
-  "RUSTSEC-2026-0002", # lru unsound advisory - transitive via nearcore@2.10.3
+  "RUSTSEC-2025-0137",
 ]
 
 [bans]
 multiple-versions = "deny"
-skip = [
-  { name = "prost-types" },
-  # near-sdk v5.24.0 pulls in old near-primitives/near-fmt/near-time (0.34.3)
-  # while nearcore v2.10.3 pulls in newer versions (2.10.3)
-  { name = "near-fmt" },
-  { name = "near-primitives" },
-  { name = "near-time" },
-]
+skip = [{ name = "prost-types" }]
 skip-tree = [
   { name = "reqwest" },
   { name = "axum" },
