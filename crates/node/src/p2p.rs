@@ -612,24 +612,27 @@ pub async fn new_tls_mesh_network(
                             // Send Pong via our outgoing connection to the peer, maintaining
                             // unidirectional I/O design. If outgoing isn't ready, store the pong
                             // to be sent when the connection becomes ready.
-                            if let Some(conn) = connections.get(&peer_id) {
-                                if let Some(outgoing_conn) =
-                                    conn.connectivity.any_outgoing_connection()
-                                {
-                                    if outgoing_conn.sender.send(Packet::Pong(seq)).is_err() {
-                                        // Close incoming so peer detects disconnect and both sides reconnect cleanly
-                                        tracing::info!(
-                                            peer = %peer_id,
-                                            "Outgoing connection is dead, closing incoming connection for clean reconnect"
-                                        );
-                                        break;
-                                    }
-                                } else {
-                                    // Outgoing connection not ready yet, store the latest pong.
-                                    // Ignore error: send only fails if the receiver is dropped,
-                                    // meaning the PersistentConnection is shutting down anyway.
-                                    let _ = conn.pending_pong.send(seq);
+                            let Some(conn) = connections.get(&peer_id) else {
+                                // Peer authenticated but not in connections map - indicates a bug
+                                tracing::warn!(peer = %peer_id, seq, "Received Ping from peer not in connections map");
+                                continue;
+                            };
+                            if let Some(outgoing_conn) =
+                                conn.connectivity.any_outgoing_connection()
+                            {
+                                if outgoing_conn.sender.send(Packet::Pong(seq)).is_err() {
+                                    // Close incoming so peer detects disconnect and both sides reconnect cleanly
+                                    tracing::info!(
+                                        peer = %peer_id,
+                                        "Outgoing connection is dead, closing incoming connection for clean reconnect"
+                                    );
+                                    break;
                                 }
+                            } else {
+                                // Outgoing connection not ready yet, store the latest pong.
+                                // Ignore error: send only fails if the receiver is dropped,
+                                // meaning the PersistentConnection is shutting down anyway.
+                                let _ = conn.pending_pong.send(seq);
                             }
                         }
                         Packet::Pong(seq) => {
