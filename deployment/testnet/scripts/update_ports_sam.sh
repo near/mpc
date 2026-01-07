@@ -1,3 +1,5 @@
+# this is reference script for updating ports for SAM VM.
+# update the hard-coded values as needed.
 #!/bin/bash
 set -euo pipefail
 
@@ -14,11 +16,12 @@ CLI="python3 /mnt/data/barak/dstack/vmm/src/vmm-cli.py --url $VMM_RPC"
 PORTS=(
   "tcp:127.0.0.1:18092:8090"
   "tcp:127.0.0.1:1221:22"
-  "tcp:57.129.140.254:18082:8080"
+  "tcp:51.68.219.2:18082:8080"
   "tcp:127.0.0.1:3032:3030"
-  "tcp:57.129.140.254:13002:13002"
-  "tcp:57.129.140.254:24567:24567"
-  "tcp:57.129.140.254:2080:2080"
+  "tcp:51.68.219.2:13002:13002"
+  "tcp:51.68.219.2:80:80"
+  "tcp:51.68.219.2:24567:24567"
+  "tcp:51.68.219.2:2080:2080"
 )
 
 echo "Updating ports for VM: $VM_ID"
