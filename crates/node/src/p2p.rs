@@ -12,7 +12,10 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        watch,
+    },
 };
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
@@ -73,8 +76,9 @@ pub struct TlsMeshSender {
 /// MPC/IndexerHeight messages to the unified receiver channel.
 ///
 /// Ping/Pong handling uses cross-stream communication to maintain unidirectional I/O: when
-/// receiving a Ping, this handler sends Pong via the outgoing connection to that peer; when
-/// receiving a Pong, it notifies the outgoing connection's keepalive task via a watch channel.
+/// receiving a Ping, this handler sends Pong via the outgoing connection to that peer (or
+/// buffers it if the outgoing connection isn't ready yet); when receiving a Pong, it notifies
+/// the outgoing connection's keepalive task via a watch channel.
 ///
 /// Implements [`MeshNetworkTransportReceiver`] to receive messages from all peers in the
 /// mesh network.
@@ -88,7 +92,8 @@ pub struct TlsMeshReceiver {
     /// 1) Performs TLS handshake and authenticates the peer's identity
     /// 2) Registers the connection with `connectivities` for bidirectional tracking
     /// 3) Reads messages from the peer in a loop (read-only stream usage)
-    /// 4) On Ping: Sends Pong via our outgoing connection to maintain unidirectional I/O
+    /// 4) On Ping: Sends Pong via our outgoing connection to maintain unidirectional I/O;
+    ///    if outgoing connection isn't ready, buffers the pong to send when it connects
     /// 5) On Pong: Notifies the outgoing connection's keepalive task via watch channel
     /// 6) Forwards MpcMessage and IndexerHeight to the unified `receiver` channel
     ///
@@ -118,14 +123,15 @@ struct ParticipantIdentities {
 struct PersistentConnection {
     target_participant_id: ParticipantId,
     connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
-    /// Channel for buffering Pongs when outgoing connection is temporarily unavailable.
-    pong_buffer: UnboundedSender<u64>,
+    /// Stores the latest pong sequence number to send when outgoing connection becomes ready.
+    /// Uses a watch channel so we only keep the most recent value.
+    pending_pong: watch::Sender<u64>,
     /// Background reconnection task that maintains the connection lifecycle.
     ///
     /// This task runs an infinite loop that:
     /// 1. Attempts to establish a new [`TlsConnection`] to `target_participant_id`
-    /// 2. On success: Registers the connection with `connectivity` and blocks waiting for it
-    ///    to close (via `wait_for_close()`)
+    /// 2. On success: Registers the connection with `connectivity`, sends any buffered
+    ///    pending pong, and blocks waiting for it to close (via `wait_for_close()`)
     /// 3. On failure: Logs the error and sleeps for [`CONNECTION_RETRY_DELAY`] before retrying
     /// 4. When a connection closes (step 2 completes): Loops back to step 1
     ///
@@ -415,7 +421,7 @@ impl PersistentConnection {
         connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = Arc::clone(&connectivity);
-        let (pong_buffer_tx, mut pong_buffer_rx) = mpsc::unbounded_channel::<u64>();
+        let (pending_pong_tx, mut pending_pong_rx) = watch::channel(0u64);
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
@@ -436,10 +442,19 @@ impl PersistentConnection {
                                 target_participant_id
                             );
 
-                            // Register connection and drain any buffered Pongs
                             connectivity.set_outgoing_connection(&new_conn);
-                            while let Ok(seq) = pong_buffer_rx.try_recv() {
-                                let _ = new_conn.sender.send(Packet::Pong(seq));
+
+                            // Send the latest pending pong if there is one
+                            let pending_seq = *pending_pong_rx.borrow_and_update();
+                            if pending_seq > 0 {
+                                if new_conn.sender.send(Packet::Pong(pending_seq)).is_err() {
+                                    tracing::warn!(
+                                        "Failed to send pending pong {} to {}, reconnecting",
+                                        pending_seq,
+                                        target_participant_id
+                                    );
+                                    continue;
+                                }
                             }
 
                             new_conn.wait_for_close().await;
@@ -460,7 +475,7 @@ impl PersistentConnection {
         Ok(PersistentConnection {
             target_participant_id,
             connectivity: connectivity_clone,
-            pong_buffer: pong_buffer_tx,
+            pending_pong: pending_pong_tx,
             _task: task,
         })
     }
@@ -585,7 +600,8 @@ pub async fn new_tls_mesh_network(
                     match packet {
                         Packet::Ping(seq) => {
                             // Send Pong via our outgoing connection to the peer, maintaining
-                            // unidirectional I/O design. If outgoing isn't ready, buffer the Pong.
+                            // unidirectional I/O design. If outgoing isn't ready, store the pong
+                            // to be sent when the connection becomes ready.
                             if let Some(conn) = connections.get(&peer_id) {
                                 if let Some(outgoing_conn) =
                                     conn.connectivity.any_outgoing_connection()
@@ -598,19 +614,11 @@ pub async fn new_tls_mesh_network(
                                         break;
                                     }
                                 } else {
-                                    // Outgoing connection not ready yet, buffer the Pong
-                                    if conn.pong_buffer.send(seq).is_err() {
-                                        tracing::warn!(
-                                            "Cannot buffer Pong({}) for {}: pong buffer channel closed",
-                                            seq, peer_id
-                                        );
-                                    }
+                                    // Outgoing connection not ready yet, store the latest pong.
+                                    // Ignore error: send only fails if the receiver is dropped,
+                                    // meaning the PersistentConnection is shutting down anyway.
+                                    let _ = conn.pending_pong.send(seq);
                                 }
-                            } else {
-                                tracing::warn!(
-                                    "Cannot send Pong({}) to {}: connection not found in HashMap",
-                                    seq, peer_id
-                                );
                             }
                         }
                         Packet::Pong(seq) => {
