@@ -617,6 +617,7 @@ pub async fn new_tls_mesh_network(
                                     conn.connectivity.any_outgoing_connection()
                                 {
                                     if outgoing_conn.sender.send(Packet::Pong(seq)).is_err() {
+                                        // Close incoming so peer detects disconnect and both sides reconnect cleanly
                                         tracing::info!(
                                             peer = %peer_id,
                                             "Outgoing connection is dead, closing incoming connection for clean reconnect"
