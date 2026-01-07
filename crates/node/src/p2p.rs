@@ -318,9 +318,9 @@ impl TlsConnection {
                         break;
                     }
 
-                    // Wait for either a pong response or timeout
-                    tokio::select! {
-                        _ = pong_rx.changed() => {
+                    // Wait for pong response with timeout
+                    match tokio::time::timeout(Self::PONG_TIMEOUT, pong_rx.changed()).await {
+                        Ok(Ok(())) => {
                             // Pong received, validate and calculate RTT
                             let pong_info = *pong_rx.borrow_and_update();
                             if pong_info.seq > last_received_pong_seq {
@@ -354,7 +354,12 @@ impl TlsConnection {
                                 tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
                             }
                         }
-                        _ = tokio::time::sleep(Self::PONG_TIMEOUT) => {
+                        Ok(Err(_)) => {
+                            // Watch sender dropped, connection is closing
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout
                             tracing::warn!(
                                 peer = %target_participant_id,
                                 timeout = ?Self::PONG_TIMEOUT,
