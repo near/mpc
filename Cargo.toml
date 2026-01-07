@@ -91,7 +91,6 @@ hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
 insta = { version = "1.43.1", features = ["json", "redactions"] }
 itertools = "0.12.1"
 k256 = "0.13.4"
-lru = "0.12.5"
 mockall = "0.13.1"
 near-abi = "0.4.3"
 near-account-id = "2.0.0"
