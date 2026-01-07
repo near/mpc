@@ -446,15 +446,15 @@ impl PersistentConnection {
 
                             // Send the latest pending pong if there is one
                             let pending_seq = *pending_pong_rx.borrow_and_update();
-                            if pending_seq > 0 {
-                                if new_conn.sender.send(Packet::Pong(pending_seq)).is_err() {
-                                    tracing::warn!(
-                                        "Failed to send pending pong {} to {}, reconnecting",
-                                        pending_seq,
-                                        target_participant_id
-                                    );
-                                    continue;
-                                }
+                            if pending_seq > 0
+                                && new_conn.sender.send(Packet::Pong(pending_seq)).is_err()
+                            {
+                                tracing::warn!(
+                                    "Failed to send pending pong {} to {}, reconnecting",
+                                    pending_seq,
+                                    target_participant_id
+                                );
+                                continue;
                             }
 
                             new_conn.wait_for_close().await;
