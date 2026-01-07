@@ -226,8 +226,8 @@ impl TlsConnection {
     /// If we don't receive a pong response within this time, consider the connection dead.
     const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
-    /// Interval between consecutive pings. A new ping is sent 1 second after the previous
-    /// ping was sent, but only after receiving its pong response.
+    /// Pings are sent at 1-second intervals from when the previous ping was sent,
+    /// waiting for pong response before sending the next.
     const PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
     /// Makes a TLS/TCP connection to the given address, authenticating the
@@ -331,7 +331,7 @@ impl TlsConnection {
                                         peer = %target_participant_id,
                                         expected = expected_seq,
                                         lost = pong_info.seq - expected_seq,
-                                        "Received pong with unexpected sequence, lost pong(s)"
+                                        "Unexpected pong sequence gap"
                                     );
                                 }
                                 last_received_pong_seq = pong_info.seq;
