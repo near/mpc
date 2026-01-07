@@ -14,44 +14,57 @@ check_ports_in_use() {
     EXTERNAL_MPC_MAIN_PORT
     "
 
+    if ! command -v ss >/dev/null 2>&1; then
+        echo "⚠️  WARNING: could not check port conflict. please install ss"
+        exit 1
+    fi
+
     any_in_use=0
+
+    # Only IPv4 listeners (-4). Local address is column 4 (e.g. 0.0.0.0:13002 or 51.68.219.11:13002)
+    addrs="$(ss -H -4 -ltn 2>/dev/null | awk '{print $4}')"
 
     for var in $PORT_VARS; do
         val=$(eval echo \$$var)
-        if [ -n "$val" ]; then
-            port=$(echo "$val" | cut -d: -f2)
+        [ -z "$val" ] && continue
 
-            echo "Checking $var (port $port)..."
+        ip="${val%%:*}"
+        port="${val##*:}"
 
-            # Use ss if available, otherwise fallback to netstat
-            if command -v ss >/dev/null 2>&1; then
-                if ss -ltn | awk '{print $4}' | grep -Eq "[:.]$port$"; then
-                    echo "  -> Port $port is IN USE"
-                    any_in_use=1
-                else
-                    echo "  -> Port $port is free"
-                fi
-            elif command -v netstat >/dev/null 2>&1; then
-                if netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]$port$"; then
-                    echo "  -> Port $port is IN USE"
-                    any_in_use=1
-                else
-                    echo "  -> Port $port is free"
-                fi
-            else
-                echo "  -> Neither ss nor netstat found, cannot check"
-                any_in_use=1
+        echo "Checking $var ($ip:$port)..."
+
+        conflict=0
+
+        if [[ "$ip" == "0.0.0.0" ]]; then
+            # Binding to all IPv4 addresses conflicts with ANY existing listener on that port.
+            if echo "$addrs" | grep -Eq ":$port$"; then
+                conflict=1
             fi
+        else
+            # Binding to a specific IPv4 address conflicts if:
+            # 1) someone already bound 0.0.0.0:port, OR
+            # 2) someone already bound that exact ip:port.
+            if echo "$addrs" | grep -Eq "0\.0\.0\.0:$port$|${ip//./\\.}:$port$"; then
+                conflict=1
+            fi
+        fi
+
+        if [ $conflict -eq 1 ]; then
+            echo "  -> ❌ CONFLICT"
+            any_in_use=1
+        else
+            echo "  -> ✅ free"
         fi
     done
 
     if [ $any_in_use -eq 1 ]; then
-        echo "❌ One or more required ports are in use. Aborting."
+        echo "❌ One or more required IPv4 IP:ports conflict. Aborting."
         exit 1
     else
-        echo "✅ All required ports are free."
+        echo "✅ All required IPv4 IP:ports are free."
     fi
 }
+
 
 # Default .env path
 ENV_FILE="default.env"
