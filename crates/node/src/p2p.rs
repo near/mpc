@@ -178,7 +178,7 @@ struct TlsConnection {
     /// the `closed` token. This ensures pings are sent at exactly 1-second intervals while only
     /// sending when the previous ping received a response.
     _keepalive_task: AutoAbortTask<()>,
-    /// Watch channel sender for receiving pong notifications from the incoming connection handler.
+    /// Watch channel sender for delivering pong notifications to the keepalive task.
     ///
     /// The incoming handler sends PongInfo when it receives a Pong packet. The keepalive task
     /// monitors this channel to detect connection health and calculate RTT. This enables clean
