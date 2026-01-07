@@ -42,7 +42,14 @@ async fn pprof_flamegraph() -> impl IntoResponse {
     match pprof_report {
         Ok(report) => {
             let mut svg_buffer = Vec::new();
-            report.flamegraph(&mut svg_buffer).unwrap();
+            let flamegraph_write = report.flamegraph(&mut svg_buffer);
+            if let Err(error) = flamegraph_write {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Error generating flamegraph: {:#?}", error),
+                )
+                    .into_response();
+            }
 
             (
                 StatusCode::OK,
