@@ -195,6 +195,7 @@ near_responder_account_id: frodo.test.near
 number_of_responder_keys: 1
 web_ui: 127.0.0.1:8081
 migration_web_ui: 127.0.0.1:8079
+pprof_bind_address: 127.0.0.1:34001
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
@@ -245,6 +246,7 @@ near_responder_account_id: sam.test.near
 number_of_responder_keys: 1
 web_ui: 127.0.0.1:8082
 migration_web_ui: 127.0.0.1:8078
+pprof_bind_address: 127.0.0.1:34002
 triple:
   concurrency: 2
   desired_triples_to_buffer: 128
