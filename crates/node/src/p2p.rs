@@ -308,66 +308,56 @@ impl TlsConnection {
             &format!("Ping sender for {}", target_participant_id),
             async move {
                 let mut seq: u64 = 0;
-                let mut last_received_pong_seq: u64 = 0;
                 loop {
                     seq += 1;
                     let ping_sent_at = Instant::now();
                     if sender_clone.send(Packet::Ping(seq)).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
-                        break;
+                        return;
                     }
 
-                    // Wait for pong response with timeout
-                    match tokio::time::timeout(Self::PONG_TIMEOUT, pong_rx.changed()).await {
-                        Ok(Ok(())) => {
-                            // Pong received, validate and calculate RTT
-                            let pong_info = *pong_rx.borrow_and_update();
-                            if pong_info.seq > last_received_pong_seq {
-                                let expected_seq = last_received_pong_seq + 1;
-                                if pong_info.seq != expected_seq {
-                                    tracing::warn!(
-                                        seq = pong_info.seq,
-                                        peer = %target_participant_id,
-                                        expected = expected_seq,
-                                        lost = pong_info.seq - expected_seq,
-                                        "Unexpected pong sequence gap"
-                                    );
+                    // Wait for pong matching this ping, ignoring stale pongs
+                    let deadline = Instant::now() + Self::PONG_TIMEOUT;
+                    loop {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        match tokio::time::timeout(remaining, pong_rx.changed()).await {
+                            Ok(Ok(())) => {
+                                let pong_info = *pong_rx.borrow_and_update();
+                                if pong_info.seq == seq {
+                                    let rtt = ping_sent_at.elapsed();
+                                    tracking::set_progress(&format!(
+                                        "Received pong {} from {target_participant_id}, RTT: {rtt:?}",
+                                        seq
+                                    ));
+                                    break;
                                 }
-                                last_received_pong_seq = pong_info.seq;
-                                let rtt = ping_sent_at.elapsed();
-                                tracking::set_progress(&format!(
-                                    "Received pong {} from {target_participant_id}, RTT: {rtt:?}",
-                                    pong_info.seq
-                                ));
-                            } else {
                                 tracing::debug!(
-                                    seq = pong_info.seq,
                                     peer = %target_participant_id,
-                                    last_received = last_received_pong_seq,
-                                    "Received stale pong, already received newer"
+                                    received_seq = pong_info.seq,
+                                    expected_seq = seq,
+                                    "Received stale pong, waiting for expected sequence"
                                 );
                             }
-                            // Wait until PING_INTERVAL has elapsed since ping was sent
-                            let elapsed = ping_sent_at.elapsed();
-                            if elapsed < Self::PING_INTERVAL {
-                                tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
+                            Ok(Err(_)) => {
+                                // Exit to trigger reconnection by PersistentConnection
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!(
+                                    peer = %target_participant_id,
+                                    timeout = ?Self::PONG_TIMEOUT,
+                                    "No pong received, closing connection"
+                                );
+                                closed_for_keepalive.cancel();
+                                return;
                             }
                         }
-                        Ok(Err(_)) => {
-                            // Watch sender dropped, connection is closing
-                            break;
-                        }
-                        Err(_) => {
-                            // Timeout
-                            tracing::warn!(
-                                peer = %target_participant_id,
-                                timeout = ?Self::PONG_TIMEOUT,
-                                "No pong received, closing connection"
-                            );
-                            closed_for_keepalive.cancel();
-                            break;
-                        }
+                    }
+                    // Wait until PING_INTERVAL has elapsed since ping was sent
+                    let elapsed = ping_sent_at.elapsed();
+                    if elapsed < Self::PING_INTERVAL {
+                        tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
                     }
                 }
             },
