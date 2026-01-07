@@ -632,7 +632,9 @@ pub async fn new_tls_mesh_network(
                                 if let Some(outgoing_conn) =
                                     conn.connectivity.any_outgoing_connection()
                                 {
-                                    // Send the new pong info via watch channel
+                                    // Forward pong to keepalive task via watch channel.
+                                    // Ignore error: send only fails if the receiver is dropped,
+                                    // meaning the connection is already closing.
                                     let _ = outgoing_conn.pong_tx.send(PongInfo { seq });
                                 } else {
                                     tracing::warn!(peer = %peer_id, seq, "No outgoing connection to forward Pong");
