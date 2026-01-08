@@ -414,7 +414,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install zizmor
+      - name: Install cargo-deny
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-deny@0.18.9
