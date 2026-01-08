@@ -251,16 +251,16 @@ impl TlsConnection {
             .context("TLS connect")?;
 
         let peer_id = verify_peer_identity(tls_conn.get_ref().1, participant_identities)
-            .context("Verify server identity")?;
+            .context("verify server identity")?;
         if peer_id != target_participant_id {
             anyhow::bail!(
-                "Incorrect peer identity, expected {}, authenticated {}",
+                "incorrect peer identity, expected {}, authenticated {}",
                 target_participant_id,
                 peer_id
             );
         }
 
-        info!(target_address, "Performing P2P handshake");
+        info!(target_address, "performing P2P handshake");
         p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
@@ -282,12 +282,12 @@ impl TlsConnection {
                                 break;
                             };
                             let serialized = borsh::to_vec(&data)?;
-                            let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            let len: u32 = serialized.len().try_into().context("message too long")?;
                             tls_conn.write_u32(len).await?;
                             tls_conn.write_all(&serialized).await?;
                             sent_bytes += 4 + len as u64;
 
-                            tracking::set_progress(&format!("Sent {sent_bytes} bytes"));
+                            tracking::set_progress(&format!("sent {sent_bytes} bytes"));
                         }
                         _ = tls_conn.read_u8() => {
                             // We do not expect any data from the other side. However,
@@ -353,7 +353,7 @@ impl TlsConnection {
                             tracing::warn!(
                                 peer = %target_participant_id,
                                 timeout = ?Self::PONG_TIMEOUT,
-                                "No pong received, closing connection"
+                                "no pong received, closing connection"
                             );
                             closed_for_keepalive.cancel();
                             return;
@@ -439,7 +439,7 @@ impl PersistentConnection {
                             tracing::info!(
                                 from = %my_id,
                                 to = %target_participant_id,
-                                "Outgoing connection established"
+                                "outgoing connection established"
                             );
 
                             connectivity.set_outgoing_connection(&new_conn);
@@ -452,7 +452,7 @@ impl PersistentConnection {
                                 tracing::warn!(
                                     seq = pending_seq,
                                     peer = %target_participant_id,
-                                    "Failed to send pending pong, reconnecting"
+                                    "failed to send pending pong, reconnecting"
                                 );
                                 continue;
                             }
@@ -464,7 +464,7 @@ impl PersistentConnection {
                                 peer = %target_participant_id,
                                 error = format!("{e:#}"),
                                 me = %my_id,
-                                "Could not connect, retrying"
+                                "could not connect, retrying"
                             );
                             tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                         }
@@ -499,7 +499,7 @@ pub async fn new_tls_mesh_network(
         .map(|participant| participant.port)
         .ok_or_else(|| anyhow!("My ID not found in participants"))?;
 
-    info!("Preparing participant data.");
+    info!("preparing participant data");
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
@@ -552,7 +552,7 @@ pub async fn new_tls_mesh_network(
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
     let connections_for_incoming = connections.clone();
-    info!("Spawning incoming connections handler.");
+    info!("spawning incoming connections handler");
     let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
@@ -568,11 +568,11 @@ pub async fn new_tls_mesh_network(
 
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
-                tracking::set_progress(&format!("Authenticated as {peer_id}"));
+                tracking::set_progress(&format!("authenticated as {peer_id}"));
                 p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
                     .await
                     .context("p2p handshake")?;
-                tracing::info!(to = %my_id, from = %peer_id, "Incoming connection established");
+                tracing::info!(to = %my_id, from = %peer_id, "incoming connection established");
                 let incoming_conn = Arc::new(());
                 connectivities
                     .get(peer_id)?
@@ -585,7 +585,7 @@ pub async fn new_tls_mesh_network(
                     )
                     .await??;
                     if len >= MAX_MESSAGE_LEN {
-                        anyhow::bail!("Message too long");
+                        anyhow::bail!("message too long");
                     }
                     let mut buf = vec![0; len as usize];
                     tokio::time::timeout(
@@ -596,7 +596,7 @@ pub async fn new_tls_mesh_network(
                     received_bytes += 4 + len as u64;
 
                     let packet =
-                        Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
+                        Packet::try_from_slice(&buf).context("failed to deserialize packet")?;
                     match packet {
                         Packet::Ping(seq) => {
                             // Send Pong via our outgoing connection to the peer, maintaining
@@ -604,7 +604,7 @@ pub async fn new_tls_mesh_network(
                             // to be sent when the connection becomes ready.
                             let Some(conn) = connections.get(&peer_id) else {
                                 // Peer authenticated but not in connections map - indicates a bug
-                                tracing::warn!(peer = %peer_id, seq, "Received Ping from peer not in connections map");
+                                tracing::warn!(peer = %peer_id, seq, "received ping from peer not in connections map");
                                 continue;
                             };
                             if let Some(outgoing_conn) =
@@ -614,7 +614,7 @@ pub async fn new_tls_mesh_network(
                                     // Close incoming so peer detects disconnect and both sides reconnect cleanly
                                     tracing::info!(
                                         peer = %peer_id,
-                                        "Outgoing connection is dead, closing incoming connection for clean reconnect"
+                                        "outgoing connection is dead, closing incoming connection for clean reconnect"
                                     );
                                     break;
                                 }
@@ -636,10 +636,10 @@ pub async fn new_tls_mesh_network(
                                     // meaning the connection is already closing.
                                     let _ = outgoing_conn.pong_tx.send(PongInfo { seq });
                                 } else {
-                                    tracing::warn!(peer = %peer_id, seq, "No outgoing connection to forward Pong");
+                                    tracing::warn!(peer = %peer_id, seq, "no outgoing connection to forward pong");
                                 }
                             } else {
-                                tracing::warn!(peer = %peer_id, seq, "No connection found for peer to forward Pong");
+                                tracing::warn!(peer = %peer_id, seq, "no connection found for peer to forward pong");
                             }
                         }
                         Packet::MpcMessage(mpc_message) => {
@@ -659,7 +659,7 @@ pub async fn new_tls_mesh_network(
                     }
 
                     tracking::set_progress(&format!(
-                        "Received {received_bytes} bytes from {peer_id}"
+                        "received {received_bytes} bytes from {peer_id}"
                     ));
                 }
                 anyhow::Ok(())
@@ -696,7 +696,7 @@ fn verify_peer_identity(
         .key_to_participant_id
         .get(&public_key)
     else {
-        anyhow::bail!("Connection with unknown public key");
+        anyhow::bail!("connection with unknown public key");
     };
     Ok(*peer_id)
 }
