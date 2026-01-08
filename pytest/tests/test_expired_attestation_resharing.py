@@ -21,7 +21,6 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 from common_lib import shared
 from common_lib.contract_state import ProtocolState, RunningProtocolState
 from common_lib.contracts import ContractMethod, load_mpc_contract
-from common_lib.shared.mpc_node import MpcNode
 
 
 def get_block_timestamp_seconds(cluster) -> int:
