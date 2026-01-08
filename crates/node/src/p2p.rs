@@ -309,7 +309,11 @@ impl TlsConnection {
             async move {
                 let peer_id_str = target_participant_id.to_string();
                 let mut seq: u64 = 0;
+                let mut interval = tokio::time::interval(Self::PING_INTERVAL);
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
                 loop {
+                    interval.tick().await;
                     seq += 1;
                     let ping_sent_at = Instant::now();
                     if sender_clone.send(Packet::Ping(seq)).is_err() {
@@ -355,11 +359,6 @@ impl TlsConnection {
                             return;
                         }
                     }
-                    // Wait until PING_INTERVAL has elapsed since ping was sent
-                    tokio::time::sleep_until(tokio::time::Instant::from_std(
-                        ping_sent_at + Self::PING_INTERVAL,
-                    ))
-                    .await;
                 }
             },
         );
