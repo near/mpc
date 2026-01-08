@@ -345,13 +345,3 @@ pub static MPC_P2P_RTT_SECONDS: LazyLock<prometheus::GaugeVec> = LazyLock::new(|
     )
     .unwrap()
 });
-
-pub static MPC_P2P_STALE_PONGS_RECEIVED: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_p2p_stale_pongs_received",
-            "Number of stale pong packets received from each peer (indicates reconnect issues)",
-            &["peer_id"],
-        )
-        .unwrap()
-    });

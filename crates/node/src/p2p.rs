@@ -321,50 +321,38 @@ impl TlsConnection {
                         .with_label_values(&[&peer_id_str])
                         .set(seq as i64);
 
-                    // Wait for pong matching this ping, ignoring stale pongs
-                    let deadline = Instant::now() + Self::PONG_TIMEOUT;
-                    loop {
-                        let remaining = deadline.saturating_duration_since(Instant::now());
-                        match tokio::time::timeout(remaining, pong_rx.changed()).await {
-                            Ok(Ok(())) => {
-                                let pong_info = *pong_rx.borrow_and_update();
-                                if pong_info.seq == seq {
-                                    let rtt = ping_sent_at.elapsed();
-                                    crate::metrics::MPC_P2P_PONG_SEQUENCE_RECEIVED
-                                        .with_label_values(&[&peer_id_str])
-                                        .set(seq as i64);
-                                    crate::metrics::MPC_P2P_RTT_SECONDS
-                                        .with_label_values(&[&peer_id_str])
-                                        .set(rtt.as_secs_f64());
-                                    tracking::set_progress(&format!(
-                                        "Received pong {} from {target_participant_id}, RTT: {rtt:?}",
-                                        seq
-                                    ));
-                                    break;
-                                }
-                                crate::metrics::MPC_P2P_STALE_PONGS_RECEIVED
-                                    .with_label_values(&[&peer_id_str])
-                                    .inc();
-                                tracing::debug!(
-                                    peer = %target_participant_id,
-                                    received_seq = pong_info.seq,
-                                    expected_seq = seq,
-                                    "Received stale pong, waiting for expected sequence"
-                                );
-                            }
-                            Ok(Err(_)) => {
-                                // Exit to trigger reconnection by PersistentConnection
-                                return;
-                            }
-                            Err(_) => {
-                                tracing::warn!(
-                                    peer = %target_participant_id,
-                                    timeout = ?Self::PONG_TIMEOUT,
-                                    "No pong received, closing connection"
-                                );
-                                closed_for_keepalive.cancel();
-                                return;
-                            }
+                    // Wait for pong matching this ping (non-matching pongs are silently ignored)
+                    match tokio::time::timeout(
+                        Self::PONG_TIMEOUT,
+                        pong_rx.wait_for(|info| info.seq == seq),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            let rtt = ping_sent_at.elapsed();
+                            crate::metrics::MPC_P2P_PONG_SEQUENCE_RECEIVED
+                                .with_label_values(&[&peer_id_str])
+                                .set(seq as i64);
+                            crate::metrics::MPC_P2P_RTT_SECONDS
+                                .with_label_values(&[&peer_id_str])
+                                .set(rtt.as_secs_f64());
+                            tracking::set_progress(&format!(
+                                "Received pong {} from {target_participant_id}, RTT: {rtt:?}",
+                                seq
+                            ));
+                        }
+                        Ok(Err(_)) => {
+                            // Channel closed, exit to trigger reconnection
+                            return;
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                peer = %target_participant_id,
+                                timeout = ?Self::PONG_TIMEOUT,
+                                "No pong received, closing connection"
+                            );
+                            closed_for_keepalive.cancel();
+                            return;
                         }
                     }
                     // Wait until PING_INTERVAL has elapsed since ping was sent
