@@ -646,7 +646,7 @@ mod tests {
     fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().iter().cloned().collect();
+        let participant_list: Vec<_> = participants.participants().to_vec();
 
         // Add valid attestations for only first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
@@ -679,7 +679,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().iter().cloned().collect();
+        let participant_list: Vec<_> = participants.participants().to_vec();
 
         // Add valid attestations for first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
@@ -726,7 +726,7 @@ mod tests {
         let participants = gen_participants(3);
 
         // Add attestations for all participants, third one with future expiry
-        let participant_list: Vec<_> = participants.participants().iter().cloned().collect();
+        let participant_list: Vec<_> = participants.participants().to_vec();
 
         for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
             let node_id = create_node_id(account_id, &participant_info.sign_pk);
@@ -758,7 +758,7 @@ mod tests {
     fn validate_tee_returns_partial_when_attestation_is_invalid() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().iter().cloned().collect();
+        let participant_list: Vec<_> = participants.participants().to_vec();
 
         // Add valid attestations for first 2 participants
         for (account_id, _, participant_info) in participant_list.iter().take(2) {
