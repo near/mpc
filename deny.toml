@@ -42,6 +42,7 @@ skip-tree = [
   { name = "axum" },
   { name = "near-jsonrpc-client" },
   { name = "near-vm-runner" },
+  { name = "lru" },
 ]
 
 [sources]
