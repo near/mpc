@@ -3,7 +3,7 @@ use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
-        key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_near_public_key, gen_participants},
         thresholds::{Threshold, ThresholdParameters},
@@ -268,18 +268,18 @@ fn set_system_time(nano_seconds_since_unix_epoch: u64) {
         .build());
 }
 
-/// **Integration test for participant kickout after expiration** - Tests expired attestation removal. This test demonstrates the complete kickout mechanism using direct contract calls:
-/// 1. Initialize contract with 3 secp256k1 participants in Running state at time T=1s
-/// 2. Submit valid attestations for first 2 participants at time T=1s
+/// **Test for contract resharing trigger on expired attestation** - Verifies that when
+/// `verify_tee()` is called and a participant has an expired attestation, the contract
+/// transitions to [`ProtocolContractState::Resharing`] state.
+///
+/// Steps:
+/// 1. Initialize contract with 3 participants in [`ProtocolContractState::Running`] state at time T=1s
+/// 2. Submit valid attestations (no expiry) for first 2 participants at time T=1s
 /// 3. Submit expiring attestation for 3rd participant with expiry at time T+10s
-/// 4. Fast-forward blockchain time to T+20s using VMContextBuilder
-/// 5. Call verify_tee() which detects expired attestation and returns false
-/// 6. Contract automatically transitions from Running to Resharing state
-/// 7. Start resharing instance and have valid participants vote for completion
-/// 8. Contract transitions back to Running state with filtered participant set (2 participants)
-/// 9. Verify final state: 2 participants in Running state but 3 TEE accounts remain (cleanup tested separately)
+/// 4. Fast-forward blockchain time to T+20s (past 3rd participant's attestation expiry)
+/// 5. Call `verify_tee()` and verify contract transitions to [`ProtocolContractState::Resharing`] state
 #[test]
-fn test_participant_kickout_after_expiration() {
+fn test_verify_tee_triggers_resharing_on_expired_attestation() {
     const INITIAL_TIME_SECONDS: u64 = 1;
     const INITIAL_TIMESTAMP_NANOS: u64 =
         Duration::from_secs(INITIAL_TIME_SECONDS).as_nanos() as u64;
@@ -291,7 +291,6 @@ fn test_participant_kickout_after_expiration() {
     testing_env!(VMContextBuilder::new()
         .block_timestamp(INITIAL_TIMESTAMP_NANOS)
         .build());
-    let domain_id = DomainId::default();
 
     let mut setup = TestSetupBuilder::new()
         .with_partcipant_count(PARTICIPANT_COUNT)
@@ -335,60 +334,25 @@ fn test_participant_kickout_after_expiration() {
 
     assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 
-    // Fast-forward time past expiry and trigger resharing
+    // Fast-forward time past expiry
     const EXPIRED_TIMESTAMP: u64 =
         INITIAL_TIMESTAMP_NANOS + Duration::from_secs(POST_EXPIRY_WAIT_SECONDS).as_nanos() as u64;
     testing_env!(VMContextBuilder::new()
         .block_timestamp(EXPIRED_TIMESTAMP)
         .build());
 
-    // verify_tee() need to be called by a participant
+    // verify_tee() must be called by a participant
     testing_env!(create_context_for_participant(
         &participant_nodes[0].account_id
     ));
     assert!(setup.contract.verify_tee().unwrap());
 
-    let resharing_state = match setup.contract.state() {
-        ProtocolContractState::Resharing(r) => r,
-        state => panic!("Should be in Resharing state. Actual state {:#?}", state),
-    };
-
-    // Complete resharing process
-    let key_event_id = KeyEventId::new(
-        resharing_state.prospective_epoch_id(),
-        domain_id,
-        AttemptId::new(),
+    // Verify contract transitioned to Resharing state
+    assert_matches!(
+        setup.contract.state(),
+        ProtocolContractState::Resharing(_),
+        "Contract should transition to Resharing state when a participant has expired attestation"
     );
-
-    testing_env!(create_context_for_participant(
-        &participant_nodes[0].account_id
-    ));
-    setup.contract.start_reshare_instance(key_event_id).unwrap();
-
-    // Vote for resharing with first 2 participants
-    for node_id in &participant_nodes {
-        testing_env!(create_context_for_participant(&node_id.account_id));
-        setup.contract.vote_reshared(key_event_id).unwrap();
-    }
-
-    // Verify final state: back to Running with one less participant
-    assert_matches!(setup.contract.state(), ProtocolContractState::Running(_));
-
-    // At this point we have 2 participants in Running state but 3 TEE accounts
-    // The cleanup step is tested separately in test_clean_tee_status_removes_non_participants
-    let final_running_state = match setup.contract.state() {
-        ProtocolContractState::Running(r) => r,
-        _ => panic!("Should be in Running state after resharing"),
-    };
-    const EXPECTED_PARTICIPANT_COUNT: usize = PARTICIPANT_COUNT - 1;
-
-    assert_eq!(
-        final_running_state.parameters.participants().len(),
-        EXPECTED_PARTICIPANT_COUNT
-    );
-
-    // Before clean_tee_status() cleanup, we still have old TEE accounts
-    assert_eq!(setup.contract.get_tee_accounts().len(), PARTICIPANT_COUNT);
 }
 
 /// ** Test for TEE cleanup of non-participants** - Tests that `clean_tee_status()` removes

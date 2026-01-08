@@ -122,3 +122,5 @@ class ContractMethod(str, Enum):
     STATE = "state"
     REGISTER_BACKUP_SERVICE = "register_backup_service"
     START_NODE_MIGRATION = "start_node_migration"
+    SUBMIT_PARTICIPANT_INFO = "submit_participant_info"
+    VERIFY_TEE = "verify_tee"
