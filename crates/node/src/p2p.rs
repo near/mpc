@@ -307,6 +307,7 @@ impl TlsConnection {
         let keepalive_task = tracking::spawn(
             &format!("Ping sender for {}", target_participant_id),
             async move {
+                let peer_id_str = target_participant_id.to_string();
                 let mut seq: u64 = 0;
                 loop {
                     seq += 1;
@@ -316,6 +317,9 @@ impl TlsConnection {
                         // dropped (i.e. connection is closed).
                         return;
                     }
+                    crate::metrics::MPC_P2P_PING_SEQUENCE_SENT
+                        .with_label_values(&[&peer_id_str])
+                        .set(seq as i64);
 
                     // Wait for pong matching this ping, ignoring stale pongs
                     let deadline = Instant::now() + Self::PONG_TIMEOUT;
@@ -326,12 +330,21 @@ impl TlsConnection {
                                 let pong_info = *pong_rx.borrow_and_update();
                                 if pong_info.seq == seq {
                                     let rtt = ping_sent_at.elapsed();
+                                    crate::metrics::MPC_P2P_PONG_SEQUENCE_RECEIVED
+                                        .with_label_values(&[&peer_id_str])
+                                        .set(seq as i64);
+                                    crate::metrics::MPC_P2P_RTT_SECONDS
+                                        .with_label_values(&[&peer_id_str])
+                                        .set(rtt.as_secs_f64());
                                     tracking::set_progress(&format!(
                                         "Received pong {} from {target_participant_id}, RTT: {rtt:?}",
                                         seq
                                     ));
                                     break;
                                 }
+                                crate::metrics::MPC_P2P_STALE_PONGS_RECEIVED
+                                    .with_label_values(&[&peer_id_str])
+                                    .inc();
                                 tracing::debug!(
                                     peer = %target_participant_id,
                                     received_seq = pong_info.seq,
