@@ -356,10 +356,10 @@ impl TlsConnection {
                         }
                     }
                     // Wait until PING_INTERVAL has elapsed since ping was sent
-                    let elapsed = ping_sent_at.elapsed();
-                    if elapsed < Self::PING_INTERVAL {
-                        tokio::time::sleep(Self::PING_INTERVAL - elapsed).await;
-                    }
+                    tokio::time::sleep_until(tokio::time::Instant::from_std(
+                        ping_sent_at + Self::PING_INTERVAL,
+                    ))
+                    .await;
                 }
             },
         );
