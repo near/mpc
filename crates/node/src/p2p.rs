@@ -550,7 +550,7 @@ pub mod testing {
         pub const MAX_CASES: u16 = 4;
         // Each function below corresponds to a port per node. Each defines an offset,
         // and all offsets must be different
-        pub const TOTAL_PORTS_PER_NODE: u16 = 3;
+        pub const TOTAL_PORTS_PER_NODE: u16 = 4;
 
         pub const fn new(port_number: u16) -> Self {
             Self {
