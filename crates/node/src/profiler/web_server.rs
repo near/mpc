@@ -26,7 +26,9 @@ pub(crate) async fn start_web_server(bind_address: SocketAddr) -> Result<(), io:
 
     tokio::spawn(async move {
         tracing::info!(?bind_address, "starting profiling server");
-        axum::serve(tcp_listener, pprof_router).await
+        if let Err(err) = axum::serve(tcp_listener, pprof_router).await {
+            tracing::error!(?err, "profiling server failed");
+        }
     });
 
     Ok(())
