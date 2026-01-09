@@ -18,7 +18,7 @@ use mpc_contract::{
     errors,
     primitives::{
         ckd::{CKDRequest, CKDRequestArgs},
-        domain::{DomainId, SignatureScheme},
+        domain::DomainId,
         signature::{Bytes, Payload, SignRequestArgs, SignatureRequest, YieldIndex},
     },
 };
@@ -26,7 +26,7 @@ use near_account_id::AccountId;
 use near_workspaces::{
     network::Sandbox, operations::TransactionStatus, types::NearToken, Account, Contract, Worker,
 };
-use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
+use rand::{rngs::OsRng, Rng};
 use rand_core::CryptoRngCore;
 use serde::Serialize;
 use sha2::Sha256;
@@ -40,7 +40,134 @@ use threshold_signatures::{
 };
 use utilities::AccountIdExtV1;
 
-#[derive(Serialize)]
+#[derive(Debug)]
+pub enum DomainResponseTest {
+    Sign(SignRequestTest),
+    CKD(CKDRequestTest),
+}
+
+impl DomainResponseTest {
+    pub fn new(
+        rng: &mut impl CryptoRngCore,
+        domain_key: &DomainKey,
+        predecessor_id: &AccountId,
+    ) -> Self {
+        let domain_id = domain_key.domain_config.id;
+        match &domain_key.domain_secret_key {
+            SharedSecretKey::Secp256k1(sk) => DomainResponseTest::Sign(gen_secp_256k1_sign_test(
+                rng,
+                domain_id,
+                predecessor_id,
+                sk,
+            )),
+            SharedSecretKey::Ed25519(sk) => {
+                DomainResponseTest::Sign(gen_ed25519_sign_test(rng, domain_id, predecessor_id, sk))
+            }
+            SharedSecretKey::Bls12381(sk) => {
+                DomainResponseTest::CKD(CKDRequestTest::new(rng, domain_id, predecessor_id, sk))
+            }
+        }
+    }
+
+    pub async fn run(
+        &self,
+        account: &Account,
+        contract: &Contract,
+        attested_account: &Account,
+    ) -> anyhow::Result<()> {
+        let status = self
+            .submit_request_ensure_included(account, contract)
+            .await?;
+        self.submit_response(contract, attested_account).await?;
+        self.verify_execution_outcome(status).await?;
+        Ok(())
+    }
+
+    pub async fn submit_response(
+        &self,
+        contract: &Contract,
+        attested_account: &Account,
+    ) -> anyhow::Result<()> {
+        match &self {
+            Self::Sign(inner) => {
+                submit_signature_response(&inner.response, contract, attested_account).await
+            }
+            Self::CKD(inner) => {
+                submit_ckd_response(&inner.response, contract, attested_account).await
+            }
+        }
+    }
+
+    pub async fn submit_request_ensure_included(
+        &self,
+        account: &Account,
+        contract: &Contract,
+    ) -> anyhow::Result<TransactionStatus> {
+        match self {
+            Self::Sign(inner) => {
+                let status = submit_sign_request(account, &inner.args, contract).await?;
+                await_request_in_contract_queue(contract, &inner.response.request, None).await?;
+                Ok(status)
+            }
+            Self::CKD(inner) => {
+                let status = submit_ckd_request(account, &inner.args, contract).await?;
+                await_request_in_contract_queue(contract, &inner.response.request, None).await?;
+                Ok(status)
+            }
+        }
+    }
+
+    pub async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        match self {
+            Self::Sign(inner) => inner.verify_execution_outcome(status).await,
+            Self::CKD(inner) => inner.verify_execution_outcome(status).await,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SignRequestTest {
+    pub response: SignResponseArgs,
+    pub args: SignRequestArgs,
+}
+
+impl SignRequestTest {
+    pub fn request_json_args(&self) -> serde_json::Value {
+        serde_json::json!({
+            "request": self.args,
+        })
+    }
+
+    pub fn payload(&self) -> &Payload {
+        &self.response.request.payload
+    }
+
+    pub fn path(&self) -> &String {
+        &self.args.path
+    }
+
+    pub async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        let execution = status.await?;
+        dbg!(&execution);
+        let execution = execution.into_result()?;
+        let returned_resp: SignatureResponse = execution.json()?;
+        assert_eq!(
+            returned_resp, self.response.response,
+            "Returned signature request does not match"
+        );
+        Ok(())
+    }
+
+    pub async fn submit_response(
+        &self,
+        contract: &Contract,
+        attested_account: &Account,
+    ) -> anyhow::Result<()> {
+        submit_signature_response(&self.response, contract, attested_account).await
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct SignResponseArgs {
     pub request: SignatureRequest,
     pub response: SignatureResponse,
@@ -52,106 +179,61 @@ impl SignResponseArgs {
     }
 }
 
-pub struct SignRequestTest {
-    pub response: SignResponseArgs,
-    pub args: SignRequestArgs,
+pub async fn verify_timeout(status: TransactionStatus) -> anyhow::Result<()> {
+    let execution = status.await?;
+    dbg!(&execution);
+    assert!(execution.is_failure());
+    let err = execution
+        .into_result()
+        .expect_err("expect execution failure");
+    assert!(err
+        .to_string()
+        .contains(&errors::RequestError::Timeout.to_string()));
+    Ok(())
 }
 
-impl SignRequestTest {
+#[derive(Debug)]
+pub struct CKDRequestTest {
+    pub response: CKDResponseArgs,
+    pub args: CKDRequestArgs,
+}
+
+impl CKDRequestTest {
     pub fn new(
-        domain_key: &DomainKey,
+        rng: &mut impl CryptoRngCore,
+        domain_id: DomainId,
         predecessor_id: &AccountId,
-        msg: &str,
-        path: &str,
-    ) -> SignRequestTest {
-        let domain_id = domain_key.domain_config.id;
-        let (payload, request, response) = match &domain_key.domain_secret_key {
-            SharedSecretKey::Secp256k1(sk) => {
-                create_response_secp256k1(domain_id, predecessor_id, msg, path, sk)
-            }
-            SharedSecretKey::Ed25519(sk) => {
-                create_response_ed25519(domain_id, predecessor_id, msg, path, sk)
-            }
-            SharedSecretKey::Bls12381(_) => {
-                // todo: make SignRequestTest an enum
-                unreachable!()
-            }
+        sk: &ckd::KeygenOutput,
+    ) -> CKDRequestTest {
+        let derivation_path: String = rng.gen::<usize>().to_string();
+        let app_public_key = generate_random_app_public_key(rng);
+        let (request, response) = create_response_ckd(
+            predecessor_id,
+            app_public_key.clone(),
+            &domain_id,
+            sk,
+            &derivation_path,
+        );
+        let args = CKDRequestArgs {
+            derivation_path: derivation_path.to_string(),
+            app_public_key: app_public_key.clone(),
+            domain_id,
         };
-        let args = SignRequestArgs {
-            payload_v2: Some(payload.clone()),
-            path: path.into(),
-            domain_id: Some(domain_key.domain_id()),
-            ..Default::default()
-        };
-        SignRequestTest {
-            response: SignResponseArgs { request, response },
+
+        CKDRequestTest {
+            response: CKDResponseArgs { request, response },
             args,
         }
     }
-
-    pub fn expected_response(&self) -> &SignatureResponse {
-        &self.response.response
-    }
-
-    pub fn request_json_args(&self) -> serde_json::Value {
-        serde_json::json!({
-            "request": self.args,
-        })
-    }
-
-    pub fn payload(&self) -> &Payload {
-        &self.response.request.payload
-    }
-
-    pub async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
-        let execution = status.await?;
-        dbg!(&execution);
-        let execution = execution.into_result()?;
-        let returned_resp: SignatureResponse = execution.json()?;
-        assert_eq!(
-            &returned_resp, &self.response.response,
-            "Returned signature request does not match"
-        );
-        Ok(())
-    }
-
-    pub async fn verify_timeout(&self, status: TransactionStatus) -> anyhow::Result<()> {
-        let execution = status.await?;
-        dbg!(&execution);
-        assert!(execution.is_failure());
-        let err = execution
-            .into_result()
-            .expect_err("expect execution failure");
-        assert!(err
-            .to_string()
-            .contains(&errors::RequestError::Timeout.to_string()));
-        Ok(())
-    }
-
-    pub async fn sign_ensure_included(
-        &self,
-        account: &Account,
-        contract: &Contract,
-    ) -> anyhow::Result<TransactionStatus> {
-        let status = submit_sign_request(account, &self.args, contract).await?;
-        await_request_in_contract_queue(contract, &self.response.request, None).await?;
-        Ok(status)
-    }
-
-    pub async fn sign_and_validate(
-        &self,
-        account: &Account,
-        contract: &Contract,
-        attested_account: &Account,
-    ) -> anyhow::Result<()> {
-        let status = self.sign_ensure_included(account, contract).await?;
-        submit_signature_response(&self.response, contract, attested_account).await?;
-        self.verify_execution_outcome(status).await
-    }
 }
 
-// contract interactions
-pub async fn submit_sign_request(
+#[derive(Debug)]
+pub struct CKDResponseArgs {
+    pub request: CKDRequest,
+    pub response: CKDResponse,
+}
+
+async fn submit_sign_request(
     account: &Account,
     request: &SignRequestArgs,
     contract: &Contract,
@@ -166,11 +248,10 @@ pub async fn submit_sign_request(
         .transact_async()
         .await?;
     dbg!(&status);
-
     Ok(status)
 }
 
-pub async fn submit_ckd_request(
+async fn submit_ckd_request(
     account: &Account,
     request: &CKDRequestArgs,
     contract: &Contract,
@@ -185,7 +266,6 @@ pub async fn submit_ckd_request(
         .transact_async()
         .await?;
     dbg!(&status);
-
     Ok(status)
 }
 
@@ -207,8 +287,7 @@ pub async fn submit_signature_response(
 }
 
 pub async fn submit_ckd_response(
-    respond_req: &CKDRequest,
-    respond_resp: &CKDResponse,
+    response: &CKDResponseArgs,
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
@@ -216,41 +295,55 @@ pub async fn submit_ckd_response(
     let respond = attested_account
         .call(contract.id(), "respond_ckd")
         .args_json(serde_json::json!({
-            "request": respond_req,
-            "response": respond_resp
+            "request": response.request,
+            "response": response.response,
         }))
         .max_gas()
         .transact()
         .await?;
     dbg!(&respond);
-
+    respond.into_result()?;
     Ok(())
 }
 
-// contract state queries
-pub async fn request_is_in_queue(
-    contract: &Contract,
-    request: &SignatureRequest,
-) -> Option<YieldIndex> {
-    contract
-        .view("get_pending_request")
-        .args_json(serde_json::json!({"request": request}))
-        .await
-        .unwrap()
-        .json()
-        .unwrap()
+trait ContractQueueRequest: serde::Serialize + Sync {
+    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex>;
 }
 
-pub async fn await_request_in_contract_queue(
+impl ContractQueueRequest for CKDRequest {
+    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
+        contract
+            .view("get_pending_ckd_request")
+            .args_json(serde_json::json!({ "request": self }))
+            .await
+            .unwrap()
+            .json()
+            .unwrap()
+    }
+}
+
+impl ContractQueueRequest for SignatureRequest {
+    async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
+        contract
+            .view("get_pending_request")
+            .args_json(serde_json::json!({ "request": self }))
+            .await
+            .unwrap()
+            .json()
+            .unwrap()
+    }
+}
+
+async fn await_request_in_contract_queue<T: ContractQueueRequest>(
     contract: &Contract,
-    request: &SignatureRequest,
+    request: &T,
     max_timeout: Option<Duration>,
 ) -> anyhow::Result<()> {
     let timeout = max_timeout.unwrap_or(DEFAULT_MAX_TIMEOUT_TX_INCLUDED);
     let start = std::time::Instant::now();
 
     loop {
-        if request_is_in_queue(contract, request).await.is_some() {
+        if request.is_in_queue(contract).await.is_some() {
             return Ok(());
         }
 
@@ -263,7 +356,7 @@ pub async fn await_request_in_contract_queue(
 }
 
 /// Derives a confidential key following https://github.com/near/threshold-signatures/blob/main/docs/confidential_key_derivation.md
-pub fn create_response_ckd(
+fn create_response_ckd(
     account_id: &AccountId,
     app_public_key: dtos::Bls12381G1PublicKey,
     domain_id: &DomainId,
@@ -293,54 +386,18 @@ pub fn create_response_ckd(
     (request, response)
 }
 
-// contract calls
-pub async fn derive_confidential_key_and_validate(
-    account: Account,
-    request: &CKDRequestArgs,
-    respond: Option<(&CKDRequest, &CKDResponse)>,
-    contract: &Contract,
-    attested_account: &Account,
-) -> anyhow::Result<()> {
-    let status = account
-        .call(contract.id(), "request_app_private_key")
-        .args_json(serde_json::json!({ "request": request }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-    dbg!(&status);
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    if let Some((respond_req, respond_resp)) = respond {
+impl CKDRequestTest {
+    async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        let execution = status.await?;
+        dbg!(&execution);
+        let execution = execution.into_result()?;
+        let returned_resp: CKDResponse = execution.json()?;
         assert_eq!(
-            derive_app_id(&account.id().as_v2_account_id(), &request.derivation_path),
-            respond_req.app_id
-        );
-        let respond = attested_account
-            .call(contract.id(), "respond_ckd")
-            .args_json(serde_json::json!({
-                "request": respond_req,
-                "response": respond_resp
-            }))
-            .max_gas()
-            .transact()
-            .await?;
-        dbg!(&respond);
-    }
-
-    let execution = status.await?;
-    dbg!(&execution);
-    let execution = execution.into_result()?;
-
-    // Finally wait the result:
-    let returned_resp: CKDResponse = execution.json()?;
-    if let Some((_, respond_resp)) = respond {
-        assert_eq!(
-            &returned_resp, respond_resp,
+            returned_resp, self.response.response,
             "Returned ckd request does not match"
         );
+        Ok(())
     }
-    Ok(())
 }
 
 pub async fn make_and_submit_requests(
@@ -351,61 +408,31 @@ pub async fn make_and_submit_requests(
 ) -> (Vec<PendingSignRequest>, Vec<PendingCKDRequest>) {
     let mut pending_sign_requests = vec![];
     let mut pending_ckd_requests = vec![];
-    let path = "test";
 
-    let signature_request_payloads = [
-        generate_random_request_payloads(10, rng),
-        generate_random_request_payloads(4, rng),
-    ];
-    let app_public_keys = [
-        generate_random_app_public_key(rng),
-        generate_random_app_public_key(rng),
-    ];
+    const NUM_TESTS: usize = 2;
 
     let alice = worker.dev_create_account().await.unwrap();
     let alice_id = alice.id().as_v2_account_id();
 
     for key in keys {
-        match key.domain_config.scheme {
-            SignatureScheme::Secp256k1
-            | SignatureScheme::Ed25519
-            | SignatureScheme::V2Secp256k1 => {
-                for message in &signature_request_payloads {
-                    let req = SignRequestTest::new(key, &alice_id, message, path);
-                    let transaction = submit_sign_request(&alice, &req.args, contract)
+        for _ in 0..NUM_TESTS {
+            match DomainResponseTest::new(rng, key, &alice_id) {
+                DomainResponseTest::Sign(inner) => {
+                    let transaction = submit_sign_request(&alice, &inner.args, contract)
                         .await
                         .unwrap();
                     pending_sign_requests.push(PendingSignRequest {
                         transaction,
-                        response: req.response,
+                        response: inner.response,
                     });
                 }
-            }
-            SignatureScheme::Bls12381 => {
-                for app_public_key in &app_public_keys {
-                    let SharedSecretKey::Bls12381(sk) = &key.domain_secret_key else {
-                        unreachable!();
-                    };
-                    let (ckd_request, ckd_response) = create_response_ckd(
-                        &alice_id,
-                        app_public_key.clone(),
-                        &key.domain_id(),
-                        sk,
-                        path,
-                    );
-                    let request_args = CKDRequestArgs {
-                        derivation_path: path.to_string(),
-                        app_public_key: app_public_key.clone(),
-                        domain_id: key.domain_id(),
-                    };
-                    let transaction = submit_ckd_request(&alice, &request_args, contract)
+                DomainResponseTest::CKD(inner) => {
+                    let transaction = submit_ckd_request(&alice, &inner.args, contract)
                         .await
                         .unwrap();
-
                     pending_ckd_requests.push(PendingCKDRequest {
                         transaction,
-                        ckd_request,
-                        ckd_response,
+                        ckd_response: inner.response,
                     });
                 }
             }
@@ -414,11 +441,7 @@ pub async fn make_and_submit_requests(
     (pending_sign_requests, pending_ckd_requests)
 }
 
-fn generate_random_request_payloads(n: usize, rng: &mut impl CryptoRngCore) -> String {
-    (0..n).map(|_| rng.sample(Alphanumeric) as char).collect()
-}
-
-pub fn create_response_secp256k1(
+fn create_response_secp256k1(
     domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
@@ -427,7 +450,6 @@ pub fn create_response_secp256k1(
 ) -> (Payload, SignatureRequest, SignatureResponse) {
     let (digest, payload) = process_message(msg);
     let pk = signing_key.public_key;
-
     let tweak = derive_tweak(predecessor_id, path);
     let derived_sk = derive_secret_key_secp256k1(signing_key, &tweak);
     let derived_pk = derive_key_secp256k1(&pk.to_element().to_affine(), &tweak).unwrap();
@@ -468,7 +490,7 @@ pub fn create_response_secp256k1(
     (payload, respond_req, respond_resp)
 }
 
-pub fn create_response_ed25519(
+fn create_response_ed25519(
     domain_id: DomainId,
     predecessor_id: &AccountId,
     msg: &str,
@@ -508,7 +530,7 @@ pub fn create_response_ed25519(
 }
 
 /// Process the message, creating the same hash with type of [`Digest`] and [`Payload`]
-pub fn process_message(msg: &str) -> (impl Digest, Payload) {
+fn process_message(msg: &str) -> (impl Digest, Payload) {
     let msg = msg.as_bytes();
     let digest = <k256::Secp256k1 as ecdsa::hazmat::DigestPrimitive>::Digest::new_with_prefix(msg);
     let bytes: FieldBytes = digest.clone().finalize_fixed();
@@ -524,6 +546,49 @@ pub struct PendingSignRequest {
 
 pub struct PendingCKDRequest {
     pub transaction: TransactionStatus,
-    pub ckd_request: CKDRequest,
-    pub ckd_response: CKDResponse,
+    pub ckd_response: CKDResponseArgs,
+}
+
+fn gen_ed25519_sign_test(
+    rng: &mut impl Rng,
+    domain_id: DomainId,
+    predecessor_id: &AccountId,
+    sk: &eddsa::KeygenOutput,
+) -> SignRequestTest {
+    let msg: String = rng.gen::<usize>().to_string();
+    let path: String = rng.gen::<usize>().to_string();
+    let (payload, request, response) =
+        create_response_ed25519(domain_id, predecessor_id, &msg, &path, sk);
+    let args = SignRequestArgs {
+        payload_v2: Some(payload.clone()),
+        path,
+        domain_id: Some(domain_id),
+        ..Default::default()
+    };
+    SignRequestTest {
+        response: SignResponseArgs { request, response },
+        args,
+    }
+}
+
+pub fn gen_secp_256k1_sign_test(
+    rng: &mut impl Rng,
+    domain_id: DomainId,
+    predecessor_id: &AccountId,
+    sk: &ts_ecdsa::KeygenOutput,
+) -> SignRequestTest {
+    let msg: String = rng.gen::<usize>().to_string();
+    let path: String = rng.gen::<usize>().to_string();
+    let (payload, request, response) =
+        create_response_secp256k1(domain_id, predecessor_id, &msg, &path, sk);
+    let args = SignRequestArgs {
+        payload_v2: Some(payload.clone()),
+        path,
+        domain_id: Some(domain_id),
+        ..Default::default()
+    };
+    SignRequestTest {
+        response: SignResponseArgs { request, response },
+        args,
+    }
 }

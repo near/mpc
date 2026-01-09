@@ -1,10 +1,14 @@
 use crate::sandbox::{
     common::{candidates, init, init_env, SandboxTestSetup},
     utils::{
-        consts::PARTICIPANT_LEN,
-        sign_utils::{submit_signature_response, SignRequestTest},
+        consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
+        shared_key_utils::SharedSecretKey,
+        sign_utils::{
+            gen_secp_256k1_sign_test, submit_signature_response, verify_timeout, DomainResponseTest,
+        },
     },
 };
+use anyhow::Context;
 use mpc_contract::{
     errors,
     primitives::{
@@ -13,112 +17,153 @@ use mpc_contract::{
         thresholds::{Threshold, ThresholdParameters},
     },
 };
+use near_account_id::AccountId;
 use near_workspaces::types::NearToken;
+use near_workspaces::{network::Sandbox, result::Execution, Account, Worker};
+use rand::SeedableRng;
 use std::time::Duration;
 use utilities::AccountIdExtV1;
-
-const NON_CKD_SCHEMES: &[SignatureScheme] = &[
-    SignatureScheme::Secp256k1,
-    SignatureScheme::V2Secp256k1,
-    SignatureScheme::Ed25519,
-];
+use utilities::AccountIdExtV2;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
 
+async fn create_account_given_id(
+    worker: &Worker<Sandbox>,
+    account_id: AccountId,
+) -> Result<Execution<Account>, near_workspaces::error::Error> {
+    let (_, sk) = worker.generate_dev_account_credentials();
+    worker
+        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
+        .await
+}
+
 #[tokio::test]
-async fn test_contract_sign_request_all_schemes() -> anyhow::Result<()> {
+async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
-
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let attested_account = &mpc_signer_accounts[0];
-    let path = "test";
-    let alice = worker.dev_create_account().await.unwrap();
-    let predecessor_id = alice.id();
-    let messages = [
-        "hello world",
-        "hello world!",
-        "hello world!!",
-        "hello world!!!",
-        "hello world!!!!",
+
+    let account_ids: [AccountId; 5] = [
+        "alice".parse().unwrap(),
+        "this_is_an_app".parse().unwrap(),
+        "another".parse().unwrap(),
+        "a_better_one".parse().unwrap(),
+        "a_fake_one".parse().unwrap(),
     ];
 
-    for key in &keys {
-        for msg in messages {
+    for predecessor_id in account_ids {
+        let alice = create_account_given_id(&worker, predecessor_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let predecessor_id = alice.id();
+        for key in &keys {
             {
-                println!("submitting: {msg}");
-                let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
-                req.sign_and_validate(&alice, &contract, attested_account)
+                let req =
+                    DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+                req.run(&alice, &contract, attested_account)
                     .await
+                    .with_context(|| format!("{:?}", req))
                     .unwrap();
             }
-        }
-
-        {
-            // check that in case of duplicate request, only the most recent will be signed:
-            let msg = "welp";
-            println!("submitting: {msg}");
-            let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
-            let status_1 = req.sign_ensure_included(&alice, &contract).await?;
-            worker
-                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-                .await
-                .unwrap();
-            let status_2 = req.sign_ensure_included(&alice, &contract).await?;
-            // unfortunately, we still can't completely get rid of this sleep
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            worker
-                .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
-                .await
-                .unwrap();
-            submit_signature_response(&req.response, &contract, attested_account).await?;
-            req.verify_execution_outcome(status_2)
-                .await
-                .expect("most recent signature request should succeed");
-            worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
-            req.verify_timeout(status_1)
-                .await
-                .expect("initial signature request should time out");
-        }
-
-        {
-            // Check that a sign with no response from MPC network properly errors out:
-            let msg = "this should timeout";
-            println!("submitting: {msg}");
-            let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
-            let status = req.sign_ensure_included(&alice, &contract).await?;
-            worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
-            req.verify_timeout(status).await.unwrap();
         }
     }
     Ok(())
 }
 
 #[tokio::test]
-async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
+async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let SandboxTestSetup {
         worker,
         contract,
         mpc_signer_accounts,
         keys,
-    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    let attested_account = &mpc_signer_accounts[0];
+
+    for key in &keys {
+        let alice = worker.dev_create_account().await.unwrap();
+        let predecessor_id = alice.id();
+        // check that in case of duplicate request, only the most recent will be signed:
+        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let status_1 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+        let status_2 = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+
+        // unfortunately, we still can't completely get rid of this sleep
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        worker
+            .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
+            .await
+            .unwrap();
+        req.submit_response(&contract, attested_account).await?;
+        req.verify_execution_outcome(status_2)
+            .await
+            .expect("most recent signature request should succeed");
+        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
+        verify_timeout(status_1)
+            .await
+            .expect("initial signature request should time out");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        keys,
+        ..
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+
+    for key in &keys {
+        let alice = worker.dev_create_account().await.unwrap();
+        let predecessor_id = alice.id();
+        // Check that a sign with no response from MPC network properly errors out:
+        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let status = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
+        worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
+        verify_timeout(status).await.unwrap();
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
 
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let path = "test";
-    let msg = "hello world!";
 
     for key in &keys {
-        println!("submitting: {msg}");
-        let req = SignRequestTest::new(key, &alice.id().as_v2_account_id(), msg, path);
-        req.sign_and_validate(&alice, &contract, attested_account)
-            .await?;
+        let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
+        req.run(&alice, &contract, attested_account).await?;
 
         let new_balance = alice.view_account().await?.balance;
         let new_contract_balance = contract.view_account().await?.balance;
@@ -140,26 +185,26 @@ async fn test_contract_sign_success_refund() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
+async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
         worker,
         contract,
         keys,
         ..
-    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
     let contract_balance = contract.view_account().await?.balance;
-    let path = "test";
 
-    let msg = "hello world!";
-    println!("submitting: {msg}");
     for key in &keys {
-        let req = SignRequestTest::new(key, &alice.id().as_v2_account_id(), msg, path);
-        let status = req.sign_ensure_included(&alice, &contract).await?;
+        let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
+        let status = req
+            .submit_request_ensure_included(&alice, &contract)
+            .await?;
         worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await.unwrap();
         // we do not respond, sign will fail due to timeout
-        req.verify_timeout(status).await?;
+        verify_timeout(status).await?;
 
         let new_balance = alice.view_account().await?.balance;
         let new_contract_balance = contract.view_account().await?.balance;
@@ -177,32 +222,48 @@ async fn test_contract_sign_fail_refund() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_contract_sign_request_deposits() -> anyhow::Result<()> {
+async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
         contract,
         mpc_signer_accounts,
         keys,
         ..
-    } = init_env(NON_CKD_SCHEMES, PARTICIPANT_LEN).await;
+    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let attested_account = &mpc_signer_accounts[0];
     let predecessor_id = contract.id();
-    let path = "testing-no-deposit";
 
     for key in &keys {
         // Try to sign with no deposit, should fail.
-        let msg = "without-deposit";
-        let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
-        let status = contract
-            .call("sign")
-            .args_json(req.request_json_args())
-            .max_gas()
-            .transact_async()
-            .await?;
-        dbg!(&status);
+        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let status = match &req {
+            DomainResponseTest::Sign(req) => {
+                let status = contract
+                    .call("sign")
+                    .args_json(req.request_json_args())
+                    .max_gas()
+                    .transact_async()
+                    .await?;
+                dbg!(&status);
+                status
+            }
+            DomainResponseTest::CKD(req) => {
+                let status = contract
+                    .call("request_app_private_key")
+                    .args_json(serde_json::json!({
+                        "request": req.args,
+                    }))
+                    .max_gas()
+                    .transact_async()
+                    .await?;
+                dbg!(&status);
+                status
+            }
+        };
 
         // Responding to the request should fail with missing request because the deposit is too low,
         // so the request should have never made it into the request queue and subsequently the MPC network.
-        let respond = submit_signature_response(&req.response, &contract, attested_account).await;
+        let respond = req.submit_response(&contract, attested_account).await;
         dbg!(&respond);
         assert!(respond
             .unwrap_err()
@@ -228,30 +289,31 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
         keys,
         ..
     } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_LEN).await;
+    let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
     let key = &keys[0];
     const LEGACY_KEY_VERSION: u64 = 0; // this is the first cait-sith domain in the contract
+    const NUM_MSGS: usize = 5;
     assert_eq!(key.domain_id().0, LEGACY_KEY_VERSION);
+    let SharedSecretKey::Secp256k1(sk) = &key.domain_secret_key else {
+        anyhow::bail!("expected secp256k1");
+    };
     let attested_account = &mpc_signer_accounts[0];
     let predecessor_id = contract.id();
-    let path = "test";
 
-    let messages = [
-        "hello world",
-        "hello world!",
-        "hello world!!",
-        "hello world!!!",
-        "hello world!!!!",
-    ];
+    for _ in 0..NUM_MSGS {
+        let req = gen_secp_256k1_sign_test(
+            &mut rng,
+            key.domain_id(),
+            &predecessor_id.as_v2_account_id(),
+            sk,
+        );
 
-    for msg in messages {
-        println!("submitting: {msg}");
-        let req = SignRequestTest::new(key, &predecessor_id.as_v2_account_id(), msg, path);
         let status = contract
             .call("sign")
             .args_json(serde_json::json!({
                 "request": {
                     "payload": req.payload().as_ecdsa().unwrap(),
-                    "path": path,
+                    "path": req.path(),
                     "key_version": LEGACY_KEY_VERSION,
                 },
             }))
