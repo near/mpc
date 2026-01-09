@@ -139,8 +139,6 @@ mod tests {
     use crate::test_utils::MockCryptoRng;
 
     use super::*;
-    use bincode::config;
-    use bincode::serde::{decode_from_slice, encode_to_vec};
     use rand::SeedableRng;
     use rand_core::RngCore;
     use std::borrow::Borrow;
@@ -199,16 +197,15 @@ mod tests {
     }
 
     #[test]
-    fn test_bincode_roundtrip() {
+    fn test_encoding_roundtrip() {
         let test_bytes = vec![0xAB, 0xCD, 0xEF];
         let original = AppId::try_new(test_bytes.clone()).unwrap();
 
-        // Encode using bincode's binary format
-        let encoded = encode_to_vec(&original, config::standard()).expect("bincode encode");
+        let encoded = serde_json::to_vec(&original).expect("serde_json encode should not fail");
 
         // Decode back into AppId
-        let (decoded, _len): (AppId, usize) =
-            decode_from_slice(&encoded, config::standard()).expect("bincode decode");
+        let decoded: AppId =
+            serde_json::from_slice(&encoded).expect("serde_json decode should not fail");
 
         assert_eq!(decoded, original);
         assert_eq!(decoded.as_bytes(), &test_bytes[..]);
