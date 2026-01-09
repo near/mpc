@@ -31,6 +31,7 @@ ignore = [
   # - `ruint` is a transitive dependency through `alloy`.
   # - The affected function is unused in alloy (ref: recmo/uint#550, alloy-rs/alloy#3416).
   "RUSTSEC-2025-0137",
+  "RUSTSEC-2026-0002", # TODO(#1730): Remove once nearcore updates to a fixed version
 ]
 
 [bans]
@@ -42,6 +43,7 @@ skip-tree = [
   { name = "near-vm-runner" },
   { name = "pprof" },
   { name = "reqwest" },
+  { name = "lru" },                 # TODO(#1730): Remove once nearcore updates to a fixed version
 ]
 
 [sources]
