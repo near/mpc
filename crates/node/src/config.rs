@@ -143,6 +143,7 @@ pub struct ConfigFile {
 
     pub web_ui: SocketAddr,
     pub migration_web_ui: SocketAddr,
+    pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
     pub triple: TripleConfig,
     pub presignature: PresignatureConfig,

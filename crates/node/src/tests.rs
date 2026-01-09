@@ -214,6 +214,10 @@ impl IntegrationTestSetup {
                     Ipv4Addr::UNSPECIFIED.into(),
                     port_seed.migration_web_port(i),
                 ),
+                pprof_bind_address: SocketAddr::new(
+                    Ipv4Addr::UNSPECIFIED.into(),
+                    port_seed.pprof_web_port(i),
+                ),
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {

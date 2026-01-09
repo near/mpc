@@ -44,8 +44,10 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
+pprof = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
+regex = { workspace = true }
 rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
@@ -63,9 +65,15 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+
+# Use frame-pointer to get the back-trace on macOS
+# see: https://github.com/tikv/pprof-rs/issues/131#issuecomment-1146991294
+[target.'cfg(target_os = "macos")'.dependencies]
+pprof = { workspace = true, features = ["frame-pointer"] }
 
 [build-dependencies]
 built = { version = "0.8", features = ["git2", "chrono"] }
