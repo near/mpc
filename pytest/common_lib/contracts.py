@@ -124,3 +124,4 @@ class ContractMethod(str, Enum):
     START_NODE_MIGRATION = "start_node_migration"
     SUBMIT_PARTICIPANT_INFO = "submit_participant_info"
     VERIFY_TEE = "verify_tee"
+    CONFIG = "config"

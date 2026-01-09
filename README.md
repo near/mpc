@@ -23,8 +23,16 @@ specific node in the MPC network, which is known as the leader for this specific
 
 ## Testing
 
-- **Unit Tests**: Run with `cargo test --release` (`--release` flag is advised for performance reasons).
-- **Integration Test** : Located in the `/pytest` directory.
+### Terminology
+We use the following terminology when referring to tests:
+- _unit test_ -> a rust test in `/src` folder (per crate)
+- _integration test_ -> a rust test in `/tests` folder (per crate)
+- _system test_ -> a pytest in the `/pytest` folder
+
+### Run tests
+
+- **Unit and integration tests**: Run with `cargo test --profile test-release`
+- **System Tests** : c.f. README located in the `/pytest` directory.
 
 ## Compilation
 
