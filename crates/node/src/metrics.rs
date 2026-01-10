@@ -315,3 +315,33 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         )
         .unwrap()
 });
+
+// P2P Ping/Pong metrics for monitoring connection health
+
+pub static MPC_P2P_PING_SEQUENCE_SENT: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
+    prometheus::register_int_gauge_vec!(
+        "mpc_p2p_ping_sequence_sent",
+        "Latest ping sequence number sent to each peer",
+        &["peer_id"],
+    )
+    .unwrap()
+});
+
+pub static MPC_P2P_PONG_SEQUENCE_RECEIVED: LazyLock<prometheus::IntGaugeVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge_vec!(
+            "mpc_p2p_pong_sequence_received",
+            "Latest pong sequence number received from each peer",
+            &["peer_id"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_P2P_RTT_SECONDS: LazyLock<prometheus::GaugeVec> = LazyLock::new(|| {
+    prometheus::register_gauge_vec!(
+        "mpc_p2p_rtt_seconds",
+        "Latest round-trip time in seconds to each peer",
+        &["peer_id"],
+    )
+    .unwrap()
+});
