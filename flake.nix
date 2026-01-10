@@ -66,6 +66,7 @@
 
             # Cargo extensions
             cargo-binstall
+            cargo-expand
             cargo-deny
             cargo-insta
             cargo-make
