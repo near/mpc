@@ -2,21 +2,26 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
+        interface::IntoInterfaceType,
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
-            get_participant_attestation, get_tee_accounts, submit_participant_info, vote_for_hash,
+            get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
+            vote_for_hash,
         },
+        resharing_utils::conclude_resharing,
     },
 };
 use anyhow::Result;
 use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
 use mpc_contract::{
-    errors::InvalidState, primitives::test_utils::bogus_ed25519_public_key,
+    errors::InvalidState,
+    primitives::{domain::SignatureScheme, test_utils::bogus_ed25519_public_key},
     state::ProtocolContractState,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::{Account, Contract};
 use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
+use utilities::AccountIdExtV1;
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -633,6 +638,104 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
         get_allowed_launcher_compose_hashes(&contract).await?.len(),
         1
     );
+
+    Ok(())
+}
+
+/// Tests that when a participant's TEE attestation expires and `verify_tee()` is called,
+/// the contract transitions to Resharing state and eventually removes that participant.
+///
+/// Steps:
+/// 1. Initialize contract with 3 participants
+/// 2. Submit an expiring attestation for the last participant
+/// 3. Fast-forward blocks past the attestation expiry
+/// 4. Call `verify_tee()` which detects the expired attestation and triggers resharing
+/// 5. Complete resharing with remaining 2 participants
+/// 6. Verify participant count reduced from 3 to 2
+#[tokio::test]
+async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> {
+    const PARTICIPANT_COUNT: usize = 3;
+    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        ..
+    } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
+
+    let initial_participants = assert_running_return_participants(&contract).await?;
+    assert_eq!(initial_participants.len(), PARTICIPANT_COUNT);
+
+    // Calculate expiry timestamp from current block time
+    let block_info = worker.view_block().await?;
+    let expiry_timestamp = block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
+
+    // Submit an expiring attestation for the last participant
+    let target_account = &mpc_signer_accounts[2];
+    let target_node_id = initial_participants
+        .get_node_ids()
+        .into_iter()
+        .find(|node| node.account_id == target_account.id().as_v2_account_id())
+        .expect("target participant not found");
+
+    let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: None,
+        expiry_time_stamp_seconds: Some(expiry_timestamp),
+    });
+
+    let submit_result = submit_participant_info(
+        target_account,
+        &contract,
+        &expiring_attestation,
+        &target_node_id.tls_public_key.into_interface_type(),
+    )
+    .await?;
+    assert!(submit_result, "failed to submit expiring attestation");
+
+    // Fast-forward past the attestation expiry
+    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+
+    // Call verify_tee() to trigger resharing
+    let verify_result = mpc_signer_accounts[0]
+        .call(contract.id(), "verify_tee")
+        .args_json(serde_json::json!({}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(
+        verify_result.is_success(),
+        "verify_tee call failed: {:?}",
+        verify_result
+    );
+
+    // Verify contract transitioned to Resharing state
+    let state_after_verify = get_state(&contract).await;
+    let prospective_epoch_id = match &state_after_verify {
+        ProtocolContractState::Resharing(resharing_state) => resharing_state.prospective_epoch_id(),
+        _ => panic!("expected Resharing state, got {:?}", state_after_verify),
+    };
+
+    // Complete resharing with the remaining participants (first 2)
+    let remaining_accounts = &mpc_signer_accounts[..2];
+    conclude_resharing(&contract, remaining_accounts, prospective_epoch_id).await?;
+
+    // Verify final state: 2 participants, target removed
+    let final_participants = assert_running_return_participants(&contract).await?;
+    assert_eq!(final_participants.len(), PARTICIPANT_COUNT - 1);
+
+    let final_accounts: Vec<_> = final_participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, _)| account_id.clone())
+        .collect();
+    let expected_accounts: Vec<_> = remaining_accounts
+        .iter()
+        .map(|a| a.id().as_v2_account_id())
+        .collect();
+    assert_eq!(final_accounts, expected_accounts);
 
     Ok(())
 }
