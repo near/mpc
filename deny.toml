@@ -15,8 +15,8 @@ allow = [
   "Unicode-3.0",
   "CC0-1.0",
   "CDLA-Permissive-2.0",
+  "CDDL-1.0",
 ]
-
 
 [advisories]
 ignore = [
@@ -41,10 +41,11 @@ skip = [
   { name = "near-time" },
 ]
 skip-tree = [
-  { name = "reqwest" },
   { name = "axum" },
   { name = "near-jsonrpc-client" },
   { name = "near-vm-runner" },
+  { name = "pprof" },
+  { name = "reqwest" },
   { name = "lru" },                 # TODO(#1730): Remove once nearcore updates to a fixed version
 ]
 

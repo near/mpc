@@ -15,6 +15,7 @@ use crate::{
     },
     migration_service::spawn_recovery_server_and_run_onboarding,
     p2p::testing::{generate_test_p2p_configs, PortSeed},
+    profiler,
     tracking::{self, start_root_task},
     web::{start_web_server, static_web_data, DebugRequest},
 };
@@ -248,6 +249,8 @@ impl StartCmd {
             &home_dir,
             config.number_of_responder_keys,
         )?;
+
+        profiler::web_server::start_web_server(config.pprof_bind_address).await?;
 
         // TODO (#1296)
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
@@ -678,6 +681,10 @@ impl Cli {
             migration_web_ui: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
                 PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            ),
+            pprof_bind_address: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),
             ),
             indexer: IndexerConfig {
                 validate_genesis: true,

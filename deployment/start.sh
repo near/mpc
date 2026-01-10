@@ -92,6 +92,7 @@ near_responder_account_id: $responder_id
 number_of_responder_keys: 50
 web_ui: 0.0.0.0:8080
 migration_web_ui: 0.0.0.0:8079
+pprof_bind_address: 0.0.0.0:34001
 triple:
   concurrency: 2
   desired_triples_to_buffer: 1000000
