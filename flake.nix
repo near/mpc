@@ -129,7 +129,7 @@
               # needed for neard's rocksdb build to avoid unsupported CPU features
               CXXFLAGS =
                 let
-                  isX86 = lib.strings.hasPrefix "x86_64" system;
+                  isX86 = pkgs.stdenv.hostPlatform.isx86_64;
                 in
                 "-include cstdint" + (lib.optionalString isX86 " -msse4.2 -mpclmul");
 
@@ -154,6 +154,10 @@
               RUSTUP_TOOLCHAIN = "";
               CARGO_HOME = ".nix-cargo";
             };
+
+            # Remove the hardening added by nix to fix jmalloc compilation error.
+            # More info: https://github.com/tikv/jemallocator/issues/108
+            hardeningDisable = [ "fortify" ];
 
             shellHook = ''
               mkdir -p .nix-cargo
