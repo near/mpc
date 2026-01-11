@@ -185,11 +185,17 @@ let
 in
 pythonWithCustom.withPackages (
   ps: with ps; [
+    # key ring required by NEAR cli for storing credentials
+    keyring
+
+    # linter
+    ruff
+
+    # pytest deps
     pytest
     pytest-rerunfailures
     gitpython
     ruamel-yaml
-    ruff
     pygithub
     base58
     cachetools
