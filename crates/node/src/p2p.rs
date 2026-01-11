@@ -143,10 +143,13 @@ impl TlsConnection {
         let sender_task = tracking::spawn_checked(
             &format!("TLS connection to {}", target_participant_id),
             async move {
+                // this is the only place where we cancel "closed"
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 let mut sent_bytes: u64 = 0;
                 loop {
                     tokio::select! {
+                        // can this recv() never return? resulting in a above "closed" not getting
+                        // dropped, i.e. not getting cancelled?
                         data = receiver.recv() => {
                             let Some(data) = data else {
                                 break;
@@ -167,15 +170,18 @@ impl TlsConnection {
                             // (so we can reconnect).
                             break;
                         }
+                        // here: add a check if cancelled?
                     }
                 }
                 anyhow::Ok(())
             },
         );
         let sender_clone = sender.clone();
+        let closed_clone = closed.clone();
         let keepalive_task = tracking::spawn(
             &format!("TCP keepalive for {}", target_participant_id),
             async move {
+                let _drop_to_cancel = DropToCancel(closed_clone);
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     if sender_clone.send(Packet::Ping).is_err() {
@@ -279,6 +285,7 @@ impl PersistentConnection {
                     };
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
+                    // this here might never happen
                     new_conn.wait_for_close().await;
                 }
             },
@@ -382,6 +389,10 @@ pub async fn new_tls_mesh_network(
                     .context("p2p handshake")?;
                 tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
                 let incoming_conn = Arc::new(());
+                // why would we receive block height from peer, but still think they are not
+                // connected?
+                // could it be that we falsely think our outgoing connection is broken, or that we think
+                // the incoming one is broken?
                 connectivities
                     .get(peer_id)?
                     .set_incoming_connection(&incoming_conn);
@@ -416,6 +427,8 @@ pub async fn new_tls_mesh_network(
                             }))?;
                         }
                         Packet::IndexerHeight(message) => {
+                            // we seem to receive this, but still think the peer is not fully
+                            // connected. Why?
                             message_sender.send(PeerMessage::IndexerHeight(
                                 PeerIndexerHeightMessage {
                                     from: peer_id,

@@ -81,6 +81,7 @@ pub struct MeshNetworkClient {
 
 impl NetworkAPIForRequests for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
+        // look into this
         self.all_alive_participant_ids().into_iter().collect()
     }
 
@@ -198,6 +199,7 @@ impl MeshNetworkClient {
                 && self
                     .transport_sender
                     .connectivity(participant)
+                    // I would suppose this one here yields false on the receiver side
                     .is_bidirectionally_connected()
             {
                 result.push(participant);

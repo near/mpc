@@ -47,6 +47,7 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
     }
 
     pub fn is_connected(&self) -> bool {
+        // does this returns false?
         self.connection.upgrade().is_some()
     }
 }
@@ -54,6 +55,7 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
 /// Struct to track bidirectional connectivity between two nodes.
 /// A node has one NodeConnectivity for each other node in the network.
 pub struct NodeConnectivity<I: Send + Sync + 'static, O: Send + Sync + 'static> {
+    // why use channels instead of mutex or arcs here?
     outgoing_sender: tokio::sync::watch::Sender<ConnectionWithVersion<I>>,
     outgoing_receiver: tokio::sync::watch::Receiver<ConnectionWithVersion<I>>,
     incoming_sender: tokio::sync::watch::Sender<ConnectionWithVersion<O>>,
@@ -106,6 +108,8 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// they make outgoing connections to us. However, for the purpose of
     /// tracking connectivity and connection resets, we logically assume that
     /// as soon as this is called, the old connection is considered dropped.
+    /// note: this might be an issue... What if the peer attemps to spawn multiple connections with
+    /// the most recent one failing and an older one succeeding? Is there a race condition?
     pub fn set_incoming_connection(&self, conn: &Arc<O>) {
         let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.incoming_sender
@@ -130,6 +134,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     pub fn is_bidirectionally_connected(&self) -> bool {
         let outgoing = self.outgoing_receiver.borrow();
         let incoming = self.incoming_receiver.borrow();
+        // would suppose that the incoming here is false
         outgoing.is_connected() && incoming.is_connected()
     }
 
@@ -181,6 +186,7 @@ pub trait NodeConnectivityInterface: Send + Sync + 'static {
     fn connection_version(&self) -> ConnectionVersion;
     fn was_connection_interrupted(&self, version: ConnectionVersion) -> bool;
     async fn wait_for_connection(&self, version: ConnectionVersion) -> anyhow::Result<()>;
+    // look into this
     fn is_bidirectionally_connected(&self) -> bool;
 }
 
