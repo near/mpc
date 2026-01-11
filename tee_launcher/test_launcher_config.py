@@ -21,6 +21,9 @@ from tee_launcher.launcher import (
     ENV_VAR_DEFAULT_IMAGE_DIGEST,
 )
 
+TEE = launcher.PLATFORM_TEE
+NONTEE = launcher.PLATFORM_NONTEE
+
 
 def make_digest_json(hashes):
     return json.dumps({JSON_KEY_APPROVED_HASHES: hashes})
@@ -124,7 +127,7 @@ def test_build_docker_cmd_sanitizes_ports_and_hosts():
         "EXTRA_HOSTS": "node:192.168.1.1,--volume /:/mnt",
         "MPC_ACCOUNT_ID": "mpc-user-123",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     func_name = inspect.currentframe().f_code.co_name
     print(f"[{func_name}] CMD:", " ".join(cmd))
@@ -146,7 +149,7 @@ def test_extra_hosts_does_not_allow_ld_preload():
         "EXTRA_HOSTS": "host:1.2.3.4,--env LD_PRELOAD=/evil.so",
         "MPC_ACCOUNT_ID": "safe",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "host:1.2.3.4" in cmd
     assert not any("LD_PRELOAD" in arg for arg in cmd)
@@ -157,7 +160,7 @@ def test_ports_does_not_allow_volume_injection():
         "PORTS": "2200:2200,--volume /:/mnt",
         "MPC_ACCOUNT_ID": "safe",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "2200:2200" in cmd
     assert not any("/:/mnt" in arg for arg in cmd)
@@ -168,7 +171,7 @@ def test_invalid_env_key_is_ignored():
         "BAD_KEY": "should_not_be_used",
         "MPC_ACCOUNT_ID": "safe",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "should_not_be_used" not in " ".join(cmd)
     assert "MPC_ACCOUNT_ID=safe" in cmd
@@ -178,7 +181,7 @@ def test_protocol_upgrade_override_is_allowed():
     env = {
         "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE": "now",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE=now" in " ".join(cmd)
 
@@ -187,7 +190,7 @@ def test_mpc_backup_encryption_key_is_allowed():
     env = {
         "MPC_BACKUP_ENCRYPTION_KEY_HEX": "0000000000000000000000000000000000000000000000000000000000000000",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert (
         "MPC_BACKUP_ENCRYPTION_KEY_HEX=0000000000000000000000000000000000000000000000000000000000000000"
@@ -200,7 +203,7 @@ def test_malformed_extra_host_is_ignored():
         "EXTRA_HOSTS": "badhostentry,no-colon,also--bad",
         "MPC_ACCOUNT_ID": "safe",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "--add-host" not in cmd  # All malformed entries should be skipped
 
@@ -209,7 +212,7 @@ def test_env_value_with_shell_injection_is_handled_safely():
     env = {
         "MPC_ACCOUNT_ID": "safe; rm -rf /",
     }
-    cmd = build_docker_cmd(env, "sha256:abc123")
+    cmd = build_docker_cmd(TEE, env, "sha256:abc123")
 
     assert "--env" in cmd
     assert "MPC_ACCOUNT_ID=safe; rm -rf /" in cmd
@@ -227,7 +230,7 @@ def test_parse_and_build_docker_cmd_full_flow():
     env = parse_env_string(config_str)
     image_hash = env.get("IMAGE_HASH", "sha256:default")
 
-    cmd = build_docker_cmd(env, image_hash)
+    cmd = build_docker_cmd(TEE, env, image_hash)
 
     print(f"[{inspect.currentframe().f_code.co_name}] CMD: {' '.join(cmd)}")
 
@@ -252,7 +255,7 @@ def test_ld_preload_injection_blocked1():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not included in the command
     assert "--env" in docker_cmd  # Ensure there is an env var
@@ -278,7 +281,7 @@ def test_ld_preload_in_extra_hosts1():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not part of the extra hosts in the docker command
     assert "--add-host" in docker_cmd  # Ensure extra hosts are included
@@ -299,7 +302,7 @@ def test_ld_preload_in_ports1():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not part of the port mappings in the docker command
     assert "-p" in docker_cmd  # Ensure port mappings are included
@@ -323,7 +326,7 @@ def test_ld_preload_in_mpc_account_id():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not part of the extra hosts in the docker command
     assert "--add-host" in docker_cmd  # Ensure extra hosts are included
@@ -345,7 +348,7 @@ def test_ld_preload_injection_blocked2():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     assert (
         "-e LD_PRELOAD" not in docker_cmd
@@ -364,7 +367,7 @@ def test_ld_preload_in_extra_hosts2():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not part of the extra hosts in the docker command
     assert "--add-host" in docker_cmd  # Ensure extra hosts are included
@@ -380,7 +383,7 @@ def test_ld_preload_in_ports2():
     }
 
     # Call build_docker_cmd to generate the docker command
-    docker_cmd = build_docker_cmd(malicious_env, "sha256:abc123")
+    docker_cmd = build_docker_cmd(TEE, malicious_env, "sha256:abc123")
 
     # Check that LD_PRELOAD is not part of the port mappings in the docker command
     assert "-p" in docker_cmd  # Ensure port mappings are included
@@ -496,3 +499,271 @@ def test_validate_image_hash():
         RPC_MAX_ATTEMPTS,
     )
     assert result is True, "validate_image_hash() failed for test image"
+
+
+# test launcher support for non TEE images.
+
+
+class DummyProc:
+    def __init__(self, returncode=0, stdout=b"", stderr=b""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+@pytest.fixture
+def base_env(monkeypatch):
+    # Required by launcher
+    monkeypatch.setenv(launcher.OS_ENV_DOCKER_CONTENT_TRUST, "1")
+    monkeypatch.setenv(launcher.ENV_VAR_DEFAULT_IMAGE_DIGEST, "sha256:" + "a" * 64)
+
+
+def test_parse_platform_missing(monkeypatch, base_env):
+    monkeypatch.delenv(launcher.ENV_VAR_PLATFORM, raising=False)
+    with pytest.raises(RuntimeError):
+        launcher.parse_platform()
+
+
+@pytest.mark.parametrize("val", ["", "foo", "TEE as", "NON_TEE", "1"])
+def test_parse_platform_invalid(monkeypatch, base_env, val):
+    monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, val)
+    with pytest.raises(RuntimeError):
+        launcher.parse_platform()
+
+
+@pytest.mark.parametrize(
+    "val,expected",
+    [("tee", "TEE"), ("TEE", "TEE"), ("nontee", "NONTEE"), ("NONTEE", "NONTEE")],
+)
+def test_parse_platform_valid(monkeypatch, base_env, val, expected):
+    monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, val)
+    assert launcher.parse_platform() == expected
+
+
+def test_extend_rtmr3_nontee_skips_dstack(monkeypatch, base_env):
+    called = {"count": 0}
+
+    def fake_curl(*args, **kwargs):
+        called["count"] += 1
+        return DummyProc(returncode=0)
+
+    monkeypatch.setattr(launcher, "curl_unix_socket_post", fake_curl)
+
+    launcher.extend_rtmr3(launcher.PLATFORM_NONTEE, "sha256:" + "b" * 64)
+    assert called["count"] == 0
+
+
+def test_extend_rtmr3_tee_requires_socket(monkeypatch, base_env):
+    monkeypatch.setattr(launcher, "is_unix_socket", lambda p: False)
+    with pytest.raises(RuntimeError):
+        launcher.extend_rtmr3(launcher.PLATFORM_TEE, "sha256:" + "b" * 64)
+
+
+def test_extend_rtmr3_tee_getquote_fail(monkeypatch, base_env):
+    monkeypatch.setattr(launcher, "is_unix_socket", lambda p: True)
+
+    def fake_curl(endpoint, payload, capture_output=False):
+        # Fail only GetQuote
+        if endpoint == "GetQuote":
+            return DummyProc(returncode=7)
+        return DummyProc(returncode=0)
+
+    monkeypatch.setattr(launcher, "curl_unix_socket_post", fake_curl)
+    with pytest.raises(RuntimeError, match="GetQuote failed"):
+        launcher.extend_rtmr3(launcher.PLATFORM_TEE, "sha256:" + "b" * 64)
+
+
+def test_extend_rtmr3_tee_emitevent_fail(monkeypatch, base_env):
+    monkeypatch.setattr(launcher, "is_unix_socket", lambda p: True)
+
+    def fake_curl(endpoint, payload, capture_output=False):
+        if endpoint == "GetQuote":
+            return DummyProc(returncode=0)
+        if endpoint == "EmitEvent":
+            return DummyProc(returncode=55)
+        return DummyProc(returncode=0)
+
+    monkeypatch.setattr(launcher, "curl_unix_socket_post", fake_curl)
+    with pytest.raises(RuntimeError, match="EmitEvent failed"):
+        launcher.extend_rtmr3(launcher.PLATFORM_TEE, "sha256:" + "b" * 64)
+
+
+def test_build_docker_cmd_nontee_no_dstack_mount(base_env):
+    env = {
+        "MPC_ACCOUNT_ID": "x",
+        # launcher-only env should be ignored
+        launcher.ENV_VAR_RPC_MAX_ATTEMPTS: "5",
+    }
+    cmd = launcher.build_docker_cmd(launcher.PLATFORM_NONTEE, env, "sha256:" + "c" * 64)
+    s = " ".join(cmd)
+
+    assert "MPC_TEE_MODE=0" in s
+    assert "DSTACK_ENDPOINT=" not in s
+    assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" not in s
+
+
+def test_build_docker_cmd_tee_has_dstack_mount(base_env):
+    env = {"MPC_ACCOUNT_ID": "x"}
+    cmd = launcher.build_docker_cmd(launcher.PLATFORM_TEE, env, "sha256:" + "c" * 64)
+    s = " ".join(cmd)
+
+    assert "MPC_TEE_MODE=1" in s
+    assert f"DSTACK_ENDPOINT={launcher.DSTACK_UNIX_SOCKET}" in s
+    assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" in s
+
+
+def test_main_tee_fails_closed_before_launch(monkeypatch, base_env):
+    monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, "TEE")
+    monkeypatch.setattr(launcher, "is_unix_socket", lambda p: False)
+
+    # prevent any real docker/network
+    monkeypatch.setattr(
+        launcher, "load_and_select_hash", lambda cfg: "sha256:" + "d" * 64
+    )
+    monkeypatch.setattr(launcher, "validate_image_hash", lambda *a, **k: True)
+    monkeypatch.setattr(
+        launcher,
+        "launch_mpc_container",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not launch")),
+    )
+
+    with pytest.raises(RuntimeError, match="requires dstack unix socket"):
+        launcher.main()
+
+
+def test_main_nontee_skips_extend_and_launches(monkeypatch, base_env):
+    monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, "NONTEE")
+    monkeypatch.setattr(
+        launcher, "is_unix_socket", lambda p: False
+    )  # should not matter
+
+    monkeypatch.setattr(
+        launcher, "load_and_select_hash", lambda cfg: "sha256:" + "d" * 64
+    )
+    monkeypatch.setattr(launcher, "validate_image_hash", lambda *a, **k: True)
+
+    called = {"extend": 0, "launch": 0}
+    monkeypatch.setattr(
+        launcher,
+        "extend_rtmr3",
+        lambda platform, h: called.__setitem__("extend", called["extend"] + 1),
+    )
+    monkeypatch.setattr(
+        launcher,
+        "launch_mpc_container",
+        lambda platform, h, cfg: called.__setitem__("launch", called["launch"] + 1),
+    )
+
+    launcher.main()
+    assert called["extend"] == 1
+    assert called["launch"] == 1
+
+
+def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
+    """
+    Verify that launcher.main() builds the correct MPC docker command in NONTEE mode.
+
+    Steps:
+    1. Configure the launcher to run with PLATFORM=NONTEE.
+    2. Set required environment variables (DOCKER_CONTENT_TRUST, DEFAULT_IMAGE_DIGEST).
+    3. Create a temporary user_config file with MPC env vars, ports, and extra hosts.
+    4. Simulate a missing IMAGE_DIGEST_FILE so the launcher falls back to DEFAULT_IMAGE_DIGEST.
+    5. Stub image validation and docker interactions to avoid real network or docker usage.
+    6. Invoke launcher.main().
+    7. Capture the docker run command used to start the MPC container.
+    8. Assert that the command:
+       - Includes expected MPC configuration (env vars, ports, hosts, volumes).
+       - Sets MPC_TEE_MODE=0.
+       - Does NOT include dstack socket mounts or DSTACK_ENDPOINT.
+       - Filters out injection attempts in ports and hosts.
+       - Uses the expected full image digest.
+    """
+    # --- Arrange: environment (NONTEE) ---
+    monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, launcher.PLATFORM_NONTEE)
+    monkeypatch.setenv(launcher.OS_ENV_DOCKER_CONTENT_TRUST, "1")
+
+    default_digest = "sha256:" + "a" * 64
+    monkeypatch.setenv(launcher.ENV_VAR_DEFAULT_IMAGE_DIGEST, default_digest)
+
+    # Provide a temp user config file so main() passes env into build_docker_cmd()
+    user_config = tmp_path / "user_config"
+    user_config.write_text(
+        "\n".join(
+            [
+                "MPC_ACCOUNT_ID=mpc-user-123",
+                "PORTS=11780:11780,--env BAD=1",  # BAD should be ignored
+                "EXTRA_HOSTS=node:192.168.1.1,--volume /:/mnt",  # injection should be ignored
+            ]
+        )
+        + "\n"
+    )
+
+    # Point launcher at our temp config
+    monkeypatch.setattr(launcher, "DSTACK_USER_CONFIG_FILE", str(user_config))
+
+    # Make IMAGE_DIGEST_FILE "missing" so DEFAULT_IMAGE_DIGEST is used
+    def fake_isfile(path: str) -> bool:
+        if path == launcher.IMAGE_DIGEST_FILE:
+            return False
+        if path == str(user_config):
+            return True
+        return os.path.isfile(path)
+
+    monkeypatch.setattr(launcher.os.path, "isfile", fake_isfile)
+
+    # Avoid network/docker verification in validate_image_hash
+    monkeypatch.setattr(launcher, "validate_image_hash", lambda *a, **k: True)
+
+    # Avoid remove_existing_container touching real docker
+    monkeypatch.setattr(launcher, "check_output", lambda *a, **k: "")
+
+    # Capture the docker run command used to launch MPC
+    captured = {"docker_run_cmd": None}
+
+    def fake_run(cmd, *args, **kwargs):
+        # cmd is a list[str]
+        if (
+            isinstance(cmd, list)
+            and len(cmd) >= 2
+            and cmd[0] == "docker"
+            and cmd[1] == "run"
+        ):
+            captured["docker_run_cmd"] = cmd
+            return DummyProc(returncode=0)
+        return DummyProc(returncode=0)
+
+    monkeypatch.setattr(launcher, "run", fake_run)
+
+    # --- Act ---
+    launcher.main()
+
+    # --- Assert ---
+    cmd = captured["docker_run_cmd"]
+    assert cmd is not None, "Expected launcher to invoke 'docker run' for MPC container"
+
+    cmd_str = " ".join(cmd)
+
+    # NONTEE invariants
+    assert "MPC_TEE_MODE=0" in cmd_str
+    assert "DSTACK_ENDPOINT=" not in cmd_str
+    assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" not in cmd_str
+
+    # Expected env propagation + sanitization
+    assert "MPC_ACCOUNT_ID=mpc-user-123" in cmd_str
+    assert "-p" in cmd and "11780:11780" in cmd_str
+    assert "--add-host" in cmd and "node:192.168.1.1" in cmd_str
+
+    # Injection strings filtered out
+    assert "BAD=1" not in cmd_str
+    assert "/:/mnt" not in cmd_str
+
+    # Required mounts / flags from build_docker_cmd
+    assert "--security-opt" in cmd_str
+    assert "no-new-privileges:true" in cmd_str
+    assert "/tapp:/tapp:ro" in cmd_str
+    assert "shared-volume:/mnt/shared" in cmd_str
+    assert "mpc-data:/data" in cmd_str
+    assert f"--name {launcher.MPC_CONTAINER_NAME}" in cmd_str
+
+    # Image digest should be the final argument and should be the FULL digest
+    assert cmd[-1] == default_digest
