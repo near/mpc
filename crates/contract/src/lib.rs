@@ -3387,9 +3387,6 @@ mod tests {
     fn test_verify_tee_triggers_resharing_on_expired_attestation() {
         const PARTICIPANT_COUNT: usize = 3;
         const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-        // Add 10 seconds margin to account for block time variance and ensure attestation is
-        // reliably expired.
-        const POST_EXPIRY_SECONDS: u64 = ATTESTATION_EXPIRY_SECONDS + 10;
 
         let participants = gen_participants(PARTICIPANT_COUNT);
         let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(2)).unwrap();
@@ -3435,12 +3432,12 @@ mod tests {
             .tee_state
             .add_participant(node_id, expiring_attestation);
 
-        // Fast-forward time past the attestation expiry
+        // Set time to exact expiry boundary
         let (first_account_id, _, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
             .signer_account_id(first_account_id.as_v1_account_id())
             .predecessor_account_id(first_account_id.as_v1_account_id())
-            .block_timestamp(POST_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+            .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
             .build());
 
         // Call verify_tee - should trigger resharing
