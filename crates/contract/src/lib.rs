@@ -1670,6 +1670,8 @@ mod tests {
         test_utils::gen_participants,
     };
     use crate::state::key_event::tests::Environment;
+    use crate::state::key_event::KeyEvent;
+    use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
@@ -3463,77 +3465,28 @@ mod tests {
             );
         };
 
-        assert_eq!(
-            resharing_state.previous_running_state, running_state_before,
-            "previous_running_state should preserve the original running state"
+        // Build expected participants: exclude the target (participant 2) who has expired attestation
+        let expected_participants = Participants::init(
+            ParticipantId(PARTICIPANT_COUNT as u32),
+            participant_list[0..2]
+                .iter()
+                .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))
+                .collect(),
         );
+        let expected_params =
+            ThresholdParameters::new(expected_participants, parameters.threshold()).unwrap();
 
-        // Epoch should advance by one
-        assert_eq!(
-            resharing_state.resharing_key.epoch_id(),
-            keyset.epoch_id.next(),
-            "resharing should target the next epoch"
-        );
-        // Domain being reshared should be the first domain
-        assert_eq!(
-            resharing_state.resharing_key.domain_id(),
-            domain_id,
-            "resharing should start with the first domain"
-        );
-        // Key event should not be active yet (no attempt started)
-        assert!(
-            !resharing_state.resharing_key.is_active(),
-            "resharing key event should not be active until participants start the protocol"
-        );
+        let expected_resharing_state = ResharingContractState {
+            previous_running_state: running_state_before,
+            reshared_keys: Vec::new(),
+            resharing_key: KeyEvent::new(
+                keyset.epoch_id.next(),
+                domains[0].clone(),
+                expected_params,
+            ),
+            cancellation_requests: HashSet::new(),
+        };
 
-        let prospective_params = resharing_state.resharing_key.proposed_parameters();
-        // Threshold should be preserved
-        assert_eq!(
-            prospective_params.threshold(),
-            parameters.threshold(),
-            "threshold should be preserved during attestation-triggered resharing"
-        );
-        // Participant count should be reduced by one
-        assert_eq!(
-            prospective_params.participants().len(),
-            PARTICIPANT_COUNT - 1,
-            "should have one fewer participant after resharing initiated"
-        );
-
-        // Verify exactly which participants remain (target excluded, others included)
-        let prospective_account_ids: HashSet<_> = prospective_params
-            .participants()
-            .participants()
-            .iter()
-            .map(|(acc, _, _)| acc)
-            .collect();
-        let expected_remaining: HashSet<_> = [&participant_list[0].0, &participant_list[1].0]
-            .into_iter()
-            .collect();
-        assert_eq!(
-            prospective_account_ids, expected_remaining,
-            "only participants with valid attestations should remain"
-        );
-
-        // Verify initial resharing collections
-        assert!(
-            resharing_state.reshared_keys.is_empty(),
-            "reshared_keys should be empty at start of resharing"
-        );
-        assert!(
-            resharing_state.cancellation_requests.is_empty(),
-            "cancellation_requests should be empty at start of resharing"
-        );
-
-        // ParticipantIds should be preserved for remaining participants
-        let prospective_participants = prospective_params.participants().participants();
-        assert_eq!(
-            prospective_participants[0].1, participant_list[0].1,
-            "participant 0 should retain their ParticipantId"
-        );
-        assert_eq!(
-            prospective_participants[1].1, participant_list[1].1,
-            "participant 1 should retain their ParticipantId"
-        );
+        assert_eq!(*resharing_state, expected_resharing_state);
     }
 }
