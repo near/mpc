@@ -6,13 +6,10 @@
 
 set -euo pipefail
 
-# Find all .rs files, excluding the nearcore submodule and target directory
-# Match lines containing TODO (case-insensitive) that do NOT match valid patterns
-INVALID_TODOS=$(find . -name "*.rs" -type f \
-    ! -path "./libs/nearcore/*" \
-    ! -path "./target/*" \
-    -exec grep -Hn -E "(//|///)[[:space:]]*(TODO|todo)" {} \; 2>/dev/null | \
-    grep -v -E "(//|///)[[:space:]]*TODO(\(#[0-9]+\))?:" || true)
+# Use git ls-files to respect .gitignore and exclude submodules
+INVALID_TODOS=$(git ls-files '*.rs' | \
+    xargs grep -Hin -E "(//|///).*todo" 2>/dev/null | \
+    grep -v -E "TODO(\(#[0-9]+\))?:" || true)
 
 if [ -n "$INVALID_TODOS" ]; then
     echo "❌ Found TODO comments not matching the required format"
