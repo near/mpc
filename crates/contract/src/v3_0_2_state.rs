@@ -103,33 +103,6 @@ struct TeeState {
     participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
 }
 
-// #[derive(Debug, BorshDeserialize)]
-// enum ProtocolContractState {
-//     NotInitialized,
-//     Initializing,
-//     Running(RunningContractState),
-//     Resharing,
-// }
-
-// #[derive(Debug, BorshDeserialize)]
-// pub struct RunningContractState {
-//     /// The domains for which we have a key ready for signature processing.
-//     pub domains: DomainRegistry,
-//     /// The keys that are currently in use; for each domain provides an unique identifier for a
-//     /// distributed key, so that the nodes can identify which local keyshare to use.
-//     pub keyset: Keyset,
-//     /// The current participants and threshold.
-//     pub parameters: ThresholdParameters,
-//     /// Votes for proposals for a new set of participants and threshold.
-//     pub parameters_votes: ThresholdParametersVotes,
-//     /// Votes for proposals to add new domains.
-//     pub add_domains_votes: AddDomainsVotes,
-//     /// The previous epoch id for a resharing state that was cancelled.
-//     /// This epoch id is tracked, as the next time the state transitions to resharing,
-//     /// we can't reuse a previously cancelled epoch id.
-//     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
-// }
-
 #[derive(Debug, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
