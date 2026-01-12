@@ -305,7 +305,7 @@ pub async fn submit_tee_attestations(
             node_id.account_id,
             "AccountId mismatch"
         );
-        let attestation = Attestation::Mock(MockAttestation::Valid); // todo #1109, add TLS key.
+        let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result = submit_participant_info(
             account,
             contract,

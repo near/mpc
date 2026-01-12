@@ -75,7 +75,7 @@ impl Attestation {
 
         let accepted_measurements = [
             include_measurements!("assets/tcb_info.json"),
-            // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
+            // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
             include_measurements!("assets/tcb_info_dev.json"),
         ];
 

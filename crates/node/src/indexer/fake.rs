@@ -513,7 +513,7 @@ impl FakeIndexerCore {
                         contract.vote_reshared(account_id, reshared.key_event_id);
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
-                        // todo: timeout logic in fake indexer?
+                        // TODO: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
                         contract.vote_start_keygen(account_id, start.key_event_id);
                     }

@@ -73,7 +73,7 @@ impl SignRequestTest {
                 create_response_ed25519(domain_id, predecessor_id, msg, path, sk)
             }
             SharedSecretKey::Bls12381(_) => {
-                // todo: make SignRequestTest an enum
+                // TODO: make SignRequestTest an enum
                 unreachable!()
             }
         };
