@@ -415,7 +415,9 @@ pub async fn new_tls_mesh_network(
                 // the incoming one is broken?
                 connectivities
                     .get(peer_id)?
-                    // set connectivity here
+                    // NOTE: we increment the version number here, but we don't necessarily
+                    // ancel the receiver task. This would happen only if the sender does so, which
+                    // might reult in some sort of race condition if the network is bad.
                     .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {

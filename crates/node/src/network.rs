@@ -188,6 +188,7 @@ impl MeshNetworkClient {
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
         let mut result = Vec::new();
+        // any chance this `get_indexer_heights()` is different to the one from the debug endpoint?
         let indexer_heights = self.get_indexer_heights();
         let my_height = *indexer_heights.get(&self.my_participant_id()).unwrap_or(&0);
         for participant in self.all_participant_ids() {
