@@ -6,9 +6,11 @@
 
 set -euo pipefail
 
-# Use git ls-files to respect .gitignore and exclude submodules
+# Use git ls-files to respect .gitignore and exclude submodules.
+# First grep finds all TODO comments (case-insensitive), then the second grep
+# filters out valid patterns, leaving only violations.
 INVALID_TODOS=$(git ls-files '*.rs' | \
-    xargs grep -Hin -E "(//|///).*todo" 2>/dev/null | \
+    xargs -r grep -Hin -E "(//|///).*todo" 2>/dev/null | \
     grep -v -E "TODO(\(#[0-9]+\))?:" || true)
 
 if [ -n "$INVALID_TODOS" ]; then
