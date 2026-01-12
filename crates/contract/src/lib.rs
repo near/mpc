@@ -2456,7 +2456,11 @@ mod tests {
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
                 accept_requests: true,
-                ..Default::default()
+                proposed_updates: Default::default(),
+                config: Default::default(),
+                tee_state: Default::default(),
+                node_migrations: Default::default(),
+                stale_data: Default::default(),
             }
         }
     }
