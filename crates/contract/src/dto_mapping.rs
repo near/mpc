@@ -8,7 +8,7 @@ use contract_interface::types as dtos;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::{Collateral, QuoteCollateralV3},
-    EventLog, TcbInfo,
+    tcb_info::{EventLog, HexBytes, TcbInfo},
 };
 
 use k256::{
@@ -49,16 +49,17 @@ pub(crate) trait TryIntoInterfaceType<InterfaceType> {
     fn try_into_dto_type(self) -> Result<InterfaceType, Self::Error>;
 }
 
-impl IntoContractType<Attestation> for dtos::Attestation {
-    fn into_contract_type(self) -> Attestation {
-        match self {
+impl TryIntoContractType<Attestation> for dtos::Attestation {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<Attestation, Self::Error> {
+        Ok(match self {
             dtos::Attestation::Dstack(dstack_attestation) => {
-                Attestation::Dstack(dstack_attestation.into_contract_type())
+                Attestation::Dstack(dstack_attestation.try_into_contract_type()?)
             }
             dtos::Attestation::Mock(mock_attestation) => {
                 Attestation::Mock(mock_attestation.into_contract_type())
             }
-        }
+        })
     }
 }
 
@@ -80,19 +81,20 @@ impl IntoContractType<MockAttestation> for dtos::MockAttestation {
     }
 }
 
-impl IntoContractType<DstackAttestation> for dtos::DstackAttestation {
-    fn into_contract_type(self) -> DstackAttestation {
+impl TryIntoContractType<DstackAttestation> for dtos::DstackAttestation {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<DstackAttestation, Self::Error> {
         let dtos::DstackAttestation {
             quote,
             collateral,
             tcb_info,
         } = self;
 
-        DstackAttestation {
+        Ok(DstackAttestation {
             quote: quote.into(),
             collateral: collateral.into_contract_type(),
-            tcb_info: tcb_info.into_contract_type(),
-        }
+            tcb_info: tcb_info.try_into_contract_type()?,
+        })
     }
 }
 
@@ -124,8 +126,9 @@ impl IntoContractType<Collateral> for dtos::Collateral {
     }
 }
 
-impl IntoContractType<TcbInfo> for dtos::TcbInfo {
-    fn into_contract_type(self) -> TcbInfo {
+impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<TcbInfo, Self::Error> {
         let dtos::TcbInfo {
             mrtd,
             rtmr0,
@@ -141,26 +144,39 @@ impl IntoContractType<TcbInfo> for dtos::TcbInfo {
 
         let event_log = event_log
             .into_iter()
-            .map(IntoContractType::into_contract_type)
-            .collect();
+            .map(|event| event.try_into_contract_type())
+            .collect::<Result<Vec<_>, _>>()?;
 
-        TcbInfo {
-            mrtd,
-            rtmr0,
-            rtmr1,
-            rtmr2,
-            rtmr3,
+        fn convert<const N: usize>(str: String) -> Result<HexBytes<N>, Error> {
+            str.try_into().map_err(|err| {
+                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
+            })
+        }
+
+        let os_image_hash = if os_image_hash.is_empty() {
+            None
+        } else {
+            Some(convert(os_image_hash)?)
+        };
+
+        Ok(TcbInfo {
+            mrtd: convert(mrtd)?,
+            rtmr0: convert(rtmr0)?,
+            rtmr1: convert(rtmr1)?,
+            rtmr2: convert(rtmr2)?,
+            rtmr3: convert(rtmr3)?,
             os_image_hash,
-            compose_hash,
-            device_id,
+            compose_hash: convert(compose_hash)?,
+            device_id: convert(device_id)?,
             app_compose,
             event_log,
-        }
+        })
     }
 }
 
-impl IntoContractType<EventLog> for dtos::EventLog {
-    fn into_contract_type(self) -> EventLog {
+impl TryIntoContractType<EventLog> for dtos::EventLog {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<EventLog, Self::Error> {
         let dtos::EventLog {
             imr,
             event_type,
@@ -169,13 +185,15 @@ impl IntoContractType<EventLog> for dtos::EventLog {
             event_payload,
         } = self;
 
-        EventLog {
+        Ok(EventLog {
             imr,
             event_type,
-            digest,
+            digest: digest.try_into().map_err(|err| {
+                ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
+            })?,
             event,
             event_payload,
-        }
+        })
     }
 }
 
@@ -276,14 +294,14 @@ impl IntoInterfaceType<dtos::TcbInfo> for TcbInfo {
             .collect();
 
         dtos::TcbInfo {
-            mrtd,
-            rtmr0,
-            rtmr1,
-            rtmr2,
-            rtmr3,
-            os_image_hash,
-            compose_hash,
-            device_id,
+            mrtd: mrtd.into(),
+            rtmr0: rtmr0.into(),
+            rtmr1: rtmr1.into(),
+            rtmr2: rtmr2.into(),
+            rtmr3: rtmr3.into(),
+            os_image_hash: os_image_hash.map(|v| v.into()).unwrap_or("".into()),
+            compose_hash: compose_hash.into(),
+            device_id: device_id.into(),
             app_compose,
             event_log,
         }
@@ -303,7 +321,7 @@ impl IntoInterfaceType<dtos::EventLog> for EventLog {
         dtos::EventLog {
             imr,
             event_type,
-            digest,
+            digest: digest.into(),
             event,
             event_payload,
         }

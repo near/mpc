@@ -1,10 +1,20 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use borsh::{BorshDeserialize, BorshSerialize};
+use dstack_sdk_types::dstack::{EventLog as DstackEventLog, TcbInfo as DstackTcbInfo};
 use serde::{Deserialize, Serialize};
 use serde_with::{FromInto, hex::Hex, serde_as};
 
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ParsingError {
+    #[error("wrong lenght: {0}")]
+    WrongLength(usize),
+    #[error("unexpected character: {0} {1}")]
+    UnexpectedHexCharacter(char, usize),
+}
+
 #[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct TcbInfo {
     pub mrtd: HexBytes<48>,
     pub rtmr0: HexBytes<48>,
@@ -20,12 +30,11 @@ pub struct TcbInfo {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct EventLog {
     pub imr: u32,
     pub event_type: u32,
-    #[serde_as(as = "Hex")]
-    pub digest: [u8; 48],
+    pub digest: HexBytes<48>,
     pub event: String,
     pub event_payload: String,
 }
@@ -41,6 +50,8 @@ pub struct EventLog {
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::AsRef,
     derive_more::Deref,
@@ -72,6 +83,106 @@ impl<const N: usize> From<Option<HexBytes<N>>> for HexBytesOrEmpty<N> {
             Some(hex_bytes) => HexBytesOrEmpty::Some(hex_bytes),
             None => HexBytesOrEmpty::Empty(HexBytes([])),
         }
+    }
+}
+
+impl<const N: usize> TryFrom<String> for HexBytes<N> {
+    type Error = ParsingError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let len = value.len();
+        if len != 2 * N {
+            Err(ParsingError::WrongLength(len))
+        } else {
+            let value = hex::decode(value).map_err(|err| match err {
+                hex::FromHexError::InvalidHexCharacter { c, index } => {
+                    ParsingError::UnexpectedHexCharacter(c, index)
+                }
+                hex::FromHexError::OddLength | hex::FromHexError::InvalidStringLength => {
+                    ParsingError::WrongLength(len)
+                }
+            });
+            match value {
+                Ok(value) => {
+                    let v: [u8; N] = value
+                        .try_into()
+                        .map_err(|_| ParsingError::WrongLength(len))?;
+                    Ok(v.into())
+                }
+                Err(err) => Err(err),
+            }
+        }
+    }
+}
+
+impl TryFrom<DstackTcbInfo> for TcbInfo {
+    type Error = ParsingError;
+
+    fn try_from(value: DstackTcbInfo) -> Result<Self, Self::Error> {
+        let DstackTcbInfo {
+            mrtd,
+            rtmr0,
+            rtmr1,
+            rtmr2,
+            rtmr3,
+            os_image_hash,
+            compose_hash,
+            device_id,
+            app_compose,
+            event_log,
+        } = value;
+
+        let event_log = event_log
+            .into_iter()
+            .map(|event| event.try_into())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let os_image_hash = if os_image_hash.is_empty() {
+            None
+        } else {
+            Some(os_image_hash.try_into()?)
+        };
+
+        Ok(Self {
+            mrtd: mrtd.try_into()?,
+            rtmr0: rtmr0.try_into()?,
+            rtmr1: rtmr1.try_into()?,
+            rtmr2: rtmr2.try_into()?,
+            rtmr3: rtmr3.try_into()?,
+            os_image_hash,
+            compose_hash: compose_hash.try_into()?,
+            device_id: device_id.try_into()?,
+            app_compose,
+            event_log,
+        })
+    }
+}
+
+impl TryFrom<DstackEventLog> for EventLog {
+    type Error = ParsingError;
+
+    fn try_from(value: DstackEventLog) -> Result<Self, Self::Error> {
+        let DstackEventLog {
+            imr,
+            event_type,
+            digest,
+            event,
+            event_payload,
+        } = value;
+
+        Ok(Self {
+            imr,
+            event_type,
+            digest: digest.try_into()?,
+            event,
+            event_payload,
+        })
+    }
+}
+
+impl<const N: usize> From<HexBytes<N>> for String {
+    fn from(val: HexBytes<N>) -> Self {
+        hex::encode(val.0)
     }
 }
 

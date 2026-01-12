@@ -55,7 +55,7 @@ fn generate_measurements_tokens(json_content: &str) -> anyhow::Result<proc_macro
     let key_provider_event_digests: Vec<_> = event_log
         .iter()
         .filter(|event| event.event == "key-provider")
-        .map(|event| event.digest)
+        .map(|event| event.digest.as_slice())
         .collect();
 
     anyhow::ensure!(
