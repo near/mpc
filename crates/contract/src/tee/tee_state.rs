@@ -669,7 +669,6 @@ mod tests {
     fn validate_tee_returns_partial_when_attestation_is_expired() {
         const INITIAL_TIME: Duration = Duration::from_secs(1);
         const EXPIRY_TIME: Duration = Duration::from_secs(11);
-        const POST_EXPIRY_TIME: Duration = Duration::from_secs(20);
 
         set_block_timestamp(INITIAL_TIME.as_nanos() as u64);
 
@@ -693,8 +692,8 @@ mod tests {
         });
         tee_state.add_participant(node_id, expiring_attestation);
 
-        // Fast-forward time past expiry
-        set_block_timestamp(POST_EXPIRY_TIME.as_nanos() as u64);
+        // Set time to exact expiry boundary
+        set_block_timestamp(EXPIRY_TIME.as_nanos() as u64);
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
