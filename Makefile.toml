@@ -18,6 +18,7 @@ dependencies = [
 description = "Run all checks"
 dependencies = [
   "crate-names",
+  "todo-format",
   "ruff-format",
   "ruff-check",
   "fmt",
