@@ -47,7 +47,7 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
     }
 
     pub fn is_connected(&self) -> bool {
-        // current suspicion is that this, for some reason, is dropped...
+        // suspicion is that this, for some reason, is dropped...
         // yet we still have a receiver loop running and listening for indexer height messages
         self.connection.upgrade().is_some()
     }
