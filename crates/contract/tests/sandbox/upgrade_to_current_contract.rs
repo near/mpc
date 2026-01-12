@@ -152,6 +152,8 @@ async fn propose_upgrade_from_production_to_current_binary(
 ) {
     use rand_core::OsRng;
 
+    use crate::sandbox::common::cleanup_post_migrate;
+
     let worker = near_workspaces::sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
     let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
@@ -178,6 +180,8 @@ async fn propose_upgrade_from_production_to_current_binary(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
+
+    cleanup_post_migrate(&contract, &accounts[0]).await;
 }
 
 //// Verifies that upgrading the contract preserves state and functionality.

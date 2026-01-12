@@ -48,13 +48,14 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
+use mpc_attestation::attestation::Attestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
-    store::LookupMap,
+    store::{IterableMap, LookupMap},
     CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
@@ -100,6 +101,27 @@ pub struct MpcContract {
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
+    stale_data: StaleData,
+}
+
+/// A container for "orphaned" state that persists across contract migrations.
+///
+/// ### Why this exists
+/// On the NEAR blockchain, the `migrate` function is limited by the maximum transaction gas
+/// (300 Tgas). Large data structures, specifically `IterableMap` or `LookupMap`
+/// often cannot be cleared in a single block without hitting this limit.
+///
+/// ### The Pattern
+/// 1. During `migrate()`, expensive-to-delete fields are moved from the main state into [`StaleData`].
+/// 2. The main contract state becomes usable immediately.
+/// 3. "Lazy cleanup" methods (like `migrate_clear_tee`) are then called in subsequent,
+///    separate transactions to gradually deallocate this storage.
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+struct StaleData {
+    /// Holds the TEE attestations from the previous contract version.
+    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
+    /// ensuring the `IterableMap` handle is properly dropped.
+    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
 }
 
 impl MpcContract {
@@ -1205,6 +1227,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
+            stale_data: Default::default(),
         })
     }
 
@@ -1255,6 +1278,7 @@ impl MpcContract {
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
+            stale_data: Default::default(),
         })
     }
 
@@ -1291,6 +1315,18 @@ impl MpcContract {
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
+    }
+
+    pub fn migrate_clear_tee(&mut self) {
+        let mut attestations = self
+            .stale_data
+            .participant_attestations
+            .take()
+            .expect("TEE data has not been cleared");
+
+        attestations.clear();
+
+        log!("Successfully cleared stale TEE attestations.");
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -2419,11 +2455,8 @@ mod tests {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
-                proposed_updates: ProposedUpdates::default(),
-                config: Config::default(),
-                tee_state: TeeState::default(),
                 accept_requests: true,
-                node_migrations: NodeMigrations::default(),
+                ..Default::default()
             }
         }
     }

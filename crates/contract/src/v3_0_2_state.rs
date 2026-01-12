@@ -146,14 +146,6 @@ impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
         let protocol_state = value.protocol_state;
 
-        // let (protocol_state, running_state) = match value.protocol_state {
-        //     ProtocolContractState::Running(running_state) => (
-        //         crate::ProtocolContractState::Running(running_state),
-        //         &running_state,
-        //     ),
-        //     _ => env::panic_str("Contract must be in running state when migrating."),
-        // };
-
         let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
         };
@@ -161,12 +153,8 @@ impl From<MpcContract> for crate::MpcContract {
         // For the soft release we give every participant a mocked attestation.
         // Since this upgrade has a non-backwards compatible change, instead of manually mapping the attestations
         // we give everyone a new mock attestation again instead.
-
         // clear previous attestations from the storage trie
-        let mut previous_tee_state = value.tee_state;
-
-        // TODO: This clear is running out of gas
-        // previous_tee_state.participants_attestations.clear();
+        let stale_participant_attestations = value.tee_state.participants_attestations;
 
         let threshold_parameters = &running_state.parameters.participants();
         let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
@@ -180,6 +168,9 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
+            stale_data: crate::StaleData {
+                participant_attestations: Some(stale_participant_attestations),
+            },
         }
     }
 }

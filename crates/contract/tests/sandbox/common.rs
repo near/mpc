@@ -478,3 +478,16 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     (new_account, account_id, new_participant)
 }
+
+pub async fn cleanup_post_migrate(contract: &Contract, account: &Account) {
+    let execution = account
+        .call(contract.id(), "migrate_clear_tee")
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .into_result()
+        .expect("migration cleanup succeeded");
+
+    dbg!(&execution);
+}
