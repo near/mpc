@@ -1,5 +1,5 @@
 use crate::sandbox::{
-    common::{candidates, init, init_env, SandboxTestSetup},
+    common::{candidates, create_account_given_id, init, init_env, SandboxTestSetup},
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
         shared_key_utils::SharedSecretKey,
@@ -19,24 +19,12 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_workspaces::types::NearToken;
-use near_workspaces::{network::Sandbox, result::Execution, Account, Worker};
 use rand::SeedableRng;
 use std::time::Duration;
 use utilities::AccountIdExtV1;
-use utilities::AccountIdExtV2;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
-
-async fn create_account_given_id(
-    worker: &Worker<Sandbox>,
-    account_id: AccountId,
-) -> Result<Execution<Account>, near_workspaces::error::Error> {
-    let (_, sk) = worker.generate_dev_account_credentials();
-    worker
-        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
-        .await
-}
 
 #[tokio::test]
 async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
@@ -105,6 +93,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
             .await?;
 
         // unfortunately, we still can't completely get rid of this sleep
+        // todo: [#1307](https://github.com/near/mpc/issues/1306)
         tokio::time::sleep(Duration::from_secs(3)).await;
         worker
             .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
@@ -250,9 +239,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
             DomainResponseTest::CKD(req) => {
                 let status = contract
                     .call("request_app_private_key")
-                    .args_json(serde_json::json!({
-                        "request": req.args,
-                    }))
+                    .args_json(req.request_json_args())
                     .max_gas()
                     .transact_async()
                     .await?;

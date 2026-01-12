@@ -225,6 +225,11 @@ impl CKDRequestTest {
             args,
         }
     }
+    pub fn request_json_args(&self) -> serde_json::Value {
+        serde_json::json!({
+            "request": self.args,
+        })
+    }
 }
 
 #[derive(Debug)]
