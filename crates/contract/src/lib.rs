@@ -19,6 +19,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 pub mod v3_0_2_state;
+pub mod v3_2_0_state;
 
 mod dto_mapping;
 
@@ -67,7 +68,7 @@ use primitives::{
 use state::{running::RunningContractState, ProtocolContractState};
 use tee::{
     proposal::MpcDockerImageHash,
-    tee_state::{NodeId, TeeValidationResult},
+    tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
 use utilities::{AccountIdExtV1, AccountIdExtV2};
 
@@ -579,31 +580,28 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        // Verify the TEE quote (including TLS and account keys) and Docker image for the proposed participant
-        let account_key_dto = account_key.clone().try_into_dto_type()?;
-        let status = self.tee_state.verify_proposed_participant_attestation(
-            &proposed_participant_attestation,
-            tls_public_key.clone(),
-            account_key_dto,
-            tee_upgrade_deadline_duration,
-        );
-
-        if let TeeQuoteStatus::Invalid(reason) = status {
-            return Err(InvalidParameters::InvalidTeeRemoteAttestation
-                .message(format!("TeeQuoteStatus is invalid: {reason}")));
-        }
-
         // Add the participant information to the contract state
-        let is_new_attestation = self.tee_state.add_participant(
-            NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: tls_public_key.into_contract_type(),
-                account_public_key: Some(account_key),
-            },
-            proposed_participant_attestation,
-        );
+        let attestation_insertion_result = self
+            .tee_state
+            .add_participant(
+                NodeId {
+                    account_id: account_id.clone(),
+                    tls_public_key: tls_public_key.into_contract_type(),
+                    account_public_key: Some(account_key),
+                },
+                proposed_participant_attestation,
+                tee_upgrade_deadline_duration,
+            )
+            .map_err(|err| {
+                InvalidParameters::InvalidTeeRemoteAttestation
+                    .message(format!("TeeQuoteStatus is invalid: {err}"))
+            })?;
 
         let caller_is_not_participant = self.voter_account().is_err();
+        let is_new_attestation = matches!(
+            attestation_insertion_result,
+            ParticipantInsertion::NewlyInsertedParticipant
+        );
 
         let attestation_storage_must_be_paid_by_caller =
             is_new_attestation || caller_is_not_participant;
@@ -638,15 +636,19 @@ impl MpcContract {
     pub fn get_attestation(
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<Option<dtos::Attestation>, Error> {
+    ) -> Result<Option<dtos::VerifiedAttestation>, Error> {
         let tls_public_key = tls_public_key.into_contract_type();
 
         Ok(self
             .tee_state
             .stored_attestations
-            .iter()
-            .find(|(stored_tls_pk, _)| **stored_tls_pk == tls_public_key)
-            .map(|(_, (_, attestation))| attestation.clone().into_dto_type()))
+            .get(&tls_public_key)
+            .map(|node_attestation| {
+                node_attestation
+                    .verified_attestation
+                    .clone()
+                    .into_dto_type()
+            }))
     }
 
     /// Propose a new set of parameters (participants and threshold) for the MPC network.
@@ -671,9 +673,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let validation_result = self
-            .tee_state
-            .validate_tee(proposal.participants(), tee_upgrade_deadline_duration);
+        let validation_result = self.tee_state.reverify_and_cleanup_participants(
+            proposal.participants(),
+            tee_upgrade_deadline_duration,
+        );
 
         let proposed_participants = proposal.participants();
         match validation_result {
@@ -1076,10 +1079,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        match self
-            .tee_state
-            .validate_tee(current_params.participants(), tee_upgrade_deadline_duration)
-        {
+        match self.tee_state.reverify_and_cleanup_participants(
+            current_params.participants(),
+            tee_upgrade_deadline_duration,
+        ) {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
@@ -1270,7 +1273,17 @@ impl MpcContract {
         match try_state_read::<v3_0_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
-            Err(_) => (), // Try read as "Self" instead
+            Err(err) => {
+                log!("failed to deserialize state into 3_0_2 state: {:?}", err);
+            }
+        };
+
+        match try_state_read::<v3_2_0_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!("failed to deserialize state into 3_2_0 state: {:?}", err);
+            }
         };
 
         match try_state_read::<Self>() {
@@ -1597,9 +1610,9 @@ impl MpcContract {
         };
 
         if !(matches!(
-            self.tee_state.verify_tee_participant(
+            self.tee_state.reverify_participants(
                 &node_id,
-                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds)
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
             ),
             TeeQuoteStatus::Valid
         )) {
@@ -1829,7 +1842,7 @@ mod tests {
             .find(|(public_key, _)| active_participant_pks.contains(public_key))
             .expect("No attested participants in tee_state")
             .1
-             .0
+            .node_id
             .clone();
 
         // Build a new simulated environment with this node as caller
@@ -2341,6 +2354,7 @@ mod tests {
             .predecessor_account_id(outsider_id.clone().as_v1_account_id())
             .attached_deposit(NearToken::from_near(1))
             .build());
+
         contract
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), dto_public_key)
             .unwrap();
@@ -2839,13 +2853,22 @@ mod tests {
             let valid_participant_attestation = mpc_attestation::attestation::Attestation::Mock(
                 mpc_attestation::attestation::MockAttestation::Valid,
             );
-            contract.tee_state.add_participant(
+
+            let tee_upgrade_duration =
+                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds);
+
+            let insertion_result = contract.tee_state.add_participant(
                 NodeId {
                     account_id: self.signer_account_id.clone(),
                     tls_public_key: self.attestation_tls_key.clone().into_contract_type(),
                     account_public_key: Some(self.signer_account_pk.clone()),
                 },
                 valid_participant_attestation,
+                tee_upgrade_duration,
+            );
+            assert_matches::assert_matches!(
+                insertion_result,
+                Ok(ParticipantInsertion::NewlyInsertedParticipant)
             );
         }
 

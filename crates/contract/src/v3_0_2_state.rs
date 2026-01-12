@@ -8,8 +8,13 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_attestation::attestation::Attestation;
+use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
-use near_sdk::store::{IterableMap, LookupMap};
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 use std::collections::HashSet;
 
 use crate::{
@@ -19,7 +24,10 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::TeeState,
+    tee::{
+        proposal::{AllowedDockerImageHashes, CodeHashesVotes},
+        tee_state::NodeId,
+    },
     update::{Update, UpdateId},
 };
 
@@ -87,7 +95,42 @@ impl From<ProposedUpdates> for crate::update::ProposedUpdates {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshDeserialize)]
+struct TeeState {
+    _allowed_docker_image_hashes: AllowedDockerImageHashes,
+    _allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+    _votes: CodeHashesVotes,
+    participants_attestations: IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>,
+}
+
+// #[derive(Debug, BorshDeserialize)]
+// enum ProtocolContractState {
+//     NotInitialized,
+//     Initializing,
+//     Running(RunningContractState),
+//     Resharing,
+// }
+
+// #[derive(Debug, BorshDeserialize)]
+// pub struct RunningContractState {
+//     /// The domains for which we have a key ready for signature processing.
+//     pub domains: DomainRegistry,
+//     /// The keys that are currently in use; for each domain provides an unique identifier for a
+//     /// distributed key, so that the nodes can identify which local keyshare to use.
+//     pub keyset: Keyset,
+//     /// The current participants and threshold.
+//     pub parameters: ThresholdParameters,
+//     /// Votes for proposals for a new set of participants and threshold.
+//     pub parameters_votes: ThresholdParametersVotes,
+//     /// Votes for proposals to add new domains.
+//     pub add_domains_votes: AddDomainsVotes,
+//     /// The previous epoch id for a resharing state that was cancelled.
+//     /// This epoch id is tracked, as the next time the state transitions to resharing,
+//     /// we can't reuse a previously cancelled epoch id.
+//     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+// }
+
+#[derive(Debug, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
@@ -101,13 +144,40 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
+        let protocol_state = value.protocol_state;
+
+        // let (protocol_state, running_state) = match value.protocol_state {
+        //     ProtocolContractState::Running(running_state) => (
+        //         crate::ProtocolContractState::Running(running_state),
+        //         &running_state,
+        //     ),
+        //     _ => env::panic_str("Contract must be in running state when migrating."),
+        // };
+
+        let crate::ProtocolContractState::Running(running_state) = &protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
+        // For the soft release we give every participant a mocked attestation.
+        // Since this upgrade has a non-backwards compatible change, instead of manually mapping the attestations
+        // we give everyone a new mock attestation again instead.
+
+        // clear previous attestations from the storage trie
+        let mut previous_tee_state = value.tee_state;
+
+        // TODO: This clear is running out of gas
+        // previous_tee_state.participants_attestations.clear();
+
+        let threshold_parameters = &running_state.parameters.participants();
+        let tee_state = crate::TeeState::with_mocked_participant_attestations(threshold_parameters);
+
         Self {
-            protocol_state: value.protocol_state,
+            protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             proposed_updates: value.proposed_updates.into(),
             config: value.config.into(),
-            tee_state: value.tee_state,
+            tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
         }

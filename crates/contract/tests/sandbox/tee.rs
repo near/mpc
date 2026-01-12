@@ -431,7 +431,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
             let mock_attestation = MockAttestation::WithConstraints {
                 mpc_docker_image_hash: Some(*approved_hash),
                 launcher_docker_compose_hash: None,
-                expiry_time_stamp_seconds: None,
+                expiry_timestamp_seconds: None,
             };
             let attestation = Attestation::Mock(mock_attestation);
 
@@ -509,13 +509,13 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
     let participant_1_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_time_stamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(u64::MAX),
     });
 
     let participant_2_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_time_stamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(u64::MAX - 1),
     });
 
     assert_ne!(
@@ -565,13 +565,13 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let first_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_time_stamp_seconds: Some(u64::MAX),
+        expiry_timestamp_seconds: Some(u64::MAX),
     });
 
     let second_attestation = Attestation::Mock(MockAttestation::WithConstraints {
         mpc_docker_image_hash: None,
         launcher_docker_compose_hash: None,
-        expiry_time_stamp_seconds: Some(u64::MAX - 1),
+        expiry_timestamp_seconds: Some(u64::MAX - 1),
     });
 
     assert_ne!(

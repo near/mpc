@@ -183,7 +183,7 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: &AccountId,
         participant_tls_public_key: &contract_interface::types::Ed25519PublicKey,
-    ) -> anyhow::Result<Option<contract_interface::types::Attestation>> {
+    ) -> anyhow::Result<Option<contract_interface::types::VerifiedAttestation>> {
         let get_attestation_args: Vec<u8> = serde_json::to_string(&GetAttestationArgs {
             tls_public_key: participant_tls_public_key,
         })
@@ -210,7 +210,7 @@ impl IndexerViewClient {
 
         match query_response.kind {
             QueryResponseKind::CallResult(call_result) => serde_json::from_slice::<
-                Option<contract_interface::types::Attestation>,
+                Option<contract_interface::types::VerifiedAttestation>,
             >(&call_result.result)
             .context("failed to deserialize pending request response"),
             _ => {

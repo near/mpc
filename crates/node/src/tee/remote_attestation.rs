@@ -104,12 +104,14 @@ fn validate_remote_attestation(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    attestation.verify(
-        expected_report_data.into(),
-        now,
-        allowed_docker_image_hashes,
-        allowed_launcher_compose_hashes,
-    )
+    attestation
+        .verify(
+            expected_report_data.into(),
+            now,
+            allowed_docker_image_hashes,
+            allowed_launcher_compose_hashes,
+        )
+        .map(|_| ())
 }
 
 pub async fn validate_and_submit_remote_attestation(

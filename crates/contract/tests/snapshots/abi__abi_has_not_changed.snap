@@ -190,7 +190,7 @@ expression: abi
           "type_schema": {
             "anyOf": [
               {
-                "$ref": "#/definitions/Attestation"
+                "$ref": "#/definitions/VerifiedAttestation"
               },
               {
                 "type": "null"
@@ -1961,8 +1961,8 @@ expression: abi
                 "WithConstraints": {
                   "type": "object",
                   "properties": {
-                    "expiry_time_stamp_seconds": {
-                      "description": "Unix time stamp for when this attestation expires.",
+                    "expiry_timestamp_seconds": {
+                      "description": "Unix time stamp for when this attestation will be expired.",
                       "type": [
                         "integer",
                         "null"
@@ -2797,6 +2797,72 @@ expression: abi
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "VerifiedAttestation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Dtack"
+              ],
+              "properties": {
+                "Dtack": {
+                  "$ref": "#/definitions/VerifiedDstackAttestation"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Mock"
+              ],
+              "properties": {
+                "Mock": {
+                  "$ref": "#/definitions/MockAttestation"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "VerifiedDstackAttestation": {
+          "type": "object",
+          "required": [
+            "expiry_timestamp_seconds",
+            "launcher_compose_hash",
+            "mpc_image_hash"
+          ],
+          "properties": {
+            "expiry_timestamp_seconds": {
+              "description": "Unix time stamp for when this attestation will be expired.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "launcher_compose_hash": {
+              "description": "The digest of the launcher compose file running.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            },
+            "mpc_image_hash": {
+              "description": "The digest of the MPC image running.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "maxItems": 32,
+              "minItems": 32
+            }
+          }
         },
         "YieldIndex": {
           "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",
