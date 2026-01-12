@@ -396,6 +396,10 @@ expression: abi
         ]
       },
       {
+        "name": "migrate_clear_tee",
+        "kind": "call"
+      },
+      {
         "name": "migration_info",
         "kind": "view",
         "result": {
