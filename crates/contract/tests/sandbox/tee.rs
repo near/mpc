@@ -656,7 +656,9 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
 async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> {
     const PARTICIPANT_COUNT: usize = 3;
     const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
+    // Add 10 seconds margin to account for block time variance and ensure attestation is
+    // reliably expired.
+    const BLOCKS_TO_FAST_FORWARD: u64 = ATTESTATION_EXPIRY_SECONDS + 10;
 
     let SandboxTestSetup {
         worker,
