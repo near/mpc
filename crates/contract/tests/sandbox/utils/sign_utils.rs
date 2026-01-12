@@ -198,6 +198,15 @@ pub struct CKDRequestTest {
     pub args: CKDRequestArgs,
 }
 
+fn gen_ckd_derivation_path(rng: &mut impl CryptoRngCore) -> String {
+    let empty: bool = rng.gen();
+    if empty {
+        "".to_string()
+    } else {
+        rng.gen::<usize>().to_string()
+    }
+}
+
 impl CKDRequestTest {
     pub fn new(
         rng: &mut impl CryptoRngCore,
@@ -205,7 +214,7 @@ impl CKDRequestTest {
         predecessor_id: &AccountId,
         sk: &ckd::KeygenOutput,
     ) -> CKDRequestTest {
-        let derivation_path: String = rng.gen::<usize>().to_string();
+        let derivation_path = gen_ckd_derivation_path(rng);
         let app_public_key = generate_random_app_public_key(rng);
         let (request, response) = create_response_ckd(
             predecessor_id,
@@ -215,8 +224,8 @@ impl CKDRequestTest {
             &derivation_path,
         );
         let args = CKDRequestArgs {
-            derivation_path: derivation_path.to_string(),
-            app_public_key: app_public_key.clone(),
+            derivation_path,
+            app_public_key,
             domain_id,
         };
 
