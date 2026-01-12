@@ -3403,10 +3403,11 @@ mod tests {
             key: pk.try_into().unwrap(),
             attempt: AttemptId::new(),
         };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain]);
+        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
 
         let mut contract =
-            MpcContract::init_running(domains, 1, keyset, parameters.clone(), None).unwrap();
+            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
+                .unwrap();
 
         assert!(matches!(
             contract.protocol_state,
@@ -3432,6 +3433,12 @@ mod tests {
             .tee_state
             .add_participant(node_id, expiring_attestation);
 
+        // Capture the running state before verify_tee for comparison
+        let ProtocolContractState::Running(running_state_before) = &contract.protocol_state else {
+            panic!("expected Running state");
+        };
+        let running_state_before = running_state_before.clone();
+
         // Set time to exact expiry boundary
         let (first_account_id, _, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
@@ -3448,7 +3455,7 @@ mod tests {
             "verify_tee should return true when threshold is met"
         );
 
-        // Verify contract transitioned to Resharing state and excludes the expired participant
+        // Verify contract transitioned to Resharing state
         let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {
             panic!(
                 "expected Resharing state, got {:?}",
@@ -3456,24 +3463,77 @@ mod tests {
             );
         };
 
-        let prospective_participants = resharing_state.resharing_key.proposed_parameters();
         assert_eq!(
-            prospective_participants.participants().len(),
+            resharing_state.previous_running_state, running_state_before,
+            "previous_running_state should preserve the original running state"
+        );
+
+        // Epoch should advance by one
+        assert_eq!(
+            resharing_state.resharing_key.epoch_id(),
+            keyset.epoch_id.next(),
+            "resharing should target the next epoch"
+        );
+        // Domain being reshared should be the first domain
+        assert_eq!(
+            resharing_state.resharing_key.domain_id(),
+            domain_id,
+            "resharing should start with the first domain"
+        );
+        // Key event should not be active yet (no attempt started)
+        assert!(
+            !resharing_state.resharing_key.is_active(),
+            "resharing key event should not be active until participants start the protocol"
+        );
+
+        let prospective_params = resharing_state.resharing_key.proposed_parameters();
+        // Threshold should be preserved
+        assert_eq!(
+            prospective_params.threshold(),
+            parameters.threshold(),
+            "threshold should be preserved during attestation-triggered resharing"
+        );
+        // Participant count should be reduced by one
+        assert_eq!(
+            prospective_params.participants().len(),
             PARTICIPANT_COUNT - 1,
             "should have one fewer participant after resharing initiated"
         );
 
-        // Verify the target account is not in the prospective participants
-        let prospective_account_ids: Vec<_> = prospective_participants
+        // Verify exactly which participants remain (target excluded, others included)
+        let prospective_account_ids: HashSet<_> = prospective_params
             .participants()
             .participants()
             .iter()
             .map(|(acc, _, _)| acc)
             .collect();
+        let expected_remaining: HashSet<_> = [&participant_list[0].0, &participant_list[1].0]
+            .into_iter()
+            .collect();
         assert_eq!(
-            prospective_account_ids,
-            [&participant_list[0].0, &participant_list[1].0],
-            "target participant with expired attestation should be excluded"
+            prospective_account_ids, expected_remaining,
+            "only participants with valid attestations should remain"
+        );
+
+        // Verify initial resharing collections
+        assert!(
+            resharing_state.reshared_keys.is_empty(),
+            "reshared_keys should be empty at start of resharing"
+        );
+        assert!(
+            resharing_state.cancellation_requests.is_empty(),
+            "cancellation_requests should be empty at start of resharing"
+        );
+
+        // ParticipantIds should be preserved for remaining participants
+        let prospective_participants = prospective_params.participants().participants();
+        assert_eq!(
+            prospective_participants[0].1, participant_list[0].1,
+            "participant 0 should retain their ParticipantId"
+        );
+        assert_eq!(
+            prospective_participants[1].1, participant_list[1].1,
+            "participant 1 should retain their ParticipantId"
         );
     }
 }
