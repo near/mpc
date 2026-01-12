@@ -90,6 +90,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
     pub fn set_outgoing_connection(&self, conn: &Arc<I>) {
+        // where is this called?
         let version = self.outgoing_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.outgoing_sender
             .send(ConnectionWithVersion {
@@ -112,6 +113,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// the most recent one failing and an older one succeeding? Is there a race condition?
     pub fn set_incoming_connection(&self, conn: &Arc<O>) {
         let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
+        // add metric here
         self.incoming_sender
             .send(ConnectionWithVersion {
                 connection: Arc::downgrade(conn),
@@ -123,6 +125,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// The current ConnectionVersion.
     pub fn connection_version(&self) -> ConnectionVersion {
         let outgoing = self.outgoing_receiver.borrow();
+        // is it safe to hold ref to outgoing while fetching ref to incoming?
         let incoming = self.incoming_receiver.borrow();
 
         ConnectionVersion {
@@ -167,6 +170,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     ) -> anyhow::Result<Arc<I>> {
         let current = self.outgoing_receiver.borrow().clone();
         if current.version != expected.outgoing {
+            // can we have a mismatch here and stall forever??
             anyhow::bail!(
                 "Connection was reset (expected version {} but got {})",
                 expected.outgoing,

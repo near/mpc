@@ -274,6 +274,7 @@ impl MeshNetworkClient {
         //      when the NetworkTaskChannel is destroyed.
         let mut channels = self.channels.lock().unwrap();
         let sender = match channels.senders.entry(channel_id) {
+            // could we be sending "old" channels here?
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
                 let (sender, receiver) = mpsc::unbounded_channel();
@@ -300,6 +301,8 @@ impl MeshNetworkClient {
             //  - It's possible that we received Start message twice. That's erroneous, but we'll
             //    just deliver the second Start message to the channel, where the channel handling
             //    code will fail.
+
+            // note: this only runs if "Start" is set. But waht if we have k!- channel_id?
             if let Some(incomplete_channel) = channels.channels_waiting_for_start.pop(&channel_id) {
                 drop(channels); // release lock
                 let drop_fn = {
@@ -315,13 +318,14 @@ impl MeshNetworkClient {
                         leader: originator,
                         my_participant_id: self.my_participant_id(),
                         participants: start.participants.clone(),
-                        connection_versions: start
+                        connection_versions: start // is this initialization correct??
                             .participants
                             .iter()
                             .filter(|id| **id != self.my_participant_id())
                             .map(|id| {
                                 (
                                     *id,
+                                    // version seems to come from below
                                     self.transport_sender.connectivity(*id).connection_version(),
                                 )
                             })
@@ -407,6 +411,7 @@ async fn run_receive_messages_loop(
                 }
             }
             PeerMessage::IndexerHeight(message) => {
+                // we seem to be receiving these messages
                 indexer_heights.set_height(message.from, message.message.height);
             }
         }
@@ -503,7 +508,7 @@ impl NetworkTaskChannelSender {
             recipient_id,
             message,
             self.connection_versions
-                .get(&recipient_id)
+                .get(&recipient_id) // possible mismatch here
                 .copied()
                 .ok_or_else(|| anyhow::anyhow!("No connection version for recipient"))?,
         )?;
@@ -670,6 +675,7 @@ impl NetworkTaskChannel {
                         self.sender.transport_sender.connectivity(*id).was_connection_interrupted(*version)
                     }) {
                         anyhow::bail!("Computation cannot succeed as not all participants are alive anymore");
+                    // version mismatch would lead to error --> what happens then?
                     }
                 }
                 received = self.receiver.recv() => {

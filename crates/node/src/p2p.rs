@@ -36,6 +36,7 @@ pub struct TlsMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
+    // and here are the versions somewhere I suppose?
     connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
 }
 
@@ -141,6 +142,9 @@ impl TlsConnection {
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
         let sender_task = tracking::spawn_checked(
+            // should get dropped if parent gets dropped
+            // would it be possible for this sender task to just continue running in the
+            // background??
             &format!("TLS connection to {}", target_participant_id),
             async move {
                 // this is the only place where we cancel "closed"
@@ -152,6 +156,7 @@ impl TlsConnection {
                         // dropped, i.e. not getting cancelled?
                         data = receiver.recv() => {
                             let Some(data) = data else {
+                                // we only exit in case the channel has been closed
                                 break;
                             };
                             let serialized = borsh::to_vec(&data)?;
@@ -179,11 +184,14 @@ impl TlsConnection {
         let sender_clone = sender.clone();
         let closed_clone = closed.clone();
         let keepalive_task = tracking::spawn(
+            // should get dropped if parent gets dropped
             &format!("TCP keepalive for {}", target_participant_id),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    // ATTENTION: this sender_clone lives forever, except if the receiver is dropped, which
+                    // happens only if the sender gets dropped or the connection has a problem
                     if sender_clone.send(Packet::Ping).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
@@ -236,6 +244,8 @@ impl PersistentConnection {
 
     /// Sends a message over the connection. This is done on a best-effort basis.
     fn send_indexer_height(&self, height: IndexerHeightMessage) {
+        // so, this seems to work, but above "send_mpc_message" seems to fail.
+        // Ths indicates that we have a version mismatch
         if let Some(conn) = self.connectivity.any_outgoing_connection() {
             let _ = conn.send_indexer_height(height);
         }
@@ -251,6 +261,7 @@ impl PersistentConnection {
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
+            // note that this task might get dropped
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 loop {
@@ -285,7 +296,9 @@ impl PersistentConnection {
                     };
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
-                    // this here might never happen
+                    // this here might never happen, in which case, we would keep sending - what
+                    // would happen with the old connection on the receiver side? They expect us to
+                    // stop this task.
                     new_conn.wait_for_close().await;
                 }
             },
@@ -351,6 +364,7 @@ pub async fn new_tls_mesh_network(
                 format!("{}:{}", participant.address, participant.port),
                 participant.id,
                 participant_identities.clone(),
+                // get connectivities from here
                 connectivities.get(participant.id)?,
             )?),
         );
@@ -373,10 +387,16 @@ pub async fn new_tls_mesh_network(
         let mut tasks = AutoAbortTaskCollection::new();
         while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
             let message_sender = message_sender.clone();
+            // so, the issue might be here: we just clone the sender and it would be possible to
+            // have two such tasks running simultaneously for the same peer.
+            // Which would be confusing.
             let participant_identities = participant_identities.clone();
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
+                // this task here is definitely active and working.
+                // We now have to figure out why the node thinks it isn't
+                //
                 tcp_stream
                     .set_nodelay(TCP_NODELAY)
                     .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
@@ -395,9 +415,12 @@ pub async fn new_tls_mesh_network(
                 // the incoming one is broken?
                 connectivities
                     .get(peer_id)?
+                    // set connectivity here
                     .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
                 loop {
+                    // we might want to improve this loop.
+                    // we might need to cancel this loop somehow?
                     let len = tokio::time::timeout(
                         std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
                         stream.read_u32(),
@@ -510,6 +533,7 @@ impl MeshNetworkTransportSender for TlsMeshSender {
     }
 
     fn send_indexer_height(&self, height: IndexerHeightMessage) {
+        // we send to the connection here
         for conn in self.connections.values() {
             conn.send_indexer_height(height.clone());
         }

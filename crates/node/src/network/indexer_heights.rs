@@ -21,6 +21,8 @@ impl IndexerHeightTracker {
     pub fn set_height(&self, participant: ParticipantId, height: u64) {
         let atomic = self.heights.get(&participant).unwrap();
         let current = atomic.load(std::sync::atomic::Ordering::Relaxed);
+        // why this inequality check?
+        // how could a participant go backwards?
         if height > current {
             atomic.store(height, std::sync::atomic::Ordering::Relaxed);
         }
