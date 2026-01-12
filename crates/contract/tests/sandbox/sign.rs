@@ -93,7 +93,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
             .await?;
 
         // unfortunately, we still can't completely get rid of this sleep
-        // todo: [#1307](https://github.com/near/mpc/issues/1306)
+        // TODO(#1306): remove the need to sleep
         tokio::time::sleep(Duration::from_secs(3)).await;
         worker
             .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
