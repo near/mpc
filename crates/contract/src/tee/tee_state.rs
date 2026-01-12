@@ -657,11 +657,7 @@ mod tests {
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
-        let expected_valid_account_ids: Vec<_> = participant_list
-            .iter()
-            .take(2)
-            .map(|(acc, _, _)| acc.clone())
-            .collect();
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
@@ -702,11 +698,7 @@ mod tests {
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
-        let expected_valid_account_ids: Vec<_> = participant_list
-            .iter()
-            .take(2)
-            .map(|(acc, _, _)| acc.clone())
-            .collect();
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
@@ -773,11 +765,7 @@ mod tests {
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
-        let expected_valid_account_ids: Vec<_> = participant_list
-            .iter()
-            .take(2)
-            .map(|(acc, _, _)| acc.clone())
-            .collect();
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
         assert_matches!(
             validation_result,
             TeeValidationResult::Partial { participants_with_valid_attestation }
