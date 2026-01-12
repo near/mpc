@@ -159,12 +159,16 @@ impl TlsConnection {
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
-                        _ = tls_conn.read_u8() => {
+                        _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
+                            tls_conn.read_u8()
+                        ) => {
                             // We do not expect any data from the other side. However,
                             // selecting on it will quickly return error if the connection
-                            // is broken before we have data to send. That way we can
-                            // immediately quit the loop as soon as the connection is broken
-                            // (so we can reconnect).
+                            // is broken before we have data to send. The timeout ensures
+                            // we detect half-open TCP connections where the network path
+                            // is broken but TCP doesn't know it yet (would otherwise hang
+                            // indefinitely waiting for data that will never arrive).
                             break;
                         }
                     }
@@ -914,5 +918,144 @@ mod tests {
         let mut ids = ids.to_vec();
         ids.sort();
         ids
+    }
+
+    /// This test demonstrates the asymmetric connection state issue that caused
+    /// the 2025-09-30 mainnet incident (now fixed).
+    ///
+    /// Root cause: The outgoing connection's sender_task had no timeout on read_u8(),
+    /// while the incoming connection handler has MESSAGE_READ_TIMEOUT_SECS timeout.
+    ///
+    /// Scenario (half-open TCP due to network path failure):
+    /// 1. Node A has outgoing connection to Node B (A sends pings)
+    /// 2. Node B has incoming connection from Node A (B receives pings)
+    /// 3. Network issue causes A→B packets to be dropped (half-open TCP)
+    /// 4. B's incoming handler times out after MESSAGE_READ_TIMEOUT_SECS (30s) - drops Arc
+    /// 5. A's sender_task read_u8() blocks **indefinitely** - TCP doesn't know connection is dead
+    ///    - Writes "succeed" (data goes to TCP send buffer, pings are small)
+    ///    - TCP retransmission can take **minutes** before giving up
+    ///    - No application-level timeout means A never drops its Arc
+    /// 6. Result: A thinks connected to B **forever**, B thinks A is disconnected
+    /// 7. PersistentConnection never reconnects because sender_task never exits
+    ///
+    /// Impact: B excludes A from signature generation, A's messages go nowhere,
+    /// signatures fail to reach threshold.
+    ///
+    /// Fix: Added MESSAGE_READ_TIMEOUT_SECS timeout to read_u8() in sender_task.
+    ///
+    /// This test verifies the connectivity tracking behavior in isolation.
+    #[test]
+    fn test_asymmetric_connection_state_issue() {
+        use crate::network::conn::NodeConnectivity;
+        use std::sync::Arc;
+
+        // We simulate a single bidirectional connection A <-> B.
+        // Each node has its own NodeConnectivity for the peer.
+        //
+        // For A's view of B:
+        //   - outgoing = A→B (A initiates connection to B)
+        //   - incoming = B→A (B initiates connection to A)
+        //
+        // For B's view of A:
+        //   - outgoing = B→A (B initiates connection to A)
+        //   - incoming = A→B (A initiates connection to B)
+        //
+        // So A's outgoing corresponds to B's incoming, and vice versa.
+
+        let node_a_connectivity_to_b = NodeConnectivity::<(), ()>::new();
+        let node_b_connectivity_to_a = NodeConnectivity::<(), ()>::new();
+
+        // Establish the A→B connection
+        // A creates outgoing connection, B sees it as incoming
+        let a_to_b_conn_held_by_a = Arc::new(()); // A's sender_task holds this
+        let a_to_b_conn_held_by_b = Arc::new(()); // B's incoming handler holds this
+
+        node_a_connectivity_to_b.set_outgoing_connection(&a_to_b_conn_held_by_a);
+        node_b_connectivity_to_a.set_incoming_connection(&a_to_b_conn_held_by_b);
+
+        // Establish the B→A connection
+        let b_to_a_conn_held_by_b = Arc::new(());
+        let b_to_a_conn_held_by_a = Arc::new(());
+
+        node_b_connectivity_to_a.set_outgoing_connection(&b_to_a_conn_held_by_b);
+        node_a_connectivity_to_b.set_incoming_connection(&b_to_a_conn_held_by_a);
+
+        // Both sides initially report bidirectionally connected
+        assert!(
+            node_a_connectivity_to_b.is_bidirectionally_connected(),
+            "A should think it's bidirectionally connected to B"
+        );
+        assert!(
+            node_b_connectivity_to_a.is_bidirectionally_connected(),
+            "B should think it's bidirectionally connected to A"
+        );
+
+        // --- Simulate network break on A→B direction ---
+        //
+        // In the real code:
+        // - B's incoming handler times out after MESSAGE_READ_TIMEOUT_SECS (30s)
+        //   because it doesn't receive any pings from A, so it exits and drops its Arc.
+        // - A's sender_task is stuck on read_u8() with NO TIMEOUT waiting for acks,
+        //   so it never detects the break and keeps its Arc alive.
+        //
+        // Here we simulate B dropping its side of the A→B connection:
+        drop(a_to_b_conn_held_by_b);
+
+        // Now we have asymmetric state!
+        // A still thinks it's connected (because its Arc is still alive)
+        // B knows A is disconnected (because its Arc was dropped)
+        assert!(
+            node_a_connectivity_to_b.any_outgoing_connection().is_some(),
+            "BUG: A still thinks it has outgoing connection to B"
+        );
+        assert!(
+            !node_b_connectivity_to_a.is_bidirectionally_connected(),
+            "B correctly detects that incoming from A is down"
+        );
+
+        // This asymmetric state causes B to not include A in signature generation,
+        // while A believes it's still part of the network.
+
+        // The fix: Add a timeout to read_u8() in TlsConnection::new()'s sender_task
+        // so that A also detects the connection failure within a reasonable timeframe.
+    }
+
+    /// Test that proper disconnection is symmetric when both sides detect it.
+    #[test]
+    fn test_symmetric_connection_state_on_proper_disconnect() {
+        use crate::network::conn::NodeConnectivity;
+        use std::sync::Arc;
+
+        let node_a_connectivity_to_b = NodeConnectivity::<(), ()>::new();
+        let node_b_connectivity_to_a = NodeConnectivity::<(), ()>::new();
+
+        // Establish bidirectional connection
+        let a_to_b_conn_held_by_a = Arc::new(());
+        let a_to_b_conn_held_by_b = Arc::new(());
+        let b_to_a_conn_held_by_b = Arc::new(());
+        let b_to_a_conn_held_by_a = Arc::new(());
+
+        node_a_connectivity_to_b.set_outgoing_connection(&a_to_b_conn_held_by_a);
+        node_b_connectivity_to_a.set_incoming_connection(&a_to_b_conn_held_by_b);
+        node_b_connectivity_to_a.set_outgoing_connection(&b_to_a_conn_held_by_b);
+        node_a_connectivity_to_b.set_incoming_connection(&b_to_a_conn_held_by_a);
+
+        assert!(node_a_connectivity_to_b.is_bidirectionally_connected());
+        assert!(node_b_connectivity_to_a.is_bidirectionally_connected());
+
+        // Proper disconnection: both sides detect and drop their connections
+        // This is what SHOULD happen with proper timeout on both sides
+        drop(a_to_b_conn_held_by_b);
+        drop(a_to_b_conn_held_by_a); // <-- This is what the fix would cause
+
+        // With the fix, both sides would agree: A→B connection is down
+        assert!(
+            node_a_connectivity_to_b.any_outgoing_connection().is_none(),
+            "A should detect that outgoing to B is down"
+        );
+        assert!(
+            !node_b_connectivity_to_a.is_bidirectionally_connected(),
+            "B should detect that incoming from A is down"
+        );
     }
 }
