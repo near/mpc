@@ -147,7 +147,7 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
             .map(|event| event.try_into_contract_type())
             .collect::<Result<Vec<_>, _>>()?;
 
-        fn convert<const N: usize>(str: String) -> Result<HexBytes<N>, Error> {
+        fn try_convert<const N: usize>(str: String) -> Result<HexBytes<N>, Error> {
             str.try_into().map_err(|err| {
                 ConversionError::DataConversion.message(format!("Failed to get digest: {err}"))
             })
@@ -156,18 +156,18 @@ impl TryIntoContractType<TcbInfo> for dtos::TcbInfo {
         let os_image_hash = if os_image_hash.is_empty() {
             None
         } else {
-            Some(convert(os_image_hash)?)
+            Some(try_convert(os_image_hash)?)
         };
 
         Ok(TcbInfo {
-            mrtd: convert(mrtd)?,
-            rtmr0: convert(rtmr0)?,
-            rtmr1: convert(rtmr1)?,
-            rtmr2: convert(rtmr2)?,
-            rtmr3: convert(rtmr3)?,
+            mrtd: try_convert(mrtd)?,
+            rtmr0: try_convert(rtmr0)?,
+            rtmr1: try_convert(rtmr1)?,
+            rtmr2: try_convert(rtmr2)?,
+            rtmr3: try_convert(rtmr3)?,
             os_image_hash,
-            compose_hash: convert(compose_hash)?,
-            device_id: convert(device_id)?,
+            compose_hash: try_convert(compose_hash)?,
+            device_id: try_convert(device_id)?,
             app_compose,
             event_log,
         })

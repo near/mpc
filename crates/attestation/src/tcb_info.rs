@@ -189,7 +189,9 @@ impl<const N: usize> From<HexBytes<N>> for String {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
+
     use super::*;
+    use alloc::string::ToString;
     use serde_json;
 
     #[test]
@@ -227,5 +229,98 @@ mod tests {
 
         // Then
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn TcbInfo__should_succeed_tryfrom_DstackTcbInfo() {
+        // Given
+        const TCB_INFO_JSON: &str = include_str!("../assets/tcb_info.json");
+        let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_JSON).unwrap();
+
+        // When
+        let tcb_info: TcbInfo = dstack_tcb_info.try_into().unwrap();
+
+        // Then
+        assert_eq!(
+            hex::encode(*tcb_info.rtmr0),
+            "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46"
+        )
+    }
+
+    #[test]
+    fn TcbInfo__should_fail_tryfrom_DstackTcbInfo() {
+        // Given
+        const TCB_INFO_JSON: &str = include_str!("../assets/tcb_info.json");
+        let mut dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_JSON).unwrap();
+        // One extra char should make the conversion fail
+        dstack_tcb_info.mrtd += "a";
+
+        // When
+        let result: Result<TcbInfo, _> = dstack_tcb_info.try_into();
+
+        // Then
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn EventLog__should_succeed_tryfrom_DstackEventLog() {
+        // Given
+        const EVENT_LOG_JSON: &str = include_str!("../assets/event_log.json");
+        let dstack_event_log: DstackEventLog = serde_json::from_str(EVENT_LOG_JSON).unwrap();
+
+        // When
+        let event_log: EventLog = dstack_event_log.try_into().unwrap();
+
+        // Then
+        assert_eq!(
+            hex::encode(*event_log.digest),
+            "8ae1e425351df7992c444586eff99d35af3b779aa2b0e981cb4b73bc5b279f2ade19b6a62a203fc3c3bbdaae80af596d"
+        )
+    }
+
+    #[test]
+    fn EventLog__should_fail_tryfrom_DstackEventLog() {
+        // Given
+        const EVENT_LOG_JSON: &str = include_str!("../assets/event_log.json");
+        let mut dstack_event_log: DstackEventLog = serde_json::from_str(EVENT_LOG_JSON).unwrap();
+        // One extra char should make the conversion fail
+        dstack_event_log.digest += "a";
+
+        // When
+        let result: Result<EventLog, _> = dstack_event_log.try_into();
+
+        // Then
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn HexBytes__should_succeed_tryfrom_String() {
+        // Given
+        let hex_str = "8ae1e425351df7992c444586eff99d35af3b779aa2b0e981cb4b73bc5b279f2ade19b6a62a203fc3c3bbdaae80af596d";
+
+        // When
+        let hex_bytes: HexBytes<48> = hex_str.to_string().try_into().unwrap();
+
+        // Then
+        assert_eq!(hex::encode(*hex_bytes), hex_str)
+    }
+
+    #[test]
+    fn HexBytes__should_fail_tryfrom_String() {
+        // Given
+        let hex_str = "8ae1e425351df7992c444586eff99d35af3b779aa2b0e981cb4b73bc5b279f2ade19b6a62a203fc3c3bbdaae80af596d";
+        let modified_hex_str0 = hex_str.to_string().replace("8", "z");
+        let modified_hex_str1 = hex_str.to_string() + "a";
+        let modified_hex_str2 = hex_str.to_string() + "aa";
+
+        // When
+        let result0: Result<HexBytes<48>, _> = modified_hex_str0.try_into();
+        let result1: Result<HexBytes<48>, _> = modified_hex_str1.try_into();
+        let result2: Result<HexBytes<48>, _> = modified_hex_str2.try_into();
+
+        // Then
+        assert!(result0.is_err());
+        assert!(result1.is_err());
+        assert!(result2.is_err());
     }
 }
