@@ -69,7 +69,7 @@
             strictDeps = true;
 
             nativeBuildInputs = with pkgs; [
-              # Docker Tools, note docker daemon must be running separately
+              # Docker Tools. NB! docker daemon must be running separately
               docker
               docker-compose
 
@@ -95,11 +95,13 @@
               binaryen
 
               # NEAR CLI Tools
+              python3Packages.keyring
               near-cli-rs
               cargo-near
 
-              # Python environment for pytests
-              pythonEnv
+              # python
+              ruff
+              pythonEnv # Python environment for pytests
 
               # Misc Utilities
               git
@@ -153,11 +155,33 @@
               # Prevent Cargo from trying to use the system rustup
               RUSTUP_TOOLCHAIN = "";
               CARGO_HOME = ".nix-cargo";
+
+              ## BEGIN MACOS
+              # Force Cargo build scripts + autotools to use Nix wrappers (NOT Homebrew clang)
+              CC = "${pkgs.stdenv.cc}/bin/cc";
+              CXX = "${pkgs.stdenv.cc}/bin/c++";
+
+              # cc crate looks for these first on macOS
+              CC_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/cc";
+              CXX_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/c++";
+
+              AR = "${pkgs.stdenv.cc.bintools}/bin/ar";
+              RANLIB = "${pkgs.stdenv.cc.bintools}/bin/ranlib";
+              ## END MACOS
             };
 
             # Remove the hardening added by nix to fix jmalloc compilation error.
             # More info: https://github.com/tikv/jemallocator/issues/108
-            hardeningDisable = [ "fortify" ];
+            hardeningDisable = [
+              "fortify"
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              "fortify"
+              "stackprotector"
+              "strictoverflow"
+              "format"
+              "zerocallusedregs"
+            ];
 
             shellHook = ''
               mkdir -p .nix-cargo
