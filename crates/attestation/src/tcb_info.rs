@@ -192,6 +192,7 @@ mod tests {
 
     use super::*;
     use alloc::string::ToString;
+    use rstest::rstest;
     use serde_json;
 
     #[test]
@@ -305,22 +306,20 @@ mod tests {
         assert_eq!(hex::encode(*hex_bytes), hex_str)
     }
 
-    #[test]
-    fn HexBytes__should_fail_tryfrom_String() {
-        // Given
-        let hex_str = "8ae1e425351df7992c444586eff99d35af3b779aa2b0e981cb4b73bc5b279f2ade19b6a62a203fc3c3bbdaae80af596d";
-        let modified_hex_str0 = hex_str.to_string().replace("8", "z");
-        let modified_hex_str1 = hex_str.to_string() + "a";
-        let modified_hex_str2 = hex_str.to_string() + "aa";
+    #[rstest]
+    #[case("zae1e4", ParsingError::UnexpectedHexCharacter('z', 0))]
+    #[case("8ae1e4a", ParsingError::WrongLength(7))]
+    #[case("8ae1e4aa", ParsingError::WrongLength(8))]
+    fn hexbytes_should_fail_tryfrom_string(
+        #[case] hex_str: String,
+        #[case] expected_error: ParsingError,
+    ) {
+        // Given hex_str
 
         // When
-        let result0: Result<HexBytes<48>, _> = modified_hex_str0.try_into();
-        let result1: Result<HexBytes<48>, _> = modified_hex_str1.try_into();
-        let result2: Result<HexBytes<48>, _> = modified_hex_str2.try_into();
+        let result: Result<HexBytes<3>, _> = hex_str.try_into();
 
         // Then
-        assert!(result0.is_err());
-        assert!(result1.is_err());
-        assert!(result2.is_err());
+        assert_eq!(result.unwrap_err(), expected_error);
     }
 }
