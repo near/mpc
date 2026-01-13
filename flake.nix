@@ -3,9 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
-      # ensures the overlay uses the same nixpkgs as the cargo project
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -17,33 +17,40 @@
       rust-overlay,
     }:
     let
-      # 1. Define supported architectures
-      supportedSystems = [
+      lib = nixpkgs.lib;
+
+      systems = [
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
       ];
 
-      # 2. Helper to iterate over systems without flake-utils
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-
-      # 3. Functional helper to get pkgs with overlay applied
       pkgsFor =
         system:
         import nixpkgs {
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
+
+      forAllSystems = f: lib.genAttrs systems (system: f (pkgsFor system));
+
+      # Helper: compute clang resource include dir for bindgen/wasm.
+      clangResourceInclude =
+        llvmPkgs:
+        let
+          clangVersion = lib.versions.major llvmPkgs.clang-unwrapped.version;
+        in
+        "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
+
     in
     {
       devShells = forAllSystems (
-        system:
+        pkgs:
         let
-          pkgs = pkgsFor system;
-          inherit (pkgs) lib;
-          llvmPkg = pkgs.llvmPackages_19;
+          inherit (pkgs) stdenv;
 
-          # Rust Toolchain setup
+          llvmPkgs = pkgs.llvmPackages_19;
+
           rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
             extensions = [
               "rust-src"
@@ -55,143 +62,150 @@
 
           pythonEnv = import ./nix/python-env.nix { inherit pkgs; };
 
-          # LLVM/Clang Helpers
-          clangVersion = lib.versions.major llvmPkg.clang-unwrapped.version;
-          clangResourceDir = "${llvmPkg.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
-          libcInc = lib.getDev pkgs.stdenv.cc.libc;
-
-          # Custom NEAR local packages
+          # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
+
+          libcDev = lib.getDev stdenv.cc.libc;
+
+          isX86 = stdenv.hostPlatform.isx86_64;
+
+          envCommon = {
+            # needed for neard's rocksdb build to avoid unsupported CPU features
+            CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -msse4.2 -mpclmul";
+
+            # WASM Toolchain
+            CC_wasm32_unknown_unknown = "${llvmPkgs.clang-unwrapped}/bin/clang";
+            AR_wasm32_unknown_unknown = "${llvmPkgs.llvm}/bin/llvm-ar";
+            CFLAGS_wasm32_unknown_unknown = "-I${clangResourceInclude llvmPkgs}";
+
+            # Bindgen & Paths
+            LIBCLANG_PATH = "${llvmPkgs.libclang.lib}/lib";
+            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+
+            BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
+              "-I${clangResourceInclude llvmPkgs}"
+              "-I${libcDev}/include"
+              "-fno-stack-protector"
+            ];
+
+            PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
+
+            # Prevent Cargo from trying to use the system rustup
+            RUSTUP_TOOLCHAIN = "";
+            CARGO_HOME = ".nix-cargo";
+          };
+
+          envDarwin = lib.optionalAttrs stdenv.isDarwin {
+            # Force build scripts to use Nix wrappers (not host clang)
+            CC = "${stdenv.cc}/bin/cc";
+            CXX = "${stdenv.cc}/bin/c++";
+
+            # cc crate looks for these first on macOS
+            CC_aarch64_apple_darwin = "${stdenv.cc}/bin/cc";
+            CXX_aarch64_apple_darwin = "${stdenv.cc}/bin/c++";
+
+            AR = "${stdenv.cc.bintools}/bin/ar";
+            RANLIB = "${stdenv.cc.bintools}/bin/ranlib";
+          };
+
+          # Tool groups (makes it much easier to edit later)
+          dockerTools = with pkgs; [
+            docker
+            docker-compose
+          ];
+
+          llvmTools = [
+            pkgs.pkg-config
+            llvmPkgs.clang
+            llvmPkgs.libclang
+          ];
+
+          rustTools = with pkgs; [
+            rustToolchain
+            rustPlatform.bindgenHook
+          ];
+
+          cargoTools = with pkgs; [
+            cargo-binstall
+            cargo-deny
+            cargo-insta
+            cargo-make
+            cargo-nextest
+            cargo-shear
+            cargo-sort
+          ];
+
+          nearTools = with pkgs; [
+            python3Packages.keyring
+            near-cli-rs
+            cargo-near
+          ];
+
+          pythonTools = with pkgs; [
+            ruff
+            pythonEnv
+          ];
+
+          miscTools = with pkgs; [
+            git
+            zizmor
+            binaryen
+          ];
+
+          buildLibs =
+            with pkgs;
+            [
+              openssl
+              zlib
+              libiconv
+              snappy
+              lz4
+              zstd
+              bzip2
+            ]
+            ++ lib.optionals stdenv.isLinux [
+              udev
+              dbus
+            ];
+
+          hardening = [
+            "fortify"
+          ]
+          ++ lib.optionals stdenv.isDarwin [
+            "stackprotector"
+            "strictoverflow"
+            "format"
+            "zerocallusedregs"
+          ];
+
         in
         {
           default = pkgs.mkShell {
             strictDeps = true;
 
-            nativeBuildInputs = with pkgs; [
-              # Docker Tools. NB! docker daemon must be running separately
-              docker
-              docker-compose
+            # Prefer `packages` for devShells: clearer and avoids
+            # having to think about nativeBuildInputs vs buildInputs in a shell.
+            packages =
+              dockerTools
+              ++ llvmTools
+              ++ rustTools
+              ++ cargoTools
+              ++ nearTools
+              ++ pythonTools
+              ++ miscTools
+              ++ buildLibs;
 
-              # LLVM/Clang Tools
-              pkg-config
-              llvmPkg.clang
-              llvmPkg.libclang
-
-              # Rust Toolchain
-              rustToolchain
-              rustPlatform.bindgenHook
-
-              # Cargo & Build tools
-              cargo-binstall
-              cargo-deny
-              cargo-insta
-              cargo-make
-              cargo-nextest
-              cargo-shear
-              cargo-sort
-
-              # wasm-opt
-              binaryen
-
-              # NEAR CLI Tools
-              python3Packages.keyring
-              near-cli-rs
-              cargo-near
-
-              # python
-              ruff
-              pythonEnv # Python environment for pytests
-
-              # Misc Utilities
-              git
-              zizmor
-            ];
-
-            buildInputs =
-              with pkgs;
-              [
-                openssl
-                zlib
-                libiconv
-                snappy
-                lz4
-                zstd
-                bzip2
-              ]
-              ++ lib.optionals stdenv.isLinux [
-                udev
-                dbus
-              ]
-              ++ lib.optionals stdenv.isDarwin [
-                pkgs.apple-sdk
-              ];
-
-            env =
-              let
-                isX86 = pkgs.stdenv.hostPlatform.isx86_64;
-
-                commonEnv = {
-                  # needed for neard's rocksdb build to avoid unsupported CPU features
-                  CXXFLAGS = "-include cstdint" + (lib.optionalString isX86 " -msse4.2 -mpclmul");
-
-                  # WASM Toolchain
-                  CC_wasm32_unknown_unknown = "${llvmPkg.clang-unwrapped}/bin/clang";
-                  AR_wasm32_unknown_unknown = "${llvmPkg.llvm}/bin/llvm-ar";
-                  CFLAGS_wasm32_unknown_unknown = "-I${clangResourceDir}";
-
-                  # Bindgen & Paths
-                  LIBCLANG_PATH = "${llvmPkg.libclang.lib}/lib";
-                  RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
-
-                  BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
-                    "-I${clangResourceDir}"
-                    "-I${libcInc}/include"
-                    "-fno-stack-protector"
-                  ];
-
-                  PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
-
-                  # Prevent Cargo from trying to use the system rustup
-                  RUSTUP_TOOLCHAIN = "";
-                  CARGO_HOME = ".nix-cargo";
-                };
-
-                # Force Cargo build scripts + autotools to use Nix wrappers (NOT host clang)
-                macosEnv = lib.optionalAttrs pkgs.stdenv.isDarwin {
-                  CC = "${pkgs.stdenv.cc}/bin/cc";
-                  CXX = "${pkgs.stdenv.cc}/bin/c++";
-
-                  # cc crate looks for these first on macOS
-                  CC_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/cc";
-                  CXX_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/c++";
-
-                  AR = "${pkgs.stdenv.cc.bintools}/bin/ar";
-                  RANLIB = "${pkgs.stdenv.cc.bintools}/bin/ranlib";
-                };
-              in
-              commonEnv // macosEnv;
+            env = envCommon // envDarwin;
 
             # Remove the hardening added by nix to fix jmalloc compilation error.
             # More info: https://github.com/tikv/jemallocator/issues/108
-            hardeningDisable = [
-              "fortify"
-            ]
-            ++ lib.optionals pkgs.stdenv.isDarwin [
-              "fortify"
-              "stackprotector"
-              "strictoverflow"
-              "format"
-              "zerocallusedregs"
-            ];
+            hardeningDisable = hardening;
 
             shellHook = ''
               mkdir -p .nix-cargo
               export PATH="$PWD/.nix-cargo/bin:$PATH"
-
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
-
-              # echo "🦀 NEAR Dev Shell Active | $(rustc --version)"
             '';
           };
         }
