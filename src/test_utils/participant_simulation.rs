@@ -29,4 +29,8 @@ impl Simulator {
     pub fn get_recorded_messages(self) -> Vec<(Participant, MessageData)> {
         self.view
     }
+
+    pub fn get_view_size(&self) -> usize {
+        self.view.iter().map(|(_, s)| s.len()).sum()
+    }
 }

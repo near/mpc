@@ -1,5 +1,6 @@
 #![allow(dead_code, clippy::missing_panics_doc, clippy::indexing_slicing)]
 
+use average::{Estimate, Quantile, Variance};
 use frost_secp256k1::VerifyingKey;
 use k256::AffinePoint;
 use rand::Rng;
@@ -55,6 +56,52 @@ pub struct PreparedSig<RerandomizedPresignOutput> {
     pub presig: RerandomizedPresignOutput,
     pub derived_pk: AffinePoint,
     pub msg_hash: Scalar,
+}
+
+#[allow(clippy::cast_precision_loss)]
+/// Analyzes the size of the received data by a participant accross the entire protocol
+pub fn analyze_received_sizes(
+    sizes: &[usize],
+    is_print: bool,
+) -> (usize, usize, f64, f64, f64, f64) {
+    if sizes.len() <= 1 {
+        return (0, 0, 0.0, 0.0, 0.0, 0.0);
+    }
+    let min = *sizes.iter().min().expect("Minimum should exist");
+    let max = *sizes.iter().max().expect("Maximum should exist");
+    let avg = sizes.iter().sum::<usize>() as f64 / sizes.len() as f64;
+
+    let data = sizes.iter().map(|&x| x as f64).collect::<Vec<f64>>();
+
+    // Median (0.5 quantile)
+    let mut quantile = Quantile::new(0.5);
+    // Variance + Std Dev
+    let mut variance_est = Variance::new();
+
+    for &x in &data {
+        variance_est.add(x);
+        quantile.add(x);
+    }
+
+    let median = quantile.quantile();
+    let variance = variance_est.sample_variance();
+    let std_dev = variance.sqrt();
+
+    if is_print {
+        println!("Analysis for received messages:");
+        println!(
+            "\
+            min:{min}B\t\
+            max:{max}B\t\
+            average:{avg}B\t\
+            median:{median}B\t\
+            variance:{variance}B\t\
+            standard deviation:{std_dev}B
+        "
+        );
+    }
+
+    (min, max, avg, median, variance, std_dev)
 }
 
 /********************* OT Based ECDSA *********************/
