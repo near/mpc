@@ -232,6 +232,7 @@ where
                 .await?;
         }
         if let Some(mut receiver) = incoming_receiver {
+            // could we be blocking here?
             receiver
                 .wait_for(|item| item.version >= version.incoming)
                 .await?;

@@ -166,6 +166,7 @@ impl MeshNetworkClient {
                 continue;
             }
             channel.sender.send_raw(
+                // this might be failing, lets see if we check version here
                 *participant,
                 MpcMessage {
                     channel_id,
@@ -304,6 +305,8 @@ impl MeshNetworkClient {
             //    code will fail.
 
             // note: this only runs if "Start" is set. But waht if we have k!- channel_id?
+            // actually, this should work, but mostly because of how we are using this function right
+            // now. This coud break i
             if let Some(incomplete_channel) = channels.channels_waiting_for_start.pop(&channel_id) {
                 drop(channels); // release lock
                 let drop_fn = {
@@ -357,6 +360,7 @@ impl MeshNetworkClient {
                 let is_live_participant = self
                     .transport_sender
                     .connectivity(id)
+                    // this one here yields false for one of the two nodes
                     .is_bidirectionally_connected();
                 metric.set(is_live_participant.into());
             }

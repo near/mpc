@@ -189,6 +189,7 @@ impl TlsConnection {
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 loop {
+                    // check if got cancelled?
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     // ATTENTION: this sender_clone lives forever, except if the receiver is dropped, which
                     // happens only if the sender gets dropped or the connection has a problem
@@ -333,6 +334,7 @@ pub async fn new_tls_mesh_network(
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
+    // suspected mismatch in connectivities
     let connectivities = Arc::new(AllNodeConnectivities::new(
         config.my_participant_id,
         &config
@@ -416,7 +418,7 @@ pub async fn new_tls_mesh_network(
                 connectivities
                     .get(peer_id)?
                     // NOTE: we increment the version number here, but we don't necessarily
-                    // ancel the receiver task. This would happen only if the sender does so, which
+                    // cancel the receiver task. This would happen only if the sender does so, which
                     // might reult in some sort of race condition if the network is bad.
                     .set_incoming_connection(&incoming_conn);
                 let mut received_bytes: u64 = 0;
@@ -435,7 +437,7 @@ pub async fn new_tls_mesh_network(
                     tokio::time::timeout(
                         std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
                         stream.read_exact(&mut buf),
-                    )
+                    ) // this could timeout
                     .await??;
                     received_bytes += 4 + len as u64;
 
@@ -462,8 +464,12 @@ pub async fn new_tls_mesh_network(
                             ))?;
                         }
                     }
+                    // note: I suspect we need to cancel this receiver task.
+                    // Could it be possible that the sender just continues sending on an old,
+                    // uncancelled task?
 
                     tracking::set_progress(&format!(
+                        // check this
                         "Received {} bytes from {}",
                         received_bytes, peer_id
                     ));
