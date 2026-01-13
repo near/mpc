@@ -1,10 +1,10 @@
 use attestation::{
-    TcbInfo,
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
     measurements::ExpectedMeasurements,
     measurements::Measurements,
     report_data::ReportData,
+    tcb_info::TcbInfo,
 };
 
 use include_measurements::include_measurements;

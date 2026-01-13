@@ -915,6 +915,7 @@ dependencies = [
  "derive_more 2.0.1",
  "dstack-sdk-types",
  "hex",
+ "rstest",
  "serde",
  "serde_json",
  "serde_with",
@@ -9745,7 +9746,6 @@ name = "test-utils"
 version = "3.2.0"
 dependencies = [
  "contract-interface",
- "dstack-sdk-types",
  "hex",
  "mpc-attestation",
  "mpc-primitives",
