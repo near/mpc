@@ -239,6 +239,18 @@ impl CKDRequestTest {
             "request": self.args,
         })
     }
+
+    async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
+        let execution = status.await?;
+        dbg!(&execution);
+        let execution = execution.into_result()?;
+        let returned_resp: CKDResponse = execution.json()?;
+        assert_eq!(
+            returned_resp, self.response.response,
+            "Returned ckd request does not match"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -391,20 +403,6 @@ fn create_response_ckd(
         big_c: big_c.into_interface_type(),
     };
     (request, response)
-}
-
-impl CKDRequestTest {
-    async fn verify_execution_outcome(&self, status: TransactionStatus) -> anyhow::Result<()> {
-        let execution = status.await?;
-        dbg!(&execution);
-        let execution = execution.into_result()?;
-        let returned_resp: CKDResponse = execution.json()?;
-        assert_eq!(
-            returned_resp, self.response.response,
-            "Returned ckd request does not match"
-        );
-        Ok(())
-    }
 }
 
 pub async fn make_and_submit_requests(
