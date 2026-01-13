@@ -1,7 +1,5 @@
 # MPC
 
-"Mastodon" will fail CI as a false positive
-
 This repository contains the code for the Near MPC node. It is a rewrite of [Near MPC](https://github.com/near/mpc_old).
 
 ## Dependencies and submodules
@@ -14,9 +12,10 @@ This repository contains the code for the Near MPC node. It is a rewrite of [Nea
 There are two main parts of the binary: NEAR indexer and MPC signing:
 
 - NEAR Indexer: this is a NEAR node that tracks the shard where the signing smart contract is on. For mainnet, it is `v1.signer`.
-The indexer tracks incoming requests by looking at successful calls to the `sign` function. Each request is hashed and gets mapped to a
-specific node in the MPC network, which is known as the leader for this specific request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, there is a secondary leader who can initiate the signing
+  The indexer tracks incoming requests by looking at successful calls to the `sign` function. Each request is hashed and gets mapped to a
+  specific node in the MPC network, which is known as the leader for this specific request. The leader initiates the signing process and submits the final signature back to the smart contract. If the leader is offline, there is a secondary leader who can initiate the signing
 - MPC signing: A threshold ecdsa implementation based on [cait-sith](https://cronokirby.com/Posts/Some-Bits-about-Cait-Sith). Each node does the following:
+
   - Participates in Beaver triple generation in the background. Each node both initiates triple generation and passively participates in triple generation initiated by other nodes. This is constantly running until each node generates 1M Beaver triples.
   - Presignature generation. It also runs in the background. Each presignature generation requires two Beaver triples.
   - Signature generation. When a request comes in, a signature can be generated using a presignature and one round of communication.
@@ -26,7 +25,9 @@ specific node in the MPC network, which is known as the leader for this specific
 ## Testing
 
 ### Terminology
+
 We use the following terminology when referring to tests:
+
 - _unit test_ -> a rust test in `/src` folder (per crate)
 - _integration test_ -> a rust test in `/tests` folder (per crate)
 - _system test_ -> a pytest in the `/pytest` folder
@@ -41,7 +42,7 @@ We use the following terminology when referring to tests:
 This repository uses `rust-toolchain.toml` files, as some code sections may require specific compiler versions. Be aware of potential overrides from:
 
 - Directory-specific toolchain overrides
-- Environment variables  
+- Environment variables
 
 For more information, refer to the [Rustup book on overrides](https://rust-lang.github.io/rustup/overrides.html).
 
