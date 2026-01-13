@@ -142,7 +142,7 @@ impl SignRequestTest {
         &self.response.request.payload
     }
 
-    pub fn path(&self) -> &String {
+    pub fn path(&self) -> &str {
         &self.args.path
     }
 
