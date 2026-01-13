@@ -1,5 +1,7 @@
 # MPC
 
+"Mastodon" will fail CI as a false positive
+
 This repository contains the code for the Near MPC node. It is a rewrite of [Near MPC](https://github.com/near/mpc_old).
 
 ## Dependencies and submodules
