@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
-# Check that all TODO comments follow one of these formats:
-# - TODO(#NNN): description (with issue reference)
-# - TODO: description (without issue reference)
-# This enforces uppercase TODO and proper formatting.
-
 set -euo pipefail
 
-CHECKED_FILE_EXTENSIONS="*.rs *.py *.sh *.yml *.yaml *.md"
+# Define extensions as an array for cleaner handling
+CHECKED_EXTENSIONS=(
+  "*.rs" "*.py" "*.sh" "*.yml" "*.yaml" "*.md"
+)
 
-# Use git ls-files to respect .gitignore and exclude submodules.
-# Find all TODO comments (case-insensitive), then filter out valid patterns.
-# Exclude check-todo-format.sh and todo-format-check.yml (they mention
-# "todo-format" in descriptions).
-INVALID_TODOS=$(git ls-files $CHECKED_FILE_EXTENSIONS | \
-    grep -v "todo-format" | \
-    xargs -r grep -Hin -i "todo" 2>/dev/null | \
-    grep -v -E "TODO(\(#[0-9]+\))?:" || true)
+# 1. git ls-files -z uses null-termination for space-safe filenames
+# 2. xargs -0 reads those null-terminated strings
+# 3. grep \btodo\b looks for the word "todo" specifically
+# 4. The final grep -v -E filters out the two valid patterns
+INVALID_TODOS=$(git ls-files -z "${CHECKED_EXTENSIONS[@]}" | \
+    xargs -0 grep -HinE "\btodo\b" | \
+    grep -vE ":.*(TODO\(#[0-9]+\):|TODO:)" || true)
+
+# Filter out the script itself from the results if it's named similarly
+SCRIPT_NAME=$(basename "$0")
+INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -v "$SCRIPT_NAME" || true)
 
 if [ -n "$INVALID_TODOS" ]; then
     echo "❌ Found TODO comments not matching the required format"
     echo ""
     echo "Valid formats:"
-    echo "  TODO(#1234): description (with issue reference)"
-    echo "  TODO: description (without issue reference)"
+    echo "  TODO(#1234): description"
+    echo "  TODO: description"
     echo ""
-    echo "Invalid TODOs:"
+    echo "Invalid lines found:"
     echo "$INVALID_TODOS"
     exit 1
 fi
