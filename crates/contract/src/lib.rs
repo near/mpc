@@ -1670,9 +1670,12 @@ mod tests {
         test_utils::gen_participants,
     };
     use crate::state::key_event::tests::Environment;
+    use crate::state::key_event::KeyEvent;
+    use crate::state::resharing::ResharingContractState;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
+    use crate::tee::tee_state::NodeId;
     use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
@@ -1682,6 +1685,9 @@ mod tests {
         ecdsa::SigningKey,
         elliptic_curve::point::DecompactPoint,
         {elliptic_curve, AffinePoint, Secp256k1},
+    };
+    use mpc_attestation::attestation::{
+        Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
@@ -3369,5 +3375,118 @@ mod tests {
             allowed_docker_image_hashes,
             vec![MpcDockerImageHash::from(code_hash)]
         )
+    }
+
+    /// Tests that [`MpcContract::verify_tee`] triggers resharing when a participant's attestation
+    /// is expired.
+    ///
+    /// Verifies the behavior when:
+    /// 1. [`MpcContract::verify_tee`] returns [`TeeValidationResult::Partial`] (some attestations
+    ///    expired/invalid)
+    /// 2. The remaining participants meet threshold requirements
+    /// 3. The contract transitions to [`ProtocolContractState::Resharing`] state
+    #[test]
+    fn test_verify_tee_triggers_resharing_on_expired_attestation() {
+        const PARTICIPANT_COUNT: usize = 3;
+        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+
+        let participants = gen_participants(PARTICIPANT_COUNT);
+        let parameters = ThresholdParameters::new(participants.clone(), Threshold::new(2)).unwrap();
+
+        // Set up contract in Running state
+        let domain_id = DomainId::default();
+        let domains = vec![DomainConfig {
+            id: domain_id,
+            scheme: SignatureScheme::Secp256k1,
+        }];
+        let (pk, _) = make_public_key_for_domain(SignatureScheme::Secp256k1, &mut OsRng);
+        let key_for_domain = KeyForDomain {
+            domain_id,
+            key: pk.try_into().unwrap(),
+            attempt: AttemptId::new(),
+        };
+        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
+
+        let mut contract =
+            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
+                .unwrap();
+
+        assert!(matches!(
+            contract.protocol_state,
+            ProtocolContractState::Running(_)
+        ));
+
+        // Get participant info for the target (last participant)
+        let participant_list: Vec<_> = participants.participants().to_vec();
+        let (target_account_id, _, target_participant_info) = &participant_list[2];
+
+        // Replace the target's attestation with an expired one
+        let node_id = NodeId {
+            account_id: target_account_id.clone(),
+            tls_public_key: target_participant_info.sign_pk.clone(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        };
+        let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_time_stamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
+        });
+        contract
+            .tee_state
+            .add_participant(node_id, expiring_attestation);
+
+        // Capture the running state before verify_tee for comparison
+        let ProtocolContractState::Running(running_state_before) = &contract.protocol_state else {
+            panic!("expected Running state");
+        };
+        let running_state_before = running_state_before.clone();
+
+        // Set time to exact expiry boundary
+        let (first_account_id, _, _) = &participant_list[0];
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(first_account_id.as_v1_account_id())
+            .predecessor_account_id(first_account_id.as_v1_account_id())
+            .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
+            .build());
+
+        // Call verify_tee - should trigger resharing
+        let result = contract.verify_tee();
+        assert!(result.is_ok());
+        assert!(
+            result.unwrap(),
+            "verify_tee should return true when threshold is met"
+        );
+
+        // Verify contract transitioned to Resharing state
+        let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {
+            panic!(
+                "expected Resharing state, got {:?}",
+                contract.protocol_state
+            );
+        };
+
+        // Build expected participants: exclude the target (participant 2) who has expired attestation
+        let expected_participants = Participants::init(
+            ParticipantId(PARTICIPANT_COUNT as u32),
+            participant_list[0..2]
+                .iter()
+                .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))
+                .collect(),
+        );
+        let expected_params =
+            ThresholdParameters::new(expected_participants, parameters.threshold()).unwrap();
+
+        let expected_resharing_state = ResharingContractState {
+            previous_running_state: running_state_before,
+            reshared_keys: Vec::new(),
+            resharing_key: KeyEvent::new(
+                keyset.epoch_id.next(),
+                domains[0].clone(),
+                expected_params,
+            ),
+            cancellation_requests: HashSet::new(),
+        };
+
+        assert_eq!(*resharing_state, expected_resharing_state);
     }
 }
