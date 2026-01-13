@@ -127,48 +127,50 @@
                 pkgs.apple-sdk
               ];
 
-            env = {
-              # needed for neard's rocksdb build to avoid unsupported CPU features
-              CXXFLAGS =
-                let
-                  isX86 = pkgs.stdenv.hostPlatform.isx86_64;
-                in
-                "-include cstdint" + (lib.optionalString isX86 " -msse4.2 -mpclmul");
+            env =
+              let
+                isX86 = pkgs.stdenv.hostPlatform.isx86_64;
 
-              # WASM Toolchain
-              CC_wasm32_unknown_unknown = "${llvmPkg.clang-unwrapped}/bin/clang";
-              AR_wasm32_unknown_unknown = "${llvmPkg.llvm}/bin/llvm-ar";
-              CFLAGS_wasm32_unknown_unknown = "-I${clangResourceDir}";
+                commonEnv = {
+                  # needed for neard's rocksdb build to avoid unsupported CPU features
+                  CXXFLAGS = "-include cstdint" + (lib.optionalString isX86 " -msse4.2 -mpclmul");
 
-              # Bindgen & Paths
-              LIBCLANG_PATH = "${llvmPkg.libclang.lib}/lib";
-              RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+                  # WASM Toolchain
+                  CC_wasm32_unknown_unknown = "${llvmPkg.clang-unwrapped}/bin/clang";
+                  AR_wasm32_unknown_unknown = "${llvmPkg.llvm}/bin/llvm-ar";
+                  CFLAGS_wasm32_unknown_unknown = "-I${clangResourceDir}";
 
-              BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
-                "-I${clangResourceDir}"
-                "-I${libcInc}/include"
-                "-fno-stack-protector"
-              ];
+                  # Bindgen & Paths
+                  LIBCLANG_PATH = "${llvmPkg.libclang.lib}/lib";
+                  RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
 
-              PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
+                  BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
+                    "-I${clangResourceDir}"
+                    "-I${libcInc}/include"
+                    "-fno-stack-protector"
+                  ];
 
-              # Prevent Cargo from trying to use the system rustup
-              RUSTUP_TOOLCHAIN = "";
-              CARGO_HOME = ".nix-cargo";
+                  PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
 
-              ## BEGIN MACOS
-              # Force Cargo build scripts + autotools to use Nix wrappers (NOT Homebrew clang)
-              CC = "${pkgs.stdenv.cc}/bin/cc";
-              CXX = "${pkgs.stdenv.cc}/bin/c++";
+                  # Prevent Cargo from trying to use the system rustup
+                  RUSTUP_TOOLCHAIN = "";
+                  CARGO_HOME = ".nix-cargo";
+                };
 
-              # cc crate looks for these first on macOS
-              CC_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/cc";
-              CXX_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/c++";
+                # Force Cargo build scripts + autotools to use Nix wrappers (NOT host clang)
+                macosEnv = lib.optionalAttrs pkgs.stdenv.isDarwin {
+                  CC = "${pkgs.stdenv.cc}/bin/cc";
+                  CXX = "${pkgs.stdenv.cc}/bin/c++";
 
-              AR = "${pkgs.stdenv.cc.bintools}/bin/ar";
-              RANLIB = "${pkgs.stdenv.cc.bintools}/bin/ranlib";
-              ## END MACOS
-            };
+                  # cc crate looks for these first on macOS
+                  CC_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/cc";
+                  CXX_aarch64_apple_darwin = "${pkgs.stdenv.cc}/bin/c++";
+
+                  AR = "${pkgs.stdenv.cc.bintools}/bin/ar";
+                  RANLIB = "${pkgs.stdenv.cc.bintools}/bin/ranlib";
+                };
+              in
+              commonEnv // macosEnv;
 
             # Remove the hardening added by nix to fix jmalloc compilation error.
             # More info: https://github.com/tikv/jemallocator/issues/108
