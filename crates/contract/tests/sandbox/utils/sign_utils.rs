@@ -241,10 +241,27 @@ impl CKDRequestTest {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct CKDResponseArgs {
     pub request: CKDRequest,
     pub response: CKDResponse,
+}
+
+async fn submit_request(
+    account: &Account,
+    contract: &Contract,
+    method: &str,
+    args: impl Serialize,
+) -> anyhow::Result<TransactionStatus> {
+    let status = account
+        .call(contract.id(), method)
+        .args_json(serde_json::json!({ "request": args }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact_async()
+        .await?;
+    dbg!(&status);
+    Ok(status)
 }
 
 async fn submit_sign_request(
@@ -252,17 +269,7 @@ async fn submit_sign_request(
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    let status = account
-        .call(contract.id(), "sign")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
-        .deposit(NearToken::from_yoctonear(1))
-        .max_gas()
-        .transact_async()
-        .await?;
-    dbg!(&status);
-    Ok(status)
+    submit_request(account, contract, "sign", request).await
 }
 
 async fn submit_ckd_request(
@@ -270,17 +277,24 @@ async fn submit_ckd_request(
     request: &CKDRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    let status = account
-        .call(contract.id(), "request_app_private_key")
-        .args_json(serde_json::json!({
-            "request": request,
-        }))
-        .deposit(NearToken::from_yoctonear(1))
+    submit_request(account, contract, "request_app_private_key", request).await
+}
+
+async fn submit_response(
+    contract: &Contract,
+    attested_account: &Account,
+    method: &str,
+    args: impl Serialize,
+) -> anyhow::Result<()> {
+    let respond = attested_account
+        .call(contract.id(), method)
+        .args_json(args)
         .max_gas()
-        .transact_async()
+        .transact()
         .await?;
-    dbg!(&status);
-    Ok(status)
+    dbg!(&respond);
+    respond.into_result()?;
+    Ok(())
 }
 
 pub async fn submit_signature_response(
@@ -288,16 +302,7 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are an attested_account
-    let respond = attested_account
-        .call(contract.id(), "respond")
-        .args_json(response.json_args())
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
+    submit_response(contract, attested_account, "respond", response).await
 }
 
 pub async fn submit_ckd_response(
@@ -305,19 +310,7 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    // Call `respond` as if we are an attested_account
-    let respond = attested_account
-        .call(contract.id(), "respond_ckd")
-        .args_json(serde_json::json!({
-            "request": response.request,
-            "response": response.response,
-        }))
-        .max_gas()
-        .transact()
-        .await?;
-    dbg!(&respond);
-    respond.into_result()?;
-    Ok(())
+    submit_response(contract, attested_account, "respond_ckd", response).await
 }
 
 trait ContractQueueRequest: serde::Serialize + Sync {
