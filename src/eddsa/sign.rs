@@ -59,7 +59,8 @@ async fn do_sign_coordinator(
     let mut commitments_map: BTreeMap<frost_ed25519::Identifier, round1::SigningCommitments> =
         BTreeMap::new();
 
-    let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
+    // signing share is the private_share
+    let signing_share = keygen_output.private_share;
 
     // Step 1.1 (and implicitely 1.2)
     let (nonces, commitments) = round1::commit(&signing_share, rng);
@@ -141,8 +142,8 @@ async fn do_sign_participant(
         ));
     }
 
-    // create signing share out of private_share
-    let signing_share = SigningShare::new(keygen_output.private_share.to_scalar());
+    // signing share is the private_share
+    let signing_share = keygen_output.private_share;
 
     // Step 1.1
     let (nonces, commitments) = round1::commit(&signing_share, rng);
