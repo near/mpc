@@ -109,7 +109,6 @@
             RANLIB = "${stdenv.cc.bintools}/bin/ranlib";
           };
 
-          # Tool groups (makes it much easier to edit later)
           dockerTools = with pkgs; [
             docker
             docker-compose
@@ -184,8 +183,6 @@
           default = pkgs.mkShell {
             strictDeps = true;
 
-            # Prefer `packages` for devShells: clearer and avoids
-            # having to think about nativeBuildInputs vs buildInputs in a shell.
             packages =
               dockerTools
               ++ llvmTools
