@@ -14,15 +14,10 @@ let
         pyproject = true;
         nativeBuildInputs = [ pyfinal.setuptools ];
 
-        # This is the crucial part:
-        # 1. Move into the directory containing the actual package
-        # 2. But the 'src' still contains the 'libs' folder at the relative path
         postPatch = ''
           cd pytest/nearcore_pytest
         '';
 
-        # If setuptools still complains about egg_base, we can force the path
-        # to be created or pointed to correctly during build.
         preBuild = ''
           mkdir -p ../../libs/nearcore/pytest/lib
         '';
