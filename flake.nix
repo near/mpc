@@ -60,7 +60,7 @@
             ];
           };
 
-          pythonEnv = import ./nix/python-env.nix { inherit pkgs; };
+          # pythonEnv = import ./nix/python-env.nix { inherit pkgs; };
 
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
@@ -144,7 +144,7 @@
 
           pythonTools = with pkgs; [
             ruff
-            pythonEnv
+            # pythonEnv
           ];
 
           miscTools = with pkgs; [
