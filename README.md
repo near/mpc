@@ -11,7 +11,7 @@ This repository contains the code for the Near MPC node. It is a rewrite of [Nea
 
 This repository includes a [flake.nix](flake.nix) file that provides a reproducible development environment using Nix. This environment pre-configures the Rust toolchain, LLVM/Clang tools, NEAR CLI tools, and all necessary system dependencies.
 Prerequisites
-  - **Nix**: Install Nix with [Flakes enabled](https://nixos.wiki/wiki/Flakes)
+  - **Nix**: [Install Nix](https://nixos.org/download/) with [Flakes enabled](https://nixos.wiki/wiki/Flakes)
   - **Docker**: While tools are provided in the shell, the Docker daemon must be running separately on your host system. Docker is required for reproducible builds of the MPC contract.
 
 ### Entering the Shell
