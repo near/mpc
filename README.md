@@ -39,6 +39,7 @@ specific node in the MPC network, which is known as the leader for this specific
 ## Testing
 
 ### Terminology
+
 We use the following terminology when referring to tests:
 - _unit test_ -> a rust test in `/src` folder (per crate)
 - _integration test_ -> a rust test in `/tests` folder (per crate)

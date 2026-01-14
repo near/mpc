@@ -366,75 +366,80 @@ pub async fn new_tls_mesh_network(
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
     info!("Spawning incoming connections handler.");
-    let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
-        let mut tasks = AutoAbortTaskCollection::new();
-        while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-            let message_sender = message_sender.clone();
-            let participant_identities = participant_identities.clone();
-            let tls_acceptor = tls_acceptor.clone();
-            let connectivities = connectivities_clone.clone();
-            tasks.spawn_checked::<_, ()>("Handle connection", async move {
-                let tcp_stream = configure_tcp_stream(tcp_stream)?;
-                let mut stream = tls_acceptor.accept(tcp_stream).await?;
+    let incoming_connections_task =
+        tracking::spawn("incoming connection handler tls mesh network", async move {
+            let mut tasks = AutoAbortTaskCollection::new();
+            while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
+                let message_sender = message_sender.clone();
+                let participant_identities = participant_identities.clone();
+                let tls_acceptor = tls_acceptor.clone();
+                let connectivities = connectivities_clone.clone();
+                tasks.spawn_checked::<_, ()>(
+                    "new connection handler tls mesh network",
+                    async move {
+                        let tcp_stream = configure_tcp_stream(tcp_stream)?;
+                        let mut stream = tls_acceptor.accept(tcp_stream).await?;
 
-                let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
-                tracking::set_progress(&format!("Authenticated as {}", peer_id));
-                p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
-                    .await
-                    .context("p2p handshake")?;
-                tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
-                let incoming_conn = Arc::new(());
-                connectivities
-                    .get(peer_id)?
-                    .set_incoming_connection(&incoming_conn);
-                let mut received_bytes: u64 = 0;
-                loop {
-                    let len = tokio::time::timeout(
-                        std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
-                        stream.read_u32(),
-                    )
-                    .await??;
-                    if len >= MAX_MESSAGE_LEN {
-                        anyhow::bail!("Message too long");
-                    }
-                    let mut buf = vec![0; len as usize];
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
-                        stream.read_exact(&mut buf),
-                    )
-                    .await??;
-                    received_bytes += 4 + len as u64;
+                        let peer_id =
+                            verify_peer_identity(stream.get_ref().1, &participant_identities)?;
+                        tracking::set_progress(&format!("Authenticated as {}", peer_id));
+                        p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
+                            .await
+                            .context("p2p handshake")?;
+                        tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
+                        let incoming_conn = Arc::new(());
+                        connectivities
+                            .get(peer_id)?
+                            .set_incoming_connection(&incoming_conn);
+                        let mut received_bytes: u64 = 0;
+                        loop {
+                            let len = tokio::time::timeout(
+                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
+                                stream.read_u32(),
+                            )
+                            .await??;
+                            if len >= MAX_MESSAGE_LEN {
+                                anyhow::bail!("Message too long");
+                            }
+                            let mut buf = vec![0; len as usize];
+                            tokio::time::timeout(
+                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
+                                stream.read_exact(&mut buf),
+                            )
+                            .await??;
+                            received_bytes += 4 + len as u64;
 
-                    let packet =
-                        Packet::try_from_slice(&buf).context("Failed to deserialize packet")?;
-                    match packet {
-                        Packet::Ping => {
-                            // Do nothing. Pings are just for TCP keepalive.
-                        }
-                        Packet::MpcMessage(mpc_message) => {
-                            message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
-                                from: peer_id,
-                                message: mpc_message,
-                            }))?;
-                        }
-                        Packet::IndexerHeight(message) => {
-                            message_sender.send(PeerMessage::IndexerHeight(
-                                PeerIndexerHeightMessage {
-                                    from: peer_id,
-                                    message,
-                                },
-                            ))?;
-                        }
-                    }
+                            let packet = Packet::try_from_slice(&buf)
+                                .context("Failed to deserialize packet")?;
+                            match packet {
+                                Packet::Ping => {
+                                    // Do nothing. Pings are just for TCP keepalive.
+                                }
+                                Packet::MpcMessage(mpc_message) => {
+                                    message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
+                                        from: peer_id,
+                                        message: mpc_message,
+                                    }))?;
+                                }
+                                Packet::IndexerHeight(message) => {
+                                    message_sender.send(PeerMessage::IndexerHeight(
+                                        PeerIndexerHeightMessage {
+                                            from: peer_id,
+                                            message,
+                                        },
+                                    ))?;
+                                }
+                            }
 
-                    tracking::set_progress(&format!(
-                        "Received {} bytes from {}",
-                        received_bytes, peer_id
-                    ));
-                }
-            });
-        }
-    });
+                            tracking::set_progress(&format!(
+                                "Received {} bytes from {}",
+                                received_bytes, peer_id
+                            ));
+                        }
+                    },
+                );
+            }
+        });
 
     let sender = TlsMeshSender {
         my_id: config.my_participant_id,
