@@ -24,3 +24,6 @@ venv
 
 # Files for launcher
 **/.app-compose.json
+
+# Nix cargo home
+.nix-cargo/
