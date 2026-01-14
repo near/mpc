@@ -12,8 +12,8 @@ In non-TEE mode:
 - The launcher runs with `PLATFORM=NONTEE`
 - No dstack socket or attestation is used
 - RTMR extensions are skipped
-- The MPC node is launched with `MPC_TEE_MODE=0`
 - Image hash validation and upgrade logic remain unchanged
+- The MPC container is launched with DSTACK_ENDPOINT set to dstack.sock
 
 This provides maximum parity with production while keeping the setup simple.
 
@@ -103,7 +103,6 @@ docker ps
 ```
 
 Inspect the MPC container to confirm:
-- `MPC_TEE_MODE=0` is set
 - No `DSTACK_ENDPOINT` environment variable exists
 - No dstack socket is mounted
 - Expected ports are published
