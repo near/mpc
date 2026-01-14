@@ -288,7 +288,7 @@ impl TaskHandle {
                     current_task = task.parent.clone();
                 }
                 tracing::error!(
-                    "Task failed; description: {}; error msg: {}; trace:{}",
+                    "task failed; description: {}; error msg: {}; trace:{}",
                     child.description,
                     err,
                     task_trace.join("")
