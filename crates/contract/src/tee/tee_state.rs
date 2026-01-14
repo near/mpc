@@ -668,7 +668,8 @@ mod tests {
     #[test]
     fn validate_tee_returns_partial_when_attestation_is_expired() {
         const INITIAL_TIME: Duration = Duration::from_secs(1);
-        const EXPIRY_TIME: Duration = Duration::from_secs(11);
+        const EXPIRY_TIME: Duration =
+            Duration::from_secs(INITIAL_TIME.as_secs() + TEST_GRACE_PERIOD.as_secs());
 
         set_block_timestamp(INITIAL_TIME.as_nanos() as u64);
 
@@ -708,8 +709,10 @@ mod tests {
     #[test]
     fn validate_tee_returns_full_when_attestation_not_yet_expired() {
         const INITIAL_TIME: Duration = Duration::from_secs(1);
-        const EXPIRY_TIME: Duration = Duration::from_secs(100);
-        const BEFORE_EXPIRY_TIME: Duration = Duration::from_secs(50);
+        const EXPIRY_TIME: Duration =
+            Duration::from_secs(INITIAL_TIME.as_secs() + 2 * TEST_GRACE_PERIOD.as_secs());
+        const BEFORE_EXPIRY_TIME: Duration =
+            Duration::from_secs(INITIAL_TIME.as_secs() + TEST_GRACE_PERIOD.as_secs());
 
         set_block_timestamp(INITIAL_TIME.as_nanos() as u64);
 
