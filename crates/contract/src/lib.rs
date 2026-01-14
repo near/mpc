@@ -3433,19 +3433,13 @@ mod tests {
 
     #[test]
     fn test_post_upgrade_cleanup_success() {
-        // 1. Setup Environment
-        let context = VMContextBuilder::new().build();
-        testing_env!(context);
-
-        // 2. Initialize contract state
+        // given
         let mut contract = MpcContract::init(
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
             None,
         )
         .unwrap();
 
-        // 3. Manually simulate "stale" data as it would look after a migrate() call
-        // We create an IterableMap and add some dummy attestation data to it
         let mut mock_stale_map = IterableMap::new(StorageKey::_DeprecatedTeeParticipantAttestation);
         let node_pk = bogus_ed25519_near_public_key();
         let node_id = NodeId {
@@ -3459,48 +3453,30 @@ mod tests {
 
         mock_stale_map.insert(node_pk.clone(), (node_id, attestation));
 
-        // Inject this into the contract's stale_data field
         contract.stale_data.participant_attestations = Some(mock_stale_map);
 
-        // Verify data exists before cleanup
-        assert!(contract.stale_data.participant_attestations.is_some());
-        assert_eq!(
-            contract
-                .stale_data
-                .participant_attestations
-                .as_ref()
-                .unwrap()
-                .len(),
-            1
-        );
-
-        // 4. Execute cleanup
+        // when
         contract.post_upgrade_cleanup();
 
-        // 5. Assertions
-        // The Option should be None because .take() was called
-        assert!(contract.stale_data.participant_attestations.is_none());
-
-        // Note: In a real blockchain environment, this would have also
-        // deleted the underlying storage entries for StorageKey::TeeStateV2.
+        // then
+        assert_matches::assert_matches!(contract.stale_data.participant_attestations, None);
     }
 
     #[test]
     #[should_panic(expected = "stale participant_attestations data has already been cleared")]
     fn test_post_upgrade_cleanup_panics_if_already_cleared() {
-        let context = VMContextBuilder::new().build();
-        testing_env!(context);
-
+        // given
         let mut contract = MpcContract::init(
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
             None,
         )
         .unwrap();
 
-        // Ensure stale_data is None (default state)
         contract.stale_data.participant_attestations = None;
 
-        // This should panic because the current implementation uses .expect()
+        // when
         contract.post_upgrade_cleanup();
+
+        // then panic
     }
 }
