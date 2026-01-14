@@ -302,7 +302,7 @@ pub struct NodeMigrations {
 }
 ```
 
-Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO issue [#947](https://github.com/near/mpc/issues/947))
+Additionally, the backup service will need to provide a TEE attestation similar to MPC nodes, which requires extending the contract to support attestation verification for backup services. (TODO(#947): Define attestation data for backup service)
 
 #### Backup Service Registration
 
@@ -321,7 +321,7 @@ The backup service attestation registreation and verification would follow the s
    - Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
 7. Contract stores `TeeState` (containing attestation and all verification data)
 
-> **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services [use](#todo) a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
+> **Note**: Unlike MPC nodes which may need multiple attestations per operator, backup services use a simpler one-per-operator model. The `AccountId` remains the unique identifier, consistent with soft launch.
 
 #### Backup Service TEE methods
 
@@ -445,7 +445,7 @@ Both soft launch and hard launch implementations share common core components, w
    - Prometheus-style metrics (keyshare freshness, backup success/failure rates)
    - Operator dashboards for status visibility
 
-### Todo
+### Remaining Work
 
 See [(#949)](https://github.com/near/mpc/issues/949)
 - It is advised that the node operator grants access only to specific contract methods for the backup service and the node: [(#946)](https://github.com/near/mpc/issues/946)

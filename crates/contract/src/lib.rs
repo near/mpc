@@ -1183,8 +1183,7 @@ impl MpcContract {
 
         parameters.validate().unwrap();
 
-        // TODO: https://github.com/near/mpc/issues/1087
-        // Every participant must have a valid attestation, otherwise we risk
+        // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
         // participants being immediately kicked out once contract transitions into running.
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
@@ -1507,7 +1506,7 @@ impl MpcContract {
         &mut self,
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
-        // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
+        // TODO(#1163): require a deposit
 
         let account_id = Self::assert_caller_is_signer();
 

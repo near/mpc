@@ -104,7 +104,7 @@ def test_cleanup_dead_node(lost_assets_cluster: MpcCluster):
     lost_assets_cluster.send_and_await_signature_requests(presignatures_available)
 
 
-# Todo: [(#791)](https://github.com/near/mpc/issues/791) requires MPC node binary with enabled network-hardship-simulation feature
+# TODO(#791): requires MPC node binary with enabled network-hardship-simulation feature
 @pytest.mark.no_atexit_cleanup
 def test_cleanup_lagging_node(lost_assets_cluster: MpcCluster):
     """
