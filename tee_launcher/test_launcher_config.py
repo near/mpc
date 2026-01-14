@@ -1,5 +1,5 @@
 # test_launcher_config.py
-import cmd
+
 import inspect
 import json
 import tempfile
