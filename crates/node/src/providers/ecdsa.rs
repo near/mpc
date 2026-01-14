@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 pub mod key_generation;
 pub mod presign;
 mod sign;

@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use std::sync::Arc;
 
 use crate::indexer::IndexerState;

@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 near-account-id = { workspace = true }
 near-account-id-v1 = { workspace = true }
+
+[lints]
+workspace = true

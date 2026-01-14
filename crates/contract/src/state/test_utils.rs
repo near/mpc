@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::resharing::ResharingContractState;
 use super::InitializingContractState;
 use crate::primitives::test_utils::{bogus_ed25519_public_key_extended, gen_domains_to_add};

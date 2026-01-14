@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::config::ParticipantsConfig;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;

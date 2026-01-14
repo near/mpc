@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;

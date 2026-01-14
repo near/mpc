@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{env::sha256, log, near};
 use std::{collections::BTreeMap, time::Duration};

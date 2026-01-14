@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use ::attestation::report_data::REPORT_DATA_SIZE;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::{AsRef, Deref, From};

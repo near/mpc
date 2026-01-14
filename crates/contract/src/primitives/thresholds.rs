@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::participants::{ParticipantId, ParticipantInfo, Participants};
 use crate::errors::{Error, InvalidCandidateSet, InvalidThreshold};
 use near_account_id::AccountId;

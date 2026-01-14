@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::{MpcConfig, TripleConfig};

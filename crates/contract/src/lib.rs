@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::as_conversions)]
 #![deny(clippy::mod_module_files)]
 // We disallow using `near_sdk::AccountId` in our own code.
 // However, the `near_bindgen` proc macro expands to code that uses it

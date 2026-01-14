@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use std::time::Duration;
 
 use anyhow::Context;

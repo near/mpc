@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::sandbox::{
     common::{init_env, SandboxTestSetup},
     utils::{

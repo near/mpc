@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;

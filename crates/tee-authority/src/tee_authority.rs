@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use anyhow::{Context, bail};
 use backon::{BackoffBuilder, ExponentialBuilder};
 use core::{future::Future, time::Duration};

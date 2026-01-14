@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::debug::{CompletedRequest, CompletedRequests};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;

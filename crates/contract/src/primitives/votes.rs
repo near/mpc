@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::thresholds::ThresholdParameters;
 use super::{key_state::AuthenticatedAccountId, participants::Participants};
 use near_sdk::{log, near};

@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 pub mod computation;
 pub mod conn;
 pub mod constants;

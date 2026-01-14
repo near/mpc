@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},

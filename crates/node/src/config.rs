@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::primitives::ParticipantId;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};

@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::queue::{ComputationProgress, PendingRequests, QueuedRequest};
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;

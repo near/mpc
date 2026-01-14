@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use contract_interface::types::{Attestation, InitConfig, MockAttestation};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,

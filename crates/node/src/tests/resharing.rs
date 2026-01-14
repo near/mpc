@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::indexer::participants::ContractState;
 use crate::metrics;
 use crate::p2p::testing::PortSeed;

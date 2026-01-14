@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 // TODO(#1657): split this file
 use crate::sandbox::{
     common::{

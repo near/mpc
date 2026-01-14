@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::types::RpcConfig;
 use futures::future::BoxFuture;
 use futures::FutureExt;

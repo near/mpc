@@ -13,3 +13,6 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 borsh = { workspace = true }
 near-sdk = { workspace = true }
+
+[lints]
+workspace = true

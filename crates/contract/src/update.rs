@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use std::collections::BTreeMap;
 use std::hash::Hash;
 

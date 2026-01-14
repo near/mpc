@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;

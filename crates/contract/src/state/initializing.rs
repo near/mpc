@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::key_event::KeyEvent;
 use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;

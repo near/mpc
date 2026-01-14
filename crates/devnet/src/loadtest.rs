@@ -1,4 +1,5 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
+#![allow(clippy::as_conversions)]
 use crate::account::{OperatingAccessKey, OperatingAccounts};
 use crate::cli::{
     DeployParallelSignContractCmd, ListLoadtestCmd, NewLoadtestCmd, RunLoadtestCmd,

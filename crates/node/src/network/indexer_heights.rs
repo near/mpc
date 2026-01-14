@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::metrics;
 use crate::primitives::ParticipantId;
 use std::collections::HashMap;

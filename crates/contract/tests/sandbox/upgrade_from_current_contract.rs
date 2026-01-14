@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::sandbox::{
     common::{
         execute_key_generation_and_add_random_state, init_env, init_with_candidates,

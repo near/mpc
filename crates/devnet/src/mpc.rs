@@ -1,4 +1,5 @@
 #![allow(clippy::expect_fun_call)] // to reduce verbosity of expect calls
+#![allow(clippy::as_conversions)]
 use crate::account::{OperatingAccount, OperatingAccounts};
 use crate::cli::{
     ListMpcCmd, MpcAddKeysCmd, MpcDeployContractCmd, MpcDescribeCmd, MpcInitContractCmd,

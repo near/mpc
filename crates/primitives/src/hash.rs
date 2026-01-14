@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use alloc::string::String;
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::marker::PhantomData;

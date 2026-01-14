@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
     contract_build::current_contract,

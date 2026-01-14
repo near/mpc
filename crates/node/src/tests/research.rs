@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
 use rand::rngs::OsRng;

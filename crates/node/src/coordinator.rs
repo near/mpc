@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::assets::cleanup::{delete_stale_triples_and_presignatures, EpochData};
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;

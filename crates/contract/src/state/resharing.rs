@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use std::collections::HashSet;
 
 use super::key_event::KeyEvent;

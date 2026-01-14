@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,

@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use crate::providers::ckd::CKDTaskId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;

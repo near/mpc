@@ -1,3 +1,4 @@
+#![allow(clippy::as_conversions)]
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use derive_more::{Deref, From};
