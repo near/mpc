@@ -3377,16 +3377,17 @@ mod tests {
         )
     }
 
-    /// Tests that [`MpcContract::verify_tee`] triggers resharing when a participant's attestation
-    /// is expired.
+    /// Tests that [`MpcContract::verify_tee`] triggers resharing and kicks out a participant
+    /// when their attestation is expired.
     ///
     /// Verifies the behavior when:
     /// 1. [`MpcContract::verify_tee`] returns [`TeeValidationResult::Partial`] (some attestations
     ///    expired/invalid)
     /// 2. The remaining participants meet threshold requirements
     /// 3. The contract transitions to [`ProtocolContractState::Resharing`] state
+    /// 4. The participant with expired attestation is excluded from the new parameters
     #[test]
-    fn test_verify_tee_triggers_resharing_on_expired_attestation() {
+    fn test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation() {
         const PARTICIPANT_COUNT: usize = 3;
         const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
 
