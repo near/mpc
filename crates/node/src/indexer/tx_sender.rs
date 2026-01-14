@@ -223,8 +223,8 @@ async fn observe_tx_result(
                         VerifiedAttestation::Dtack(verified_dstack_attestation),
                         Attestation::Dstack(_),
                     ) => {
-                        // Check for equality by checking expiry timestamp to be less than
-                        // than `MAX_ATTESTATION_AGE`
+                        // Check if the attestation stored on chain is fresh by verifying its age
+                        // is less than `MAX_ATTESTATION_AGE`
                         //
                         // TODO(#1637): extract expiration timestamp from the certificate itself,
                         // instead of using heuristics.

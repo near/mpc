@@ -209,8 +209,7 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
                     launcher_compose_hash: validated_dstack_attestation
                         .launcher_compose_hash
                         .into(),
-                    expiry_timestamp_seconds: validated_dstack_attestation
-                        .expiration_timestamp_seconds,
+                    expiry_timestamp_seconds: validated_dstack_attestation.expiry_timestamp_seconds,
                 })
             }
         }

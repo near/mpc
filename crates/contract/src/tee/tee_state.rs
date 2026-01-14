@@ -223,7 +223,7 @@ impl TeeState {
     }
 
     /// reverifies stored participant attestations and removes any participant attestation
-    /// from the internal state that fails reverifications. Reverification can fail for example
+    /// from the internal state that fails reverifications. Reverification can fail, for example,
     /// the MPC image hash the attestation was tied to is no longer allowed, or due to certificate
     /// expiries.
     pub fn reverify_and_cleanup_participants(

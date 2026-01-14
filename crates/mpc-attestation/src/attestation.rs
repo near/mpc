@@ -49,7 +49,7 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<MpcDockerImageHash>,
         launcher_docker_compose_hash: Option<LauncherDockerComposeHash>,
-        /// Unix time stamp for when this attestation expires.  
+        /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
     },
 }
@@ -60,7 +60,7 @@ pub struct ValidatedDstackAttestation {
     pub launcher_compose_hash: LauncherDockerComposeHash,
     // TODO(#1639): This timestamp can not come from the contract,
     // but should be extracted from the certificate itself.
-    pub expiration_timestamp_seconds: u64,
+    pub expiry_timestamp_seconds: u64,
 }
 
 impl VerifiedAttestation {
@@ -74,7 +74,7 @@ impl VerifiedAttestation {
             Self::Dstack(ValidatedDstackAttestation {
                 mpc_image_hash,
                 launcher_compose_hash,
-                expiration_timestamp_seconds,
+                expiry_timestamp_seconds: expiration_timestamp_seconds,
             }) => {
                 let attestation_has_expired = *expiration_timestamp_seconds < timestamp_seconds;
 
@@ -172,7 +172,7 @@ impl Attestation {
                 Ok(VerifiedAttestation::Dstack(ValidatedDstackAttestation {
                     mpc_image_hash,
                     launcher_compose_hash,
-                    expiration_timestamp_seconds,
+                    expiry_timestamp_seconds: expiration_timestamp_seconds,
                 }))
             }
             Self::Mock(mock_attestation) => {
@@ -218,7 +218,7 @@ fn verify_launcher_compose_hash(
 ) -> Result<(), VerificationError> {
     if allowed_hashes.is_empty() {
         return Err(VerificationError::Custom(
-            "the allowed mpc laucher compose hashes list is empty".to_string(),
+            "the allowed mpc launcher compose hashes list is empty".to_string(),
         ));
     }
 
@@ -265,7 +265,7 @@ pub(crate) fn verify_mock_attestation(
             if let Some(hash) = launcher_docker_compose_hash {
                 if allowed_launcher_docker_compose_hashes.is_empty() {
                     return Err(VerificationError::Custom(
-                        "the allowed mpc laucher compose hashes list is empty".to_string(),
+                        "the allowed mpc launcher compose hashes list is empty".to_string(),
                     ));
                 }
                 allowed_launcher_docker_compose_hashes
