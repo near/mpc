@@ -10,7 +10,7 @@ use tokio::task_local;
 
 /// A wrapper around JoinHandle, except that dropping this will abort the task
 /// behind the handle. This is very useful in making sure that background tasks
-/// spawned by futures that are then dropped are are properly cleaned up.
+/// spawned by futures that are then dropped are properly cleaned up.
 #[must_use = "Dropping this value will immediately abort the task"]
 pub struct AutoAbortTask<R> {
     handle: tokio::task::JoinHandle<R>,
@@ -287,7 +287,12 @@ impl TaskHandle {
                     ));
                     current_task = task.parent.clone();
                 }
-                tracing::error!("Task failed: {}; trace:{}", err, task_trace.join(""));
+                tracing::error!(
+                    "Task failed; description: {}; error msg: {}; trace:{}",
+                    child.description,
+                    err,
+                    task_trace.join("")
+                );
             }
         })
     }
