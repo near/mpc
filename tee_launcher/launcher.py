@@ -306,13 +306,14 @@ def parse_platform() -> Platform:
             f"{ENV_VAR_PLATFORM} must be set to one of {[p.value for p in Platform]}"
         )
 
-    val = raw.strip().upper()
+    val = raw.strip()
     try:
         return Platform(val)
-    except ValueError:
+    except ValueError as e:
+        allowed = ", ".join(p.value for p in Platform)
         raise RuntimeError(
-            f"Invalid {ENV_VAR_PLATFORM}={raw!r}. Expected one of {[p.value for p in Platform]}"
-        )
+            f"Invalid {ENV_VAR_PLATFORM}={raw!r}. Expected one of: {allowed}"
+        ) from e
 
 
 def load_rpc_timing_config(dstack_config: dict[str, str]) -> RpcTimingConfig:

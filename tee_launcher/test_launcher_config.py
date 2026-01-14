@@ -531,7 +531,7 @@ def test_parse_platform_missing(monkeypatch, base_env):
         launcher.parse_platform()
 
 
-@pytest.mark.parametrize("val", ["", "foo", "TEE as", "NON_TEE", "1"])
+@pytest.mark.parametrize("val", ["", "foo", "TEE as", "NON_TEE", "1", "tee", "nontee"])
 def test_parse_platform_invalid(monkeypatch, base_env, val):
     monkeypatch.setenv(launcher.ENV_VAR_PLATFORM, val)
     with pytest.raises(RuntimeError):
@@ -541,9 +541,7 @@ def test_parse_platform_invalid(monkeypatch, base_env, val):
 @pytest.mark.parametrize(
     "val,expected",
     [
-        ("tee", launcher.Platform.TEE),
         ("TEE", launcher.Platform.TEE),
-        ("nontee", launcher.Platform.NONTEE),
         ("NONTEE", launcher.Platform.NONTEE),
     ],
 )
@@ -678,7 +676,7 @@ def assert_subsequence(seq, subseq):
                 break
         else:
             raise AssertionError(f"Missing subsequence item: {x}\nseq={seq}")
-        
+
 
 def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     """
@@ -788,12 +786,18 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     assert cmd[-1] == default_digest
 
     expected_core = [
-    "docker", "run",
-    "--security-opt", "no-new-privileges:true",
-    "-v", "/tapp:/tapp:ro",
-    "-v", "shared-volume:/mnt/shared",
-    "-v", "mpc-data:/data",
-    "--name", launcher.MPC_CONTAINER_NAME,
-    "--detach",
+        "docker",
+        "run",
+        "--security-opt",
+        "no-new-privileges:true",
+        "-v",
+        "/tapp:/tapp:ro",
+        "-v",
+        "shared-volume:/mnt/shared",
+        "-v",
+        "mpc-data:/data",
+        "--name",
+        launcher.MPC_CONTAINER_NAME,
+        "--detach",
     ]
     assert_subsequence(cmd, expected_core)
