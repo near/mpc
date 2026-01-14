@@ -60,8 +60,6 @@
             ];
           };
 
-          # pythonEnv = import ./nix/python-env.nix { inherit pkgs; };
-
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
@@ -141,11 +139,6 @@
             cargo-near
           ];
 
-          pythonTools = with pkgs; [
-            ruff
-            # pythonEnv
-          ];
-
           miscTools = with pkgs; [
             git
             zizmor
@@ -184,14 +177,7 @@
             strictDeps = true;
 
             packages =
-              dockerTools
-              ++ llvmTools
-              ++ rustTools
-              ++ cargoTools
-              ++ nearTools
-              ++ pythonTools
-              ++ miscTools
-              ++ buildLibs;
+              dockerTools ++ llvmTools ++ rustTools ++ cargoTools ++ nearTools ++ miscTools ++ buildLibs;
 
             env = envCommon // envDarwin;
 
