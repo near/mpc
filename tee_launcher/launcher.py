@@ -683,7 +683,7 @@ def get_manifest_digest(
         raise Exception(f"No tags found for image {docker_image.spec.image_name}")
 
     # We need an authorization token to fetch manifests.
-    # TODO this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint.
+    # TODO: this still has the registry hard-coded in the url. also, if we use a different registry, we need a different auth-endpoint.
     token_resp = requests.get(
         f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{docker_image.name()}:pull"
     )

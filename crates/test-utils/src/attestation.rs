@@ -1,7 +1,7 @@
-use dstack_sdk_types::dstack::TcbInfo as DstackTcbInfo;
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation},
     quote::QuoteBytes,
+    tcb_info::TcbInfo,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use serde_json::Value;
@@ -75,7 +75,7 @@ pub fn mock_dstack_attestation() -> Attestation {
     let collateral_json_string = include_str!("../assets/collateral.json");
     let collateral = serde_json::from_str(collateral_json_string).unwrap();
 
-    let tcb_info: DstackTcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
+    let tcb_info: TcbInfo = serde_json::from_str(TEST_TCB_INFO_STRING).unwrap();
 
     Attestation::Dstack(DstackAttestation::new(quote, collateral, tcb_info))
 }
