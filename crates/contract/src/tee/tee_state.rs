@@ -387,6 +387,7 @@ mod tests {
     use super::*;
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
     use crate::primitives::test_utils::gen_participants;
+    use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
@@ -608,13 +609,6 @@ mod tests {
             tls_public_key: sign_pk.clone(),
             account_public_key: Some(bogus_ed25519_near_public_key()),
         }
-    }
-
-    /// Helper to set the blockchain timestamp for testing time-dependent behavior
-    fn set_block_timestamp(timestamp_nanos: u64) {
-        testing_env!(VMContextBuilder::new()
-            .block_timestamp(timestamp_nanos)
-            .build());
     }
 
     /// Helper to extract account IDs from participants for assertion comparisons
