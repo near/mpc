@@ -64,6 +64,9 @@
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
 
+          # Pinned to CI version
+          cargo-shear = pkgs.callPackage ./nix/cargo-shear.nix { };
+
           libcDev = lib.getDev stdenv.cc.libc;
 
           isX86 = stdenv.hostPlatform.isx86_64;
