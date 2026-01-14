@@ -73,7 +73,7 @@ pub struct VerifiedDstackAttestation {
     pub mpc_image_hash: Sha256Digest,
     /// The digest of the launcher compose file running.
     pub launcher_compose_hash: Sha256Digest,
-    /// Unix time stamp for when this attestation will be expired.  
+    /// Unix time stamp for when this attestation expires.
     pub expiry_timestamp_seconds: u64,
 }
 
@@ -126,7 +126,7 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<Sha256Digest>,
         launcher_docker_compose_hash: Option<Sha256Digest>,
-        /// Unix time stamp for when this attestation will be expired.   
+        /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
     },
 }

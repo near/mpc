@@ -396,10 +396,6 @@ expression: abi
         ]
       },
       {
-        "name": "post_upgrade_cleanup",
-        "kind": "call"
-      },
-      {
         "name": "migration_info",
         "kind": "view",
         "result": {
@@ -435,6 +431,11 @@ expression: abi
             }
           }
         }
+      },
+      {
+        "name": "post_upgrade_cleanup",
+        "doc": " Removes stale data from the contract to be removed after a contract upgrade. Some\n containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,\n as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.",
+        "kind": "call"
       },
       {
         "name": "propose_update",
@@ -1966,7 +1967,7 @@ expression: abi
                   "type": "object",
                   "properties": {
                     "expiry_timestamp_seconds": {
-                      "description": "Unix time stamp for when this attestation will be expired.",
+                      "description": "Unix time stamp for when this attestation expires.",
                       "type": [
                         "integer",
                         "null"
@@ -2839,7 +2840,7 @@ expression: abi
           ],
           "properties": {
             "expiry_timestamp_seconds": {
-              "description": "Unix time stamp for when this attestation will be expired.",
+              "description": "Unix time stamp for when this attestation expires.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
