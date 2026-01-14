@@ -30,6 +30,12 @@ use tracing::info;
 ///  the cost of higher packet overhead.
 const TCP_NODELAY: bool = true;
 
+const TCP_CONNECTION_KEEPALIVE_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
+const TCP_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+const TCP_CONNECTION_RETRIES: u32 = 3;
+
+const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -110,15 +116,13 @@ impl TlsConnection {
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
     ) -> anyhow::Result<TlsConnection> {
-        let conn = TcpStream::connect(target_address)
+        let tcp_stream = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
-
-        conn.set_nodelay(TCP_NODELAY)
-            .context("failed to enable `TCP_NODELAY`")?;
+        let tcp_stream = configure_tcp_stream(tcp_stream)?;
 
         let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
-            .connect("dummy".try_into().unwrap(), conn)
+            .connect("dummy".try_into().unwrap(), tcp_stream)
             .await
             .context("TLS connect")?;
 
@@ -174,10 +178,10 @@ impl TlsConnection {
         );
         let sender_clone = sender.clone();
         let keepalive_task = tracking::spawn(
-            &format!("TCP keepalive for {}", target_participant_id),
+            &format!("ping keepalive task for {}", target_participant_id),
             async move {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
                     if sender_clone.send(Packet::Ping).is_err() {
                         // The receiver side will be dropped when the sender task is
                         // dropped (i.e. connection is closed).
@@ -370,11 +374,9 @@ pub async fn new_tls_mesh_network(
             let tls_acceptor = tls_acceptor.clone();
             let connectivities = connectivities_clone.clone();
             tasks.spawn_checked::<_, ()>("Handle connection", async move {
-                tcp_stream
-                    .set_nodelay(TCP_NODELAY)
-                    .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
-
+                let tcp_stream = configure_tcp_stream(tcp_stream)?;
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
+
                 let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("Authenticated as {}", peer_id));
                 p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
@@ -452,6 +454,23 @@ pub async fn new_tls_mesh_network(
     };
 
     Ok((sender, receiver))
+}
+
+fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
+    let socket = socket2::Socket::from(tcp_stream.into_std()?);
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(TCP_CONNECTION_KEEPALIVE_DELAY)
+        .with_interval(TCP_CONNECTION_RETRY_DELAY)
+        .with_retries(TCP_CONNECTION_RETRIES);
+
+    socket
+        .set_tcp_keepalive(&keepalive)
+        .context("failed to set TCP keepalive")?;
+    socket
+        .set_tcp_nodelay(TCP_NODELAY)
+        .context("failed to enable `TCP_NODELAY`")?;
+
+    Ok(TcpStream::from_std(socket.into())?)
 }
 
 fn verify_peer_identity(
