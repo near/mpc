@@ -4938,6 +4938,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha3",
+ "socket2 0.6.1",
  "tee-authority",
  "tempfile",
  "test-utils",
