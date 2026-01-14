@@ -16,6 +16,8 @@ pub async fn p2p_handshake<T: AsyncRead + AsyncWrite + Unpin>(
         handshake_buf[0] = MAGIC_BYTE;
         handshake_buf[1..].copy_from_slice(&MPC_PROTOCOL_VERSION.to_be_bytes());
         conn.write_all(&handshake_buf).await?;
+        // maybe we need this?
+        conn.flush().await?;
 
         let mut other_handshake = [0u8; 5];
         conn.read_exact(&mut other_handshake).await?;
