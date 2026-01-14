@@ -65,7 +65,7 @@
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
 
           # Pinned to CI version
-          cargo-shear = pkgs.callPackage ./nix/cargo-shear.nix { };
+          cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
 
           libcDev = lib.getDev stdenv.cc.libc;
 
@@ -124,16 +124,6 @@
           rustTools = with pkgs; [
             rustToolchain
             rustPlatform.bindgenHook
-          ];
-
-          cargoTools = with pkgs; [
-            cargo-binstall
-            cargo-deny
-            cargo-insta
-            cargo-make
-            cargo-nextest
-            cargo-shear
-            cargo-sort
           ];
 
           nearTools = with pkgs; [
