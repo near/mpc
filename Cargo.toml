@@ -29,6 +29,7 @@ license = "MIT"
 
 [workspace.lints.clippy]
 as_conversions = "warn"
+mod_module_files = "deny"
 
 [workspace.dependencies]
 #workspace members

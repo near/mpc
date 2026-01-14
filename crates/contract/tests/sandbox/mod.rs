@@ -1,3 +1,4 @@
+#![allow(clippy::mod_module_files)]
 pub mod contract_configuration;
 pub mod sign;
 pub mod tee;

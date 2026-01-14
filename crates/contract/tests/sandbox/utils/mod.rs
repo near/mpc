@@ -1,3 +1,4 @@
+#![allow(clippy::mod_module_files)]
 pub mod consts;
 pub mod contract_build;
 pub mod initializing_utils;

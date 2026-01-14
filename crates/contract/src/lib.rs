@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 #![allow(clippy::as_conversions)]
-#![deny(clippy::mod_module_files)]
 // We disallow using `near_sdk::AccountId` in our own code.
 // However, the `near_bindgen` proc macro expands to code that uses it
 // internally, and Clippy applies the `disallowed_types` lint to that
@@ -1498,7 +1497,7 @@ impl MpcContract {
     /// under the signer’s account ID.
     ///
     /// # Errors
-    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.  
+    /// - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the `Running` state.
     /// - [`InvalidState::NotParticipant`] if the signer is not a current participant.
     /// # Note:
     /// - might require a deposit

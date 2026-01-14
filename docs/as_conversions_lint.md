@@ -1,8 +1,12 @@
-# `as_conversions` Clippy Lint
+# Workspace Clippy Lints
 
 ## Overview
 
-This document describes the implementation and usage of the `as_conversions` clippy lint in the MPC project. This lint helps prevent potentially dangerous implicit type conversions using the `as` keyword, encouraging more explicit and safer conversion methods.
+This document describes the implementation and usage of workspace-level clippy lints in the MPC project. These lints help maintain code quality and consistency across the entire codebase.
+
+Currently enabled lints:
+- **`as_conversions`**: Prevents potentially dangerous implicit type conversions using the `as` keyword
+- **`mod_module_files`**: Prevents the use of `mod.rs` files in favor of named module files
 
 ## Background
 
@@ -18,11 +22,12 @@ By requiring explicit conversion methods, we make the intent clearer and reduce 
 
 ### Workspace Configuration
 
-The lint is enabled at the workspace level in `Cargo.toml`:
+Both lints are enabled at the workspace level in `Cargo.toml`:
 
 ```toml
 [workspace.lints.clippy]
 as_conversions = "warn"
+mod_module_files = "deny"
 ```
 
 Each crate inherits this configuration:
@@ -32,21 +37,31 @@ Each crate inherits this configuration:
 workspace = true
 ```
 
-### Existing Conversions
+### Existing Code with Allowed Lints
 
-To avoid blocking development while we gradually refactor existing code, 49 files containing existing `as` conversions have been marked with:
+To avoid blocking development while we gradually refactor existing code:
+
+**For `as_conversions`**: 49 files containing existing `as` conversions have been marked with:
 
 ```rust
 #![allow(clippy::as_conversions)]
 ```
 
-This allows the existing code to compile while preventing new `as` conversions from being introduced.
+**For `mod_module_files`**: 3 test module files and 1 test file use `mod.rs` files and have been marked with:
+
+```rust
+#![allow(clippy::mod_module_files)]
+```
+
+These allows permit the existing code to compile while preventing new violations from being introduced.
 
 ## Usage
 
-### What This Means for Developers
+### `as_conversions` Lint
 
-When adding new code, you **cannot** use `as` for type conversions. Instead, use explicit conversion methods:
+#### What This Means for Developers
+
+When adding new code, you **should not** use `as` for type conversions. Instead, use explicit conversion methods:
 
 #### ❌ Bad (Will trigger warning):
 ```rust
@@ -70,7 +85,7 @@ let x: u64 = 42;
 let y = x as u32;  // Documented that truncation is intentional
 ```
 
-### Recommended Conversion Methods
+#### Recommended Conversion Methods
 
 | Scenario | Method | Example |
 |----------|--------|---------|
@@ -79,7 +94,7 @@ let y = x as u32;  // Documented that truncation is intentional
 | Intentionally lossy | `#[allow(clippy::as_conversions)]` with `as` | See below |
 | Numeric truncation with wrapping | `.wrapping_as()` (if available) | Check num-traits |
 
-### When You Must Use `as`
+#### When You Must Use `as`
 
 If you have a legitimate reason to use `as` (e.g., performance-critical code where the conversion is verified safe), you can allow it locally:
 
@@ -96,6 +111,53 @@ fn my_function() {
 ```
 
 **Important**: Always add a comment explaining why the `as` conversion is safe or intentional.
+
+### `mod_module_files` Lint
+
+#### What This Means for Developers
+
+When creating new modules, you **cannot** use `mod.rs` files. Instead, use named module files:
+
+#### ❌ Bad (Will trigger error):
+```
+src/
+  my_module/
+    mod.rs        # Error: mod.rs files are not allowed
+    submodule.rs
+```
+
+#### ✅ Good (Use named module file):
+```
+src/
+  my_module.rs    # Module file
+  my_module/
+    submodule.rs
+```
+
+Or alternatively:
+```
+src/
+  lib.rs          # Contains: pub mod my_module;
+  my_module/
+    submodule.rs
+```
+
+#### Why This Lint?
+
+Using named module files instead of `mod.rs` has several benefits:
+- Makes it easier to find modules in editors and file trees
+- Reduces confusion about which `mod.rs` file you're looking at
+- Follows modern Rust conventions (Rust 2018 edition and later)
+- Better IDE support and navigation
+
+#### Existing `mod.rs` Files
+
+Currently, 3 `mod.rs` files exist in test directories and are allowed:
+- `crates/contract/tests/inprocess/mod.rs`
+- `crates/contract/tests/sandbox/mod.rs`
+- `crates/contract/tests/sandbox/utils/mod.rs`
+
+These can be refactored later to use named files.
 
 ## Files with Existing `as` Conversions
 
@@ -185,6 +247,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## References
 
 - [Clippy `as_conversions` documentation](https://rust-lang.github.io/rust-clippy/master/index.html#as_conversions)
+- [Clippy `mod_module_files` documentation](https://rust-lang.github.io/rust-clippy/master/index.html#mod_module_files)
 - [PR Discussion](https://github.com/near/mpc/pull/1699#discussion_r2634534748)
 - [Rust Book: Type Casting](https://doc.rust-lang.org/book/ch03-02-data-types.html)
 - [Rust Reference: Type Coercions](https://doc.rust-lang.org/reference/type-coercions.html)
+- [Rust Edition Guide: Path Clarity](https://doc.rust-lang.org/edition-guide/rust-2018/module-system/path-clarity.html)
