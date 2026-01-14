@@ -667,11 +667,8 @@ mod tests {
 
     #[test]
     fn validate_tee_returns_partial_when_attestation_is_expired() {
-        const INITIAL_TIME: Duration = Duration::from_secs(1);
-        const EXPIRY_TIME: Duration =
-            Duration::from_secs(INITIAL_TIME.as_secs() + TEST_GRACE_PERIOD.as_secs());
-
-        set_block_timestamp(INITIAL_TIME.as_nanos() as u64);
+        let current_time_secs = env::block_timestamp() / 1_000_000_000;
+        let expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
 
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
@@ -689,12 +686,12 @@ mod tests {
         let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_time_stamp_seconds: Some(EXPIRY_TIME.as_secs()),
+            expiry_time_stamp_seconds: Some(expiry_time_secs),
         });
         tee_state.add_participant(node_id, expiring_attestation);
 
-        // Set time to exact expiry boundary
-        set_block_timestamp(EXPIRY_TIME.as_nanos() as u64);
+        // Advance time to exact expiry boundary
+        set_block_timestamp(expiry_time_secs * 1_000_000_000);
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
@@ -708,13 +705,9 @@ mod tests {
 
     #[test]
     fn validate_tee_returns_full_when_attestation_not_yet_expired() {
-        const INITIAL_TIME: Duration = Duration::from_secs(1);
-        const EXPIRY_TIME: Duration =
-            Duration::from_secs(INITIAL_TIME.as_secs() + 2 * TEST_GRACE_PERIOD.as_secs());
-        const BEFORE_EXPIRY_TIME: Duration =
-            Duration::from_secs(INITIAL_TIME.as_secs() + TEST_GRACE_PERIOD.as_secs());
-
-        set_block_timestamp(INITIAL_TIME.as_nanos() as u64);
+        let current_time_secs = env::block_timestamp() / 1_000_000_000;
+        let expiry_time_secs = current_time_secs + 2 * TEST_GRACE_PERIOD.as_secs();
+        let before_expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
 
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
@@ -728,7 +721,7 @@ mod tests {
                 Attestation::Mock(MockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: None,
-                    expiry_time_stamp_seconds: Some(EXPIRY_TIME.as_secs()),
+                    expiry_time_stamp_seconds: Some(expiry_time_secs),
                 })
             } else {
                 Attestation::Mock(MockAttestation::Valid)
@@ -736,8 +729,8 @@ mod tests {
             tee_state.add_participant(node_id, attestation);
         }
 
-        // Check before expiry
-        set_block_timestamp(BEFORE_EXPIRY_TIME.as_nanos() as u64);
+        // Advance time, but still before expiry
+        set_block_timestamp(before_expiry_time_secs * 1_000_000_000);
 
         let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
 
