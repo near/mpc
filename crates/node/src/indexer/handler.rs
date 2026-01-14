@@ -151,7 +151,7 @@ async fn handle_message(
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
 
-            // TODO: this should improve once https://github.com/near/mpc/issues/950 is done
+            // TODO(#950): this should improve once the issue is resolved
             if let Some(next_receipt_id) =
                 try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
             {

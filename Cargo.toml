@@ -127,6 +127,7 @@ serial_test = "3.2.0"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
+socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
@@ -152,14 +153,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.3" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
 
 [profile.test-release]
 inherits = "release"

@@ -15,7 +15,7 @@ use k256::{
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation},
     collateral::{Collateral, QuoteCollateralV3},
-    EventLog, TcbInfo,
+    tcb_info::{EventLog, TcbInfo},
 };
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_ed25519;
@@ -142,15 +142,15 @@ impl IntoContractInterfaceType<contract_interface::types::TcbInfo> for TcbInfo {
             .map(IntoContractInterfaceType::into_contract_interface_type)
             .collect();
 
-        contract_interface::types::TcbInfo {
-            mrtd,
-            rtmr0,
-            rtmr1,
-            rtmr2,
-            rtmr3,
-            os_image_hash,
-            compose_hash,
-            device_id,
+        dtos::TcbInfo {
+            mrtd: mrtd.into(),
+            rtmr0: rtmr0.into(),
+            rtmr1: rtmr1.into(),
+            rtmr2: rtmr2.into(),
+            rtmr3: rtmr3.into(),
+            os_image_hash: os_image_hash.map(|v| v.into()).unwrap_or("".into()),
+            compose_hash: compose_hash.into(),
+            device_id: device_id.into(),
             app_compose,
             event_log,
         }
@@ -170,7 +170,7 @@ impl IntoContractInterfaceType<contract_interface::types::EventLog> for EventLog
         contract_interface::types::EventLog {
             imr,
             event_type,
-            digest,
+            digest: digest.into(),
             event,
             event_payload,
         }

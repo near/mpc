@@ -18,7 +18,7 @@ pub const ALL_SIGNATURE_SCHEMES: &[SignatureScheme; 4] = &[
 /// we use this constant to attach a fixed amount to each call and detect if gas usage
 /// increases unexpectedly in the future.
 ///
-/// TODO(#926) this gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559. This
+/// TODO(#926): this gas was bumped from 22 to 34 in https://github.com/near/mpc/pull/1559. This
 /// might be due to the high cost of `self.protocol_state = new_state` in the vote_reshard
 /// contract call. This needs to be investigated to understand why the increase was necessary.
 pub const GAS_FOR_VOTE_RESHARED: Gas = Gas::from_tgas(34);

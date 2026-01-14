@@ -21,7 +21,7 @@ impl PermanentKeyshareData {
         }
     }
 
-    // [todo #1217](https://github.com/near/mpc/issues/1217): Move this to a separate crate, s.t. we are forced to use the constructor
+    // TODO(#1217): Move this to a separate crate, s.t. we are forced to use the constructor
     pub fn new(epoch_id: EpochId, keyshares: Vec<Keyshare>) -> anyhow::Result<Self> {
         let is_consistent = keyshares.windows(2).all(|w| {
             w[0].key_id.epoch_id == w[1].key_id.epoch_id

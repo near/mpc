@@ -27,7 +27,7 @@ use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoInterfaceType},
+    dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoContractType, TryIntoInterfaceType},
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     state::ContractNotInitialized,
@@ -583,7 +583,7 @@ impl MpcContract {
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Result<(), Error> {
         let proposed_participant_attestation =
-            proposed_participant_attestation.into_contract_type();
+            proposed_participant_attestation.try_into_contract_type()?;
 
         let account_key = env::signer_account_pk();
         let account_id = Self::assert_caller_is_signer();
@@ -1208,8 +1208,7 @@ impl MpcContract {
 
         parameters.validate().unwrap();
 
-        // TODO: https://github.com/near/mpc/issues/1087
-        // Every participant must have a valid attestation, otherwise we risk
+        // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
         // participants being immediately kicked out once contract transitions into running.
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
@@ -1556,7 +1555,7 @@ impl MpcContract {
         &mut self,
         destination_node_info: DestinationNodeInfo,
     ) -> Result<(), Error> {
-        // todo: require a deposit [#1163](https://github.com/near/mpc/issues/1163)
+        // TODO(#1163): require a deposit
 
         let account_id = Self::assert_caller_is_signer();
 

@@ -218,7 +218,7 @@ async fn test_invalid_contract_deploy() {
     dbg!(state);
 }
 
-// TODO(#496) Investigate flakiness of this test
+// TODO(#496): Investigate flakiness of this test
 #[tokio::test]
 async fn test_propose_update_contract_many() {
     let SandboxTestSetup {

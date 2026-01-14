@@ -6,7 +6,6 @@ edition = "2021"
 
 [dependencies]
 contract-interface = { workspace = true }
-dstack-sdk-types = { workspace = true }
 hex = { workspace = true }
 mpc-attestation = { workspace = true }
 mpc-primitives = { workspace = true }

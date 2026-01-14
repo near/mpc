@@ -4,6 +4,7 @@ use crate::{
     measurements::{ExpectedMeasurements, MeasurementsError},
     quote::QuoteBytes,
     report_data::ReportData,
+    tcb_info::{EventLog, TcbInfo},
 };
 
 use alloc::{
@@ -14,7 +15,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use core::fmt;
 use dcap_qvl::verify::VerifiedReport;
 use derive_more::Constructor;
-use dstack_sdk_types::dstack::{EventLog, TcbInfo};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
 
@@ -159,29 +159,19 @@ impl DstackAttestation {
             }
             let mut hasher = Sha384::new();
             hasher.update(digest);
-            match hex::decode(event.digest.as_str()) {
-                Ok(decoded_digest) => {
-                    let payload_bytes = match hex::decode(&event.event_payload) {
-                        Ok(bytes) => bytes,
-                        Err(e) => {
-                            tracing::error!("Failed to decode hex string for: {:?}", e);
-                            return Err(VerificationError::EventDecoding(event.digest.clone()));
-                        }
-                    };
-                    let expected_digest =
-                        Self::event_digest(event.event_type, &event.event, &payload_bytes);
-                    compare_hashes("event_digest", &decoded_digest, &expected_digest)?;
-
-                    hasher.update(decoded_digest.as_slice())
-                }
+            let payload_bytes = match hex::decode(&event.event_payload) {
+                Ok(bytes) => bytes,
                 Err(e) => {
-                    tracing::error!(
-                        "Failed to decode hex digest in event log; skipping invalid event: {:?}",
-                        e
-                    );
-                    continue;
+                    tracing::error!("Failed to decode hex string for: {:?}", e);
+                    return Err(VerificationError::EventDecoding(hex::encode(*event.digest)));
                 }
-            }
+            };
+            let expected_digest =
+                Self::event_digest(event.event_type, &event.event, &payload_bytes);
+            compare_hashes("event_digest", event.digest.as_slice(), &expected_digest)?;
+
+            hasher.update(event.digest.as_slice());
+
             digest = hasher.finalize().into();
         }
 
@@ -312,25 +302,25 @@ impl DstackAttestation {
             &expected_measurements.rtmrs.mrtd,
         )?;
 
-        compare_hex_hashes(
+        compare_hashes(
             "rtmr0_tcb_info",
-            &tcb_info.rtmr0,
-            &hex::encode(expected_measurements.rtmrs.rtmr0),
+            tcb_info.rtmr0.as_slice(),
+            &expected_measurements.rtmrs.rtmr0,
         )?;
-        compare_hex_hashes(
+        compare_hashes(
             "rtmr1_tcb_info",
-            &tcb_info.rtmr1,
-            &hex::encode(expected_measurements.rtmrs.rtmr1),
+            tcb_info.rtmr1.as_slice(),
+            &expected_measurements.rtmrs.rtmr1,
         )?;
-        compare_hex_hashes(
+        compare_hashes(
             "rtmr2_tcb_info",
-            &tcb_info.rtmr2,
-            &hex::encode(expected_measurements.rtmrs.rtmr2),
+            tcb_info.rtmr2.as_slice(),
+            &expected_measurements.rtmrs.rtmr2,
         )?;
-        compare_hex_hashes(
+        compare_hashes(
             "mtrd_tcb_info",
-            &tcb_info.mrtd,
-            &hex::encode(expected_measurements.rtmrs.mrtd),
+            tcb_info.mrtd.as_slice(),
+            &expected_measurements.rtmrs.mrtd,
         )
     }
 
@@ -340,7 +330,7 @@ impl DstackAttestation {
         report_data: &dcap_qvl::quote::TDReport10,
         tcb_info: &TcbInfo,
     ) -> Result<(), VerificationError> {
-        compare_hex_hashes("rtmr3", &tcb_info.rtmr3, &hex::encode(report_data.rt_mr3))?;
+        compare_hashes("rtmr3", tcb_info.rtmr3.as_slice(), &report_data.rt_mr3)?;
 
         Self::verify_event_log_rtmr3(&tcb_info.event_log, report_data.rt_mr3)
     }
@@ -361,7 +351,7 @@ impl DstackAttestation {
         compare_hex_hashes(
             "app_compose_event_hash",
             &app_compose_event.event_payload,
-            &tcb_info.compose_hash,
+            &hex::encode(*tcb_info.compose_hash),
         )?;
 
         Self::validate_app_compose_payload(&app_compose_event.event_payload, &tcb_info.app_compose)
@@ -389,10 +379,10 @@ impl DstackAttestation {
     ) -> Result<(), VerificationError> {
         let key_provider_event = tcb_info.get_single_event(KEY_PROVIDER_EVENT)?;
 
-        compare_hex_hashes(
+        compare_hashes(
             "key_provider",
-            &key_provider_event.digest,
-            &hex::encode(expected_digest),
+            key_provider_event.digest.as_slice(),
+            expected_digest,
         )
     }
 

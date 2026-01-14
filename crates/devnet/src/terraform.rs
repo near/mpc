@@ -317,8 +317,7 @@ pub fn get_urls(name: &str, config: &ParsedConfig) -> Vec<String> {
                 "http://{}:8080",
                 instance.nat_ip().unwrap_or_default()
             ));
-            // todo: display account_ids on the endpoint too, as this index might not be reliable.
-            // [(#712)](https://github.com/near/mpc/issues/712)
+            // TODO(#712): display account_ids on the endpoint too, as this index might not be reliable
         }
     }
     ret

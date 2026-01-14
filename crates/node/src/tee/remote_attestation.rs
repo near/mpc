@@ -194,7 +194,7 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
     allowed_launcher_compose_hashes_in_contract: watch::Receiver<Vec<LauncherDockerComposeHash>>,
     mut tee_accounts_receiver: watch::Receiver<Vec<NodeId>>,
 ) -> anyhow::Result<()> {
-    // TODO: we should unify these conversions, will not be needed after https://github.com/near/mpc/issues/1246
+    // TODO(#1246): we should unify these conversions, will not be needed after the issue is resolved
     let node_id = NodeId {
         account_id: node_account_id.clone(),
         tls_public_key: near_sdk::PublicKey::from_parts(
