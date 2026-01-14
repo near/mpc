@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 use contract_interface::types::Bls12381G1PublicKey;
-// TODO: all these types should come from mpc_contract https://github.com/near/mpc/issues/1057
+// TODO(#1057): all these types should come from mpc_contract
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]

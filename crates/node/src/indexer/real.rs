@@ -72,7 +72,7 @@ pub fn spawn_real_indexer(
     let (txn_sender_sender, txn_sender_receiver) = oneshot::channel();
 
     std::thread::spawn(move || {
-        // TODO(#1515); limit number of worker threads? Assume not as we don't want the node to fall behind.
+        // TODO(#1515): limit number of worker threads? Assume not as we don't want the node to fall behind
         let indexer_tokio_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()

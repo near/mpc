@@ -323,7 +323,7 @@ The prospective node operator can retrieve that data from the web endpoint (`:80
 
 The process of doing so is as follows:
 
-1. The prospective participants set up their MPC inside their TEE environment (todo: [#550](https://github.com/near/mpc/issues/550), documentation to follow).
+1. The prospective participants set up their MPC inside their TEE environment (TODO(#550): documentation to follow).
 2. The prospective participants fetch their TEE related information from their logs.
 3. The prospective participants add the `near_signer_public_key` from the web endpoint (`:8080/get_public_data`) as an access key to their node operator account, eligible for calling the MPC contract (`v1.signer` on mainnet or `v1.signer-prod.testnet` on testnet). Participants should provide sufficient funding to this key.
 4. The prospective participants add the `near_responder_public_keys` from the web endpoint to a different account and provide sufficient funding to it.

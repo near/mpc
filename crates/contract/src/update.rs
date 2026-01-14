@@ -237,7 +237,7 @@ impl ProposedUpdates {
     /// Removes votes from accounts that are not participants.
     pub fn remove_non_participant_votes(&mut self, participants: &Participants) {
         // Note: This operation has quadratic time complexity.
-        // TODO issue [#1572](https://github.com/near/mpc/issues/1572)
+        // TODO(#1572): optimize quadratic time complexity
         let non_participants: Vec<AccountId> = self
             .vote_by_participant
             .keys()

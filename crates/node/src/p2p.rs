@@ -732,7 +732,7 @@ mod tests {
             sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
             for _ in 0..100 {
-                // todo: adjust test?
+                // TODO: adjust test?
                 let domain_id = rand::thread_rng().gen();
                 let epoch_id = rand::thread_rng().gen();
                 let n_attempts = rand::thread_rng().gen::<usize>() % 100;
