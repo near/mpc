@@ -2,11 +2,12 @@ version: '3.8'
 
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:7f155ebc928579ca269840d2e59f2e08e3c0cc1271c586f2e2b74bbda27ee8e1
+    image: nearone/mpc-launcher@sha256:17243e65f47c69a4735c507ea91aefa0bdd761d9a267e28221232d748518bad3
 
     container_name: launcher
 
     environment:
+      - PLATFORM=TEE
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
 
