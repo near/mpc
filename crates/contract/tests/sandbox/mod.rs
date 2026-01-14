@@ -1,4 +1,3 @@
-pub mod ckd;
 pub mod contract_configuration;
 pub mod sign;
 pub mod tee;
