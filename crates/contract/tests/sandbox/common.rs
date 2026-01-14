@@ -24,11 +24,22 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_workspaces::{network::Sandbox, Account, Contract, Worker};
+use near_workspaces::{network::Sandbox, Contract};
+use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use std::collections::BTreeSet;
-use utilities::AccountIdExtV1;
+use utilities::{AccountIdExtV1, AccountIdExtV2};
+
+pub async fn create_account_given_id(
+    worker: &Worker<Sandbox>,
+    account_id: AccountId,
+) -> Result<Execution<Account>, near_workspaces::error::Error> {
+    let (_, sk) = worker.generate_dev_account_credentials();
+    worker
+        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
+        .await
+}
 
 pub fn gen_participant_info() -> ParticipantInfo {
     ParticipantInfo {
