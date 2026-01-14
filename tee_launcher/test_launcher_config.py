@@ -1,4 +1,5 @@
 # test_launcher_config.py
+import cmd
 import inspect
 import json
 import tempfile
@@ -20,6 +21,15 @@ from tee_launcher.launcher import (
     ENV_VAR_MPC_HASH_OVERRIDE,
     ENV_VAR_DEFAULT_IMAGE_DIGEST,
 )
+
+
+# Test constants for user_config content
+TEST_MPC_ACCOUNT_ID = "mpc-user-123"
+
+TEST_PORTS_WITH_INJECTION = "11780:11780,--env BAD=1"
+
+TEST_EXTRA_HOSTS_WITH_IP = "node:192.168.1.1"
+TEST_EXTRA_HOSTS_WITH_INJECTION = f"{TEST_EXTRA_HOSTS_WITH_IP},--volume /:/mnt"
 
 
 def make_digest_json(hashes):
@@ -120,9 +130,9 @@ def test_valid_port_mapping():
 
 def test_build_docker_cmd_sanitizes_ports_and_hosts():
     env = {
-        "PORTS": "11780:11780,--env BAD=1",
-        "EXTRA_HOSTS": "node:192.168.1.1,--volume /:/mnt",
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "PORTS": TEST_PORTS_WITH_INJECTION,
+        "EXTRA_HOSTS": TEST_EXTRA_HOSTS_WITH_INJECTION,
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
     }
     cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
 
@@ -130,11 +140,11 @@ def test_build_docker_cmd_sanitizes_ports_and_hosts():
     print(f"[{func_name}] CMD:", " ".join(cmd))
 
     assert "--env" in cmd
-    assert "MPC_ACCOUNT_ID=mpc-user-123" in cmd
+    assert f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}" in cmd
     assert "-p" in cmd
     assert "11780:11780" in cmd
     assert "--add-host" in cmd
-    assert "node:192.168.1.1" in cmd
+    assert TEST_EXTRA_HOSTS_WITH_IP in cmd
 
     # Make sure injection strings were filtered
     assert not any("BAD=1" in arg for arg in cmd)
@@ -247,7 +257,7 @@ def test_parse_and_build_docker_cmd_full_flow():
 def test_ld_preload_injection_blocked1():
     # Set up the environment variable with a dangerous LD_PRELOAD value
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "--env LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
     }
 
@@ -273,7 +283,7 @@ def test_ld_preload_injection_blocked1():
 def test_ld_preload_in_extra_hosts1():
     # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,--env LD_PRELOAD=/path/to/my/malloc.so",
     }
 
@@ -294,7 +304,7 @@ def test_ld_preload_in_extra_hosts1():
 def test_ld_preload_in_ports1():
     # Set up environment with malicious PORTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "PORTS": "11780:11780,--env LD_PRELOAD=/path/to/my/malloc.so",
     }
 
@@ -318,7 +328,7 @@ def test_ld_preload_in_ports1():
 def test_ld_preload_in_mpc_account_id():
     # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123, --env LD_PRELOAD=/path/to/my/malloc.so",
+        "MPC_ACCOUNT_ID": f"{TEST_MPC_ACCOUNT_ID}, --env LD_PRELOAD=/path/to/my/malloc.so",
         "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2",
     }
 
@@ -340,7 +350,7 @@ def test_ld_preload_in_mpc_account_id():
 def test_ld_preload_injection_blocked2():
     # Set up the environment variable with a dangerous LD_PRELOAD value
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "-e LD_PRELOAD": "/path/to/my/malloc.so",  # The dangerous value
     }
 
@@ -359,7 +369,7 @@ def test_ld_preload_injection_blocked2():
 def test_ld_preload_in_extra_hosts2():
     # Set up environment with malicious EXRA_HOSTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "EXTRA_HOSTS": "host1:192.168.0.1,host2:192.168.0.2,-e LD_PRELOAD=/path/to/my/malloc.so",
     }
 
@@ -375,7 +385,7 @@ def test_ld_preload_in_extra_hosts2():
 def test_ld_preload_in_ports2():
     # Set up environment with malicious PORTS containing LD_PRELOAD
     malicious_env = {
-        "MPC_ACCOUNT_ID": "mpc-user-123",
+        "MPC_ACCOUNT_ID": TEST_MPC_ACCOUNT_ID,
         "PORTS": "11780:11780,-e LD_PRELOAD=/path/to/my/malloc.so",
     }
 
@@ -660,6 +670,16 @@ def test_main_nontee_skips_extend_and_launches(monkeypatch, base_env):
     assert called["launch"] == 1
 
 
+def assert_subsequence(seq, subseq):
+    it = iter(seq)
+    for x in subseq:
+        for y in it:
+            if y == x:
+                break
+        else:
+            raise AssertionError(f"Missing subsequence item: {x}\nseq={seq}")
+        
+
 def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     """
     Verify that launcher.main() builds the correct MPC docker command in NONTEE mode.
@@ -690,9 +710,9 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     user_config.write_text(
         "\n".join(
             [
-                "MPC_ACCOUNT_ID=mpc-user-123",
-                "PORTS=11780:11780,--env BAD=1",  # BAD should be ignored
-                "EXTRA_HOSTS=node:192.168.1.1,--volume /:/mnt",  # injection should be ignored
+                f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}",
+                f"PORTS={TEST_PORTS_WITH_INJECTION}",  # injection should be ignored
+                f"EXTRA_HOSTS={TEST_EXTRA_HOSTS_WITH_INJECTION}",  # injection should be ignored
             ]
         )
         + "\n"
@@ -748,9 +768,9 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
     assert f"{launcher.DSTACK_UNIX_SOCKET}:{launcher.DSTACK_UNIX_SOCKET}" not in cmd_str
 
     # Expected env propagation + sanitization
-    assert "MPC_ACCOUNT_ID=mpc-user-123" in cmd_str
+    assert f"MPC_ACCOUNT_ID={TEST_MPC_ACCOUNT_ID}" in cmd_str
     assert "-p" in cmd and "11780:11780" in cmd_str
-    assert "--add-host" in cmd and "node:192.168.1.1" in cmd_str
+    assert "--add-host" in cmd and TEST_EXTRA_HOSTS_WITH_IP in cmd_str
 
     # Injection strings filtered out
     assert "BAD=1" not in cmd_str
@@ -766,3 +786,14 @@ def test_main_nontee_builds_expected_mpc_docker_cmd(monkeypatch, tmp_path):
 
     # Image digest should be the final argument and should be the FULL digest
     assert cmd[-1] == default_digest
+
+    expected_core = [
+    "docker", "run",
+    "--security-opt", "no-new-privileges:true",
+    "-v", "/tapp:/tapp:ro",
+    "-v", "shared-volume:/mnt/shared",
+    "-v", "mpc-data:/data",
+    "--name", launcher.MPC_CONTAINER_NAME,
+    "--detach",
+    ]
+    assert_subsequence(cmd, expected_core)
