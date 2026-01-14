@@ -36,11 +36,6 @@ def b58encode_g1(pk: G1Point) -> str:
     return BLS12381G1_PREFIX + base58.b58encode(pk_bytes).decode("ascii")
 
 
-def b58encode_g2(pk: G2Point) -> str:
-    pk_bytes = bytes(pk.to_compressed_bytes())
-    return BLS12381G2_PREFIX + base58.b58encode(pk_bytes).decode("ascii")
-
-
 def b58decode_g1(pk_encoded: str) -> G1Point:
     assert pk_encoded.startswith(BLS12381G1_PREFIX)
     pk_bytes = base58.b58decode(pk_encoded[len(BLS12381G1_PREFIX) :])
