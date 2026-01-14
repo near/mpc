@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   launcher:
-    image: nearone/mpc-launcher@sha256:72f16f1d1ca9119f5c19cb3ec7f6338949e2ad3082bd01ba2099c6649e845f61
+    image: nearone/mpc-launcher@sha256:17243e65f47c69a4735c507ea91aefa0bdd761d9a267e28221232d748518bad3
     container_name: launcher
 
     environment:
