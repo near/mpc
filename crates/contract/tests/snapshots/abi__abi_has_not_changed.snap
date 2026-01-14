@@ -396,7 +396,7 @@ expression: abi
         ]
       },
       {
-        "name": "migrate_clear_tee",
+        "name": "post_upgrade_cleanup",
         "kind": "call"
       },
       {

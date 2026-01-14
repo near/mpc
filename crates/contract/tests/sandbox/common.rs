@@ -24,7 +24,11 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
-use near_workspaces::{network::Sandbox, Contract};
+use near_workspaces::{
+    network::Sandbox,
+    result::{ExecutionFailure, ExecutionSuccess},
+    Contract,
+};
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
@@ -490,15 +494,15 @@ pub async fn generate_participant_and_submit_attestation(
     (new_account, account_id, new_participant)
 }
 
-pub async fn cleanup_post_migrate(contract: &Contract, account: &Account) {
-    let execution = account
-        .call(contract.id(), "migrate_clear_tee")
+pub async fn cleanup_post_migrate(
+    contract: &Contract,
+    account: &Account,
+) -> Result<ExecutionSuccess, ExecutionFailure> {
+    account
+        .call(contract.id(), "post_upgrade_cleanup")
         .max_gas()
         .transact()
         .await
         .unwrap()
         .into_result()
-        .expect("migration cleanup succeeded");
-
-    dbg!(&execution);
 }
