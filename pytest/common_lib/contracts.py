@@ -1,6 +1,5 @@
 from utils import load_binary_file
 from enum import Enum
-from borsh_construct import Vec, U8, CStruct, U64, Option
 from .constants import MPC_REPO_DIR
 
 PARALLEL_CONTRACT_PACKAGE_NAME = "test-parallel-contract"
@@ -40,12 +39,6 @@ def load_parallel_sign_contract() -> bytearray:
     Returns test contract for parallel sign
     """
     return load_binary_file(PARALLEL_CONTRACT_BINARY_PATH)
-
-
-ConfigV2Borsh = CStruct("key_event_timeout_blocks" / U64)
-ProposeUpdateArgsV2 = CStruct(
-    "code" / Option(Vec(U8)), "config" / Option(ConfigV2Borsh)
-)
 
 
 class ContractMethod(str, Enum):

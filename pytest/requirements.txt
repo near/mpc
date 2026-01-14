@@ -1,9 +1,6 @@
 -r ../libs/nearcore/pytest/requirements.txt
 -e ./nearcore_pytest
-borsh-construct
 blspy
 py-arkworks-bls12381
 pytest==8.3.4
 gitpython
-pytest-rerunfailures
-ruamel.yaml
