@@ -94,7 +94,7 @@ The inputs to this phase are:
 **Round 1:**
 
 1. Each $P_i$ computes its signature share $s_i \gets \alpha_i * h + \beta_i \cdot R_\mathsf{x} + e_i$ where $R_\mathsf{x}$ is the x coordinate of $R$.
-2. Each $P_i$ linearizes its signature share $s_i \gets \lambda(\mathcal{P}_2)_i s_i$.
+2. Each $P_i$ linearizes its signature share $s_i \gets \lambda_i(\mathcal{P}_2) s_i$.
 3. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
 
 **Round 1 (Coordinator):**

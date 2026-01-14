@@ -69,10 +69,10 @@ fn generate_coefficient_commitment<C: Ciphersuite>(
 }
 
 /// Generates the challenge for the proof of knowledge
-/// H(id, `context_string`, g^{secret} , R)
+/// H(`domain_separator`, id, g^{secret} , R)
 fn challenge<C: Ciphersuite>(
-    session_id: &HashOutput,
     domain_separator: u32,
+    session_id: &HashOutput,
     id: Scalar<C>,
     vk_share: &CoefficientCommitment<C>,
     big_r: &Element<C>,
@@ -126,11 +126,14 @@ fn proof_of_knowledge<C: Ciphersuite>(
     let vk_share = coefficient_commitment.eval_at_zero()?;
 
     // pick a random k_i and compute R_id = g^{k_id},
+    // Step 2.5
     let (k, big_r) = <C>::generate_nonce(rng);
 
-    // compute H(id, context_string, g^{a_0} , R_id) as a scalar
-    let hash = challenge::<C>(session_id, domain_separator, id, &vk_share, &big_r)?;
+    // Step 2.6
+    // compute H(domain_separator, id, me, g^{a_0}, R_id) as a scalar
+    let hash = challenge::<C>(domain_separator, session_id, id, &vk_share, &big_r)?;
     let a_0 = coefficients.eval_at_zero()?.0;
+    // Step 2.7
     let mu = k + a_0 * hash.to_scalar();
     Ok(Signature::new(big_r, mu))
 }
@@ -153,7 +156,7 @@ fn internal_verify_proof_of_knowledge<C: Ciphersuite>(
 
     let big_r = proof_of_knowledge.R();
     let z = proof_of_knowledge.z();
-    let c = challenge::<C>(session_id, domain_separator, id, vk_share, big_r)?;
+    let c = challenge::<C>(domain_separator, session_id, id, vk_share, big_r)?;
     if *big_r != <C::Group>::generator() * *z - vk_share.value() * c.to_scalar() {
         return Err(ProtocolError::InvalidProofOfKnowledge(participant));
     }
@@ -348,18 +351,22 @@ async fn do_keyshare<C: Ciphersuite>(
     let (old_verification_key, old_participants) =
         assert_keyshare_inputs(me, &secret, old_reshare_package)?;
 
-    // Start Round 0
+    // Start Round 1
+    // Step 1.2
     let mut my_session_id = [0u8; 32]; // 256 bits
     rng.fill_bytes(&mut my_session_id);
+    // Step 1.3 & 2.1
     let session_ids = do_broadcast(&mut chan, &participants, me, my_session_id).await?;
 
-    // Start Round 1
+    // Start Round 2
     // generate your secret polynomial p with the constant term set to the secret
     // and the rest of the coefficients are picked at random
     // because the library does not allow serializing the zero and identity term,
     // this function does not add the zero coefficient
+    // Step 2.2
     let session_id = domain_separate_hash(domain_separator, &session_ids)?;
     domain_separator += 1;
+    // Step 2.3
     // the degree of the polynomial is threshold - 1
     let degree = threshold
         .checked_sub(1)
@@ -367,12 +374,14 @@ async fn do_keyshare<C: Ciphersuite>(
     let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
 
     // Compute the multiplication of every coefficient of p with the generator G
+    // Step 2.4
     let coefficient_commitment = generate_coefficient_commitment::<C>(&secret_coefficients)?;
 
     // Generates a proof of knowledge if me is not holding the zero secret.
     let proof_domain_separator = domain_separator;
     // Send none if me is a new participant
     let generate_proof: bool = old_participants.as_ref().is_none_or(|old| old.contains(me));
+    // Step 2.5 2.6 2.7
     let proof_of_knowledge = if generate_proof {
         Some(proof_of_knowledge(
             &session_id,
@@ -393,9 +402,11 @@ async fn do_keyshare<C: Ciphersuite>(
         VerifiableSecretSharingCommitment::new(coefficient_commitment.get_coefficients());
 
     // hash commitment and send it
+    // Step 2.8
     let commit_domain_separator = domain_separator;
     let commitment_hash = domain_separate_hash(domain_separator, &(&me, &commitment, &session_id))?;
 
+    // Step 2.9
     let wait_round_1 = chan.next_waitpoint();
     chan.send_many(wait_round_1, &commitment_hash)?;
     // receive commitment_hash
@@ -403,18 +414,20 @@ async fn do_keyshare<C: Ciphersuite>(
     let mut all_hash_commitments = ParticipantMap::new(&participants);
     all_hash_commitments.put(me, commitment_hash);
 
+    // Step 3.1
     for (from, their_commitment_hash) in
         recv_from_others(&chan, wait_round_1, &participants, me).await?
     {
         all_hash_commitments.put(from, their_commitment_hash);
     }
 
-    // Start Round 2
+    // Start Round 3
     // add my commitment to the map with the proper commitment sizes = threshold
     let my_full_commitment = insert_identity_if_missing(threshold, &commitment);
     all_full_commitments.put(me, my_full_commitment);
 
     // Broadcast the commitment and the proof of knowledge
+    // Step 3.2 and 4.1
     let commitments_and_proofs_map = do_broadcast(
         &mut chan,
         &participants,
@@ -423,8 +436,9 @@ async fn do_keyshare<C: Ciphersuite>(
     )
     .await?;
 
-    // Start Round 3
+    // Start Round 4
     let wait_round_3 = chan.next_waitpoint();
+    // Step 4.2 4.3 and 4.4
     for p in participants.others(me) {
         let (commitment_i, proof_i) = commitments_and_proofs_map.index(p)?;
 
@@ -463,8 +477,10 @@ async fn do_keyshare<C: Ciphersuite>(
     let all_commitments_refs = all_full_commitments.to_refs_or_none().ok_or_else(|| {
         ProtocolError::AssertionFailed("all_full_commitments is empty".to_string())
     })?;
+    // Step 4.5
     let verifying_key = public_key_from_commitments(all_commitments_refs)?;
 
+    // Step 4.5 +++
     // In the case of Resharing, check if the old public key is the same as the new one
     if let Some(old_vk) = old_verification_key {
         // check the equality between the old key and the new key without failing the unwrap
@@ -475,6 +491,7 @@ async fn do_keyshare<C: Ciphersuite>(
         }
     }
 
+    // Step 4.6
     for p in participants.others(me) {
         // securely send to each other participant a secret share
         // using the evaluation secret polynomial on the identifier of the recipient
@@ -484,11 +501,12 @@ async fn do_keyshare<C: Ciphersuite>(
         chan.send_private(wait_round_3, p, &signing_share_to_p)?;
     }
 
-    // Start Round 4
+    // Start Round 5
     // compute my secret evaluation of my private polynomial
     // should not panic as secret_coefficients are created internally
     let mut my_signing_share = secret_coefficients.eval_at_participant(me)?.0;
     // receive evaluations from all participants
+    // Step 5.1
     for (from, signing_share_from) in
         recv_from_others(&chan, wait_round_3, &participants, me).await?
     {
@@ -496,13 +514,16 @@ async fn do_keyshare<C: Ciphersuite>(
         // this deviates from the original FROST DKG paper
         // however it matches the FROST implementation of ZCash
         let full_commitment_from = all_full_commitments.index(from)?;
+        // Step 5.2
         validate_received_share::<C>(me, from, &signing_share_from, full_commitment_from)?;
 
         // Compute the sum of all the owned secret shares
         // At the end of this loop, I will be owning a valid secret signing share
+        // Step 5.3
         my_signing_share = my_signing_share + signing_share_from.to_scalar();
     }
 
+    // Step 5.4 and Step 5.5
     broadcast_success(&mut chan, &participants, me, session_id).await?;
 
     // Return the key pair
@@ -541,6 +562,7 @@ pub fn assert_keygen_invariants(
         });
     }
 
+    // Step 1.1
     // validate threshold
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
@@ -548,6 +570,7 @@ pub fn assert_keygen_invariants(
             max: participants.len(),
         });
     }
+    // Step 1.1
     if threshold < 2 {
         return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
     }
@@ -604,6 +627,7 @@ pub async fn do_reshare<C: Ciphersuite>(
     Ok(keygen_output)
 }
 
+// Step 1.1
 pub fn reshare_assertions<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
@@ -617,6 +641,7 @@ pub fn reshare_assertions<C: Ciphersuite>(
             participants: participants.len(),
         });
     }
+    // Step 1.1
     if threshold > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
             threshold,
@@ -624,6 +649,7 @@ pub fn reshare_assertions<C: Ciphersuite>(
         });
     }
 
+    // Step 1.1
     if threshold < 2 {
         return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
     }
@@ -641,12 +667,14 @@ pub fn reshare_assertions<C: Ciphersuite>(
     let old_participants =
         ParticipantList::new(old_participants).ok_or(InitializationError::DuplicateParticipants)?;
 
+    // Step 1.1
     if old_participants.intersection(&participants).len() < old_threshold {
         return Err(InitializationError::NotEnoughParticipantsForThreshold {
             threshold: old_threshold,
             participants: old_participants.intersection(&participants).len(),
         });
     }
+    // Step 1.1
     // if me is not in the old participant set then ensure that old_signing_key is None
     if old_participants.contains(me) && old_signing_key.is_none() {
         return Err(InitializationError::BadParameters(format!(

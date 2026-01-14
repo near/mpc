@@ -40,7 +40,9 @@ The protocol implementation provides several communication primitives:
 
 ## Documentation Notation
 
-In protocol specifications (particularly for ECDSA), we use the following symbols to describe actions:
+Protocol algorithm descriptions are divided into rounds, where each round corresponds to a communication step consisting of sending a message and waiting for the reception of another message.
+
+In protocol specifications, we use the following symbols to denote actions:
 
 | Symbol | Meaning | Description |
 | :---: | :--- | :--- |
