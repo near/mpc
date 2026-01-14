@@ -154,14 +154,11 @@ impl Attestation {
                     allowed_launcher_docker_compose_hashes,
                 )?;
 
-                #[cfg(any(test, debug_assertions))]
                 let accepted_measurements = [
                     include_measurements!("assets/tcb_info.json"),
+                    // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
                     include_measurements!("assets/tcb_info_dev.json"),
                 ];
-
-                #[cfg(not(any(test, debug_assertions)))]
-                let accepted_measurements = [include_measurements!("assets/tcb_info.json")];
 
                 dstack_attestation.verify(
                     expected_report_data,
