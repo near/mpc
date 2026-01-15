@@ -21,11 +21,6 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-/// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
-/// This will send small packets immediately, reducing latency for node messages at
-///  the cost of higher packet overhead.
-const TCP_NODELAY: bool = true;
-
 use crate::{
     config::MpcConfig,
     network::{
@@ -43,6 +38,10 @@ use crate::{
     tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
 };
 
+/// Disables Nagle's algorithm by setting [`TCP_NODELAY`] to true. This will send small packets
+/// immediately, reducing latency for node messages at the cost of higher packet overhead.
+const TCP_NODELAY: bool = true;
+
 /// This struct manages **outgoing connections only** - one persistent TLS connection to each
 /// peer in the network. When the application wants to send a message to a peer, it queues the
 /// message through the corresponding [`PersistentConnection`], which handles automatic
@@ -52,6 +51,12 @@ use crate::{
 /// Implements the [`MeshNetworkTransportSender`] trait to provide a high-level API for sending
 /// messages (`.send()`, `.send_indexer_height()`) and checking connectivity status
 /// (`.connectivity()`, `.wait_for_ready()`), while handling low-level connection management.
+const TCP_CONNECTION_KEEPALIVE_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
+const TCP_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+const TCP_CONNECTION_RETRIES: u32 = 3;
+
+/// Implements MeshNetworkTransportSender for sending messages over a TLS-based
+/// mesh network.
 pub struct TlsMeshSender {
     /// The participant ID of this node.
     my_id: ParticipantId,
@@ -132,7 +137,8 @@ struct PersistentConnection {
     /// 1. Attempts to establish a new [`TlsConnection`] to `target_participant_id`
     /// 2. On success: Registers the connection with `connectivity`, sends any buffered
     ///    pending pong, and blocks waiting for it to close (via `wait_for_close()`)
-    /// 3. On failure: Logs the error and sleeps for [`CONNECTION_RETRY_DELAY`] before retrying
+    /// 3. On failure: Logs the error and sleeps for
+    ///    [`PersistentConnection::CONNECTION_RETRY_DELAY`] before retrying
     /// 4. When a connection closes (step 2 completes): Loops back to step 1
     ///
     /// The task owns the active [`TlsConnection`] (wrapped in Arc), so when the task is
@@ -238,15 +244,13 @@ impl TlsConnection {
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
     ) -> anyhow::Result<TlsConnection> {
-        let conn = TcpStream::connect(target_address)
+        let tcp_stream = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
-
-        conn.set_nodelay(TCP_NODELAY)
-            .context("failed to enable `TCP_NODELAY`")?;
+        let tcp_stream = configure_tcp_stream(tcp_stream)?;
 
         let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
-            .connect("dummy".try_into().unwrap(), conn)
+            .connect("dummy".try_into().unwrap(), tcp_stream)
             .await
             .context("TLS connect")?;
 
@@ -305,7 +309,7 @@ impl TlsConnection {
         let sender_clone = sender.clone();
         let closed_for_keepalive = closed.clone();
         let keepalive_task = tracking::spawn(
-            &format!("Ping sender for {}", target_participant_id),
+            &format!("ping keepalive task for {}", target_participant_id),
             async move {
                 let peer_id_str = target_participant_id.to_string();
                 let mut seq: u64 = 0;
@@ -557,21 +561,26 @@ pub async fn new_tls_mesh_network(
     let my_id = config.my_participant_id;
     let connections_for_incoming = connections.clone();
     info!("spawning incoming connections handler");
-    let incoming_connections_task = tracking::spawn("Handle incoming connections", async move {
-        let mut tasks = AutoAbortTaskCollection::new();
-        while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-            let message_sender = message_sender.clone();
-            let participant_identities = participant_identities.clone();
-            let tls_acceptor = tls_acceptor.clone();
-            let connectivities = connectivities_clone.clone();
-            let connections = connections_for_incoming.clone();
-            tasks.spawn_checked::<_, ()>("Handle connection", async move {
+    let incoming_connections_task = tracking::spawn(
+        "incoming connection handler tls mesh network",
+        async move {
+            let mut tasks = AutoAbortTaskCollection::new();
+            while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
+                let message_sender = message_sender.clone();
+                let participant_identities = participant_identities.clone();
+                let tls_acceptor = tls_acceptor.clone();
+                let connectivities = connectivities_clone.clone();
+                let connections = connections_for_incoming.clone();
+                tasks.spawn_checked::<_, ()>(
+                    "new connection handler tls mesh network",
+                    async move {
                 tcp_stream
                     .set_nodelay(TCP_NODELAY)
                     .context("failed to enable `TCP_NODELAY` for incoming TCP stream")?;
 
                 let mut stream = tls_acceptor.accept(tcp_stream).await?;
-                let peer_id = verify_peer_identity(stream.get_ref().1, &participant_identities)?;
+                let peer_id =
+                    verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                 tracking::set_progress(&format!("authenticated as {peer_id}"));
                 p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
                     .await
@@ -599,8 +608,8 @@ pub async fn new_tls_mesh_network(
                     .await??;
                     received_bytes += 4 + len as u64;
 
-                    let packet =
-                        Packet::try_from_slice(&buf).context("failed to deserialize packet")?;
+                    let packet = Packet::try_from_slice(&buf)
+                        .context("Failed to deserialize packet")?;
                     match packet {
                         Packet::Ping(seq) => {
                             // Send Pong via our outgoing connection to the peer, maintaining
@@ -668,8 +677,9 @@ pub async fn new_tls_mesh_network(
                 }
                 anyhow::Ok(())
             });
-        }
-    });
+            }
+        },
+    );
 
     let sender = TlsMeshSender {
         my_id: config.my_participant_id,
@@ -689,6 +699,23 @@ pub async fn new_tls_mesh_network(
     };
 
     Ok((sender, receiver))
+}
+
+fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
+    let socket = socket2::Socket::from(tcp_stream.into_std()?);
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(TCP_CONNECTION_KEEPALIVE_DELAY)
+        .with_interval(TCP_CONNECTION_RETRY_DELAY)
+        .with_retries(TCP_CONNECTION_RETRIES);
+
+    socket
+        .set_tcp_keepalive(&keepalive)
+        .context("failed to set TCP keepalive")?;
+    socket
+        .set_tcp_nodelay(TCP_NODELAY)
+        .context("failed to enable `TCP_NODELAY`")?;
+
+    Ok(TcpStream::from_std(socket.into())?)
 }
 
 fn verify_peer_identity(
@@ -950,7 +977,7 @@ mod tests {
             sender1.wait_for_ready(2, &all_participants).await.unwrap();
 
             for _ in 0..100 {
-                // todo: adjust test?
+                // TODO: adjust test?
                 let domain_id = rand::thread_rng().gen();
                 let epoch_id = rand::thread_rng().gen();
                 let n_attempts = rand::thread_rng().gen::<usize>() % 100;

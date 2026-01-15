@@ -252,7 +252,7 @@ impl StartCmd {
 
         profiler::web_server::start_web_server(config.pprof_bind_address).await?;
 
-        // TODO (#1296)
+        // TODO(#1296): Decide if the MPC responder account is actually needed
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
 
         let backup_encryption_key_hex = match &self.backup_encryption_key_hex {

@@ -2,6 +2,7 @@
 description = "Run all fast checks"
 dependencies = [
   "crate-names",
+  "todo-format",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -17,6 +18,7 @@ dependencies = [
 description = "Run all checks"
 dependencies = [
   "crate-names",
+  "todo-format",
   "ruff-format",
   "ruff-check",
   "fmt",
@@ -84,6 +86,10 @@ args = [".github/"]
 [tasks.crate-names]
 command = "sh"
 args = ["scripts/check-crates-kebab-case.sh"]
+
+[tasks.todo-format]
+command = "sh"
+args = ["scripts/check-todo-format.sh"]
 
 [tasks.cargo-deny]
 description = "Run cargo deny"

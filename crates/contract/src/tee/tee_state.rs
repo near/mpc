@@ -387,6 +387,7 @@ mod tests {
     use super::*;
     use crate::primitives::test_utils::bogus_ed25519_near_public_key;
     use crate::primitives::test_utils::gen_participants;
+    use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
     use near_account_id::AccountId;
@@ -594,5 +595,170 @@ mod tests {
         let result = tee_state.is_caller_an_attested_participant(&participants);
 
         assert_matches!(result, Err(AttestationCheckError::AttestationKeyMismatch));
+    }
+
+    // validate_tee() unit tests
+
+    /// Grace period for TEE upgrade deadline used in validate_tee() tests
+    const TEST_GRACE_PERIOD: Duration = Duration::from_secs(10);
+
+    /// Helper to create a NodeId from participant data
+    fn create_node_id(account_id: &AccountId, sign_pk: &near_sdk::PublicKey) -> NodeId {
+        NodeId {
+            account_id: account_id.clone(),
+            tls_public_key: sign_pk.clone(),
+            account_public_key: Some(bogus_ed25519_near_public_key()),
+        }
+    }
+
+    /// Helper to extract account IDs from participants for assertion comparisons
+    fn account_ids(participants: &Participants) -> Vec<AccountId> {
+        participants
+            .participants()
+            .iter()
+            .map(|(acc, _, _)| acc.clone())
+            .collect()
+    }
+
+    #[test]
+    fn validate_tee_returns_full_when_all_participants_have_valid_attestations() {
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+
+        // Add valid attestations for all participants
+        for (account_id, _, participant_info) in participants.participants().iter() {
+            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+        }
+
+        let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
+
+        assert_matches!(validation_result, TeeValidationResult::Full);
+    }
+
+    #[test]
+    fn validate_tee_returns_partial_when_participant_has_no_attestation() {
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+        let participant_list: Vec<_> = participants.participants().to_vec();
+
+        // Add valid attestations for only first 2 participants
+        for (account_id, _, participant_info) in participant_list.iter().take(2) {
+            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+        }
+        // Third participant has no attestation
+
+        let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
+
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        assert_matches!(
+            validation_result,
+            TeeValidationResult::Partial { participants_with_valid_attestation }
+                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
+        );
+    }
+
+    #[test]
+    fn validate_tee_returns_partial_when_attestation_is_expired() {
+        let current_time_secs = env::block_timestamp() / 1_000_000_000;
+        let expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
+
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+        let participant_list: Vec<_> = participants.participants().to_vec();
+
+        // Add valid attestations for first 2 participants
+        for (account_id, _, participant_info) in participant_list.iter().take(2) {
+            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+        }
+
+        // Add expiring attestation for third participant
+        let (account_id, _, participant_info) = &participant_list[2];
+        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
+            mpc_docker_image_hash: None,
+            launcher_docker_compose_hash: None,
+            expiry_time_stamp_seconds: Some(expiry_time_secs),
+        });
+        tee_state.add_participant(node_id, expiring_attestation);
+
+        // Advance time to exact expiry boundary
+        set_block_timestamp(expiry_time_secs * 1_000_000_000);
+
+        let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
+
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        assert_matches!(
+            validation_result,
+            TeeValidationResult::Partial { participants_with_valid_attestation }
+                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
+        );
+    }
+
+    #[test]
+    fn validate_tee_returns_full_when_attestation_not_yet_expired() {
+        let current_time_secs = env::block_timestamp() / 1_000_000_000;
+        let expiry_time_secs = current_time_secs + 2 * TEST_GRACE_PERIOD.as_secs();
+        let before_expiry_time_secs = current_time_secs + TEST_GRACE_PERIOD.as_secs();
+
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+
+        // Add attestations for all participants, third one with future expiry
+        let participant_list: Vec<_> = participants.participants().to_vec();
+
+        for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
+            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            let attestation = if i == 2 {
+                Attestation::Mock(MockAttestation::WithConstraints {
+                    mpc_docker_image_hash: None,
+                    launcher_docker_compose_hash: None,
+                    expiry_time_stamp_seconds: Some(expiry_time_secs),
+                })
+            } else {
+                Attestation::Mock(MockAttestation::Valid)
+            };
+            tee_state.add_participant(node_id, attestation);
+        }
+
+        // Advance time, but still before expiry
+        set_block_timestamp(before_expiry_time_secs * 1_000_000_000);
+
+        let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
+
+        assert_matches!(
+            validation_result,
+            TeeValidationResult::Full,
+            "All participants should be valid before expiry"
+        );
+    }
+
+    #[test]
+    fn validate_tee_returns_partial_when_attestation_is_invalid() {
+        let mut tee_state = TeeState::default();
+        let participants = gen_participants(3);
+        let participant_list: Vec<_> = participants.participants().to_vec();
+
+        // Add valid attestations for first 2 participants
+        for (account_id, _, participant_info) in participant_list.iter().take(2) {
+            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+            tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Valid));
+        }
+
+        // Add invalid attestation for third participant
+        let (account_id, _, participant_info) = &participant_list[2];
+        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        tee_state.add_participant(node_id, Attestation::Mock(MockAttestation::Invalid));
+
+        let validation_result = tee_state.validate_tee(&participants, TEST_GRACE_PERIOD);
+
+        let expected_valid_account_ids = account_ids(&participants)[..2].to_vec();
+        assert_matches!(
+            validation_result,
+            TeeValidationResult::Partial { participants_with_valid_attestation }
+                if account_ids(&participants_with_valid_attestation) == expected_valid_account_ids
+        );
     }
 }

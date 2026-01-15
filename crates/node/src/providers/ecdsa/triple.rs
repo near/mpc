@@ -122,26 +122,30 @@ impl EcdsaSignatureProvider {
                 let parallelism_limiter = parallelism_limiter.clone();
                 let triple_store = triple_store.clone();
                 let config_clone = config.clone();
-                tasks.spawn_checked(&format!("{:?}", task_id), async move {
-                    let _in_flight = in_flight;
-                    let _semaphore_guard = parallelism_limiter.acquire().await?;
-                    let triples = (ManyTripleGenerationComputation::<
-                        SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
-                    > {
-                        threshold,
-                    })
-                    .perform_leader_centric_computation(
-                        channel,
-                        Duration::from_secs(config_clone.timeout_sec),
-                    )
-                    .await?;
+                tasks.spawn_checked(
+                    &format!("background triple generation; task_id: {:?}", task_id),
+                    async move {
+                        let _in_flight = in_flight;
+                        let _semaphore_guard = parallelism_limiter.acquire().await?;
+                        let triples = (ManyTripleGenerationComputation::<
+                            SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
+                        > {
+                            threshold,
+                        })
+                        .perform_leader_centric_computation(
+                            channel,
+                            Duration::from_secs(config_clone.timeout_sec),
+                        )
+                        .await?;
 
-                    for (i, paired_triple) in triples.into_iter().enumerate() {
-                        triple_store.add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
-                    }
+                        for (i, paired_triple) in triples.into_iter().enumerate() {
+                            triple_store
+                                .add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
+                        }
 
-                    anyhow::Ok(())
-                });
+                        anyhow::Ok(())
+                    },
+                );
                 // Before issuing another one, wait a bit. This can dramatically
                 // improve throughput by avoiding thundering herd situations.
                 // Further optimization can be done to avoid thundering herd

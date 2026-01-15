@@ -1,10 +1,10 @@
 use attestation::{
-    TcbInfo,
     app_compose::AppCompose,
     attestation::{GetSingleEvent as _, OrErr as _},
     measurements::ExpectedMeasurements,
     measurements::Measurements,
     report_data::ReportData,
+    tcb_info::TcbInfo,
 };
 
 use include_measurements::include_measurements;
@@ -75,7 +75,7 @@ impl Attestation {
 
         let accepted_measurements = [
             include_measurements!("assets/tcb_info.json"),
-            // TODO Security #1433 - remove dev measurements from production builds after testing is complete.
+            // TODO(#1433): Security - remove dev measurements from production builds after testing is complete
             include_measurements!("assets/tcb_info_dev.json"),
         ];
 

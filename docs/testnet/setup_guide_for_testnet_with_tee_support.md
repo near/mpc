@@ -1,18 +1,21 @@
 # MPC Testnet with TEE Support
 
-This guide describes how to set up a testnet MPC cluster using dstack TDX CVMs.
+This guide describes how to set up a testnet MPC cluster, where each MPC node is runing inside a dstack TDX CVM.
 
 ## Prerequisites
-1. Two TDX-enabled machines  
-2. dstack installed and configured  
+1. One TDX-enabled machine (with 2 external IPs)
+2. dstack installed and configured
 3. MPC repository cloned  
 4. NEAR CLI installed  
+
+**Note**, dstack version must be v0.55 or higher (in order to support reserved port forwarding).
+
 
 ## High-Level Steps
 
 1. Create a NEAR account that will host the MPC contract.  
 2. Deploy the MPC contract.  
-3. Start two TDX CVMs: Alice (running MPC node **frodo**) and Bob (running MPC node **sam**).  
+3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.  
 4. Get account and TLS keys from each node.  
 5. Initialize the contract with node parameters (keys, accounts, IPs).  
 6. Workaround for port override issue.  
@@ -25,7 +28,9 @@ This guide describes how to set up a testnet MPC cluster using dstack TDX CVMs.
 
 **Note:** These operations assume you start from the MPC root directory and are running on the Alice machine. Otherwise, it will be explicitly noted.
 
----
+**Note**, It is possible to run both CVMs on seperate TDX-enabled machines. In that case, adjust the IPs and commands accordingly.
+
+
 
 ## Step 1: Create MPC Account
 
@@ -105,7 +110,9 @@ near contract inspect $MPC_CONTRACT_ACCOUNT network-config testnet now
 
 ## Step 3: Start the CVMs with MPC Nodes
 
-Create two accounts for the MPC nodes:
+
+
+### Create two accounts for the MPC nodes:
 
 ```bash
 near account create-account sponsor-by-faucet-service $FRODO_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
@@ -113,7 +120,7 @@ near account create-account sponsor-by-faucet-service $FRODO_ACCOUNT autogenerat
 near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 ```
 
-### Update Bootnodes
+### Update Bootnodes and IPs
 
 Run this command to get the current testnet bootnodes:
 
@@ -124,6 +131,12 @@ export BOOTNODES=$(curl -X POST https://rpc.testnet.near.org \
   -d '{"jsonrpc": "2.0", "method": "network_info", "params": [], "id": "dontcare"}' |
   jq -r '.result.active_peers[] as $p | "\($p.id)@\($p.addr)"' |
   paste -sd',' -)
+```
+Define 2 external IPs available on the server that will be used by each MPC node:
+
+```bash
+  export SERVER_IP_1=${IP 1}  # e.g., On Alice Server you can use 51.68.219.1
+  export SERVER_IP_2=${IP 2}  # e.g., On Alice Server you can use 51.68.219.2
 ```
 
 ---
@@ -138,7 +151,23 @@ envsubst < deployment/testnet/frodo.conf > "/tmp/$USER/frodo.conf"
 envsubst < deployment/testnet/sam.conf > "/tmp/$USER/sam.conf"
 ```
 
+```bash
+envsubst < deployment/testnet/frodo.env > "/tmp/$USER/frodo.env"
+```
+
+```bash
+envsubst < deployment/testnet/sam.env > "/tmp/$USER/sam.env"
+```
+
 ### deploy the CVMs using script
+
+
+#### preliminry setup:
+Allow reserved port forwarding (e.g 80) for the CVMs. 
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' $(which qemu-system-x86_64)
+```
 
 #### 1. Move into the `tee_launcher` directory
 
@@ -167,13 +196,13 @@ Start the nodes:
 **On Alice:**
 
 ```bash
-./deploy-launcher.sh --env-file ../deployment/testnet/frodo.env --base-path $BASE_PATH --python-exec python
+./deploy-launcher.sh --env-file /tmp/$USER/frodo.env --base-path $BASE_PATH --python-exec python
 ```
 
 **On Bob:**
 
 ```bash
-./deploy-launcher.sh --env-file ../deployment/testnet/sam.env --base-path $BASE_PATH --python-exec python
+./deploy-launcher.sh --env-file /tmp/$USER/sam.env --base-path $BASE_PATH --python-exec python
 ```
 
 If successful, each command outputs an **App ID** and confirms creation of a **CVM instance**.
@@ -182,12 +211,7 @@ If successful, each command outputs an **App ID** and confirms creation of a **C
 
 ## Step 4: Get Account & TLS Keys from Each MPC Node
 
-Define the two server IPs:
 
-```bash
-export SERVER_IP_1=${YOUR_ALICE_SERVER_IP}  # e.g., 57.129.140.254
-export SERVER_IP_2=${YOUR_BOB_SERVER_IP}    # e.g., 91.134.92.20
-```
 
 Each node exposes its keys via:
 
@@ -291,7 +315,11 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT  state \
 
 ---
 
-## Step 6: Workaround for Port Override Issue
+## Step 6: Workaround for Port Override Issue  (optional)
+
+**note:** correctly setting port_override is set for testnet. So regradless of the port defined in the mpc contract, the nodes will try to use port 80.
+
+If you which which to change the port overide value here is the steps to do so.
 
 Default `port_override = 80`.  
 dstack CVMs had issues forwarding port 80, so update the config on both machines.
@@ -325,8 +353,9 @@ docker start mpc-node
 
 ## Step 7: Vote MPC Hash on Contract
 
+Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
-export CODE_HASH=<hash used to start the nodes>
+export CODE_HASH=<hash used to start the nodes> 
 ```
 
 ### Frodo votes
@@ -398,7 +427,7 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \
-  file-args docs/localnet/args/sign.json prepaid-gas '300.0 Tgas' \
+  file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' \
   attached-deposit '100 yoctoNEAR' sign-as $FRODO_ACCOUNT \
   network-config testnet sign-with-keychain send
 ```
