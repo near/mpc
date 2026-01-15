@@ -26,7 +26,9 @@ to  **automatically enter the dev environment when you `cd` into the repo** usin
 
 #### 1. Install direnv and nix-direnv (Nix profile)
 
-You can install both `direnv` and `nix-direnv` with nix profiles with the command below, but you can also use your preferred package manager.
+Install [direnv](https://direnv.net/docs/installation.html) and [nix-direnv](https://github.com/nix-community/nix-direnv?tab=readme-ov-file#installation)
+
+You can install both with nix profiles:
 
 ```shell
 nix profile add nixpkgs#direnv nixpkgs#nix-direnv
@@ -37,27 +39,14 @@ nix profile add nixpkgs#direnv nixpkgs#nix-direnv
 direnv allow
 ```
 
-#### 3. Hook direnv into your shell
+#### 3. Add direnv hook to your shell
 
-Add the appropriate hook to your shell configuration:
+For `direnv` command to automatically run in the project, it must bee hooked to your shell.
 
-Bash:
-```bash
-eval "$(direnv hook bash)"
-```
-
-Zsh:
-```zsh
-eval "$(direnv hook zsh)"
-```
-
-Fish:
-```shell
-direnv hook fish | source
-```
+See https://direnv.net/docs/installation.html for instructions.
 
 #### 4. Making direnv quiet (Optional)
-By default `direnv` will print all exports each time the environment is activated which is quite noisy. By default you'll see a verbose log each time.
+By default `direnv` will print all exports each time the environment is activated which can be quite noisy.
 <details>
 <summary><b>Example verbose log</b></summary>
 
@@ -72,7 +61,10 @@ direnv: export +AR +AR_FOR_BUILD +AR_wasm32_unknown_unknown +AS +AS_FOR_BUILD +B
 
 </details>
 
-To disable these logs we need to create a `direnv.toml` and add a log_filter and hide_env_diff variables to it. You can do this with the command below:
+To silence these logs we need to create a `direnv.toml` and add a log_filter and hide_env_diff variables to it.
+
+You can do this with the command below:
+> NB! This command **is not idempotent**, so only run it once!
 ```shell
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/direnv" && cat <<EOF >> "${XDG_CONFIG_HOME:-$HOME/.config}/direnv/direnv.toml"
 
