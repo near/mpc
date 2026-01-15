@@ -88,4 +88,5 @@ near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
