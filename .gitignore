@@ -25,5 +25,9 @@ venv
 # Files for launcher
 **/.app-compose.json
 
-# Nix cargo home
+# Nix
 .nix-cargo/
+.direnv/
+
+# TODO(#1768): potentially remove
+.envrc
