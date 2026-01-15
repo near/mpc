@@ -5,10 +5,8 @@ use crate::test_utils::{
     generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng,
 };
 
-use frost_core::keys::SigningShare;
-use frost_core::VerifyingKey as FrostVerifyingKey;
-use frost_core::{Scalar as FrostScalar, SigningKey as FrostSigningKey};
-use frost_ed25519::Ed25519Sha512;
+use frost_core::Scalar;
+use frost_ed25519::{keys::SigningShare, Ed25519Sha512, SigningKey, VerifyingKey};
 
 type C = Ed25519Sha512;
 use rand::SeedableRng;
@@ -75,34 +73,24 @@ pub fn test_run_signature_protocols(
     let coordinators = ParticipantList::new(coordinators).unwrap();
     for (participant, key_pair) in participants.iter().take(actual_signers) {
         let mut rng_p = MockCryptoRng::seed_from_u64(42);
-        let protocol = if coordinators.contains(*participant) {
-            let protocol = sign(
-                &participants_list,
-                threshold,
-                *participant,
-                *participant,
-                key_pair.clone(),
-                msg_hash.as_ref().to_vec(),
-                rng_p,
-            )?;
-            Box::new(protocol)
-        } else {
+        let mut coordinator = *participant;
+
+        if !coordinators.contains(coordinator) {
             // pick any coordinator
             let index = rng_p.next_u32() as usize % coordinators.len();
-            let coordinator = coordinators.get_participant(index).unwrap();
-            // run the signing scheme
-            let protocol = sign(
-                &participants_list,
-                threshold,
-                *participant,
-                coordinator,
-                key_pair.clone(),
-                msg_hash.as_ref().to_vec(),
-                rng_p,
-            )?;
-            Box::new(protocol)
-        };
-        protocols.push((*participant, protocol));
+            coordinator = coordinators.get_participant(index).unwrap();
+        }
+        // run the signing scheme
+        let protocol = sign(
+            &participants_list,
+            threshold,
+            *participant,
+            coordinator,
+            key_pair.clone(),
+            msg_hash.as_ref().to_vec(),
+            rng_p,
+        )?;
+        protocols.push((*participant, Box::new(protocol)));
     }
 
     Ok(run_protocol(protocols)?)
@@ -113,11 +101,11 @@ pub fn test_run_signature_protocols(
 fn keygen_output__should_be_serializable() {
     // Given
     let mut rng = MockCryptoRng::seed_from_u64(42u64);
-    let signing_key = FrostSigningKey::<C>::new(&mut rng);
+    let signing_key = SigningKey::new(&mut rng);
 
     let keygen_output = KeygenOutput {
-        private_share: SigningShare::<C>::new(FrostScalar::<C>::from(7_u32)),
-        public_key: FrostVerifyingKey::<C>::from(signing_key),
+        private_share: SigningShare::new(Scalar::<C>::from(7_u32)),
+        public_key: VerifyingKey::from(signing_key),
     };
 
     // When
