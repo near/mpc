@@ -674,6 +674,7 @@ pub mod testing {
         pub const MIGRATION_WEBSERVER_CHANGE_MIGRATION_INFO: Self = Self::new(16);
         pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
+        pub const RECONNECTION_TEST: Self = Self::new(19);
     }
 
     pub fn generate_test_p2p_configs(
@@ -983,7 +984,7 @@ mod tests {
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
             2,
-            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            PortSeed::RECONNECTION_TEST,
             None,
         )
         .unwrap();
@@ -1037,7 +1038,8 @@ mod tests {
                 }
             );
 
-            configs[1].0.participants.participants[1].port += 100;
+            configs[1].0.participants.participants[1].port =
+                PortSeed::RECONNECTION_TEST.p2p_port(2);
             let (bob_new, _bob_new_receiver) =
                 super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                     .await
