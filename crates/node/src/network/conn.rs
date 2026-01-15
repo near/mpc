@@ -133,6 +133,11 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         outgoing.is_connected() && incoming.is_connected()
     }
 
+    pub fn is_incoming_connected(&self) -> bool {
+        let incoming = self.incoming_receiver.borrow();
+        incoming.is_connected()
+    }
+
     /// Given the result of a previous call to `connection_version()`, determine
     /// if the network connection in either direction may have been interrupted
     /// since that call. If this returns false, then all messages sent in the

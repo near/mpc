@@ -387,6 +387,10 @@ pub async fn new_tls_mesh_network(
                             .await
                             .context("p2p handshake")?;
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
+                        if connectivities.get(peer_id)?.is_incoming_connected() {
+                            tracing::info!("Dropping Incoming {} <-- {} connected", my_id, peer_id);
+                            return Ok(());
+                        }
                         let incoming_conn = Arc::new(());
                         connectivities
                             .get(peer_id)?
