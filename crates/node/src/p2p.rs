@@ -23,6 +23,7 @@ use tracing::info;
 
 use crate::{
     config::MpcConfig,
+    metrics,
     network::{
         conn::{
             AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
@@ -156,43 +157,43 @@ struct OutgoingConnection {
     /// Channel for queuing outbound packets ([`Packet::Ping`], [`Packet::MpcMessage`],
     /// [`Packet::IndexerHeight`]) to be sent.
     ///
-    /// The application sends messages by calling [`send_mpc_message()`](Self::send_mpc_message) or
-    /// [`send_indexer_height()`](Self::send_indexer_height), which queue packets into this channel.
-    /// The [`_sender_task`](Self::_sender_task) continuously reads from the receiver end of this
-    /// channel and writes packets to the TLS stream. This decouples message sending from I/O
-    /// operations, allowing the application to queue messages without blocking on network writes.
+    /// The application sends messages by calling [Self::send_mpc_message] or
+    /// [Self::send_indexer_height], which queue packets into this channel. [Self::_sender_task]
+    /// continuously reads from the receiver end of this channel and writes packets to the TLS
+    /// stream. This decouples message sending from I/O operations, allowing the application to
+    /// queue messages without blocking on network writes.
     sender: UnboundedSender<Packet>,
     /// Background task that owns the TLS stream and handles write-only I/O operations.
     ///
-    /// This task continuously reads packets from the [`sender`](Self::sender) channel and writes
-    /// them to the TLS stream. The stream is used unidirectionally - only for sending. Connection
-    /// health monitoring is handled by the keepalive task which cancels the [`closed`](Self::closed)
-    /// token when a pong timeout occurs. When this task is aborted (via [`AutoAbortTask`] drop),
-    /// it closes the underlying TLS/TCP stream, which triggers [`PersistentConnection`] to reconnect.
+    /// This task continuously reads packets from [Self::sender] channel and writes them to the
+    /// TLS stream. The stream is used unidirectionally - only for sending. Connection health
+    /// monitoring is handled by the keepalive task which cancels [Self::closed] token when a
+    /// pong timeout occurs. When this task is aborted (via [`AutoAbortTask`] drop), it closes
+    /// the underlying TLS/TCP stream, which triggers [`PersistentConnection`] to reconnect.
     _sender_task: AutoAbortTask<()>,
     /// Background task that sends Ping heartbeats and monitors Pong responses.
     ///
-    /// This task sends a [`Ping`](Packet::Ping) with an incrementing sequence number and then
-    /// waits for either a [`Pong`](Packet::Pong) response (via a watch channel) or a timeout.
-    /// When a Pong is received, it validates the sequence number, calculates RTT, and waits until
+    /// This task sends a [Packet::Ping] with an incrementing sequence number and then waits for
+    /// either a [Packet::Pong] response (via a watch channel) or a timeout. When a Pong is
+    /// received, it validates the sequence number, calculates RTT, and waits until
     /// [`KeepaliveConfig::ping_interval`] (default 1 second) has elapsed since the ping was sent
     /// before sending the next one. If no Pong is received within
     /// [`KeepaliveConfig::pong_timeout`] (default 20 seconds), it closes the connection by
-    /// cancelling the [`closed`](Self::closed) token. This ensures pings are sent at regular
-    /// intervals while only sending when the previous ping received a response.
+    /// cancelling [Self::closed] token. This ensures pings are sent at regular intervals while
+    /// only sending when the previous ping received a response.
     _keepalive_task: AutoAbortTask<()>,
     /// Watch channel sender for delivering pong notifications to the keepalive task.
     ///
-    /// The incoming handler sends [`PongInfo`] when it receives a [`Pong`](Packet::Pong) packet.
-    /// The keepalive task monitors this channel to detect connection health and calculate RTT.
-    /// This enables clean async communication without mutexes.
+    /// The incoming handler sends [`PongInfo`] when it receives a [Packet::Pong] packet. The
+    /// keepalive task monitors this channel to detect connection health and calculate RTT. This
+    /// enables clean async communication without mutexes.
     pong_tx: tokio::sync::watch::Sender<PongInfo>,
     /// Token that gets cancelled when the connection closes, allowing waiters to be notified.
     ///
-    /// Used by [`PersistentConnection`] via the [`wait_for_close()`](Self::wait_for_close) method
-    /// to block until the connection dies (either due to network failure, timeout, or intentional
-    /// shutdown). When [`_sender_task`](Self::_sender_task) exits, the [`DropToCancel`] guard
-    /// automatically cancels this token, unblocking any tasks waiting on it.
+    /// Used by [`PersistentConnection`] via [Self::wait_for_close] to block until the connection
+    /// dies (either due to network failure, timeout, or intentional shutdown). When
+    /// [Self::_sender_task] exits, the [`DropToCancel`] guard automatically cancels this token,
+    /// unblocking any tasks waiting on it.
     closed: CancellationToken,
 }
 
@@ -305,7 +306,7 @@ async fn run_keepalive(
             );
             return;
         };
-        crate::metrics::MPC_P2P_PING_SEQUENCE_SENT
+        metrics::MPC_P2P_PING_SEQUENCE_SENT
             .with_label_values(&[&peer_id_str])
             .set(seq_i64);
 
@@ -318,10 +319,10 @@ async fn run_keepalive(
         {
             Ok(Ok(_)) => {
                 let rtt = ping_sent_at.elapsed();
-                crate::metrics::MPC_P2P_PONG_SEQUENCE_RECEIVED
+                metrics::MPC_P2P_PONG_SEQUENCE_RECEIVED
                     .with_label_values(&[&peer_id_str])
                     .set(seq_i64);
-                crate::metrics::MPC_P2P_RTT_SECONDS
+                metrics::MPC_P2P_RTT_SECONDS
                     .with_label_values(&[&peer_id_str])
                     .set(rtt.as_secs_f64());
                 tracking::set_progress(&format!(
@@ -329,10 +330,13 @@ async fn run_keepalive(
                 ));
             }
             Ok(Err(_)) => {
-                // Channel closed, exit to trigger reconnection
+                // Channel closed - `OutgoingConnection` is being dropped, and its
+                // `_sender_task`'s `DropToCancel` guard will cancel the `closed` token
                 return;
             }
             Err(_) => {
+                // Timeout - we're the first to detect the dead connection,
+                // so we must signal closure to notify other tasks
                 tracing::warn!(
                     peer = %peer_id,
                     timeout = ?config.pong_timeout,
@@ -1304,6 +1308,12 @@ mod tests {
         ids
     }
 
+    /// Initial sequence number for `PongInfo` in tests.
+    const INITIAL_SEQ: u64 = 0;
+
+    /// Sequence number of the first `Ping` sent by `run_keepalive`.
+    const FIRST_PING_SEQ: u64 = INITIAL_SEQ + 1;
+
     #[tokio::test(start_paused = true)]
     async fn test_pong_timeout_triggers_reconnection() {
         // given
@@ -1312,7 +1322,7 @@ mod tests {
             pong_timeout: Duration::from_secs(5),
         };
         let (ping_tx, mut ping_rx) = mpsc::unbounded_channel();
-        let (_pong_tx, pong_rx) = watch::channel(PongInfo { seq: 0 });
+        let (_pong_tx, pong_rx) = watch::channel(PongInfo { seq: INITIAL_SEQ });
         let closed = CancellationToken::new();
         let peer_id = ParticipantId::from_raw(1);
 
@@ -1328,7 +1338,7 @@ mod tests {
 
         // Verify ping was sent
         let ping = ping_rx.recv().await;
-        assert!(matches!(ping, Some(Packet::Ping(1))));
+        assert!(matches!(ping, Some(Packet::Ping(FIRST_PING_SEQ))));
 
         // Don't respond with pong - advance time past the timeout
         tokio::time::advance(Duration::from_secs(6)).await;
@@ -1351,7 +1361,7 @@ mod tests {
                 pong_timeout: Duration::from_secs(5),
             };
             let (ping_tx, mut ping_rx) = mpsc::unbounded_channel();
-            let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: 0 });
+            let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: INITIAL_SEQ });
             let closed = CancellationToken::new();
             let peer_id = ParticipantId::from_raw(1);
 
@@ -1398,7 +1408,7 @@ mod tests {
             pong_timeout: Duration::from_secs(5),
         };
         let (ping_tx, mut ping_rx) = mpsc::unbounded_channel();
-        let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: 0 });
+        let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: INITIAL_SEQ });
         let closed = CancellationToken::new();
         let peer_id = ParticipantId::from_raw(1);
 
@@ -1413,10 +1423,10 @@ mod tests {
         tokio::task::yield_now().await;
 
         let ping = ping_rx.recv().await;
-        assert!(matches!(ping, Some(Packet::Ping(1))));
+        assert!(matches!(ping, Some(Packet::Ping(FIRST_PING_SEQ))));
 
-        // Send pong with wrong sequence (0 instead of 1)
-        pong_tx.send(PongInfo { seq: 0 }).unwrap();
+        // Send pong with wrong sequence (INITIAL_SEQ instead of FIRST_PING_SEQ)
+        pong_tx.send(PongInfo { seq: INITIAL_SEQ }).unwrap();
         tokio::task::yield_now().await;
 
         // Connection should still be waiting for correct pong
@@ -1445,7 +1455,7 @@ mod tests {
             pong_timeout: Duration::from_secs(5),
         };
         let (ping_tx, ping_rx) = mpsc::unbounded_channel();
-        let (_pong_tx, pong_rx) = watch::channel(PongInfo { seq: 0 });
+        let (_pong_tx, pong_rx) = watch::channel(PongInfo { seq: INITIAL_SEQ });
         let closed = CancellationToken::new();
         let peer_id = ParticipantId::from_raw(1);
 
@@ -1484,7 +1494,7 @@ mod tests {
                 pong_timeout: Duration::from_secs(5),
             };
             let (ping_tx, mut ping_rx) = mpsc::unbounded_channel();
-            let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: 0 });
+            let (pong_tx, pong_rx) = watch::channel(PongInfo { seq: INITIAL_SEQ });
             let closed = CancellationToken::new();
             let peer_id = ParticipantId::from_raw(1);
 
@@ -1499,14 +1509,18 @@ mod tests {
             tokio::task::yield_now().await;
 
             let ping = ping_rx.recv().await;
-            assert!(matches!(ping, Some(Packet::Ping(1))));
+            assert!(matches!(ping, Some(Packet::Ping(FIRST_PING_SEQ))));
 
             // Wait almost until timeout (4.9 seconds of 5 second timeout)
             tokio::time::advance(Duration::from_millis(4900)).await;
             tokio::task::yield_now().await;
 
             // Send pong just before timeout
-            pong_tx.send(PongInfo { seq: 1 }).unwrap();
+            pong_tx
+                .send(PongInfo {
+                    seq: FIRST_PING_SEQ,
+                })
+                .unwrap();
             tokio::task::yield_now().await;
 
             // then
@@ -1524,7 +1538,7 @@ mod tests {
 
             let ping = ping_rx.recv().await;
             assert!(
-                matches!(ping, Some(Packet::Ping(2))),
+                matches!(ping, Some(Packet::Ping(seq)) if seq == FIRST_PING_SEQ + 1),
                 "second ping should be sent after late pong received"
             );
         })
