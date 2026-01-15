@@ -244,6 +244,19 @@ impl Default for KeepaliveConfig {
     }
 }
 
+/// Configuration for creating outgoing connections to peers.
+///
+/// Groups the configuration that is identical across all peer connections, used by
+/// [`run_persistent_connection()`] to establish new [`OutgoingConnection`]s.
+struct OutgoingConnectionConfig {
+    /// TLS client configuration for establishing secure connections.
+    client_config: Arc<ClientConfig>,
+    /// Map for authenticating peer certificates by public key.
+    participant_identities: Arc<ParticipantIdentities>,
+    /// Ping/pong timing configuration for connection health monitoring.
+    keepalive_config: KeepaliveConfig,
+}
+
 /// Runs the keepalive loop that sends pings and monitors pong responses.
 ///
 /// This standalone function allows unit testing of timeout behavior without requiring
@@ -507,31 +520,27 @@ const CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::from_se
 /// 4. When a connection closes: Loops back to step 1
 ///
 /// # Arguments
-/// * `client_config` - TLS client configuration
+/// * `outgoing_config` - Configuration for creating outgoing connections
 /// * `my_id` - This node's participant ID (for logging)
 /// * `target_address` - Address to connect to (host:port)
 /// * `target_participant_id` - Expected peer identity
-/// * `participant_identities` - Map for authenticating peer certificates
 /// * `connectivity` - Shared state for tracking connection status
 /// * `pending_pong_rx` - Receiver for buffered pong messages to send on reconnect
-/// * `keepalive_config` - Configuration for ping/pong keepalive mechanism
 async fn run_persistent_connection(
-    client_config: Arc<ClientConfig>,
+    outgoing_config: Arc<OutgoingConnectionConfig>,
     my_id: ParticipantId,
     target_address: String,
     target_participant_id: ParticipantId,
-    participant_identities: Arc<ParticipantIdentities>,
     connectivity: Arc<NodeConnectivity<OutgoingConnection, ()>>,
     mut pending_pong_rx: watch::Receiver<u64>,
-    keepalive_config: KeepaliveConfig,
 ) {
     loop {
         match OutgoingConnection::new(
-            Arc::clone(&client_config),
+            Arc::clone(&outgoing_config.client_config),
             &target_address,
             target_participant_id,
-            &participant_identities,
-            keepalive_config,
+            &outgoing_config.participant_identities,
+            outgoing_config.keepalive_config,
         )
         .await
         {
@@ -616,6 +625,11 @@ pub async fn new_tls_mesh_network(
     }
     let participant_identities = Arc::new(participant_identities);
     let client_config = Arc::new(client_config);
+    let outgoing_config = Arc::new(OutgoingConnectionConfig {
+        client_config,
+        participant_identities: participant_identities.clone(),
+        keepalive_config: KeepaliveConfig::default(),
+    });
     for participant in &config.participants.participants {
         if participant.id == config.my_participant_id {
             continue;
@@ -632,14 +646,12 @@ pub async fn new_tls_mesh_network(
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             run_persistent_connection(
-                client_config.clone(),
+                outgoing_config.clone(),
                 config.my_participant_id,
                 target_address,
                 target_participant_id,
-                participant_identities.clone(),
                 Arc::clone(&connectivity),
                 pending_pong_rx,
-                KeepaliveConfig::default(),
             ),
         );
 
