@@ -434,13 +434,6 @@ impl StartCmd {
             },
         };
 
-        submit_remote_attestation(
-            indexer_api.txn_sender.clone(),
-            attestation,
-            tls_public_key.clone(),
-        )
-        .await?;
-
         // Spawn periodic attestation submission task
         let tee_authority_clone = tee_authority.clone();
         let tx_sender_clone = indexer_api.txn_sender.clone();
