@@ -23,37 +23,61 @@ nix develop
 ### Automatic environment loading (direnv + nix-direnv)
 This project provides a Nix flake–based development shell. You can configure your shell to **automatically enter the dev environment when you `cd` into the repo** using **direnv** with **nix-direnv**.
 
-> ⚠️ Note: `direnv` runs *before* you enter the Nix dev shell, so it **must be installed and hooked into your shell globally**. Including `direnv` in the flake devShell alone is not sufficient for auto-loading.
-
-
 ### 1. Install direnv and nix-direnv (Nix profile)
 
 ```shell
 nix profile add nixpkgs#direnv nixpkgs#nix-direnv
 ```
 
-### 3. Allow the `.envrc` file from the repository root
+### 2. Allow the `.envrc` file from the repository root
 ```shell
 direnv allow
 ```
 
-### 2. Hook direnv into your shell
+### 3. Hook direnv into your shell
 
 Add the appropriate hook to your shell configuration:
 
+Bash:
 ```bash
 eval "$(direnv hook bash)"
 ```
 
+Zsh:
 ```zsh
 eval "$(direnv hook zsh)"
 ```
 
+Fish"
 ```shell
 direnv hook fish | source
 ```
 
-Once you enter the shell, your workspace is immediately ready for development.
+### 4. Making direnv quiet (Optional)
+By default `direnv` will print all exports each time the environment is activated which is quite noisy. By default you'll see a verbose log each time.
+<details>
+<summary><b>Example verbose log</b></summary>
+
+```log
+$ cd mpc
+direnv: loading ~/Dev/mpc/.envrc
+direnv: using flake
+warning: Git tree '/home/dsharifi/Dev/mpc' is dirty
+🦀 NEAR Dev Shell Active
+direnv: export +AR +AR_FOR_BUILD +AR_wasm32_unknown_unknown +AS +AS_FOR_BUILD +BINDGEN_EXTRA_CLANG_ARGS +CARGO_HOME +CC +CC_FOR_BUILD +CC_wasm32_unknown_unknown +CFLAGS_wasm32_unknown_unknown +CONFIG_SHELL +CXX +CXXFLAGS +CXX_FOR_BUILD +DETERMINISTIC_BUILD +IN_NIX_SHELL +LD +LD_FOR_BUILD +LIBCLANG_PATH +NIX_BINTOOLS +NIX_BINTOOLS_FOR_BUILD +NIX_BINTOOLS_WRAPPER_TARGET_BUILD_x86_64_unknown_linux_gnu +NIX_BINTOOLS_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu +NIX_BUILD_CORES +NIX_BUILD_TOP +NIX_CC +NIX_CC_FOR_BUILD +NIX_CC_WRAPPER_TARGET_BUILD_x86_64_unknown_linux_gnu +NIX_CC_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu +NIX_CFLAGS_COMPILE +NIX_CFLAGS_COMPILE_FOR_BUILD +NIX_ENFORCE_NO_NATIVE +NIX_HARDENING_ENABLE +NIX_LDFLAGS +NIX_LDFLAGS_FOR_BUILD +NIX_PKG_CONFIG_WRAPPER_TARGET_HOST_x86_64_unknown_linux_gnu +NIX_STORE +NM +NM_FOR_BUILD +OBJCOPY +OBJCOPY_FOR_BUILD +OBJDUMP +OBJDUMP_FOR_BUILD +PKG_CONFIG +PYTHONHASHSEED +PYTHONNOUSERSITE +PYTHONPATH +RANLIB +RANLIB_FOR_BUILD +READELF +READELF_FOR_BUILD +RUSTUP_TOOLCHAIN +RUST_SRC_PATH +SIZE +SIZE_FOR_BUILD +SOURCE_DATE_EPOCH +STRINGS +STRINGS_FOR_BUILD +STRIP +STRIP_FOR_BUILD +TEMP +TEMPDIR +TMP +TMPDIR +_PYTHON_HOST_PLATFORM +_PYTHON_SYSCONFIGDATA_NAME +__structuredAttrs +buildInputs +buildPhase +builder +cmakeFlags +configureFlags +depsBuildBuild +depsBuildBuildPropagated +depsBuildTarget +depsBuildTargetPropagated +depsHostHost +depsHostHostPropagated +depsTargetTarget +depsTargetTargetPropagated +doCheck +doInstallCheck +dontAddDisableDepTrack +hardeningDisable +mesonFlags +name +nativeBuildInputs +out +outputs +patches +phases +preferLocalBuild +propagatedBuildInputs +propagatedNativeBuildInputs +shell +shellHook +stdenv +strictDeps +system ~PATH ~XDG_DATA_DIRS
+```
+
+</details>
+
+To disable these logs we need to create a `direnv.toml` and add a log_filter and hide_env_diff variables to it. You can do this with the command below:
+```shell
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/direnv" && cat <<EOF >> "${XDG_CONFIG_HOME:-$HOME/.config}/direnv/direnv.toml"
+
+[global]
+log_filter = "^$"
+hide_env_diff = true
+EOF
+```
 
 ## How it works
 
