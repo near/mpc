@@ -36,7 +36,7 @@ nix profile add nixpkgs#direnv nixpkgs#nix-direnv
 
 #### 2. Create an `.envrc` file to use the project's nix flake
 ```shell
-echo "use nix" >> .envrc
+echo "use flake" >> .envrc
 ```
 
 #### 3. Allow the `.envrc` file from the repository root
