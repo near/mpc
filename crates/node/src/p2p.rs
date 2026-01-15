@@ -333,9 +333,13 @@ impl TlsConnection {
                         // dropped (i.e. connection is closed).
                         return;
                     }
+                    let Ok(seq_i64) = i64::try_from(seq) else {
+                        tracing::warn!(seq, "TLS sequence number exceeded i64::MAX - closing connection");
+                        return;
+                    };
                     crate::metrics::MPC_P2P_PING_SEQUENCE_SENT
                         .with_label_values(&[&peer_id_str])
-                        .set(seq as i64);
+                        .set(seq_i64);
 
                     // Wait for pong matching this ping (non-matching pongs are silently ignored)
                     match tokio::time::timeout(
