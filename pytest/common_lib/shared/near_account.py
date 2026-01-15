@@ -50,7 +50,7 @@ class NearAccount:
             )
             if nonce is None:
                 nonce = 0
-            nonces += [Nonce(nonce)]
+            nonces.append(Nonce(nonce))
         self._pytest_signer_nonces = nonces
 
     def account_id(self) -> str:
