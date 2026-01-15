@@ -1,7 +1,9 @@
 from collections import deque
 import logging
 import os
+import stat
 from typing import Dict, Union
+from enum import Enum
 import requests
 from subprocess import CompletedProcess, run, check_output
 import sys
@@ -34,6 +36,18 @@ class RpcTimingConfig(NamedTuple):
     rpc_request_timeout_secs: float
     rpc_request_interval_secs: float
     rpc_max_attempts: int
+
+
+#
+# Platform mode (MUST come from measured docker-compose env in TEE deployments)
+#
+ENV_VAR_PLATFORM = "PLATFORM"
+
+
+# do not change the string values - they are used in docker-compose files.
+class Platform(Enum):
+    TEE = "TEE"
+    NONTEE = "NONTEE"
 
 
 # only considered if `IMAGE_DIGEST_FILE` does not exist.
@@ -270,6 +284,38 @@ def parse_env_file(path: str) -> dict:
         return parse_env_lines(f.readlines())
 
 
+def is_unix_socket(path: str) -> bool:
+    try:
+        st = os.stat(path)
+        return stat.S_ISSOCK(st.st_mode)
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
+
+
+def parse_platform() -> Platform:
+    """
+    Platform selection MUST be a measured input in TEE deployments.
+    Therefore, we only read it from process env (docker-compose 'environment'),
+    and never from /tapp/user_config.
+    """
+    raw = os.environ.get(ENV_VAR_PLATFORM)
+    if raw is None:
+        raise RuntimeError(
+            f"{ENV_VAR_PLATFORM} must be set to one of {[p.value for p in Platform]}"
+        )
+
+    val = raw.strip()
+    try:
+        return Platform(val)
+    except ValueError as e:
+        allowed = ", ".join(p.value for p in Platform)
+        raise RuntimeError(
+            f"Invalid {ENV_VAR_PLATFORM}={raw!r}. Expected one of: {allowed}"
+        ) from e
+
+
 def load_rpc_timing_config(dstack_config: dict[str, str]) -> RpcTimingConfig:
     """
     Loads dockerhub RPC timing configuration from dstack_config,
@@ -440,7 +486,16 @@ def validate_image_hash(
         return False
 
 
-def extend_rtmr3(valid_hash: str) -> None:
+def extend_rtmr3(platform: Platform, valid_hash: str) -> None:
+    if platform == Platform.NONTEE:
+        logging.info("PLATFORM=NONTEE → skipping RTMR3 extension step.")
+        return
+
+    if not is_unix_socket(DSTACK_UNIX_SOCKET):
+        raise RuntimeError(
+            f"PLATFORM=TEE requires dstack unix socket at {DSTACK_UNIX_SOCKET}."
+        )
+
     bare = get_bare_digest(valid_hash)
     logging.info(f"Extending RTMR3 with validated hash: {bare}")
 
@@ -460,11 +515,11 @@ def extend_rtmr3(valid_hash: str) -> None:
         raise RuntimeError("EmitEvent failed while extending RTMR3")
 
 
-def launch_mpc_container(valid_hash: str, user_env: dict) -> None:
+def launch_mpc_container(platform: Platform, valid_hash: str, user_env: dict) -> None:
     logging.info(f"Launching MPC node with validated hash: {valid_hash}")
 
     remove_existing_container()
-    docker_cmd = build_docker_cmd(user_env, valid_hash)
+    docker_cmd = build_docker_cmd(platform, user_env, valid_hash)
 
     proc = run(docker_cmd)
     if proc.returncode != 0:
@@ -510,6 +565,14 @@ def curl_unix_socket_post(
 def main():
     logging.info("start")
 
+    platform = parse_platform()
+    logging.info(f"Launcher platform: {platform.value}")
+
+    if platform is Platform.TEE and not is_unix_socket(DSTACK_UNIX_SOCKET):
+        raise RuntimeError(
+            f"PLATFORM=TEE requires dstack unix socket at {DSTACK_UNIX_SOCKET}."
+        )
+
     # DOCKER_CONTENT_TRUST must be enabled
     if os.environ.get(OS_ENV_DOCKER_CONTENT_TRUST, "0") != "1":
         raise RuntimeError(
@@ -547,9 +610,9 @@ def main():
     # Continue with validated hash
     logging.info(f"MPC image hash validated successfully: {selected_hash}")
 
-    extend_rtmr3(selected_hash)
+    extend_rtmr3(platform, selected_hash)
 
-    launch_mpc_container(selected_hash, dstack_config)
+    launch_mpc_container(platform, selected_hash, dstack_config)
 
 
 def request_until_success(
@@ -685,7 +748,9 @@ def get_bare_digest(full_digest: str) -> str:
     return full_digest.split(":", 1)[1]
 
 
-def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
+def build_docker_cmd(
+    platform: Platform, user_env: dict[str, str], image_digest: str
+) -> list[str]:
     bare_digest = get_bare_digest(image_digest)
 
     docker_cmd = ["docker", "run"]
@@ -693,7 +758,10 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
     # Required environment variables
     docker_cmd += ["--env", f"MPC_IMAGE_HASH={bare_digest}"]
     docker_cmd += ["--env", f"MPC_LATEST_ALLOWED_HASH_FILE={IMAGE_DIGEST_FILE}"]
-    docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
+
+    if platform is Platform.TEE:
+        docker_cmd += ["--env", f"DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}"]
+        docker_cmd += ["-v", f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}"]
 
     # MPC env vars and extra config
     for key, value in user_env.items():
@@ -736,8 +804,6 @@ def build_docker_cmd(user_env: dict[str, str], image_digest: str) -> list[str]:
         "no-new-privileges:true",
         "-v",
         "/tapp:/tapp:ro",
-        "-v",
-        f"{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}",
         "-v",
         "shared-volume:/mnt/shared",
         "-v",

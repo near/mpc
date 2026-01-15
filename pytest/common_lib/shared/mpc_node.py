@@ -7,7 +7,6 @@ import time
 from typing import cast
 
 from key import Key
-from ruamel.yaml import YAML
 
 
 from common_lib.constants import LISTEN_BLOCKS_FILE, MPC_BINARY_PATH
@@ -73,25 +72,6 @@ class MpcNode(NearAccount):
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
         self.backup_key = backup_key
-
-    def change_contract_id(self, new_contract_id: str):
-        yaml = YAML()
-        yaml.preserve_quotes = (
-            True  # optional: keeps any quotes if present in original file
-        )
-
-        path = pathlib.Path(self.home_dir) / "config.yaml"
-        with path.open("r") as f:
-            config = yaml.load(f)
-
-        old_contract_id = config["indexer"]["mpc_contract_id"]
-        print(
-            f"changing contract_id from {old_contract_id} to {new_contract_id} for node {self.account_id()}"
-        )
-        config["indexer"]["mpc_contract_id"] = new_contract_id
-
-        with path.open("w") as f:
-            yaml.dump(config, f)
 
     def print(self):
         if not self.is_running:

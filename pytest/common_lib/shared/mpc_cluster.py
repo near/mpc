@@ -42,10 +42,6 @@ from transaction import sign_deploy_contract_tx
 class MpcCluster:
     """Helper class"""
 
-    def run_all(self):
-        for node in self.nodes:
-            node.run()
-
     def kill_all(self):
         with ThreadPoolExecutor(max_workers=len(self.mpc_nodes)) as executor:
             executor.map(lambda node: node.kill(False), self.mpc_nodes)
@@ -540,13 +536,6 @@ class MpcCluster:
         self.request_node.send_await_check_txs_parallel(
             "ckd request", txs, ckd_verification
         )
-
-    def get_config(self, node_id=0):
-        node = self.mpc_nodes[node_id]
-        res = self.call_contract_function_with_account_assert_success(
-            node, ContractMethod.CONFIG
-        )
-        return json.dumps(res)
 
     def register_backup_service_info(
         self, node_id: int, backup_service_info: BackupServiceInfo

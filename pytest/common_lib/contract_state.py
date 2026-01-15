@@ -87,9 +87,6 @@ class Participants:
     def account_ids(self) -> set[str]:
         return {p.account_id for p in self.participants}
 
-    def ids(self) -> set[int]:
-        return {p.id for p in self.participants}
-
     def is_participant(self, account_id: str) -> bool:
         return any(p.account_id == account_id for p in self.participants)
 
@@ -98,12 +95,6 @@ class Participants:
             if participant.account_id == account_id:
                 return participant
         raise KeyError(f"No participant found with account_id '{account_id}'")
-
-    def by_id(self, id: int) -> Participant:
-        for participant in self.participants:
-            if participant.id == id:
-                return participant
-        raise KeyError(f"No participant found with id '{id}'")
 
     @staticmethod
     def from_json(data: dict):
