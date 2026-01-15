@@ -430,6 +430,7 @@ pub async fn new_tls_mesh_network(
                                 }
                                 _ = cancel.cancelled() => {
                                     tracing::info!("receiver loop cancelled.");
+                                    let _ = stream.shutdown().await;
                                     return Ok(());
                                 }
                             };
