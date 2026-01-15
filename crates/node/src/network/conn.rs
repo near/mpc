@@ -96,9 +96,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             })
             .unwrap(); // can't fail: we keep the receiver
     }
-}
 
-impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> {
     /// Sets a new incoming connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
@@ -307,7 +305,6 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 mod tests {
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
-    use crate::p2p::IncomingConnection;
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
     use std::sync::Arc;
@@ -337,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_connectivity() {
-        let connectivity = NodeConnectivity::<usize, IncomingConnection>::new();
+        let connectivity = NodeConnectivity::<usize, usize>::new();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
         assert!(!connectivity.is_bidirectionally_connected());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
@@ -348,7 +345,7 @@ mod tests {
         assert!(!connectivity.is_bidirectionally_connected());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
-        let conn2 = Arc::new(IncomingConnection::default());
+        let conn2 = Arc::new(0);
         connectivity.set_incoming_connection(&conn2);
         assert_eq!(connectivity.connection_version(), ver(1, 1));
         assert!(connectivity.is_bidirectionally_connected());
@@ -360,7 +357,7 @@ mod tests {
         assert!(connectivity.was_connection_interrupted(ver(1, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
-        let conn3 = Arc::new(IncomingConnection::default());
+        let conn3 = Arc::new(0);
         connectivity.set_incoming_connection(&conn3);
         assert_eq!(connectivity.connection_version(), ver(2, 2));
         assert!(!connectivity.is_bidirectionally_connected());
@@ -386,11 +383,10 @@ mod tests {
 
         let all_participants = [id0, id1, id2];
 
-        let connectivity =
-            AllNodeConnectivities::<usize, IncomingConnection>::new(id1, &[id0, id1, id2]);
+        let connectivity = AllNodeConnectivities::<usize, usize>::new(id1, &[id0, id1, id2]);
 
         let conn10 = Arc::new(0);
-        let conn01 = Arc::new(IncomingConnection::default());
+        let conn01 = Arc::new(0);
 
         connectivity
             .get(id0)
@@ -414,7 +410,7 @@ mod tests {
         };
 
         let conn12 = Arc::new(0);
-        let conn21 = Arc::new(IncomingConnection::default());
+        let conn21 = Arc::new(0);
 
         connectivity
             .get(id2)
