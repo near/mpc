@@ -47,7 +47,7 @@ pub enum Attestation {
     derive(schemars::JsonSchema)
 )]
 pub enum VerifiedAttestation {
-    Dtack(VerifiedDstackAttestation),
+    Dstack(VerifiedDstackAttestation),
     Mock(MockAttestation),
 }
 

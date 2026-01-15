@@ -204,7 +204,7 @@ impl IntoInterfaceType<dtos::VerifiedAttestation> for VerifiedAttestation {
                 dtos::VerifiedAttestation::Mock(mock_attestation.into_dto_type())
             }
             VerifiedAttestation::Dstack(validated_dstack_attestation) => {
-                dtos::VerifiedAttestation::Dtack(dtos::VerifiedDstackAttestation {
+                dtos::VerifiedAttestation::Dstack(dtos::VerifiedDstackAttestation {
                     mpc_image_hash: validated_dstack_attestation.mpc_image_hash.into(),
                     launcher_compose_hash: validated_dstack_attestation
                         .launcher_compose_hash

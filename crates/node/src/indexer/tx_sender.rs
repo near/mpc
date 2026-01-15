@@ -220,7 +220,7 @@ async fn observe_tx_result(
             let submitted_attestation_is_on_chain =
                 match (stored_attestation, submitted_attestation) {
                     (
-                        VerifiedAttestation::Dtack(verified_dstack_attestation),
+                        VerifiedAttestation::Dstack(verified_dstack_attestation),
                         Attestation::Dstack(_),
                     ) => {
                         // Check if the attestation stored on chain is fresh by verifying its age
