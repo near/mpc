@@ -20,21 +20,24 @@ To activate the development environment, run the following command in the projec
 nix develop
 ```
 
-### Automatic environment loading (direnv + nix-direnv)
-This project provides a Nix flake–based development shell. You can configure your shell to **automatically enter the dev environment when you `cd` into the repo** using **direnv** with **nix-direnv**.
+### Automatic environment loading (Optional)
+To avoid typing `nix develop` each time you want to activate your shell environment, we can configure our shell
+to  **automatically enter the dev environment when you `cd` into the repo** using **direnv** with **nix-direnv**.
 
-### 1. Install direnv and nix-direnv (Nix profile)
+#### 1. Install direnv and nix-direnv (Nix profile)
+
+You can install both `direnv` and `nix-direnv` with nix profiles with the command below, but you can also use your preferred package manager.
 
 ```shell
 nix profile add nixpkgs#direnv nixpkgs#nix-direnv
 ```
 
-### 2. Allow the `.envrc` file from the repository root
+#### 2. Allow the `.envrc` file from the repository root
 ```shell
 direnv allow
 ```
 
-### 3. Hook direnv into your shell
+#### 3. Hook direnv into your shell
 
 Add the appropriate hook to your shell configuration:
 
@@ -48,12 +51,12 @@ Zsh:
 eval "$(direnv hook zsh)"
 ```
 
-Fish"
+Fish:
 ```shell
 direnv hook fish | source
 ```
 
-### 4. Making direnv quiet (Optional)
+#### 4. Making direnv quiet (Optional)
 By default `direnv` will print all exports each time the environment is activated which is quite noisy. By default you'll see a verbose log each time.
 <details>
 <summary><b>Example verbose log</b></summary>
