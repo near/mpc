@@ -42,20 +42,16 @@ class NearAccount:
     """
 
     def init_nonces(self, running_node: LocalNode):
-        self._pytest_signer_nonces = [
-            Nonce(
-                nonce
-                if (
-                    nonce := running_node.get_nonce_for_pk(
-                        acc=key.account_id,
-                        pk=key.pk,
-                    )
-                )
-                is not None
-                else 0
+        nonces = []
+        for key in self._pytest_signer_keys:
+            nonce = running_node.get_nonce_for_pk(
+                acc=key.account_id,
+                pk=key.pk,
             )
-            for key in self._pytest_signer_keys
-        ]
+            if nonce is None:
+                nonce = 0
+            nonces += [Nonce(nonce)]
+        self._pytest_signer_nonces = nonces
 
     def account_id(self) -> str:
         return self._signer_key.account_id
@@ -166,7 +162,7 @@ class NearAccount:
 
 
 class Nonce:
-    def __init__(self, nonce=0):
+    def __init__(self, nonce):
         self.nonce = nonce
 
     def next_nonce(self):
