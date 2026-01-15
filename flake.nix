@@ -92,6 +92,12 @@
 
             PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
 
+            # OpenSSL
+            PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+            OPENSSL_DIR = "${pkgs.openssl.dev}";
+            OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+            OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
+
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
             CARGO_HOME = ".nix-cargo";
