@@ -2808,10 +2808,10 @@ expression: abi
             {
               "type": "object",
               "required": [
-                "Dtack"
+                "Dstack"
               ],
               "properties": {
-                "Dtack": {
+                "Dstack": {
                   "$ref": "#/definitions/VerifiedDstackAttestation"
                 }
               },
