@@ -393,7 +393,7 @@ pub async fn new_tls_mesh_network(
                         p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
                             .await
                             .context("p2p handshake")?;
-                        if connectivities.get(peer_id)?.has_incoming_connection() {
+                        if connectivities.get(peer_id)?.is_incoming_connected() {
                         tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
                             anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
                         }

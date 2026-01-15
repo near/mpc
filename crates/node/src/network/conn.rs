@@ -99,13 +99,6 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
 }
 
 impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> {
-    pub fn has_incoming_connection(&self) -> bool {
-        self.incoming_receiver
-            .borrow()
-            .connection
-            .upgrade()
-            .is_some()
-    }
     /// Sets a new incoming connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
@@ -140,6 +133,11 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         let outgoing = self.outgoing_receiver.borrow();
         let incoming = self.incoming_receiver.borrow();
         outgoing.is_connected() && incoming.is_connected()
+    }
+
+    pub fn is_incoming_connected(&self) -> bool {
+        let incoming = self.incoming_receiver.borrow();
+        incoming.is_connected()
     }
 
     /// Given the result of a previous call to `connection_version()`, determine
