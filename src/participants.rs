@@ -277,7 +277,7 @@ impl<'a, T> ParticipantMap<'a, T> {
 /// A way to count participants.
 ///
 /// This is used when you want to process a message from each participant only once.
-/// This datastructure will let you put a participant in, and then tell you if this
+/// This data-structure will let you put a participant in, and then tell you if this
 /// participant was newly inserted or not, allowing you to thus process the
 /// first message received from them.
 #[derive(Debug, Clone)]

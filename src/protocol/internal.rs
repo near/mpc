@@ -42,9 +42,6 @@
 //! This is why we have to take great care that the identifiers a protocol will produce
 //! are deterministic, even in the presence of concurrent tasks.
 
-// TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use super::{Action, MessageData, Participant, Protocol, ProtocolError};
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
@@ -159,22 +156,12 @@ impl MessageHeader {
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < Self::LEN {
-            return None;
-        }
-        // Unwrapping is fine because we checked the length already.
-        let channel = ChannelTag(
-            bytes[..ChannelTag::SIZE]
-                .try_into()
-                .expect("This cannot fail"),
-        );
-        let waitpoint = u64::from_le_bytes(
-            bytes[ChannelTag::SIZE..Self::LEN]
-                .try_into()
-                .expect("This cannot fail"),
-        );
-
-        Some(Self { channel, waitpoint })
+        let (data, _) = bytes.split_at_checked(Self::LEN)?;
+        let (tag_part, wait_part) = data.split_at(ChannelTag::SIZE);
+        Some(Self {
+            channel: ChannelTag(tag_part.try_into().ok()?),
+            waitpoint: u64::from_le_bytes(wait_part.try_into().ok()?),
+        })
     }
 
     /// Returns a new header with the waitpoint modified.
@@ -345,9 +332,11 @@ impl Comms {
         header: MessageHeader,
     ) -> Result<(Participant, T), ProtocolError> {
         let (from, data) = self.incoming.pop(header).await;
+        let message_data = data.get(MessageHeader::LEN..).ok_or_else(|| {
+            ProtocolError::DeserializationError("Failed to deserialize message data".to_string())
+        })?;
         let decoded: Result<T, Box<dyn error::Error + Send + Sync>> =
-            rmp_serde::decode::from_slice(&data[MessageHeader::LEN..])
-                .map_err(std::convert::Into::into);
+            rmp_serde::decode::from_slice(message_data).map_err(std::convert::Into::into);
         Ok((from, decoded?))
     }
 

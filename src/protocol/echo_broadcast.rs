@@ -1,6 +1,3 @@
-// TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use crate::participants::{ParticipantCounter, ParticipantList, ParticipantMap};
 use crate::protocol::ProtocolError;
 use crate::protocol::{
@@ -100,6 +97,40 @@ where
     Ok(vote)
 }
 
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone)]
+struct BroadcastProtocolState<'a, T> {
+    // first dimension determines the session
+    // second dimension contains the counter for the received data
+    data_echo: CounterList<T>,
+    data_ready: CounterList<T>,
+
+    // first dimension determines the session
+    // second dimension helps prevent duplication: correct processes should deliver at most one message
+    seen_echo: ParticipantCounter<'a>,
+    seen_ready: ParticipantCounter<'a>,
+
+    finish_send: bool,
+    finish_echo: bool,
+    finish_amplification: bool,
+    finish_ready: bool,
+}
+
+impl<'a, T: PartialEq> BroadcastProtocolState<'a, T> {
+    fn new(participants: &'a ParticipantList) -> Self {
+        Self {
+            data_echo: CounterList::new(),
+            data_ready: CounterList::new(),
+            seen_echo: ParticipantCounter::new(participants),
+            seen_ready: ParticipantCounter::new(participants),
+            finish_send: false,
+            finish_echo: false,
+            finish_amplification: false,
+            finish_ready: false,
+        }
+    }
+}
+
 /// This reliable broadcast function is the echo-broadcast protocol from the sender side.
 ///
 /// It broadcasts a vote of type `MessageType::Send` and expects that the output
@@ -121,20 +152,7 @@ where
 
     let mut vote_output = ParticipantMap::new(participants);
 
-    // first dimension determines the session
-    // second dimension contains the counter for the received data
-    let mut data_echo = vec![CounterList::new(); n];
-    let mut data_ready = vec![CounterList::new(); n];
-
-    // first dimension determines the session
-    // second dimension helps prevent duplication: correct processes should deliver at most one message
-    let mut seen_echo = vec![ParticipantCounter::new(participants); n];
-    let mut seen_ready = vec![ParticipantCounter::new(participants); n];
-
-    let mut finish_send = vec![false; n];
-    let mut finish_echo = vec![false; n];
-    let mut finish_amplification = vec![false; n];
-    let mut finish_ready = vec![false; n];
+    let mut state = vec![BroadcastProtocolState::new(participants); n];
 
     // receive simulated vote
     let mut from = me;
@@ -166,9 +184,9 @@ where
 
         is_simulated_vote = false;
 
-        if sid >= n {
+        let Some(state_sid) = state.get_mut(sid) else {
             continue;
-        }
+        };
 
         match vote.clone() {
             // Receive send vote then echo to everybody
@@ -178,13 +196,13 @@ where
                 // then skip.
                 // The second condition prevents a malicious party starting the protocol
                 // on behalf on somebody else
-                if finish_send[sid] || sid != participants.index(from)? {
+                if state_sid.finish_send || sid != participants.index(from)? {
                     continue;
                 }
                 vote = MessageType::Echo(data);
                 // upon receiving a send message, echo it
                 chan.send_many(wait, &(&sid, &vote))?;
-                finish_send[sid] = true;
+                state_sid.finish_send = true;
 
                 // simulate an echo vote sent by me
                 is_simulated_vote = true;
@@ -194,22 +212,22 @@ where
             MessageType::Echo(data) => {
                 // skip if I received echo message from the sender in a specific session (sid)
                 // or if I had already passed to the ready phase in this same session
-                if !seen_echo[sid].put(from) || finish_echo[sid] {
+                if !state_sid.seen_echo.put(from) || state_sid.finish_echo {
                     continue;
                 }
                 // insert or increment the number of collected echo of a specific vote
-                data_echo[sid].insert_or_increase_counter(data.clone());
+                state_sid.data_echo.insert_or_increase_counter(data.clone());
 
                 // upon gathering strictly more than (n+f)/2 votes
                 // for a result, deliver Ready.
-                if data_echo[sid].get(&data).ok_or_else(|| {
+                if state_sid.data_echo.get(&data).ok_or_else(|| {
                     ProtocolError::Other("Missing element in CounterList".to_string())
                 })? > echo_t
                 {
                     vote = MessageType::Ready(data);
                     chan.send_many(wait, &(&sid, &vote))?;
                     // state that the echo phase for session id (sid) is done
-                    finish_echo[sid] = true;
+                    state_sid.finish_echo = true;
 
                     // simulate a ready vote sent by me
                     is_simulated_vote = true;
@@ -220,14 +238,14 @@ where
                 // then deduce that the sender is malicious and stop
                 // this is better than letting the timeout stop the process.
                 // This check has to be done after counting the simulated value.
-                else if !finish_amplification[sid] {
+                else if !state_sid.finish_amplification {
                     // calculate the total number of echos already collected
-                    let received_echo_cnt = data_echo[sid].get_sum_counters();
+                    let received_echo_cnt = state_sid.data_echo.get_sum_counters();
                     // calculate the number of echo to be received
                     let non_received_echo_cnt = n - received_echo_cnt;
-                    // iterate over the data_echo[sid] array
+                    // iterate over the state_sid.data_echo array
                     let mut is_enough = false;
-                    for (_, cnt) in data_echo[sid].iter() {
+                    for (_, cnt) in state_sid.data_echo.iter() {
                         // verify whether there is enough votes in at
                         // least one slot to exceed the threshold
                         if cnt + non_received_echo_cnt > echo_t {
@@ -247,37 +265,39 @@ where
             }
             MessageType::Ready(data) => {
                 // skip if I received ready message from the sender in session sid
-                if !seen_ready[sid].put(from) || finish_ready[sid] {
+                if !state_sid.seen_ready.put(from) || state_sid.finish_ready {
                     continue;
                 }
 
                 // insert or increment the number of collected ready of a specific vote
-                data_ready[sid].insert_or_increase_counter(data.clone());
+                state_sid
+                    .data_ready
+                    .insert_or_increase_counter(data.clone());
 
                 // upon gathering strictly more than f votes
                 // and if I haven't already amplified ready vote in session sid then
                 // proceed to amplification of the ready message
-                if data_ready[sid].get(&data).ok_or_else(|| {
+                if state_sid.data_ready.get(&data).ok_or_else(|| {
                     ProtocolError::Other("Missing element in CounterList".to_string())
                 })? > ready_t
-                    && !finish_amplification[sid]
+                    && !state_sid.finish_amplification
                 {
                     vote = MessageType::Ready(data.clone());
                     chan.send_many(wait, &(&sid, &vote))?;
-                    finish_amplification[sid] = true;
+                    state_sid.finish_amplification = true;
 
                     // simulate a ready vote sent by me
                     is_simulated_vote = true;
                     from = me;
                 }
-                if data_ready[sid].get(&data).ok_or_else(|| {
+                if state_sid.data_ready.get(&data).ok_or_else(|| {
                     ProtocolError::Other("Missing element in CounterList".to_string())
                 })? > 2 * ready_t
                 {
                     // skip all types of messages sent for session sid from now on
-                    finish_send[sid] = true;
-                    finish_echo[sid] = true;
-                    finish_ready[sid] = true;
+                    state_sid.finish_send = true;
+                    state_sid.finish_echo = true;
+                    state_sid.finish_ready = true;
 
                     // return a map of participant data
                     let p = participants
@@ -300,7 +320,7 @@ where
                     // if all the ready slots are set to true
                     // then all sessions have ended successfully
                     // we can thus output that the n instances of the broadcast protocols have succeeded
-                    if finish_ready.iter().all(|&x| x) {
+                    if state.iter().all(|x| x.finish_ready) {
                         return Ok(vote_output);
                     }
                 }
