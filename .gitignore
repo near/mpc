@@ -28,3 +28,6 @@ venv
 # Nix
 .nix-cargo/
 .direnv/
+
+# TODO(#1768): potentially remove
+.envrc
