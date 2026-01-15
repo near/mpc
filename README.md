@@ -20,6 +20,39 @@ To activate the development environment, run the following command in the projec
 nix develop
 ```
 
+### Automatic environment loading (direnv + nix-direnv)
+This project provides a Nix flake–based development shell. You can configure your shell to **automatically enter the dev environment when you `cd` into the repo** using **direnv** with **nix-direnv**.
+
+> ⚠️ Note: `direnv` runs *before* you enter the Nix dev shell, so it **must be installed and hooked into your shell globally**. Including `direnv` in the flake devShell alone is not sufficient for auto-loading.
+
+
+### 1. Install direnv and nix-direnv (Nix profile)
+
+```shell
+nix profile add nixpkgs#direnv nixpkgs#nix-direnv
+```
+
+### 3. Allow the `.envrc` file from the repository root
+```shell
+direnv allow
+```
+
+### 2. Hook direnv into your shell
+
+Add the appropriate hook to your shell configuration:
+
+```bash
+eval "$(direnv hook bash)"
+```
+
+```zsh
+eval "$(direnv hook zsh)"
+```
+
+```shell
+direnv hook fish | source
+```
+
 Once you enter the shell, your workspace is immediately ready for development.
 
 ## How it works
