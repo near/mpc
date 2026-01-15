@@ -32,14 +32,7 @@ ignore = [
 
 [bans]
 multiple-versions = "deny"
-skip = [
-  { name = "prost-types" },
-  # Allow multiple versions pulled transitively by near-sdk/nearcore
-  { name = "lru" },
-  { name = "near-fmt" },
-  { name = "near-primitives" },
-  { name = "near-time" },
-]
+skip = [{ name = "prost-types" }]
 skip-tree = [
   { name = "axum" },
   { name = "near-jsonrpc-client" },
