@@ -3,6 +3,7 @@
 pub mod types {
     pub use attestation::{
         AppCompose, Attestation, Collateral, DstackAttestation, EventLog, MockAttestation, TcbInfo,
+        VerifiedAttestation, VerifiedDstackAttestation,
     };
     pub use config::{Config, InitConfig};
     pub use crypto::{
