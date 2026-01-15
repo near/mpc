@@ -1,7 +1,6 @@
 use crate::config::MpcConfig;
 use crate::network::conn::{
-    AllNodeConnectivities, CancellableConnection, ConnectionVersion, NodeConnectivity,
-    NodeConnectivityInterface,
+    AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
 use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
 use crate::network::handshake::p2p_handshake;
@@ -285,7 +284,6 @@ impl PersistentConnection {
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
-                    tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                 }
             },
         );
@@ -297,27 +295,8 @@ impl PersistentConnection {
     }
 }
 
-pub struct IncomingConnection {
-    cancel: CancellationToken,
-}
-
-impl IncomingConnection {
-    pub fn new(cancel: CancellationToken) -> IncomingConnection {
-        IncomingConnection { cancel }
-    }
-}
-
-impl Default for IncomingConnection {
-    fn default() -> Self {
-        Self::new(CancellationToken::new())
-    }
-}
-
-impl CancellableConnection for IncomingConnection {
-    fn cancel(&self) {
-        self.cancel.cancel();
-    }
-}
+#[derive(Default)]
+pub struct IncomingConnection(());
 
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
@@ -414,26 +393,25 @@ pub async fn new_tls_mesh_network(
                         p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
                             .await
                             .context("p2p handshake")?;
+                        if connectivities.get(peer_id)?.has_incoming_connection() {
+                        tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
+                            anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
+                        }
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
-                        let cancel = CancellationToken::new();
-                        let incoming_conn = IncomingConnection { cancel: cancel.clone() };
+                        let incoming_conn = IncomingConnection::default();
                         let incoming_conn = Arc::new(incoming_conn);
                         connectivities
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
                         loop {
-                            let len = tokio::select! {
-                                res = stream.read_u32() => { res? }
-                                _ = tokio::time::sleep(std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS)) => {
-                                    anyhow::bail!("timed out waiting for read")
-                                }
-                                _ = cancel.cancelled() => {
-                                    tracing::info!("receiver loop cancelled.");
-                                    let _ = stream.shutdown().await;
-                                    return Ok(());
-                                }
-                            };
+
+                            let len = tokio::time::timeout(
+                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
+                                stream.read_u32(),
+                            )
+                            .await??;
+
                             if len >= MAX_MESSAGE_LEN {
                                 anyhow::bail!("Message too long");
                             }
@@ -980,7 +958,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_receiver_drops_previous_connection() {
+    async fn test_receiver_does_not_accept_new_connection_if_connected() {
         init_logging(LogFormat::Plain);
         let mut configs = generate_test_p2p_configs(
             &["test0".parse().unwrap(), "test1".parse().unwrap()],
@@ -1045,34 +1023,14 @@ mod tests {
                 super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                     .await
                     .unwrap();
-            alice
-                .connectivity(bob_id)
-                .wait_for_connection(ConnectionVersion {
-                    outgoing: 1,
-                    incoming: 2,
-                })
-                .await
-                .unwrap();
-            let bob_new_connection_versions = bob_new.connectivity(alice_id).connection_version();
-            assert_eq!(
-                bob_new_connection_versions,
-                ConnectionVersion {
-                    outgoing: 1,
-                    incoming: 1
-                }
-            );
-
-            bob_initial
-                .connectivity(alice_id)
-                .wait_for_connection(ConnectionVersion {
-                    outgoing: 2,
-                    incoming: 1,
-                })
-                .await
-                .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
             // bob_new will never connect bidirectionally with Alice
             assert!(!bob_new
+                .connectivity(alice_id)
+                .is_bidirectionally_connected());
+
+            assert!(bob_initial
                 .connectivity(alice_id)
                 .is_bidirectionally_connected());
         })
