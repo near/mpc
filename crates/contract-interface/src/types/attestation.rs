@@ -31,6 +31,54 @@ pub enum Attestation {
 
 #[derive(
     Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum VerifiedAttestation {
+    Dstack(VerifiedDstackAttestation),
+    Mock(MockAttestation),
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct VerifiedDstackAttestation {
+    /// The digest of the MPC image running.
+    pub mpc_image_hash: Sha256Digest,
+    /// The digest of the launcher compose file running.
+    pub launcher_compose_hash: Sha256Digest,
+    /// Unix time stamp for when this attestation expires.
+    pub expiry_timestamp_seconds: u64,
+}
+
+#[derive(
+    Clone,
     Eq,
     PartialEq,
     Ord,
@@ -78,8 +126,8 @@ pub enum MockAttestation {
     WithConstraints {
         mpc_docker_image_hash: Option<Sha256Digest>,
         launcher_docker_compose_hash: Option<Sha256Digest>,
-        /// Unix time stamp for when this attestation expires.  
-        expiry_time_stamp_seconds: Option<u64>,
+        /// Unix time stamp for when this attestation expires.
+        expiry_timestamp_seconds: Option<u64>,
     },
 }
 

@@ -249,7 +249,7 @@ impl TestSetup {
         Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: Some(hash),
             launcher_docker_compose_hash: None,
-            expiry_time_stamp_seconds: None,
+            expiry_timestamp_seconds: None,
         })
     }
 }
