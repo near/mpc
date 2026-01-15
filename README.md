@@ -34,18 +34,23 @@ You can install both with nix profiles:
 nix profile add nixpkgs#direnv nixpkgs#nix-direnv
 ```
 
-#### 2. Allow the `.envrc` file from the repository root
+#### 2. Create an `.envrc` file to use the project's nix flake
+```shell
+echo "use nix" >> .envrc
+```
+
+#### 3. Allow the `.envrc` file from the repository root
 ```shell
 direnv allow
 ```
 
-#### 3. Add direnv hook to your shell
+#### 4. Add direnv hook to your shell
 
 For `direnv` command to automatically run in the project, it must bee hooked to your shell.
 
 See https://direnv.net/docs/installation.html for instructions.
 
-#### 4. Making direnv quiet (Optional)
+#### 5. Making direnv quiet (Optional)
 By default `direnv` will print all exports each time the environment is activated which can be quite noisy.
 <details>
 <summary><b>Example verbose log</b></summary>
@@ -61,7 +66,7 @@ direnv: export +AR +AR_FOR_BUILD +AR_wasm32_unknown_unknown +AS +AS_FOR_BUILD +B
 
 </details>
 
-To silence these logs we need to create a `direnv.toml` and add a log_filter and hide_env_diff variables to it.
+To silence these logs we need to create a `direnv.toml` and add `log_filter` and `hide_env_diff` configuration values to it.
 
 You can do this with the command below:
 > NB! This command **is not idempotent**, so only run it once!
