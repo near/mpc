@@ -318,7 +318,15 @@ impl TlsConnection {
 
                 loop {
                     interval.tick().await;
-                    seq += 1;
+                    seq = match seq.checked_add(1) {
+                        Some(new_seq) => new_seq,
+                        None => {
+                            tracing::warn!(
+                                "TLS sequence number exceeded u64::MAX - closing connection"
+                            );
+                            return;
+                        }
+                    };
                     let ping_sent_at = Instant::now();
                     if sender_clone.send(Packet::Ping(seq)).is_err() {
                         // The receiver side will be dropped when the sender task is
