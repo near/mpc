@@ -96,7 +96,15 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             })
             .unwrap(); // can't fail: we keep the receiver
     }
+}
 
+pub trait CancellableConnection {
+    fn cancel(&self);
+}
+
+impl<I: Send + Sync + 'static, O: CancellableConnection + Send + Sync + 'static>
+    NodeConnectivity<I, O>
+{
     /// Sets a new incoming connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
@@ -107,6 +115,10 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// tracking connectivity and connection resets, we logically assume that
     /// as soon as this is called, the old connection is considered dropped.
     pub fn set_incoming_connection(&self, conn: &Arc<O>) {
+        if let Some(previous) = self.incoming_receiver.borrow().connection.upgrade() {
+            tracing::info!("cancelling previous connection with same peer");
+            previous.cancel();
+        }
         let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.incoming_sender
             .send(ConnectionWithVersion {
@@ -115,7 +127,9 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             })
             .unwrap(); // can't fail: we keep the receiver
     }
+}
 
+impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> {
     /// The current ConnectionVersion.
     pub fn connection_version(&self) -> ConnectionVersion {
         let outgoing = self.outgoing_receiver.borrow();
@@ -238,18 +252,22 @@ pub struct AllNodeConnectivities<I: Send + Sync + 'static, O: Send + Sync + 'sta
     connectivities: HashMap<ParticipantId, Arc<NodeConnectivity<I, O>>>,
 }
 
-impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I, O> {
+impl<I: Send + Sync + 'static, O: CancellableConnection + Send + Sync + 'static>
+    AllNodeConnectivities<I, O>
+{
     pub fn new(my_participant_id: ParticipantId, all_participant_ids: &[ParticipantId]) -> Self {
         let mut connectivities = HashMap::new();
         for p in all_participant_ids {
             if *p == my_participant_id {
                 continue;
             }
-            connectivities.insert(*p, Arc::new(NodeConnectivity::new()));
+            connectivities.insert(*p, Arc::new(NodeConnectivity::<I, O>::new()));
         }
         Self { connectivities }
     }
+}
 
+impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I, O> {
     /// Waits for `threshold` number of connections (a freebie is included for the node itself)
     /// to the given `peers` to be bidirectionally established at the same time.
     pub async fn wait_for_ready(&self, threshold: usize, peers_to_consider: &[ParticipantId]) {
@@ -300,9 +318,11 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 mod tests {
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
+    use crate::p2p::IncomingConnection;
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
     use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
 
     #[test]
     fn test_connection_version() {
@@ -329,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_connectivity() {
-        let connectivity = NodeConnectivity::<usize, usize>::new();
+        let connectivity = NodeConnectivity::<usize, IncomingConnection>::new();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
         assert!(!connectivity.is_bidirectionally_connected());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
@@ -340,7 +360,7 @@ mod tests {
         assert!(!connectivity.is_bidirectionally_connected());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
-        let conn2 = Arc::new(0);
+        let conn2 = Arc::new(IncomingConnection::default());
         connectivity.set_incoming_connection(&conn2);
         assert_eq!(connectivity.connection_version(), ver(1, 1));
         assert!(connectivity.is_bidirectionally_connected());
@@ -352,7 +372,7 @@ mod tests {
         assert!(connectivity.was_connection_interrupted(ver(1, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
-        let conn3 = Arc::new(0);
+        let conn3 = Arc::new(IncomingConnection::default());
         connectivity.set_incoming_connection(&conn3);
         assert_eq!(connectivity.connection_version(), ver(2, 2));
         assert!(!connectivity.is_bidirectionally_connected());
@@ -378,10 +398,11 @@ mod tests {
 
         let all_participants = [id0, id1, id2];
 
-        let connectivity = AllNodeConnectivities::<usize, usize>::new(id1, &[id0, id1, id2]);
+        let connectivity =
+            AllNodeConnectivities::<usize, IncomingConnection>::new(id1, &[id0, id1, id2]);
 
         let conn10 = Arc::new(0);
-        let conn01 = Arc::new(0);
+        let conn01 = Arc::new(IncomingConnection::default());
 
         connectivity
             .get(id0)
@@ -405,7 +426,7 @@ mod tests {
         };
 
         let conn12 = Arc::new(0);
-        let conn21 = Arc::new(0);
+        let conn21 = Arc::new(IncomingConnection::default());
 
         connectivity
             .get(id2)
@@ -417,5 +438,23 @@ mod tests {
             .set_incoming_connection(&conn21);
 
         assert_eq!(fut.now_or_never(), Some(()));
+    }
+
+    #[test]
+    fn test_connectivity_prevous_incoming_is_cancelled() {
+        let connectivity = NodeConnectivity::<usize, IncomingConnection>::new();
+        assert_eq!(connectivity.connection_version(), ver(1, 1));
+        assert!(!connectivity.is_bidirectionally_connected());
+        assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
+
+        let cancel_first = CancellationToken::new();
+        let first_conn = Arc::new(IncomingConnection::new(cancel_first.clone()));
+        connectivity.set_incoming_connection(&first_conn);
+        assert_eq!(connectivity.connection_version(), ver(1, 1));
+
+        let second_conn = Arc::new(IncomingConnection::default());
+        connectivity.set_incoming_connection(&second_conn);
+        assert_eq!(connectivity.connection_version(), ver(1, 2));
+        assert!(cancel_first.is_cancelled());
     }
 }

@@ -1,6 +1,7 @@
 use crate::config::MpcConfig;
 use crate::network::conn::{
-    AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
+    AllNodeConnectivities, CancellableConnection, ConnectionVersion, NodeConnectivity,
+    NodeConnectivityInterface,
 };
 use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
 use crate::network::handshake::p2p_handshake;
@@ -42,7 +43,7 @@ pub struct TlsMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
-    connectivities: Arc<AllNodeConnectivities<TlsConnection, ()>>,
+    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnection>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
@@ -61,7 +62,7 @@ struct ParticipantIdentities {
 /// connection is broken.
 struct PersistentConnection {
     target_participant_id: ParticipantId,
-    connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
+    connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
@@ -71,7 +72,7 @@ struct PersistentConnection {
 /// State for a single TLS/TCP connection to one participant. We only ever send
 /// messages through this connection, so there is nothing to handle receiving.
 /// Dropping this struct will automatically close the connection.
-struct TlsConnection {
+struct OutgoingConnection {
     /// Used to send messages via the connection.
     sender: UnboundedSender<Packet>,
     /// Task that reads messages from the channel (other side of `sender`) and
@@ -103,7 +104,7 @@ enum Packet {
     IndexerHeight(IndexerHeightMessage),
 }
 
-impl TlsConnection {
+impl OutgoingConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
     const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -115,7 +116,7 @@ impl TlsConnection {
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
-    ) -> anyhow::Result<TlsConnection> {
+    ) -> anyhow::Result<OutgoingConnection> {
         let tcp_stream = TcpStream::connect(target_address)
             .await
             .context("TCP connect")?;
@@ -190,7 +191,7 @@ impl TlsConnection {
                 }
             },
         );
-        Ok(TlsConnection {
+        Ok(OutgoingConnection {
             sender,
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
@@ -245,14 +246,14 @@ impl PersistentConnection {
         target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
-        connectivity: Arc<NodeConnectivity<TlsConnection, ()>>,
+        connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
                 loop {
-                    let new_conn = match TlsConnection::new(
+                    let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
                         &target_address,
                         target_participant_id,
@@ -284,6 +285,7 @@ impl PersistentConnection {
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
+                    tokio::time::sleep(Self::CONNECTION_RETRY_DELAY).await;
                 }
             },
         );
@@ -292,6 +294,28 @@ impl PersistentConnection {
             connectivity: connectivity_clone,
             _task: task,
         })
+    }
+}
+
+pub struct IncomingConnection {
+    cancel: CancellationToken,
+}
+
+impl IncomingConnection {
+    pub fn new(cancel: CancellationToken) -> IncomingConnection {
+        IncomingConnection { cancel }
+    }
+}
+
+impl Default for IncomingConnection {
+    fn default() -> Self {
+        Self::new(CancellationToken::new())
+    }
+}
+
+impl CancellableConnection for IncomingConnection {
+    fn cancel(&self) {
+        self.cancel.cancel();
     }
 }
 
@@ -317,7 +341,10 @@ pub async fn new_tls_mesh_network(
     // Prepare participant data.
     let mut participant_identities = ParticipantIdentities::default();
     let mut connections = HashMap::new();
-    let connectivities = Arc::new(AllNodeConnectivities::new(
+    let connectivities = Arc::new(AllNodeConnectivities::<
+        OutgoingConnection,
+        IncomingConnection,
+    >::new(
         config.my_participant_id,
         &config
             .participants
@@ -366,8 +393,9 @@ pub async fn new_tls_mesh_network(
     let connectivities_clone = connectivities.clone();
     let my_id = config.my_participant_id;
     info!("Spawning incoming connections handler.");
-    let incoming_connections_task =
-        tracking::spawn("incoming connection handler tls mesh network", async move {
+    let incoming_connections_task = tracking::spawn(
+        "incoming connection handler tls mesh network",
+        async move {
             let mut tasks = AutoAbortTaskCollection::new();
             while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
                 let message_sender = message_sender.clone();
@@ -383,21 +411,28 @@ pub async fn new_tls_mesh_network(
                         let peer_id =
                             verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                         tracking::set_progress(&format!("Authenticated as {}", peer_id));
-                        p2p_handshake(&mut stream, TlsConnection::HANDSHAKE_TIMEOUT)
+                        p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
                             .await
                             .context("p2p handshake")?;
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
-                        let incoming_conn = Arc::new(());
+                        let cancel = CancellationToken::new();
+                        let incoming_conn = IncomingConnection { cancel: cancel.clone() };
+                        let incoming_conn = Arc::new(incoming_conn);
                         connectivities
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
                         loop {
-                            let len = tokio::time::timeout(
-                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
-                                stream.read_u32(),
-                            )
-                            .await??;
+                            let len = tokio::select! {
+                                res = stream.read_u32() => { res? }
+                                _ = tokio::time::sleep(std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS)) => {
+                                    anyhow::bail!("timed out waiting for read")
+                                }
+                                _ = cancel.cancelled() => {
+                                    tracing::info!("receiver loop cancelled.");
+                                    return Ok(());
+                                }
+                            };
                             if len >= MAX_MESSAGE_LEN {
                                 anyhow::bail!("Message too long");
                             }
@@ -439,7 +474,8 @@ pub async fn new_tls_mesh_network(
                     },
                 );
             }
-        });
+        },
+    );
 
     let sender = TlsMeshSender {
         my_id: config.my_participant_id,
@@ -694,6 +730,7 @@ pub mod testing {
 mod tests {
     use crate::cli::LogFormat;
     use crate::config::MpcConfig;
+    use crate::network::conn::ConnectionVersion;
     use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
     use crate::p2p::testing::{generate_test_p2p_configs, PortSeed};
     use crate::primitives::{
@@ -938,5 +975,104 @@ mod tests {
         let mut ids = ids.to_vec();
         ids.sort();
         ids
+    }
+
+    #[tokio::test]
+    async fn test_receiver_drops_previous_connection() {
+        init_logging(LogFormat::Plain);
+        let mut configs = generate_test_p2p_configs(
+            &["test0".parse().unwrap(), "test1".parse().unwrap()],
+            2,
+            PortSeed::P2P_WAIT_FOR_READY_TEST,
+            None,
+        )
+        .unwrap();
+
+        let all_participants = |mpc_config: &MpcConfig| {
+            mpc_config
+                .participants
+                .participants
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+        start_root_task_with_periodic_dump(async move {
+            let (alice, _alice_receiver) =
+                super::new_tls_mesh_network(&configs[0].0, &configs[0].1)
+                    .await
+                    .unwrap();
+            let (bob_initial, _bob_receiver) =
+                super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                    .await
+                    .unwrap();
+
+            let participants = all_participants(&configs[0].0);
+            assert_eq!(&participants, &all_participants(&configs[1].0));
+            let alice_id = participants[0];
+            let bob_id = participants[1];
+
+            alice.wait_for_ready(2, &participants).await.unwrap();
+            bob_initial.wait_for_ready(2, &participants).await.unwrap();
+
+            assert!(alice.connectivity(bob_id).is_bidirectionally_connected());
+            assert!(bob_initial
+                .connectivity(alice_id)
+                .is_bidirectionally_connected());
+
+            let alice_connection_versions = alice.connectivity(bob_id).connection_version();
+            assert_eq!(
+                alice_connection_versions,
+                ConnectionVersion {
+                    outgoing: 1,
+                    incoming: 1
+                }
+            );
+            let bob_initial_connection_versions =
+                bob_initial.connectivity(alice_id).connection_version();
+            assert_eq!(
+                bob_initial_connection_versions,
+                ConnectionVersion {
+                    outgoing: 1,
+                    incoming: 1
+                }
+            );
+
+            configs[1].0.participants.participants[1].port += 100;
+            let (bob_new, _bob_new_receiver) =
+                super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
+                    .await
+                    .unwrap();
+            alice
+                .connectivity(bob_id)
+                .wait_for_connection(ConnectionVersion {
+                    outgoing: 1,
+                    incoming: 2,
+                })
+                .await
+                .unwrap();
+            let bob_new_connection_versions = bob_new.connectivity(alice_id).connection_version();
+            assert_eq!(
+                bob_new_connection_versions,
+                ConnectionVersion {
+                    outgoing: 1,
+                    incoming: 1
+                }
+            );
+
+            bob_initial
+                .connectivity(alice_id)
+                .wait_for_connection(ConnectionVersion {
+                    outgoing: 2,
+                    incoming: 1,
+                })
+                .await
+                .unwrap();
+
+            // bob_new will never connect bidirectionally with Alice
+            assert!(!bob_new
+                .connectivity(alice_id)
+                .is_bidirectionally_connected());
+        })
+        .await;
     }
 }
