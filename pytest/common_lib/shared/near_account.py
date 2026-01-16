@@ -14,7 +14,7 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from cluster import LocalNode
 
-from transaction import sign_function_call_tx
+from transaction import sign_function_call_tx, sign_and_serialize_transaction
 
 
 class NearAccount:
@@ -36,6 +36,22 @@ class NearAccount:
         self._signer_key = signer_key
         self._pytest_signer_keys = pytest_signer_keys
         self._next_signer_key_id = 0
+
+    """
+    This function must be called after the account is created on the blockchain
+    """
+
+    def init_nonces(self, running_node: LocalNode):
+        nonces = []
+        for key in self._pytest_signer_keys:
+            nonce = running_node.get_nonce_for_pk(
+                acc=key.account_id,
+                pk=key.pk,
+            )
+            if nonce is None:
+                nonce = 0
+            nonces.append(Nonce(nonce))
+        self._pytest_signer_nonces = nonces
 
     def account_id(self) -> str:
         return self._signer_key.account_id
@@ -101,7 +117,7 @@ class NearAccount:
     def get_key_and_nonce(self) -> tuple[Key, int]:
         id = self._get_next_signer_key_id()
         key = self._pytest_signer_keys[id]
-        nonce = self.near_node.get_nonce_for_pk(key.account_id, key.pk)
+        nonce = self._pytest_signer_nonces[id].next_nonce()
         assert nonce is not None
         return (key, nonce)
 
@@ -110,7 +126,6 @@ class NearAccount:
         target_contract,
         function_name,
         args,
-        nonce_offset=1,
         gas=150 * TGAS,
         deposit=0,
     ):
@@ -126,7 +141,30 @@ class NearAccount:
             encoded_args,
             gas,
             deposit,
-            nonce + nonce_offset,
+            nonce,
             last_block_hash,
         )
         return tx
+
+    def sign_transaction(self, receiverId, actions):
+        last_block_hash = self.last_block_hash()
+        (key, nonce) = self.get_key_and_nonce()
+        signed_tx = sign_and_serialize_transaction(
+            receiverId,
+            nonce,
+            actions,
+            last_block_hash,
+            key.account_id,
+            key.decoded_pk(),
+            key.decoded_sk(),
+        )
+        return signed_tx
+
+
+class Nonce:
+    def __init__(self, nonce):
+        self.nonce = nonce
+
+    def next_nonce(self):
+        self.nonce += 1
+        return self.nonce

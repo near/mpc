@@ -1,7 +1,8 @@
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary,
+        call_contract_key_generation, cleanup_post_migrate,
+        execute_key_generation_and_add_random_state, gen_accounts, init,
+        propose_and_vote_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -178,6 +179,10 @@ async fn propose_upgrade_from_production_to_current_binary(
         state_pre_upgrade, state_post_upgrade,
         "State of the contract should remain the same post upgrade."
     );
+
+    cleanup_post_migrate(&contract, &accounts[0])
+        .await
+        .expect("post migration cleanup works");
 }
 
 //// Verifies that upgrading the contract preserves state and functionality.

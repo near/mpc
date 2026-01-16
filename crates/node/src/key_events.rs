@@ -583,14 +583,17 @@ pub async fn resharing_leader(
 
         // Start the resharing computation.
         info!("Starting resharing computation.");
-        let Ok(channel) = client.new_channel_for_task(
+        let channel = match client.new_channel_for_task(
             EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,
             },
             client.all_participant_ids(),
-        ) else {
-            tracing::warn!("Failed to create channel for resharing computation; retrying.");
-            continue;
+        ) {
+            Ok(channel) => channel,
+            Err(err) => {
+                tracing::warn!(error =%err, "Failed to create channel for resharing computation; retrying.");
+                continue;
+            }
         };
 
         if let Err(e) = resharing_computation(

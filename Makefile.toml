@@ -12,6 +12,7 @@ dependencies = [
   "zizmor",
   "check",
   "clippy",
+  "clippy-all-features",
 ]
 
 [tasks.check-all]
@@ -28,6 +29,7 @@ dependencies = [
   "zizmor",
   "check",
   "clippy",
+  "clippy-all-features",
   "nextest",
 ]
 
@@ -35,7 +37,7 @@ dependencies = [
 command = "cargo"
 args = ["check"]
 
-[tasks.clippy]
+[tasks.clippy-all-features]
 command = "cargo"
 args = [
   "clippy",
@@ -47,13 +49,17 @@ args = [
   "warnings",
 ]
 
+[tasks.clippy]
+command = "cargo"
+args = ["clippy", "--all-targets", "--locked", "--", "-D", "warnings"]
+
 [tasks.fmt]
 command = "cargo"
 args = ["fmt", "--", "--check"]
 
 [tasks.cargo-sort]
 command = "cargo"
-args = ["sort", "--workspace", "--grouped"]
+args = ["sort", "--workspace", "--grouped", "--check", "--check-format"]
 
 [tasks.cargo-shear]
 command = "cargo"
@@ -84,11 +90,11 @@ command = "zizmor"
 args = [".github/"]
 
 [tasks.crate-names]
-command = "sh"
+command = "bash"
 args = ["scripts/check-crates-kebab-case.sh"]
 
 [tasks.todo-format]
-command = "sh"
+command = "bash"
 args = ["scripts/check-todo-format.sh"]
 
 [tasks.cargo-deny]

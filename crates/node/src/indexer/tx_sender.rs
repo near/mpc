@@ -4,17 +4,20 @@ use super::IndexerState;
 use crate::config::RespondConfig;
 use crate::metrics;
 use anyhow::Context;
+use contract_interface::types::{Attestation, VerifiedAttestation};
 use ed25519_dalek::SigningKey;
+use mpc_attestation::attestation::DEFAULT_EXPIRATION_DURATION_SECONDS;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Gas;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 
 const TRANSACTION_PROCESSOR_CHANNEL_SIZE: usize = 10000;
 const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_ATTESTATION_AGE: Duration = Duration::from_secs(60 * 2);
 
 pub trait TransactionSender: Clone + Send + Sync {
     fn send(
@@ -207,11 +210,61 @@ async fn observe_tx_result(
                 .get_participant_attestation(&indexer_state.mpc_contract_id, tls_public_key)
                 .await?;
 
+            let Some(stored_attestation) = attestation_stored_on_contract else {
+                return Ok(TransactionStatus::NotExecuted);
+            };
+
+            let submitted_attestation =
+                &submit_participant_info_args.proposed_participant_attestation;
+
             let submitted_attestation_is_on_chain =
-                attestation_stored_on_contract.is_some_and(|stored_attestation| {
-                    stored_attestation
-                        == submit_participant_info_args.proposed_participant_attestation
-                });
+                match (stored_attestation, submitted_attestation) {
+                    (
+                        VerifiedAttestation::Dstack(verified_dstack_attestation),
+                        Attestation::Dstack(_),
+                    ) => {
+                        // Check if the attestation stored on chain is fresh by verifying its age
+                        // is less than `MAX_ATTESTATION_AGE`
+                        //
+                        // TODO(#1637): extract expiration timestamp from the certificate itself,
+                        // instead of using heuristics.
+                        let expiry_timestamp_seconds =
+                            verified_dstack_attestation.expiry_timestamp_seconds;
+
+                        let Some(attestation_duration_since_unix_epoch) = expiry_timestamp_seconds
+                            .checked_sub(DEFAULT_EXPIRATION_DURATION_SECONDS)
+                            .map(Duration::from_secs)
+                        else {
+                            tracing::error!(
+                                ?expiry_timestamp_seconds,
+                                "could not calculate attestation storage time"
+                            );
+
+                            return Ok(TransactionStatus::NotExecuted);
+                        };
+
+                        let timestamp_seconds_now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .context("could not calculate system time")?;
+
+                        let attestation_age =
+                            attestation_duration_since_unix_epoch.abs_diff(timestamp_seconds_now);
+                        let attestation_is_fresh = attestation_age < MAX_ATTESTATION_AGE;
+
+                        tracing::info!(
+                            ?attestation_age,
+                            ?attestation_is_fresh,
+                            "node found dstack attestation on chain"
+                        );
+
+                        attestation_is_fresh
+                    }
+                    (
+                        VerifiedAttestation::Mock(stored_mock_attestation),
+                        Attestation::Mock(submitted_mock_attestation),
+                    ) => stored_mock_attestation == *submitted_mock_attestation,
+                    _ => false,
+                };
 
             if submitted_attestation_is_on_chain {
                 Ok(TransactionStatus::Executed)

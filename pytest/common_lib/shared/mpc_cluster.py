@@ -130,7 +130,7 @@ class MpcCluster:
         """
         last_block_hash = self.contract_node.last_block_hash()
         (key, nonce) = self.contract_node.get_key_and_nonce()
-        tx = sign_deploy_contract_tx(key, contract, nonce + 1, last_block_hash)
+        tx = sign_deploy_contract_tx(key, contract, nonce, last_block_hash)
         self.contract_node.send_txn_and_check_success(tx)
 
     def deploy_secondary_contract(self, contract):
@@ -141,7 +141,7 @@ class MpcCluster:
         """
         last_block_hash = self.secondary_contract_node.last_block_hash()
         (key, nonce) = self.secondary_contract_node.get_key_and_nonce()
-        tx = sign_deploy_contract_tx(key, contract, nonce + 1, last_block_hash)
+        tx = sign_deploy_contract_tx(key, contract, nonce, last_block_hash)
         self.secondary_contract_node.send_txn_and_check_success(tx)
 
     def make_function_call_on_secondary_contract(self, function_name, args):
@@ -422,7 +422,6 @@ class MpcCluster:
     def make_sign_request_txns(
         self,
         requests_per_domains: int,
-        nonce_offset: int = 1,
         add_gas: Optional[int] = None,
         add_deposit: Optional[int] = None,
     ):
@@ -443,13 +442,11 @@ class MpcCluster:
                 )
                 for _ in range(requests_per_domains):
                     sign_args = generate_sign_args(domain)
-                    nonce_offset += 1
 
                     tx = self.request_node.sign_tx(
                         self.mpc_contract_account(),
                         "sign",
                         sign_args,
-                        nonce_offset=nonce_offset,
                         deposit=deposit,
                         gas=gas,
                     )
@@ -481,7 +478,6 @@ class MpcCluster:
     def make_ckd_request_txns(
         self,
         requests_per_domains: int,
-        nonce_offset: int = 1,
         add_gas: Optional[int] = None,
         add_deposit: Optional[int] = None,
     ):
@@ -502,13 +498,11 @@ class MpcCluster:
                 )
                 for i in range(requests_per_domains):
                     ckd_args = generate_ckd_args(domain)
-                    nonce_offset += 1
 
                     tx = self.request_node.sign_tx(
                         self.mpc_contract_account(),
                         "request_app_private_key",
                         ckd_args,
-                        nonce_offset=nonce_offset,
                         deposit=deposit,
                         gas=gas,
                     )

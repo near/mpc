@@ -1,7 +1,5 @@
-use near_sdk::near;
 use std::time::Duration;
 
-#[near(serializers=[json])]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Timestamp {
     duration_since_unix_epoch: Duration,
