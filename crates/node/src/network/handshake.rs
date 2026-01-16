@@ -68,7 +68,7 @@ mod tests {
         b.read_exact(&mut buf).await.unwrap();
         buf[1..].copy_from_slice(&(MPC_PROTOCOL_VERSION + 1).to_be_bytes());
         b.write_all(&buf).await.unwrap();
-        let err = a_result.await.unwrap();
+        a_result.await.unwrap();
     }
 
     #[tokio::test]
