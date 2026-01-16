@@ -390,13 +390,14 @@ pub async fn new_tls_mesh_network(
                         let peer_id =
                             verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                         tracking::set_progress(&format!("Authenticated as {}", peer_id));
+                        if connectivities.get(peer_id)?.is_incoming_connected() {
+                        tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
+                            stream.shutdown().await?;
+                            anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
+                        }
                         p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
                             .await
                             .context("p2p handshake")?;
-                        if connectivities.get(peer_id)?.is_incoming_connected() {
-                        tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
-                            anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
-                        }
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
                         let incoming_conn = IncomingConnection::default();
                         let incoming_conn = Arc::new(incoming_conn);
