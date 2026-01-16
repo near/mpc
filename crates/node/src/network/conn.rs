@@ -51,6 +51,18 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
     }
 }
 
+impl<T> SenderConnectionId for ConnectionWithVersion<T>
+where
+    T: SenderConnectionId + Send + Sync + 'static,
+{
+    fn sender_connection_id(&self) -> u32 {
+        match self.connection.upgrade() {
+            Some(conn) => conn.sender_connection_id(),
+            None => 0,
+        }
+    }
+}
+
 /// Struct to track bidirectional connectivity between two nodes.
 /// A node has one NodeConnectivity for each other node in the network.
 pub struct NodeConnectivity<I: Send + Sync + 'static, O: Send + Sync + 'static> {
@@ -96,7 +108,11 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
             })
             .unwrap(); // can't fail: we keep the receiver
     }
+}
 
+impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
+    NodeConnectivity<I, O>
+{
     /// Sets a new incoming connection and increments the version by 1.
     /// The caller needs to drop the connection object when the network
     /// connection is dropped.
@@ -106,16 +122,29 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
     /// they make outgoing connections to us. However, for the purpose of
     /// tracking connectivity and connection resets, we logically assume that
     /// as soon as this is called, the old connection is considered dropped.
-    pub fn set_incoming_connection(&self, conn: &Arc<O>) {
-        let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
-        self.incoming_sender
-            .send(ConnectionWithVersion {
+    pub fn set_incoming_connection(&self, conn: &Arc<O>) -> anyhow::Result<()> {
+        let modified = self.incoming_sender.send_if_modified(|existing| {
+            let should_replace = conn.sender_connection_id() == 0
+                || existing.sender_connection_id() < conn.sender_connection_id();
+            if !should_replace {
+                return false;
+            }
+            let version = self.incoming_version.fetch_add(1, Ordering::Relaxed) + 1;
+            *existing = ConnectionWithVersion {
                 connection: Arc::downgrade(conn),
                 version,
-            })
-            .unwrap(); // can't fail: we keep the receiver
+            };
+            true
+        });
+        anyhow::ensure!(
+            modified,
+            "can't replace existing connection of higher value"
+        );
+        Ok(())
     }
+}
 
+impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> {
     /// The current ConnectionVersion.
     pub fn connection_version(&self) -> ConnectionVersion {
         let outgoing = self.outgoing_receiver.borrow();
@@ -178,6 +207,19 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         };
 
         Ok(conn)
+    }
+}
+
+pub trait SenderConnectionId {
+    fn sender_connection_id(&self) -> u32;
+}
+
+impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
+    NodeConnectivity<I, O>
+{
+    pub fn sender_connection_id(&self) -> u32 {
+        let incoming = self.incoming_receiver.borrow();
+        incoming.sender_connection_id()
     }
 }
 
@@ -304,10 +346,21 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 #[cfg(test)]
 mod tests {
     use crate::async_testing::{run_future_once, MaybeReady};
-    use crate::network::conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity};
+    use crate::network::conn::{
+        AllNodeConnectivities, ConnectionVersion, ConnectionWithVersion, NodeConnectivity,
+    };
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
+    use rstest::rstest;
     use std::sync::Arc;
+
+    use super::SenderConnectionId;
+
+    impl SenderConnectionId for usize {
+        fn sender_connection_id(&self) -> u32 {
+            *self as u32
+        }
+    }
 
     #[test]
     fn test_connection_version() {
@@ -332,6 +385,49 @@ mod tests {
         ConnectionVersion { outgoing, incoming }
     }
 
+    #[rstest]
+    #[case(0, 0, true)]
+    #[case(0, 1, true)]
+    #[case(42, 43, true)]
+    #[case(42, 41, false)]
+    fn test_set_incoming_connection(
+        #[case] previous_sender_connection_id: usize,
+        #[case] sender_connection_id: usize,
+        #[case] success: bool,
+    ) {
+        let connectivity = NodeConnectivity::<usize, usize>::new();
+        let init_conn = Arc::new(previous_sender_connection_id);
+        let init_conn = ConnectionWithVersion {
+            connection: Arc::downgrade(&init_conn),
+            version: 0,
+        };
+        connectivity.incoming_sender.send(init_conn).unwrap();
+        {
+            // sanity check
+            let found = connectivity.incoming_receiver.borrow().clone();
+            assert_eq!(
+                *found.connection.upgrade().unwrap(),
+                previous_sender_connection_id
+            );
+            assert_eq!(found.version(), 0);
+        }
+        let conn = Arc::new(sender_connection_id);
+        let res = connectivity.set_incoming_connection(&conn);
+        let found = connectivity.incoming_receiver.borrow().clone();
+        if success {
+            res.unwrap();
+            assert_eq!(found.sender_connection_id(), conn.sender_connection_id());
+            assert_eq!(found.version(), 1);
+        } else {
+            matches!(res, Err(_));
+            assert_eq!(
+                found.sender_connection_id(),
+                previous_sender_connection_id.sender_connection_id()
+            );
+            assert_eq!(found.version(), 0);
+        }
+    }
+
     #[test]
     fn test_connectivity() {
         let connectivity = NodeConnectivity::<usize, usize>::new();
@@ -346,7 +442,7 @@ mod tests {
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
 
         let conn2 = Arc::new(0);
-        connectivity.set_incoming_connection(&conn2);
+        connectivity.set_incoming_connection(&conn2).unwrap();
         assert_eq!(connectivity.connection_version(), ver(1, 1));
         assert!(connectivity.is_bidirectionally_connected());
         assert!(!connectivity.was_connection_interrupted(ver(1, 1)));
@@ -358,7 +454,7 @@ mod tests {
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
         let conn3 = Arc::new(0);
-        connectivity.set_incoming_connection(&conn3);
+        connectivity.set_incoming_connection(&conn3).unwrap();
         assert_eq!(connectivity.connection_version(), ver(2, 2));
         assert!(!connectivity.is_bidirectionally_connected());
         assert!(connectivity.was_connection_interrupted(ver(2, 1)));
@@ -395,7 +491,8 @@ mod tests {
         connectivity
             .get(id0)
             .unwrap()
-            .set_incoming_connection(&conn01);
+            .set_incoming_connection(&conn01)
+            .unwrap();
 
         assert_eq!(
             connectivity
@@ -419,7 +516,8 @@ mod tests {
         connectivity
             .get(id2)
             .unwrap()
-            .set_incoming_connection(&conn21);
+            .set_incoming_connection(&conn21)
+            .unwrap();
 
         assert_eq!(fut.now_or_never(), Some(()));
     }
