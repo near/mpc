@@ -82,11 +82,13 @@ impl EddsaSignatureProvider {
         channel: NetworkTaskChannel,
         id: SignatureId,
     ) -> anyhow::Result<()> {
+        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
         let sign_request = timeout(
             Duration::from_secs(self.config.signature.timeout_sec),
             self.sign_request_store.get(id),
         )
         .await??;
+        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let threshold = self.mpc_config.participants.threshold as usize;
 
@@ -163,7 +165,7 @@ impl MpcLeaderCentricComputation<Option<(Signature, VerifyingKey)>> for SignComp
             OsRng,
         )?;
 
-        // TODO(#306): metrics
+        let _timer = metrics::MPC_SIGNATURE_TIME_ELAPSED.start_timer();
         let signature: Option<Signature> = run_protocol("sign eddsa", channel, protocol).await?;
 
         Ok(signature.map(|signature| (signature, derived_keygen_output.public_key)))
