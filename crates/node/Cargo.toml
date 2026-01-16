@@ -44,6 +44,7 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
+num_enum = { workspace = true }
 pprof = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
@@ -87,5 +88,6 @@ mpc-contract = { workspace = true, features = ["test-utils"] }
 near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+test-case = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }

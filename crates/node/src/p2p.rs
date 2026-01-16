@@ -1,9 +1,10 @@
 use crate::config::MpcConfig;
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
+    SenderConnectionId,
 };
 use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
-use crate::network::handshake::p2p_handshake;
+use crate::network::handshake::{HandshakeRole, ReceiverHandshakeData, SenderHandshakeData};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
@@ -126,6 +127,7 @@ impl OutgoingConnection {
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
+        sender_connection_id: u32,
     ) -> anyhow::Result<OutgoingConnection> {
         let tcp_stream = TcpStream::connect(target_address)
             .await
@@ -148,9 +150,16 @@ impl OutgoingConnection {
         }
 
         info!("Performing P2P handshake with: {:?}", target_address);
-        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
-            .await
-            .context("p2p handshake")?;
+        let handshake_outcome = HandshakeRole::Sender(SenderHandshakeData {
+            sender_connection_id,
+        })
+        .p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+        .await
+        .context("p2p sender handshake")?;
+
+        if !handshake_outcome.accept_connection() {
+            anyhow::bail!("Connectoin not accepted: {:?}", handshake_outcome)
+        }
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
@@ -285,12 +294,14 @@ impl PersistentConnection {
         let task = tracking::spawn(
             &format!("Persistent connection to {}", target_participant_id),
             async move {
+                let mut connection_attempt = 0u32;
                 loop {
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
                         &target_address,
                         target_participant_id,
                         &participant_identities,
+                        connection_attempt,
                     )
                     .await
                     {
@@ -318,6 +329,8 @@ impl PersistentConnection {
                     let new_conn = Arc::new(new_conn);
                     connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
+                    connection_attempt += 1;
+                    // TODO(#1829): check if we can add a timeout
                 }
             },
         );
@@ -330,7 +343,15 @@ impl PersistentConnection {
 }
 
 #[derive(Default)]
-pub struct IncomingConnection(());
+pub struct IncomingConnection {
+    sender_connection_id: u32,
+}
+
+impl SenderConnectionId for IncomingConnection {
+    fn sender_connection_id(&self) -> u32 {
+        self.sender_connection_id
+    }
+}
 
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
@@ -424,23 +445,45 @@ pub async fn new_tls_mesh_network(
                         let peer_id =
                             verify_peer_identity(stream.get_ref().1, &participant_identities)?;
                         tracking::set_progress(&format!("Authenticated as {}", peer_id));
-                        if connectivities.get(peer_id)?.is_incoming_connected() {
-                        tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
+
+                        let peer = connectivities.get(peer_id)?;
+                        // if we do not have an existing connection, we accept any connection id.
+                        // If we have an existing connection, we require this connection attempt to
+                        // be newer than the existing connection (to avoid race conditions, c.f. github issue #1759)
+                        let min_expected_connection_id = if peer.is_incoming_connected() {peer.sender_connection_id() + 1} else {0};
+                        let handshake_outcome = match HandshakeRole::Receiver(ReceiverHandshakeData {
+                                min_expected_connection_id,
+                            }).p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT).await
+                        .context("p2p handshake") {
+                            Ok(outcome) => outcome,
+                            Err(err) => {
+                            tracing::info!(
+                                "Connection attempt {} <-- {} ignored: {}",
+                                my_id,
+                                peer_id,
+                                err,
+                            );
+                                stream.shutdown().await?;
+                                return Ok(());
+                            }
+                        };
+                        if !handshake_outcome.accept_connection() {
+                            tracing::info!(
+                                "Connection attempt {} <-- {} ignored, keeping previous connection: {:?}",
+                                my_id,
+                                peer_id,
+                                handshake_outcome
+                            );
                             stream.shutdown().await?;
-                            anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
+                            return Ok(());
                         }
-                        p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
-                            .await
-                            .context("p2p handshake")?;
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
-                        let incoming_conn = IncomingConnection::default();
-                        let incoming_conn = Arc::new(incoming_conn);
+                        let incoming_conn = Arc::new(IncomingConnection{sender_connection_id: handshake_outcome.sender_connection_id+1});
                         connectivities
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
                         loop {
-
                             let len = tokio::time::timeout(
                                 std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
                                 stream.read_u32(),
@@ -448,7 +491,7 @@ pub async fn new_tls_mesh_network(
                             .await??;
 
                             if len >= MAX_MESSAGE_LEN {
-                                anyhow::bail!("Message too long");
+                                anyhow::bail!("Message too long")
                             }
                             let mut buf = vec![0; len as usize];
                             tokio::time::timeout(

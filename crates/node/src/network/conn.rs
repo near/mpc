@@ -51,6 +51,18 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
     }
 }
 
+impl<T> SenderConnectionId for ConnectionWithVersion<T>
+where
+    T: SenderConnectionId + Send + Sync + 'static,
+{
+    fn sender_connection_id(&self) -> u32 {
+        match self.connection.upgrade() {
+            Some(conn) => conn.sender_connection_id(),
+            None => 0,
+        }
+    }
+}
+
 /// Struct to track bidirectional connectivity between two nodes.
 /// A node has one NodeConnectivity for each other node in the network.
 pub struct NodeConnectivity<I: Send + Sync + 'static, O: Send + Sync + 'static> {
@@ -178,6 +190,19 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         };
 
         Ok(conn)
+    }
+}
+
+pub trait SenderConnectionId {
+    fn sender_connection_id(&self) -> u32;
+}
+
+impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
+    NodeConnectivity<I, O>
+{
+    pub fn sender_connection_id(&self) -> u32 {
+        let incoming = self.incoming_receiver.borrow();
+        incoming.sender_connection_id()
     }
 }
 
