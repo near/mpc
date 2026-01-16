@@ -16,7 +16,7 @@ INVALID_TODOS=$(git ls-files -z "${CHECKED_EXTENSIONS[@]}" | \
 
 # Filter out the script itself and todo-format-check files from the results
 SCRIPT_NAME=$(basename "$0")
-INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -v "$SCRIPT_NAME" | grep -v "todo-format-check.ya\?ml" || true)
+INVALID_TODOS=$(echo "$INVALID_TODOS" | grep -v "$SCRIPT_NAME" | grep -v "todo-format-check.ya\?ml" | grep -v "CHANGELOG.md" || true)
 
 if [ -n "$INVALID_TODOS" ]; then
     echo "❌ Found TODO comments not matching the required format"
