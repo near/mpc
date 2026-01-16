@@ -22,7 +22,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hex::FromHex;
-use mpc_attestation::{attestation::Attestation, report_data::ReportDataV1};
+use mpc_attestation::report_data::ReportDataV1;
 use mpc_contract::state::ProtocolContractState;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
@@ -45,9 +45,7 @@ use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use {
     crate::tee::{
         monitor_allowed_image_hashes,
-        remote_attestation::{
-            monitor_attestation_removal, periodic_attestation_submission, submit_remote_attestation,
-        },
+        remote_attestation::{monitor_attestation_removal, periodic_attestation_submission},
         AllowedImageHashesFile,
     },
     mpc_contract::tee::proposal::MpcDockerImageHash,
@@ -295,7 +293,7 @@ impl StartCmd {
                 root_task_handle.clone(),
                 debug_request_sender.clone(),
                 config.web_ui,
-                static_web_data(&secrets, Some(attestation.clone())),
+                static_web_data(&secrets, Some(attestation)),
                 protocol_state_receiver,
                 migration_state_receiver,
             ))
@@ -351,7 +349,6 @@ impl StartCmd {
             config.clone(),
             secrets.clone(),
             indexer_api,
-            attestation,
             debug_request_sender,
             root_task_handle,
             tee_authority,
@@ -390,7 +387,6 @@ impl StartCmd {
         config: ConfigFile,
         secrets: SecretsConfig,
         indexer_api: IndexerAPI<impl TransactionSender + 'static>,
-        attestation: Attestation,
         debug_request_sender: broadcast::Sender<DebugRequest>,
         // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
         // Otherwise we would not write to the same cell/lock.
