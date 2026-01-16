@@ -79,6 +79,17 @@ hide_env_diff = true
 EOF
 ```
 
+#### 6. VS Code rust-analyzer plugin support
+
+For `rust-analyzer` installed through nix to work with the VS Code extension, you must configure the server path in your settings:
+
+Add the following to your project settings in `.vscode/settings.json`:
+```json
+{
+    "rust-analyzer.server.path": "rust-analyzer"
+}
+```
+
 ## How it works
 
 There are two main parts of the binary: NEAR indexer and MPC signing:

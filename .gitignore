@@ -1,7 +1,7 @@
 # IDE configs
 .idea
 venv
-.vscode
+.vscode/settings.json
 
 # Lock file generated in contract integration tests
 *.itest.build.lock
