@@ -52,7 +52,7 @@ pub(crate) fn x_coordinate(point: &AffinePoint) -> Scalar {
 /// may thus include an extra information to recover this point.
 ///
 /// This signature supports all variants by containing `big_r` entirely
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Signature {
     /// This is the entire first point.
     pub big_r: AffinePoint,
@@ -89,6 +89,8 @@ pub type SignatureOption = Option<Signature>;
 /// *** Warning ***
 /// Following [GS21] <https://eprint.iacr.org/2021/1330.pdf>, the entropy should
 /// be public, freshly generated, and unpredictable.
+// Cannot derive Debug here because an external type inside Tweak does not implement it
+#[derive(Clone)]
 pub struct RerandomizationArguments {
     // Preferable (but non-binding) the master public key
     pub pk: AffinePoint,

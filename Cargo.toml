@@ -11,7 +11,7 @@ auto_ops = "0.3.0"
 blstrs = "0.7.1"
 borsh = "1.6.0"
 byteorder = "1.5.0"
-derive_more = { version = "2.1.1", features= ["deref", "deref_mut", "constructor"]}
+derive_more = { version = "2.1.1", features= ["deref", "deref_mut", "constructor", "from", "into", "as_ref"]}
 digest = "0.10.7"
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 elliptic-curve = { version = "0.13.8", features = ["serde"] }

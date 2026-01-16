@@ -21,7 +21,20 @@ use crate::Scalar;
 /// struct holds. In our case, we use a `u32`, which is enough for billions of
 /// participants. That said, you won't actually be able to make the protocols
 /// work with billions of users.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    Hash,
+    derive_more::From,
+    derive_more::Into,
+)]
 pub struct Participant(u32);
 
 impl Participant {
@@ -55,18 +68,6 @@ impl Participant {
         // creating an identifier as required by the syntax of frost_core
         // cannot panic as the previous line ensures id is neq zero
         Identifier::new(id).map_err(|_| ProtocolError::IdentityElement)
-    }
-}
-
-impl From<Participant> for u32 {
-    fn from(p: Participant) -> Self {
-        p.0
-    }
-}
-
-impl From<u32> for Participant {
-    fn from(x: u32) -> Self {
-        Self(x)
     }
 }
 
