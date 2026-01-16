@@ -99,6 +99,8 @@ impl Drop for DropToCancel {
 #[derive(BorshSerialize, BorshDeserialize)]
 enum Packet {
     Ping,
+    EchoPing(u64),
+    EchoPong(u64),
     MpcMessage(MpcMessage),
     IndexerHeight(IndexerHeightMessage),
 }
@@ -427,8 +429,9 @@ pub async fn new_tls_mesh_network(
                             let packet = Packet::try_from_slice(&buf)
                                 .context("Failed to deserialize packet")?;
                             match packet {
-                                Packet::Ping => {
+                                Packet::Ping | Packet::EchoPing(_) | Packet::EchoPong(_) => {
                                     // Do nothing. Pings are just for TCP keepalive.
+                                    // EchoPing/EchoPong are recognized but ignored until https://github.com/near/mpc/pull/1687 is merged.
                                 }
                                 Packet::MpcMessage(mpc_message) => {
                                     message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
