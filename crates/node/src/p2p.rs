@@ -1494,12 +1494,30 @@ mod tests {
             assert_eq!(seq, expected_seq);
         }
 
+        /// Asserts that no ping has been sent yet.
+        fn expect_no_ping(&mut self) {
+            let pings = self.ping_receiver.as_mut().expect("pings was dropped");
+            match pings.try_recv() {
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    // Expected: no ping in the channel
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    panic!("ping channel was unexpectedly closed");
+                }
+                Ok(packet) => {
+                    panic!("expected no ping, but received: {:?}", packet);
+                }
+            }
+        }
+
         /// Sends a pong with the given sequence number.
         fn send_pong(&self, seq: u64) {
             self.pong_sender.send(PongInfo { seq }).unwrap();
         }
 
-        /// Returns true if the keepalive task detected a pong timeout.
+        /// Returns true if the keepalive task detected a pong timeout. In production, this
+        /// cancellation triggers reconnection via `run_persistent_connection`, which waits
+        /// on `wait_for_close()` and loops to establish a new connection.
         fn timed_out(&self) -> bool {
             self.closed.is_cancelled()
         }
@@ -1511,47 +1529,68 @@ mod tests {
         let mut env = KeepaliveTestEnv::new();
         let handle = env.spawn_keepalive();
 
-        env.advance(Duration::from_secs(1)).await;
         env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ).await;
 
-        // when: advance to just before timeout - should NOT trigger
+        // when: advance to just before timeout
         env.advance(env.config.pong_timeout - Duration::from_nanos(1))
             .await;
         assert!(
             !env.timed_out(),
             "connection should not be cancelled before timeout"
         );
+        // no second ping should be sent while waiting for pong
+        env.expect_no_ping();
 
-        // when: advance past timeout - should trigger
+        // when: advance past timeout
         env.advance(Duration::from_nanos(2)).await;
-        let _ = handle.await;
-
-        // then
         assert!(
             env.timed_out(),
             "connection should be cancelled on pong timeout"
         );
+
+        let result = handle.await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_pong_received_keeps_connection_alive() {
         start_root_task_with_periodic_dump(async move {
-            // given
+            // given: a keepalive task monitoring connection health
             let mut env = KeepaliveTestEnv::new();
             let _handle = env.spawn_keepalive_tracked();
 
-            // when: process multiple ping/pong cycles
+            // when: we respond to each ping with a matching pong
             for expected_seq in 1..=3u64 {
-                env.advance(Duration::from_secs(1)).await;
                 env.expect_ping(expected_seq).await;
+                assert!(
+                    !env.timed_out(),
+                    "connection should be alive while waiting for pong"
+                );
                 env.send_pong(expected_seq);
-                tokio::task::yield_now().await;
+                assert!(
+                    !env.timed_out(),
+                    "connection should remain alive after pong {expected_seq}"
+                );
             }
 
-            // then
+            // then: connection survives even near timeout boundary
+            env.expect_ping(4).await;
+            env.advance(env.config.pong_timeout - Duration::from_nanos(1))
+                .await;
+            assert!(!env.timed_out(), "should survive until just before timeout");
+            env.send_pong(4);
             assert!(
                 !env.timed_out(),
-                "connection should still be alive after successful pongs"
+                "pong at last moment should keep connection alive"
+            );
+
+            // then: connection times out when pongs stop
+            env.expect_ping(5).await;
+            env.advance(env.config.pong_timeout + Duration::from_nanos(1))
+                .await;
+            assert!(
+                env.timed_out(),
+                "connection should timeout when pongs stop arriving"
             );
         })
         .await;
@@ -1563,56 +1602,57 @@ mod tests {
         let mut env = KeepaliveTestEnv::new();
         let handle = env.spawn_keepalive();
 
-        env.advance(Duration::from_secs(1)).await;
         env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ).await;
 
         // when: send pong with wrong sequence
         env.send_pong(KeepaliveTestEnv::INITIAL_SEQ);
-        tokio::task::yield_now().await;
+
+        // then: connection should not be cancelled yet, and no new ping sent
+        assert!(!env.timed_out(), "connection should not be cancelled yet");
+        env.expect_no_ping();
+
+        // when: advance to just before timeout
+        env.advance(env.config.pong_timeout - Duration::from_nanos(1))
+            .await;
 
         // then: connection should not be cancelled yet
         assert!(!env.timed_out(), "connection should not be cancelled yet");
+        env.expect_no_ping();
 
-        // when: advance past timeout
-        env.advance(env.config.pong_timeout + Duration::from_secs(1))
-            .await;
-        let _ = handle.await;
+        // when: advance to the timeout
+        env.advance(env.config.pong_timeout).await;
 
-        // then
+        // then: connection should be cancelled
         assert!(
             env.timed_out(),
             "connection should be cancelled after timeout"
         );
+
+        let result = handle.await;
+        assert!(result.is_ok());
     }
 
-    /// Verifies that when the ping channel is closed externally (e.g., connection teardown),
-    /// the keepalive task exits gracefully without triggering a timeout cancellation.
+    /// Verifies that when `ping_sender.send()` fails (receiver dropped), the keepalive task
+    /// exits gracefully without cancelling the `closed` token.
     ///
-    /// This distinguishes between two exit scenarios:
-    /// - **Channel closed**: Another component initiated shutdown (e.g., sender task dropped).
-    ///   The keepalive should simply exit - cancelling `closed` would be redundant since
-    ///   the connection is already being torn down elsewhere.
-    /// - **Pong timeout**: The keepalive detected a dead connection first. It must cancel
-    ///   `closed` to notify other tasks (like `wait_for_close`) that the connection died.
+    /// This tests the error path in `run_keepalive` where sending a ping fails because the
+    /// sender task has already dropped its end of the channel (e.g., due to TLS stream error).
+    /// In this case, the keepalive should simply return - the `closed` token will be cancelled
+    /// by the sender task's `DropToCancel` guard, so cancelling it here would be redundant.
     #[tokio::test(start_paused = true)]
     async fn test_ping_channel_closed_exits_gracefully() {
-        // given
+        // given: ping receiver is dropped before spawning keepalive
         let mut env = KeepaliveTestEnv::new();
         env.drop_ping_receiver();
 
-        // when
+        // when: keepalive task tries to send ping, it fails immediately
         let handle = env.spawn_keepalive();
-        env.advance(Duration::from_secs(1)).await;
-        let result = tokio::time::timeout(Duration::from_millis(100), handle).await;
+        handle.await.expect("task should exit cleanly");
 
-        // then
-        assert!(
-            result.is_ok(),
-            "keepalive should exit when ping channel is closed"
-        );
+        // then: closed token should NOT be cancelled
         assert!(
             !env.timed_out(),
-            "connection should not be cancelled on channel close"
+            "closed token should not be cancelled when ping channel is closed"
         );
     }
 
@@ -1623,14 +1663,12 @@ mod tests {
             let mut env = KeepaliveTestEnv::new();
             let _handle = env.spawn_keepalive_tracked();
 
-            env.advance(Duration::from_secs(1)).await;
             env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ).await;
             env.advance(env.config.pong_timeout - Duration::from_nanos(1))
                 .await;
 
             // when: send pong just before timeout
             env.send_pong(KeepaliveTestEnv::FIRST_PING_SEQ);
-            tokio::task::yield_now().await;
 
             // then
             assert!(
@@ -1638,8 +1676,10 @@ mod tests {
                 "connection should remain alive when pong arrives before timeout"
             );
 
-            // then: second ping is sent
-            env.advance(Duration::from_millis(100)).await;
+            env.expect_no_ping();
+
+            // second ping is sent
+            env.advance(Duration::from_nanos(1)).await;
             env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ + 1).await;
         })
         .await;
@@ -1652,12 +1692,10 @@ mod tests {
         let mut env = KeepaliveTestEnv::new();
         let handle = env.spawn_keepalive();
 
-        env.advance(Duration::from_secs(1)).await;
         env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ).await;
 
         // when: timeout expires first
-        env.advance(env.config.pong_timeout + Duration::from_secs(1))
-            .await;
+        env.advance(env.config.pong_timeout).await;
         let _ = handle.await;
         assert!(env.timed_out(), "should have timed out");
 
