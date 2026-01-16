@@ -1514,9 +1514,16 @@ mod tests {
         env.advance(Duration::from_secs(1)).await;
         env.expect_ping(KeepaliveTestEnv::FIRST_PING_SEQ).await;
 
-        // when: don't respond with pong - advance past timeout
-        env.advance(env.config.pong_timeout + Duration::from_secs(1))
+        // when: advance to just before timeout - should NOT trigger
+        env.advance(env.config.pong_timeout - Duration::from_nanos(1))
             .await;
+        assert!(
+            !env.timed_out(),
+            "connection should not be cancelled before timeout"
+        );
+
+        // when: advance past timeout - should trigger
+        env.advance(Duration::from_nanos(2)).await;
         let _ = handle.await;
 
         // then
