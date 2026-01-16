@@ -63,10 +63,11 @@ mod tests {
     #[tokio::test]
     async fn test_p2p_handshake_accept_higher_version() {
         let (a, mut b) = tokio::io::duplex(1024);
+        let new_version = MPC_PROTOCOL_VERSION + 1;
         let a_result = do_handshake(a);
         let mut buf = [0u8; 5];
         b.read_exact(&mut buf).await.unwrap();
-        buf[1..].copy_from_slice(&(MPC_PROTOCOL_VERSION + 1).to_be_bytes());
+        buf[1..].copy_from_slice(&(new_version).to_be_bytes());
         b.write_all(&buf).await.unwrap();
         a_result.await.unwrap();
     }
@@ -76,16 +77,16 @@ mod tests {
         let (a, mut b) = tokio::io::duplex(1024);
         let a_result = do_handshake(a);
         let mut buf = [0u8; 5];
+        let old_version = MPC_PROTOCOL_VERSION - 1;
         b.read_exact(&mut buf).await.unwrap();
-        buf[1..].copy_from_slice(&(MPC_PROTOCOL_VERSION - 1).to_be_bytes());
+        buf[1..].copy_from_slice(&(old_version).to_be_bytes());
         b.write_all(&buf).await.unwrap();
         let err = a_result.await.unwrap_err();
         assert_eq!(
             err.to_string(),
             format!(
                 "Incompatible protocol version; we have {}, they have {}",
-                MPC_PROTOCOL_VERSION,
-                MPC_PROTOCOL_VERSION - 1
+                MPC_PROTOCOL_VERSION, old_version
             )
         );
     }
