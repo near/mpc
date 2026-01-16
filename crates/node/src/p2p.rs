@@ -1024,13 +1024,21 @@ mod tests {
                 super::new_tls_mesh_network(&configs[1].0, &configs[1].1)
                     .await
                     .unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
             // bob_new will never connect bidirectionally with Alice
             assert!(!bob_new
                 .connectivity(alice_id)
                 .is_bidirectionally_connected());
 
+            let bob_new_version = bob_new.connectivity(alice_id).connection_version();
+            assert_eq!(
+                bob_new_version,
+                ConnectionVersion {
+                    outgoing: 1,
+                    incoming: 1
+                }
+            );
             assert!(bob_initial
                 .connectivity(alice_id)
                 .is_bidirectionally_connected());
