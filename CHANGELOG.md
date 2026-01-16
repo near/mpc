@@ -5,6 +5,108 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.3.0] - 2026-01-16
+
+### 🚀 Features
+
+- [#1723](https://github.com/near/mpc/pull/1723)(@DSharifi): *(node)* Add web endpoint to collect CPU profiles with `pprof-rs` (#1723)
+
+- [#1735](https://github.com/near/mpc/pull/1735)(@barakeinav1): *(launcher)* Add ability to use the launcher also for non tee setups. (#1735)
+
+
+### 🐛 Bug Fixes
+
+- [#1729](https://github.com/near/mpc/pull/1729)(@gilcu3): Ruint unsoundness issue RUSTSEC-2025-0137 (#1729)
+
+- [#1752](https://github.com/near/mpc/pull/1752)(@gilcu3): Enable TCP_KEEPALIVE for network connections (#1752)
+
+- [#1764](https://github.com/near/mpc/pull/1764)(@kevindeforth): *(network)* Do not accept incoming connection if previous one is still active (#1764)
+
+- [#1772](https://github.com/near/mpc/pull/1772)(@DSharifi): Don't crash MPC node on startup for failed attestation submission (#1772)
+
+
+### 💼 Other
+
+- [#1738](https://github.com/near/mpc/pull/1738)(@DSharifi): *(rust)* Add support for Nix build environment (#1738)
+
+- [#1767](https://github.com/near/mpc/pull/1767)(@DSharifi): *(nix)* Add instructions to enable direnv with Nix flake (#1767)
+
+- [#1771](https://github.com/near/mpc/pull/1771)(@DSharifi): *(nix)* Resolve openssl-sys compilation errors in devShell (#1771)
+
+
+### 🚜 Refactor
+
+- [#1697](https://github.com/near/mpc/pull/1697)(@DSharifi): Return Result type in `is_caller_an_attested_participant ` (#1697)
+
+
+### 📚 Documentation
+
+- [#1733](https://github.com/near/mpc/pull/1733)(@kevindeforth): Update readme to reflect correct test terminology (#1733)
+
+- [#1661](https://github.com/near/mpc/pull/1661)(@barakeinav1): Support running two MPC CVMs (Frodo + Sam) on the same physical machine (#1661)
+
+
+### ⚡ Performance
+
+- [#1713](https://github.com/near/mpc/pull/1713)(@DSharifi): Enable `TCP_NODELAY` for nodes' P2P TCP connections (#1713)
+
+- [#1663](https://github.com/near/mpc/pull/1663)(@DSharifi): *(contract)* Contract should not store full attestation submission (#1663)
+
+
+### 🧪 Testing
+
+- [#1708](https://github.com/near/mpc/pull/1708)(@gilcu3): Improve pytest handling of crate builds (#1708)
+
+- [#1709](https://github.com/near/mpc/pull/1709)(@gilcu3): Refactor wait_for_state to avoid self.contract_state() in tight loop (#1709)
+
+- [#1725](https://github.com/near/mpc/pull/1725)(@pbeza): Fix contract integration tests (#1725)
+
+- [#1769](https://github.com/near/mpc/pull/1769)(@gilcu3): Handle transaction nonces locally (#1769)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1699](https://github.com/near/mpc/pull/1699)(@netrome): Initial contribution guidelines (#1699)
+
+- [#1705](https://github.com/near/mpc/pull/1705)(@gilcu3): Add cargo-deny support (#1705)
+
+- [#1707](https://github.com/near/mpc/pull/1707)(@gilcu3): Update testnet contract (#1707)
+
+- [#1715](https://github.com/near/mpc/pull/1715)(@DSharifi): Ignore `RUSTSEC-2025-0137` in cargo-deny check (#1715)
+
+- [#1717](https://github.com/near/mpc/pull/1717)(@DSharifi): Use `SocketAddr` instead of custom struct for addresses in configs (#1717)
+
+- [#1718](https://github.com/near/mpc/pull/1718)(@barakeinav1): Update tee testnet guide (#1718)
+
+- [#1722](https://github.com/near/mpc/pull/1722)(@DSharifi): Update rkyv version to fix `RUSTSEC-2026-0001` (#1722)
+
+- [#1720](https://github.com/near/mpc/pull/1720)(@pbeza): Fix typo (#1720)
+
+- [#1726](https://github.com/near/mpc/pull/1726)(@DSharifi): Ignore `RUSTSEC-2026-0002` in cargo-deny check (#1726)
+
+- [#1739](https://github.com/near/mpc/pull/1739)(@kevindeforth): Unify ckd and sign sandbox tests (#1739)
+
+- [#1744](https://github.com/near/mpc/pull/1744)(@gilcu3): Use attestation crate types (#1744)
+
+- [#1749](https://github.com/near/mpc/pull/1749)(@gilcu3): Update to nearcore 2.10.4 (#1749)
+
+- [#1742](https://github.com/near/mpc/pull/1742)(@pbeza): CI check to enforce TODO comment format (#1742)
+
+- [#1756](https://github.com/near/mpc/pull/1756)(@gilcu3): Improve log messages for tokio tasks (#1756)
+
+- [#1761](https://github.com/near/mpc/pull/1761)(@pbeza): Remove dead Python code (#1761)
+
+- [#1774](https://github.com/near/mpc/pull/1774)(@gilcu3): Update mainnet history contract to 3.2.0 (#1774)
+
+- [#1776](https://github.com/near/mpc/pull/1776)(@gilcu3): Add missing metrics in eddsa (#1776)
+
+- [#1778](https://github.com/near/mpc/pull/1778)(@kevindeforth): Nodes accept peer with same or higher protocol version (#1778)
+
+- [#1780](https://github.com/near/mpc/pull/1780)(@gilcu3): Refactor CI tests to group fast tests in a single run (#1780)
+
+- [#1790](https://github.com/near/mpc/pull/1790)(@pbeza): Skip `TODO` format checks for `CHANGELOG.md` (#1790)
+
+
 ## [3.2.0] - 2025-12-18
 
 ### 🚀 Features
@@ -95,7 +197,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1683](https://github.com/near/mpc/pull/1683)(@kevindeforth): *(contract)* Sandbox code organization (#1683)
 
-- [#1698](https://github.com/near/mpc/pull/1698)(@gilcu3): bump nearcore to 2.10.3 (#1698)
+- [#1698](https://github.com/near/mpc/pull/1698)(@gilcu3): Bump nearcore to 2.10.3 (#1698)
 
 
 ## [3.1.0] - 2025-12-04
