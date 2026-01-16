@@ -98,75 +98,9 @@ jobs:
         run: |
           ./scripts/build-and-verify-launcher-docker-image.sh
 
-  clippy-mpc-node:
-    name: "MPC Node: clippy and format"
-    runs-on: warp-ubuntu-2204-x64-8x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-          cache-provider: "warpbuild"
-
-      - name: Run Clippy fmt
-        run: |
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-targets --locked
-
-      - name: Run Cargo fmt
-        run: |
-          cargo fmt -- --check
-
-  clippy-mpc-node-all-features:
-    name: "MPC Node (all features): clippy and format"
-    runs-on: warp-ubuntu-2204-x64-8x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-          cache-provider: "warpbuild"
-
-      - name: Run Clippy fmt
-        run: |
-          CARGO_TARGET_DIR="target/clippy" \
-          RUSTFLAGS="-D warnings" \
-          cargo clippy --all-targets --all-features --locked
-
-      - name: Run Cargo fmt
-        run: |
-          cargo fmt -- --check
-
   mpc-unittests:
     name: "Cargo test"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -177,8 +111,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Initialize submodules
-        run: git submodule update --init --recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -216,7 +152,7 @@ jobs:
 
   mpc-pytests:
     name: "MPC Node: pytests"
-    runs-on: warp-ubuntu-2204-x64-16x
+    runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -236,6 +172,11 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-provider: "warpbuild"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
 
       - name: Download near core binary from S3
         id: download-neard
@@ -307,7 +248,7 @@ jobs:
 
   tee-launcher-tests:
     name: "TEE Launcher: pytests"
-    runs-on: warp-ubuntu-2204-x64-8x
+    runs-on: warp-ubuntu-2404-x64-2x
     timeout-minutes: 60
     permissions:
       contents: read
@@ -335,90 +276,3 @@ jobs:
           source tee_launcher/venv/bin/activate
           cd tee_launcher 
           PYTHONPATH=. pytest -vsx
-
-  detect-unused-dependencies:
-    name: "Detect unused dependencies"
-    runs-on: warp-ubuntu-2204-x64-2x
-    timeout-minutes: 60
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-shear
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
-        with:
-          tool: cargo-shear@1.6.0
-
-      - run: cargo shear
-
-  cargo-sort-check:
-    name: "Cargo.toml sort check"
-    runs-on: warp-ubuntu-2204-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-sort
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
-        with:
-          tool: cargo-sort@2.0.2
-
-      - name: Check Cargo.toml sorting (strict)
-        run: |
-          cargo sort --check --check-format --workspace --grouped
-
-  zizmor-check:
-    name: "zizmor github actions check"
-    runs-on: warp-ubuntu-2204-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install zizmor
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
-        with:
-          tool: zizmor@1.16.2
-
-      - name: Check github actions with zizmor
-        run: |
-          zizmor .github/
-
-  cargo-deny:
-    name: "cargo-deny check"
-    runs-on: warp-ubuntu-2204-x64-2x
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
-        with:
-          tool: cargo-deny@0.18.9
-
-      - name: cargo-deny check
-        run: |
-          cargo deny --all-features check

@@ -7,7 +7,7 @@ on:
 jobs:
   lint-pr-title:
     name: "Lint PR title for Conventional Commits"
-    runs-on: warp-ubuntu-2204-x64-2x
+    runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
