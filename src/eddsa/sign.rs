@@ -305,23 +305,6 @@ mod test {
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512};
     use rand::{Rng, RngCore, SeedableRng};
 
-    fn assert_single_coordinator_result(
-        data: &[(Participant, super::SignatureOption)],
-    ) -> frost_ed25519::Signature {
-        let mut signature = None;
-        let count = data
-            .iter()
-            .filter(|(_, output)| {
-                output.is_some_and(|s| {
-                    signature = Some(s);
-                    true
-                })
-            })
-            .count();
-        assert_eq!(count, 1);
-        signature.unwrap()
-    }
-
     #[test]
     fn basic_two_participants() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
@@ -342,7 +325,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        assert_single_coordinator_result(&data);
+        one_coordinator_output(data, coordinators[0]).unwrap();
     }
 
     #[test]
@@ -366,7 +349,7 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                assert_single_coordinator_result(&data);
+                one_coordinator_output(data, coordinators[0]).unwrap();
             }
         }
     }
@@ -397,7 +380,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        let signature = assert_single_coordinator_result(&data);
+        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
 
         assert!(key_packages[0]
             .1
@@ -418,7 +401,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        let signature = assert_single_coordinator_result(&data);
+        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
         let pub_key = key_packages1[2].1.public_key;
         assert!(key_packages1[0]
             .1
@@ -451,7 +434,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        let signature = assert_single_coordinator_result(&data);
+        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
         assert!(key_packages2[0]
             .1
             .public_key
@@ -518,7 +501,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        let signature = assert_single_coordinator_result(&data);
+        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
         assert!(key_packages[0]
             .1
             .public_key
@@ -583,7 +566,7 @@ mod test {
             msg_hash,
         )
         .unwrap();
-        let signature = assert_single_coordinator_result(&data);
+        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
         assert!(key_packages[0]
             .1
             .public_key
