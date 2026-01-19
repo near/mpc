@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.3.1] - 2026-01-19
+
+### 🐛 Bug Fixes
+
+- [#1795](https://github.com/near/mpc/pull/1795)(@netrome): Revert #1707 (use SocketAddr instead of custom struct) (#1795)
+
+
 ## [3.3.0] - 2026-01-16
 
 ### 🚀 Features
@@ -105,6 +112,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1780](https://github.com/near/mpc/pull/1780)(@gilcu3): Refactor CI tests to group fast tests in a single run (#1780)
 
 - [#1790](https://github.com/near/mpc/pull/1790)(@pbeza): Skip `TODO` format checks for `CHANGELOG.md` (#1790)
+
+- [#1791](https://github.com/near/mpc/pull/1791)(@pbeza): Update version and changelog for `3.3.0` release (#1791)
 
 
 ## [3.2.0] - 2025-12-18
