@@ -90,15 +90,16 @@ async fn do_presign(
 ) -> Result<PresignOutput, ProtocolError> {
     let rng = &mut rng;
     let threshold = args.threshold;
-    // Round 0
-
+    // Round 1
     let degree = threshold
         .checked_mul(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
     let polynomials = [
+        // Step 1.1
         // degree t random secret shares where t is the max number of malicious parties
         Polynomial::generate_polynomial(None, threshold, rng)?, // fk
         Polynomial::generate_polynomial(None, threshold, rng)?, // fa
+        // Step 1.2
         // degree 2t zero secret shares where t is the max number of malicious parties
         zero_secret_polynomial(degree, rng)?, // fb
         zero_secret_polynomial(degree, rng)?, // fd
@@ -106,8 +107,9 @@ async fn do_presign(
     ];
 
     // send polynomial evaluations to participants
-    let wait_round_0 = chan.next_waitpoint();
+    let wait_round_1 = chan.next_waitpoint();
 
+    // Step 1.3
     for p in participants.others(me) {
         // Securely send to each other participant a secret share
         let package = polynomials
@@ -116,28 +118,33 @@ async fn do_presign(
             .collect::<Result<Vec<_>, _>>()?;
 
         // send the evaluation privately to participant p
-        chan.send_private(wait_round_0, p, &package)?;
+        chan.send_private(wait_round_1, p, &package)?;
     }
 
     // Evaluate my secret shares for my polynomials
     let mut shares = Shares::new(&polynomials, me)?;
 
-    // Round 1
+    // Round 2
+    // Step 2.1
     // Receive evaluations from all participants
-    for (_, package) in recv_from_others(&chan, wait_round_0, &participants, me).await? {
+    for (_, package) in recv_from_others(&chan, wait_round_1, &participants, me).await? {
+        // Step 2.2
         // calculate the respective sum of the different shares received from each participant
         shares.add_shares(&package);
     }
 
+    // Step 2.3
     // Compute R_me = g^{k_me}
     let big_r_me = CoefficientCommitment::new(Secp256K1Group::generator() * shares.k());
 
+    // Step 2.4
     // Compute w_me = a_me * k_me + b_me
     let w_me = shares.a() * shares.k() + shares.b();
 
+    // Step 2.5
     // Send and receive
-    let wait_round_1 = chan.next_waitpoint();
-    chan.send_many(wait_round_1, &(&big_r_me, &SigningShare::<C>::new(w_me)))?;
+    let wait_round_2 = chan.next_waitpoint();
+    chan.send_many(wait_round_2, &(&big_r_me, &SigningShare::<C>::new(w_me)))?;
 
     // Store the sent items
     let mut signingshares_map = ParticipantMap::new(&participants);
@@ -145,9 +152,11 @@ async fn do_presign(
     signingshares_map.put(me, SerializableScalar(w_me));
     verifyingshares_map.put(me, big_r_me);
 
+    // Round 3
     // Receive and interpolate
     while !signingshares_map.full() {
-        let (from, (big_r_p, w_p)): (_, (_, SigningShare<C>)) = chan.recv(wait_round_1).await?;
+        // Step 3.1
+        let (from, (big_r_p, w_p)): (_, (_, SigningShare<C>)) = chan.recv(wait_round_2).await?;
         // collect big_r_p and w_p in maps that will be later ordered
         // if the sender has already sent elements then put will return immediately
         signingshares_map.put(from, SerializableScalar(w_p.to_scalar()));
@@ -176,30 +185,28 @@ async fn do_presign(
         .split_at_checked(threshold + 1)
         .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
 
-    #[cfg(feature = "actively_secure_robust_ecdsa")]
+    // check that the exponent interpolations match what has been received
+    for (identifier, verifying_share) in identifiers
+        .iter()
+        .skip(threshold + 1)
+        .zip(verifying_shares.iter().skip(threshold + 1))
     {
-        // Round 2
-        // check that the exponent interpolations match what has been received
-        for (identifier, verifying_share) in identifiers
-            .iter()
-            .skip(threshold + 1)
-            .zip(verifying_shares.iter().skip(threshold + 1))
-        {
-            // exponent interpolation for (R0, .., Rt; i)
-            let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
-                threshold_plus1_identifiers,
-                threshold_plus1_verifying_shares,
-                Some(identifier),
-            )?;
+        // Step 3.2
+        // exponent interpolation for (R0, .., Rt; i)
+        let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
+            threshold_plus1_identifiers,
+            threshold_plus1_verifying_shares,
+            Some(identifier),
+        )?;
 
-            // check the interpolated R values match the received ones
-            if big_r_i != *verifying_share {
-                return Err(ProtocolError::AssertionFailed(
-                    "Exponent interpolation check failed.".to_string(),
-                ));
-            }
+        // check the interpolated R values match the received ones
+        if big_r_i != *verifying_share {
+            return Err(ProtocolError::AssertionFailed(
+                "Exponent interpolation check failed.".to_string(),
+            ));
         }
     }
+    // Step 3.3
     // get only the first t+1 elements to interpolate
     // we know that identifiers.len()>threshold+1
     // evaluate the exponent interpolation on zero
@@ -209,6 +216,7 @@ async fn do_presign(
         None,
     )?;
 
+    // Step 3.4
     // check R is not identity
     if big_r
         .value()
@@ -218,81 +226,88 @@ async fn do_presign(
         return Err(ProtocolError::IdentityElement);
     }
 
+    // Step 3.5
     // polynomial interpolation of w
     let w = Polynomial::eval_interpolation(&identifiers, &signingshares, None)?;
 
+    // Step 3.6
     // check w is non-zero
     if w.0.is_zero().into() {
         return Err(ProtocolError::ZeroScalar);
     }
 
-    #[cfg(feature = "actively_secure_robust_ecdsa")]
+    // Step 3.7
+    // Compute W_me = R^{a_me}
+    let big_w_me = CoefficientCommitment::new(big_r.value() * shares.a());
+    // Step 3.8
+    // Send W_me
+    let wait_round_3 = chan.next_waitpoint();
+    chan.send_many(wait_round_3, &big_w_me)?;
+
+    // Step 3.9
+    // Receive W_i
+    let mut wshares_map = ParticipantMap::new(&participants);
+    wshares_map.put(me, big_w_me);
+    while !wshares_map.full() {
+        let (from, big_w_p) = chan.recv(wait_round_3).await?;
+        wshares_map.put(from, big_w_p);
+    }
+    // Compute exponent interpolation checks
+    let wshares = wshares_map
+        .into_vec_or_none()
+        .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+    let (threshold_plus1_wshares, _) = wshares
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough wshares".to_string()))?;
+
+    for (identifier, wshare) in identifiers
+        .iter()
+        .skip(threshold + 1)
+        .zip(wshares.iter().skip(threshold + 1))
     {
-        // Still in Round 2
-        // Compute W_me = R^{a_me}
-        let big_w_me = CoefficientCommitment::new(big_r.value() * shares.a());
-        // Send W_me
-        let wait_round_active = chan.next_waitpoint();
-        chan.send_many(wait_round_active, &big_w_me)?;
-
-        // Receive W_i
-        let mut wshares_map = ParticipantMap::new(&participants);
-        wshares_map.put(me, big_w_me);
-        while !wshares_map.full() {
-            let (from, big_w_p) = chan.recv(wait_round_active).await?;
-            wshares_map.put(from, big_w_p);
-        }
-        // Compute exponent interpolation checks
-        let wshares = wshares_map
-            .into_vec_or_none()
-            .ok_or(ProtocolError::InvalidInterpolationArguments)?;
-        let (threshold_plus1_wshares, _) = wshares
-            .split_at_checked(threshold + 1)
-            .ok_or_else(|| ProtocolError::AssertionFailed("Not enough wshares".to_string()))?;
-
-        for (identifier, wshare) in identifiers
-            .iter()
-            .skip(threshold + 1)
-            .zip(wshares.iter().skip(threshold + 1))
-        {
-            // exponent interpolation for (W0, .., Wt; i)
-            let big_w_i = PolynomialCommitment::eval_exponent_interpolation(
-                threshold_plus1_identifiers,
-                threshold_plus1_wshares,
-                Some(identifier),
-            )?;
-            // check the interpolated W values match the received ones
-            if big_w_i != *wshare {
-                return Err(ProtocolError::AssertionFailed(
-                    "Exponent interpolation check failed.".to_string(),
-                ));
-            }
-        }
-        // compute W as exponent interpolation for (W0, .., Wt; 0)
-        let big_w = PolynomialCommitment::eval_exponent_interpolation(
+        // exponent interpolation for (W0, .., Wt; i)
+        let big_w_i = PolynomialCommitment::eval_exponent_interpolation(
             threshold_plus1_identifiers,
             threshold_plus1_wshares,
-            None,
+            Some(identifier),
         )?;
-
-        // check W == g^w
-        if big_w
-            .value()
-            .ct_ne(&(<Secp256K1Group as Group>::generator() * w.0))
-            .into()
-        {
+        // check the interpolated W values match the received ones
+        if big_w_i != *wshare {
             return Err(ProtocolError::AssertionFailed(
                 "Exponent interpolation check failed.".to_string(),
             ));
         }
     }
 
+    // Step 3.10
+    // compute W as exponent interpolation for (W0, .., Wt; 0)
+    let big_w = PolynomialCommitment::eval_exponent_interpolation(
+        threshold_plus1_identifiers,
+        threshold_plus1_wshares,
+        None,
+    )?;
+
+    // Step 3.12
+    // check W == g^w
+    if big_w
+        .value()
+        .ct_ne(&(<Secp256K1Group as Group>::generator() * w.0))
+        .into()
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "Exponent interpolation check failed.".to_string(),
+        ));
+    }
+
+    // Step 3.13
     // w is non-zero due to previous check and so I can unwrap safely
     let c_me = w.0.invert().unwrap() * shares.a();
 
+    // Step 3.14
     // Some extra computation is pushed in this offline phase
     let alpha_me = c_me + shares.d();
 
+    // Step 3.15
     let x_me = args.keygen_out.private_share.to_scalar();
     let beta_me = c_me * x_me;
 

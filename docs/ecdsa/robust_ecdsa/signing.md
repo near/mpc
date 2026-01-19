@@ -54,15 +54,18 @@ $$
 $\forall j \in \\{t+2.. n\\},\quad \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
 3. Each $P_i$ computes $R \gets \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; 0)$
 4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
-5. Each $P_i$ computes $W_i \gets R^{a_i}$
-6. $\star$ Each $P_i$ sends $W_i$ to every party.
-7. $\bullet$ Each $P_i$ waits to receive $W_j$ from every party.
-8. $\blacktriangle$ Each $P_i$ *asserts* that:
+5. Each $P_i$ performs polynomial interpolation of degree $2t$ to derive $w$ as in $w \gets \sum_i \lambda_i(\mathcal{P}_1)_i \cdot w_i$ where $\lambda_i(\mathcal{P}_1)$ is the lagrange coefficient defined as:
+
+$$\lambda_i(\mathcal{P}_1) = \prod_{j\in \mathcal{P}_1\setminus \set{i}} \frac{-j}{i-j}$$
+
+6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
+7. Each $P_i$ computes $W_i \gets R^{a_i}$
+8. $\star$ Each $P_i$ sends $W_i$ to every party.
+9. $\bullet$ Each $P_i$ waits to receive $W_j$ from every party.
+10. $\blacktriangle$ Each $P_i$ *asserts* that:
 $\forall j \in \\{t+2.. n\\},\quad \mathsf{ExponentInterpolation}(W_1, \ldots W_{t+1}; j) =  W_j$
-9. Each $P_i$ computes $W \gets \mathsf{ExponentInterpolation}(W_1, \ldots W_{t+1}; 0)$
+11. Each $P_i$ computes $W \gets \mathsf{ExponentInterpolation}(W_1, \ldots W_{t+1}; 0)$
 10. $\blacktriangle$ Each $P_i$ *asserts* that $W = w\cdot G$
-11. Each $P_i$ performs polynomial interpolation of degree $2t$ to derive $w$ as in $w \gets \sum_i \lambda(\mathcal{P}_1)_i \cdot w_i$.
-12. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
 13. Each $P_i$ computes $c_i \gets a_i \cdot w^{-1}$
 14. Each $P_i$ computes $\alpha_i \gets c_i+d_i$
 15. Each $P_i$ computes $\beta_i \gets c_i \cdot x_i$.

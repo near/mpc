@@ -73,7 +73,7 @@ $\quad$ `+++` If $P_i\notin \mathit{OldSigners}$ then set $f_i(0) \gets 0$
 $\quad$ `+++` Else set $f_i(0) \gets \lambda_i(I) \cdot \mathit{secret}_i$
 where $\lambda_i(I)$ is the lagrange coefficient defined as:
 
-$$\lambda_i(I) = \prod_{j\in I\setminus \set{i}} \frac{j}{i-j}$$
+$$\lambda_i(I) = \prod_{j\in I\setminus \set{i}} \frac{-j}{i-j}$$
 
 
 2.4 Each $P_i$ generates a commitment of the polynomial $C_i \gets f_i \cdot G$ (commits every coefficient of the polynomial).

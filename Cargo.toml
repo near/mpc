@@ -51,8 +51,6 @@ thiserror = "2.0.17"
 zeroize = { version = "1.8.2", features = ["zeroize_derive"]}
 
 [features]
-default = ["actively_secure_robust_ecdsa"]
-actively_secure_robust_ecdsa = []
 test-utils = ["rand", "rand_chacha"]
 
 [dev-dependencies]
