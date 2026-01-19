@@ -14,16 +14,12 @@ byteorder = "1.5.0"
 derive_more = { version = "2.1.1", features= ["deref", "deref_mut", "constructor", "from", "into", "as_ref"]}
 digest = "0.10.7"
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
-elliptic-curve = { version = "0.13.8", features = ["serde"] }
+elliptic-curve = { version = "0.13.8" }
 frost-core = { version = "2.2.0", default-features = false, features = [
   "serde",
 ] }
-frost-ed25519 = { version = "2.2.0", default-features = false, features = [
-  "serde",
-] }
-frost-secp256k1 = { version = "2.2.0", default-features = false, features = [
-  "serde",
-] }
+frost-ed25519 = { version = "2.2.0", default-features = false }
+frost-secp256k1 = { version = "2.2.0", default-features = false }
 futures = "0.3.31"
 futures-lite = "2.6.1"
 hex = "0.4.3"
