@@ -1,4 +1,4 @@
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 
 use hyper::{service::service_fn, Body, Response, StatusCode};
 use mpc_contract::primitives::key_state::Keyset;
@@ -9,9 +9,12 @@ use tokio::{
 use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 
-use crate::migration_service::{
-    types::MigrationInfo,
-    web::{authentication::authenticate_peer, serialization::serialize_and_encrypt_keyshares},
+use crate::{
+    config::WebUIConfig,
+    migration_service::{
+        types::MigrationInfo,
+        web::{authentication::authenticate_peer, serialization::serialize_and_encrypt_keyshares},
+    },
 };
 
 use super::{
@@ -21,16 +24,23 @@ use super::{
 
 pub(crate) async fn start_web_server(
     web_server_state: Arc<WebServerState>,
-    bind_address: SocketAddr,
+    config: WebUIConfig,
     migration_state_receiver: watch::Receiver<MigrationInfo>,
     p2p_private_key: &ed25519_dalek::SigningKey,
 ) -> anyhow::Result<()> {
     let (server_config, _client_config) = mpc_tls::tls::configure_tls(p2p_private_key)?;
 
-    tracing::info!(?bind_address, "attempting to bind web server to address");
+    tracing::info!(
+        host = %config.host,
+        port = %config.port,
+        "attempting to bind web server to host",
+    );
 
     let mut expected_peer_info_receiver =
         spawn_expected_peer_info_monitoring(migration_state_receiver).await;
+
+    let bind_address = format!("{}:{}", config.host, config.port);
+    tracing::info!(address = %bind_address, "binding to address");
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
     let tcp_listener = TcpListener::bind(&bind_address).await?;

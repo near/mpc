@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -29,7 +28,7 @@ struct MigrationTestNodeInfo {
     participant_info: ParticipantInfo,
     home_dir: PathBuf,
     storage_key: [u8; 16],
-    migration_service_addr: SocketAddr,
+    migration_service_addr: String,
     p2p_public_key: VerifyingKey,
     near_signer_key: VerifyingKey,
     backup_service_key: AesKey256,
@@ -37,6 +36,11 @@ struct MigrationTestNodeInfo {
 
 impl MigrationTestNodeInfo {
     pub fn new(config: &OneNodeTestConfig, participant_info: ParticipantInfo) -> Self {
+        let migration_service_addr = {
+            let migration_web_ui = &config.config.migration_web_ui;
+            format!("{}:{}", migration_web_ui.host, migration_web_ui.port)
+        };
+
         let p2p_public_key = config
             .secrets
             .persistent_secrets
@@ -51,7 +55,7 @@ impl MigrationTestNodeInfo {
             participant_info,
             home_dir: config.home_dir.clone(),
             storage_key: config.secrets.local_storage_aes_key,
-            migration_service_addr: config.config.migration_web_ui,
+            migration_service_addr,
             p2p_public_key,
             near_signer_key,
             backup_service_key: config.secrets.backup_encryption_key,
@@ -230,7 +234,7 @@ async fn test_onboarding() {
         tracing::info!("Sending keyshares to onboarding node");
         let mut request_sender = migration_service::web::client::connect_to_web_server(
             &backup_service_key,
-            onboarding_node.migration_service_addr,
+            onboarding_node.migration_service_addr.clone(),
             &onboarding_node.p2p_public_key,
         )
         .await
