@@ -1,6 +1,3 @@
-// TODO(#122): remove this exception
-#![allow(clippy::indexing_slicing)]
-
 use super::{PresignArguments, PresignOutput};
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::{
@@ -172,21 +169,31 @@ async fn do_presign(
         .into_vec_or_none()
         .ok_or(ProtocolError::InvalidInterpolationArguments)?;
 
+    let (threshold_plus1_identifiers, _) = identifiers
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
+    let (threshold_plus1_verifying_shares, _) = verifying_shares
+        .split_at_checked(threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
+
     #[cfg(feature = "actively_secure_robust_ecdsa")]
     {
         // Round 2
         // check that the exponent interpolations match what has been received
-        for i in threshold + 1..identifiers.len() {
-            let p = &identifiers[i];
+        for (identifier, verifying_share) in identifiers
+            .iter()
+            .skip(threshold + 1)
+            .zip(verifying_shares.iter().skip(threshold + 1))
+        {
             // exponent interpolation for (R0, .., Rt; i)
             let big_r_i = PolynomialCommitment::eval_exponent_interpolation(
-                &identifiers[..=threshold],
-                &verifying_shares[..=threshold],
-                Some(p),
+                threshold_plus1_identifiers,
+                threshold_plus1_verifying_shares,
+                Some(identifier),
             )?;
 
             // check the interpolated R values match the received ones
-            if big_r_i != verifying_shares[i] {
+            if big_r_i != *verifying_share {
                 return Err(ProtocolError::AssertionFailed(
                     "Exponent interpolation check failed.".to_string(),
                 ));
@@ -197,8 +204,8 @@ async fn do_presign(
     // we know that identifiers.len()>threshold+1
     // evaluate the exponent interpolation on zero
     let big_r = PolynomialCommitment::eval_exponent_interpolation(
-        &identifiers[..=threshold],
-        &verifying_shares[..=threshold],
+        threshold_plus1_identifiers,
+        threshold_plus1_verifying_shares,
         None,
     )?;
 
@@ -239,17 +246,23 @@ async fn do_presign(
         let wshares = wshares_map
             .into_vec_or_none()
             .ok_or(ProtocolError::InvalidInterpolationArguments)?;
+        let (threshold_plus1_wshares, _) = wshares
+            .split_at_checked(threshold + 1)
+            .ok_or_else(|| ProtocolError::AssertionFailed("Not enough wshares".to_string()))?;
 
-        for i in threshold + 1..identifiers.len() {
-            let p = &identifiers[i];
+        for (identifier, wshare) in identifiers
+            .iter()
+            .skip(threshold + 1)
+            .zip(wshares.iter().skip(threshold + 1))
+        {
             // exponent interpolation for (W0, .., Wt; i)
             let big_w_i = PolynomialCommitment::eval_exponent_interpolation(
-                &identifiers[..=threshold],
-                &wshares[..=threshold],
-                Some(p),
+                threshold_plus1_identifiers,
+                threshold_plus1_wshares,
+                Some(identifier),
             )?;
             // check the interpolated W values match the received ones
-            if big_w_i != wshares[i] {
+            if big_w_i != *wshare {
                 return Err(ProtocolError::AssertionFailed(
                     "Exponent interpolation check failed.".to_string(),
                 ));
@@ -257,8 +270,8 @@ async fn do_presign(
         }
         // compute W as exponent interpolation for (W0, .., Wt; 0)
         let big_w = PolynomialCommitment::eval_exponent_interpolation(
-            &identifiers[..=threshold],
-            &wshares[..=threshold],
+            threshold_plus1_identifiers,
+            threshold_plus1_wshares,
             None,
         )?;
 
@@ -349,8 +362,8 @@ impl Shares {
 
     /// Adds two sets of shares together respectively and puts the result back into self
     pub(crate) fn add_shares(&mut self, shares: &Self) {
-        for i in 0..self.0.len() {
-            self.0[i].0 += shares.0[i].0;
+        for (share, other_share) in self.0.iter_mut().zip(shares.0.iter()) {
+            share.0 += other_share.0;
         }
     }
 }
