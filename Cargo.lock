@@ -1232,7 +1232,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2893,7 +2893,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4188,7 +4188,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4927,7 +4927,7 @@ dependencies = [
  "near-time 2.10.4",
  "node-types",
  "pprof",
- "prometheus",
+ "prometheus 0.13.4",
  "rand 0.8.5",
  "regex",
  "rocksdb",
@@ -4947,6 +4947,8 @@ dependencies = [
  "tikv-jemallocator",
  "time",
  "tokio",
+ "tokio-metrics",
+ "tokio-metrics-collector",
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
@@ -5848,7 +5850,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "parking_lot 0.12.5",
- "prometheus",
+ "prometheus 0.13.4",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -6532,7 +6534,7 @@ dependencies = [
  "num-rational",
  "parking_lot 0.12.5",
  "prefix-sum-vec",
- "prometheus",
+ "prometheus 0.13.4",
  "rand 0.8.5",
  "rayon",
  "ripemd",
@@ -6793,7 +6795,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7619,6 +7621,21 @@ dependencies = [
  "memchr",
  "parking_lot 0.12.5",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "prometheus"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
+dependencies = [
+ "cfg-if 1.0.4",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot 0.12.5",
+ "protobuf",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -8612,7 +8629,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9701,7 +9718,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9974,6 +9991,31 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4c2ca6283a34abc77cb58ea83d4a3c40e0162b0095d7a674172a2eed5415197"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "tokio-metrics-collector"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f360c6fa7fd188e65904979ea07f1f44c57f0759ab18ecca88551c26acdf4cd6"
+dependencies = [
+ "lazy_static",
+ "parking_lot 0.12.5",
+ "prometheus 0.14.0",
+ "tokio",
+ "tokio-metrics",
 ]
 
 [[package]]
@@ -11065,7 +11107,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
 use std::sync::LazyLock;
 
+pub mod tokio_runtime_metrics;
+
 pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_triples_generated",
