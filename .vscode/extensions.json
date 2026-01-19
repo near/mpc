@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        // needed for rust-analyzer to run in nix environment
+        "mkhl.direnv",
+        "rust-lang.rust-analyzer",
+    ]
+}
