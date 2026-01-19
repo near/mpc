@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    target-branch: "main"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 5
+
+    cooldown:
+      default-days: 7
+      days: 7
+
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
