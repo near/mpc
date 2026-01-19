@@ -14,17 +14,16 @@ of $[x, y]$.
 All this information will then be used when the transcript is passed
 to create or verify a proof.
 
-This transcript API is closely related to the implementation
-used in this library: [Magikitten](https://github.com/cronokirby/magikitten).
-Looking at the API of that library will likely make this
-API more understandable.
+# Maurer NIZK Proofs
 
-# ZK Proofs
-
-The proofs we use in this library are all Maurer proofs.
+The proofs we use in this library are all Maurer proofs \[[Mau09](https://crypto.ethz.ch/publications/files/Maurer09.pdf)\] .
 These are proofs of the form:
 "I know a secret $x$ such that $\varphi(x) = X$, with $X$ a public value",
 and $\varphi$ being a homomorphism, i.e. $\varphi(a + b) = \varphi(a) + \varphi(b)$.
+
+We amend the protocol from the original paper, shown in the figure below, to make it non-interactive, generating the challenge by hashing the transcript i.e., applying the Fiat-Shamir transform.
+
+![Maurer Proofs](../images/maurer_proofs.png)
 
 A common case of this is the Schnorr discrete logarithm proof,
 with $\varphi(x) = x \cdot G$.
@@ -36,13 +35,16 @@ We also write $\text{Mau}(\varphi, X)$ to denote the verifier's
 view of this relation, where $x$ is not known.
 
 Using this notation, we write:
-- $$
+
+$$
 \text{Prove}(T, \text{Mau}(\varphi, X; x))
 $$
-- $$
+
+$$
 \text{Verify}(T, \pi, \text{Mau}(\varphi, X))
 $$
+
 for creating and verifying a proof, using a transcript for binding
 proofs to a given context.
 
-See [this blog post](https://cronokirby.com/posts/2022/08/the-paper-that-keeps-showing-up/) for more context on Maurer proofs.
+See [this blog post](https://cronokirby.com/Posts/The-Paper-that-Keeps-Showing-Up.html) for more context on Maurer proofs.
