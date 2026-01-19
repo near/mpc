@@ -167,7 +167,7 @@ impl OutgoingConnection {
                             };
                             let serialized = borsh::to_vec(&data)?;
                             let len: u32 = serialized.len().try_into().context("Message too long")?;
-                            
+
                             // Add timeout to write operations to detect if writes are hanging
                             // (e.g., due to half-open connection where peer stopped ACKing)
                             match tokio::time::timeout(WRITE_OPERATION_TIMEOUT, tls_conn.write_u32(len)).await {
