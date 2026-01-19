@@ -55,7 +55,7 @@ To run a local NEAR network, first create the configuration with the following c
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
-Now, copy the the embedded node configuration from `deployment/localnet`.
+Now, copy the embedded node configuration from `deployment/localnet`.
 This ensures two things:
 
 1. We have a consistent genesis configuration with the MPC nodes when running in docker.
@@ -77,7 +77,7 @@ Congratulations, you are now running a local NEAR network.
 To see the network status, call
 
 ```shell
-curl localhost:3030/status | jq
+curl -s localhost:3030/status | jq
 ```
 
 Before proceeding, save the validator key from the network configuration
