@@ -10,7 +10,6 @@ updates:
 
     cooldown:
       default-days: 7
-      days: 7
 
     groups:
       rust-dependencies:
