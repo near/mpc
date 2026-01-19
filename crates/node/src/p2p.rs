@@ -36,6 +36,16 @@ const TCP_CONNECTION_RETRIES: u32 = 3;
 
 const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// TCP_USER_TIMEOUT: Maximum time that transmitted data may remain
+/// unacknowledged before TCP will forcibly close the connection.
+/// This is critical for detecting half-open connections during active writes.
+/// Set to 30 seconds to detect when peer stops ACKing our writes.
+#[cfg(target_os = "linux")]
+const TCP_USER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Timeout for individual write operations to detect if writes are hanging.
+const WRITE_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Implements MeshNetworkTransportSender for sending messages over a TLS-based
 /// mesh network.
 pub struct TlsMeshSender {
@@ -157,8 +167,31 @@ impl TlsConnection {
                             };
                             let serialized = borsh::to_vec(&data)?;
                             let len: u32 = serialized.len().try_into().context("Message too long")?;
-                            tls_conn.write_u32(len).await?;
-                            tls_conn.write_all(&serialized).await?;
+                            
+                            // Add timeout to write operations to detect if writes are hanging
+                            // (e.g., due to half-open connection where peer stopped ACKing)
+                            match tokio::time::timeout(WRITE_OPERATION_TIMEOUT, tls_conn.write_u32(len)).await {
+                                Ok(Ok(_)) => {},
+                                Ok(Err(e)) => return Err(e.into()),
+                                Err(_) => {
+                                    // Write timed out - connection is likely stuck/half-open
+                                    return Err(anyhow::anyhow!(
+                                        "Write operation timed out after {}s (connection may be half-open)",
+                                        WRITE_OPERATION_TIMEOUT.as_secs()
+                                    ));
+                                }
+                            }
+                            match tokio::time::timeout(WRITE_OPERATION_TIMEOUT, tls_conn.write_all(&serialized)).await {
+                                Ok(Ok(_)) => {},
+                                Ok(Err(e)) => return Err(e.into()),
+                                Err(_) => {
+                                    // Write timed out - connection is likely stuck/half-open
+                                    return Err(anyhow::anyhow!(
+                                        "Write operation timed out after {}s (connection may be half-open)",
+                                        WRITE_OPERATION_TIMEOUT.as_secs()
+                                    ));
+                                }
+                            }
                             sent_bytes += 4 + len as u64;
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
@@ -468,6 +501,33 @@ fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
     socket
         .set_tcp_nodelay(TCP_NODELAY)
         .context("failed to enable `TCP_NODELAY`")?;
+
+    // Set TCP_USER_TIMEOUT to detect half-open connections during active writes.
+    // This ensures that if the peer stops ACKing our writes, the connection
+    // will be closed after TCP_USER_TIMEOUT milliseconds.
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+        // TCP_USER_TIMEOUT is defined in linux/tcp.h
+        // Value: maximum time that transmitted data may remain unacknowledged
+        const TCP_USER_TIMEOUT_OPTION: libc::c_int = 18;
+        let timeout_ms = TCP_USER_TIMEOUT.as_millis() as u32;
+        unsafe {
+            let result = libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::IPPROTO_TCP,
+                TCP_USER_TIMEOUT_OPTION,
+                &timeout_ms as *const _ as *const libc::c_void,
+                std::mem::size_of::<u32>() as libc::socklen_t,
+            );
+            if result != 0 {
+                return Err(anyhow::anyhow!(
+                    "Failed to set TCP_USER_TIMEOUT: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+    }
 
     Ok(TcpStream::from_std(socket.into())?)
 }
