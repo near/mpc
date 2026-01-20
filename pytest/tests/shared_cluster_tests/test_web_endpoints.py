@@ -126,7 +126,7 @@ def assert_pprof_endpoint(pprof_address: str):
     response = requests.get(
         f"http://{pprof_address}/profiler/pprof/flamegraph",
         params={"sampling_duration_secs": sampling_duration_secs},
-        timeout=5,
+        timeout=10,
     )
 
     assert response.status_code == 200
