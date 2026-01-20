@@ -158,6 +158,9 @@
             ++ lib.optionals stdenv.isLinux [
               udev
               dbus
+            ]
+            ++ lib.optionals stdenv.isDarwin [
+              apple-sdk_14
             ];
 
           hardening = [
