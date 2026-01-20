@@ -528,6 +528,7 @@ def start_cluster_with_mpc(
             p2p_public_key=config.p2p_public_key,
             pytest_signer_keys=pytest_signer_keys,
             backup_key=config.backup_key,
+            pprof_address=config.pprof_address,
         )
         mpc_node.init_nonces(validators[0])
         mpc_node.set_block_ingestion(True)
