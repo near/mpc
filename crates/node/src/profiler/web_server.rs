@@ -14,7 +14,7 @@ const PPROF_FLAMEGRAPH_PATH: &str = "/profiler/pprof/flamegraph";
 const MAX_CONCURRENT_PPROF_REQUESTS: usize = 5;
 
 const DEFAULT_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(30);
-const MIN_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(5);
+const MIN_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(1);
 const MAX_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(180); // 3 minutes
 
 const DEFAULT_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 1000;
