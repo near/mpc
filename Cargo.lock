@@ -4910,7 +4910,6 @@ dependencies = [
  "hyper 0.14.32",
  "itertools 0.12.1",
  "k256",
- "libc",
  "lru 0.16.3",
  "mockall",
  "mpc-attestation",
