@@ -529,7 +529,6 @@ fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
     // This ensures that if the peer stops ACKing our writes, the connection
     // will be closed after TCP_USER_TIMEOUT milliseconds.
     // socket2 handles platform detection - this is supported on Linux, Android, Fuchsia, etc.
-    // On unsupported platforms (e.g., Windows, macOS), this is a no-op.
     #[cfg(target_os = "linux")]
     {
         socket
