@@ -4,7 +4,7 @@
 # Requirements: jq
 #
 # Usage:
-#   ./deployment/build-images.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
+#   ./scripts/launch-localnet.sh [--mpc-contract-path <MPC_CONTRACT_PATH>] [--nodes <number_of_nodes>] [--threshold <threshold>]
 
 set -euo pipefail
 
