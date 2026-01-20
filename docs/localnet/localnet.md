@@ -1,5 +1,10 @@
 # Localnet - instructions for how to run a local MPC network
 
+## Automated setting
+
+The current guide explains the manual steps to run a `localnet`. These steps
+have been automated in `scripts/launch-localnet.sh` for faster deployment.
+
 ## Prerequisites
 
 neard, near CLI, cargo, grep, envsubst, python3-keyring
@@ -37,7 +42,7 @@ cargo install --path crates/node --locked
 Build the contract from the repository root with:
 
 ```shell
-cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
+cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
