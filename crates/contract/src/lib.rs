@@ -339,7 +339,7 @@ impl MpcContract {
         self.state()
             .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
             .unwrap()
-            .0 as u32
+            .0
     }
 
     /// To avoid overloading the network with too many requests,
@@ -630,7 +630,8 @@ impl MpcContract {
 
         if attestation_storage_must_be_paid_by_caller {
             let storage_used = env::storage_usage() - initial_storage;
-            let cost = env::storage_byte_cost().saturating_mul(storage_used as u128);
+            let cost = env::storage_byte_cost()
+                .saturating_mul(u128::from(storage_used));
             let attached = env::attached_deposit();
 
             if attached < cost {
@@ -1016,7 +1017,7 @@ impl MpcContract {
             .count();
 
         // Not enough votes from current participants, wait for more.
-        if (valid_votes_count as u64) < threshold.value() {
+        if u64::try_from(valid_votes_count).expect("vote count fits in u64") < threshold.value() {
             return Ok(false);
         }
 
@@ -1113,7 +1114,8 @@ impl MpcContract {
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
             } => {
-                let threshold = current_params.threshold().value() as usize;
+                let threshold =
+                    usize::try_from(current_params.threshold().value()).expect("threshold fits in usize");
                 let remaining = participants_with_valid_attestation.len();
                 if threshold > remaining {
                     log!(
@@ -1135,7 +1137,7 @@ impl MpcContract {
 
                 let threshold_parameters = ThresholdParameters::new(
                     participants_with_valid_attestation,
-                    Threshold::new(new_threshold as u64),
+                    Threshold::new(u64::try_from(new_threshold).expect("threshold fits in u64")),
                 )
                 .expect("Require valid threshold parameters"); // this should never happen.
                 current_params.validate_incoming_proposal(&threshold_parameters)?;
@@ -3530,7 +3532,7 @@ mod tests {
 
         // Build expected participants: exclude the target (participant 2) who has expired attestation
         let expected_participants = Participants::init(
-            ParticipantId(PARTICIPANT_COUNT as u32),
+            ParticipantId(u32::try_from(PARTICIPANT_COUNT).expect("participant count fits in u32")),
             participant_list[0..2]
                 .iter()
                 .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))

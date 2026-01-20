@@ -334,8 +334,10 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
         mpc_pending_queue_blocks_indexed.inc();
         for (final_block_height, buffered_block_data) in add_result.new_final_blocks {
             mpc_pending_queue_finalized_blocks_indexed.inc();
-            mpc_pending_queue_responses_indexed
-                .inc_by(buffered_block_data.completed_requests.len() as u64);
+            mpc_pending_queue_responses_indexed.inc_by(
+                u64::try_from(buffered_block_data.completed_requests.len())
+                    .expect("completed request count fits in u64"),
+            );
 
             for request_id in &buffered_block_data.completed_requests {
                 tracing::debug!(target: "request", "Removing completed request {:?}", request_id);
@@ -347,7 +349,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                         .timestamp_received
                         .signed_duration_since(request.time_indexed);
 
-                    request_response_latency_blocks.observe(response_latency_blocks as f64);
+                    request_response_latency_blocks.observe(f64::from(response_latency_blocks));
 
                     request_response_latency_seconds
                         .observe(response_latency_duration.as_seconds_f64());
@@ -365,7 +367,9 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 }
             }
         }
-        mpc_pending_requests_queue_requests_indexed.inc_by(requests.len() as u64);
+        mpc_pending_requests_queue_requests_indexed.inc_by(
+            u64::try_from(requests.len()).expect("request count fits in u64"),
+        );
         for request in requests {
             self.requests
                 .entry(request.get_id())
@@ -524,8 +528,12 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 ),
             };
 
-        mpc_pending_requests_queue_size.set(self.requests.len() as i64);
-        mpc_pending_requests_queue_attempts_generated.inc_by(result.len() as u64);
+        mpc_pending_requests_queue_size.set(
+            i64::try_from(self.requests.len()).expect("request count fits in i64"),
+        );
+        mpc_pending_requests_queue_attempts_generated.inc_by(
+            u64::try_from(result.len()).expect("result count fits in u64"),
+        );
         result
     }
 

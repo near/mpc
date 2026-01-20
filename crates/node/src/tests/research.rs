@@ -72,7 +72,9 @@ where
                         }
                     }
                     threshold_signatures::protocol::Action::SendPrivate(participant, vec) => {
-                        p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
+                        p2p_messages_to_send[i][usize::try_from(u32::from(participant))
+                            .expect("participant ID fits in usize")]
+                        .push(vec);
                     }
                     threshold_signatures::protocol::Action::Return(_) => {
                         completed[i] = true;
@@ -89,7 +91,10 @@ where
             let mut peer_messages = Vec::new();
             for (j, messages) in messages.into_iter().enumerate() {
                 for message in &messages {
-                    protocols[j].message(Participant::from(i as u32), message.clone());
+                    protocols[j].message(
+                        Participant::from(u32::try_from(i).expect("index fits in u32")),
+                        message.clone(),
+                    );
                 }
                 let num_messages = messages.len();
                 let total_bytes = messages.iter().map(|v| v.len()).sum();
@@ -139,7 +144,9 @@ fn run_protocol_and_generate_network_report_for_worst_case(
                             }
                         }
                         threshold_signatures::protocol::Action::SendPrivate(participant, vec) => {
-                            p2p_messages_to_send[i][u32::from(participant) as usize].push(vec);
+                            p2p_messages_to_send[i][usize::try_from(u32::from(participant))
+                                .expect("participant ID fits in usize")]
+                            .push(vec);
                             made_progress = true;
                         }
                         threshold_signatures::protocol::Action::Return(_) => {
@@ -153,7 +160,10 @@ fn run_protocol_and_generate_network_report_for_worst_case(
                     break;
                 }
                 if let Some((from, message)) = p2p_messages_to_receive[i].pop_front() {
-                    protocols[i].message(Participant::from(from as u32), message);
+                    protocols[i].message(
+                        Participant::from(u32::try_from(from).expect("index fits in u32")),
+                        message,
+                    );
                 } else {
                     break;
                 }
@@ -193,7 +203,7 @@ const THRESHOLD: usize = 7;
 fn triple_network_research_best_case() {
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
-        .map(|i| Participant::from(i as u32))
+        .map(|i| Participant::from(u32::try_from(i).expect("index fits in u32")))
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
@@ -223,7 +233,7 @@ fn triple_network_research_best_case() {
 fn triple_network_research_worst_case() {
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
-        .map(|i| Participant::from(i as u32))
+        .map(|i| Participant::from(u32::try_from(i).expect("index fits in u32")))
         .collect::<Vec<_>>();
     for i in 0..NUM_PARTICIPANTS {
         protocols.push(
@@ -259,7 +269,7 @@ fn presignature_network_research_best_case() {
 
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
-        .map(|i| Participant::from(i as u32))
+        .map(|i| Participant::from(u32::try_from(i).expect("index fits in u32")))
         .collect::<Vec<_>>();
 
     for i in 0..NUM_PARTICIPANTS {
@@ -300,7 +310,7 @@ fn signature_network_research_best_case() {
 
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
-        .map(|i| Participant::from(i as u32))
+        .map(|i| Participant::from(u32::try_from(i).expect("index fits in u32")))
         .collect::<Vec<_>>();
     let leader = participants[0];
     for i in 0..NUM_PARTICIPANTS {

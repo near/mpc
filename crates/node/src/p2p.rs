@@ -167,7 +167,8 @@ impl OutgoingConnection {
                                 break;
                             };
                             let serialized = borsh::to_vec(&data)?;
-                            let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            let len: u32 = u32::try_from(serialized.len())
+                                .context("Message too long")?;
 
                             // Add timeout to write operations to detect if writes are hanging
                             // (e.g., due to half-open connection where peer stopped ACKing)
@@ -193,7 +194,7 @@ impl OutgoingConnection {
                                     ));
                                 }
                             }
-                            sent_bytes += 4 + len as u64;
+                            sent_bytes += 4 + u64::from(len);
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
@@ -450,13 +451,13 @@ pub async fn new_tls_mesh_network(
                             if len >= MAX_MESSAGE_LEN {
                                 anyhow::bail!("Message too long");
                             }
-                            let mut buf = vec![0; len as usize];
+                            let mut buf = vec![0; usize::try_from(len).expect("length fits in usize")];
                             tokio::time::timeout(
                                 std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
                                 stream.read_exact(&mut buf),
                             )
                             .await??;
-                            received_bytes += 4 + len as u64;
+                            received_bytes += 4 + u64::from(len);
 
                             let packet = Packet::try_from_slice(&buf)
                                 .context("Failed to deserialize packet")?;
@@ -660,19 +661,19 @@ pub mod testing {
         }
 
         pub fn p2p_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 0)
+            self.compute_port(u16::try_from(node_index).expect("node index fits in u16"), 0)
         }
 
         pub fn web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 1)
+            self.compute_port(u16::try_from(node_index).expect("node index fits in u16"), 1)
         }
 
         pub fn migration_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 2)
+            self.compute_port(u16::try_from(node_index).expect("node index fits in u16"), 2)
         }
 
         pub fn pprof_web_port(&self, node_index: usize) -> u16 {
-            self.compute_port(node_index as u16, 3)
+            self.compute_port(u16::try_from(node_index).expect("node index fits in u16"), 3)
         }
 
         pub const CLI_FOR_PYTEST: Self = Self::new(0);
@@ -737,7 +738,7 @@ pub mod testing {
         let mut configs = Vec::new();
         for (i, singing_key) in p2p_keypairs.into_iter().enumerate() {
             let participants = ParticipantsConfig {
-                threshold: threshold as u64,
+                threshold: u64::try_from(threshold).expect("threshold fits in u64"),
                 participants: participants.clone(),
             };
 

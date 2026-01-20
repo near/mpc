@@ -39,7 +39,10 @@ impl ThresholdParameters {
     /// Constructs Threshold parameters from `participants` and `threshold` if the
     /// threshold meets the absolute and relative validation criteria.
     pub fn new(participants: Participants, threshold: Threshold) -> Result<Self, Error> {
-        match Self::validate_threshold(participants.len() as u64, threshold.clone()) {
+        match Self::validate_threshold(
+            u64::try_from(participants.len()).expect("participant count fits in u64"),
+            threshold.clone(),
+        ) {
             Ok(_) => Ok(ThresholdParameters {
                 participants,
                 threshold,
@@ -72,7 +75,10 @@ impl ThresholdParameters {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        Self::validate_threshold(self.participants.len() as u64, self.threshold())?;
+        Self::validate_threshold(
+            u64::try_from(self.participants.len()).expect("participant count fits in u64"),
+            self.threshold(),
+        )?;
         self.participants.validate()
     }
 
@@ -118,9 +124,9 @@ impl ThresholdParameters {
             return Err(InvalidCandidateSet::InsufficientOldParticipants.into());
         }
         // ensure the new ids are contiguous and unique
-        let n_new = proposal.participants().len() as u64 - n_old;
+        let n_new = u64::try_from(proposal.participants().len()).expect("participant count fits in u64") - n_old;
         if n_new > 0 {
-            if n_new - 1 != (new_max_id - new_min_id) as u64 {
+            if n_new - 1 != u64::from(new_max_id - new_min_id) {
                 return Err(InvalidCandidateSet::NewParticipantIdsNotContiguous.into());
             }
             if new_min_id != self.participants().next_id().get() {
@@ -181,8 +187,8 @@ mod tests {
 
     #[test]
     fn test_validate_threshold() {
-        let n = rand::thread_rng().gen_range(2..600) as u64;
-        let min_threshold = ((n as f64) * 0.6).ceil() as u64;
+        let n = u64::try_from(rand::thread_rng().gen_range(2..600)).unwrap();
+        let min_threshold = u64::try_from((f64::from(n) * 0.6).ceil() as u64).unwrap();
         for k in 0..min_threshold {
             assert!(ThresholdParameters::validate_threshold(n, Threshold::new(k)).is_err());
         }
@@ -195,18 +201,18 @@ mod tests {
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
-        let min_threshold = ((n as f64) * 0.6).ceil() as usize;
+        let min_threshold = usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil() as usize).unwrap();
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {
-            let invalid_threshold = Threshold::new(k as u64);
+            let invalid_threshold = Threshold::new(u64::try_from(k).unwrap());
             assert!(ThresholdParameters::new(participants.clone(), invalid_threshold).is_err());
         }
         assert!(
-            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64)).is_err()
+            ThresholdParameters::new(participants.clone(), Threshold::new(u64::try_from(n + 1).unwrap())).is_err()
         );
         for k in min_threshold..(n + 1) {
-            let threshold = Threshold::new(k as u64);
+            let threshold = Threshold::new(u64::try_from(k).unwrap());
             let tp = ThresholdParameters::new(participants.clone(), threshold.clone());
             assert!(tp.is_ok(), "{:?}", tp);
             let tp = tp.unwrap();
@@ -239,9 +245,9 @@ mod tests {
         assert!(params.validate_incoming_proposal(&proposal).is_err());
 
         // Proposal with threshold number of shared participants should be allowed.
-        let mut new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let mut new_participants = params.participants.subset(
+            0..usize::try_from(params.threshold.value()).expect("threshold fits in usize"),
+        );
         new_participants.add_random_participants_till_n(params.participants.len());
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
@@ -254,9 +260,9 @@ mod tests {
 
         // Proposal with less than threshold number of shared participants should not be allowed,
         // even if the new threshold is lower.
-        let mut new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize - 1);
+        let mut new_participants = params.participants.subset(
+            0..usize::try_from(params.threshold.value()).expect("threshold fits in usize") - 1,
+        );
         new_participants.add_random_participants_till_n(params.participants.len());
         let proposal = ThresholdParameters::new_unvalidated(
             new_participants,
@@ -265,9 +271,9 @@ mod tests {
         assert!(params.validate_incoming_proposal(&proposal).is_err());
 
         // Proposal with the new threshold being invalid should not be allowed.
-        let mut new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let mut new_participants = params.participants.subset(
+            0..usize::try_from(params.threshold.value()).expect("threshold fits in usize"),
+        );
         new_participants.add_random_participants_till_n(50);
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
@@ -282,7 +288,7 @@ mod tests {
 
         let wrong_id = params.participants.next_id().0 + 1;
 
-        let (account_id, participant_info) = gen_participant(wrong_id as usize);
+        let (account_id, participant_info) = gen_participant(usize::try_from(wrong_id).unwrap());
 
         let mut tampered_participants = params.participants.clone();
         tampered_participants
@@ -326,9 +332,9 @@ mod tests {
     fn test_remove_only() {
         let params = ThresholdParameters::new(gen_participants(5), Threshold::new(3)).unwrap();
 
-        let new_participants = params
-            .participants
-            .subset(0..params.threshold.value() as usize);
+        let new_participants = params.participants.subset(
+            0..usize::try_from(params.threshold.value()).expect("threshold fits in usize"),
+        );
 
         let new_params =
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
