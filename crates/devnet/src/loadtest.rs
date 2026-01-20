@@ -242,11 +242,11 @@ impl RunLoadtestCmd {
             .map(|m| m.values().sum::<u64>())
             .unwrap_or(0);
         let tx_per_sec = if parallel_sign_calls > 0 {
-            self.qps as f64 / parallel_sign_calls as f64
+            f64::from(self.qps) / f64::try_from(parallel_sign_calls).expect("parallel_sign_calls fits in f64")
         } else {
-            self.qps as f64
+            f64::from(self.qps)
         };
-        if tx_per_sec > config.rpc.total_qps() as f64 {
+        if tx_per_sec > f64::try_from(config.rpc.total_qps()).expect("total_qps fits in f64") {
             println!("WARNING: Transactions to send per second is {}, but the RPC servers are only capable of handling an aggregate of {} QPS",
                 tx_per_sec, config.rpc.total_qps());
         }
@@ -386,7 +386,8 @@ impl RunLoadtestCmd {
                     rpc_errs.len(),
                 );
                 for _ in 0..10 {
-                    let waiting_time = 1000 / (config.rpc.total_qps() as u64);
+                    let waiting_time =
+                        1000 / u64::try_from(config.rpc.total_qps()).expect("total_qps fits in u64");
                     tokio::time::sleep(Duration::from_millis(waiting_time)).await;
                     let request = RpcTransactionStatusRequest{
                     transaction_info:
@@ -472,7 +473,8 @@ async fn send_load(
     cancel: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinSet<()> {
     let mut join_set = tokio::task::JoinSet::new();
-    let (permits_sender, permits_receiver) = flume::bounded(qps.ceil() as usize);
+    let (permits_sender, permits_receiver) =
+        flume::bounded(usize::try_from(qps.ceil() as u64).expect("qps.ceil() fits in usize"));
     for mut key in keys {
         let permits_receiver = permits_receiver.clone();
         let res_sender_clone = res_sender.clone();

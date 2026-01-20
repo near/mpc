@@ -239,18 +239,22 @@ pub mod tests {
                 .unwrap();
             assert_eq!(*participants.info(account_id).unwrap(), info.clone());
             assert_eq!(
-                participants.account_id(&ParticipantId(idx as u32)).unwrap(),
+                participants
+                    .account_id(&ParticipantId(u32::try_from(idx).expect("index fits in u32")))
+                    .unwrap(),
                 *account_id
             );
             assert_eq!(
                 participants.id(account_id).unwrap(),
-                ParticipantId(idx as u32)
+                ParticipantId(u32::try_from(idx).expect("index fits in u32"))
             );
             assert!(participants.is_participant(account_id));
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
-            assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
+            assert!(participants
+                .account_id(&ParticipantId(u32::try_from(i).expect("index fits in u32")))
+                .is_ok());
         }
         assert!(participants.validate().is_ok());
     }

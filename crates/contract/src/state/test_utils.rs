@@ -16,7 +16,8 @@ use rand::Rng;
 
 pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParameters {
     let mut rng = rand::thread_rng();
-    let current_k = params.threshold().value() as usize;
+    let current_k =
+        usize::try_from(params.threshold().value()).expect("threshold fits in usize");
     let current_n = params.participants().len();
     let n_old_participants: usize = rng.gen_range(current_k..current_n + 1);
     let current_participants = params.participants();
@@ -26,7 +27,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
         .map(|(_, id, _)| id.clone())
         .collect();
     let mut new_ids = BTreeSet::new();
-    while new_ids.len() < (n_old_participants as usize) {
+    while new_ids.len() < n_old_participants {
         let x: usize = rng.gen::<usize>() % old_ids.len();
         let c = old_ids.iter().nth(x).unwrap().clone();
         new_ids.insert(c.clone());
@@ -46,7 +47,10 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
         next_id = next_id.next();
     }
 
-    let threshold = ((new_participants.len() as f64) * 0.6).ceil() as u64;
+    let threshold = u64::try_from(
+        (f64::try_from(new_participants.len()).unwrap() * 0.6).ceil() as u64,
+    )
+    .unwrap();
     ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()
 }
 

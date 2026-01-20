@@ -272,18 +272,20 @@ impl ProposedUpdates {
 }
 
 fn bytes_used(update: &Update) -> u128 {
-    let mut bytes_used = std::mem::size_of::<UpdateEntry>() as u128;
+    let mut bytes_used =
+        u128::try_from(std::mem::size_of::<UpdateEntry>()).expect("size_of fits in u128");
 
     // Assume a high max of 128 participant votes per update entry.
-    bytes_used += 128 * std::mem::size_of::<AccountId>() as u128;
+    bytes_used +=
+        128 * u128::try_from(std::mem::size_of::<AccountId>()).expect("size_of fits in u128");
 
     match update {
         Update::Contract(code) => {
-            bytes_used += code.len() as u128;
+            bytes_used += u128::try_from(code.len()).expect("code length fits in u128");
         }
         Update::Config(config) => {
             let bytes = serde_json::to_vec(&config).unwrap();
-            bytes_used += bytes.len() as u128;
+            bytes_used += u128::try_from(bytes.len()).expect("config length fits in u128");
         }
     }
 

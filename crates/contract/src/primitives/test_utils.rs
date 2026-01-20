@@ -25,11 +25,15 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
     let mut domains = Vec::new();
     for i in 0..num_domains {
         domains.push(DomainConfig {
-            id: DomainId(i as u64 * 2),
+            id: DomainId(u64::try_from(i).expect("index fits in u64") * 2),
             scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
         });
     }
-    DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
+    DomainRegistry::from_raw_validated(
+        domains,
+        u64::try_from(num_domains).expect("num_domains fits in u64") * 2,
+    )
+    .unwrap()
 }
 
 /// Generates a valid list of domains to add to the given registry.
@@ -37,7 +41,9 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
     let mut new_domains = Vec::new();
     for i in 0..num_domains {
         new_domains.push(DomainConfig {
-            id: DomainId(registry.next_domain_id() + i as u64),
+            id: DomainId(
+                registry.next_domain_id() + u64::try_from(i).expect("index fits in u64"),
+            ),
             scheme: ALL_PROTOCOLS[i % ALL_PROTOCOLS.len()],
         });
     }
@@ -113,7 +119,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
 }
 
 pub fn min_thrershold(n: usize) -> usize {
-    ((n as f64) * 0.6).ceil() as usize
+    usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil() as u64).unwrap()
 }
 
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {
@@ -140,5 +146,9 @@ pub fn gen_threshold_params(max_n: usize) -> ThresholdParameters {
     let n: usize = rand::thread_rng().gen_range(2..max_n + 1);
     let k_min = min_thrershold(n);
     let k = rand::thread_rng().gen_range(k_min..n + 1);
-    ThresholdParameters::new(gen_participants(n), Threshold::new(k as u64)).unwrap()
+    ThresholdParameters::new(
+        gen_participants(n),
+        Threshold::new(u64::try_from(k).expect("k fits in u64")),
+    )
+    .unwrap()
 }

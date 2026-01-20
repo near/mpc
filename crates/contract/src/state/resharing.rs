@@ -159,7 +159,8 @@ impl ResharingContractState {
         let authenticated_candidate = AuthenticatedAccountId::new(previous_running_participants)?;
         self.cancellation_requests.insert(authenticated_candidate);
 
-        let cancellation_votes_count = self.cancellation_requests.len() as u64;
+        let cancellation_votes_count =
+            u64::try_from(self.cancellation_requests.len()).expect("request count fits in u64");
         let previous_running_threshold = self.previous_running_state.parameters.threshold();
 
         let threshold_cancellation_votes_reached: bool =
@@ -393,7 +394,9 @@ pub mod tests {
         // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
         // should be rejected, since all re-proposals must be valid against the original.
         let mut new_participants_1 = old_participants.clone();
-        let new_threshold = Threshold::new(old_participants.len() as u64);
+        let new_threshold = Threshold::new(
+            u64::try_from(old_participants.len()).expect("participant count fits in u64"),
+        );
         new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
         let new_participants_2 = new_participants_1
             .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
