@@ -1697,7 +1697,7 @@ impl MpcContract {
 /// These methods expose individual `Participants` operations as contract endpoints
 /// so that sandbox tests can measure actual on-chain gas costs for each operation.
 /// This enables detecting performance regressions when changing internal data structures.
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "bench-utils")]
 #[near_bindgen]
 impl MpcContract {
     /// Benchmark: Returns the number of participants.

@@ -286,8 +286,7 @@ impl KeyEventInstance {
     }
 }
 
-// test_utils::Environment uses host-only NEAR test utilities
-#[cfg(all(any(test, feature = "test-utils"), not(target_arch = "wasm32")))]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod tests {
     use crate::primitives::participants::ParticipantId;
     use crate::state::key_event::KeyEvent;

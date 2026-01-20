@@ -2,8 +2,7 @@ pub mod initializing;
 pub mod key_event;
 pub mod resharing;
 pub mod running;
-// test_utils uses Environment which requires host-only NEAR test utilities
-#[cfg(all(any(test, feature = "test-utils"), not(target_arch = "wasm32")))]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 use crate::crypto_shared::types::PublicKeyExtended;
