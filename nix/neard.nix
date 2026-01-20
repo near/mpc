@@ -16,7 +16,8 @@ rustPlatform.buildRustPackage rec {
   src = fetchFromGitHub {
     owner = "near";
     repo = "nearcore";
-    # rev = "${version}";
+    # the revision is not on tag 2.10.4, since https://github.com/near/nearcore/pull/14902
+    # is required to build neard in a sandboxed environment.
     rev = "3c4442e48af2e0ad12e84e10fec269d1b25638fc";
     hash = "sha256-lzM8QMozsjSDjFvMkkgaPayL2Fcmpe/knw+3I/ACQtc=";
   };
