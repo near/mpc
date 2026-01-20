@@ -166,13 +166,13 @@ VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret_key" |
 NODE_PUBKEY=$(cat ~/.near/mpc-localnet/node_key.json | jq ".public_key" | grep -oE "ed25519:\w+")
 
 echo "Creating mpc-contract account"
-run_quiet_on_success "near --quiet account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
-run_quiet_on_success "near --quiet account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
+run_quiet_on_success "near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key '$VALIDATOR_KEY' send"
+run_quiet_on_success "near account view-account-summary mpc-contract.test.near network-config mpc-localnet now"
 
 echo "Deploying mpc-contract"
-run_quiet_on_success "near --quiet contract deploy mpc-contract.test.near use-file '$MPC_CONTRACT_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
+run_quiet_on_success "near contract deploy mpc-contract.test.near use-file '$MPC_CONTRACT_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
 sleep 2
-run_quiet_on_success "near --quiet contract inspect mpc-contract.test.near network-config mpc-localnet now"
+run_quiet_on_success "near contract inspect mpc-contract.test.near network-config mpc-localnet now"
 
 echo "Creating mpc-node accounts"
 
@@ -186,7 +186,7 @@ BASE_P2P_PORT=3000
 for ((i = 1; i <= N; i++)); do
 
   node_name="mpc-node-$i.test.near"
-  run_quiet_on_success "near --quiet account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
+  run_quiet_on_success "near account create-account fund-myself ${node_name} '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key $VALIDATOR_KEY send"
 
 done
 
@@ -227,8 +227,8 @@ for ((i = 1; i <= N; i++)); do
   NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
   NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
-  run_quiet_on_success "near --quiet account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_PUBKEY network-config mpc-localnet sign-with-keychain send"
-  run_quiet_on_success "near --quiet account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_RESPONDER_KEY network-config mpc-localnet sign-with-keychain send"
+  run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_PUBKEY network-config mpc-localnet sign-with-keychain send"
+  run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_RESPONDER_KEY network-config mpc-localnet sign-with-keychain send"
 
 done
 
@@ -261,31 +261,31 @@ init_args=$(mktemp /tmp/init_args.XXXXXX)
 echo "$JSON_RESULT" >"${init_args}"
 
 echo "Initializing contract"
-run_quiet_on_success "near --quiet contract call-function as-transaction mpc-contract.test.near init file-args ${init_args} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send"
+run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near init file-args ${init_args} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send"
 
 sleep 2
 
-run_quiet_on_success "near --quiet contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
+run_quiet_on_success "near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
 
 echo "Adding domains to contract"
 
 for ((i = 1; i <= N; i++)); do
   node_name="mpc-node-$i.test.near"
-  run_quiet_on_success "near --quiet contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send"
+  run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send"
 done
 
 DOMAINS_WAIT=20
 echo "Waiting ${DOMAINS_WAIT} seconds for key generation to happen"
 sleep $DOMAINS_WAIT
 
-is_contract_running_cmd="near --quiet contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now 2>&1 | grep Running"
+is_contract_running_cmd="near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now 2>&1 | grep Running"
 wait_for_success "${is_contract_running_cmd}"
 
 signer_account="mpc-node-1.test.near"
 
 echo "Executing signature requests"
-run_quiet_on_success "near --quiet contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-run_quiet_on_success "near --quiet contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
-run_quiet_on_success "near --quiet contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
+run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_ecdsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
+run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
+run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
 
 read -rp "Press Enter to tear-down the processes..."
