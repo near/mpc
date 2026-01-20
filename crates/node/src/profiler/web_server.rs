@@ -1,6 +1,7 @@
 use super::pprof::collect_pprof;
 
 use axum::{
+    extract::Query,
     http::{header, StatusCode},
     response::IntoResponse,
 };
@@ -13,7 +14,12 @@ const PPROF_FLAMEGRAPH_PATH: &str = "/profiler/pprof/flamegraph";
 const MAX_CONCURRENT_PPROF_REQUESTS: usize = 5;
 
 const DEFAULT_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(30);
+const MIN_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(5);
+const MAX_PPROF_SAMPLE_DURATION: Duration = Duration::from_secs(180); // 3 minutes
+
 const DEFAULT_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 1000;
+const MIN_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 100;
+const MAX_PPROF_SAMPLE_FREQUENCY_HZ: i32 = 2000;
 
 pub(crate) async fn start_web_server(bind_address: SocketAddr) -> Result<(), io::Error> {
     let pprof_router = axum::Router::new()
@@ -34,12 +40,25 @@ pub(crate) async fn start_web_server(bind_address: SocketAddr) -> Result<(), io:
     Ok(())
 }
 
-async fn pprof_flamegraph() -> impl IntoResponse {
-    let pprof_report = collect_pprof(
-        DEFAULT_PPROF_SAMPLE_DURATION,
-        DEFAULT_PPROF_SAMPLE_FREQUENCY_HZ,
-    )
-    .await;
+#[derive(Debug, serde::Deserialize)]
+struct PprofParameters {
+    duration_secs: Option<u64>,
+    frequency_hz: Option<i32>,
+}
+
+async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoResponse {
+    let sample_duration = params
+        .duration_secs
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_PPROF_SAMPLE_DURATION)
+        .clamp(MIN_PPROF_SAMPLE_DURATION, MAX_PPROF_SAMPLE_DURATION);
+
+    let sample_frequency = params
+        .frequency_hz
+        .unwrap_or(DEFAULT_PPROF_SAMPLE_FREQUENCY_HZ)
+        .clamp(MIN_PPROF_SAMPLE_FREQUENCY_HZ, MAX_PPROF_SAMPLE_FREQUENCY_HZ);
+
+    let pprof_report = collect_pprof(sample_duration, sample_frequency).await;
 
     match pprof_report {
         Ok(report) => {
