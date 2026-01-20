@@ -63,6 +63,7 @@
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
+          neard = pkgs.callPackage ./nix/neard.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
@@ -136,6 +137,7 @@
             python3Packages.keyring
             near-cli-rs
             cargo-near
+            neard
           ];
 
           miscTools = with pkgs; [
