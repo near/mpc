@@ -41,7 +41,7 @@ const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_s
 /// This is critical for detecting half-open connections during active writes.
 /// Set to 30 seconds to detect when peer stops ACKing our writes.
 /// Supported on Linux
-#[cfg(any(target_os = "linux",))]
+#[cfg(target_os = "linux")]
 const TCP_USER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Timeout for individual write operations to detect if writes are hanging.
@@ -530,7 +530,7 @@ fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
     // will be closed after TCP_USER_TIMEOUT milliseconds.
     // socket2 handles platform detection - this is supported on Linux, Android, Fuchsia, etc.
     // On unsupported platforms (e.g., Windows, macOS), this is a no-op.
-    #[cfg(any(target_os = "linux",))]
+    #[cfg(target_os = "linux")]
     {
         socket
             .set_tcp_user_timeout(Some(TCP_USER_TIMEOUT))
