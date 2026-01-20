@@ -50,37 +50,37 @@ struct GasThresholds {
 }
 
 fn get_thresholds(n: usize) -> GasThresholds {
-    // Per-count thresholds: measured max + ~10% margin
+    // Per-count thresholds based on measured values
     match n {
         10 => GasThresholds {
-            len: Gas::from_ggas(3352),              // measured: 3047
-            is_participant: Gas::from_ggas(3376),   // measured: 3069
-            info: Gas::from_ggas(3376),             // measured: 3069
-            id: Gas::from_ggas(1566),               // measured: 1423
-            validate: Gas::from_ggas(3387),         // measured: 3079
-            iter_count: Gas::from_ggas(1563),       // measured: 1421
-            get_all_accounts: Gas::from_ggas(1563), // measured: 1421
-            serialization: Gas::from_ggas(3370),    // measured: 3063
+            len: Gas::from_ggas(3047),
+            is_participant: Gas::from_ggas(3069),
+            info: Gas::from_ggas(3069),
+            id: Gas::from_ggas(1424),
+            validate: Gas::from_ggas(3079),
+            iter_count: Gas::from_ggas(1421),
+            get_all_accounts: Gas::from_ggas(1421),
+            serialization: Gas::from_ggas(3063),
         },
         30 => GasThresholds {
-            len: Gas::from_ggas(3539),              // measured: 3217
-            is_participant: Gas::from_ggas(3818),   // measured: 3471
-            info: Gas::from_ggas(3818),             // measured: 3471
-            id: Gas::from_ggas(1566),               // measured: 1423
-            validate: Gas::from_ggas(3936),         // measured: 3578
-            iter_count: Gas::from_ggas(1563),       // measured: 1421
-            get_all_accounts: Gas::from_ggas(1563), // measured: 1421
-            serialization: Gas::from_ggas(3848),    // measured: 3498
+            len: Gas::from_ggas(3440),
+            is_participant: Gas::from_ggas(3471),
+            info: Gas::from_ggas(3471),
+            id: Gas::from_ggas(1424),
+            validate: Gas::from_ggas(3578),
+            iter_count: Gas::from_ggas(1421),
+            get_all_accounts: Gas::from_ggas(1421),
+            serialization: Gas::from_ggas(3498),
         },
         40 => GasThresholds {
-            len: Gas::from_ggas(4020),              // measured: 3655
-            is_participant: Gas::from_ggas(4058),   // measured: 3689
-            info: Gas::from_ggas(4058),             // measured: 3689
-            id: Gas::from_ggas(1566),               // measured: 1423
-            validate: Gas::from_ggas(4216),         // measured: 3832
-            iter_count: Gas::from_ggas(1563),       // measured: 1421
-            get_all_accounts: Gas::from_ggas(1563), // measured: 1421
-            serialization: Gas::from_ggas(4100),    // measured: 3727
+            len: Gas::from_ggas(3655),
+            is_participant: Gas::from_ggas(3689),
+            info: Gas::from_ggas(3689),
+            id: Gas::from_ggas(1424),
+            validate: Gas::from_ggas(3832),
+            iter_count: Gas::from_ggas(1421),
+            get_all_accounts: Gas::from_ggas(1421),
+            serialization: Gas::from_ggas(3727),
         },
         _ => panic!("No thresholds defined for n={}", n),
     }
