@@ -130,9 +130,13 @@ def assert_pprof_endpoint(pprof_address: str):
     )
 
     assert response.status_code == 200
-    assert response.headers["Content-Type"].startswith("image/svg+xml")
 
-    # Basic SVG sanity checks
-    body = response.text
-    assert body.startswith("<svg")
-    assert "</svg>" in body
+    # Content-Type should be SVG
+    content_type = response.headers.get("Content-Type", "")
+    assert content_type.startswith("image/svg+xml")
+
+    response_body = response.text
+
+    # Accept optional XML declaration / doctype
+    assert "<svg" in response_body
+    assert "</svg>" in response_body
