@@ -123,11 +123,13 @@ impl InitializingContractState {
         let participant = AuthenticatedParticipantId::new(
             self.generating_key.proposed_parameters().participants(),
         )?;
-        let required_threshold = self
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
+        let required_threshold = usize::try_from(
+            self.generating_key
+                .proposed_parameters()
+                .threshold()
+                .value(),
+        )
+        .expect("threshold fits in usize");
         if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
             let mut domains = self.domains.clone();
             domains.retain_domains(self.generated_keys.len());
@@ -347,11 +349,14 @@ pub mod tests {
             .participants()
             .participants()
             .clone();
-        let threshold = state
-            .generating_key
-            .proposed_parameters()
-            .threshold()
-            .value() as usize;
+        let threshold = usize::try_from(
+            state
+                .generating_key
+                .proposed_parameters()
+                .threshold()
+                .value(),
+        )
+        .expect("threshold fits in usize");
         for (account, _, _) in &participants {
             env.set_signer(account);
             state.vote_pk(first_key_event_id, pk.clone()).unwrap();

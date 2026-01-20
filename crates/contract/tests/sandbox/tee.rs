@@ -41,17 +41,17 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // First votes - should not be enough
-    for account in mpc_signer_accounts
-        .iter()
-        .take((threshold.value() - 1) as usize)
-    {
+    for account in mpc_signer_accounts.iter().take(
+        usize::try_from(threshold.value() - 1).expect("threshold-1 fits in usize"),
+    ) {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
         assert_eq!(get_allowed_hashes(&contract).await, vec![]);
     }
 
     // `threshold`-th vote - should reach threshold
     vote_for_hash(
-        &mpc_signer_accounts[(threshold.value() - 1) as usize],
+        &mpc_signer_accounts
+            [usize::try_from(threshold.value() - 1).expect("threshold-1 fits in usize")],
         &contract,
         &allowed_mpc_image_digest,
     )
@@ -87,7 +87,10 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
-    assert!((threshold.value() as usize) < mpc_signer_accounts.len());
+    assert!(
+        usize::try_from(threshold.value()).expect("threshold fits in usize")
+            < mpc_signer_accounts.len()
+    );
     let first_hash = image_digest();
 
     let arbitrary_bytes = [2; 32];
@@ -98,7 +101,10 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // Initial votes for first hash - reach threshold
-    for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+    for account in mpc_signer_accounts
+        .iter()
+        .take(usize::try_from(threshold.value()).expect("threshold fits in usize"))
+    {
         vote_for_hash(account, &contract, &first_hash).await?;
     }
 
@@ -115,11 +121,9 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     assert_eq!(allowed_hashes, vec![first_hash.clone()]);
 
     // Participants 2..threshold votes for second hash - should reach threshold
-    for account in mpc_signer_accounts
-        .iter()
-        .skip(2)
-        .take(threshold.value() as usize - 1)
-    {
+    for account in mpc_signer_accounts.iter().skip(2).take(
+        usize::try_from(threshold.value()).expect("threshold fits in usize") - 1,
+    ) {
         vote_for_hash(account, &contract, &second_hash).await?;
     }
 
@@ -426,7 +430,10 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
     for (i, current_hash) in hashes.iter().enumerate() {
         let hash = MpcDockerImageHash::from(*current_hash);
-        for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+        for account in mpc_signer_accounts
+            .iter()
+            .take(usize::try_from(threshold.value()).expect("threshold fits in usize"))
+        {
             vote_for_hash(account, &contract, &hash).await?;
         }
 
