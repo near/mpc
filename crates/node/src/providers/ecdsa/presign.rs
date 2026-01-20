@@ -81,12 +81,18 @@ impl EcdsaSignatureProvider {
         let mut tasks = AutoAbortTaskCollection::new();
         loop {
             progress_tracker.update_progress();
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
-                .set(presignature_store.num_owned_ready() as i64);
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
-                .set(presignature_store.num_owned_offline() as i64);
+            metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE.set(
+                i64::try_from(presignature_store.num_owned_ready())
+                    .expect("presignature count fits in i64"),
+            );
+            metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT.set(
+                i64::try_from(presignature_store.num_owned_offline())
+                    .expect("presignature count fits in i64"),
+            );
             let my_presignatures_count: usize = presignature_store.num_owned();
-            metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(my_presignatures_count as i64);
+            metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(
+                i64::try_from(my_presignatures_count).expect("presignature count fits in i64"),
+            );
             let should_generate = my_presignatures_count + in_flight_generations.num_in_flight()
                 < config.desired_presignatures_to_buffer;
             if should_generate
@@ -160,7 +166,8 @@ impl EcdsaSignatureProvider {
         let domain_data = self.domain_data(domain_id)?;
 
         FollowerPresignComputation {
-            threshold: self.mpc_config.participants.threshold as usize,
+            threshold: usize::try_from(self.mpc_config.participants.threshold)
+                .expect("threshold fits in usize"),
             keygen_out: domain_data.keyshare,
             triple_store: self.triple_store.clone(),
             paired_triple_id,

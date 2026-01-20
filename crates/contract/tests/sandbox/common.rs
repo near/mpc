@@ -113,7 +113,10 @@ pub async fn init_with_candidates(
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
     let threshold_parameters = {
-        let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
+        let threshold = Threshold::new(
+            u64::try_from((f64::try_from(participants.len()).unwrap() * 0.6).ceil() as u64)
+                .unwrap(),
+        );
         ThresholdParameters::new(participants.clone(), threshold).unwrap()
     };
     let mut ret_domains: Vec<DomainPublicKey> = Vec::new();
@@ -123,7 +126,8 @@ pub async fn init_with_candidates(
             .into_iter()
             .enumerate()
             .map(|(i, pk)| {
-                let domain_id = DomainId((i as u64) * 2);
+                let domain_id =
+                    DomainId(u64::try_from(i).expect("index fits in u64") * 2);
                 let scheme = match pk {
                     dtos::PublicKey::Ed25519(_) => SignatureScheme::Ed25519,
                     dtos::PublicKey::Secp256k1(_) => SignatureScheme::Secp256k1,
@@ -153,7 +157,7 @@ pub async fn init_with_candidates(
 
         contract.call("init_running").args_json(serde_json::json!({
             "domains": domains,
-            "next_domain_id": (domains.len() as u64) * 2,
+            "next_domain_id": u64::try_from(domains.len()).expect("domain count fits in u64") * 2,
             "keyset": Keyset::new(EpochId::new(5), keys),
             "parameters": threshold_parameters,
         }))
