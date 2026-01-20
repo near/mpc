@@ -42,19 +42,19 @@ pub(crate) async fn start_web_server(bind_address: SocketAddr) -> Result<(), io:
 
 #[derive(Debug, serde::Deserialize)]
 struct PprofParameters {
-    duration_secs: Option<u64>,
-    frequency_hz: Option<i32>,
+    sampling_duration_secs: Option<u64>,
+    sampling_frequency_hz: Option<i32>,
 }
 
 async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoResponse {
     let sample_duration = params
-        .duration_secs
+        .sampling_duration_secs
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_PPROF_SAMPLE_DURATION)
         .clamp(MIN_PPROF_SAMPLE_DURATION, MAX_PPROF_SAMPLE_DURATION);
 
     let sample_frequency = params
-        .frequency_hz
+        .sampling_frequency_hz
         .unwrap_or(DEFAULT_PPROF_SAMPLE_FREQUENCY_HZ)
         .clamp(MIN_PPROF_SAMPLE_FREQUENCY_HZ, MAX_PPROF_SAMPLE_FREQUENCY_HZ);
 

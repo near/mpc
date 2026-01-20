@@ -226,6 +226,7 @@ class ConfigValues:
     p2p_url: str
     web_address: SocketAddress
     migration_address: SocketAddress
+    pprof_address: str
     backup_key: bytes
 
 
@@ -310,6 +311,7 @@ def generate_mpc_configs(
 
         web_address = SocketAddress.from_config(config.get("web_ui"))
         migration_address = SocketAddress.from_config(config.get("migration_web_ui"))
+        pprof_address = config.get("pprof_bind_address")
 
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)
 
@@ -335,6 +337,7 @@ def generate_mpc_configs(
                 p2p_url,
                 web_address,
                 migration_address,
+                pprof_address,
                 backup_key,
             )
         )

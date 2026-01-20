@@ -56,6 +56,8 @@ def test_web_endpoints(shared_cluster: shared.MpcCluster):
         response = requests.get(f"http://{socket_address}/debug/contract")
         assert "Contract is in Running state" in response.text, response.text
 
+        assert_pprof_endpoint(node.pprof_address)
+
 
 @pytest.mark.no_atexit_cleanup
 def test_migration_endpoint(shared_cluster: shared.MpcCluster):
@@ -116,3 +118,21 @@ def assert_contract_match(cluster: MpcCluster, expected_migrations: MigrationSta
                 f"Failed to get expected migrations state expected: {expected_migrations}, found: {contract_migrations}"
             )
             time.sleep(1)
+
+
+def assert_pprof_endpoint(pprof_address: str):
+    sampling_duration_secs = 1
+
+    response = requests.get(
+        f"http://{pprof_address}/profiler/pprof/flamegraph",
+        params={"sampling_duration_secs": sampling_duration_secs},
+        timeout=5,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("image/svg+xml")
+
+    # Basic SVG sanity checks
+    body = response.text
+    assert body.startswith("<svg")
+    assert "</svg>" in body
