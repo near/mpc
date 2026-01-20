@@ -49,6 +49,9 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         .lock_exclusive()
         .expect("Failed to lock build file");
 
+    // Track whether test-utils feature is enabled at compile time
+    let test_utils_enabled = cfg!(feature = "test-utils");
+
     // check if we need to re-build
     let do_build = match lockfile.metadata().unwrap().len() {
         0 => true,
@@ -56,21 +59,27 @@ fn load_contract(package_name: &str) -> Vec<u8> {
             let mut buf = String::new();
             lockfile.read_to_string(&mut buf).unwrap();
             match serde_json::from_str::<BuildLock>(&buf) {
-                Ok(build_lock) => build_lock.expired(),
+                Ok(build_lock) => build_lock.expired(test_utils_enabled),
                 _ => true,
             }
         }
     };
 
     if do_build {
+        let mut args = vec![
+            "build".to_string(),
+            format!("--package={package_name}"),
+            "--profile=release-contract".to_string(),
+            "--target=wasm32-unknown-unknown".to_string(),
+            "--locked".to_string(),
+        ];
+
+        // Conditionally add test-utils feature when the test crate is compiled with it
+        #[cfg(feature = "test-utils")]
+        args.push("--features=test-utils".to_string());
+
         let status = Command::new("cargo")
-            .args([
-                "build",
-                &format!("--package={package_name}"),
-                "--profile=release-contract",
-                "--target=wasm32-unknown-unknown",
-                "--locked",
-            ])
+            .args(&args)
             .current_dir(&project_dir)
             .status()
             .expect("Failed to run cargo build");
@@ -93,7 +102,11 @@ fn load_contract(package_name: &str) -> Vec<u8> {
 
         lockfile.set_len(0).unwrap();
         lockfile
-            .write_all(serde_json::to_string(&BuildLock::new()).unwrap().as_bytes())
+            .write_all(
+                serde_json::to_string(&BuildLock::new(test_utils_enabled))
+                    .unwrap()
+                    .as_bytes(),
+            )
             .expect("Failed to write timestamp to lockfile");
     }
 
@@ -103,20 +116,32 @@ fn load_contract(package_name: &str) -> Vec<u8> {
 #[derive(Debug, Serialize, Deserialize)]
 struct BuildLock {
     timestamp: u64,
+    /// Tracks whether the WASM was built with test-utils feature.
+    /// If this doesn't match the current compilation, we need to rebuild.
+    #[serde(default)]
+    test_utils: bool,
 }
 
 impl BuildLock {
-    fn new() -> Self {
+    fn new(test_utils: bool) -> Self {
         Self {
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
+            test_utils,
         }
     }
 
-    /// checks if self is older than 4 seconds
-    fn expired(&self) -> bool {
+    /// Checks if the build is stale:
+    /// - older than 4 seconds, OR
+    /// - was built with different test-utils feature state
+    fn expired(&self, current_test_utils: bool) -> bool {
+        // Feature mismatch requires rebuild
+        if self.test_utils != current_test_utils {
+            return true;
+        }
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()

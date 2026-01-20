@@ -1,4 +1,5 @@
 pub mod contract_configuration;
+pub mod participants_gas;
 pub mod sign;
 pub mod tee;
 pub mod tee_cleanup_after_resharing;
