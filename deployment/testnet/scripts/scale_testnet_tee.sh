@@ -173,6 +173,8 @@ maybe_stop_after_phase() {
   fi
 }
 
+
+
 # ---------- phase gating ----------
 phase_rank() {
   case "$1" in
@@ -241,6 +243,96 @@ fetch_bootnodes() {
 ### =========================
 ### NEAR helpers (balance, create, topup)
 ### =========================
+
+is_existing_key_error() {
+  local out="$1"
+  # This matches the exact near-cli-rs message you pasted
+  echo "$out" | grep -Eq "Public key <ed25519:.*> is already used for an existing account ID <"
+}
+
+near_add_key_skip_if_exists() {
+  # Usage: near_add_key_skip_if_exists "<acct>" "<pubkey>" "<label>"
+  local acct="$1"
+  local pk="$2"
+  local label="$3"
+
+  local cmd=(NEAR_CLI_DISABLE_SPINNER=1 near account add-key "$acct" grant-full-access
+             use-manually-provided-public-key "$pk"
+             network-config testnet sign-with-keychain send)
+
+  set +e
+  local out
+  out="$("${cmd[@]}" 2>&1)"
+  local rc=$?
+  set -e
+
+  if [ $rc -eq 0 ]; then
+    echo "$out"
+    near_sleep "add $label key for $acct"
+    return 0
+  fi
+
+  if is_existing_key_error "$out"; then
+    warn "$acct: $label key already exists, skipping"
+    return 0
+  fi
+
+  # For other failures, use retry wrapper
+  near_tx_retry "add $label key for $acct" "${cmd[@]}"
+  near_sleep "add $label key for $acct"
+}
+
+# Retry policy (tunable)
+NEAR_RETRY_MAX="${NEAR_RETRY_MAX:-6}"                 # total attempts
+NEAR_RETRY_SLEEP_SEC="${NEAR_RETRY_SLEEP_SEC:-15}"    # initial sleep between retries
+NEAR_RETRY_BACKOFF_MULT="${NEAR_RETRY_BACKOFF_MULT:-2}"
+
+is_retryable_near_error() {
+  local out="$1"
+  echo "$out" | grep -Eq \
+    "Transaction has expired|exceeded the rate limit|Too Many Requests|429|timeout|timed out|Gateway Time-out|502|503|504|Connection reset|TLS|temporarily unavailable|Block.*is not available"
+}
+
+near_tx_retry() {
+  # Usage: near_tx_retry "description" <command...>
+  local desc="$1"; shift
+
+  local attempt=1
+  local sleep_s="$NEAR_RETRY_SLEEP_SEC"
+
+  while true; do
+    log "NEAR tx: $desc (attempt $attempt/$NEAR_RETRY_MAX)"
+    set +e
+    local out
+    out="$("$@" 2>&1)"
+    local rc=$?
+    set -e
+
+    if [ $rc -eq 0 ]; then
+      # print output so user still sees tx explorer URL etc.
+      echo "$out"
+      return 0
+    fi
+
+    if is_retryable_near_error "$out"; then
+      warn "Retryable NEAR error for '$desc' (rc=$rc). Will retry after ${sleep_s}s."
+      echo "$out"
+      if [ $attempt -ge "$NEAR_RETRY_MAX" ]; then
+        err "Giving up after $NEAR_RETRY_MAX attempts: $desc"
+        return 1
+      fi
+      sleep "$sleep_s"
+      sleep_s=$((sleep_s * NEAR_RETRY_BACKOFF_MULT))
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    err "Non-retryable NEAR error for '$desc' (rc=$rc):"
+    echo "$out"
+    return 1
+  done
+}
+
 near_account_exists() {
   local acct="$1"
   set +e
@@ -336,9 +428,12 @@ PY
       exit 1
     fi
     log "Topping up ROOT from $FUNDER_ACCOUNT by ~${need} NEAR"
-    NEAR_CLI_DISABLE_SPINNER=1 near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
-      network-config testnet sign-with-keychain send
+    near_tx_retry "top-up ROOT from $FUNDER_ACCOUNT to $ROOT_ACCOUNT (${need} NEAR)" \
+  NEAR_CLI_DISABLE_SPINNER=1 near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
+    network-config testnet sign-with-keychain send
+
     near_sleep "root top-up"
+
   else
     log "No root top-up needed."
   fi
@@ -389,10 +484,11 @@ create_account_fund_myself_if_missing() {
     return 0
   fi
 
-  log "creating account: $new_acct (balance=$initial_balance) paid by $payer"
+  near_tx_retry "create account $new_acct (balance=$initial_balance, payer=$payer)" \
   NEAR_CLI_DISABLE_SPINNER=1 near account create-account fund-myself "$new_acct" "$initial_balance" \
     autogenerate-new-keypair save-to-legacy-keychain \
     sign-as "$payer" network-config testnet sign-with-keychain send
+
   near_sleep "created account $new_acct"
   
 }
@@ -749,17 +845,11 @@ add_node_keys_from_keysjson() {
     signer="$(echo "$row" | jq -r .signer_pk)"
     responder="$(echo "$row" | jq -r .responder_pk)"
 
-    log "$acct: add signer key"
-    NEAR_CLI_DISABLE_SPINNER=1 near account add-key "$acct" grant-full-access \
-      use-manually-provided-public-key "$signer" \
-      network-config testnet sign-with-keychain send
+   log "$acct: add signer key"
+  near_add_key_skip_if_exists "$acct" "$signer" "signer"
 
-    near_sleep "add signer key for $acct"
-    log "$acct: add responder key"
-    NEAR_CLI_DISABLE_SPINNER=1 near account add-key "$acct" grant-full-access \
-      use-manually-provided-public-key "$responder" \
-      network-config testnet sign-with-keychain send
-    near_sleep "add responder key for $acct"
+  log "$acct: add responder key"
+  near_add_key_skip_if_exists "$acct" "$responder" "responder"
   done
 }
 
@@ -791,10 +881,12 @@ vote_code_hash_threshold() {
     local acct
     acct="$(node_account_for_i "$i")"
     log "vote_code_hash as $acct"
+    near_tx_retry "vote_code_hash by $acct" \
     NEAR_CLI_DISABLE_SPINNER=1 near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_code_hash \
-      json-args "{\"code_hash\": \"$code_hash\"}" prepaid-gas '100.0 Tgas' \
-      attached-deposit '0 NEAR' sign-as "$acct" \
-      network-config testnet sign-with-keychain send
+    json-args "{\"code_hash\": \"$code_hash\"}" prepaid-gas '100.0 Tgas' \
+    attached-deposit '0 NEAR' sign-as "$acct" \
+    network-config testnet sign-with-keychain send
+
     near_sleep "vote_code_hash by $acct"
   done
 }
@@ -806,10 +898,14 @@ vote_add_domain_threshold() {
     local acct
     acct="$(node_account_for_i "$i")"
     log "vote_add_domains as $acct"
+    near_tx_retry "vote_add_domains by $acct" \
     NEAR_CLI_DISABLE_SPINNER=1 near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_domains \
-      file-args "$ADD_DOMAIN_JSON" prepaid-gas '300.0 Tgas' \
-      attached-deposit '0 NEAR' sign-as "$acct" \
-      network-config testnet sign-with-keychain send
+    file-args "$ADD_DOMAIN_JSON" prepaid-gas '300.0 Tgas' \
+    attached-deposit '0 NEAR' sign-as "$acct" \
+    network-config testnet sign-with-keychain send
+
+    near_sleep "vote_add_domains by $acct"
+
   done
 }
 
