@@ -5,11 +5,28 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.3.2] - 2026-01-20
+
+### 🐛 Bug Fixes
+
+- [#1802](https://github.com/near/mpc/pull/1802)(@DSharifi): Include default value for pprof address (#1802)
+
+
 ## [3.3.1] - 2026-01-19
 
 ### 🐛 Bug Fixes
 
 - [#1795](https://github.com/near/mpc/pull/1795)(@netrome): Revert #1707 (use SocketAddr instead of custom struct) (#1795)
+
+
+### 💼 Other
+
+- [#1786](https://github.com/near/mpc/pull/1786)(@DSharifi): Add instruction how to get `rust-analyzer` to work with nix flakes (#1786)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1798](https://github.com/near/mpc/pull/1798)(@netrome): Update version and changelog for `3.3.1` release (#1798)
 
 
 ## [3.3.0] - 2026-01-16
