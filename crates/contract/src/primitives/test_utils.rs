@@ -119,7 +119,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
 }
 
 pub fn min_thrershold(n: usize) -> usize {
-    usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil() as u64).unwrap()
+    usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil()).unwrap()
 }
 
 pub fn gen_accounts_and_info(n: usize) -> BTreeMap<AccountId, ParticipantInfo> {

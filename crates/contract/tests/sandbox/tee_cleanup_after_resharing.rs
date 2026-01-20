@@ -87,7 +87,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     for (account_id, participant_id, participant_info) in initial_participants
         .participants()
         .iter()
-        .take(threshold.value() as usize)
+        .take(usize::try_from(threshold.value()).expect("threshold fits in usize"))
     {
         new_participants
             .insert_with_id(
@@ -105,7 +105,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let prospective_epoch_id = EpochId::new(6);
 
     do_resharing(
-        &mpc_signer_accounts[..threshold.value() as usize],
+        &mpc_signer_accounts[..usize::try_from(threshold.value()).expect("threshold fits in usize")],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,

@@ -474,7 +474,7 @@ async fn send_load(
 ) -> tokio::task::JoinSet<()> {
     let mut join_set = tokio::task::JoinSet::new();
     let (permits_sender, permits_receiver) =
-        flume::bounded(usize::try_from(qps.ceil() as u64).expect("qps.ceil() fits in usize"));
+        flume::bounded(usize::try_from(qps.ceil()).expect("qps.ceil() fits in usize"));
     for mut key in keys {
         let permits_receiver = permits_receiver.clone();
         let res_sender_clone = res_sender.clone();

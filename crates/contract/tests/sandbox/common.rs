@@ -114,7 +114,7 @@ pub async fn init_with_candidates(
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
     let threshold_parameters = {
         let threshold = Threshold::new(
-            u64::try_from((f64::try_from(participants.len()).unwrap() * 0.6).ceil() as u64)
+            u64::try_from((f64::try_from(participants.len()).unwrap() * 0.6).ceil())
                 .unwrap(),
         );
         ThresholdParameters::new(participants.clone(), threshold).unwrap()

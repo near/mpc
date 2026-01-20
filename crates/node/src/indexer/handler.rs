@@ -216,7 +216,9 @@ async fn handle_message(
         }
     }
 
-    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(block_height as i64);
+    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(
+        i64::try_from(block_height).expect("block height fits in i64"),
+    );
 
     block_update_sender
         .send(ChainBlockUpdate {

@@ -64,7 +64,8 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME
+                * u32::try_from(domains.len()).expect("domain count fits in u32"),
         )
         .await
         .expect("must not exceed timeout");
@@ -129,7 +130,8 @@ async fn test_basic_multidomain() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * new_domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME
+                * u32::try_from(new_domains.len()).expect("domain count fits in u32"),
         )
         .await
         .expect("must not exceed timeout");
@@ -178,7 +180,8 @@ async fn test_basic_multidomain() {
                     }
                 }
             },
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME
+                * u32::try_from(domains.len()).expect("domain count fits in u32"),
         )
         .await
         .expect("must not exceed timeout");

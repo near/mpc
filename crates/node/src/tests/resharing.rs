@@ -421,7 +421,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         if let Ok(metric) =
             metrics::MPC_CURRENT_JOB_STATE.get_metric_with_label_values(&["Resharing"])
         {
-            if metric.get() == NUM_PARTICIPANTS as i64 - 1 {
+            if metric.get() == i64::try_from(NUM_PARTICIPANTS).expect("participant count fits in i64") - 1 {
                 break;
             }
         }

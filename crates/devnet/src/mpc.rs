@@ -800,7 +800,10 @@ impl MpcVoteApprovedHashCmd {
         let accounts = get_voter_account_ids(mpc_setup, &self.voters);
         let mut voting_futures = vec![];
 
-        for account_id in accounts.iter().take(threshold as usize) {
+        for account_id in accounts
+            .iter()
+            .take(usize::try_from(threshold).expect("threshold fits in usize"))
+        {
             let account = setup.accounts.account(account_id);
             let mut key = account.any_access_key().await;
             let contract = contract.clone();

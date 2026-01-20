@@ -219,7 +219,7 @@ mod tests {
     fn test_slice_operations() {
         let mut bytes = [0u8; 32];
         for (i, byte) in bytes.iter_mut().enumerate() {
-            *byte = i as u8;
+            *byte = u8::try_from(i).expect("index fits in u8");
         }
         let hash = TestHash::from(bytes);
 

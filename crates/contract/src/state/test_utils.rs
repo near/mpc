@@ -48,7 +48,7 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     }
 
     let threshold = u64::try_from(
-        (f64::try_from(new_participants.len()).unwrap() * 0.6).ceil() as u64,
+        (f64::try_from(new_participants.len()).unwrap() * 0.6).ceil(),
     )
     .unwrap();
     ThresholdParameters::new(new_participants, Threshold::new(threshold)).unwrap()

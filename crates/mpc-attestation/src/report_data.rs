@@ -19,7 +19,7 @@ pub enum ReportDataVersion {
 
 impl ReportDataVersion {
     pub fn to_be_bytes(self) -> [u8; BINARY_VERSION_SIZE] {
-        (self as u16).to_be_bytes()
+        u16::from(self).to_be_bytes()
     }
 
     pub fn from_be_bytes(bytes: [u8; BINARY_VERSION_SIZE]) -> Option<Self> {

@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_validate_threshold() {
         let n = u64::try_from(rand::thread_rng().gen_range(2..600)).unwrap();
-        let min_threshold = u64::try_from((f64::from(n) * 0.6).ceil() as u64).unwrap();
+        let min_threshold = u64::try_from((f64::from(n) * 0.6).ceil()).unwrap();
         for k in 0..min_threshold {
             assert!(ThresholdParameters::validate_threshold(n, Threshold::new(k)).is_err());
         }
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_threshold_parameters_constructor() {
         let n: usize = rand::thread_rng().gen_range(2..600);
-        let min_threshold = usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil() as usize).unwrap();
+        let min_threshold = usize::try_from((f64::try_from(n).unwrap() * 0.6).ceil()).unwrap();
 
         let participants = gen_participants(n);
         for k in 1..min_threshold {

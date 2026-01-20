@@ -27,7 +27,7 @@ impl IndexerHeightTracker {
 
         if let Err(e) = metrics::PEERS_INDEXER_HEIGHTS
             .get_metric_with_label_values(&[&participant.to_string()])
-            .map(|gauge| gauge.set(height as i64))
+            .map(|gauge| gauge.set(i64::try_from(height).expect("height fits in i64")))
         {
             tracing::error!("Could not submit indexer height metric: {}", e);
         }

@@ -1021,7 +1021,7 @@ mod tests {
             let expected_total: u64 = other_participant_ids
                 .iter()
                 .map(|id| {
-                    let input = id.raw() as u64 + seed;
+                    let input = u64::from(id.raw()) + seed;
                     (input * input) % MOD
                 })
                 .sum();
@@ -1051,7 +1051,7 @@ mod tests {
                 channel.sender().send(
                     *other_participant_id,
                     vec![borsh::to_vec(&TestTripleMessage {
-                        data: other_participant_id.raw() as u64 + self.seed,
+                        data: u64::from(other_participant_id.raw()) + self.seed,
                     })
                     .unwrap()],
                 )?;
