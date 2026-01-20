@@ -37,7 +37,6 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM EXIT
 
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --mpc-contract-path)
@@ -122,8 +121,6 @@ EOF
 
   echo "Creating mpc-node accounts"
 
-  
-
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
@@ -151,7 +148,7 @@ EOF
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
-    node_cmd="mpc-node start --home-dir ~/.near/$node_name/ 11111111111111111111111111111111 --image-hash 8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0 --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local"
+    node_cmd="RUST_LOG=info mpc-node start --home-dir ~/.near/$node_name/ 11111111111111111111111111111111 --image-hash 8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0 --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local"
     node_pid=$(run_bg $node_name "${node_cmd}")
     pids+=("${node_pid}")
   done
