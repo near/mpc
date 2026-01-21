@@ -12,10 +12,12 @@
 
 use crate::sandbox::{
     common::{gen_accounts, init},
-    utils::{interface::IntoInterfaceType, shared_key_utils::new_secp256k1},
+    utils::{
+        interface::IntoInterfaceType, mpc_contract::submit_participant_info,
+        shared_key_utils::new_secp256k1,
+    },
 };
 use contract_interface::types::{Attestation, MockAttestation};
-use futures::future::join_all;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -238,25 +240,19 @@ async fn submit_attestations(
     accounts: &[Account],
     participants: &Participants,
 ) {
-    let futures: Vec<_> = participants
-        .participants()
-        .iter()
-        .zip(accounts)
-        .map(|((_, _, participant), account)| {
-            let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key = (&participant.sign_pk).into_interface_type();
-            account
-                .call(contract.id(), "submit_participant_info")
-                .args_json((attestation, tls_key))
-                .max_gas()
-                .transact()
-        })
-        .collect();
-
-    let results = join_all(futures).await;
-    for (i, result) in results.into_iter().enumerate() {
+    // Submit attestations sequentially to avoid nonce conflicts when testing
+    // with large participant counts (100+). Parallel submission with join_all
+    // causes `InvalidNonce` errors due to race conditions in nonce management.
+    for (i, ((_, _, participant), account)) in
+        participants.participants().iter().zip(accounts).enumerate()
+    {
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+        let tls_key = (&participant.sign_pk).into_interface_type();
+        let success = submit_participant_info(account, contract, &attestation, &tls_key)
+            .await
+            .expect("submit_participant_info should not error");
         assert!(
-            result.unwrap().is_success(),
+            success,
             "submit_participant_info failed for participant {}",
             i
         );
