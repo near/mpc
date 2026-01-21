@@ -73,16 +73,123 @@ impl GasThresholds {
     }
 }
 
-/// Applies buffer percentage to a gas value.
-fn apply_buffer(base: Gas) -> Gas {
-    let buffered = (base.as_gas() as f64 * (1.0 + GAS_BUFFER_PERCENT / 100.0)).ceil() as u64;
-    Gas::from_gas(buffered)
+/// Test environment for a specific participant count.
+struct TestEnv {
+    contract: Contract,
+    accounts: Vec<Account>,
+    n_participants: usize,
+}
+
+impl TestEnv {
+    fn first_account(&self) -> String {
+        self.accounts[0].id().to_string()
+    }
+
+    fn middle_account(&self) -> String {
+        self.accounts[self.n_participants / 2].id().to_string()
+    }
+
+    fn last_account(&self) -> String {
+        self.accounts[self.n_participants - 1].id().to_string()
+    }
+}
+
+#[tokio::test]
+async fn gas_regression_participants_len() {
+    run_gas_regression("bench_participants_len", |t| t.len, false).await;
+}
+
+#[tokio::test]
+async fn gas_regression_is_participant() {
+    run_gas_regression("bench_is_participant", |t| t.is_participant, true).await;
+}
+
+#[tokio::test]
+async fn gas_regression_participant_info() {
+    run_gas_regression("bench_participant_info", |t| t.info, true).await;
+}
+
+#[tokio::test]
+async fn gas_regression_participants_validate() {
+    run_gas_regression("bench_participants_validate", |t| t.validate, false).await;
+}
+
+#[tokio::test]
+async fn gas_regression_participants_serialization() {
+    run_gas_regression(
+        "bench_participants_serialization_size",
+        |t| t.serialization,
+        false,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn gas_regression_participants_insert() {
+    run_gas_regression_running("bench_participants_insert", |t| t.insert, false).await;
+}
+
+#[tokio::test]
+async fn gas_regression_participants_update_info() {
+    run_gas_regression_running("bench_participants_update_info", |t| t.update_info, true).await;
+}
+
+/// Runs a gas regression test across all participant counts.
+async fn run_gas_regression<F>(method: &str, get_threshold: F, use_lookups: bool)
+where
+    F: Fn(&GasThresholds) -> Gas,
+{
+    run_gas_regression_with_setup(method, get_threshold, use_lookups, false).await;
+}
+
+/// Runs a gas regression test with Running state (for mutation operations).
+async fn run_gas_regression_running<F>(method: &str, get_threshold: F, use_lookups: bool)
+where
+    F: Fn(&GasThresholds) -> Gas,
+{
+    for &n in PARTICIPANT_COUNTS {
+        println!("\n  Testing with {} participants...", n);
+        let env = setup_test_env_running(n).await;
+        let threshold = get_threshold(&get_thresholds(n));
+        if use_lookups {
+            run_bench_lookups(&env, method, threshold).await;
+        } else {
+            run_bench(&env, method, None, threshold).await;
+        }
+    }
+}
+
+async fn run_gas_regression_with_setup<F>(
+    method: &str,
+    get_threshold: F,
+    use_lookups: bool,
+    running_state: bool,
+) where
+    F: Fn(&GasThresholds) -> Gas,
+{
+    for &n in PARTICIPANT_COUNTS {
+        println!("\n  Testing with {} participants...", n);
+        let env = if running_state {
+            setup_test_env_running(n).await
+        } else {
+            setup_test_env(n).await
+        };
+        let threshold = get_threshold(&get_thresholds(n));
+        if use_lookups {
+            run_bench_lookups(&env, method, threshold).await;
+        } else {
+            run_bench(&env, method, None, threshold).await;
+        }
+    }
 }
 
 /// Returns gas thresholds for the given participant count (with buffer applied).
 ///
 /// Base values are measured from actual test runs (in GGas, rounded up to nearest integer).
 /// For lookups (is_participant, info, update_info), we use the worst-case (last element).
+///
+/// To update thresholds: run tests, observe actual gas usage, round up, and update values below.
+/// The 25% buffer is applied automatically via `with_buffer()`.
 fn get_thresholds(n: usize) -> GasThresholds {
     let base = match n {
         10 => GasThresholds {
@@ -135,25 +242,80 @@ fn get_thresholds(n: usize) -> GasThresholds {
     base.with_buffer()
 }
 
-/// Test environment for a specific participant count.
-struct TestEnv {
-    contract: Contract,
-    accounts: Vec<Account>,
-    n_participants: usize,
+/// Applies buffer percentage to a gas value.
+fn apply_buffer(base: Gas) -> Gas {
+    let buffered = (base.as_gas() as f64 * (1.0 + GAS_BUFFER_PERCENT / 100.0)).ceil() as u64;
+    Gas::from_gas(buffered)
 }
 
-impl TestEnv {
-    fn first_account(&self) -> String {
-        self.accounts[0].id().to_string()
+/// Run a benchmark contract method and assert gas is within threshold.
+async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>, max_gas: Gas) {
+    let mut call = env.accounts[0].call(env.contract.id(), method);
+    if let Some(a) = args {
+        call = call.args_json(a);
     }
+    let result = call.max_gas().transact().await.unwrap();
+    assert!(
+        result.is_success(),
+        "Contract call to '{}' failed. Method may not exist. \
+         Ensure contract was built with --features=bench-utils. \
+         Failures: {:?}",
+        method,
+        result.failures()
+    );
+    let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+    assert_gas_within_threshold(method, gas_burnt, max_gas);
+}
 
-    fn middle_account(&self) -> String {
-        self.accounts[self.n_participants / 2].id().to_string()
-    }
+/// Run a benchmark for account lookups (first, middle, last, missing).
+async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
+    let first = env.first_account();
+    let middle = env.middle_account();
+    let last = env.last_account();
+    let missing = "missing.account.near".to_string();
 
-    fn last_account(&self) -> String {
-        self.accounts[self.n_participants - 1].id().to_string()
+    for (label, account_id) in [
+        ("first", first),
+        ("middle", middle),
+        ("last", last),
+        ("missing", missing),
+    ] {
+        let result = env.accounts[0]
+            .call(env.contract.id(), method)
+            .args_json(json!({ "account_id": account_id }))
+            .max_gas()
+            .transact()
+            .await
+            .unwrap();
+        assert!(
+            result.is_success(),
+            "Contract call to '{}' with account '{}' failed. Method may not exist. \
+             Ensure contract was built with --features=bench-utils. \
+             Failures: {:?}",
+            method,
+            account_id,
+            result.failures()
+        );
+        let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
+        assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
     }
+}
+
+fn assert_gas_within_threshold(operation: &str, gas_burnt: Gas, max_gas: Gas) {
+    let gas_ggas = gas_burnt.as_gas() as f64 / 1_000_000_000.0;
+    let max_ggas = max_gas.as_gas() as f64 / 1_000_000_000.0;
+    assert!(
+        gas_burnt <= max_gas,
+        "GAS REGRESSION: {} used {:.2} GGas but threshold is {:.2} GGas ({:.1}% over)",
+        operation,
+        gas_ggas,
+        max_ggas,
+        (gas_ggas / max_ggas - 1.0) * 100.0
+    );
+    println!(
+        "  ✓ {}: {:.2} GGas (limit: {:.2} GGas)",
+        operation, gas_ggas, max_ggas
+    );
 }
 
 async fn setup_test_env(n_participants: usize) -> TestEnv {
@@ -257,163 +419,4 @@ async fn submit_attestations(
             i
         );
     }
-}
-
-fn assert_gas_within_threshold(operation: &str, gas_burnt: Gas, max_gas: Gas) {
-    let gas_ggas = gas_burnt.as_gas() as f64 / 1_000_000_000.0;
-    let max_ggas = max_gas.as_gas() as f64 / 1_000_000_000.0;
-    assert!(
-        gas_burnt <= max_gas,
-        "GAS REGRESSION: {} used {:.2} GGas but threshold is {:.2} GGas ({:.1}% over)",
-        operation,
-        gas_ggas,
-        max_ggas,
-        (gas_ggas / max_ggas - 1.0) * 100.0
-    );
-    println!(
-        "  ✓ {}: {:.2} GGas (limit: {:.2} GGas)",
-        operation, gas_ggas, max_ggas
-    );
-}
-
-/// Run a benchmark contract method and assert gas is within threshold.
-async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>, max_gas: Gas) {
-    let mut call = env.accounts[0].call(env.contract.id(), method);
-    if let Some(a) = args {
-        call = call.args_json(a);
-    }
-    let result = call.max_gas().transact().await.unwrap();
-    assert!(
-        result.is_success(),
-        "Contract call to '{}' failed. Method may not exist. \
-         Ensure contract was built with --features=bench-utils. \
-         Failures: {:?}",
-        method,
-        result.failures()
-    );
-    let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
-    assert_gas_within_threshold(method, gas_burnt, max_gas);
-}
-
-/// Run a benchmark for account lookups (first, middle, last, missing).
-async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
-    let first = env.first_account();
-    let middle = env.middle_account();
-    let last = env.last_account();
-    let missing = "missing.account.near".to_string();
-
-    for (label, account_id) in [
-        ("first", first),
-        ("middle", middle),
-        ("last", last),
-        ("missing", missing),
-    ] {
-        let result = env.accounts[0]
-            .call(env.contract.id(), method)
-            .args_json(json!({ "account_id": account_id }))
-            .max_gas()
-            .transact()
-            .await
-            .unwrap();
-        assert!(
-            result.is_success(),
-            "Contract call to '{}' with account '{}' failed. Method may not exist. \
-             Ensure contract was built with --features=bench-utils. \
-             Failures: {:?}",
-            method,
-            account_id,
-            result.failures()
-        );
-        let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
-        assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
-    }
-}
-
-/// Runs a gas regression test across all participant counts.
-async fn run_gas_regression<F>(method: &str, get_threshold: F, use_lookups: bool)
-where
-    F: Fn(&GasThresholds) -> Gas,
-{
-    run_gas_regression_with_setup(method, get_threshold, use_lookups, false).await;
-}
-
-/// Runs a gas regression test with Running state (for mutation operations).
-async fn run_gas_regression_running<F>(method: &str, get_threshold: F, use_lookups: bool)
-where
-    F: Fn(&GasThresholds) -> Gas,
-{
-    for &n in PARTICIPANT_COUNTS {
-        println!("\n  Testing with {} participants...", n);
-        let env = setup_test_env_running(n).await;
-        let threshold = get_threshold(&get_thresholds(n));
-        if use_lookups {
-            run_bench_lookups(&env, method, threshold).await;
-        } else {
-            run_bench(&env, method, None, threshold).await;
-        }
-    }
-}
-
-async fn run_gas_regression_with_setup<F>(
-    method: &str,
-    get_threshold: F,
-    use_lookups: bool,
-    running_state: bool,
-) where
-    F: Fn(&GasThresholds) -> Gas,
-{
-    for &n in PARTICIPANT_COUNTS {
-        println!("\n  Testing with {} participants...", n);
-        let env = if running_state {
-            setup_test_env_running(n).await
-        } else {
-            setup_test_env(n).await
-        };
-        let threshold = get_threshold(&get_thresholds(n));
-        if use_lookups {
-            run_bench_lookups(&env, method, threshold).await;
-        } else {
-            run_bench(&env, method, None, threshold).await;
-        }
-    }
-}
-
-#[tokio::test]
-async fn gas_regression_participants_len() {
-    run_gas_regression("bench_participants_len", |t| t.len, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_is_participant() {
-    run_gas_regression("bench_is_participant", |t| t.is_participant, true).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participant_info() {
-    run_gas_regression("bench_participant_info", |t| t.info, true).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_validate() {
-    run_gas_regression("bench_participants_validate", |t| t.validate, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_serialization() {
-    run_gas_regression(
-        "bench_participants_serialization_size",
-        |t| t.serialization,
-        false,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_insert() {
-    run_gas_regression_running("bench_participants_insert", |t| t.insert, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_update_info() {
-    run_gas_regression_running("bench_participants_update_info", |t| t.update_info, true).await;
 }
