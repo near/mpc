@@ -4,8 +4,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
+    fenix = {
+      url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -14,7 +14,7 @@
     {
       self,
       nixpkgs,
-      rust-overlay,
+      fenix,
     }:
     let
       lib = nixpkgs.lib;
@@ -29,7 +29,7 @@
         system:
         import nixpkgs {
           inherit system;
-          overlays = [ rust-overlay.overlays.default ];
+          overlays = [ fenix.overlays.default ];
         };
 
       forAllSystems = f: lib.genAttrs systems (system: f (pkgsFor system));
@@ -51,19 +51,21 @@
 
           llvmPkgs = pkgs.llvmPackages_19;
 
-          rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-            extensions = [
-              "rust-src"
-              "rust-analyzer"
-              "clippy"
-              "rustfmt"
-            ];
-          };
+          rustToolchain = pkgs.fenix.combine [
+            (pkgs.fenix.fromToolchainFile {
+              file = ./rust-toolchain.toml;
+              sha256 = "sha256-X/4ZBHO3iW0fOenQ3foEvscgAPJYl2abspaBThDOukI=";
+            })
+            pkgs.fenix.latest.rust-src
+            pkgs.fenix.latest.rust-analyzer
+            pkgs.fenix.latest.clippy
+            pkgs.fenix.latest.rustfmt
+          ];
 
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
-          neard = pkgs.callPackage ./nix/neard.nix { };
+          # neard = pkgs.callPackage ./nix/neard.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
@@ -101,7 +103,7 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
-            CARGO_HOME = ".nix-cargo";
+            # CARGO_HOME = ".nix-cargo";
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
@@ -137,7 +139,7 @@
             python3Packages.keyring
             near-cli-rs
             cargo-near
-            neard
+            # neard
           ];
 
           miscTools = with pkgs; [
@@ -190,8 +192,8 @@
             hardeningDisable = hardening;
 
             shellHook = ''
-              mkdir -p .nix-cargo
-              export PATH="$PWD/.nix-cargo/bin:$PATH"
+              # mkdir -p .nix-cargo
+              # export PATH="$PWD/.nix-cargo/bin:$PATH"
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };
