@@ -36,9 +36,11 @@ impl EcdsaSignatureProvider {
             },
             presignature.participants,
         )?;
+        let threshold = self.mpc_config.participants.threshold.try_into()?;
 
         let (signature, public_key) = SignComputation {
             keygen_out: domain_data.keyshare,
+            threshold,
             presign_out: presignature.presignature,
             msg_hash: *sign_request
                 .payload
@@ -81,10 +83,12 @@ impl EcdsaSignatureProvider {
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
         let domain_data = self.domain_data(sign_request.domain)?;
+        let threshold = self.mpc_config.participants.threshold.try_into()?;
 
         let participants = channel.participants().to_vec();
         FollowerSignComputation {
             keygen_out: domain_data.keyshare,
+            threshold,
             presignature_store: domain_data.presignature_store.clone(),
             presignature_id,
             msg_hash: *sign_request
@@ -117,6 +121,7 @@ impl EcdsaSignatureProvider {
 /// The tweak allows key derivation
 pub struct SignComputation {
     pub keygen_out: KeygenOutput,
+    pub threshold: usize,
     pub presign_out: PresignOutput,
     pub msg_hash: [u8; 32],
     pub tweak: Tweak,
@@ -165,6 +170,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
         let protocol = threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
             &cs_participants,
             channel.sender().get_leader().into(),
+            self.threshold,
             channel.my_participant_id().into(),
             derived_public_key,
             rerandomized_presignature,
@@ -184,6 +190,7 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 /// The difference is that the follower needs to look up the presignature, which may fail.
 pub struct FollowerSignComputation {
     pub keygen_out: KeygenOutput,
+    pub threshold: usize,
     pub presignature_id: UniqueId,
     pub presignature_store: Arc<PresignatureStorage>,
     pub msg_hash: [u8; 32],
@@ -200,6 +207,7 @@ impl MpcLeaderCentricComputation<()> for FollowerSignComputation {
             .presignature;
         SignComputation {
             keygen_out: self.keygen_out,
+            threshold: self.threshold,
             presign_out,
             msg_hash: self.msg_hash,
             tweak: self.tweak,
