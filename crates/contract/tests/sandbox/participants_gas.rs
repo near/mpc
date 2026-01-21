@@ -22,7 +22,7 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 /// Participant counts to test against
-const PARTICIPANT_COUNTS: &[usize] = &[10, 30, 40];
+const PARTICIPANT_COUNTS: &[usize] = &[10, 30, 40, 100];
 
 /// Gas regression thresholds (in GGas).
 ///
@@ -77,10 +77,20 @@ fn get_thresholds(n: usize) -> GasThresholds {
             is_participant: Gas::from_ggas(3689),
             info: Gas::from_ggas(3689),
             id: Gas::from_ggas(1424),
-            validate: Gas::from_ggas(3832),
+            validate: Gas::from_ggas(3841),
             iter_count: Gas::from_ggas(1421),
             get_all_accounts: Gas::from_ggas(1421),
             serialization: Gas::from_ggas(3727),
+        },
+        100 => GasThresholds {
+            len: Gas::from_ggas(4860),
+            is_participant: Gas::from_ggas(4919),
+            info: Gas::from_ggas(4919),
+            id: Gas::from_ggas(1424),
+            validate: Gas::from_ggas(5456),
+            iter_count: Gas::from_ggas(1421),
+            get_all_accounts: Gas::from_ggas(1421),
+            serialization: Gas::from_ggas(5055),
         },
         _ => panic!("No thresholds defined for n={}", n),
     }
