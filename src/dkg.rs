@@ -669,7 +669,7 @@ pub fn reshare_assertions<C: Ciphersuite>(
 
     // Step 1.1
     if old_participants.intersection(&participants).len() < old_threshold {
-        return Err(InitializationError::NotEnoughParticipantsForThreshold {
+        return Err(InitializationError::NotEnoughParticipantsForNewThreshold {
             threshold: old_threshold,
             participants: old_participants.intersection(&participants).len(),
         });

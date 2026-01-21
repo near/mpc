@@ -181,6 +181,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 /// Used to prepare ot based ecdsa signatures for benchmarking
 pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, ot_based_ecdsa::PresignOutput)],
+    threshold: usize,
     pk: VerifyingKey,
     rng: &mut R,
 ) -> OTECDSAPreparedSig {
@@ -218,6 +219,7 @@ pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
         let protocol = ot_based_ecdsa::sign::sign(
             args.participants.participants(),
             coordinator,
+            threshold,
             p,
             derived_pk,
             presignature,
@@ -299,6 +301,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
 /// Used to prepare robust ecdsa signatures for benchmarking
 pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, robust_ecdsa::PresignOutput)],
+    max_malicious: usize,
     pk: VerifyingKey,
     rng: &mut R,
 ) -> RobustECDSASig {
@@ -336,6 +339,7 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
         let protocol = robust_ecdsa::sign::sign(
             &participants,
             coordinator,
+            max_malicious,
             p,
             derived_pk,
             presignature,

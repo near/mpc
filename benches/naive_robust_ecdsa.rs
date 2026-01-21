@@ -48,7 +48,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("robust_ecdsa_sign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || robust_ecdsa_prepare_sign(&result, pk, &mut rng),
+                || robust_ecdsa_prepare_sign(&result, max_malicious, pk, &mut rng),
                 |preps| run_protocol(preps.protocols),
                 criterion::BatchSize::SmallInput,
             );

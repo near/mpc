@@ -22,6 +22,7 @@ type C = Secp256K1Sha256;
 pub fn sign(
     participants: &[Participant],
     coordinator: Participant,
+    max_malicious: usize,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
@@ -49,6 +50,22 @@ pub fn sign(
         return Err(InitializationError::MissingParticipant {
             role: "coordinator",
             participant: coordinator,
+        });
+    }
+
+    // ensure number of participants during the signing phase is >= 2 * max_malicious + 1
+    let threshold = max_malicious
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .ok_or_else(|| {
+            InitializationError::BadParameters(
+                "2*threshold+1 must be less than usize::MAX".to_string(),
+            )
+        })?;
+    if participants.len() < threshold {
+        return Err(InitializationError::NotEnoughParticipantsForThreshold {
+            threshold,
+            participants: participants.len(),
         });
     }
 
@@ -246,9 +263,14 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (_, sig) =
-            run_sign_without_rerandomization(&participants_presign, public_key, msg, &mut rng)
-                .unwrap();
+        let (_, sig) = run_sign_without_rerandomization(
+            &participants_presign,
+            max_malicious,
+            public_key,
+            msg,
+            &mut rng,
+        )
+        .unwrap();
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
 
         // verify the correctness of the generated signature
@@ -293,6 +315,7 @@ mod test {
 
         let (tweak, _, sig) = run_sign_with_rerandomization(
             &participants_presign,
+            max_malicious,
             public_key.to_element(),
             msg,
             &mut rng,
@@ -313,7 +336,8 @@ mod test {
     #[test]
     fn test_sign_fails_if_s_is_zero() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(2);
+        let participants = generate_participants(3);
+        let max_malicious = 1;
 
         // presignatures with s_me = 0 for each participant
         let presignatures = participants
@@ -337,6 +361,7 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
+            max_malicious,
             public_key,
             &msg,
             &mut rng,
@@ -348,6 +373,51 @@ mod test {
                 let text = err.to_string();
                 assert!(
                     text.contains("signature part s cannot be zero"),
+                    "unexpected error type: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sign_fails_if_threshold_too_high() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let participants = generate_participants(2);
+        let max_malicious = 1;
+
+        // arbitrary values
+        let presignatures = participants
+            .iter()
+            .map(|p| {
+                (
+                    *p,
+                    PresignOutput {
+                        big_r: ProjectivePoint::IDENTITY.to_affine(),
+                        alpha: Secp256K1ScalarField::zero(),
+                        beta: Secp256K1ScalarField::zero(),
+                        c: Secp256K1ScalarField::zero(),
+                        e: Secp256K1ScalarField::zero(),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let public_key = ProjectivePoint::IDENTITY;
+        let msg = [0u8; 32];
+
+        let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
+            &presignatures,
+            max_malicious,
+            public_key,
+            &msg,
+            &mut rng,
+        );
+
+        match result {
+            Ok(_) => panic!("expected failure, got success"),
+            Err(err) => {
+                let text = err.to_string();
+                assert!(
+                    text.contains("Participant count cannot be"),
                     "unexpected error type: {text}"
                 );
             }

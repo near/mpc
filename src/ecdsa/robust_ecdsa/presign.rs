@@ -228,7 +228,13 @@ async fn do_presign(
 
     // Step 3.5
     // polynomial interpolation of w
-    let w = Polynomial::eval_interpolation(&identifiers, &signingshares, None)?;
+    let (w_2tp1_identifiers, _) = identifiers
+        .split_at_checked(2 * threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough identifiers".to_string()))?;
+    let (w_2tp1_verifying_shares, _) = signingshares
+        .split_at_checked(2 * threshold + 1)
+        .ok_or_else(|| ProtocolError::AssertionFailed("Not enough verifying shares".to_string()))?;
+    let w = Polynomial::eval_interpolation(w_2tp1_identifiers, w_2tp1_verifying_shares, None)?;
 
     // Step 3.6
     // check w is non-zero

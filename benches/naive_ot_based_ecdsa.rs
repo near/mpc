@@ -81,7 +81,7 @@ fn bench_sign(c: &mut Criterion) {
         format!("ot_ecdsa_sign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || ot_ecdsa_prepare_sign(&result, pk, &mut rng),
+                || ot_ecdsa_prepare_sign(&result, threshold(), pk, &mut rng),
                 |preps| run_protocol(preps.protocols),
                 criterion::BatchSize::SmallInput,
             );

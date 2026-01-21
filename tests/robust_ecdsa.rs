@@ -57,6 +57,7 @@ fn run_presign(
 
 fn run_sign(
     participants_presign: Vec<(Participant, RerandomizedPresignOutput)>,
+    max_malicious: usize,
     coordinator: Participant,
     public_key: Element<C>,
     msg_hash: [u8; 32],
@@ -73,6 +74,7 @@ fn run_sign(
         let protocol = sign(
             &participants,
             coordinator,
+            max_malicious,
             p,
             public_key.to_affine(),
             presignature,
@@ -88,6 +90,7 @@ fn run_sign(
 
 fn run_sign_with_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
+    max_malicious: usize,
     public_key: VerifyingKey,
     msg_hash: [u8; 32],
     tweak: [u8; 32],
@@ -129,6 +132,7 @@ fn run_sign_with_rerandomization(
     // run sign instantiation with the necessary arguments
     let all_sigs = run_sign(
         rerand_participants_presign,
+        max_malicious,
         coordinator,
         derived_pk,
         msg_hash,
@@ -163,8 +167,14 @@ fn test_sign() {
     let mut entropy = [0u8; 32];
     OsRng.fill_bytes(&mut entropy);
 
-    let signature =
-        run_sign_with_rerandomization(&presign_result, public_key, msg_hash, tweak, entropy);
+    let signature = run_sign_with_rerandomization(
+        &presign_result,
+        max_malicious,
+        public_key,
+        msg_hash,
+        tweak,
+        entropy,
+    );
 
     // Note: this interface to check a signature is clearly sub-optimal
     let msg_hash_scalar = Scalar::from_repr(msg_hash.into())

@@ -165,6 +165,7 @@ impl TestGenerators {
 
     pub fn make_signature(
         &self,
+        threshold: usize,
         presignatures: &HashMap<Participant, ecdsa::ot_based_ecdsa::PresignOutput>,
         public_key: AffinePoint,
         msg_hash: ecdsa::Scalar,
@@ -207,6 +208,7 @@ impl TestGenerators {
                     ecdsa::ot_based_ecdsa::sign::sign(
                         &self.participants,
                         leader,
+                        threshold,
                         *participant,
                         derived_public_key,
                         rerandomized_presignature,

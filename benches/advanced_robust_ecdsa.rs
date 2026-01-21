@@ -74,7 +74,7 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || {
-                    let preps = prepare_simulated_sign(&result, pk);
+                    let preps = prepare_simulated_sign(&result, max_malicious, pk);
                     // collecting data sizes
                     sizes.push(preps.simulator.get_view_size());
                     preps
@@ -137,10 +137,11 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
 /// Used to simulate robust ecdsa signatures for benchmarking
 fn prepare_simulated_sign(
     result: &[(Participant, PresignOutput)],
+    max_malicious: usize,
     pk: VerifyingKey,
 ) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
-    let preps = robust_ecdsa_prepare_sign(result, pk, &mut rng);
+    let preps = robust_ecdsa_prepare_sign(result, max_malicious, pk, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -152,6 +153,7 @@ fn prepare_simulated_sign(
     let real_protocol = sign(
         &participants,
         real_participant,
+        max_malicious,
         real_participant,
         preps.derived_pk,
         preps.presig,

@@ -21,6 +21,7 @@ use crate::{
 pub fn sign(
     participants: &[Participant],
     coordinator: Participant,
+    threshold: usize,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
@@ -48,6 +49,14 @@ pub fn sign(
         return Err(InitializationError::MissingParticipant {
             role: "coordinator",
             participant: coordinator,
+        });
+    }
+
+    // ensure number of participants during the signing phase is >= threshold
+    if participants.len() < threshold {
+        return Err(InitializationError::NotEnoughParticipantsForThreshold {
+            threshold,
+            participants: participants.len(),
         });
     }
 
@@ -94,7 +103,7 @@ async fn do_sign_coordinator(
 ) -> Result<SignatureOption, ProtocolError> {
     // Round 1
     let s_i = compute_signature_share(&participants, me, &presignature, msg_hash)?;
-    // Spec 1.4 is non existant for a coordinator
+    // Spec 1.4 is non-existent for a coordinator
 
     let wait0 = chan.next_waitpoint();
     // Receive sj
@@ -219,8 +228,13 @@ mod test {
             participants_presign.push((*p, presignature));
         }
 
-        let (_, sig) =
-            run_sign_without_rerandomization(&participants_presign, public_key, msg, &mut rng);
+        let (_, sig) = run_sign_without_rerandomization(
+            &participants_presign,
+            threshold,
+            public_key,
+            msg,
+            &mut rng,
+        );
         let sig = ecdsa::Signature::from_scalars(x_coordinate(&sig.big_r), sig.s).unwrap();
         VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
             .verify(msg, &sig)
@@ -261,6 +275,7 @@ mod test {
 
         let (tweak, _, sig) = run_sign_with_rerandomization(
             &participants_presign,
+            threshold,
             public_key.to_element(),
             msg,
             &mut rng,

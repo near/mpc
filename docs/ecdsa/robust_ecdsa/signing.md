@@ -54,10 +54,7 @@ $$
 $\forall j \in \\{t+2.. n\\},\quad \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; j) =  R_j$
 3. Each $P_i$ computes $R \gets \mathsf{ExponentInterpolation}(R_1, \ldots R_{t+1}; 0)$
 4. $\blacktriangle$ Each $P_i$ *asserts* that $R \neq Identity$
-5. Each $P_i$ performs polynomial interpolation of degree $2t$ to derive $w$ as in $w \gets \sum_i \lambda_i(\mathcal{P}_1)_i \cdot w_i$ where $\lambda_i(\mathcal{P}_1)$ is the lagrange coefficient defined as:
-
-$$\lambda_i(\mathcal{P}_1) = \prod_{j\in \mathcal{P}_1\setminus \set{i}} \frac{-j}{i-j}$$
-
+5. Each $P_i$ computes $w \gets \mathsf{Interpolation}(w_1, \ldots w_{2 \cdot t+1}; 0)$
 6. $\blacktriangle$ Each $P_i$ *asserts* that $w \neq 0$.
 7. Each $P_i$ computes $W_i \gets R^{a_i}$
 8. $\star$ Each $P_i$ sends $W_i$ to every party.
@@ -75,7 +72,7 @@ $\forall j \in \\{t+2.. n\\},\quad \mathsf{ExponentInterpolation}(W_1, \ldots W_
 # Signing
 
 In this phase, a set of parties $\mathcal{P}_2 \subseteq \mathcal{P}_1$
-of size $N_2 > t$ wishes to generate an ECDSA signature.
+of size $N_2 \geq 2 \cdot t + 1$ wishes to generate an ECDSA signature.
 
 The inputs to this phase are:
 1) The presignature $(R, \alpha_i, \beta_i, c_i, e_i)$,
