@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export NEAR_CLI_DISABLE_SPINNER=1
 
 ### =========================
 ### Fully-automated, resumable MPC testnet TEE deploy (with subaccounts)
@@ -8,6 +9,7 @@ set -euo pipefail
 ### - Contract created as mpc.<root>, nodes as node{i}.<root>
 ### - Default funding supports contract (~16 NEAR) + up to 10 nodes (0.3 NEAR ea) + buffer
 ### - Resume logic + per-phase ENTER prompts
+### - NEW: scale/extend network with vote_new_parameters (add nodes)
 ### =========================
 
 ### Required inputs
@@ -50,6 +52,12 @@ STOP_AFTER_PHASE="${STOP_AFTER_PHASE:-}"
 
 # Pause between phases
 NO_PAUSE="${NO_PAUSE:-0}"
+
+# --- Scale / add nodes controls ---
+# Set ADD_NODES>0 (or set NEW_TOTAL_N) and run phase near_vote_new_params
+ADD_NODES="${ADD_NODES:-0}"                 # how many NEW nodes to add
+NEW_TOTAL_N="${NEW_TOTAL_N:-}"              # optional: absolute total count after scaling
+NEW_THRESHOLD_OVERRIDE="${NEW_THRESHOLD_OVERRIDE:-}"  # optional: override threshold for new proposal
 
 # If set, reuse existing network name (and NEAR accounts)
 if [ -n "${REUSE_NETWORK_NAME:-}" ]; then
@@ -106,6 +114,11 @@ node_account_for_i() { echo "node$1.${ROOT_ACCOUNT}"; }
 # Artifact paths
 KEYS_JSON="$WORKDIR/keys.json"
 INIT_ARGS_JSON="$WORKDIR/init_args.json"
+KEYS_NEW_JSON="$WORKDIR/keys_new.json"
+VOTE_PARAMS_JSON="$WORKDIR/vote_new_parameters.json"
+
+# Retry/sleep knobs (FIX #1)
+NEAR_TX_SLEEP_SEC="${NEAR_TX_SLEEP_SEC:-3}"
 
 near_sleep() {
   local reason="${1:-after NEAR tx}"
@@ -173,8 +186,6 @@ maybe_stop_after_phase() {
   fi
 }
 
-
-
 # ---------- phase gating ----------
 phase_rank() {
   case "$1" in
@@ -190,11 +201,13 @@ phase_rank() {
     near_init) echo 90 ;;
     near_vote_hash) echo 95 ;;
     near_vote_domain) echo 96 ;;
+    near_vote_new_params) echo 97 ;;
+    near_vote_new_params_votes) echo 98 ;;
+
     auto) echo 0 ;;
     *) err "Unknown phase name: $1"; exit 1 ;;
   esac
 }
-
 
 should_run_from_start() {
   local phase="$1"
@@ -246,7 +259,7 @@ fetch_bootnodes() {
 
 is_existing_key_error() {
   local out="$1"
-  # This matches the exact near-cli-rs message you pasted
+  # This matches the exact near-cli-rs message
   echo "$out" | grep -Eq "Public key <ed25519:.*> is already used for an existing account ID <"
 }
 
@@ -256,7 +269,7 @@ near_add_key_skip_if_exists() {
   local pk="$2"
   local label="$3"
 
-  local cmd=(NEAR_CLI_DISABLE_SPINNER=1 near account add-key "$acct" grant-full-access
+  local cmd=(near account add-key "$acct" grant-full-access
              use-manually-provided-public-key "$pk"
              network-config testnet sign-with-keychain send)
 
@@ -309,7 +322,6 @@ near_tx_retry() {
     set -e
 
     if [ $rc -eq 0 ]; then
-      # print output so user still sees tx explorer URL etc.
       echo "$out"
       return 0
     fi
@@ -336,7 +348,7 @@ near_tx_retry() {
 near_account_exists() {
   local acct="$1"
   set +e
-  NEAR_CLI_DISABLE_SPINNER=1 near account view-account-summary "$acct" network-config testnet now >/dev/null 2>&1
+  near account view-account-summary "$acct" network-config testnet now >/dev/null 2>&1
   local rc=$?
   set -e
   [ $rc -eq 0 ]
@@ -345,7 +357,6 @@ near_account_exists() {
 # returns NEAR balance as float string (e.g., "19.1234") or "0" if missing
 near_get_balance() {
   local acct="$1"
-  # Use RPC directly to avoid near-cli formatting issues
   local resp
   resp="$(curl -s https://rpc.testnet.near.org -H 'content-type: application/json' \
     -d "{\"jsonrpc\":\"2.0\",\"id\":\"x\",\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$acct\"}}")"
@@ -414,7 +425,6 @@ topup_root_if_needed() {
 cur=float("$cur")
 target=float("$target")
 delta=target-cur
-# add small margin for tx fee
 if delta > 0.05:
     print(delta)
 else:
@@ -429,11 +439,9 @@ PY
     fi
     log "Topping up ROOT from $FUNDER_ACCOUNT by ~${need} NEAR"
     near_tx_retry "top-up ROOT from $FUNDER_ACCOUNT to $ROOT_ACCOUNT (${need} NEAR)" \
-  NEAR_CLI_DISABLE_SPINNER=1 near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
-    network-config testnet sign-with-keychain send
-
+       near tokens "$FUNDER_ACCOUNT" send-near "$ROOT_ACCOUNT" "${need} NEAR" \
+        network-config testnet sign-with-keychain send
     near_sleep "root top-up"
-
   else
     log "No root top-up needed."
   fi
@@ -451,7 +459,7 @@ faucet_create_with_retry() {
     log "faucet create (attempt $attempt/$FAUCET_MAX_RETRIES): $acct"
     set +e
     local out
-    out="$(NEAR_CLI_DISABLE_SPINNER=1 near account create-account sponsor-by-faucet-service "$acct" \
+    out="$(near account create-account sponsor-by-faucet-service "$acct" \
       autogenerate-new-keypair save-to-legacy-keychain network-config testnet create 2>&1)"
     local rc=$?
     set -e
@@ -485,12 +493,11 @@ create_account_fund_myself_if_missing() {
   fi
 
   near_tx_retry "create account $new_acct (balance=$initial_balance, payer=$payer)" \
-  NEAR_CLI_DISABLE_SPINNER=1 near account create-account fund-myself "$new_acct" "$initial_balance" \
-    autogenerate-new-keypair save-to-legacy-keychain \
-    sign-as "$payer" network-config testnet sign-with-keychain send
+     near account create-account fund-myself "$new_acct" "$initial_balance" \
+      autogenerate-new-keypair save-to-legacy-keychain \
+      sign-as "$payer" network-config testnet sign-with-keychain send
 
   near_sleep "created account $new_acct"
-  
 }
 
 ### =========================
@@ -566,18 +573,20 @@ preflight() {
 ### =========================
 ### RENDER FILES
 ### =========================
-render_node_files() {
+render_node_files_range() {
   local bootnodes="$1"
   local threshold="$2"
+  local start_i="$3"
+  local end_i="$4"
 
-  log "Rendering node env/conf files into $WORKDIR"
-  log "Threshold: $threshold / $N"
+  log "Rendering node env/conf files into $WORKDIR (nodes $start_i..$end_i)"
+  log "Threshold (for env): $threshold / $N"
   log "OS_IMAGE=$OS_IMAGE  SEALING_KEY_TYPE=$SEALING_KEY_TYPE  VMM_RPC=$VMM_RPC"
   log "MPC_IMAGE_TAGS=$MPC_IMAGE_TAGS"
   log "Contract account: $MPC_CONTRACT_ACCOUNT"
   log "Node naming: node{i}.${ROOT_ACCOUNT}"
 
-  for i in $(seq 0 $((N-1))); do
+  for i in $(seq "$start_i" "$end_i"); do
     local ip account app_name
     ip="$(ip_for_i "$i")"
     account="$(node_account_for_i "$i")"
@@ -638,6 +647,12 @@ render_node_files() {
   log "Rendering complete"
 }
 
+render_node_files() {
+  local bootnodes="$1"
+  local threshold="$2"
+  render_node_files_range "$bootnodes" "$threshold" 0 $((N-1))
+}
+
 ### =========================
 ### NEAR phases
 ### =========================
@@ -660,7 +675,6 @@ near_phase_accounts() {
     pause_phase "NEAR: top-up ROOT if needed (from FUNDER_ACCOUNT)"
     topup_root_if_needed
   else
-    # No funder; just warn if root is low.
     local cur target
     cur="$(near_get_balance "$ROOT_ACCOUNT")"
     target="$(required_root_balance)"
@@ -687,7 +701,13 @@ near_phase_nodes_and_contract() {
   pause_phase "NEAR: create CONTRACT and NODE subaccounts (paid by ROOT)"
   create_account_fund_myself_if_missing "$MPC_CONTRACT_ACCOUNT" "$CONTRACT_INITIAL_BALANCE" "$ROOT_ACCOUNT"
 
-  for i in $(seq 0 $((MAX_NODES_TO_FUND-1))); do
+  # FIX #2: ensure we always create at least N nodes, even if MAX_NODES_TO_FUND is smaller.
+  local fund_count="$MAX_NODES_TO_FUND"
+  if [ "$fund_count" -lt "$N" ]; then
+    fund_count="$N"
+  fi
+
+  for i in $(seq 0 $((fund_count-1))); do
     create_account_fund_myself_if_missing "$(node_account_for_i "$i")" "$NODE_INITIAL_BALANCE" "$ROOT_ACCOUNT"
   done
 
@@ -697,17 +717,15 @@ near_phase_nodes_and_contract() {
 ### =========================
 ### DEPLOY + COLLECT
 ### =========================
-deploy_nodes() {
-  if file_nonempty "$KEYS_JSON" && [ "$FORCE_REDEPLOY" != "1" ]; then
-    warn "keys.json already exists ($KEYS_JSON) -> assuming nodes already deployed. Skipping deploy (set FORCE_REDEPLOY=1 to redeploy)."
-    return 0
-  fi
+deploy_nodes_range() {
+  local start_i="$1"
+  local end_i="$2"
 
-  log "Deploying CVMs via tee_launcher/deploy-launcher.sh"
+  log "Deploying CVMs via tee_launcher/deploy-launcher.sh (nodes $start_i..$end_i)"
   cd "$TEE_LAUNCHER_DIR"
   [ -x "./deploy-launcher.sh" ] || { err "$TEE_LAUNCHER_DIR/deploy-launcher.sh not executable"; exit 1; }
 
-  for i in $(seq 0 $((N-1))); do
+  for i in $(seq "$start_i" "$end_i"); do
     local ip; ip="$(ip_for_i "$i")"
     log "Deploy node$i (IP=$ip, env=$WORKDIR/node${i}.env)"
     ./deploy-launcher.sh --yes --env-file "$WORKDIR/node${i}.env" --base-path "$BASE_PATH" --python-exec python
@@ -715,16 +733,24 @@ deploy_nodes() {
   done
 }
 
-collect_keys() {
-  if file_nonempty "$KEYS_JSON" && [ "${FORCE_RECOLLECT:-0}" != "1" ]; then
-    warn "keys.json already exists ($KEYS_JSON) -> skipping collection (set FORCE_RECOLLECT=1 to recollect)."
+deploy_nodes() {
+  if file_nonempty "$KEYS_JSON" && [ "$FORCE_REDEPLOY" != "1" ]; then
+    warn "keys.json already exists ($KEYS_JSON) -> assuming nodes already deployed. Skipping deploy (set FORCE_REDEPLOY=1 to redeploy)."
     return 0
   fi
+  deploy_nodes_range 0 $((N-1))
+}
 
-  log "Collecting /public_data keys from each node"
-  echo "[]" > "$KEYS_JSON"
+collect_keys_range() {
+  # Usage: collect_keys_range <start_i> <end_i_inclusive> <out_json>
+  local start_i="$1"
+  local end_i="$2"
+  local out_json="$3"
 
-  for i in $(seq 0 $((N-1))); do
+  log "Collecting /public_data keys for nodes $start_i..$end_i -> $out_json"
+  echo "[]" > "$out_json"
+
+  for i in $(seq "$start_i" "$end_i"); do
     local ip pub_port url
     ip="$(ip_for_i "$i")"
     pub_port="$(public_port_for_i "$i")"
@@ -764,19 +790,27 @@ collect_keys() {
       exit 1
     fi
 
+    local tmp
     tmp="$(mktemp)"
     jq --arg i "$i" --arg ip "$ip" --arg acct "$account" \
        --arg signer "$signer" --arg responder "$responder" --arg tls "$tls_pk" \
        '. + [{"i":($i|tonumber),"ip":$ip,"account":$acct,"signer_pk":$signer,"responder_pk":$responder,"tls_pk":$tls}]' \
-       "$KEYS_JSON" > "$tmp"
-    mv "$tmp" "$KEYS_JSON"
+       "$out_json" > "$tmp"
+    mv "$tmp" "$out_json"
 
     log "node$i keys collected for $account"
   done
 
-  log "Wrote $KEYS_JSON"
+  log "Wrote $out_json"
 }
 
+collect_keys() {
+  if file_nonempty "$KEYS_JSON" && [ "${FORCE_RECOLLECT:-0}" != "1" ]; then
+    warn "keys.json already exists ($KEYS_JSON) -> skipping collection (set FORCE_RECOLLECT=1 to recollect)."
+    return 0
+  fi
+  collect_keys_range 0 $((N-1)) "$KEYS_JSON"
+}
 
 generate_init_args() {
   if file_nonempty "$INIT_ARGS_JSON" && [ "$FORCE_REINIT_ARGS" != "1" ]; then
@@ -802,24 +836,24 @@ PY
 
   log "init_args.json created at $INIT_ARGS_JSON"
 
-echo
-echo "================= INIT ARGS REVIEW ================="
-echo "File: $INIT_ARGS_JSON"
-echo "----------------------------------------------------"
-jq . "$INIT_ARGS_JSON"
-echo "===================================================="
-echo
-
-if [ "$NO_PAUSE" != "1" ]; then
-  read -r -p "Review init_args.json above. Press ENTER to continue, Ctrl+C to abort..." _
   echo
-else
-  log "NO_PAUSE=1 -> skipping init_args.json confirmation pause"
-fi
+  echo "================= INIT ARGS REVIEW ================="
+  echo "File: $INIT_ARGS_JSON"
+  echo "----------------------------------------------------"
+  jq . "$INIT_ARGS_JSON"
+  echo "===================================================="
+  echo
+
+  if [ "$NO_PAUSE" != "1" ]; then
+    read -r -p "Review init_args.json above. Press ENTER to continue, Ctrl+C to abort..." _
+    echo
+  else
+    log "NO_PAUSE=1 -> skipping init_args.json confirmation pause"
+  fi
 }
 
 ### =========================
-### Contract + votes phases (unchanged)
+### Contract + votes phases
 ### =========================
 build_contract() {
   log "Building MPC contract"
@@ -831,36 +865,49 @@ build_contract() {
 
 deploy_contract() {
   log "Deploying MPC contract to $MPC_CONTRACT_ACCOUNT"
-  NEAR_CLI_DISABLE_SPINNER=1 near contract deploy "$MPC_CONTRACT_ACCOUNT" use-file "$MPC_CONTRACT_PATH" \
-    without-init-call network-config testnet sign-with-keychain send
+  # FIX #5: retry wrapper + sleep
+  near_tx_retry "deploy contract to $MPC_CONTRACT_ACCOUNT" \
+    
+     near contract deploy "$MPC_CONTRACT_ACCOUNT" use-file "$MPC_CONTRACT_PATH" \
+      without-init-call network-config testnet sign-with-keychain send
+  near_sleep "deploy contract"
 }
 
-add_node_keys_from_keysjson() {
-  log "Adding node keys to NEAR accounts using $KEYS_JSON"
-  [ -f "$KEYS_JSON" ] || { err "Missing keys.json at $KEYS_JSON. Run collect phase first."; exit 1; }
+add_node_keys_from_file() {
+  local keys_file="$1"
+  log "Adding node keys to NEAR accounts using $keys_file"
+  [ -f "$keys_file" ] || { err "Missing keys file at $keys_file. Run collect phase first."; exit 1; }
 
-  jq -c '.[]' "$KEYS_JSON" | while read -r row; do
+  jq -c '.[]' "$keys_file" | while read -r row; do
     local acct signer responder
     acct="$(echo "$row" | jq -r .account)"
     signer="$(echo "$row" | jq -r .signer_pk)"
     responder="$(echo "$row" | jq -r .responder_pk)"
 
-   log "$acct: add signer key"
-  near_add_key_skip_if_exists "$acct" "$signer" "signer"
+    log "$acct: add signer key"
+    near_add_key_skip_if_exists "$acct" "$signer" "signer"
 
-  log "$acct: add responder key"
-  near_add_key_skip_if_exists "$acct" "$responder" "responder"
+    log "$acct: add responder key"
+    near_add_key_skip_if_exists "$acct" "$responder" "responder"
   done
+}
+
+add_node_keys_from_keysjson() {
+  add_node_keys_from_file "$KEYS_JSON"
 }
 
 init_contract() {
   log "Initializing contract using $INIT_ARGS_JSON"
   [ -f "$INIT_ARGS_JSON" ] || { err "Missing init_args.json at $INIT_ARGS_JSON. Run init_args phase first."; exit 1; }
 
-  NEAR_CLI_DISABLE_SPINNER=1 near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" init \
-    file-args "$INIT_ARGS_JSON" prepaid-gas '300.0 Tgas' \
-    attached-deposit '0 NEAR' sign-as "$MPC_CONTRACT_ACCOUNT" \
-    network-config testnet sign-with-keychain send
+  # FIX #5: retry wrapper + sleep
+  near_tx_retry "init contract $MPC_CONTRACT_ACCOUNT" \
+     near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" init \
+      file-args "$INIT_ARGS_JSON" prepaid-gas '300.0 Tgas' \
+      attached-deposit '0 NEAR' sign-as "$MPC_CONTRACT_ACCOUNT" \
+      network-config testnet sign-with-keychain send
+
+  near_sleep "init contract"
 }
 
 extract_code_hash() {
@@ -882,11 +929,10 @@ vote_code_hash_threshold() {
     acct="$(node_account_for_i "$i")"
     log "vote_code_hash as $acct"
     near_tx_retry "vote_code_hash by $acct" \
-    NEAR_CLI_DISABLE_SPINNER=1 near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_code_hash \
-    json-args "{\"code_hash\": \"$code_hash\"}" prepaid-gas '100.0 Tgas' \
-    attached-deposit '0 NEAR' sign-as "$acct" \
-    network-config testnet sign-with-keychain send
-
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_code_hash \
+        json-args "{\"code_hash\": \"$code_hash\"}" prepaid-gas '100.0 Tgas' \
+        attached-deposit '0 NEAR' sign-as "$acct" \
+        network-config testnet sign-with-keychain send
     near_sleep "vote_code_hash by $acct"
   done
 }
@@ -899,16 +945,289 @@ vote_add_domain_threshold() {
     acct="$(node_account_for_i "$i")"
     log "vote_add_domains as $acct"
     near_tx_retry "vote_add_domains by $acct" \
-    NEAR_CLI_DISABLE_SPINNER=1 near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_domains \
-    file-args "$ADD_DOMAIN_JSON" prepaid-gas '300.0 Tgas' \
-    attached-deposit '0 NEAR' sign-as "$acct" \
-    network-config testnet sign-with-keychain send
-
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_add_domains \
+        file-args "$ADD_DOMAIN_JSON" prepaid-gas '300.0 Tgas' \
+        attached-deposit '0 NEAR' sign-as "$acct" \
+        network-config testnet sign-with-keychain send
     near_sleep "vote_add_domains by $acct"
-
   done
 }
 
+### =========================
+### SCALE: vote_new_parameters (add nodes)
+### Only supported when contract state is Running (if Resharing -> stop)
+### =========================
+get_contract_state_json() {
+  local out
+  out="$(near contract call-function as-read-only \
+    "$MPC_CONTRACT_ACCOUNT" state json-args '{}' \
+    network-config testnet now 2>/dev/null)"
+
+  # Extract first valid JSON value from near-cli output
+  python3 -c '
+import sys, re, json
+s = sys.stdin.read()
+m = re.search(r"[\{\[]", s)
+if not m:
+    raise SystemExit("Could not find JSON in near output")
+start = m.start()
+for end in range(start + 1, len(s) + 1):
+    try:
+        obj = json.loads(s[start:end])
+        print(json.dumps(obj))
+        sys.exit(0)
+    except Exception:
+        pass
+raise SystemExit("Found JSON start but could not parse a complete JSON value")
+' <<<"$out"
+}
+
+
+
+extract_running_fields() {
+  # Reads state JSON from stdin and prints:
+  # epoch_id
+  # next_id
+  # participants_json (single line)
+  # threshold
+  python3 -c '
+import json,sys
+j=json.loads(sys.stdin.read())
+
+if "Resharing" in j:
+    raise SystemExit("Contract is in Resharing. This script stops here (as requested).")
+if "Running" not in j:
+    raise SystemExit("Contract state is not Running.")
+
+r=j["Running"]
+epoch=r["keyset"]["epoch_id"]
+params=r["parameters"]
+participants=params["participants"]["participants"]
+next_id=params["participants"]["next_id"]
+threshold=params["threshold"]
+
+print(epoch)
+print(next_id)
+print(json.dumps(participants, separators=(",", ":")))
+print(threshold)
+'
+}
+
+
+compute_threshold_default() {
+  local total="$1"
+  ceil_2n_3 "$total"
+}
+
+make_vote_new_parameters_json() {
+  # Usage: make_vote_new_parameters_json <state_json> <keys_new_json> <out_json>
+  local state_json="$1"
+  local keys_new_json="$2"
+  local out_json="$3"
+
+  [ -f "$keys_new_json" ] || { err "Missing $keys_new_json"; exit 1; }
+
+  # Extract current running fields
+  local cur_epoch cur_next_id cur_threshold
+  cur_epoch="$(echo "$state_json" | jq -r '.Running.keyset.epoch_id')"
+  cur_next_id="$(echo "$state_json" | jq -r '.Running.parameters.participants.next_id')"
+  cur_threshold="$(echo "$state_json" | jq -r '.Running.parameters.threshold')"
+
+  local cur_parts_file
+  cur_parts_file="$(mktemp)"
+  echo "$state_json" | jq -c '.Running.parameters.participants.participants' > "$cur_parts_file"
+
+
+  local num_new old_count total
+  num_new="$(jq 'length' "$keys_new_json")"
+  old_count="$(jq 'length' "$cur_parts_file")"
+  total=$((old_count + num_new))
+
+  local new_threshold
+  if [ -n "$NEW_THRESHOLD_OVERRIDE" ]; then
+    new_threshold="$NEW_THRESHOLD_OVERRIDE"
+  else
+    new_threshold="$(compute_threshold_default "$total")"
+  fi
+
+  local prospective_epoch_id
+  prospective_epoch_id=$((cur_epoch + 1))
+
+  python3 - <<PY
+import json
+
+cur_next_id=int("${cur_next_id}")
+prospective_epoch_id=int("${prospective_epoch_id}")
+new_threshold=int("${new_threshold}")
+
+cur_parts=json.load(open("${cur_parts_file}"))
+new_keys=json.load(open("${keys_new_json}"))
+
+new_parts=[]
+next_id=cur_next_id
+for k in new_keys:
+    acct=k["account"]
+    ip=k["ip"]
+    tls_pk=k["tls_pk"]  # P2P key == sign_pk
+    new_parts.append([acct, next_id, {"sign_pk": tls_pk, "url": f"https://{ip}:13001"}])
+    next_id += 1
+
+out={
+  "prospective_epoch_id": prospective_epoch_id,
+  "proposal": {
+    "participants": {
+      "next_id": next_id,
+      "participants": cur_parts + new_parts
+    },
+    "threshold": new_threshold
+  }
+}
+
+open("${out_json}","w").write(json.dumps(out, indent=2))
+print("Wrote", "${out_json}")
+print("prospective_epoch_id:", prospective_epoch_id)
+print("old_count:", len(cur_parts), "new_count:", len(new_parts), "total:", len(cur_parts)+len(new_parts))
+print("threshold:", new_threshold)
+PY
+
+  rm -f "$cur_parts_file"
+
+  echo
+  echo "================= VOTE NEW PARAMETERS REVIEW ================="
+  echo "File: $out_json"
+  echo "--------------------------------------------------------------"
+  jq . "$out_json"
+  echo "=============================================================="
+  echo
+
+  if [ "$NO_PAUSE" != "1" ]; then
+    read -r -p "Review vote_new_parameters.json above. Press ENTER to continue, Ctrl+C to abort..." _
+    echo
+  else
+    log "NO_PAUSE=1 -> skipping vote_new_parameters confirmation pause"
+  fi
+}
+
+
+
+vote_new_parameters_all_voters() {
+  local vote_json="$1"
+
+  local voters
+  voters="$(jq -r '.proposal.participants.participants[][0]' "$vote_json")"
+
+  log "Voting vote_new_parameters from all voters (count=$(echo "$voters" | wc -l | tr -d ' '))"
+
+  while read -r acct; do
+    [ -n "$acct" ] || continue
+    log "vote_new_parameters as $acct"
+    near_tx_retry "vote_new_parameters by $acct" \
+       near contract call-function as-transaction "$MPC_CONTRACT_ACCOUNT" vote_new_parameters \
+        file-args "$vote_json" prepaid-gas '299.99 Tgas' attached-deposit '0 NEAR' \
+        sign-as "$acct" network-config testnet sign-with-keychain send
+    near_sleep "vote_new_parameters by $acct"
+  done <<< "$voters"
+}
+
+near_phase_vote_new_params_votes_only() {
+  [ -f "$VOTE_PARAMS_JSON" ] || { err "Missing $VOTE_PARAMS_JSON. Generate it first (phase near_vote_new_params)."; exit 1; }
+
+  # Sanity: ensure contract is Running (you said Resharing should stop)
+  local state_json
+  state_json="$(get_contract_state_json)"
+  if ! echo "$state_json" | jq -e 'has("Running")' >/dev/null; then
+    err "Contract is not Running (or is Resharing). Refusing to vote."
+    echo "$state_json" | jq .
+    exit 1
+  fi
+
+  pause_phase "Vote vote_new_parameters from ALL nodes (old+new) [votes-only]"
+  vote_new_parameters_all_voters "$VOTE_PARAMS_JSON"
+}
+
+near_phase_vote_new_parameters() {
+  if [ "$ADD_NODES" = "0" ] && [ -z "$NEW_TOTAL_N" ]; then
+    err "To scale, set ADD_NODES>0 (or set NEW_TOTAL_N)."
+    exit 1
+  fi
+
+  local state_json
+  state_json="$(get_contract_state_json)"
+
+  # Ensure Running, stop if Resharing or other
+  if ! echo "$state_json" | jq -e 'has("Running")' >/dev/null; then
+    err "Contract is not Running (or is Resharing). Refusing to proceed."
+    echo "$state_json" | jq .
+    exit 1
+  fi
+
+  # Extract directly from state JSON (robust)
+local cur_epoch cur_next_id cur_threshold old_count
+cur_epoch="$(echo "$state_json" | jq -r '.Running.keyset.epoch_id')"
+cur_next_id="$(echo "$state_json" | jq -r '.Running.parameters.participants.next_id')"
+cur_threshold="$(echo "$state_json" | jq -r '.Running.parameters.threshold')"
+old_count="$(echo "$state_json" | jq -r '.Running.parameters.participants.participants | length')"
+
+# Sanity check
+if ! [[ "$old_count" =~ ^[0-9]+$ ]]; then
+  err "Failed to parse old_count from contract state (got: '$old_count')"
+  echo "$state_json" | jq .
+  exit 1
+fi
+ 
+
+  local new_total
+  if [ -n "$NEW_TOTAL_N" ]; then
+    new_total="$NEW_TOTAL_N"
+    if [ "$new_total" -lt "$old_count" ]; then
+      err "NEW_TOTAL_N ($new_total) < old participant count ($old_count) - refusing."
+      exit 1
+    fi
+    ADD_NODES=$((new_total - old_count))
+  else
+    new_total=$((old_count + ADD_NODES))
+  fi
+
+  if [ "$ADD_NODES" -le 0 ]; then
+    err "Nothing to add (ADD_NODES computed as $ADD_NODES)."
+    exit 1
+  fi
+
+  local start_i end_i
+  start_i="$old_count"
+  end_i=$((new_total - 1))
+
+  log "Scaling network: old_count=$old_count add_nodes=$ADD_NODES new_total=$new_total"
+  log "New node index range: $start_i..$end_i"
+
+  pause_phase "NEAR: create NEW node subaccounts (if missing)"
+  for i in $(seq "$start_i" "$end_i"); do
+    create_account_fund_myself_if_missing "$(node_account_for_i "$i")" "$NODE_INITIAL_BALANCE" "$ROOT_ACCOUNT"
+  done
+
+  pause_phase "Render+Deploy NEW CVMs (dstack)"
+  local bootnodes threshold_for_env
+  bootnodes="$(fetch_bootnodes)"
+  threshold_for_env="$(compute_threshold_default "$new_total")"
+  render_node_files_range "$bootnodes" "$threshold_for_env" "$start_i" "$end_i"
+  deploy_nodes_range "$start_i" "$end_i"
+
+  pause_phase "Collect NEW node keys + add keys to NEAR accounts"
+  collect_keys_range "$start_i" "$end_i" "$KEYS_NEW_JSON"
+  add_node_keys_from_file "$KEYS_NEW_JSON"
+
+  pause_phase "Prepare vote_new_parameters payload"
+  make_vote_new_parameters_json "$state_json" "$KEYS_NEW_JSON" "$VOTE_PARAMS_JSON"
+
+  pause_phase "Vote vote_new_parameters from ALL nodes (old+new)"
+  vote_new_parameters_all_voters "$VOTE_PARAMS_JSON"
+
+  log "Scale vote submitted. Check contract state for transition to Resharing."
+}
+
+### =========================
+### Summary
+### =========================
 print_summary() {
   local threshold="$1"
   local code_hash="$2"
@@ -922,12 +1241,15 @@ print_summary() {
   echo " Threshold           : $threshold / $N"
   echo " Workdir             : $WORKDIR"
   echo " FUNDER_ACCOUNT      : ${FUNDER_ACCOUNT:-<none>}"
-  echo " ROOT_INITIAL_BAL    : $ROOT_INITIAL_BALANCE (target supports 10 nodes)"
+  echo " ROOT_INITIAL_BAL    : $ROOT_INITIAL_BALANCE (target supports MAX_NODES_TO_FUND)"
   echo " CONTRACT_BAL        : $CONTRACT_INITIAL_BALANCE"
   echo " NODE_BAL            : $NODE_INITIAL_BALANCE"
   echo " MAX_NODES_TO_FUND   : $MAX_NODES_TO_FUND"
   echo " MPC_IMAGE_TAGS      : $MPC_IMAGE_TAGS"
   echo " CODE_HASH           : $code_hash"
+  echo " ADD_NODES           : $ADD_NODES"
+  echo " NEW_TOTAL_N         : ${NEW_TOTAL_N:-<unset>}"
+  echo " NEW_THRESHOLD_OVR   : ${NEW_THRESHOLD_OVERRIDE:-<unset>}"
   echo "============================================================"
 }
 
@@ -950,6 +1272,9 @@ echo " MAX_NODES_TO_FUND : $MAX_NODES_TO_FUND"
 echo " START_FROM_PHASE  : $START_FROM_PHASE"
 echo " STOP_AFTER_PHASE  : ${STOP_AFTER_PHASE:-<none>}"
 echo " RESUME            : $RESUME"
+echo " ADD_NODES         : $ADD_NODES"
+echo " NEW_TOTAL_N       : ${NEW_TOTAL_N:-<unset>}"
+echo " NEW_THRESHOLD_OVR : ${NEW_THRESHOLD_OVERRIDE:-<unset>}"
 echo "============================================================"
 echo
 
@@ -1032,24 +1357,34 @@ main() {
     maybe_stop_after_phase near_init
   fi
 
- if should_run_from_start near_vote_hash; then
-  pause_phase "NEAR: vote code hash"
-  code_hash="$(extract_code_hash)"
-  log "CODE_HASH (no prefix): $code_hash"
-  vote_code_hash_threshold "$threshold" "$code_hash"
-  maybe_stop_after_phase near_vote_hash
- fi
+  if should_run_from_start near_vote_hash; then
+    pause_phase "NEAR: vote code hash"
+    code_hash="$(extract_code_hash)"
+    log "CODE_HASH (no prefix): $code_hash"
+    vote_code_hash_threshold "$threshold" "$code_hash"
+    maybe_stop_after_phase near_vote_hash
+  fi
 
- if should_run_from_start near_vote_domain; then
-  pause_phase "NEAR: vote add domain"
-  vote_add_domain_threshold "$threshold"
-  maybe_stop_after_phase near_vote_domain
- fi
+  if should_run_from_start near_vote_domain; then
+    pause_phase "NEAR: vote add domain"
+    vote_add_domain_threshold "$threshold"
+    maybe_stop_after_phase near_vote_domain
+  fi
 
+  if should_run_from_start near_vote_new_params; then
+    near_phase_vote_new_parameters
+    maybe_stop_after_phase near_vote_new_params
+  fi
+  if should_run_from_start near_vote_new_params_votes; then
+    near_phase_vote_new_params_votes_only
+    maybe_stop_after_phase near_vote_new_params_votes
+  fi
 
   code_hash="$(extract_code_hash || true)"
   print_summary "$threshold" "${code_hash:-<unknown>}"
   log "✅ Done"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
