@@ -14,6 +14,7 @@ RUN \
 
 # Install near-cli-rs via official installer script.
 ARG NEAR_CLI_VERSION=0.21.0
+SHELL ["/bin/bash", "-lc"]
 RUN set -euo pipefail; \
     if [ "${NEAR_CLI_VERSION}" = "latest" ]; then \
       url="https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-installer.sh"; \
