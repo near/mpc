@@ -13,7 +13,7 @@ RUN \
     rm -rf /var/lib/apt/lists/*
 
 # Install near-cli-rs via official installer script.
-ARG NEAR_CLI_VERSION=0.21.0
+ARG NEAR_CLI_VERSION=0.23.5
 SHELL ["/bin/bash", "-lc"]
 RUN set -euo pipefail; \
     if [ "${NEAR_CLI_VERSION}" = "latest" ]; then \
