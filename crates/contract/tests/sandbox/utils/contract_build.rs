@@ -78,8 +78,11 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         ];
 
         // Include benchmark endpoints in WASM when bench-utils feature is enabled
+        // Only apply this to mpc-contract, as test-migration-contract doesn't have this feature
         #[cfg(feature = "bench-utils")]
-        args.push("--features=bench-utils".to_string());
+        if package_name == CURRENT_CONTRACT_PACKAGE_NAME {
+            args.push("--features=bench-utils".to_string());
+        }
 
         let status = Command::new("cargo")
             .args(&args)
