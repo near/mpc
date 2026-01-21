@@ -75,6 +75,7 @@ class MpcNode(NearAccount):
         p2p_url: str,
         web_address: SocketAddress,
         migration_address: SocketAddress,
+        pprof_address: str,
         p2p_public_key: str,
         pytest_signer_keys: list[Key],
         backup_key: bytes,
@@ -83,9 +84,10 @@ class MpcNode(NearAccount):
         self.p2p_url: str = p2p_url
         self.web_address: SocketAddress = web_address
         self.migration_address: SocketAddress = migration_address
+        self.pprof_address: str = pprof_address
         self.p2p_public_key: str = p2p_public_key
         self.status: MpcNode.NodeStatus = MpcNode.NodeStatus.IDLE
-        self.participant_id: int | None = None
+        self.paticipant_id: int | None = None
         self.home_dir = self.near_node.node_dir
         self.is_running = False
         self.metrics = MetricsTracker(near_node)
