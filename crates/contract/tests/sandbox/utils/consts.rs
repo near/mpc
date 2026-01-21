@@ -38,7 +38,7 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(163);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make
@@ -46,6 +46,6 @@ pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(147);
 /// not be getting that big.
 ///
 /// TODO(#771): Reduce this to the minimal value possible after #770 is resolved
-pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(13000);
+pub const CURRENT_CONTRACT_DEPLOY_DEPOSIT: NearToken = NearToken::from_millinear(14000);
 
 pub const DEFAULT_MAX_TIMEOUT_TX_INCLUDED: Duration = Duration::from_secs(3);
