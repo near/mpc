@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
 
 
@@ -58,16 +59,19 @@ def derive_boot_nodes(repo_root: Path, config: dict) -> str:
     return f"{node_key['public_key']}@neard:24566"
 
 
-def generate_compose(config: dict, config_path: Path, repo_root: Path) -> str:
+def generate_compose(config: dict, config_path: Path, repo_root: Path, output_dir: Path) -> str:
     ensure_nodes(config)
     boot_nodes = derive_boot_nodes(repo_root, config)
+
+    root_rel = os.path.relpath(repo_root, output_dir)
+    root_rel_posix = Path(root_rel).as_posix()
 
     neard_image = config.get("neard", {}).get("image", "nearprotocol/nearcore:2.10.5")
     rpc_port = int(config.get("neard", {}).get("rpc_port", 3030))
     bootstrap_config = config.get("bootstrap", {}) or {}
     bootstrap_image = bootstrap_config.get("image", "mpc-localnet-bootstrap:local")
     bootstrap_contract_path = config.get("bootstrap", {}).get("contract_path", "/artifacts/mpc_contract.wasm")
-    bootstrap_context = bootstrap_config.get("context", ".")
+    bootstrap_context = bootstrap_config.get("context", root_rel_posix)
     bootstrap_dockerfile = bootstrap_config.get("dockerfile", "deployment/Dockerfile-localnet-bootstrap")
     contract_id = config.get("contract_id")
 
@@ -86,7 +90,7 @@ def generate_compose(config: dict, config_path: Path, repo_root: Path) -> str:
     add(f"- {yaml_quote(str(rpc_port) + ':3030')}", 3)
     add("volumes:", 2)
     add("- near-data:/root/.near", 3)
-    add("- ./deployment/localnet:/seed:ro", 3)
+    add(f"- {root_rel_posix}/deployment/localnet:/seed:ro", 3)
     add("command:", 2)
     add("- /bin/sh", 3)
     add("- -c", 3)
@@ -105,11 +109,13 @@ def generate_compose(config: dict, config_path: Path, repo_root: Path) -> str:
     add("volumes:", 2)
     add("- near-data:/root/.near", 3)
     add("- near-credentials:/root/.near-credentials", 3)
-    add("- ./deployment/localnet:/seed:ro", 3)
-    add("- ./docs/localnet:/work/docs:ro", 3)
-    add("- ./scripts:/work/scripts:ro", 3)
-    add("- ./deployment/localnet/compose:/config:ro", 3)
-    add("- ./target/near:/artifacts:ro", 3)
+    add(f"- {root_rel_posix}/deployment/localnet:/seed:ro", 3)
+    add(f"- {root_rel_posix}/docs/localnet:/work/docs:ro", 3)
+    add(f"- {root_rel_posix}/scripts:/work/scripts:ro", 3)
+    config_rel = os.path.relpath(config_path.parent, output_dir)
+    config_rel_posix = Path(config_rel).as_posix()
+    add(f"- {config_rel_posix}:/config:ro", 3)
+    add(f"- {root_rel_posix}/target/near:/artifacts:ro", 3)
     add("environment:", 2)
     add(f"- LOCALNET_CONFIG=/config/{config_path.name}", 3)
     add(f"- MPC_CONTRACT_PATH={bootstrap_contract_path}", 3)
@@ -175,9 +181,9 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
 
     config = load_config(config_path)
-    compose = generate_compose(config, config_path, repo_root)
-
     output_path = Path(args.output)
+    compose = generate_compose(config, config_path, repo_root, output_path.parent)
+
     output_path.write_text(compose)
     return 0
 

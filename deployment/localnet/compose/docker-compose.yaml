@@ -8,7 +8,7 @@ services:
       - "3030:3030"
     volumes:
       - near-data:/root/.near
-      - ./deployment/localnet:/seed:ro
+      - ../../../deployment/localnet:/seed:ro
     command:
       - /bin/sh
       - -c
@@ -19,18 +19,18 @@ services:
   bootstrap:
     image: mpc-localnet-bootstrap:local
     build:
-      context: .
+      context: ../../..
       dockerfile: deployment/Dockerfile-localnet-bootstrap
     depends_on:
       - neard
     volumes:
       - near-data:/root/.near
       - near-credentials:/root/.near-credentials
-      - ./deployment/localnet:/seed:ro
-      - ./docs/localnet:/work/docs:ro
-      - ./scripts:/work/scripts:ro
-      - ./deployment/localnet/compose:/config:ro
-      - ./target/near:/artifacts:ro
+      - ../../../deployment/localnet:/seed:ro
+      - ../../../docs/localnet:/work/docs:ro
+      - ../../../scripts:/work/scripts:ro
+      - .:/config:ro
+      - ../../../target/near:/artifacts:ro
     environment:
       - LOCALNET_CONFIG=/config/localnet.config.json
       - MPC_CONTRACT_PATH=/artifacts/mpc_contract.wasm
