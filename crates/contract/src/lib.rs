@@ -1240,12 +1240,13 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        // Log only participant count to avoid large logs and extra gas usage
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
-            parameters,
+            parameters.participants().len(),
             init_config,
         );
         parameters.validate()?;
@@ -1765,6 +1766,51 @@ impl MpcContract {
     pub fn bench_participants_serialization_size(&self) -> usize {
         let participants = self.protocol_state.active_participants();
         borsh::to_vec(participants).unwrap().len()
+    }
+
+    /// Benchmark: Insert a new participant using `insert()`.
+    ///
+    /// Measures the gas cost of adding a participant to the set.
+    /// Returns the new participant count.
+    pub fn bench_participants_insert(&mut self) -> usize {
+        use crate::primitives::participants::ParticipantInfo;
+        use near_sdk::PublicKey;
+
+        let participants = self.protocol_state.active_participants_mut();
+        let next_id = participants.next_id();
+        let account_id: AccountId = format!("bench-participant-{}.near", next_id.0)
+            .parse()
+            .unwrap();
+        let info = ParticipantInfo {
+            sign_pk: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                .parse::<PublicKey>()
+                .unwrap(),
+            url: "http://bench.test".to_string(),
+        };
+        participants.insert(account_id, info).unwrap();
+        participants.len()
+    }
+
+    /// Benchmark: Update participant info using `update_info()`.
+    ///
+    /// Measures the gas cost of finding and updating a participant's info.
+    ///
+    /// Returns `true` if update succeeded.
+    pub fn bench_participants_update_info(&mut self, account_id: dtos::AccountId) -> bool {
+        use crate::primitives::participants::ParticipantInfo;
+        use near_sdk::PublicKey;
+
+        let account_id: AccountId = account_id.0.parse().unwrap();
+        let new_info = ParticipantInfo {
+            sign_pk: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                .parse::<PublicKey>()
+                .unwrap(),
+            url: "http://updated.test".to_string(),
+        };
+        self.protocol_state
+            .active_participants_mut()
+            .update_info(account_id, new_info)
+            .is_ok()
     }
 }
 

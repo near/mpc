@@ -156,6 +156,12 @@ impl ThresholdParameters {
     ) -> Result<(), Error> {
         self.participants.update_info(account_id, new_info)
     }
+
+    /// Returns mutable reference to Participants for benchmarking.
+    #[cfg(feature = "bench-utils")]
+    pub fn participants_mut(&mut self) -> &mut Participants {
+        &mut self.participants
+    }
 }
 
 #[cfg(test)]
