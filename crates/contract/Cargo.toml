@@ -90,7 +90,6 @@ getrandom = { workspace = true, features = ["custom"] }
 [dev-dependencies]
 cargo-near-build = { workspace = true }
 contract-history = { workspace = true }
-criterion = { workspace = true }
 digest = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
@@ -109,8 +108,3 @@ test-utils = { workspace = true }
 threshold-signatures = { workspace = true }
 tokio = { workspace = true }
 zstd = { workspace = true }
-
-[[bench]]
-name = "participants_bench"
-harness = false
-required-features = ["test-utils"]
