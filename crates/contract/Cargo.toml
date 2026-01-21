@@ -94,7 +94,6 @@ digest = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
 fs2 = { workspace = true }
-futures = { workspace = true }
 insta = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-abi = { workspace = true }
