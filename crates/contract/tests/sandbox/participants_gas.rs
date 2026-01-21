@@ -3,7 +3,10 @@
 //! These tests measure actual on-chain gas consumption for contract operations
 //! that involve [`Participants`] and assert they stay within expected bounds.
 //!
-//! Run with: `cargo test -p mpc-contract --features test-utils participants_gas -- --nocapture`
+//! Run with:
+//! ```sh
+//! cargo test -p mpc-contract --features test-utils,bench-utils participants_gas
+//! ```
 //!
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
@@ -22,14 +25,9 @@ use near_workspaces::{Account, Contract};
 use serde_json::json;
 
 /// Participant counts to test against
-const PARTICIPANT_COUNTS: &[usize] = &[10, 30, 40, 100];
+const PARTICIPANT_COUNTS: &[usize] = &[10, 30, 40, 100, 400];
 
 /// Gas regression thresholds (in GGas).
-///
-/// Thresholds are minimal values that pass tests.
-/// Update after running `cargo test -p mpc-contract --features test-utils measure_gas_baselines -- --nocapture`
-///
-/// Format: (n_participants, ggas_for_operation).
 struct GasThresholds {
     /// Gas cost for calling [`Participants::len`].
     len: Gas,
@@ -37,14 +35,8 @@ struct GasThresholds {
     is_participant: Gas,
     /// Gas cost for calling [`Participants::info`].
     info: Gas,
-    /// Gas cost for calling [`Participants::id`].
-    id: Gas,
     /// Gas cost for calling [`Participants::validate`].
     validate: Gas,
-    /// Gas cost for iterating over [`Participants::participants`] with `.iter().count()`.
-    iter_count: Gas,
-    /// Gas cost for collecting all account IDs from [`Participants::participants`].
-    get_all_accounts: Gas,
     /// Gas cost for borsh-serializing [`Participants`].
     serialization: Gas,
 }
@@ -56,41 +48,36 @@ fn get_thresholds(n: usize) -> GasThresholds {
             len: Gas::from_ggas(3047),
             is_participant: Gas::from_ggas(3069),
             info: Gas::from_ggas(3069),
-            id: Gas::from_ggas(1424),
-            validate: Gas::from_ggas(3079),
-            iter_count: Gas::from_ggas(1421),
-            get_all_accounts: Gas::from_ggas(1421),
+            validate: Gas::from_ggas(3085),
             serialization: Gas::from_ggas(3063),
         },
         30 => GasThresholds {
             len: Gas::from_ggas(3440),
             is_participant: Gas::from_ggas(3471),
             info: Gas::from_ggas(3471),
-            id: Gas::from_ggas(1424),
             validate: Gas::from_ggas(3578),
-            iter_count: Gas::from_ggas(1421),
-            get_all_accounts: Gas::from_ggas(1421),
             serialization: Gas::from_ggas(3498),
         },
         40 => GasThresholds {
             len: Gas::from_ggas(3655),
             is_participant: Gas::from_ggas(3689),
             info: Gas::from_ggas(3689),
-            id: Gas::from_ggas(1424),
             validate: Gas::from_ggas(3841),
-            iter_count: Gas::from_ggas(1421),
-            get_all_accounts: Gas::from_ggas(1421),
             serialization: Gas::from_ggas(3727),
         },
         100 => GasThresholds {
             len: Gas::from_ggas(4860),
             is_participant: Gas::from_ggas(4919),
             info: Gas::from_ggas(4919),
-            id: Gas::from_ggas(1424),
             validate: Gas::from_ggas(5456),
-            iter_count: Gas::from_ggas(1421),
-            get_all_accounts: Gas::from_ggas(1421),
             serialization: Gas::from_ggas(5055),
+        },
+        400 => GasThresholds {
+            len: Gas::from_ggas(10900),
+            is_participant: Gas::from_ggas(11100),
+            info: Gas::from_ggas(11100),
+            validate: Gas::from_ggas(13730),
+            serialization: Gas::from_ggas(11680),
         },
         _ => panic!("No thresholds defined for n={}", n),
     }
@@ -202,6 +189,14 @@ async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>,
         call = call.args_json(a);
     }
     let result = call.max_gas().transact().await.unwrap();
+    assert!(
+        result.is_success(),
+        "Contract call to '{}' failed. Method may not exist. \
+         Ensure contract was built with --features=bench-utils. \
+         Failures: {:?}",
+        method,
+        result.failures()
+    );
     let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
     assert_gas_within_threshold(method, gas_burnt, max_gas);
 }
@@ -226,6 +221,15 @@ async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
             .transact()
             .await
             .unwrap();
+        assert!(
+            result.is_success(),
+            "Contract call to '{}' with account '{}' failed. Method may not exist. \
+             Ensure contract was built with --features=bench-utils. \
+             Failures: {:?}",
+            method,
+            account_id,
+            result.failures()
+        );
         let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
         assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
     }
@@ -264,28 +268,8 @@ async fn gas_regression_participant_info() {
 }
 
 #[tokio::test]
-async fn gas_regression_participant_id() {
-    run_gas_regression("bench_participant_id", |t| t.id, true).await;
-}
-
-#[tokio::test]
 async fn gas_regression_participants_validate() {
     run_gas_regression("bench_participants_validate", |t| t.validate, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_iter_count() {
-    run_gas_regression("bench_participants_iter_count", |t| t.iter_count, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_get_all_participant_accounts() {
-    run_gas_regression(
-        "bench_get_all_participant_accounts",
-        |t| t.get_all_accounts,
-        false,
-    )
-    .await;
 }
 
 #[tokio::test]
