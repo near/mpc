@@ -1,5 +1,10 @@
 # Localnet - instructions for how to run a local MPC network
 
+## Automated setting
+
+The current guide explains the manual steps to run a `localnet`. These steps
+have been automated in `scripts/launch-localnet.sh` for faster deployment.
+
 ## Prerequisites
 
 neard, near CLI, cargo, grep, envsubst, python3-keyring
@@ -37,7 +42,7 @@ cargo install --path crates/node --locked
 Build the contract from the repository root with:
 
 ```shell
-cargo near build non-reproducible-wasm --features abi --manifest-path crates/contract/Cargo.toml --locked
+cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
 ```
 
 Now you should have a `mpc_contract.wasm` artifact ready in the target directory.
@@ -55,7 +60,7 @@ To run a local NEAR network, first create the configuration with the following c
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
-Now, copy the the embedded node configuration from `deployment/localnet`.
+Now, copy the embedded node configuration from `deployment/localnet`.
 This ensures two things:
 
 1. We have a consistent genesis configuration with the MPC nodes when running in docker.
@@ -77,7 +82,7 @@ Congratulations, you are now running a local NEAR network.
 To see the network status, call
 
 ```shell
-curl localhost:3030/status | jq
+curl -s localhost:3030/status | jq
 ```
 
 Before proceeding, save the validator key from the network configuration
@@ -283,11 +288,11 @@ EOF
 In two separate shells run the MPC binary for frodo and sam. Note the last argument repeating (`11111111111111111111111111111111`) is the encryption key for the secret storage, and can be any arbitrary value.
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-sam/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+RUST_LOG=info mpc-node start --home-dir ~/.near/mpc-sam/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 
 ```shell
-mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
+RUST_LOG=info mpc-node start --home-dir ~/.near/mpc-frodo/ 11111111111111111111111111111111 --image-hash "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0" --latest-allowed-hash-file /temp/LATEST_ALLOWED_HASH_FILE.txt local
 ```
 
 Notes:

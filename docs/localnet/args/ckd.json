@@ -1,6 +1,6 @@
 {
   "request": {
-    "path": "mykey",
+    "derivation_path": "mykey",
     "app_public_key": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6",
     "domain_id": 2
   }
