@@ -58,6 +58,8 @@ VALIDATOR_KEY=$(jq -r '.secret_key' "$SEED_DIR/validator_key.json")
 
 mkdir -p /root/.config/near-cli
 cat > /root/.config/near-cli/config.toml <<EOF_NEAR
+version = "3"
+credentials_home_dir = "/root/.near-credentials"
 [network_connection.${CHAIN_ID}]
 network_name = "${CHAIN_ID}"
 rpc_url = "${NEAR_RPC_URL}"

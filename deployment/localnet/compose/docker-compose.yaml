@@ -32,7 +32,7 @@ services:
       - ../../../target/near:/artifacts:ro
     environment:
       - LOCALNET_CONFIG=/config/localnet.config.json
-      - MPC_CONTRACT_PATH=/artifacts/mpc_contract.wasm
+      - MPC_CONTRACT_PATH=/artifacts/mpc_contract/mpc_contract.wasm
     command:
       - /work/scripts/localnet/bootstrap.sh
   mpc-node-1:
