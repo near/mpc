@@ -39,6 +39,14 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 1
 fi
 
+BASE_CONFIG=$(mktemp /tmp/localnet_config.XXXXXX)
+NODE_COUNT_RAW=$(jq -r '.nodes | length' "$CONFIG_PATH")
+if [[ "$NODE_COUNT_RAW" -eq 0 ]]; then
+  jq 'def default_nodes: [range(1; (.node_count + 1)) | {name: ("mpc-node-" + (. | tostring)), service_name: ("mpc-node-" + (. | tostring)), account_id: ("mpc-node-" + (. | tostring) + ".test.near")}]; .nodes = default_nodes' \
+    "$CONFIG_PATH" >"$BASE_CONFIG"
+  CONFIG_PATH="$BASE_CONFIG"
+fi
+
 CHAIN_ID=$(jq -r '.chain_id' "$CONFIG_PATH")
 CONTRACT_ID=$(jq -r '.contract_id' "$CONFIG_PATH")
 VALIDATOR_ACCOUNT_ID=$(jq -r '.validator_account_id' "$CONFIG_PATH")
@@ -51,6 +59,16 @@ fi
 
 if [[ ! -f "$MPC_CONTRACT_PATH" ]]; then
   echo "Contract wasm not found at $MPC_CONTRACT_PATH" >&2
+  exit 1
+fi
+
+if [[ "$NODE_COUNT" -le 0 ]]; then
+  echo "No nodes defined in config and node_count is 0. Cannot initialize contract." >&2
+  exit 1
+fi
+
+if [[ "$THRESHOLD" -gt "$NODE_COUNT" ]]; then
+  echo "Threshold ($THRESHOLD) exceeds node count ($NODE_COUNT). Update the config." >&2
   exit 1
 fi
 
