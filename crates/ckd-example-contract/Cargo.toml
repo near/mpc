@@ -1,0 +1,29 @@
+[package]
+name = "ckd-example-contract"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/near/mpc"
+
+[package.metadata.near.reproducible_build]
+image = "sourcescan/cargo-near:0.16.2-rust-1.86.0"
+image_digest = "sha256:74c24d4d912f893198b8b13e01d43e0f78f3b00b3df45bf555a707eb4918a54e"
+passed_env = []
+container_build_command = [
+    "cargo",
+    "near",
+    "build",
+    "non-reproducible-wasm",
+    "--locked",
+    "--profile=release-contract",
+]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+attestation.workspace = true
+contract-interface.workspace = true
+include-measurements.workspace = true
+near-sdk.workspace = true
+serde_json.workspace = true
