@@ -10,7 +10,6 @@ use crate::sandbox::utils::{
 use assert_matches::assert_matches;
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
-use futures::future::join_all;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -76,21 +75,14 @@ pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
 }
 
 /// Create `amount` accounts and return them along with the candidate info.
-///
-/// Uses parallel account creation for better performance. Sequential account creation
-/// takes ~1 second per account due to sandbox block finalization, resulting in ~400s
-/// for 400 accounts. Parallel creation batches requests into fewer blocks, reducing
-/// the time to ~2s for 400 accounts (~200x speedup).
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
-    let account_futures: Vec<_> = (0..amount).map(|_| worker.dev_create_account()).collect();
-
-    let accounts: Vec<Account> = join_all(account_futures)
-        .await
-        .into_iter()
-        .map(|r| r.unwrap())
-        .collect();
-
-    let account_ids: Vec<AccountId> = accounts.iter().map(|a| a.id().as_v2_account_id()).collect();
+    let mut accounts = Vec::with_capacity(amount);
+    let mut account_ids = Vec::with_capacity(amount);
+    for _ in 0..amount {
+        let (account, account_id) = gen_account(worker).await;
+        accounts.push(account);
+        account_ids.push(account_id);
+    }
     let candidates = candidates(Some(account_ids));
     (accounts, candidates)
 }
