@@ -1,0 +1,23 @@
+{
+  "chain_id": "mpc-localnet",
+  "contract_id": "mpc-contract.test.near",
+  "validator_account_id": "test.near",
+  "node_count": 2,
+  "threshold": 2,
+  "neard": {
+    "image": "nearprotocol/neard:latest",
+    "rpc_port": 3030
+  },
+  "bootstrap": {
+    "image": "mpc-localnet-bootstrap:local",
+    "contract_path": "/artifacts/mpc_contract.wasm"
+  },
+  "defaults": {
+    "node_image": "mpc-node:local",
+    "node_image_hash": "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0",
+    "secret_store_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "web_ui_port_base": 8080,
+    "p2p_port_base": 3000
+  },
+  "nodes": []
+}
