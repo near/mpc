@@ -12,10 +12,26 @@ RUN \
       bash && \
     rm -rf /var/lib/apt/lists/*
 
-# Install near-cli-rs binary (pinned by version).
-ARG NEAR_CLI_VERSION=0.23.5
-RUN curl -fsSL "https://github.com/near/near-cli-rs/releases/download/v${NEAR_CLI_VERSION}/near-cli-rs-v${NEAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
-  | tar -xz -C /usr/local/bin near
+# Install near-cli-rs via official installer script.
+ARG NEAR_CLI_VERSION=0.21.0
+RUN set -euo pipefail; \
+    if [ "${NEAR_CLI_VERSION}" = "latest" ]; then \
+      url="https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-installer.sh"; \
+    else \
+      url="https://github.com/near/near-cli-rs/releases/download/v${NEAR_CLI_VERSION}/near-cli-rs-installer.sh"; \
+    fi; \
+    curl --proto '=https' --tlsv1.2 -LsSf "$url" | sh; \
+    if command -v near >/dev/null 2>&1; then \
+      exit 0; \
+    fi; \
+    for candidate in /root/.local/bin/near /root/.cargo/bin/near /root/.near-cli-rs/bin/near; do \
+      if [ -x "$candidate" ]; then \
+        ln -s "$candidate" /usr/local/bin/near; \
+        break; \
+      fi; \
+    done; \
+    command -v near >/dev/null 2>&1
 
 WORKDIR /work
+ENV PATH="/root/.local/bin:/root/.cargo/bin:/root/.near-cli-rs/bin:/usr/local/bin:${PATH}"
 CMD ["/bin/bash"]
