@@ -154,14 +154,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.4" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
 
 [profile.test-release]
 inherits = "release"
