@@ -62,10 +62,13 @@ def generate_compose(config: dict, config_path: Path, repo_root: Path) -> str:
     ensure_nodes(config)
     boot_nodes = derive_boot_nodes(repo_root, config)
 
-    neard_image = config.get("neard", {}).get("image", "nearprotocol/neard:latest")
+    neard_image = config.get("neard", {}).get("image", "nearprotocol/nearcore:2.10.5")
     rpc_port = int(config.get("neard", {}).get("rpc_port", 3030))
-    bootstrap_image = config.get("bootstrap", {}).get("image", "mpc-localnet-bootstrap:local")
+    bootstrap_config = config.get("bootstrap", {}) or {}
+    bootstrap_image = bootstrap_config.get("image", "mpc-localnet-bootstrap:local")
     bootstrap_contract_path = config.get("bootstrap", {}).get("contract_path", "/artifacts/mpc_contract.wasm")
+    bootstrap_context = bootstrap_config.get("context", ".")
+    bootstrap_dockerfile = bootstrap_config.get("dockerfile", "deployment/Dockerfile-localnet-bootstrap")
     contract_id = config.get("contract_id")
 
     lines = []
@@ -94,6 +97,9 @@ def generate_compose(config: dict, config_path: Path, repo_root: Path) -> str:
 
     add("bootstrap:", 1)
     add(f"image: {bootstrap_image}", 2)
+    add("build:", 2)
+    add(f"context: {bootstrap_context}", 3)
+    add(f"dockerfile: {bootstrap_dockerfile}", 3)
     add("depends_on:", 2)
     add("- neard", 3)
     add("volumes:", 2)
