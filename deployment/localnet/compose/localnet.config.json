@@ -15,7 +15,7 @@
     "dockerfile": "deployment/Dockerfile-localnet-bootstrap"
   },
   "defaults": {
-    "node_image": "mpc-node:local",
+    "node_image": "mpc-node:latest",
     "node_image_hash": "8b40f81f77b8c22d6c777a6e14d307a1d11cb55ab83541fbb8575d02d86a74b0",
     "secret_store_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "web_ui_port_base": 8080,

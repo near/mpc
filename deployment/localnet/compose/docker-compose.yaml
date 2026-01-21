@@ -37,7 +37,7 @@ services:
     command:
       - /work/scripts/localnet/bootstrap.sh
   mpc-node-1:
-    image: mpc-node:local
+    image: mpc-node:latest
     depends_on:
       - neard
     environment:
@@ -57,7 +57,7 @@ services:
       - "8081:8080"
       - "3000:3000"
   mpc-node-2:
-    image: mpc-node:local
+    image: mpc-node:latest
     depends_on:
       - neard
     environment:
