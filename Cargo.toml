@@ -53,7 +53,7 @@ axum = "0.7.9"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 base64 = "0.22"
 blstrs = "0.7.1"
-borsh = { version = "1.5.1", features = ["derive"] }
+borsh = { version = "1.6.0", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 cargo-near-build = "0.9.0"
 clap = { version = "4.5.20", features = ["derive", "env"] }
@@ -131,8 +131,8 @@ socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
 thiserror = "2.0.12"
-# Last commit on main branch as of 09-12-2025
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "1982f1b4de944d6d3011ee3f4ebbecfc9dd31cd9" }
+# Last commit on main branch as of 21-01-2026
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "db609be5021eb9d794f577601f422818fbdfe246" }
 tikv-jemallocator = "0.5.4"
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }

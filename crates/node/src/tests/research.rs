@@ -297,6 +297,7 @@ fn signature_network_research_best_case() {
     let triple0s = generator.make_triples(&mut rng);
     let triple1s = generator.make_triples(&mut rng);
     let presignatures = generator.make_presignatures(&triple0s, &triple1s, &keygens);
+    let threshold = generator.threshold;
 
     let mut protocols = Vec::new();
     let participants = (0..NUM_PARTICIPANTS)
@@ -335,6 +336,7 @@ fn signature_network_research_best_case() {
             threshold_signatures::ecdsa::ot_based_ecdsa::sign::sign(
                 &participants,
                 leader,
+                threshold,
                 participants[i],
                 derived_public_key,
                 rerandomized_presignature,
