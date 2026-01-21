@@ -5,12 +5,14 @@
   "node_count": 2,
   "threshold": 2,
   "neard": {
-    "image": "nearprotocol/neard:latest",
+    "image": "nearprotocol/nearcore:2.10.5",
     "rpc_port": 3030
   },
   "bootstrap": {
     "image": "mpc-localnet-bootstrap:local",
-    "contract_path": "/artifacts/mpc_contract.wasm"
+    "contract_path": "/artifacts/mpc_contract.wasm",
+    "context": ".",
+    "dockerfile": "deployment/Dockerfile-localnet-bootstrap"
   },
   "defaults": {
     "node_image": "mpc-node:local",

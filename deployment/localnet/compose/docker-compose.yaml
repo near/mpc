@@ -2,7 +2,7 @@
 version: "3.8"
 services:
   neard:
-    image: nearprotocol/neard:latest
+    image: nearprotocol/nearcore:2.10.5
     container_name: mpc-localnet-neard
     ports:
       - "3030:3030"
@@ -18,6 +18,9 @@ services:
           neard --home /root/.near/mpc-localnet run
   bootstrap:
     image: mpc-localnet-bootstrap:local
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile-localnet-bootstrap
     depends_on:
       - neard
     volumes:
