@@ -23,7 +23,8 @@ use utilities::AccountIdExtV2;
 use crate::sandbox::utils::interface::IntoInterfaceType;
 
 const SECOND: Duration = Duration::from_secs(1);
-const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
+const NANOS_IN_SECOND: u64 =
+    u64::try_from(SECOND.as_nanos()).expect("nanos fits in u64");
 
 const DEFAULT_PARTICIPANT_COUNT: usize = 3;
 const DEFAULT_THRESHOLD_SIZE: u64 = 2;
@@ -164,7 +165,9 @@ impl TestSetupBuilder {
                 );
             }
             ContractProtocolState::Resharing => {
-                let threshold_nodes = all_nodes.iter().take(threshold as usize);
+                let threshold_nodes = all_nodes
+                    .iter()
+                    .take(usize::try_from(threshold).expect("threshold fits in usize"));
 
                 for node_id in threshold_nodes.clone() {
                     setup.submit_attestation_for_node(

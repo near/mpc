@@ -149,7 +149,7 @@ async fn test_propose_update_config() {
 
         // NOTE: since threshold out of total participants are required to pass a proposal, having the `threshold+1` one also
         // vote should fail.
-        if i < threshold.value() as usize {
+        if i < usize::try_from(threshold.value()).expect("threshold fits in usize") {
             assert!(
                 execution.is_success(),
                 "execution should have succeeded: {state:#?}\n{execution:#?}"

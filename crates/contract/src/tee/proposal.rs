@@ -40,10 +40,13 @@ impl CodeHashesVotes {
 
     /// Counts the total number of participants who have voted for the given code hash.
     fn count_votes(&self, proposal: &MpcDockerImageHash) -> u64 {
-        self.proposal_by_account
-            .values()
-            .filter(|&prop| prop == proposal)
-            .count() as u64
+        u64::try_from(
+            self.proposal_by_account
+                .values()
+                .filter(|&prop| prop == proposal)
+                .count(),
+        )
+        .expect("vote count fits in u64")
     }
 
     /// Clears all proposals.
@@ -176,7 +179,7 @@ mod tests {
     use super::*;
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_secs(10 * 24 * 60 * 60); // 10 days
     const SECOND: Duration = Duration::from_secs(1);
-    const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
+    const NANOS_IN_SECOND: u64 = u64::try_from(SECOND.as_nanos()).expect("nanos fits in u64");
 
     fn dummy_code_hash(val: u8) -> MpcDockerImageHash {
         MpcDockerImageHash::from([val; 32])
@@ -248,7 +251,7 @@ mod tests {
         allowed.insert(dummy_code_hash(2), TEST_TEE_UPGRADE_DEADLINE_DURATION);
 
         let first_entry_expiry_time_nanoseconds = second_entry_time_nano_seconds
-            + TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos() as u64
+            + u64::try_from(TEST_TEE_UPGRADE_DEADLINE_DURATION.as_nanos()).expect("nanos fits in u64")
             + 1;
 
         testing_env!(VMContextBuilder::new()

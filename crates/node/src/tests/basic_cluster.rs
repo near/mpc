@@ -67,7 +67,8 @@ async fn test_basic_cluster() {
         .indexer
         .wait_for_contract_state(
             |state| matches!(state, ContractState::Running(_)),
-            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME
+                * u32::try_from(domains.len()).expect("domain count fits in u32"),
         )
         .await
         .expect("timeout waiting for keygen to complete");

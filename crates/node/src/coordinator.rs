@@ -283,7 +283,8 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                usize::try_from(mpc_config.participants.threshold)
+                    .expect("threshold fits in usize"),
             )
             .await?;
         } else {
@@ -292,7 +293,8 @@ where
                 keyshare_storage,
                 key_event_receiver,
                 chain_txn_sender,
-                mpc_config.participants.threshold as usize,
+                usize::try_from(mpc_config.participants.threshold)
+                    .expect("threshold fits in usize"),
             )
             .await?;
         }
@@ -489,7 +491,8 @@ where
 
                 sender
                     .wait_for_ready(
-                        running_mpc_config.participants.threshold as usize,
+                        usize::try_from(running_mpc_config.participants.threshold)
+                            .expect("threshold fits in usize"),
                         &running_participant_ids,
                     )
                     .await?;
@@ -655,7 +658,8 @@ where
         let args = Arc::new(ResharingArgs {
             previous_keyset,
             existing_keyshares,
-            new_threshold: mpc_config.participants.threshold as usize,
+            new_threshold: usize::try_from(mpc_config.participants.threshold)
+                .expect("threshold fits in usize"),
             old_participants: current_running_state.participants,
         });
 

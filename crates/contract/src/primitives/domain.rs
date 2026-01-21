@@ -187,11 +187,13 @@ impl AddDomainsVotes {
         {
             log!("removed old vote for signer");
         }
-        let total = self
-            .proposal_by_account
-            .values()
-            .filter(|&prop| prop == &proposal)
-            .count() as u64;
+        let total = u64::try_from(
+            self.proposal_by_account
+                .values()
+                .filter(|&prop| prop == &proposal)
+                .count(),
+        )
+        .expect("vote count fits in u64");
         log!("total votes for proposal: {}", total);
         total
     }

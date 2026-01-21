@@ -71,7 +71,8 @@ impl EcdsaSignatureProvider {
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
 
-        let threshold = mpc_config.participants.threshold as usize;
+        let threshold = usize::try_from(mpc_config.participants.threshold)
+            .expect("threshold fits in usize");
         let running_participants: Vec<_> = mpc_config
             .participants
             .participants
@@ -80,11 +81,18 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(triple_store.num_owned_ready() as i64);
-            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT
-                .set(triple_store.num_owned_offline() as i64);
+            metrics::MPC_OWNED_NUM_TRIPLES_ONLINE.set(
+                i64::try_from(triple_store.num_owned_ready())
+                    .expect("triple count fits in i64"),
+            );
+            metrics::MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT.set(
+                i64::try_from(triple_store.num_owned_offline())
+                    .expect("triple count fits in i64"),
+            );
             let my_triples_count = triple_store.num_owned();
-            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(my_triples_count as i64);
+            metrics::MPC_OWNED_NUM_TRIPLES_AVAILABLE.set(
+                i64::try_from(my_triples_count).expect("triple count fits in i64"),
+            );
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
@@ -110,11 +118,14 @@ impl EcdsaSignatureProvider {
                     }
                 };
 
-                let id_start = triple_store
-                    .generate_and_reserve_id_range(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32);
+                let id_start = triple_store.generate_and_reserve_id_range(
+                    u32::try_from(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE)
+                        .expect("batch size fits in u32"),
+                );
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
-                    count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
+                    count: u32::try_from(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE)
+                        .expect("batch size fits in u32"),
                 };
                 let channel = client.new_channel_for_task(task_id, participants)?;
                 let in_flight =
@@ -139,8 +150,12 @@ impl EcdsaSignatureProvider {
                         .await?;
 
                         for (i, paired_triple) in triples.into_iter().enumerate() {
-                            triple_store
-                                .add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
+                            triple_store.add_owned(
+                                id_start.add_to_counter(
+                                    u32::try_from(i).expect("index fits in u32"),
+                                )?,
+                                paired_triple,
+                            );
                         }
 
                         anyhow::Ok(())
@@ -172,13 +187,16 @@ impl EcdsaSignatureProvider {
         start: UniqueId,
         count: u32,
     ) -> anyhow::Result<()> {
-        if count as usize != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE {
+        if usize::try_from(count).expect("count fits in usize")
+            != SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE
+        {
             return Err(anyhow::anyhow!(
                 "Unsupported batch size for triple generation"
             ));
         }
         FollowerManyTripleGenerationComputation::<SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE> {
-            threshold: self.mpc_config.participants.threshold as usize,
+            threshold: usize::try_from(self.mpc_config.participants.threshold)
+                .expect("threshold fits in usize"),
             out_triple_id_start: start,
             out_triple_store: self.triple_store.clone(),
         }
@@ -231,7 +249,8 @@ impl<const N: usize> MpcLeaderCentricComputation<Vec<PairedTriple>>
         >(&cs_participants, me.into(), self.threshold, OsRng)?;
         let _timer = metrics::MPC_TRIPLES_GENERATION_TIME_ELAPSED.start_timer();
         let triples = run_protocol("many triple gen", channel, protocol).await?;
-        metrics::MPC_NUM_TRIPLES_GENERATED.inc_by(N as u64);
+        metrics::MPC_NUM_TRIPLES_GENERATED
+            .inc_by(u64::try_from(N).expect("N fits in u64"));
         assert_eq!(
             N,
             triples.len(),
@@ -269,7 +288,8 @@ impl<const N: usize> MpcLeaderCentricComputation<()>
         .await?;
         for (i, paired_triple) in triples.into_iter().enumerate() {
             self.out_triple_store.add_unowned(
-                self.out_triple_id_start.add_to_counter(i as u32)?,
+                self.out_triple_id_start
+                    .add_to_counter(u32::try_from(i).expect("index fits in u32"))?,
                 paired_triple,
             );
         }
@@ -378,7 +398,14 @@ mod tests {
                         triples
                             .into_iter()
                             .enumerate()
-                            .map(|(i, pair)| (start.add_to_counter(i as u32).unwrap(), pair))
+                            .map(|(i, pair)| {
+                                (
+                                    start
+                                        .add_to_counter(u32::try_from(i).expect("index fits in u32"))
+                                        .unwrap(),
+                                    pair,
+                                )
+                            })
                             .collect::<Vec<_>>()
                     },
                 ));
@@ -393,10 +420,14 @@ mod tests {
                 async move {
                     let participant_id = client.my_participant_id();
                     let all_participant_ids = client.all_participant_ids();
-                    let start_triple_id = UniqueId::new(participant_id, i as u64, 0);
+                    let start_triple_id = UniqueId::new(
+                        participant_id,
+                        u64::try_from(i).expect("index fits in u64"),
+                        0,
+                    );
                     let task_id = EcdsaTaskId::ManyTriples {
                         start: start_triple_id,
-                        count: TRIPLES_PER_BATCH as u32,
+                        count: u32::try_from(TRIPLES_PER_BATCH).expect("batch size fits in u32"),
                     };
                     // Pick threshold participants but do it in a uniform way so for the test,
                     // each node knows how many passive computations to expect.
@@ -429,7 +460,12 @@ mod tests {
                         .into_iter()
                         .enumerate()
                         .map(move |(i, pair)| {
-                            (start_triple_id.add_to_counter(i as u32).unwrap(), pair)
+                            (
+                                start_triple_id
+                                    .add_to_counter(u32::try_from(i).expect("index fits in u32"))
+                                    .unwrap(),
+                                pair,
+                            )
                         })
                         .collect::<Vec<_>>()
                 }

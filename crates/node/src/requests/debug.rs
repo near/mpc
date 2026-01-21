@@ -98,8 +98,10 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs> Debug
             self.indexed_block_height,
             self.completion_delay
                 .map(|(delay_blocks, delay_time)| {
-                    let duration_rounded_to_ms =
-                        near_time::Duration::milliseconds(delay_time.whole_milliseconds() as i64);
+                    let duration_rounded_to_ms = near_time::Duration::milliseconds(
+                        i64::try_from(delay_time.whole_milliseconds())
+                            .expect("milliseconds fit in i64"),
+                    );
                     format!(
                         "{:>10} (+{}, {})",
                         self.indexed_block_height + delay_blocks,

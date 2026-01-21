@@ -75,7 +75,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .participants()
         .iter()
         .skip(1) // Skip participant 0, so participant 1-6 are included
-        .take(threshold.value() as usize)
+        .take(usize::try_from(threshold.value()).expect("threshold fits in usize"))
     {
         new_participants
             .insert_with_id(
@@ -92,7 +92,8 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &mpc_signer_accounts[1..threshold.value() as usize + 1],
+        &mpc_signer_accounts
+            [1..usize::try_from(threshold.value()).expect("threshold fits in usize") + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,

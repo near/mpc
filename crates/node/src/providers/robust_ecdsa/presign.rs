@@ -84,19 +84,26 @@ pub(super) async fn run_background_presignature_generation(
         .map(|p| p.id)
         .collect();
 
-    let threshold = mpc_config.participants.threshold as usize;
+    let threshold =
+        usize::try_from(mpc_config.participants.threshold).expect("threshold fits in usize");
     let num_signers = get_number_of_signers(threshold, running_participants.len());
     let robust_ecdsa_threshold = translate_threshold(threshold, running_participants.len())?;
     anyhow::ensure!(robust_ecdsa_threshold * 2 + 1 <= num_signers);
 
     loop {
         progress_tracker.update_progress();
-        metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE
-            .set(presignature_store.num_owned_ready() as i64);
-        metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT
-            .set(presignature_store.num_owned_offline() as i64);
+        metrics::MPC_OWNED_NUM_PRESIGNATURES_ONLINE.set(
+            i64::try_from(presignature_store.num_owned_ready())
+                .expect("presignature count fits in i64"),
+        );
+        metrics::MPC_OWNED_NUM_PRESIGNATURES_WITH_OFFLINE_PARTICIPANT.set(
+            i64::try_from(presignature_store.num_owned_offline())
+                .expect("presignature count fits in i64"),
+        );
         let my_presignatures_count: usize = presignature_store.num_owned();
-        metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(my_presignatures_count as i64);
+        metrics::MPC_OWNED_NUM_PRESIGNATURES_AVAILABLE.set(
+            i64::try_from(my_presignatures_count).expect("presignature count fits in i64"),
+        );
         let should_generate = my_presignatures_count + in_flight_generations.num_in_flight()
             < config.desired_presignatures_to_buffer;
         if should_generate
@@ -171,7 +178,8 @@ impl RobustEcdsaSignatureProvider {
         let domain_data = self.domain_data(domain_id)?;
 
         let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold =
+            usize::try_from(self.mpc_config.participants.threshold).expect("threshold fits in usize");
         let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
 
         FollowerPresignComputation {

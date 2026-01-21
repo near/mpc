@@ -396,7 +396,10 @@ mod tests {
         let result = backoff_task.await.unwrap();
 
         assert_eq!(result.unwrap_err(), "persistent failure");
-        assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32); // Initial attempt + retries
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            i32::try_from(MAX_RETRIES + 1).expect("retry count fits in i32")
+        ); // Initial attempt + retries
     }
 
     #[tokio::test(start_paused = true)]

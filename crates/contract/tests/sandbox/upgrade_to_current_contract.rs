@@ -48,7 +48,10 @@ async fn init_old_contract(
 ) -> anyhow::Result<(Vec<Account>, Participants)> {
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
 
-    let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
+    let threshold = u64::try_from(
+        (f64::try_from(participants.len()).unwrap() * 0.6).ceil(),
+    )
+    .unwrap();
     let threshold = Threshold::new(threshold);
     let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
@@ -346,7 +349,8 @@ async fn upgrade_allows_new_request_types(
         "State of the contract should remain the same post upgrade."
     );
 
-    let first_available_domain_id = injected_contract_state.domain_keys.len() as u64;
+    let first_available_domain_id =
+        u64::try_from(injected_contract_state.domain_keys.len()).expect("domain count fits in u64");
 
     // 2. Add new domains
     let domains_to_add = [
@@ -416,7 +420,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
 
     let threshold_parameters = ThresholdParameters::new(
         participants.clone(),
-        Threshold::new(number_of_participants as u64),
+        Threshold::new(u64::try_from(number_of_participants).expect("participant count fits in u64")),
     )
     .unwrap();
 

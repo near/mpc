@@ -712,7 +712,10 @@ mod tests {
         // when
         testing_env!(VMContextBuilder::new()
             .block_timestamp(
-                Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos() as u64
+                u64::try_from(
+                    Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS + ELAPSED_SECONDS).as_nanos()
+                )
+                .expect("nanos fits in u64")
             )
             .build());
 
@@ -735,7 +738,7 @@ mod tests {
         const EXPIRY_TIMESTAMP_SECONDS: u64 = 1000;
 
         testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(0).as_nanos() as u64)
+            .block_timestamp(u64::try_from(Duration::from_secs(0).as_nanos()).expect("nanos fits in u64"))
             .build());
 
         let attestation = Attestation::Mock(MockAttestation::WithConstraints {
@@ -750,7 +753,10 @@ mod tests {
 
         // when
         testing_env!(VMContextBuilder::new()
-            .block_timestamp(Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS - 1).as_nanos() as u64)
+            .block_timestamp(
+                u64::try_from(Duration::from_secs(EXPIRY_TIMESTAMP_SECONDS - 1).as_nanos())
+                    .expect("nanos fits in u64")
+            )
             .build());
 
         let status = tee_state.reverify_participants(&node_id, Duration::from_secs(0));

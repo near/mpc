@@ -143,7 +143,8 @@ impl RunningContractState {
 
         // finally, vote.
         let n_votes = self.parameters_votes.vote(proposal, candidate);
-        Ok(proposal.participants().len() as u64 == n_votes)
+        Ok(u64::try_from(proposal.participants().len()).expect("participant count fits in u64")
+            == n_votes)
     }
 
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
@@ -159,7 +160,10 @@ impl RunningContractState {
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
-        if self.parameters.participants().len() as u64 == n_votes {
+        if u64::try_from(self.parameters.participants().len())
+            .expect("participant count fits in u64")
+            == n_votes
+        {
             let new_domains = self.domains.add_domains(domains.clone())?;
             Ok(Some(InitializingContractState {
                 generated_keys: self.keyset.domains.clone(),

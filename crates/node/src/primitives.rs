@@ -28,8 +28,9 @@ pub struct UniqueId(u128);
 impl UniqueId {
     /// Only for testing. Use `generate` or `pick_new_after` instead.
     pub fn new(participant_id: ParticipantId, timestamp: u64, counter: u32) -> Self {
-        let id =
-            ((participant_id.raw() as u128) << 96) | ((timestamp as u128) << 32) | counter as u128;
+        let id = (u128::from(participant_id.raw()) << 96)
+            | (u128::from(timestamp) << 32)
+            | u128::from(counter);
         Self(id)
     }
 
@@ -43,15 +44,15 @@ impl UniqueId {
     }
 
     pub fn participant_id(&self) -> ParticipantId {
-        ParticipantId::from_raw((self.0 >> 96) as u32)
+        ParticipantId::from_raw(u32::try_from(self.0 >> 96).expect("participant ID fits in u32"))
     }
 
     pub fn timestamp(&self) -> u64 {
-        ((self.0 >> 32) & ((1u128 << 64) - 1)) as u64
+        u64::try_from((self.0 >> 32) & ((1u128 << 64) - 1)).expect("timestamp fits in u64")
     }
 
     pub fn counter(&self) -> u32 {
-        (self.0 & ((1u128 << 32) - 1)) as u32
+        u32::try_from(self.0 & ((1u128 << 32) - 1)).expect("counter fits in u32")
     }
 
     /// Returns the key prefix for the given participant ID. It can be used to

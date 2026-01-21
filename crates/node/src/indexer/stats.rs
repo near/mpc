@@ -29,9 +29,11 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
         let stats_copy = stats_lock.clone();
         drop(stats_lock);
 
-        let block_processing_speed: f64 = ((stats_copy.blocks_processed_count
-            - prev_blocks_processed_count) as f64)
-            / (interval_secs as f64);
+        let block_processing_speed: f64 = f64::try_from(
+            stats_copy.blocks_processed_count - prev_blocks_processed_count,
+        )
+        .expect("block count fits in f64")
+            / f64::try_from(interval_secs).expect("interval_secs fits in f64");
 
         let time_to_catch_the_tip_duration = if block_processing_speed > 0.0 {
             if let Ok(block_height) = indexer_state
@@ -47,7 +49,12 @@ pub(crate) async fn indexer_logger(indexer_state: Arc<IndexerState>) {
                 };
 
                 Some(std::time::Duration::from_millis(
-                    ((blocks_behind as f64 / block_processing_speed) * 1000f64) as u64,
+                    u64::try_from(
+                        (f64::try_from(blocks_behind).expect("blocks_behind fits in f64")
+                            / block_processing_speed)
+                            * 1000f64,
+                    )
+                    .expect("duration fits in u64"),
                 ))
             } else {
                 None

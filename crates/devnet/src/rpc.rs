@@ -30,7 +30,7 @@ impl NearRpcClient {
         let (sender, receiver) = flume::bounded(config.rate_limit);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(
-                std::time::Duration::from_secs(1).div_f64(config.rate_limit as f64),
+                std::time::Duration::from_secs(1).div_f64(f64::from(config.rate_limit)),
             );
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
