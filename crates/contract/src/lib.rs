@@ -1199,7 +1199,7 @@ impl MpcContract {
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
-        let params_hash = env::sha256_array(&borsh::to_vec(&parameters).unwrap());
+        let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
             "init: signer={}, num_participants={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
@@ -1243,7 +1243,7 @@ impl MpcContract {
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
-        let params_hash = env::sha256_array(&borsh::to_vec(&parameters).unwrap());
+        let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
             "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
