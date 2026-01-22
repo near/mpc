@@ -100,7 +100,6 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
-            CARGO_HOME = ".nix-cargo";
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
@@ -188,8 +187,6 @@
             hardeningDisable = hardening;
 
             shellHook = ''
-              mkdir -p .nix-cargo
-              export PATH="$PWD/.nix-cargo/bin:$PATH"
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };

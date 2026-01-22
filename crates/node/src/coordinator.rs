@@ -11,6 +11,7 @@ use crate::key_events::{
 };
 use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
+use crate::metrics::tokio_runtime_metrics::monitor_runtime_metrics;
 use crate::mpc_client::MpcClient;
 use crate::network::{
     run_network_client, MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel,
@@ -38,6 +39,7 @@ use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
+use tokio_metrics::RuntimeMonitor;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -241,6 +243,12 @@ where
         } else {
             tokio::runtime::Runtime::new()?
         };
+        let runtime_handle = mpc_runtime.handle();
+        let runtime_monitor = RuntimeMonitor::new(runtime_handle);
+
+        // run as long as the runtime is alive
+        mpc_runtime.spawn(monitor_runtime_metrics(runtime_monitor));
+
         let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
         let fut = mpc_runtime.spawn(task_handle.scope(description, task));
         Ok(async move {
