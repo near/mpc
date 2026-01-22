@@ -171,7 +171,7 @@ impl RobustEcdsaSignatureProvider {
         let domain_data = self.domain_data(domain_id)?;
 
         let number_of_participants = self.mpc_config.participants.participants.len();
-        let threshold = self.mpc_config.participants.threshold as usize;
+        let threshold = self.mpc_config.participants.threshold.try_into()?;
         let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
 
         FollowerPresignComputation {

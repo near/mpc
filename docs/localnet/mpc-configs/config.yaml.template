@@ -1,0 +1,30 @@
+my_near_account_id: $NEAR_ACCOUNT_NAME
+near_responder_account_id: $NEAR_ACCOUNT_NAME
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: $WEB_UI_PORT
+migration_web_ui:
+  host: localhost
+  port: $MIGRATION_PORT
+pprof_bind_address: 127.0.0.1:$PPROF_PORT
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
