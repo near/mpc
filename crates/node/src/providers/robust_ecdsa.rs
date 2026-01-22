@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
+use crate::metrics::task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
@@ -133,7 +134,10 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
-        self.make_signature_leader(id).await
+        ROBUST_ECDSA_TASK_MONITORS
+            .make_signature
+            .instrument(self.make_signature_leader(id))
+            .await
     }
 
     async fn run_key_generation_client(
@@ -187,14 +191,20 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
                 RobustEcdsaTaskId::Presignature { id, domain_id } => {
-                    self.run_presignature_generation_follower(channel, id, domain_id)
+                    ROBUST_ECDSA_TASK_MONITORS
+                        .presignature_generation_follower
+                        .instrument(
+                            self.run_presignature_generation_follower(channel, id, domain_id),
+                        )
                         .await?;
                 }
                 RobustEcdsaTaskId::Signature {
                     id,
                     presignature_id,
                 } => {
-                    self.make_signature_follower(channel, id, presignature_id)
+                    ROBUST_ECDSA_TASK_MONITORS
+                        .make_signature_follower
+                        .instrument(self.make_signature_follower(channel, id, presignature_id))
                         .await?;
                 }
             },

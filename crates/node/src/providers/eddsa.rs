@@ -3,6 +3,7 @@ mod key_resharing;
 mod sign;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
+use crate::metrics::task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::{PublicKeyConversion, SignatureProvider};
@@ -69,7 +70,10 @@ impl SignatureProvider for EddsaSignatureProvider {
         &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
-        self.make_signature_leader(id).await
+        EDDSA_TASK_MONITORS
+            .make_signature
+            .instrument(self.make_signature_leader(id))
+            .await
     }
 
     async fn run_key_generation_client(
@@ -106,7 +110,10 @@ impl SignatureProvider for EddsaSignatureProvider {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
                 EddsaTaskId::Signature { id } => {
-                    self.make_signature_follower(channel, id).await?;
+                    EDDSA_TASK_MONITORS
+                        .make_signature_follower
+                        .instrument(self.make_signature_follower(channel, id))
+                        .await?;
                 }
             },
             _ => anyhow::bail!(
