@@ -1198,11 +1198,13 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        // Log only participant count, not full parameters (saves ~50-100 TGas for large sets)
+        // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
+        let params_hash = env::sha256_array(&borsh::to_vec(&parameters).unwrap());
         log!(
-            "init: signer={}, num_participants={}, init_config={:?}",
+            "init: signer={}, num_participants={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
             parameters.participants().len(),
+            params_hash,
             init_config,
         );
         parameters.validate()?;
@@ -1240,13 +1242,15 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
-        // Log only participant count to avoid large logs and extra gas usage
+        // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
+        let params_hash = env::sha256_array(&borsh::to_vec(&parameters).unwrap());
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
             parameters.participants().len(),
+            params_hash,
             init_config,
         );
         parameters.validate()?;
