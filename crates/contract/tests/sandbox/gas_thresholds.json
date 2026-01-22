@@ -1,0 +1,51 @@
+{
+  "_comment": "Gas thresholds in GGas keyed by participant count. Fields correspond to Participants struct operations. buffer_percent is added to account for fluctuations.",
+  "buffer_percent": 25.0,
+  "thresholds": {
+    "10": {
+      "len": 3052,
+      "is_participant": 3074,
+      "info": 3074,
+      "validate": 3083,
+      "serialization": 3067,
+      "insert": 3477,
+      "update_info": 3495
+    },
+    "30": {
+      "len": 3445,
+      "is_participant": 3475,
+      "info": 3475,
+      "validate": 3576,
+      "serialization": 3500,
+      "insert": 4356,
+      "update_info": 4384
+    },
+    "40": {
+      "len": 3659,
+      "is_participant": 3475,
+      "info": 3475,
+      "validate": 3858,
+      "serialization": 3728,
+      "insert": 4793,
+      "update_info": 4384
+    },
+    "100": {
+      "len": 4865,
+      "is_participant": 4924,
+      "info": 4924,
+      "validate": 5444,
+      "serialization": 5060,
+      "insert": 7386,
+      "update_info": 7448
+    },
+    "400": {
+      "len": 10898,
+      "is_participant": 11078,
+      "info": 11078,
+      "validate": 13701,
+      "serialization": 11676,
+      "insert": 20449,
+      "update_info": 20612
+    }
+  }
+}

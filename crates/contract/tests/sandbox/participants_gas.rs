@@ -29,18 +29,25 @@ use mpc_contract::{
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
+use serde::Deserialize;
 use serde_json::json;
+use std::collections::BTreeMap;
 
-/// Participant counts to test against
-const PARTICIPANT_COUNTS: &[usize] = &[10, 30, 40, 100, 400];
+/// Path to gas thresholds configuration file.
+const GAS_THRESHOLDS_FILE: &str = "gas_thresholds.json";
 
-/// Percentage buffer added to measured gas values to account for variability.
-/// Gas measurements can fluctuate between runs (observed up to ~20%).
-///
-/// TODO(#1821): Investigate and reduce gas cost variability.
-const GAS_BUFFER_PERCENT: f64 = 25.0;
+/// Gas thresholds configuration loaded from [`GAS_THRESHOLDS_FILE`].
+#[derive(Debug, Deserialize)]
+struct GasThresholdsConfig {
+    /// Percentage added to thresholds to account for gas fluctuations.
+    /// TODO(#1821): Investigate and reduce gas cost variability.
+    buffer_percent: f64,
+    /// Gas thresholds keyed by participant count.
+    thresholds: BTreeMap<usize, GasThresholds>,
+}
 
-/// Gas regression thresholds.
+/// Gas threshold values for [`Participants`] operations.
+#[derive(Debug, Deserialize)]
 struct GasThresholds {
     /// Gas cost for calling [`Participants::len`].
     len: Gas,
@@ -58,18 +65,35 @@ struct GasThresholds {
     update_info: Gas,
 }
 
-impl GasThresholds {
-    /// Creates thresholds with buffer applied to all values.
-    fn with_buffer(self) -> Self {
-        Self {
-            len: apply_buffer(self.len),
-            is_participant: apply_buffer(self.is_participant),
-            info: apply_buffer(self.info),
-            validate: apply_buffer(self.validate),
-            serialization: apply_buffer(self.serialization),
-            insert: apply_buffer(self.insert),
-            update_info: apply_buffer(self.update_info),
+impl GasThresholdsConfig {
+    fn load() -> Self {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/sandbox")
+            .join(GAS_THRESHOLDS_FILE);
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+    }
+
+    fn participant_counts(&self) -> Vec<usize> {
+        self.thresholds.keys().copied().collect()
+    }
+
+    fn get(&self, n: usize) -> GasThresholds {
+        let t = self.thresholds.get(&n).unwrap();
+        GasThresholds {
+            len: self.apply_buffer(t.len),
+            is_participant: self.apply_buffer(t.is_participant),
+            info: self.apply_buffer(t.info),
+            validate: self.apply_buffer(t.validate),
+            serialization: self.apply_buffer(t.serialization),
+            insert: self.apply_buffer(t.insert),
+            update_info: self.apply_buffer(t.update_info),
         }
+    }
+
+    fn apply_buffer(&self, gas: Gas) -> Gas {
+        let ggas = gas.as_gas() as f64 / 1_000_000_000.0;
+        let buffered = (ggas * (1.0 + self.buffer_percent / 100.0)).ceil() as u64;
+        Gas::from_ggas(buffered)
     }
 }
 
@@ -96,70 +120,42 @@ impl TestEnv {
 
 #[tokio::test]
 async fn gas_regression_participants_len() {
-    run_gas_regression("bench_participants_len", |t| t.len, false).await;
+    run_gas_regression("bench_participants_len", |t| t.len, false, false).await;
 }
 
 #[tokio::test]
 async fn gas_regression_is_participant() {
-    run_gas_regression("bench_is_participant", |t| t.is_participant, true).await;
+    run_gas_regression("bench_is_participant", |t| t.is_participant, true, false).await;
 }
 
 #[tokio::test]
 async fn gas_regression_participant_info() {
-    run_gas_regression("bench_participant_info", |t| t.info, true).await;
+    run_gas_regression("bench_participant_info", |t| t.info, true, false).await;
 }
 
 #[tokio::test]
 async fn gas_regression_participants_validate() {
-    run_gas_regression("bench_participants_validate", |t| t.validate, false).await;
+    run_gas_regression("bench_participants_validate", |t| t.validate, false, false).await;
 }
 
 #[tokio::test]
 async fn gas_regression_participants_serialization() {
-    run_gas_regression(
-        "bench_participants_serialization_size",
-        |t| t.serialization,
-        false,
-    )
-    .await;
+    run_gas_regression("bench_participants_serialization_size", |t| t.serialization, false, false)
+        .await;
 }
 
 #[tokio::test]
 async fn gas_regression_participants_insert() {
-    run_gas_regression_running("bench_participants_insert", |t| t.insert, false).await;
+    run_gas_regression("bench_participants_insert", |t| t.insert, false, true).await;
 }
 
 #[tokio::test]
 async fn gas_regression_participants_update_info() {
-    run_gas_regression_running("bench_participants_update_info", |t| t.update_info, true).await;
+    run_gas_regression("bench_participants_update_info", |t| t.update_info, true, true).await;
 }
 
 /// Runs a gas regression test across all participant counts.
-async fn run_gas_regression<F>(method: &str, get_threshold: F, use_lookups: bool)
-where
-    F: Fn(&GasThresholds) -> Gas,
-{
-    run_gas_regression_with_setup(method, get_threshold, use_lookups, false).await;
-}
-
-/// Runs a gas regression test with Running state (for mutation operations).
-async fn run_gas_regression_running<F>(method: &str, get_threshold: F, use_lookups: bool)
-where
-    F: Fn(&GasThresholds) -> Gas,
-{
-    for &n in PARTICIPANT_COUNTS {
-        println!("\n  Testing with {} participants...", n);
-        let env = setup_test_env_running(n).await;
-        let threshold = get_threshold(&get_thresholds(n));
-        if use_lookups {
-            run_bench_lookups(&env, method, threshold).await;
-        } else {
-            run_bench(&env, method, None, threshold).await;
-        }
-    }
-}
-
-async fn run_gas_regression_with_setup<F>(
+async fn run_gas_regression<F>(
     method: &str,
     get_threshold: F,
     use_lookups: bool,
@@ -167,85 +163,22 @@ async fn run_gas_regression_with_setup<F>(
 ) where
     F: Fn(&GasThresholds) -> Gas,
 {
-    for &n in PARTICIPANT_COUNTS {
+    let config = GasThresholdsConfig::load();
+
+    for n in config.participant_counts() {
         println!("\n  Testing with {} participants...", n);
         let env = if running_state {
             setup_test_env_running(n).await
         } else {
             setup_test_env(n).await
         };
-        let threshold = get_threshold(&get_thresholds(n));
+        let threshold = get_threshold(&config.get(n));
         if use_lookups {
             run_bench_lookups(&env, method, threshold).await;
         } else {
             run_bench(&env, method, None, threshold).await;
         }
     }
-}
-
-/// Returns gas thresholds for the given participant count (with buffer applied).
-///
-/// Base values are measured from actual test runs (in GGas, rounded up to nearest integer).
-/// For lookups (is_participant, info, update_info), we use the worst-case (last element).
-///
-/// To update thresholds: run tests, observe actual gas usage, round up, and update values below.
-/// The 25% buffer is applied automatically via `with_buffer()`.
-fn get_thresholds(n: usize) -> GasThresholds {
-    let base = match n {
-        10 => GasThresholds {
-            len: Gas::from_ggas(3052),
-            is_participant: Gas::from_ggas(3074),
-            info: Gas::from_ggas(3074),
-            validate: Gas::from_ggas(3083),
-            serialization: Gas::from_ggas(3067),
-            insert: Gas::from_ggas(3477),
-            update_info: Gas::from_ggas(3495),
-        },
-        30 => GasThresholds {
-            len: Gas::from_ggas(3445),
-            is_participant: Gas::from_ggas(3475),
-            info: Gas::from_ggas(3475),
-            validate: Gas::from_ggas(3576),
-            serialization: Gas::from_ggas(3500),
-            insert: Gas::from_ggas(4356),
-            update_info: Gas::from_ggas(4384),
-        },
-        40 => GasThresholds {
-            len: Gas::from_ggas(3659),
-            is_participant: Gas::from_ggas(3475),
-            info: Gas::from_ggas(3475),
-            validate: Gas::from_ggas(3858),
-            serialization: Gas::from_ggas(3728),
-            insert: Gas::from_ggas(4793),
-            update_info: Gas::from_ggas(4384),
-        },
-        100 => GasThresholds {
-            len: Gas::from_ggas(4865),
-            is_participant: Gas::from_ggas(4924),
-            info: Gas::from_ggas(4924),
-            validate: Gas::from_ggas(5444),
-            serialization: Gas::from_ggas(5060),
-            insert: Gas::from_ggas(7386),
-            update_info: Gas::from_ggas(7448),
-        },
-        400 => GasThresholds {
-            len: Gas::from_ggas(10898),
-            is_participant: Gas::from_ggas(11078),
-            info: Gas::from_ggas(11078),
-            validate: Gas::from_ggas(13701),
-            serialization: Gas::from_ggas(11676),
-            insert: Gas::from_ggas(20449),
-            update_info: Gas::from_ggas(20612),
-        },
-        _ => panic!("No gas thresholds defined for n={}", n),
-    };
-    base.with_buffer()
-}
-
-/// Applies buffer percentage to a gas value.
-fn apply_buffer(base: Gas) -> Gas {
-    let buffered = (base.as_gas() as f64 * (1.0 + GAS_BUFFER_PERCENT / 100.0)).ceil() as u64;
-    Gas::from_gas(buffered)
 }
 
 /// Run a benchmark contract method and assert gas is within threshold.
