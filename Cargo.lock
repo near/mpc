@@ -4802,6 +4802,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "fs2",
+ "futures",
  "getrandom 0.2.16",
  "hex",
  "insta",

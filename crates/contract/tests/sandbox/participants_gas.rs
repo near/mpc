@@ -348,21 +348,23 @@ async fn submit_attestations(
     accounts: &[Account],
     participants: &Participants,
 ) {
-    // Submit attestations sequentially to avoid nonce conflicts when testing
-    // with large participant counts (100+). Parallel submission with join_all
-    // causes `InvalidNonce` errors due to race conditions in nonce management.
-    for (i, ((_, _, participant), account)) in
-        participants.participants().iter().zip(accounts).enumerate()
-    {
-        let attestation = Attestation::Mock(MockAttestation::Valid);
-        let tls_key = (&participant.sign_pk).into_interface_type();
-        let success = submit_participant_info(account, contract, &attestation, &tls_key)
-            .await
-            .expect("submit_participant_info should not error");
-        assert!(
-            success,
-            "submit_participant_info failed for participant {}",
-            i
-        );
-    }
+    let futures: Vec<_> = participants
+        .participants()
+        .iter()
+        .zip(accounts)
+        .enumerate()
+        .map(|(i, ((_, _, participant), account))| async move {
+            let attestation = Attestation::Mock(MockAttestation::Valid);
+            let tls_key = (&participant.sign_pk).into_interface_type();
+            let success = submit_participant_info(account, contract, &attestation, &tls_key)
+                .await
+                .expect("submit_participant_info should not error");
+            assert!(
+                success,
+                "submit_participant_info failed for participant {}",
+                i
+            );
+        })
+        .collect();
+    futures::future::join_all(futures).await;
 }
