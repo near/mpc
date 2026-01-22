@@ -47,6 +47,7 @@ struct GasThresholdsConfig {
 }
 
 /// Gas threshold values for [`Participants`] operations.
+/// Note: JSON stores values in GGas, converted to Gas on load.
 #[derive(Debug, Deserialize)]
 struct GasThresholds {
     /// Gas cost for calling [`Participants::len`].
@@ -90,10 +91,11 @@ impl GasThresholdsConfig {
         }
     }
 
-    fn apply_buffer(&self, gas: Gas) -> Gas {
-        let ggas = gas.as_gas() as f64 / 1_000_000_000.0;
-        let buffered = (ggas * (1.0 + self.buffer_percent / 100.0)).ceil() as u64;
-        Gas::from_ggas(buffered)
+    fn apply_buffer(&self, ggas_from_json: Gas) -> Gas {
+        let ggas = ggas_from_json.as_gas(); // JSON value is in GGas, parsed as raw gas
+        let buffered = (ggas as f64 * (1.0 + self.buffer_percent / 100.0)).ceil() as u64;
+        const GGAS: u64 = 1_000_000_000;
+        Gas::from_gas(buffered * GGAS)
     }
 }
 
@@ -140,8 +142,13 @@ async fn gas_regression_participants_validate() {
 
 #[tokio::test]
 async fn gas_regression_participants_serialization() {
-    run_gas_regression("bench_participants_serialization_size", |t| t.serialization, false, false)
-        .await;
+    run_gas_regression(
+        "bench_participants_serialization_size",
+        |t| t.serialization,
+        false,
+        false,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -151,7 +158,13 @@ async fn gas_regression_participants_insert() {
 
 #[tokio::test]
 async fn gas_regression_participants_update_info() {
-    run_gas_regression("bench_participants_update_info", |t| t.update_info, true, true).await;
+    run_gas_regression(
+        "bench_participants_update_info",
+        |t| t.update_info,
+        true,
+        true,
+    )
+    .await;
 }
 
 /// Runs a gas regression test across all participant counts.
