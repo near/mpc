@@ -330,7 +330,7 @@ impl PersistentConnection {
                     connectivity.set_outgoing_connection(&new_conn);
                     new_conn.wait_for_close().await;
                     connection_attempt += 1;
-                    // TODO(#1829): check if we can add a timeout
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             },
         );
