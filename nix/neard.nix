@@ -7,6 +7,8 @@
   openssl,
   udev,
   apple-sdk_14,
+  clang,
+  jemalloc,
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -35,6 +37,10 @@ rustPlatform.buildRustPackage rec {
 
   nativeBuildInputs = [
     pkg-config
+    rustPlatform.bindgenHook
+  ]
+  ++ lib.optionals stdenv.isLinux [
+    clang
   ];
 
   buildInputs = [
@@ -50,6 +56,7 @@ rustPlatform.buildRustPackage rec {
   env = {
     # Prevent the crate from trying to build its own OpenSSL
     OPENSSL_NO_VENDOR = 1;
+    JEMALLOC_OVERRIDE = "${jemalloc}/lib/libjemalloc.so";
   }
   // lib.optionalAttrs stdenv.isDarwin {
     # Darwin Sonoma / SDK 14 Compatibility
