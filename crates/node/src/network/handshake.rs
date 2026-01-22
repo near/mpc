@@ -238,11 +238,9 @@ mod tests {
         assert_eq!(expected_res.accept_connection(), outcome);
     }
 
-    fn deprecated_protocols() -> Range<u32> {
-        0..(CURRENT_PROTOCOL_VERSION as u32 - 1)
-    }
-
     const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+    const PRE_2026_PROTOCOL_VERSION: u32 = KnownMpcProtocols::Pre2026 as u32;
+    static DEPRECATED_PROTOCOLS: Range<u32> = 0..PRE_2026_PROTOCOL_VERSION;
 
     fn execute_handshake(
         mut stream: tokio::io::DuplexStream,
@@ -317,7 +315,7 @@ mod tests {
     #[test_case(sender_role(42); "sender handshake must fail")]
     #[tokio::test]
     async fn test_p2p_handshake_fail_on_deprecated_protocols(role: HandshakeRole) {
-        for deprecated_version in deprecated_protocols() {
+        for deprecated_version in DEPRECATED_PROTOCOLS.clone() {
             let (alice, mut bob) = tokio::io::duplex(1024);
             let alice_handle = execute_handshake(alice, role);
 
@@ -388,12 +386,13 @@ mod tests {
         assert_eq!(
             this_node_res,
             HandshakeOutcome {
-                protocol_version: PREVIOUS_PROTOCOL_VERSION.try_into().unwrap(),
+                protocol_version: PRE_2026_PROTOCOL_VERSION.try_into().unwrap(),
                 min_expected_connection_id: 0,
                 sender_connection_id: 0,
             }
         );
     }
+
     fn execute_legacy_handshake(
         mut stream: tokio::io::DuplexStream,
     ) -> impl Future<Output = anyhow::Result<()>> {
@@ -401,7 +400,6 @@ mod tests {
         async move { handle.await? }
     }
 
-    const PREVIOUS_PROTOCOL_VERSION: u32 = 7;
     pub async fn legacy_p2p_handshake<T: AsyncRead + AsyncWrite + Unpin>(
         conn: &mut T,
         timeout: std::time::Duration,
@@ -409,7 +407,7 @@ mod tests {
         tokio::time::timeout(timeout, async move {
             let mut handshake_buf = [0u8; 5];
             handshake_buf[0] = MAGIC_BYTE;
-            handshake_buf[1..].copy_from_slice(&PREVIOUS_PROTOCOL_VERSION.to_be_bytes());
+            handshake_buf[1..].copy_from_slice(&PRE_2026_PROTOCOL_VERSION.to_be_bytes());
             conn.write_all(&handshake_buf).await?;
 
             let mut other_handshake = [0u8; 5];
@@ -420,10 +418,10 @@ mod tests {
 
             let other_protocol_version =
                 u32::from_be_bytes(other_handshake[1..].try_into().unwrap());
-            if other_protocol_version < PREVIOUS_PROTOCOL_VERSION {
+            if other_protocol_version < PRE_2026_PROTOCOL_VERSION {
                 anyhow::bail!(
                     "Incompatible protocol version; we have {}, they have {}",
-                    PREVIOUS_PROTOCOL_VERSION,
+                    PRE_2026_PROTOCOL_VERSION,
                     other_protocol_version
                 );
             }
