@@ -71,7 +71,7 @@ command = "cargo"
 args = [
   "nextest",
   "run",
-  "--profile=test-release",
+  "--cargo-profile=test-release",
   "--all-features",
   "--all-targets",
   "--locked",
