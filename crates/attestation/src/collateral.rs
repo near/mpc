@@ -52,6 +52,7 @@ impl Collateral {
             pck_crl_issuer_chain: get_str(&v, "pck_crl_issuer_chain")?,
             root_ca_crl: get_hex(&v, "root_ca_crl")?,
             pck_crl: get_hex(&v, "pck_crl")?,
+            pck_certificate_chain: get_str(&v, "pck_certificate_chain").ok(),
         };
         Ok(Self(quote_collateral))
     }

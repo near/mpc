@@ -106,6 +106,7 @@ impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collat
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         } = self.into();
 
         contract_interface::types::Collateral {
@@ -118,6 +119,7 @@ impl IntoContractInterfaceType<contract_interface::types::Collateral> for Collat
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         }
     }
 }

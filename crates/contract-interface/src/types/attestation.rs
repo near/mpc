@@ -158,6 +158,7 @@ pub struct Collateral {
     pub qe_identity_issuer_chain: String,
     pub qe_identity: String,
     pub qe_identity_signature: Vec<u8>,
+    pub pck_certificate_chain: Option<String>,
 }
 
 impl fmt::Debug for DstackAttestation {

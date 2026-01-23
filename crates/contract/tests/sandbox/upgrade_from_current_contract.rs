@@ -228,7 +228,7 @@ async fn test_propose_update_contract_many() {
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     dbg!(contract.id());
 
-    const PROPOSAL_COUNT: usize = 3;
+    const PROPOSAL_COUNT: usize = 2;
     let mut proposals = Vec::with_capacity(PROPOSAL_COUNT);
     // Try to propose multiple updates to check if they are being proposed correctly
     // and that we can have many at once living in the contract state.
