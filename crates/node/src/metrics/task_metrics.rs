@@ -2,11 +2,22 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use std::{sync::LazyLock, time::Duration};
 use tokio_metrics::TaskMonitor;
 
+const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
+
 static TOKIO_TASK_SLOW_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "mpc_tokio_task_slow_poll_total",
         "Total number of times that polling tasks completed slowly.",
-        &["subsystem", "task", "variant"],
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_FAST_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_fast_poll_total",
+        "Total number of times that polling tasks completed fast.",
+        TOKIO_TASK_LABELS,
     )
     .unwrap()
 });
@@ -49,111 +60,102 @@ pub(crate) struct EddsaTaskMonitors {
     pub(crate) make_signature_follower: TaskMonitor,
 }
 
-/// Stable, low-cardinality labels for all instrumented tasks.
-///
-/// Use `variant = "na"` when there is no meaningful variant.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TaskId {
-    pub(crate) subsystem: &'static str,
+pub(crate) struct TaskLabels {
+    pub(crate) protocol_scheme: &'static str,
     pub(crate) task: &'static str,
-    pub(crate) variant: &'static str,
+    pub(crate) role: &'static str,
 }
 
-impl TaskId {
+impl TaskLabels {
     pub(crate) const fn new(
-        subsystem: &'static str,
+        protocol_scheme: &'static str,
         task: &'static str,
-        variant: &'static str,
+        role: &'static str,
     ) -> Self {
         Self {
-            subsystem,
+            protocol_scheme,
             task,
-            variant,
+            role,
         }
     }
 
     pub(crate) const fn labels(&self) -> [&'static str; 3] {
-        [self.subsystem, self.task, self.variant]
+        [self.protocol_scheme, self.task, self.role]
     }
 }
 
 trait TaskMonitorProvider {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskId)>;
+    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)>;
 }
 
 impl TaskMonitorProvider for EcdsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskId)> {
+    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
                 self.make_signature.clone(),
-                TaskId::new("ecdsa", "make_signature", "leader"),
+                TaskLabels::new("ecdsa", "make_signature", "leader"),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskId::new("ecdsa", "make_signature", "follower"),
+                TaskLabels::new("ecdsa", "make_signature", "follower"),
             ),
             (
                 self.triple_generation.clone(),
-                TaskId::new("ecdsa", "triple_generation", "leader"),
+                TaskLabels::new("ecdsa", "triple_generation", "leader"),
             ),
             (
                 self.triple_generation_follower.clone(),
-                TaskId::new("ecdsa", "triple_generation", "follower"),
+                TaskLabels::new("ecdsa", "triple_generation", "follower"),
             ),
             (
                 self.presignature_generation_leader.clone(),
-                TaskId::new("ecdsa", "presignature_generation", "leader"),
+                TaskLabels::new("ecdsa", "presignature_generation", "leader"),
             ),
             (
                 self.presignature_generation_follower.clone(),
-                TaskId::new("ecdsa", "presignature_generation", "follower"),
+                TaskLabels::new("ecdsa", "presignature_generation", "follower"),
             ),
         ]
     }
 }
 
 impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskId)> {
+    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
                 self.make_signature.clone(),
-                TaskId::new("robust_ecdsa", "make_signature", "leader"),
+                TaskLabels::new("robust_ecdsa", "make_signature", "leader"),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskId::new("robust_ecdsa", "make_signature", "follower"),
+                TaskLabels::new("robust_ecdsa", "make_signature", "follower"),
             ),
             (
                 self.presignature_generation_leader.clone(),
-                TaskId::new("robust_ecdsa", "presignature_generation", "leader"),
+                TaskLabels::new("robust_ecdsa", "presignature_generation", "leader"),
             ),
             (
                 self.presignature_generation_follower.clone(),
-                TaskId::new("robust_ecdsa", "presignature_generation", "follower"),
+                TaskLabels::new("robust_ecdsa", "presignature_generation", "follower"),
             ),
         ]
     }
 }
 
 impl TaskMonitorProvider for EddsaTaskMonitors {
-    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskId)> {
+    fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
                 self.make_signature.clone(),
-                TaskId::new("eddsa", "make_signature", "leader"),
+                TaskLabels::new("eddsa", "make_signature", "leader"),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskId::new("eddsa", "make_signature", "follower"),
+                TaskLabels::new("eddsa", "make_signature", "follower"),
             ),
         ]
     }
-}
-
-/// Example of a monitor that *doesn't* have leader/follower semantics:
-#[allow(dead_code)]
-pub(crate) fn network_example_task_id() -> TaskId {
-    TaskId::new("network", "peer_gossip", "na")
 }
 
 pub(crate) async fn monitor_runtime_metrics() {
@@ -164,7 +166,7 @@ pub(crate) async fn monitor_runtime_metrics() {
     ];
 
     // Collect once; monitors are Clone, and label parts are &'static str.
-    let task_monitors: Vec<(TaskMonitor, TaskId)> = task_monitor_providers
+    let task_monitors: Vec<(TaskMonitor, TaskLabels)> = task_monitor_providers
         .into_iter()
         .flat_map(TaskMonitorProvider::get_monitors)
         .collect();
@@ -177,9 +179,9 @@ pub(crate) async fn monitor_runtime_metrics() {
         for (task_monitor, id) in task_monitors.iter() {
             let Some(metrics) = task_monitor.intervals().next() else {
                 tracing::error!(
-                    subsystem = id.subsystem,
+                    subsystem = id.protocol_scheme,
                     task = id.task,
-                    variant = id.variant,
+                    variant = id.role,
                     "interval iterator is unended, but failed to produce next task metric"
                 );
                 break 'outer;
