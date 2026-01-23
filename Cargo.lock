@@ -4905,7 +4905,7 @@ dependencies = [
  "near-time 2.10.5",
  "node-types",
  "pprof",
- "prometheus 0.13.4",
+ "prometheus",
  "rand 0.8.5",
  "regex",
  "rocksdb",
@@ -4926,7 +4926,6 @@ dependencies = [
  "time",
  "tokio",
  "tokio-metrics",
- "tokio-metrics-collector",
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
@@ -5828,7 +5827,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "parking_lot 0.12.5",
- "prometheus 0.13.4",
+ "prometheus",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -6512,7 +6511,7 @@ dependencies = [
  "num-rational",
  "parking_lot 0.12.5",
  "prefix-sum-vec",
- "prometheus 0.13.4",
+ "prometheus",
  "rand 0.8.5",
  "rayon",
  "ripemd",
@@ -7598,21 +7597,6 @@ dependencies = [
  "memchr",
  "parking_lot 0.12.5",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "prometheus"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
-dependencies = [
- "cfg-if 1.0.4",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot 0.12.5",
- "protobuf",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -9979,19 +9963,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "tokio-metrics-collector"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f360c6fa7fd188e65904979ea07f1f44c57f0759ab18ecca88551c26acdf4cd6"
-dependencies = [
- "lazy_static",
- "parking_lot 0.12.5",
- "prometheus 0.14.0",
- "tokio",
- "tokio-metrics",
 ]
 
 [[package]]
