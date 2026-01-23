@@ -11,10 +11,10 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::{gen_accounts, init},
+    common::gen_accounts,
     utils::{
-        interface::IntoInterfaceType, mpc_contract::submit_participant_info,
-        shared_key_utils::new_secp256k1,
+        contract_build::current_contract_with_test_utils, interface::IntoInterfaceType,
+        mpc_contract::submit_participant_info, shared_key_utils::new_secp256k1,
     },
 };
 use contract_interface::types::{Attestation, MockAttestation};
@@ -274,7 +274,9 @@ async fn setup_test_env_running(n_participants: usize) -> TestEnv {
 }
 
 async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -> TestEnv {
-    let (worker, contract) = init().await;
+    let worker = near_workspaces::sandbox().await.unwrap();
+    let wasm = current_contract_with_test_utils();
+    let contract = worker.dev_deploy(wasm).await.unwrap();
     let (accounts, participants) = gen_accounts(&worker, n_participants).await;
 
     let threshold_params = make_threshold_params(&participants);
