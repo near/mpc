@@ -135,7 +135,7 @@ impl SignatureProvider for RobustEcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         ROBUST_ECDSA_TASK_MONITORS
-            .make_signature
+            .make_signature_leader
             .instrument(self.make_signature_leader(id))
             .await
     }

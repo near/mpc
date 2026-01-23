@@ -126,7 +126,7 @@ impl EcdsaSignatureProvider {
                 tasks.spawn_checked(
                     &format!("background triple generation; task_id: {:?}", task_id),
                     ECDSA_TASK_MONITORS
-                        .triple_generation
+                        .triple_generation_leader
                         .instrument(async move {
                             let _in_flight = in_flight;
                             let _semaphore_guard = parallelism_limiter.acquire().await?;

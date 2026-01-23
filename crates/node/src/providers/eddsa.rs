@@ -71,7 +71,7 @@ impl SignatureProvider for EddsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         EDDSA_TASK_MONITORS
-            .make_signature
+            .make_signature_leader
             .instrument(self.make_signature_leader(id))
             .await
     }

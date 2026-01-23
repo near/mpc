@@ -120,10 +120,10 @@ pub(crate) static EDDSA_TASK_MONITORS: LazyLock<EddsaTaskMonitors> =
 
 #[derive(Default)]
 pub(crate) struct EcdsaTaskMonitors {
-    pub(crate) make_signature: TaskMonitor,
+    pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
 
-    pub(crate) triple_generation: TaskMonitor,
+    pub(crate) triple_generation_leader: TaskMonitor,
     pub(crate) triple_generation_follower: TaskMonitor,
 
     pub(crate) presignature_generation_leader: TaskMonitor,
@@ -132,7 +132,7 @@ pub(crate) struct EcdsaTaskMonitors {
 
 #[derive(Default)]
 pub(crate) struct RobustEcdsaTaskMonitors {
-    pub(crate) make_signature: TaskMonitor,
+    pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
 
     pub(crate) presignature_generation_leader: TaskMonitor,
@@ -141,7 +141,7 @@ pub(crate) struct RobustEcdsaTaskMonitors {
 
 #[derive(Default)]
 pub(crate) struct EddsaTaskMonitors {
-    pub(crate) make_signature: TaskMonitor,
+    pub(crate) make_signature_leader: TaskMonitor,
     pub(crate) make_signature_follower: TaskMonitor,
 }
 
@@ -178,7 +178,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
     fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
-                self.make_signature.clone(),
+                self.make_signature_leader.clone(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -194,7 +194,7 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
                 ),
             ),
             (
-                self.triple_generation.clone(),
+                self.triple_generation_leader.clone(),
                 TaskLabels::new(
                     ECDSA_PROTOCOL_SCHEME_LABEL,
                     TRIPLE_GENERATION_TASK_LABEL,
@@ -233,7 +233,7 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
     fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
-                self.make_signature.clone(),
+                self.make_signature_leader.clone(),
                 TaskLabels::new(
                     ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,
@@ -272,7 +272,7 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
     fn get_monitors(&self) -> Vec<(TaskMonitor, TaskLabels)> {
         vec![
             (
-                self.make_signature.clone(),
+                self.make_signature_leader.clone(),
                 TaskLabels::new(
                     EDDSA_PROTOCOL_SCHEME_LABEL,
                     MAKE_SIGNATURE_TASK_LABEL,

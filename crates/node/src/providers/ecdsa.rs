@@ -143,7 +143,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
         ECDSA_TASK_MONITORS
-            .make_signature
+            .make_signature_leader
             .instrument(self.make_signature_leader(id))
             .await
     }
