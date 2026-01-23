@@ -292,7 +292,6 @@ pub mod tests {
     use crate::state::key_event::KeyEvent;
     use near_account_id::AccountId;
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub use crate::tee::test_utils::Environment;
 
     pub fn find_leader(kes: &KeyEvent) -> (AccountId, ParticipantId) {
