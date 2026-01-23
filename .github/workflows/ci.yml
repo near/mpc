@@ -147,12 +147,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # participants_gas tests require bench-utils feature, run separately below
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --locked -E 'not test(participants_gas)'
-
-      - name: Run gas regression benchmarks
-        run: cargo test -p mpc-contract --features test-utils,bench-utils participants_gas
+        run: cargo nextest run --cargo-profile=test-release --locked
 
   mpc-pytests:
     name: "MPC Node: pytests"

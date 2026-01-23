@@ -51,8 +51,8 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         .lock_exclusive()
         .expect("Failed to lock build file");
 
-    // Track whether bench-utils feature is enabled at compile time
-    let bench_utils_enabled = cfg!(feature = "bench-utils");
+    // Track whether test-utils feature is enabled at compile time
+    let test_utils_enabled = cfg!(feature = "test-utils");
 
     // check if we need to re-build
     let do_build = match lockfile.metadata().unwrap().len() {
@@ -61,14 +61,14 @@ fn load_contract(package_name: &str) -> Vec<u8> {
             let mut buf = String::new();
             lockfile.read_to_string(&mut buf).unwrap();
             match serde_json::from_str::<BuildLock>(&buf) {
-                Ok(build_lock) => build_lock.expired(bench_utils_enabled),
+                Ok(build_lock) => build_lock.expired(test_utils_enabled),
                 _ => true,
             }
         }
     };
 
     if do_build {
-        #[allow(unused_mut)] // Mutated conditionally when bench-utils feature is enabled
+        #[allow(unused_mut)] // Mutated conditionally when test-utils feature is enabled
         let mut args = vec![
             "build".to_string(),
             format!("--package={package_name}"),
@@ -77,11 +77,11 @@ fn load_contract(package_name: &str) -> Vec<u8> {
             "--locked".to_string(),
         ];
 
-        // Include benchmark endpoints in WASM when bench-utils feature is enabled
+        // Include benchmark endpoints in WASM when test-utils feature is enabled
         // Only apply this to mpc-contract, as test-migration-contract doesn't have this feature
-        #[cfg(feature = "bench-utils")]
+        #[cfg(feature = "test-utils")]
         if package_name == CURRENT_CONTRACT_PACKAGE_NAME {
-            args.push("--features=bench-utils".to_string());
+            args.push("--features=test-utils".to_string());
         }
 
         let status = Command::new("cargo")
@@ -109,7 +109,7 @@ fn load_contract(package_name: &str) -> Vec<u8> {
         lockfile.set_len(0).unwrap();
         lockfile
             .write_all(
-                serde_json::to_string(&BuildLock::new(bench_utils_enabled))
+                serde_json::to_string(&BuildLock::new(test_utils_enabled))
                     .unwrap()
                     .as_bytes(),
             )
@@ -122,28 +122,28 @@ fn load_contract(package_name: &str) -> Vec<u8> {
 #[derive(Debug, Serialize, Deserialize)]
 struct BuildLock {
     timestamp: u64,
-    /// Tracks whether the WASM was built with bench-utils feature.
+    /// Tracks whether the WASM was built with test-utils feature.
     /// If this doesn't match the current compilation, we need to rebuild.
-    bench_utils: bool,
+    test_utils: bool,
 }
 
 impl BuildLock {
-    fn new(bench_utils: bool) -> Self {
+    fn new(test_utils: bool) -> Self {
         Self {
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            bench_utils,
+            test_utils,
         }
     }
 
     /// Checks if the build is stale:
     /// - older than [`BUILD_CACHE_TTL_SECONDS`], OR
-    /// - was built with different bench-utils feature state
-    fn expired(&self, current_bench_utils: bool) -> bool {
+    /// - was built with different test-utils feature state
+    fn expired(&self, current_test_utils: bool) -> bool {
         // Feature mismatch requires rebuild
-        if self.bench_utils != current_bench_utils {
+        if self.test_utils != current_test_utils {
             return true;
         }
 

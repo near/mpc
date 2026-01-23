@@ -158,7 +158,7 @@ impl ThresholdParameters {
     }
 
     /// Returns mutable reference to Participants for benchmarking.
-    #[cfg(feature = "bench-utils")]
+    #[cfg(feature = "test-utils")]
     pub fn participants_mut(&mut self) -> &mut Participants {
         &mut self.participants
     }

@@ -5,7 +5,7 @@
 //!
 //! Run with:
 //! ```sh
-//! cargo test -p mpc-contract --features test-utils,bench-utils participants_gas
+//! cargo test -p mpc-contract --features test-utils participants_gas
 //! ```
 //!
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
@@ -204,7 +204,7 @@ async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>,
     assert!(
         result.is_success(),
         "Contract call to '{}' failed. Method may not exist. \
-         Ensure contract was built with --features=bench-utils. \
+         Ensure contract was built with --features=test-utils. \
          Failures: {:?}",
         method,
         result.failures()
@@ -236,7 +236,7 @@ async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
         assert!(
             result.is_success(),
             "Contract call to '{}' with account '{}' failed. Method may not exist. \
-             Ensure contract was built with --features=bench-utils. \
+             Ensure contract was built with --features=test-utils. \
              Failures: {:?}",
             method,
             account_id,
