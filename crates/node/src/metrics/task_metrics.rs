@@ -306,7 +306,7 @@ pub(crate) async fn monitor_runtime_metrics() {
 
     let mut ticker = tokio::time::interval(TASK_MONITOR_SAMPLE_DURATION);
 
-    'outer: loop {
+    loop {
         ticker.tick().await;
 
         for (task_monitor, id) in task_monitors.iter() {
@@ -317,7 +317,7 @@ pub(crate) async fn monitor_runtime_metrics() {
                     role = id.role,
                     "interval iterator is unended, but failed to produce next task metric"
                 );
-                break 'outer;
+                return;
             };
 
             TOKIO_TASK_DROPPED_TOTAL
