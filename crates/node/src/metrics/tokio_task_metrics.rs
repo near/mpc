@@ -298,7 +298,6 @@ pub(crate) async fn run_monitor_loop() {
         &*EDDSA_TASK_MONITORS,
     ];
 
-    // Collect once; monitors are Clone, and label parts are &'static str.
     let task_monitors: Vec<(TaskMonitor, TaskLabels)> = task_monitor_providers
         .into_iter()
         .flat_map(TaskMonitorProvider::get_monitors)
@@ -309,55 +308,55 @@ pub(crate) async fn run_monitor_loop() {
     loop {
         ticker.tick().await;
 
-        for (task_monitor, id) in task_monitors.iter() {
+        for (task_monitor, task_labels) in task_monitors.iter() {
             let Some(metrics) = task_monitor.intervals().next() else {
                 tracing::error!(
-                    protocol_scheme = id.protocol_scheme,
-                    task = id.task,
-                    role = id.role,
+                    protocol_scheme = task_labels.protocol_scheme,
+                    task = task_labels.task,
+                    role = task_labels.role,
                     "interval iterator is unended, but failed to produce next task metric"
                 );
                 return;
             };
 
             TOKIO_TASK_DROPPED_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.dropped_count);
 
             TOKIO_TASK_INSTRUMENTED_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.instrumented_count);
 
             TOKIO_TASK_SLOW_POLL_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_slow_poll_count);
 
             TOKIO_TASK_FAST_POLL_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_fast_poll_count);
 
             TOKIO_TASK_FAST_POLL_DURATION_SECS_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_fast_poll_duration.as_secs_f64());
 
             TOKIO_TASK_SLOW_POLL_DURATION_SECS_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_slow_poll_duration.as_secs_f64());
 
             TOKIO_TASK_SHORT_SCHEDULE_DELAY_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_short_delay_count);
 
             TOKIO_TASK_LONG_SCHEDULE_DELAY_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_long_delay_count);
 
             TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECS_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_short_delay_duration.as_secs_f64());
 
             TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL
-                .with_label_values(&id.labels())
+                .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_long_delay_duration.as_secs_f64());
         }
     }
