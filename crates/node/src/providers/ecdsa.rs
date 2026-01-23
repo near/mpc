@@ -12,6 +12,7 @@ pub use triple::TripleStorage;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
+use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::SignatureProvider;
@@ -141,7 +142,10 @@ impl SignatureProvider for EcdsaSignatureProvider {
         &self,
         id: SignatureId,
     ) -> anyhow::Result<(Self::Signature, Self::PublicKey)> {
-        self.make_signature_leader(id).await
+        ECDSA_TASK_MONITORS
+            .make_signature_leader
+            .instrument(self.make_signature_leader(id))
+            .await
     }
 
     async fn run_key_generation_client(
@@ -178,7 +182,9 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     anyhow::bail!("Key resharing rejected in normal node operation");
                 }
                 EcdsaTaskId::ManyTriples { start, count } => {
-                    self.run_triple_generation_follower(channel, start, count)
+                    ECDSA_TASK_MONITORS
+                        .triple_generation_follower
+                        .instrument(self.run_triple_generation_follower(channel, start, count))
                         .await?;
                 }
                 EcdsaTaskId::Presignature {
@@ -186,19 +192,23 @@ impl SignatureProvider for EcdsaSignatureProvider {
                     domain_id,
                     paired_triple_id,
                 } => {
-                    self.run_presignature_generation_follower(
-                        channel,
-                        id,
-                        domain_id,
-                        paired_triple_id,
-                    )
-                    .await?;
+                    ECDSA_TASK_MONITORS
+                        .presignature_generation_follower
+                        .instrument(self.run_presignature_generation_follower(
+                            channel,
+                            id,
+                            domain_id,
+                            paired_triple_id,
+                        ))
+                        .await?;
                 }
                 EcdsaTaskId::Signature {
                     id,
                     presignature_id,
                 } => {
-                    self.make_signature_follower(channel, id, presignature_id)
+                    ECDSA_TASK_MONITORS
+                        .make_signature_follower
+                        .instrument(self.make_signature_follower(channel, id, presignature_id))
                         .await?;
                 }
             },

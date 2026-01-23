@@ -2,6 +2,7 @@ use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::{MpcConfig, PresignatureConfig};
 use crate::db::SecretDB;
+use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
@@ -127,28 +128,33 @@ pub(super) async fn run_background_presignature_generation(
             let presignature_store = presignature_store.clone();
             let config_clone = config.clone();
             let keygen_out = keygen_out.clone();
-            tasks.spawn_checked(&format!("{:?}", task_id), async move {
-                let _in_flight = in_flight;
-                let _semaphore_guard = parallelism_limiter.acquire().await?;
-                let presignature = PresignComputation {
-                    threshold: robust_ecdsa_threshold,
-                    keygen_out,
-                }
-                .perform_leader_centric_computation(
-                    channel,
-                    Duration::from_secs(config_clone.timeout_sec),
-                )
-                .await?;
-                presignature_store.add_owned(
-                    id,
-                    PresignOutputWithParticipants {
-                        presignature,
-                        participants,
-                    },
-                );
+            tasks.spawn_checked(
+                &format!("{:?}", task_id),
+                ROBUST_ECDSA_TASK_MONITORS
+                    .presignature_generation_leader
+                    .instrument(async move {
+                        let _in_flight = in_flight;
+                        let _semaphore_guard = parallelism_limiter.acquire().await?;
+                        let presignature = PresignComputation {
+                            threshold: robust_ecdsa_threshold,
+                            keygen_out,
+                        }
+                        .perform_leader_centric_computation(
+                            channel,
+                            Duration::from_secs(config_clone.timeout_sec),
+                        )
+                        .await?;
+                        presignature_store.add_owned(
+                            id,
+                            PresignOutputWithParticipants {
+                                presignature,
+                                participants,
+                            },
+                        );
 
-                anyhow::Ok(())
-            });
+                        anyhow::Ok(())
+                    }),
+            );
             continue;
         }
 

@@ -3,6 +3,7 @@ use crate::background::InFlightGenerationTracker;
 use crate::config::{MpcConfig, TripleConfig};
 use crate::db::SecretDB;
 use crate::metrics;
+use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
@@ -124,27 +125,29 @@ impl EcdsaSignatureProvider {
                 let config_clone = config.clone();
                 tasks.spawn_checked(
                     &format!("background triple generation; task_id: {:?}", task_id),
-                    async move {
-                        let _in_flight = in_flight;
-                        let _semaphore_guard = parallelism_limiter.acquire().await?;
-                        let triples = (ManyTripleGenerationComputation::<
-                            SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
-                        > {
-                            threshold,
-                        })
-                        .perform_leader_centric_computation(
-                            channel,
-                            Duration::from_secs(config_clone.timeout_sec),
-                        )
-                        .await?;
+                    ECDSA_TASK_MONITORS
+                        .triple_generation_leader
+                        .instrument(async move {
+                            let _in_flight = in_flight;
+                            let _semaphore_guard = parallelism_limiter.acquire().await?;
+                            let triples = (ManyTripleGenerationComputation::<
+                                SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE,
+                            > {
+                                threshold,
+                            })
+                            .perform_leader_centric_computation(
+                                channel,
+                                Duration::from_secs(config_clone.timeout_sec),
+                            )
+                            .await?;
 
-                        for (i, paired_triple) in triples.into_iter().enumerate() {
-                            triple_store
-                                .add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
-                        }
+                            for (i, paired_triple) in triples.into_iter().enumerate() {
+                                triple_store
+                                    .add_owned(id_start.add_to_counter(i as u32)?, paired_triple);
+                            }
 
-                        anyhow::Ok(())
-                    },
+                            anyhow::Ok(())
+                        }),
                 );
                 // Before issuing another one, wait a bit. This can dramatically
                 // improve throughput by avoiding thundering herd situations.
