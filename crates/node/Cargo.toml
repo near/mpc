@@ -91,6 +91,3 @@ rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
