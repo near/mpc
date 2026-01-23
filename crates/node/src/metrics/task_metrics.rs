@@ -4,6 +4,24 @@ use tokio_metrics::TaskMonitor;
 
 const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
 
+static TOKIO_TASK_DROPPED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_dropped_total",
+        "TThe number of tasks dropped.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_INSTRUMENTED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_instrumented_total",
+        "The number of tasks instrumented.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
 static TOKIO_TASK_SLOW_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "mpc_tokio_task_slow_poll_total",
@@ -21,6 +39,62 @@ static TOKIO_TASK_FAST_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+static TOKIO_TASK_SLOW_POLL_DURATION_SECS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_slow_poll_duration_secs_total",
+        "Total number of times that polling tasks completed slowly.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_FAST_POLL_DURATION_SECS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_fast_poll_duration_secs_total",
+        "Total number of times that polling tasks completed fast.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_SHORT_SCHEDULE_DELAY_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_short_schedule_delay_total",
+        "The total count of tasks with short scheduling delays.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_LONG_SCHEDULE_DELAY_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "mpc_tokio_task_long_schedule_delay_total",
+        "The total count of tasks with long scheduling delays.",
+        TOKIO_TASK_LABELS,
+    )
+    .unwrap()
+});
+
+static TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "mpc_tokio_task_short_schedule_delay_duration_secs_total",
+            "The total duration of tasks with short scheduling delays.",
+            TOKIO_TASK_LABELS,
+        )
+        .unwrap()
+    });
+
+static TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "mpc_tokio_task_long_schedule_delay_duration_secs_total",
+            "The total duration of tasks with long scheduling delays.",
+            TOKIO_TASK_LABELS,
+        )
+        .unwrap()
+    });
 
 const TASK_MONITOR_SAMPLE_DURATION: Duration = Duration::from_secs(10);
 
@@ -187,9 +261,45 @@ pub(crate) async fn monitor_runtime_metrics() {
                 break 'outer;
             };
 
+            TOKIO_TASK_DROPPED_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.dropped_count);
+
+            TOKIO_TASK_INSTRUMENTED_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.instrumented_count);
+
             TOKIO_TASK_SLOW_POLL_TOTAL
                 .with_label_values(&id.labels())
                 .inc_by(metrics.total_slow_poll_count);
+
+            TOKIO_TASK_FAST_POLL_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_fast_poll_count);
+
+            TOKIO_TASK_FAST_POLL_DURATION_SECS_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_fast_poll_duration.as_secs());
+
+            TOKIO_TASK_SLOW_POLL_DURATION_SECS_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_slow_poll_duration.as_secs());
+
+            TOKIO_TASK_SHORT_SCHEDULE_DELAY_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_short_delay_count);
+
+            TOKIO_TASK_LONG_SCHEDULE_DELAY_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_long_delay_count);
+
+            TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECS_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_short_delay_duration.as_secs());
+
+            TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL
+                .with_label_values(&id.labels())
+                .inc_by(metrics.total_long_delay_duration.as_secs());
         }
     }
 }
