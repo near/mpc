@@ -109,14 +109,14 @@ static TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<CounterVec> 
         .unwrap()
     });
 
-pub(crate) const ECDSA_TASK_MONITORS: LazyLock<EcdsaTaskMonitors> =
-    LazyLock::new(|| EcdsaTaskMonitors::default());
+pub(crate) static ECDSA_TASK_MONITORS: LazyLock<EcdsaTaskMonitors> =
+    LazyLock::new(EcdsaTaskMonitors::default);
 
-pub(crate) const ROBUST_ECDSA_TASK_MONITORS: LazyLock<RobustEcdsaTaskMonitors> =
-    LazyLock::new(|| RobustEcdsaTaskMonitors::default());
+pub(crate) static ROBUST_ECDSA_TASK_MONITORS: LazyLock<RobustEcdsaTaskMonitors> =
+    LazyLock::new(RobustEcdsaTaskMonitors::default);
 
-pub(crate) const EDDSA_TASK_MONITORS: LazyLock<EddsaTaskMonitors> =
-    LazyLock::new(|| EddsaTaskMonitors::default());
+pub(crate) static EDDSA_TASK_MONITORS: LazyLock<EddsaTaskMonitors> =
+    LazyLock::new(EddsaTaskMonitors::default);
 
 #[derive(Default)]
 pub(crate) struct EcdsaTaskMonitors {
