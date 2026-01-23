@@ -56,7 +56,7 @@ static TOKIO_TASK_FAST_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
 static TOKIO_TASK_SLOW_POLL_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     register_counter_vec!(
         "mpc_tokio_task_slow_poll_duration_seconds_total",
-        "Total number of times that polling tasks completed slowly.",
+        "The total duration of slow polls.",
         TOKIO_TASK_LABELS,
     )
     .unwrap()
@@ -65,7 +65,7 @@ static TOKIO_TASK_SLOW_POLL_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> = LazyL
 static TOKIO_TASK_FAST_POLL_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     register_counter_vec!(
         "mpc_tokio_task_fast_poll_duration_seconds_total",
-        "Total number of times that polling tasks completed fast.",
+        "The total duration of fast polls.",
         TOKIO_TASK_LABELS,
     )
     .unwrap()
@@ -314,7 +314,7 @@ pub(crate) async fn run_monitor_loop() {
                     protocol_scheme = task_labels.protocol_scheme,
                     task = task_labels.task,
                     role = task_labels.role,
-                    "interval iterator is unended, but failed to produce next task metric"
+                    "interval iterator is unending, but failed to produce next task metric"
                 );
                 return;
             };
