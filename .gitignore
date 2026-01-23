@@ -17,11 +17,6 @@ venv
 /pytest/contract_history/*.wasm
 /pytest/nearcore_pytest/nearcore_pytest.egg-info/
 
-**/presignature_network_report_best_case.json
-**/signature_network_report_best_case.json
-**/triple_network_report_best_case.json
-**/triple_network_report_worst_case.json
-
 # Generated on MacOs' file explorer - https://en.wikipedia.org/wiki/.DS_Store
 *.DS_Store
 

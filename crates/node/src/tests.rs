@@ -44,7 +44,6 @@ mod changing_participant_details;
 mod faulty;
 mod multidomain;
 mod onboarding;
-mod research;
 mod resharing;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
