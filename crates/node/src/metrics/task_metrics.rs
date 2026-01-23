@@ -4,6 +4,17 @@ use tokio_metrics::TaskMonitor;
 
 const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
 
+const ECDSA_PROTOCOL_SCHEME_LABEL: &str = "ecdsa";
+const EDDSA_PROTOCOL_SCHEME_LABEL: &str = "eddsa";
+const ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL: &str = "robust_ecdsa";
+
+const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
+const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
+const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
+
+const LEADER_ROLE_LABEL: &str = "leader";
+const FOLLOWER_ROLE_LABEL: &str = "follower";
+
 static TOKIO_TASK_DROPPED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "mpc_tokio_task_dropped_total",
@@ -168,27 +179,51 @@ impl TaskMonitorProvider for EcdsaTaskMonitors {
         vec![
             (
                 self.make_signature.clone(),
-                TaskLabels::new("ecdsa", "make_signature", "leader"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskLabels::new("ecdsa", "make_signature", "follower"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
             (
                 self.triple_generation.clone(),
-                TaskLabels::new("ecdsa", "triple_generation", "leader"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    TRIPLE_GENERATION_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.triple_generation_follower.clone(),
-                TaskLabels::new("ecdsa", "triple_generation", "follower"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    TRIPLE_GENERATION_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
             (
                 self.presignature_generation_leader.clone(),
-                TaskLabels::new("ecdsa", "presignature_generation", "leader"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    PRESIGNATURE_GENERATION_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.presignature_generation_follower.clone(),
-                TaskLabels::new("ecdsa", "presignature_generation", "follower"),
+                TaskLabels::new(
+                    ECDSA_PROTOCOL_SCHEME_LABEL,
+                    PRESIGNATURE_GENERATION_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
         ]
     }
@@ -199,19 +234,35 @@ impl TaskMonitorProvider for RobustEcdsaTaskMonitors {
         vec![
             (
                 self.make_signature.clone(),
-                TaskLabels::new("robust_ecdsa", "make_signature", "leader"),
+                TaskLabels::new(
+                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskLabels::new("robust_ecdsa", "make_signature", "follower"),
+                TaskLabels::new(
+                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
             (
                 self.presignature_generation_leader.clone(),
-                TaskLabels::new("robust_ecdsa", "presignature_generation", "leader"),
+                TaskLabels::new(
+                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                    PRESIGNATURE_GENERATION_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.presignature_generation_follower.clone(),
-                TaskLabels::new("robust_ecdsa", "presignature_generation", "follower"),
+                TaskLabels::new(
+                    ROBUST_ECDSA_PROTOCOL_SCHEME_LABEL,
+                    PRESIGNATURE_GENERATION_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
         ]
     }
@@ -222,11 +273,19 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
         vec![
             (
                 self.make_signature.clone(),
-                TaskLabels::new("eddsa", "make_signature", "leader"),
+                TaskLabels::new(
+                    EDDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    LEADER_ROLE_LABEL,
+                ),
             ),
             (
                 self.make_signature_follower.clone(),
-                TaskLabels::new("eddsa", "make_signature", "follower"),
+                TaskLabels::new(
+                    EDDSA_PROTOCOL_SCHEME_LABEL,
+                    MAKE_SIGNATURE_TASK_LABEL,
+                    FOLLOWER_ROLE_LABEL,
+                ),
             ),
         ]
     }
@@ -253,9 +312,9 @@ pub(crate) async fn monitor_runtime_metrics() {
         for (task_monitor, id) in task_monitors.iter() {
             let Some(metrics) = task_monitor.intervals().next() else {
                 tracing::error!(
-                    subsystem = id.protocol_scheme,
+                    protocol_scheme = id.protocol_scheme,
                     task = id.task,
-                    variant = id.role,
+                    role = id.role,
                     "interval iterator is unended, but failed to produce next task metric"
                 );
                 break 'outer;
