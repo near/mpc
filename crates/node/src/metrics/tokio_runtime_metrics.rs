@@ -37,6 +37,8 @@ static TOKIO_RUNTIME_LIVE_TASKS_COUNT: LazyLock<IntGauge> = LazyLock::new(|| {
 });
 
 pub(crate) async fn run_monitor_loop(runtime_monitor: RuntimeMonitor) {
+    let mut ticker = tokio::time::interval(MONITOR_SAMPLE_DURATION);
+
     for runtime_metrics in runtime_monitor.intervals() {
         TOKIO_RUNTIME_TOTAL_BUSY_DURATION_SECONDS
             .inc_by(runtime_metrics.total_busy_duration.as_secs_f64());
@@ -45,6 +47,6 @@ pub(crate) async fn run_monitor_loop(runtime_monitor: RuntimeMonitor) {
         TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH.set(runtime_metrics.global_queue_depth as i64);
         TOKIO_RUNTIME_LIVE_TASKS_COUNT.set(runtime_metrics.live_tasks_count as i64);
 
-        tokio::time::sleep(MONITOR_SAMPLE_DURATION).await;
+        ticker.tick().await;
     }
 }
