@@ -110,6 +110,7 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         } = self;
 
         Collateral::from(QuoteCollateralV3 {
@@ -122,6 +123,7 @@ impl IntoContractType<Collateral> for dtos::Collateral {
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         })
     }
 }
@@ -263,6 +265,7 @@ impl IntoInterfaceType<dtos::Collateral> for Collateral {
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         } = self.into();
 
         dtos::Collateral {
@@ -275,6 +278,7 @@ impl IntoInterfaceType<dtos::Collateral> for Collateral {
             qe_identity_issuer_chain,
             qe_identity,
             qe_identity_signature,
+            pck_certificate_chain,
         }
     }
 }

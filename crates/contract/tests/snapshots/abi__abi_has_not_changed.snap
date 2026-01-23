@@ -1338,6 +1338,12 @@ expression: abi
             "tcb_info_signature"
           ],
           "properties": {
+            "pck_certificate_chain": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "pck_crl": {
               "type": "array",
               "items": {
