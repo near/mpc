@@ -3,7 +3,7 @@ mod key_resharing;
 mod sign;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
-use crate::metrics::task_metrics::EDDSA_TASK_MONITORS;
+use crate::metrics::tokio_task_metrics::EDDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
 use crate::providers::{PublicKeyConversion, SignatureProvider};

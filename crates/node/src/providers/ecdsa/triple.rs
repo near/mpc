@@ -3,7 +3,7 @@ use crate::background::InFlightGenerationTracker;
 use crate::config::{MpcConfig, TripleConfig};
 use crate::db::SecretDB;
 use crate::metrics;
-use crate::metrics::task_metrics::ECDSA_TASK_MONITORS;
+use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};

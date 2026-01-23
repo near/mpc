@@ -12,7 +12,7 @@ pub use triple::TripleStorage;
 
 use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
-use crate::metrics::task_metrics::ECDSA_TASK_MONITORS;
+use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{MpcTaskId, UniqueId};
 use crate::providers::SignatureProvider;

@@ -1,6 +1,8 @@
 use prometheus::{register_counter_vec, register_int_counter_vec, CounterVec, IntCounterVec};
-use std::{sync::LazyLock, time::Duration};
+use std::sync::LazyLock;
 use tokio_metrics::TaskMonitor;
+
+use crate::metrics::MONITOR_SAMPLE_DURATION;
 
 const TOKIO_TASK_LABELS: &[&str] = &["protocol_scheme", "task", "role"];
 
@@ -106,8 +108,6 @@ static TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<CounterVec> 
         )
         .unwrap()
     });
-
-const TASK_MONITOR_SAMPLE_DURATION: Duration = Duration::from_secs(10);
 
 pub(crate) const ECDSA_TASK_MONITORS: LazyLock<EcdsaTaskMonitors> =
     LazyLock::new(|| EcdsaTaskMonitors::default());
@@ -291,7 +291,7 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
     }
 }
 
-pub(crate) async fn monitor_runtime_metrics() {
+pub(crate) async fn run_monitor_loop() {
     let task_monitor_providers: [&dyn TaskMonitorProvider; 3] = [
         &*ECDSA_TASK_MONITORS,
         &*ROBUST_ECDSA_TASK_MONITORS,
@@ -304,7 +304,7 @@ pub(crate) async fn monitor_runtime_metrics() {
         .flat_map(TaskMonitorProvider::get_monitors)
         .collect();
 
-    let mut ticker = tokio::time::interval(TASK_MONITOR_SAMPLE_DURATION);
+    let mut ticker = tokio::time::interval(MONITOR_SAMPLE_DURATION);
 
     loop {
         ticker.tick().await;

@@ -1,8 +1,8 @@
 use prometheus::{register_gauge, register_int_gauge, Gauge, IntGauge};
-use std::{sync::LazyLock, time::Duration};
+use std::sync::LazyLock;
 use tokio_metrics::RuntimeMonitor;
 
-const RUNTIME_METRIC_INTERVAL: Duration = Duration::from_secs(1);
+use crate::metrics::MONITOR_SAMPLE_DURATION;
 
 static TOKIO_RUNTIME_TOTAL_BUSY_DURATION_SECONDS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
@@ -36,7 +36,7 @@ static TOKIO_RUNTIME_BUSY_RATIO: LazyLock<Gauge> = LazyLock::new(|| {
     .unwrap()
 });
 
-pub(crate) async fn monitor_runtime_metrics(runtime_monitor: RuntimeMonitor) {
+pub(crate) async fn run_monitor_loop(runtime_monitor: RuntimeMonitor) {
     for runtime_metrics in runtime_monitor.intervals() {
         TOKIO_RUNTIME_TOTAL_BUSY_DURATION_SECONDS
             .set(runtime_metrics.total_busy_duration.as_secs() as i64);
@@ -44,6 +44,6 @@ pub(crate) async fn monitor_runtime_metrics(runtime_monitor: RuntimeMonitor) {
         TOKIO_RUNTIME_LIVE_TASKS_COUNT.set(runtime_metrics.live_tasks_count as i64);
         TOKIO_RUNTIME_BUSY_RATIO.set(runtime_metrics.busy_ratio());
 
-        tokio::time::sleep(RUNTIME_METRIC_INTERVAL).await;
+        tokio::time::sleep(MONITOR_SAMPLE_DURATION).await;
     }
 }

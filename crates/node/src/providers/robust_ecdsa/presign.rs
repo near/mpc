@@ -2,7 +2,7 @@ use crate::assets::DistributedAssetStorage;
 use crate::background::InFlightGenerationTracker;
 use crate::config::{MpcConfig, PresignatureConfig};
 use crate::db::SecretDB;
-use crate::metrics::task_metrics::ROBUST_ECDSA_TASK_MONITORS;
+use crate::metrics::tokio_task_metrics::ROBUST_ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};

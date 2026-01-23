@@ -11,7 +11,7 @@ use crate::key_events::{
 };
 use crate::keyshare::{KeyshareData, KeyshareStorage};
 use crate::metrics;
-use crate::metrics::tokio_runtime_metrics::monitor_runtime_metrics;
+use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
 use crate::network::{
     run_network_client, MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel,
@@ -247,7 +247,7 @@ where
         let runtime_monitor = RuntimeMonitor::new(runtime_handle);
 
         // run as long as the runtime is alive
-        mpc_runtime.spawn(monitor_runtime_metrics(runtime_monitor));
+        mpc_runtime.spawn(run_monitor_loop(runtime_monitor));
 
         let mpc_runtime = AsyncDroppableRuntime::new(mpc_runtime);
         let fut = mpc_runtime.spawn(task_handle.scope(description, task));

@@ -249,6 +249,7 @@ impl StartCmd {
         )?;
 
         profiler::web_server::start_web_server(config.pprof_bind_address).await?;
+        root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
         // TODO(#1296): Decide if the MPC responder account is actually needed
         let respond_config = RespondConfig::from_parts(&config, &persistent_secrets);
