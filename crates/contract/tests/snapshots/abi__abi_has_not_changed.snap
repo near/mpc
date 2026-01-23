@@ -1345,12 +1345,8 @@ expression: abi
               ]
             },
             "pck_crl": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "pck_crl_issuer_chain": {
               "type": "string"
@@ -1362,20 +1358,12 @@ expression: abi
               "type": "string"
             },
             "qe_identity_signature": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "root_ca_crl": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "tcb_info": {
               "type": "string"
@@ -1384,12 +1372,8 @@ expression: abi
               "type": "string"
             },
             "tcb_info_signature": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -1549,12 +1533,8 @@ expression: abi
               "$ref": "#/definitions/Collateral"
             },
             "quote": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "tcb_info": {
               "$ref": "#/definitions/TcbInfo"
@@ -1982,30 +1962,20 @@ expression: abi
                       "minimum": 0.0
                     },
                     "launcher_docker_compose_hash": {
+                      "default": null,
                       "type": [
-                        "array",
+                        "string",
                         "null"
                       ],
-                      "items": {
-                        "type": "integer",
-                        "format": "uint8",
-                        "minimum": 0.0
-                      },
-                      "maxItems": 32,
-                      "minItems": 32
+                      "pattern": "^(?:[0-9A-Fa-f]{2})*$"
                     },
                     "mpc_docker_image_hash": {
+                      "default": null,
                       "type": [
-                        "array",
+                        "string",
                         "null"
                       ],
-                      "items": {
-                        "type": "integer",
-                        "format": "uint8",
-                        "minimum": 0.0
-                      },
-                      "maxItems": 32,
-                      "minItems": 32
+                      "pattern": "^(?:[0-9A-Fa-f]{2})*$"
                     }
                   }
                 }
@@ -2853,25 +2823,13 @@ expression: abi
             },
             "launcher_compose_hash": {
               "description": "The digest of the launcher compose file running.",
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             },
             "mpc_image_hash": {
               "description": "The digest of the MPC image running.",
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              },
-              "maxItems": 32,
-              "minItems": 32
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
