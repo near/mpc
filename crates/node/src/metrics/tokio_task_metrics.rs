@@ -292,16 +292,16 @@ impl TaskMonitorProvider for EddsaTaskMonitors {
 }
 
 pub(crate) async fn run_monitor_loop() {
-    let task_monitor_providers: [&dyn TaskMonitorProvider; 3] = [
-        &*ECDSA_TASK_MONITORS,
-        &*ROBUST_ECDSA_TASK_MONITORS,
-        &*EDDSA_TASK_MONITORS,
+    let task_monitor_providers: [Vec<(TaskMonitor, TaskLabels)>; 3] = [
+        ECDSA_TASK_MONITORS.get_monitors(),
+        ROBUST_ECDSA_TASK_MONITORS.get_monitors(),
+        EDDSA_TASK_MONITORS.get_monitors(),
     ];
 
     let mut task_monitors: Vec<_> = task_monitor_providers
         .into_iter()
-        .flat_map(TaskMonitorProvider::get_monitors)
-        // TODO(#1841): `TaskMonitorProvider` should return intervals directly
+        .flatten()
+        // TODO(#1841): `TaskMonitorProvider::get_monitors` should return intervals directly
         .map(|(task_monitor, labels)| (task_monitor.intervals(), labels))
         .collect();
 
