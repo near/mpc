@@ -20,7 +20,7 @@ const FOLLOWER_ROLE_LABEL: &str = "follower";
 static TOKIO_TASK_DROPPED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "mpc_tokio_task_dropped_total",
-        "TThe number of tasks dropped.",
+        "The number of tasks dropped.",
         TOKIO_TASK_LABELS,
     )
     .unwrap()
@@ -53,18 +53,18 @@ static TOKIO_TASK_FAST_POLL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
-static TOKIO_TASK_SLOW_POLL_DURATION_SECS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+static TOKIO_TASK_SLOW_POLL_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     register_counter_vec!(
-        "mpc_tokio_task_slow_poll_duration_secs_total",
+        "mpc_tokio_task_slow_poll_duration_seconds_total",
         "Total number of times that polling tasks completed slowly.",
         TOKIO_TASK_LABELS,
     )
     .unwrap()
 });
 
-static TOKIO_TASK_FAST_POLL_DURATION_SECS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+static TOKIO_TASK_FAST_POLL_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     register_counter_vec!(
-        "mpc_tokio_task_fast_poll_duration_secs_total",
+        "mpc_tokio_task_fast_poll_duration_seconds_total",
         "Total number of times that polling tasks completed fast.",
         TOKIO_TASK_LABELS,
     )
@@ -89,20 +89,20 @@ static TOKIO_TASK_LONG_SCHEDULE_DELAY_TOTAL: LazyLock<IntCounterVec> = LazyLock:
     .unwrap()
 });
 
-static TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<CounterVec> =
+static TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> =
     LazyLock::new(|| {
         register_counter_vec!(
-            "mpc_tokio_task_short_schedule_delay_duration_secs_total",
+            "mpc_tokio_task_short_schedule_delay_duration_seconds_total",
             "The total duration of tasks with short scheduling delays.",
             TOKIO_TASK_LABELS,
         )
         .unwrap()
     });
 
-static TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL: LazyLock<CounterVec> =
+static TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECONDS_TOTAL: LazyLock<CounterVec> =
     LazyLock::new(|| {
         register_counter_vec!(
-            "mpc_tokio_task_long_schedule_delay_duration_secs_total",
+            "mpc_tokio_task_long_schedule_delay_duration_seconds_total",
             "The total duration of tasks with long scheduling delays.",
             TOKIO_TASK_LABELS,
         )
@@ -335,11 +335,11 @@ pub(crate) async fn run_monitor_loop() {
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_fast_poll_count);
 
-            TOKIO_TASK_FAST_POLL_DURATION_SECS_TOTAL
+            TOKIO_TASK_FAST_POLL_DURATION_SECONDS_TOTAL
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_fast_poll_duration.as_secs_f64());
 
-            TOKIO_TASK_SLOW_POLL_DURATION_SECS_TOTAL
+            TOKIO_TASK_SLOW_POLL_DURATION_SECONDS_TOTAL
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_slow_poll_duration.as_secs_f64());
 
@@ -351,11 +351,11 @@ pub(crate) async fn run_monitor_loop() {
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_long_delay_count);
 
-            TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECS_TOTAL
+            TOKIO_TASK_SHORT_SCHEDULE_DELAY_DURATION_SECONDS_TOTAL
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_short_delay_duration.as_secs_f64());
 
-            TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECS_TOTAL
+            TOKIO_TASK_LONG_SCHEDULE_DELAY_DURATION_SECONDS_TOTAL
                 .with_label_values(&task_labels.labels())
                 .inc_by(metrics.total_long_delay_duration.as_secs_f64());
         }

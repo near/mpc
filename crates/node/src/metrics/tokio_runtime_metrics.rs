@@ -4,17 +4,17 @@ use tokio_metrics::RuntimeMonitor;
 
 use crate::metrics::MONITOR_SAMPLE_DURATION;
 
-static TOKIO_RUNTIME_TOTAL_BUSY_DURATION_SECONDS: LazyLock<Counter> = LazyLock::new(|| {
+static TOKIO_RUNTIME_BUSY_DURATION_SECONDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     register_counter!(
-        "tokio_runtime_total_busy_duration_seconds",
+        "tokio_runtime_busy_duration_seconds_total",
         "Total time worker threads were busy since runtime start (seconds)."
     )
     .unwrap()
 });
 
-static TOKIO_RUNTIME_TOTAL_TIME_ELAPSED_SECONDS: LazyLock<Counter> = LazyLock::new(|| {
+static TOKIO_RUNTIME_TIME_ELAPSED_SECONDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     register_counter!(
-        "tokio_runtime_total_time_elapsed_seconds",
+        "tokio_runtime_time_elapsed_seconds_total",
         "Total amount of time elapsed since observing runtime metrics (seconds)."
     )
     .unwrap()
@@ -40,9 +40,9 @@ pub(crate) async fn run_monitor_loop(runtime_monitor: RuntimeMonitor) {
     let mut ticker = tokio::time::interval(MONITOR_SAMPLE_DURATION);
 
     for runtime_metrics in runtime_monitor.intervals() {
-        TOKIO_RUNTIME_TOTAL_BUSY_DURATION_SECONDS
+        TOKIO_RUNTIME_BUSY_DURATION_SECONDS_TOTAL
             .inc_by(runtime_metrics.total_busy_duration.as_secs_f64());
-        TOKIO_RUNTIME_TOTAL_TIME_ELAPSED_SECONDS.inc_by(runtime_metrics.elapsed.as_secs_f64());
+        TOKIO_RUNTIME_TIME_ELAPSED_SECONDS_TOTAL.inc_by(runtime_metrics.elapsed.as_secs_f64());
 
         TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH.set(runtime_metrics.global_queue_depth as i64);
         TOKIO_RUNTIME_LIVE_TASKS_COUNT.set(runtime_metrics.live_tasks_count as i64);
