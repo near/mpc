@@ -87,9 +87,8 @@ fn load_contract(package_name: &str, test_utils: bool) -> Vec<u8> {
             "--locked".to_string(),
         ];
 
-        // Include benchmark endpoints in WASM when requested.
-        // Only apply this to mpc-contract, as test-migration-contract doesn't have this feature.
-        if test_utils && package_name == CURRENT_CONTRACT_PACKAGE_NAME {
+        // Include test utilities (benchmark endpoints) in WASM when requested.
+        if test_utils {
             args.push("--features=test-utils".to_string());
         }
 
