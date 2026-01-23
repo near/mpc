@@ -21,18 +21,26 @@ THRESHOLD=2
 # Currently mpc-node i uses port
 # BASE_XXXX_PORT + i for functionality XXXX
 # for example, mpc-node 2 uses 8082 as WEB_UI port
-BASE_RPC_PORT=3030
-BASE_INDEXER_PORT=24567
-BASE_WEB_UI_PORT=8080
-BASE_MIGRATION_PORT=9080
-BASE_PPROF_PORT=34000
-BASE_P2P_PORT=3000
+: "${BASE_RPC_PORT:=3030}"
+: "${BASE_INDEXER_PORT:=24567}"
+: "${BASE_WEB_UI_PORT:=8080}"
+: "${BASE_MIGRATION_PORT:=9080}"
+: "${BASE_PPROF_PORT:=34000}"
+: "${BASE_P2P_PORT:=3000}"
 
 cleanup() {
-  echo "Cleaning-up processes"
+  echo "Running clean-up"
+  read -rp "Press Enter to tear-down the processes..."
   for pid in "${pids[@]}"; do
     kill_process "${pid}"
   done
+
+  read -rp "Press Enter to delete the logs..."
+  if [[ -v tmpdir ]]; then
+    rm -rf "${tmpdir}"
+  fi
+
+  echo "Script is exiting"
 }
 
 trap cleanup SIGINT SIGTERM EXIT
@@ -70,9 +78,11 @@ main() {
   fi
 
   pids=()
+  tmpdir=$(mktemp -d /tmp/mpc-localnet.XXXXXX)
 
   echo "Using mpc-contract binary from ${MPC_CONTRACT_PATH}"
   echo "Creating network with ${N} mpc nodes and threshold ${THRESHOLD}"
+  echo "Logs will be stored in ${tmpdir}"
 
   echo "Cleaning ~/.near folder"
   rm -rf ~/.near/
@@ -116,7 +126,6 @@ EOF
 
   echo "Deploying mpc-contract"
   run_quiet_on_success "near contract deploy mpc-contract.test.near use-file '$MPC_CONTRACT_PATH' without-init-call network-config mpc-localnet sign-with-keychain send"
-  sleep 2
   run_quiet_on_success "near contract inspect mpc-contract.test.near network-config mpc-localnet now"
 
   echo "Creating mpc-node accounts"
@@ -158,6 +167,7 @@ EOF
   sleep $MPC_NODE_WAIT
 
   echo "Adding account keys for the nodes"
+  pids_adding_keys=()
   for ((i = 1; i <= N; i++)); do
 
     node_name="mpc-node-$i.test.near"
@@ -165,9 +175,13 @@ EOF
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
     NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
-    run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_PUBKEY network-config mpc-localnet sign-with-keychain send"
-    run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_RESPONDER_KEY network-config mpc-localnet sign-with-keychain send"
+    run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_PUBKEY network-config mpc-localnet sign-with-keychain send" && \
+    run_quiet_on_success "near account add-key $node_name grant-full-access use-manually-provided-public-key $NODE_RESPONDER_KEY network-config mpc-localnet sign-with-keychain send" &
+    pids_adding_keys+=($!)
+  done
 
+  for pid in "${pids_adding_keys[@]}"; do
+    wait "$pid"
   done
 
   JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" '
@@ -200,16 +214,19 @@ EOF
 
   echo "Initializing contract"
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near init file-args ${init_args} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-contract.test.near network-config mpc-localnet sign-with-keychain send"
-
-  sleep 2
-
   run_quiet_on_success "near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now"
 
   echo "Adding domains to contract"
 
+  pids_adding_domains=()
   for ((i = 1; i <= N; i++)); do
     node_name="mpc-node-$i.test.near"
-    run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send"
+    run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as ${node_name} network-config mpc-localnet sign-with-keychain send" &
+    pids_adding_domains+=($!)
+  done
+
+  for pid in "${pids_adding_domains[@]}"; do
+    wait "$pid"
   done
 
   DOMAINS_WAIT=20
@@ -226,7 +243,7 @@ EOF
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near sign file-args docs/localnet/args/sign_eddsa.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
   run_quiet_on_success "near contract call-function as-transaction mpc-contract.test.near request_app_private_key file-args docs/localnet/args/ckd.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as ${signer_account} network-config mpc-localnet sign-with-keychain send"
 
-  read -rp "Press Enter to tear-down the processes..."
+  read -rp "Press Enter to finish the script and run clean-up steps..."
 }
 
 die() {
@@ -268,16 +285,14 @@ run_bg() {
   local out_file
   local err_file
 
-  out_file=$(mktemp /tmp/"${name}"_stdout.XXXXXX)
-  err_file=$(mktemp /tmp/"${name}"_stderr.XXXXXX)
+  out_file="${tmpdir}/${name}_stdout"
+  err_file="${tmpdir}/${name}_stderr"
 
   bash -c "$cmd" >"$out_file" 2>"$err_file" &
 
   local pid=$!
 
   echo "Started: $name PID: $pid" >&2
-  echo "Stdout: $out_file" >&2
-  echo "Stderr: $err_file" >&2
 
   echo "$pid"
 }
