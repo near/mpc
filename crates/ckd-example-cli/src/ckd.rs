@@ -108,7 +108,7 @@ fn decrypt_secret_and_verify(
     let secret = big_c - big_y * private_key;
 
     // verify the secret
-    if !verify(&mpc_public_key, app_id.0.as_ref(), &secret) {
+    if !verify(&mpc_public_key, app_id.as_ref(), &secret) {
         anyhow::bail!("Verification failed!");
     }
 
