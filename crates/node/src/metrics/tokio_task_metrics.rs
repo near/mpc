@@ -298,9 +298,11 @@ pub(crate) async fn run_monitor_loop() {
         &*EDDSA_TASK_MONITORS,
     ];
 
-    let task_monitors: Vec<(TaskMonitor, TaskLabels)> = task_monitor_providers
+    let mut task_monitors: Vec<_> = task_monitor_providers
         .into_iter()
         .flat_map(TaskMonitorProvider::get_monitors)
+        // TODO(#1841): `TaskMonitorProvider` should return intervals directly
+        .map(|(task_monitor, labels)| (task_monitor.intervals(), labels))
         .collect();
 
     let mut ticker = tokio::time::interval(MONITOR_SAMPLE_DURATION);
@@ -308,8 +310,8 @@ pub(crate) async fn run_monitor_loop() {
     loop {
         ticker.tick().await;
 
-        for (task_monitor, task_labels) in task_monitors.iter() {
-            let Some(metrics) = task_monitor.intervals().next() else {
+        for (task_interval, task_labels) in task_monitors.iter_mut() {
+            let Some(metrics) = task_interval.next() else {
                 tracing::error!(
                     protocol_scheme = task_labels.protocol_scheme,
                     task = task_labels.task,
