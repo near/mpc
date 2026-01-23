@@ -63,7 +63,6 @@
           # Local NEAR tooling
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
-          neard = pkgs.callPackage ./nix/neard.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
@@ -101,7 +100,6 @@
 
             # Prevent Cargo from trying to use the system rustup
             RUSTUP_TOOLCHAIN = "";
-            CARGO_HOME = ".nix-cargo";
           };
 
           envDarwin = lib.optionalAttrs stdenv.isDarwin {
@@ -137,7 +135,6 @@
             python3Packages.keyring
             near-cli-rs
             cargo-near
-            neard
           ];
 
           miscTools = with pkgs; [
@@ -190,8 +187,6 @@
             hardeningDisable = hardening;
 
             shellHook = ''
-              mkdir -p .nix-cargo
-              export PATH="$PWD/.nix-cargo/bin:$PATH"
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
             '';
           };

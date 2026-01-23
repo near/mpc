@@ -24,7 +24,6 @@ venv
 **/.app-compose.json
 
 # Nix
-.nix-cargo/
 .direnv/
 
 # TODO(#1768): potentially remove
