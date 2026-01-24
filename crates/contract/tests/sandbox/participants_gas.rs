@@ -11,19 +11,17 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::{gen_accounts, init_contract, init_contract_running, make_threshold_params},
-    utils::{
-        contract_build::current_contract_with_bench_methods, interface::IntoInterfaceType,
-        mpc_contract::submit_participant_info, shared_key_utils::new_secp256k1,
+    common::{
+        gen_accounts, init_contract, init_contract_running, make_threshold_params,
+        submit_attestations,
     },
+    utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
-use contract_interface::types::{Attestation, MockAttestation};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::Participants,
     },
 };
 use near_sdk::Gas;
@@ -307,30 +305,4 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         accounts,
         n_participants,
     }
-}
-
-async fn submit_attestations(
-    contract: &Contract,
-    accounts: &[Account],
-    participants: &Participants,
-) {
-    let futures: Vec<_> = participants
-        .participants()
-        .iter()
-        .zip(accounts)
-        .enumerate()
-        .map(|(i, ((_, _, participant), account))| async move {
-            let attestation = Attestation::Mock(MockAttestation::Valid);
-            let tls_key = (&participant.sign_pk).into_interface_type();
-            let success = submit_participant_info(account, contract, &attestation, &tls_key)
-                .await
-                .expect("submit_participant_info should not error");
-            assert!(
-                success,
-                "submit_participant_info failed for participant {}",
-                i
-            );
-        })
-        .collect();
-    futures::future::join_all(futures).await;
 }

@@ -7,7 +7,6 @@ use crate::sandbox::utils::{
     shared_key_utils::{make_key_for_domain, DomainKey},
     sign_utils::{make_and_submit_requests, PendingSignRequest},
 };
-use assert_matches::assert_matches;
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
 use mpc_contract::{
@@ -213,21 +212,8 @@ pub async fn init_with_candidates(
     };
 
     // Give each participant a valid attestation initially
-    for ((_, _, participant), account) in participants.participants().iter().zip(&accounts) {
-        let tee_submission_result = submit_participant_info(
-            account,
-            &contract,
-            &Attestation::Mock(MockAttestation::Valid),
-            &participant.sign_pk.into_interface_type(),
-        )
-        .await;
+    submit_attestations(&contract, &accounts, &participants).await;
 
-        assert_matches!(
-            tee_submission_result,
-            Ok(true),
-            "`submit_participant_info` must succeed for mock attestations"
-        );
-    }
     dbg!(init);
     (worker, contract, accounts, ret_domains)
 }
@@ -372,6 +358,33 @@ pub async fn submit_tee_attestations(
         assert!(result);
     }
     Ok(())
+}
+
+/// Submit mock attestations for all participants in parallel.
+pub async fn submit_attestations(
+    contract: &Contract,
+    accounts: &[Account],
+    participants: &Participants,
+) {
+    let futures: Vec<_> = participants
+        .participants()
+        .iter()
+        .zip(accounts)
+        .enumerate()
+        .map(|(i, ((_, _, participant), account))| async move {
+            let attestation = Attestation::Mock(MockAttestation::Valid);
+            let tls_key = (&participant.sign_pk).into_interface_type();
+            let success = submit_participant_info(account, contract, &attestation, &tls_key)
+                .await
+                .expect("submit_participant_info should not error");
+            assert!(
+                success,
+                "submit_participant_info failed for participant {}",
+                i
+            );
+        })
+        .collect();
+    futures::future::join_all(futures).await;
 }
 
 /// This function assumes that the accounts are sorted by participant id.
