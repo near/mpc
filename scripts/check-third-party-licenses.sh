@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # Configuration
 LICENSE_FILE="licenses.html"
 TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
@@ -24,8 +26,8 @@ if diff -q "$TEMP_LICENSE_FILE" "$LICENSE_FILE" > /dev/null; then
     rm "$TEMP_LICENSE_FILE"
     exit 0
 else
-    echo "❌ Failure: $LICENSE_FILE is out of sync with Cargo.lock!"
-    echo "Run 'cargo about generate $TEMPLATE > $LICENSE_FILE' to update it."
+    echo "❌ Failure: $LICENSE_FILE is out of sync."
+    echo "Check https://github.com/near/mpc/blob/main/third-party-licenses/README.md for instructions on how to update the license file."
     rm "$TEMP_LICENSE_FILE"
     exit 1
 fi
