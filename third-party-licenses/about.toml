@@ -4,6 +4,8 @@ accepted = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC0-1.0",
+    "CDDL-1.0",
+    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "MPL-2.0",
@@ -15,7 +17,4 @@ accepted = [
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 
-workarounds = [
-    "ring",
-    "rustls",
-]
+workarounds = ["ring", "rustls"]
