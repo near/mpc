@@ -277,13 +277,15 @@ impl ProtocolContractState {
         };
         Ok(is_existing_or_prospective_participant)
     }
+}
 
+#[cfg(feature = "bench-contract-methods")]
+impl ProtocolContractState {
     /// Returns mutable reference to active participants for benchmarking.
-    #[cfg(feature = "bench-contract-methods")]
     pub fn active_participants_mut(&mut self) -> &mut Participants {
         match self {
             ProtocolContractState::Running(state) => state.parameters.participants_mut(),
-            _ => panic!("test-utils: active_participants_mut only works in Running state"),
+            _ => panic!("bench-contract-methods: active_participants_mut only works in Running state"),
         }
     }
 }
