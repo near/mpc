@@ -5,17 +5,15 @@ set -euo pipefail
 # Configuration
 LICENSE_FILE="licenses.html"
 TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
-WORKSPACE_FILE="../Cargo.lock"
+WORKSPACE_FILE="../Cargo.toml"
 TEMPLATE="about.hbs"
-
-cargo-about --version
 
 cd third-party-licenses
 
 echo "Checking if $LICENSE_FILE is up to date..."
 
 # 1. Generate the license data to the temp file
-if ! cargo about generate -m $WORKSPACE_FILE "$TEMPLATE" > "$TEMP_LICENSE_FILE"; then
+if ! cargo about generate --locked -m $WORKSPACE_FILE "$TEMPLATE" > "$TEMP_LICENSE_FILE"; then
     echo "❌ Error: cargo-about failed to generate licenses."
     rm -f "$TEMP_LICENSE_FILE"
     exit 1
