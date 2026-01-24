@@ -15,7 +15,7 @@ const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 
 static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
-static CONTRACT_WITH_TEST_UTILS: OnceLock<Vec<u8>> = OnceLock::new();
+static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 
 /// Returns the current contract WASM without benchmark utilities.
@@ -24,10 +24,10 @@ pub fn current_contract() -> &'static [u8] {
     CONTRACT.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME, false))
 }
 
-/// Returns the current contract WASM with test utilities enabled.
+/// Returns the current contract WASM with benchmark methods enabled.
 /// Use this only for gas benchmark tests that need the `bench_*` contract methods.
-pub fn current_contract_with_test_utils() -> &'static [u8] {
-    CONTRACT_WITH_TEST_UTILS.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME, true))
+pub fn current_contract_with_bench_methods() -> &'static [u8] {
+    CONTRACT_WITH_BENCH_METHODS.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME, true))
 }
 
 pub fn migration_contract() -> &'static [u8] {
@@ -38,9 +38,9 @@ pub fn migration_contract() -> &'static [u8] {
 ///
 /// # Arguments
 /// * `package_name` - The cargo package name to build
-/// * `test_utils` - If true, builds with `--features=test-utils` for benchmark methods
-fn load_contract(package_name: &str, test_utils: bool) -> Vec<u8> {
-    let feature_suffix = if test_utils { ".test-utils" } else { "" };
+/// * `bench_methods` - If true, builds with `--features=bench-contract-methods` for benchmark methods
+fn load_contract(package_name: &str, bench_methods: bool) -> Vec<u8> {
+    let feature_suffix = if bench_methods { ".bench-methods" } else { "" };
     let lockfile_name = format!("{package_name}{feature_suffix}.itest.build.lock");
 
     // Points to `/crates`
@@ -87,9 +87,9 @@ fn load_contract(package_name: &str, test_utils: bool) -> Vec<u8> {
             "--locked".to_string(),
         ];
 
-        // Include test utilities (benchmark endpoints) in WASM when requested.
-        if test_utils {
-            args.push("--features=test-utils".to_string());
+        // Include benchmark endpoints in WASM when requested.
+        if bench_methods {
+            args.push("--features=bench-contract-methods".to_string());
         }
 
         let status = Command::new("cargo")

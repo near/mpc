@@ -2,7 +2,7 @@ pub mod initializing;
 pub mod key_event;
 pub mod resharing;
 pub mod running;
-#[cfg(all(any(test, feature = "test-utils"), not(target_arch = "wasm32")))]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
 use crate::crypto_shared::types::PublicKeyExtended;
@@ -279,7 +279,7 @@ impl ProtocolContractState {
     }
 
     /// Returns mutable reference to active participants for benchmarking.
-    #[cfg(feature = "test-utils")]
+    #[cfg(feature = "bench-contract-methods")]
     pub fn active_participants_mut(&mut self) -> &mut Participants {
         match self {
             ProtocolContractState::Running(state) => state.parameters.participants_mut(),

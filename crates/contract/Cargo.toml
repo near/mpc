@@ -41,6 +41,8 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 test-utils = ["rand", "threshold-signatures", "elliptic-curve"]
+# WASM-compatible benchmark endpoints for sandbox gas testing
+bench-contract-methods = []
 dev-utils = ["rand", "threshold-signatures", "elliptic-curve"]
 abi = ["borsh/unstable__schema", "mpc-primitives/abi", "contract-interface/abi"]
 # This is used when running `cargo clippy --all-features`, because otherwise `abi` feat will break compilation.
