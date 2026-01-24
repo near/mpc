@@ -1,5 +1,5 @@
 use crate::sandbox::utils::{
-    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE},
+    consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE},
     contract_build::current_contract,
     initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
     interface::IntoInterfaceType,
@@ -100,6 +100,50 @@ pub fn make_threshold_params(participants: &Participants) -> ThresholdParameters
     ThresholdParameters::new(participants.clone(), threshold).unwrap()
 }
 
+/// Initialize the contract with the given parameters.
+pub async fn init_contract(
+    contract: &Contract,
+    params: ThresholdParameters,
+    init_config: Option<dtos::InitConfig>,
+) -> ExecutionSuccess {
+    let result = contract
+        .call("init")
+        .args_json(json!({
+            "parameters": params,
+            "init_config": init_config,
+        }))
+        .gas(GAS_FOR_INIT)
+        .transact()
+        .await
+        .unwrap();
+    assert!(result.is_success(), "init failed: {:?}", result);
+    result.into_result().unwrap()
+}
+
+/// Initialize contract in Running state with domains and keyset.
+pub async fn init_contract_running(
+    contract: &Contract,
+    domains: Vec<DomainConfig>,
+    next_domain_id: u64,
+    keyset: Keyset,
+    params: ThresholdParameters,
+) -> ExecutionSuccess {
+    let result = contract
+        .call("init_running")
+        .args_json(json!({
+            "domains": domains,
+            "next_domain_id": next_domain_id,
+            "keyset": keyset,
+            "parameters": params,
+        }))
+        .gas(GAS_FOR_INIT)
+        .transact()
+        .await
+        .unwrap();
+    assert!(result.is_success(), "init_running failed: {:?}", result);
+    result.into_result().unwrap()
+}
+
 pub struct DomainPublicKey {
     public_key: PublicKeyExtended,
     config: DomainConfig,
@@ -121,7 +165,7 @@ pub async fn init_with_candidates(
     let threshold_parameters = make_threshold_params(&participants);
     let mut ret_domains: Vec<DomainPublicKey> = Vec::new();
 
-    let call_builder = if !pks.is_empty() {
+    let init = if !pks.is_empty() {
         let (domains, keys): (Vec<_>, Vec<_>) = pks
             .into_iter()
             .enumerate()
@@ -154,25 +198,13 @@ pub async fn init_with_candidates(
             })
             .unzip();
 
-        contract.call("init_running").args_json(serde_json::json!({
-            "domains": domains,
-            "next_domain_id": (domains.len() as u64) * 2,
-            "keyset": Keyset::new(EpochId::new(5), keys),
-            "parameters": threshold_parameters,
-        }))
+        let next_domain_id = (domains.len() as u64) * 2;
+        let keyset = Keyset::new(EpochId::new(5), keys);
+        init_contract_running(&contract, domains, next_domain_id, keyset, threshold_parameters)
+            .await
     } else {
-        contract.call("init").args_json(serde_json::json!({
-            "parameters": threshold_parameters,
-            "init_config": init_config,
-        }))
+        init_contract(&contract, threshold_parameters, init_config).await
     };
-
-    let init = call_builder
-        .transact()
-        .await
-        .unwrap()
-        .into_result()
-        .unwrap();
 
     // Give each participant a valid attestation initially
     for ((_, _, participant), account) in participants.participants().iter().zip(&accounts) {

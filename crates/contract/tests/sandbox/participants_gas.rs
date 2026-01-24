@@ -11,7 +11,7 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::{gen_accounts, make_threshold_params},
+    common::{gen_accounts, init_contract, init_contract_running, make_threshold_params},
     utils::{
         contract_build::current_contract_with_bench_methods, interface::IntoInterfaceType,
         mpc_contract::submit_participant_info, shared_key_utils::new_secp256k1,
@@ -24,7 +24,6 @@ use mpc_contract::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::Participants,
-        thresholds::ThresholdParameters,
     },
 };
 use near_sdk::Gas;
@@ -281,9 +280,25 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
 
     let threshold_params = make_threshold_params(&participants);
     if running_state {
-        init_contract_running(&contract, threshold_params).await;
+        // Create a dummy domain and keyset for running state
+        let domain_id = DomainId(0);
+        let domain = DomainConfig {
+            id: domain_id,
+            scheme: SignatureScheme::Secp256k1,
+        };
+        let (dto_pk, _) = new_secp256k1();
+        let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
+        let key = KeyForDomain {
+            attempt: AttemptId::new(),
+            domain_id,
+            key: public_key,
+        };
+        let keyset = Keyset::new(EpochId::new(1), vec![key]);
+        let domains = vec![domain];
+        let next_domain_id = domains.len() as u64 + 1;
+        init_contract_running(&contract, domains, next_domain_id, keyset, threshold_params).await;
     } else {
-        init_contract(&contract, threshold_params).await;
+        init_contract(&contract, threshold_params, None).await;
     }
     submit_attestations(&contract, &accounts, &participants).await;
 
@@ -292,52 +307,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         accounts,
         n_participants,
     }
-}
-
-async fn init_contract(contract: &Contract, params: ThresholdParameters) {
-    let result = contract
-        .call("init")
-        .args_json(json!({ "parameters": params }))
-        .gas(Gas::from_tgas(300))
-        .transact()
-        .await
-        .unwrap();
-    assert!(result.is_success(), "init failed: {:?}", result);
-}
-
-/// Initialize contract in Running state (required for mutation benchmarks).
-async fn init_contract_running(contract: &Contract, params: ThresholdParameters) {
-    // Create a dummy domain and keyset for running state
-    let domain_id = DomainId(0);
-    let domain = DomainConfig {
-        id: domain_id,
-        scheme: SignatureScheme::Secp256k1,
-    };
-
-    // Create a valid secp256k1 public key using test utilities
-    let (dto_pk, _) = new_secp256k1();
-    let public_key: PublicKeyExtended = dto_pk.try_into().unwrap();
-
-    let key = KeyForDomain {
-        attempt: AttemptId::new(),
-        domain_id,
-        key: public_key,
-    };
-    let keyset = Keyset::new(EpochId::new(1), vec![key]);
-
-    let result = contract
-        .call("init_running")
-        .args_json(json!({
-            "domains": vec![domain],
-            "next_domain_id": 2u64,
-            "keyset": keyset,
-            "parameters": params,
-        }))
-        .gas(Gas::from_tgas(300))
-        .transact()
-        .await
-        .unwrap();
-    assert!(result.is_success(), "init_running failed: {:?}", result);
 }
 
 async fn submit_attestations(
