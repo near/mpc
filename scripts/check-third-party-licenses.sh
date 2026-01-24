@@ -5,7 +5,7 @@ set -euo pipefail
 # Configuration
 LICENSE_FILE="licenses.html"
 TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
-WORKSPACE_FILE="../Cargo.toml"
+WORKSPACE_FILE="../Cargo.lock"
 TEMPLATE="about.hbs"
 
 
