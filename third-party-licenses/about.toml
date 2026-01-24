@@ -17,7 +17,7 @@ accepted = [
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 
-workarounds = ["ring", "rustls", "rkyv_derive"]
+workarounds = ["ring", "rustls"]
 
 [rkyv_derive.clarify]
 license = "MIT"
