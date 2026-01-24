@@ -200,8 +200,14 @@ pub async fn init_with_candidates(
 
         let next_domain_id = (domains.len() as u64) * 2;
         let keyset = Keyset::new(EpochId::new(5), keys);
-        init_contract_running(&contract, domains, next_domain_id, keyset, threshold_parameters)
-            .await
+        init_contract_running(
+            &contract,
+            domains,
+            next_domain_id,
+            keyset,
+            threshold_parameters,
+        )
+        .await
     } else {
         init_contract(&contract, threshold_parameters, init_config).await
     };
