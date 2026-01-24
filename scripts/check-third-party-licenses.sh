@@ -2,6 +2,15 @@
 
 set -euo pipefail
 
+
+# debug
+echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
+d=$(ls -d ${CARGO_HOME:-$HOME/.cargo}/registry/src/*/rkyv_derive-0.8.13 2>/dev/null | head -n1)
+echo "dir=$d"
+ls -la "$d"/LICENSE* 2>/dev/null || true
+
+## end debug
+
 # Configuration
 LICENSE_FILE="licenses.html"
 TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
