@@ -285,7 +285,9 @@ impl ProtocolContractState {
     pub fn active_participants_mut(&mut self) -> &mut Participants {
         match self {
             ProtocolContractState::Running(state) => state.parameters.participants_mut(),
-            _ => panic!("bench-contract-methods: active_participants_mut only works in Running state"),
+            _ => panic!(
+                "bench-contract-methods: active_participants_mut only works in Running state"
+            ),
         }
     }
 }
