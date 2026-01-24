@@ -164,7 +164,17 @@ async fn gas_regression_participants_update_info() {
     .await;
 }
 
-/// Runs a gas regression test across all participant counts.
+/// Runs a gas regression test across all participant counts defined in the config.
+///
+/// For each participant count (as defined in [`GAS_THRESHOLDS_FILE`]), this function:
+/// 1. Sets up a test environment with that many participants
+/// 2. Calls the specified benchmark method on the contract
+/// 3. Asserts that gas consumption stays within the configured threshold
+///
+/// The `use_lookups` flag runs the benchmark against first/middle/last/missing accounts
+/// to test lookup performance at different positions. The `running_state` flag determines
+/// whether the contract is initialized in [`Running`](mpc_contract::state::ProtocolContractState::Running)
+/// state (required for mutation operations).
 async fn run_gas_regression<F>(
     method: &str,
     get_threshold: F,
