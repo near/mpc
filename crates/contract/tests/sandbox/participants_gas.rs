@@ -11,7 +11,7 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::gen_accounts,
+    common::{gen_accounts, make_threshold_params},
     utils::{
         contract_build::current_contract_with_bench_methods, interface::IntoInterfaceType,
         mpc_contract::submit_participant_info, shared_key_utils::new_secp256k1,
@@ -24,7 +24,7 @@ use mpc_contract::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::Participants,
-        thresholds::{Threshold, ThresholdParameters},
+        thresholds::ThresholdParameters,
     },
 };
 use near_sdk::Gas;
@@ -292,11 +292,6 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
         accounts,
         n_participants,
     }
-}
-
-fn make_threshold_params(participants: &Participants) -> ThresholdParameters {
-    let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-    ThresholdParameters::new(participants.clone(), threshold).unwrap()
 }
 
 async fn init_contract(contract: &Contract, params: ThresholdParameters) {

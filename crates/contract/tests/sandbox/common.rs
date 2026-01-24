@@ -94,6 +94,12 @@ pub async fn init() -> (Worker<Sandbox>, Contract) {
     (worker, contract)
 }
 
+/// Creates threshold parameters with 60% threshold (rounded up).
+pub fn make_threshold_params(participants: &Participants) -> ThresholdParameters {
+    let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
+    ThresholdParameters::new(participants.clone(), threshold).unwrap()
+}
+
 pub struct DomainPublicKey {
     public_key: PublicKeyExtended,
     config: DomainConfig,
@@ -112,10 +118,7 @@ pub async fn init_with_candidates(
 ) {
     let (worker, contract) = init().await;
     let (accounts, participants) = gen_accounts(&worker, number_of_participants).await;
-    let threshold_parameters = {
-        let threshold = Threshold::new(((participants.len() as f64) * 0.6).ceil() as u64);
-        ThresholdParameters::new(participants.clone(), threshold).unwrap()
-    };
+    let threshold_parameters = make_threshold_params(&participants);
     let mut ret_domains: Vec<DomainPublicKey> = Vec::new();
 
     let call_builder = if !pks.is_empty() {
