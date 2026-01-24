@@ -2,15 +2,6 @@
 
 set -euo pipefail
 
-
-# debug
-echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}"
-d=$(ls -d ${CARGO_HOME:-$HOME/.cargo}/registry/src/*/rkyv_derive-0.8.13 2>/dev/null | head -n1)
-echo "dir=$d"
-ls -la "$d"/LICENSE* 2>/dev/null || true
-
-## end debug
-
 # Configuration
 LICENSE_FILE="licenses.html"
 TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
@@ -22,7 +13,7 @@ cd third-party-licenses
 echo "Checking if $LICENSE_FILE is up to date..."
 
 # 1. Generate the license data to the temp file
-if ! cargo about generate --locked --offline -m $WORKSPACE_FILE "$TEMPLATE" > "$TEMP_LICENSE_FILE"; then
+if ! cargo about generate --locked -m $WORKSPACE_FILE "$TEMPLATE" > "$TEMP_LICENSE_FILE"; then
     echo "❌ Error: cargo-about failed to generate licenses."
     rm -f "$TEMP_LICENSE_FILE"
     exit 1
