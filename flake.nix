@@ -64,6 +64,8 @@
           cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           near-cli-rs = pkgs.callPackage ./nix/near-cli-rs.nix { };
           neard = pkgs.callPackage ./nix/neard.nix { };
+          neard = pkgs.callPackage ./nix/neard.nix { };
+          neard = pkgs.callPackage ./nix/neard.nix { };
 
           # Pinned to CI version
           cargoTools = pkgs.callPackage ./nix/cargo-tools.nix { };
@@ -99,7 +101,9 @@
             OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
             OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
 
+            CARGO_HOME = ".nix-cargo";
             # Prevent Cargo from trying to use the system rustup
+            CARGO_HOME = ".nix-cargo";
             RUSTUP_TOOLCHAIN = "";
             CARGO_HOME = ".nix-cargo";
           };
@@ -133,8 +137,10 @@
             rustPlatform.bindgenHook
           ];
 
+            neard
           nearTools = with pkgs; [
             python3Packages.keyring
+            neard
             near-cli-rs
             cargo-near
             neard
