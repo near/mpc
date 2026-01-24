@@ -8,6 +8,7 @@ TEMP_LICENSE_FILE="/tmp/mpc_third_party_licenses.html"
 WORKSPACE_FILE="../Cargo.lock"
 TEMPLATE="about.hbs"
 
+cargo-about --version
 
 cd third-party-licenses
 
