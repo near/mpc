@@ -26,6 +26,7 @@ use mpc_contract::{
 };
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
+use rstest::rstest;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -117,51 +118,27 @@ impl TestEnv {
     }
 }
 
+/// Gas regression test cases parametrized by method.
+///
+/// Each case tests a specific [`Participants`](mpc_contract::primitives::participants::Participants)
+/// operation across all participant counts defined in [`GAS_THRESHOLDS_FILE`],
+/// asserting gas consumption stays within thresholds.
+#[rstest]
+#[case::len("bench_participants_len", |t: &GasThresholds| t.len, false, false)]
+#[case::is_participant("bench_is_participant", |t: &GasThresholds| t.is_participant, true, false)]
+#[case::info("bench_participant_info", |t: &GasThresholds| t.info, true, false)]
+#[case::validate("bench_participants_validate", |t: &GasThresholds| t.validate, false, false)]
+#[case::serialization("bench_participants_serialization_size", |t: &GasThresholds| t.serialization, false, false)]
+#[case::insert("bench_participants_insert", |t: &GasThresholds| t.insert, false, true)]
+#[case::update_info("bench_participants_update_info", |t: &GasThresholds| t.update_info, true, true)]
 #[tokio::test]
-async fn gas_regression_participants_len() {
-    run_gas_regression("bench_participants_len", |t| t.len, false, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_is_participant() {
-    run_gas_regression("bench_is_participant", |t| t.is_participant, true, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participant_info() {
-    run_gas_regression("bench_participant_info", |t| t.info, true, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_validate() {
-    run_gas_regression("bench_participants_validate", |t| t.validate, false, false).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_serialization() {
-    run_gas_regression(
-        "bench_participants_serialization_size",
-        |t| t.serialization,
-        false,
-        false,
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_insert() {
-    run_gas_regression("bench_participants_insert", |t| t.insert, false, true).await;
-}
-
-#[tokio::test]
-async fn gas_regression_participants_update_info() {
-    run_gas_regression(
-        "bench_participants_update_info",
-        |t| t.update_info,
-        true,
-        true,
-    )
-    .await;
+async fn gas_regression(
+    #[case] method: &str,
+    #[case] get_threshold: fn(&GasThresholds) -> Gas,
+    #[case] use_lookups: bool,
+    #[case] running_state: bool,
+) {
+    run_gas_regression(method, get_threshold, use_lookups, running_state).await;
 }
 
 /// Runs a gas regression test across all participant counts defined in the config.
