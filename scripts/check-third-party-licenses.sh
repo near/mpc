@@ -21,7 +21,7 @@ if ! cargo about generate -m $WORKSPACE_FILE "$TEMPLATE" > "$TEMP_LICENSE_FILE";
 fi
 
 # 2. Compare the temp file with the committed file
-if diff -q "$TEMP_LICENSE_FILE" "$LICENSE_FILE" > /dev/null; then
+if diff -u "$LICENSE_FILE" "$TEMP_LICENSE_FILE"; then
     echo "✅ Success: $LICENSE_FILE is up to date."
     rm "$TEMP_LICENSE_FILE"
     exit 0
