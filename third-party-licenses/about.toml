@@ -16,9 +16,6 @@ accepted = [
 
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
-# needed for reproducibility
-# see https://embarkstudios.github.io/cargo-about/cli/generate/config.html#the-no-clearly-defined-field-optional
-no-clearly-defined = true
 
 workarounds = ["ring", "rustls", "rkyv_derive"]
 
