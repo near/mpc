@@ -102,5 +102,9 @@ description = "Run cargo deny"
 command = "cargo"
 args = ["deny", "--all-features", "check"]
 
+[tasks.license-file]
+command = "bash"
+args = ["scripts/check-third-party-licenses.sh"]
+
 [config]
 default_to_workspace = false
