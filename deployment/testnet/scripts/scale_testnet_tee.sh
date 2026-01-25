@@ -115,6 +115,10 @@ ROOT_ACCOUNT="${MPC_NETWORK_NAME}.testnet"
 MPC_CONTRACT_ACCOUNT="mpc.${ROOT_ACCOUNT}"
 node_account_for_i() { echo "node$1.${ROOT_ACCOUNT}"; }
 
+NODE_RANGE_START="${NODE_RANGE_START:-0}"
+NODE_RANGE_END="${NODE_RANGE_END:-$((N-1))}"
+
+
 # Artifact paths
 KEYS_JSON="$WORKDIR/keys.json"
 INIT_ARGS_JSON="$WORKDIR/init_args.json"
@@ -1324,7 +1328,7 @@ main() {
     pause_phase "Fetch bootnodes (dedup) + render node env/conf files"
     bootnodes="$(fetch_bootnodes)"
     log "Fetched bootnodes length: ${#bootnodes}"
-    render_node_files "$bootnodes" "$threshold"
+    render_node_files_range "$bootnodes" "$threshold" "$NODE_RANGE_START" "$NODE_RANGE_END"
     maybe_stop_after_phase render
   fi
 
@@ -1345,7 +1349,7 @@ main() {
 
   if should_run_from_start deploy; then
     pause_phase "Deploy CVMs (dstack)"
-    deploy_nodes
+    deploy_nodes_range "$NODE_RANGE_START" "$NODE_RANGE_END"
     maybe_stop_after_phase deploy
   fi
 
