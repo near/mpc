@@ -168,6 +168,7 @@ impl OutgoingConnection {
                             };
                             let serialized = borsh::to_vec(&data)?;
                             let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            todo!("record the size of `serialized` here");
 
                             // Add timeout to write operations to detect if writes are hanging
                             // (e.g., due to half-open connection where peer stopped ACKing)
