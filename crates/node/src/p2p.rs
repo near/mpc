@@ -1,4 +1,7 @@
 use crate::config::MpcConfig;
+use crate::metrics::networking_metrics::{
+    self, MPC_P2P_NETWORK_BYTES_TOTAL, MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES, OUTGOING_CONNECTION,
+};
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
@@ -6,8 +9,8 @@ use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
 use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
+    IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
+    PeerIndexerHeightMessage, PeerMessage,
 };
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
@@ -18,6 +21,7 @@ use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
+use threshold_signatures::participants::Participant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -114,6 +118,21 @@ enum Packet {
     IndexerHeight(IndexerHeightMessage),
 }
 
+impl Packet {
+    fn message_type_label(&self) -> &str {
+        match &self {
+            Packet::Ping => networking_metrics::PING_MESSAGE,
+            Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
+            Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
+                MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
+                MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
+                MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
+                MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
+            },
+        }
+    }
+}
+
 impl OutgoingConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
@@ -123,6 +142,7 @@ impl OutgoingConnection {
     /// other side as the given participant.
     async fn new(
         client_config: Arc<ClientConfig>,
+        my_id: ParticipantId,
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
@@ -168,7 +188,24 @@ impl OutgoingConnection {
                             };
                             let serialized = borsh::to_vec(&data)?;
                             let len: u32 = serialized.len().try_into().context("Message too long")?;
-                            todo!("record the size of `serialized` here");
+
+                            let my_id_string = my_id.to_string();
+                            let peer_id_string = peer_id.to_string();
+
+                            let metric_labels = [
+                                my_id_string.as_str(),
+                                peer_id_string.as_str(),
+                                OUTGOING_CONNECTION,
+                                data.message_type_label(),
+                            ];
+
+                            MPC_P2P_NETWORK_BYTES_TOTAL
+                                .with_label_values(&metric_labels)
+                                .inc_by(len.into());
+
+                            MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES
+                                .with_label_values(&metric_labels)
+                                .observe(len.into());
 
                             // Add timeout to write operations to detect if writes are hanging
                             // (e.g., due to half-open connection where peer stopped ACKing)
@@ -289,6 +326,7 @@ impl PersistentConnection {
                 loop {
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
+                        my_id,
                         &target_address,
                         target_participant_id,
                         &participant_identities,
