@@ -443,7 +443,7 @@ RTMR2: 24847f5c5a2360d030bc4f7b8577ce32e87c4d051452c937e91220cab69542daef8343394
 The `vmm.toml` configuration provided in the installation steps above already includes a few necessary MPC-specific settings:
 
 * Port **24567** is included in the `cvm.port_mapping.range` (1-30000)
-* port 80 is used by default for MPC node to node communication.
+* port **80** is used by default for MPC node to node communication.
 
 To allow binding to port 80, run the following command:
 ```bash
