@@ -72,6 +72,10 @@ fi
 IP_PREFIX="51.68.219."
 IP_START_OCTET=1
 
+# Optional per-node IP override (format: "5=5.196.36.113 6=5.196.36.114 ...")
+NODE_IP_OVERRIDES="${NODE_IP_OVERRIDES:-}"
+
+
 SSH_BASE=1220
 AGENT_BASE=18090
 PUBLIC_DATA_BASE=18081
@@ -158,7 +162,19 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || { err "Missing required command: $1"; exit 1; }
 }
 
-ip_for_i() { echo "${IP_PREFIX}$((IP_START_OCTET + $1))"; }
+ip_for_i() {
+  local i="$1"
+  if [ -n "$NODE_IP_OVERRIDES" ]; then
+    local ip
+    ip="$(echo " $NODE_IP_OVERRIDES " | sed -n "s/.*[[:space:]]${i}=\([^[:space:]]*\).*/\1/p")"
+    if [ -n "$ip" ]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+  echo "${IP_PREFIX}$((IP_START_OCTET + i))"
+}
+
 ssh_port_for_i() { echo $((SSH_BASE + $1)); }
 agent_port_for_i() { echo $((AGENT_BASE + $1)); }
 public_port_for_i() { echo $((PUBLIC_DATA_BASE + $1)); }
