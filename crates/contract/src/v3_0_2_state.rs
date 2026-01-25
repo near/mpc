@@ -136,6 +136,9 @@ impl From<MpcContract> for crate::MpcContract {
             protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
+            pending_verify_foreign_tx_requests: near_sdk::store::LookupMap::new(
+                crate::storage_keys::StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: value.proposed_updates.into(),
             config: value.config.into(),
             tee_state,

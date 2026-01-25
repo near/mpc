@@ -279,7 +279,9 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
-        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
+        | ConcludeNodeMigration(_)
+        // TODO: implement proper verification for verify_foreign_tx response
+        | VerifyForeignTxRespond(_) => Ok(TransactionStatus::Unknown),
     }
 }
 

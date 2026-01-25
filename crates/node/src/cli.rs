@@ -698,6 +698,7 @@ impl Cli {
             signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: Default::default(),
             cores: Some(4),
         })
     }

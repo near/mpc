@@ -23,8 +23,10 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
+use crate::foreign_chain_verifier::{ForeignChainVerifierAPI, ForeignChainVerifierRegistry};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::storage::VerifyForeignTxStorage;
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use futures::future::BoxFuture;
@@ -504,6 +506,11 @@ where
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
                 let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
+                let verify_foreign_tx_store =
+                    Arc::new(VerifyForeignTxStorage::new(secret_db.clone())?);
+
+                let foreign_verifier: Arc<dyn ForeignChainVerifierAPI> =
+                    Arc::new(ForeignChainVerifierRegistry::new(&config_file.foreign_chains)?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
@@ -578,6 +585,8 @@ where
                     network_client,
                     sign_request_store,
                     ckd_request_store,
+                    verify_foreign_tx_store,
+                    foreign_verifier,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,

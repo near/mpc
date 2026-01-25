@@ -2,6 +2,7 @@ use std::fmt;
 
 use mpc_contract::primitives::{
     domain::DomainId,
+    foreign_chain::{FinalityLevel, ForeignChain, TransactionId},
     signature::{Payload, Tweak},
 };
 use near_indexer_primitives::CryptoHash;
@@ -12,6 +13,7 @@ use contract_interface::types as dtos;
 pub enum RequestType {
     Signature,
     CKD,
+    VerifyForeignTx,
 }
 
 pub type RequestId = CryptoHash;
@@ -62,6 +64,7 @@ impl fmt::Display for RequestType {
         match self {
             RequestType::Signature => write!(f, "signature"),
             RequestType::CKD => write!(f, "ckd"),
+            RequestType::VerifyForeignTx => write!(f, "verify_foreign_tx"),
         }
     }
 }
@@ -115,5 +118,68 @@ impl Request for SignatureRequest {
 
     fn get_type() -> RequestType {
         RequestType::Signature
+    }
+}
+
+pub type VerifyForeignTxId = CryptoHash;
+
+/// Request for foreign chain transaction verification.
+/// MPC nodes verify the transaction on the foreign chain before signing.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VerifyForeignTxRequest {
+    /// The unique ID that identifies this verification request.
+    pub id: VerifyForeignTxId,
+    /// The receipt that generated the request, for on-chain lookup.
+    pub receipt_id: CryptoHash,
+    /// The foreign chain where the transaction was executed.
+    pub chain: ForeignChain,
+    /// The transaction identifier to verify.
+    pub tx_id: TransactionId,
+    /// Required finality level for verification.
+    pub finality: FinalityLevel,
+    /// Key derivation tweak.
+    pub tweak: Tweak,
+    /// Random entropy for the MPC protocol.
+    pub entropy: [u8; 32],
+    /// Timestamp of the request.
+    pub timestamp_nanosec: u64,
+    /// Domain for the signature.
+    pub domain: DomainId,
+}
+
+impl VerifyForeignTxRequest {
+    /// Derive the payload from tx_id (hash of transaction identifier).
+    /// This MUST match the contract's payload derivation which uses SHA-256.
+    pub fn payload(&self) -> Payload {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(self.tx_id.to_bytes());
+        let hash_array: [u8; 32] = hash.into();
+        Payload::from_legacy_ecdsa(hash_array)
+    }
+}
+
+impl Request for VerifyForeignTxRequest {
+    fn get_id(&self) -> RequestId {
+        self.id
+    }
+
+    fn get_receipt_id(&self) -> CryptoHash {
+        self.receipt_id
+    }
+
+    fn get_entropy(&self) -> [u8; 32] {
+        self.entropy
+    }
+
+    fn get_timestamp_nanosec(&self) -> u64 {
+        self.timestamp_nanosec
+    }
+
+    fn get_domain_id(&self) -> DomainId {
+        self.domain
+    }
+
+    fn get_type() -> RequestType {
+        RequestType::VerifyForeignTx
     }
 }

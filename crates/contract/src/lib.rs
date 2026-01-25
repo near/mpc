@@ -28,8 +28,11 @@ use std::{collections::BTreeMap, time::Duration};
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
     dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoContractType, TryIntoInterfaceType},
-    errors::{Error, RequestError},
+    errors::{Error, RequestError, VerifyForeignTxError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
+    primitives::foreign_chain::{
+        VerifyForeignTxRequest, VerifyForeignTxRequestArgs, VerifyForeignTxResponse,
+    },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
     tee::tee_state::{TeeQuoteStatus, TeeState},
@@ -83,6 +86,9 @@ const MINIMUM_SIGN_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 /// Minimum deposit required for CKD requests
 const MINIMUM_CKD_REQUEST_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
 
+/// Minimum deposit required for foreign transaction verification requests
+const MINIMUM_VERIFY_FOREIGN_TX_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+
 impl Default for MpcContract {
     fn default() -> Self {
         env::panic_str("Calling default not allowed.");
@@ -96,6 +102,7 @@ pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTxRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     config: Config,
     tee_state: TeeState,
@@ -146,6 +153,17 @@ impl MpcContract {
     /// Returns true if the request was already pending
     fn add_ckd_request(&mut self, request: &CKDRequest, data_id: CryptoHash) -> bool {
         self.pending_ckd_requests
+            .insert(request.clone(), YieldIndex { data_id })
+            .is_some()
+    }
+
+    /// Returns true if the request was already pending
+    fn add_verify_foreign_tx_request(
+        &mut self,
+        request: &VerifyForeignTxRequest,
+        data_id: CryptoHash,
+    ) -> bool {
+        self.pending_verify_foreign_tx_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
@@ -456,6 +474,129 @@ impl MpcContract {
 
         env::promise_return(promise_index);
     }
+
+    /// Submit a verification + signing request for a foreign chain transaction.
+    /// MPC nodes will verify the transaction on the foreign chain before signing.
+    /// The signed payload is derived from the transaction ID (hash of tx_id).
+    #[handle_result]
+    #[payable]
+    pub fn verify_foreign_transaction(&mut self, request: VerifyForeignTxRequestArgs) {
+        log!(
+            "verify_foreign_transaction: predecessor={:?}, request={:?}",
+            env::predecessor_account_id(),
+            request
+        );
+        let initial_storage = env::storage_usage();
+
+        // Get domain ID (default to legacy ECDSA if not provided)
+        let domain_id = request.domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(domain_id) else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: domain_id,
+                }
+                .to_string(),
+            );
+        };
+
+        // Foreign transaction verification only supports ECDSA signatures
+        match domain_config.scheme {
+            SignatureScheme::Secp256k1 | SignatureScheme::V2Secp256k1 => {
+                // ECDSA is supported
+            }
+            SignatureScheme::Ed25519 | SignatureScheme::Bls12381 => {
+                env::panic_str(
+                    &VerifyForeignTxError::UnsupportedSignatureScheme.to_string(),
+                );
+            }
+        }
+
+        let gas_required =
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
+
+        // Make sure call will not run out of gas doing yield/resume logic
+        if env::prepaid_gas() < gas_required {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas
+                    .message(format!(
+                        "Provided: {}, required: {}",
+                        env::prepaid_gas(),
+                        gas_required
+                    ))
+                    .to_string(),
+            );
+        }
+
+        // Check deposit and refund if required
+        let predecessor = env::predecessor_account_id();
+        let deposit = env::attached_deposit();
+        let storage_used = env::storage_usage() - initial_storage;
+        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
+
+        let cost = std::cmp::max(storage_cost, MINIMUM_VERIFY_FOREIGN_TX_DEPOSIT);
+
+        match deposit.checked_sub(cost) {
+            None => {
+                env::panic_str(
+                    &InvalidParameters::InsufficientDeposit
+                        .message(format!(
+                            "Require a deposit of {} yoctonear, found: {}",
+                            cost.as_yoctonear(),
+                            deposit.as_yoctonear(),
+                        ))
+                        .to_string(),
+                );
+            }
+            Some(diff) => {
+                if diff > NearToken::from_yoctonear(0) {
+                    log!("refund excess deposit {diff} to {predecessor}");
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
+                }
+            }
+        }
+
+        let internal_request = VerifyForeignTxRequest::new(
+            request.chain,
+            request.tx_id,
+            request.finality,
+            domain_id,
+            &predecessor.as_v2_account_id(),
+            &request.path,
+        );
+
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        let callback_gas = Gas::from_tgas(
+            self.config
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+        );
+
+        let promise_index = env::promise_yield_create(
+            "return_verify_foreign_tx_on_success",
+            serde_json::to_vec(&(&internal_request,)).unwrap(),
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        // Store the request in the contract's local state
+        let data_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if self.add_verify_foreign_tx_request(&internal_request, data_id) {
+            log!("verify_foreign_tx request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
 }
 
 // Node API
@@ -565,6 +706,84 @@ impl MpcContract {
 
         // First get the yield promise of the (potentially timed out) request.
         if let Some(YieldIndex { data_id }) = self.pending_ckd_requests.remove(&request) {
+            // Finally, resolve the promise. This will have no effect if the request already timed.
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+            Ok(())
+        } else {
+            Err(InvalidParameters::RequestNotFound.into())
+        }
+    }
+
+    /// Node responds with verification proof and signature for foreign transaction verification.
+    #[handle_result]
+    pub fn respond_verify_foreign_tx(
+        &mut self,
+        request: VerifyForeignTxRequest,
+        response: VerifyForeignTxResponse,
+    ) -> Result<(), Error> {
+        let signer = Self::assert_caller_is_signer();
+        log!(
+            "respond_verify_foreign_tx: signer={}, request={:?}",
+            &signer,
+            &request
+        );
+
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
+        if !self.protocol_state.is_running_or_resharing() {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+
+        if !self.accept_requests {
+            return Err(TeeError::TeeValidationFailed.into());
+        }
+
+        let domain = request.domain_id;
+        let public_key = self.public_key_extended(domain)?;
+
+        // Verify the signature - derive the payload from the tx_id
+        let payload = request.payload();
+
+        let signature_is_valid = match (&response.signature, public_key) {
+            (
+                SignatureResponse::Secp256k1(signature_response),
+                PublicKeyExtended::Secp256k1 { near_public_key },
+            ) => {
+                // generate the expected public key
+                let expected_public_key = derive_key_secp256k1(
+                    &near_public_key_to_affine_point(near_public_key),
+                    &request.tweak,
+                )
+                .map_err(RespondError::from)?;
+
+                let payload_hash = payload.as_ecdsa().expect("Payload is not ECDSA");
+
+                // Check the signature is correct
+                check_ec_signature(
+                    &expected_public_key,
+                    &signature_response.big_r.affine_point,
+                    &signature_response.s.scalar,
+                    payload_hash,
+                    signature_response.recovery_id,
+                )
+                .is_ok()
+            }
+            (signature_response, public_key_requested) => {
+                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                    "Signature response from MPC: {:?}. Key requested by user {:?}",
+                    signature_response, public_key_requested
+                )));
+            }
+        };
+
+        if !signature_is_valid {
+            return Err(RespondError::InvalidSignature.into());
+        }
+
+        // First get the yield promise of the (potentially timed out) request.
+        if let Some(YieldIndex { data_id }) =
+            self.pending_verify_foreign_tx_requests.remove(&request)
+        {
             // Finally, resolve the promise. This will have no effect if the request already timed.
             env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
             Ok(())
@@ -1221,6 +1440,9 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: ProposedUpdates::default(),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
@@ -1273,6 +1495,9 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: Default::default(),
             tee_state,
             accept_requests: true,
@@ -1360,6 +1585,13 @@ impl MpcContract {
         self.pending_ckd_requests.get(request).cloned()
     }
 
+    pub fn get_pending_verify_foreign_tx_request(
+        &self,
+        request: &VerifyForeignTxRequest,
+    ) -> Option<YieldIndex> {
+        self.pending_verify_foreign_tx_requests.get(request).cloned()
+    }
+
     pub fn config(&self) -> dtos::Config {
         dtos::Config::from(&self.config)
     }
@@ -1407,6 +1639,31 @@ impl MpcContract {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 self.pending_ckd_requests.remove(&request);
+                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    fail_on_timeout_gas,
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
+            }
+        }
+    }
+
+    /// Upon success, returns the verification response with signature.
+    /// If the request times out, removes the request from state and panics to fail the
+    /// original transaction
+    #[private]
+    pub fn return_verify_foreign_tx_on_success(
+        &mut self,
+        request: VerifyForeignTxRequest,
+        #[callback_result] result: Result<VerifyForeignTxResponse, PromiseError>,
+    ) -> PromiseOrValue<VerifyForeignTxResponse> {
+        match result {
+            Ok(response) => PromiseOrValue::Value(response),
+            Err(_) => {
+                self.pending_verify_foreign_tx_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
@@ -2461,6 +2718,9 @@ mod tests {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                pending_verify_foreign_tx_requests: LookupMap::new(
+                    StorageKey::PendingVerifyForeignTxRequests,
+                ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
                 config: Default::default(),

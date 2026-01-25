@@ -464,6 +464,8 @@ impl FakeIndexerCore {
                 completed_signatures: Vec::new(),
                 ckd_requests,
                 completed_ckds: Vec::new(),
+                verify_foreign_tx_requests: Vec::new(),
+                completed_verify_foreign_txs: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -532,6 +534,10 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
                         let mut contract = contract.lock().await;
                         contract.conclude_node_migration(account_id, conclude_migration_args);
+                    }
+                    ChainSendTransactionRequest::VerifyForeignTxRespond(_respond) => {
+                        // TODO: Implement verify_foreign_tx response handling in fake indexer
+                        tracing::debug!("Received verify_foreign_tx response in fake indexer (not implemented)");
                     }
                 }
             }

@@ -3,12 +3,17 @@ use crate::metrics;
 use crate::requests::recent_blocks_tracker::BlockViewLite;
 use crate::types::CKDId;
 use crate::types::SignatureId;
+use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use contract_interface::types as dtos;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
 use mpc_contract::primitives::domain::DomainId;
-use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs};
+use mpc_contract::primitives::foreign_chain::{
+    FinalityLevel, ForeignChain, TransactionId, VerifyForeignTxRequestArgs,
+};
+use mpc_contract::crypto_shared::derive_tweak;
+use mpc_contract::primitives::signature::{Payload, SignRequest, SignRequestArgs, Tweak};
 use near_account_id::AccountId;
 use near_indexer_primitives::types::FunctionArgs;
 use near_indexer_primitives::views::{
@@ -29,6 +34,11 @@ struct UnvalidatedCKDArgs {
     request: CKDRequestArgs,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct UnvalidatedVerifyForeignTxArgs {
+    request: VerifyForeignTxRequestArgs,
+}
+
 /// A validated version of the signature request
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SignArgs {
@@ -42,6 +52,17 @@ pub struct CKDArgs {
     pub app_public_key: dtos::Bls12381G1PublicKey,
     pub app_id: dtos::CkdAppId,
     pub domain_id: DomainId,
+}
+
+/// A validated version of the verify foreign transaction request
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct VerifyForeignTxArgs {
+    pub chain: ForeignChain,
+    pub tx_id: TransactionId,
+    pub finality: FinalityLevel,
+    pub path: String,
+    pub domain_id: DomainId,
+    pub tweak: Tweak,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -64,14 +85,25 @@ pub struct CKDRequestFromChain {
     pub timestamp_nanosec: u64,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VerifyForeignTxRequestFromChain {
+    pub verify_foreign_tx_id: VerifyForeignTxId,
+    pub receipt_id: CryptoHash,
+    pub request: VerifyForeignTxArgs,
+    pub predecessor_id: AccountId,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
+}
 
+#[derive(Clone)]
 pub struct ChainBlockUpdate {
     pub block: BlockViewLite,
     pub signature_requests: Vec<SignatureRequestFromChain>,
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
     pub completed_ckds: Vec<CKDId>,
+    pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
+    pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -144,6 +176,8 @@ async fn handle_message(
     let mut completed_signatures = vec![];
     let mut ckd_requests = vec![];
     let mut completed_ckds = vec![];
+    let mut verify_foreign_tx_requests = vec![];
+    let mut completed_verify_foreign_txs = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -193,6 +227,24 @@ async fn handle_message(
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
                         }
+                        "verify_foreign_transaction" => {
+                            if let Some((verify_id, verify_args)) =
+                                try_get_verify_foreign_tx_args(&receipt, next_receipt_id, args, method_name)
+                            {
+                                verify_foreign_tx_requests.push(VerifyForeignTxRequestFromChain {
+                                    verify_foreign_tx_id: verify_id,
+                                    receipt_id: receipt.receipt_id,
+                                    request: verify_args,
+                                    predecessor_id: receipt.predecessor_id.clone(),
+                                    entropy: streamer_message.block.header.random_value.into(),
+                                    timestamp_nanosec: streamer_message
+                                        .block
+                                        .header
+                                        .timestamp_nanosec,
+                                });
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -208,6 +260,10 @@ async fn handle_message(
                         "return_ck_and_clean_state_on_success" => {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
+                        }
+                        "return_verify_foreign_tx_on_success" => {
+                            completed_verify_foreign_txs.push(request_id);
+                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
                         _ => {}
                     }
@@ -230,6 +286,8 @@ async fn handle_message(
             completed_signatures,
             ckd_requests,
             completed_ckds,
+            verify_foreign_tx_requests,
+            completed_verify_foreign_txs,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -356,6 +414,50 @@ fn try_get_ckd_args(
             app_public_key: ckd_request.app_public_key,
             app_id: ckd_request.app_id,
             domain_id: ckd_request.domain_id,
+        },
+    ))
+}
+
+fn try_get_verify_foreign_tx_args(
+    receipt: &ReceiptView,
+    next_receipt_id: CryptoHash,
+    args: &FunctionArgs,
+    expected_name: &str,
+) -> Option<(VerifyForeignTxId, VerifyForeignTxArgs)> {
+    let verify_args = match serde_json::from_slice::<'_, UnvalidatedVerifyForeignTxArgs>(args) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            return None;
+        }
+    };
+
+    let request = &verify_args.request;
+
+    // Compute tweak from path (same logic as contract)
+    let tweak = derive_tweak(&receipt.predecessor_id, &request.path);
+    let domain_id = request.domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
+
+    tracing::info!(
+        target: "mpc",
+        receipt_id = %receipt.receipt_id,
+        next_receipt_id = %next_receipt_id,
+        caller_id = receipt.predecessor_id.to_string(),
+        chain = ?request.chain,
+        tx_id = ?request.tx_id,
+        finality = ?request.finality,
+        "indexed new `{}` function call", expected_name
+    );
+
+    Some((
+        next_receipt_id,
+        VerifyForeignTxArgs {
+            chain: request.chain.clone(),
+            tx_id: request.tx_id.clone(),
+            finality: request.finality.clone(),
+            path: request.path.clone(),
+            domain_id,
+            tweak,
         },
     ))
 }

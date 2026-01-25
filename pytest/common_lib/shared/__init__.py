@@ -375,6 +375,34 @@ def move_mpc_configs(observers: list[LocalNode]):
             )
 
 
+def add_foreign_chains_config(
+    observers: list[LocalNode],
+    foreign_chains_config: dict,
+):
+    """
+    Add foreign_chains configuration to MPC node config.yaml files.
+
+    This is needed for tests that require foreign chain transaction verification.
+
+    Args:
+        observers: List of observer nodes (MPC nodes).
+        foreign_chains_config: The foreign_chains config dict to add.
+            Example: {"solana": {"rpc_url": "https://api.mainnet-beta.solana.com", ...}}
+    """
+    for observer in observers:
+        config_file_path = os.path.join(observer.node_dir, CONFIG_YAML)
+
+        with open(config_file_path, "r") as f:
+            config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
+
+        config["foreign_chains"] = foreign_chains_config
+
+        with open(config_file_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
+
+        print(f"Added foreign_chains config to: {config_file_path}")
+
+
 def start_cluster_with_mpc(
     num_mpc_nodes,
     num_respond_aks,

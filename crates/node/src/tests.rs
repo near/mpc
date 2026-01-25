@@ -45,6 +45,7 @@ mod faulty;
 mod multidomain;
 mod onboarding;
 mod resharing;
+mod verify_foreign_tx;
 
 const DEFAULT_BLOCK_TIME: std::time::Duration = std::time::Duration::from_millis(300);
 const DEFAULT_MAX_PROTOCOL_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(60);
@@ -220,6 +221,7 @@ impl IntegrationTestSetup {
                     Ipv4Addr::UNSPECIFIED.into(),
                     port_seed.pprof_web_port(i),
                 ),
+                foreign_chains: Default::default(),
             };
             let secrets = SecretsConfig {
                 persistent_secrets: PersistentSecrets {

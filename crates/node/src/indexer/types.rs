@@ -1,4 +1,4 @@
-use crate::{types::CKDRequest, types::SignatureRequest};
+use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use contract_interface::types as dtos;
 use k256::{
@@ -10,6 +10,7 @@ use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{
         domain::DomainId,
+        foreign_chain::{BlockId, FinalityLevel, ForeignChain, TransactionId},
         key_state::{KeyEventId, Keyset},
         signature::Tweak,
     },
@@ -78,6 +79,43 @@ impl ChainCKDRequest {
     }
 }
 
+/* The format in which the chain contract expects
+ * to receive the details of the original verify foreign tx request.
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChainVerifyForeignTxRequest {
+    pub chain: ForeignChain,
+    pub tx_id: TransactionId,
+    pub finality: FinalityLevel,
+    pub tweak: Tweak,
+    pub domain_id: DomainId,
+}
+
+impl ChainVerifyForeignTxRequest {
+    pub fn new(
+        chain: ForeignChain,
+        tx_id: TransactionId,
+        finality: FinalityLevel,
+        tweak: Tweak,
+        domain_id: DomainId,
+    ) -> Self {
+        ChainVerifyForeignTxRequest {
+            chain,
+            tx_id,
+            finality,
+            tweak,
+            domain_id,
+        }
+    }
+}
+
+/* The response format for verify foreign tx, includes verification proof and signature. */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChainVerifyForeignTxResponse {
+    pub verified_at_block: BlockId,
+    pub signature: ChainSignatureResponse,
+}
+
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
 
@@ -125,6 +163,18 @@ pub struct ChainCKDRespondArgs {
 }
 
 impl ChainRespondArgs for ChainCKDRespondArgs {}
+
+/* These arguments are passed to the `respond_verify_foreign_tx` function of the
+ * chain contract. It takes both the details of the original request,
+ * verification proof (block where tx was verified), and the completed signature.
+ */
+#[derive(Serialize, Debug, Deserialize, Clone)]
+pub struct ChainVerifyForeignTxRespondArgs {
+    pub request: ChainVerifyForeignTxRequest,
+    pub response: ChainVerifyForeignTxResponse,
+}
+
+impl ChainRespondArgs for ChainVerifyForeignTxRespondArgs {}
 
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingSignatureRequestArgs {
@@ -183,6 +233,7 @@ pub struct ConcludeNodeMigrationArgs {
 pub enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
     CKDRespond(ChainCKDRespondArgs),
+    VerifyForeignTxRespond(ChainVerifyForeignTxRespondArgs),
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
@@ -205,6 +256,7 @@ impl ChainSendTransactionRequest {
         match self {
             ChainSendTransactionRequest::Respond(_) => "respond",
             ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
+            ChainSendTransactionRequest::VerifyForeignTxRespond(_) => "respond_verify_foreign_tx",
             ChainSendTransactionRequest::VotePk(_) => "vote_pk",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
@@ -222,6 +274,7 @@ impl ChainSendTransactionRequest {
         match self {
             Self::Respond(_)
             | Self::CKDRespond(_)
+            | Self::VerifyForeignTxRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
             | Self::StartReshare(_)
@@ -312,6 +365,39 @@ impl ChainCKDRespondArgs {
                 request.domain_id,
             ),
             response: response.clone(),
+        })
+    }
+}
+
+impl ChainVerifyForeignTxRespondArgs {
+    /// Create a new response for verify foreign tx with an ECDSA signature
+    pub fn new_ecdsa(
+        request: &VerifyForeignTxRequest,
+        response: &Signature,
+        public_key: &VerifyingKey,
+        verified_at_block: BlockId,
+    ) -> anyhow::Result<Self> {
+        // Derive payload from tx_id (hash of transaction identifier)
+        let payload = request.payload();
+        let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
+            &public_key.to_element().to_affine(),
+            response,
+            payload
+                .as_ecdsa()
+                .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
+        )?;
+        Ok(ChainVerifyForeignTxRespondArgs {
+            request: ChainVerifyForeignTxRequest::new(
+                request.chain.clone(),
+                request.tx_id.clone(),
+                request.finality.clone(),
+                request.tweak.clone(),
+                request.domain,
+            ),
+            response: ChainVerifyForeignTxResponse {
+                verified_at_block,
+                signature: k256_signature_response(response.big_r, response.s, recovery_id)?,
+            },
         })
     }
 }
