@@ -1,7 +1,6 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES,
-    OUTGOING_CONNECTION,
+    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
@@ -497,7 +496,7 @@ pub async fn new_tls_mesh_network(
 
                             let packet = Packet::try_from_slice(&buf)
                                 .context("Failed to deserialize packet")?;
-                            let message_label = 
+                            let message_label =
                                 packet.message_type_label();
 
                             match packet {
@@ -532,7 +531,7 @@ pub async fn new_tls_mesh_network(
                             MPC_P2P_TCP_WRITE_SIZE_BYTES
                                 .with_label_values(&metric_labels)
                                 .observe(tcp_write_size as f64);
-                            
+
                             received_bytes += 4 + len as u64;
                             tracking::set_progress(&format!(
                                 "Received {} bytes from {}",
