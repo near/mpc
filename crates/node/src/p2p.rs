@@ -1,6 +1,6 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_NETWORK_BYTES_TOTAL, MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES,
+    self, INCOMING_CONNECTION, MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES,
     OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
@@ -142,7 +142,6 @@ impl OutgoingConnection {
     /// other side as the given participant.
     async fn new(
         client_config: Arc<ClientConfig>,
-        my_id: ParticipantId,
         target_address: &str,
         target_participant_id: ParticipantId,
         participant_identities: &ParticipantIdentities,
@@ -180,7 +179,6 @@ impl OutgoingConnection {
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 let mut sent_bytes: u64 = 0;
-                let my_id_string = my_id.to_string();
                 let peer_id_string = peer_id.to_string();
 
                 loop {
@@ -217,20 +215,14 @@ impl OutgoingConnection {
                                 }
                             }
 
-
                             let header_size = 4;
                             let message_size = (len as u64) + header_size;
 
                             let metric_labels = [
-                                my_id_string.as_str(),
                                 peer_id_string.as_str(),
                                 OUTGOING_CONNECTION,
                                 data.message_type_label(),
                             ];
-
-                            MPC_P2P_NETWORK_BYTES_TOTAL
-                                .with_label_values(&metric_labels)
-                                .inc_by(message_size);
 
                             MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES
                                 .with_label_values(&metric_labels)
@@ -331,7 +323,6 @@ impl PersistentConnection {
                 loop {
                     let new_conn = match OutgoingConnection::new(
                         client_config.clone(),
-                        my_id,
                         &target_address,
                         target_participant_id,
                         &participant_identities,
@@ -539,10 +530,6 @@ pub async fn new_tls_mesh_network(
                                 INCOMING_CONNECTION,
                                 message_label,
                             ];
-
-                            MPC_P2P_NETWORK_BYTES_TOTAL
-                                .with_label_values(&metric_labels)
-                                .inc_by(message_size);
 
                             MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES
                                 .with_label_values(&metric_labels)
