@@ -1,5 +1,6 @@
 pub mod ckd;
 pub mod domain;
+pub mod foreign_chain;
 pub mod key_state;
 pub mod participants;
 pub mod signature;

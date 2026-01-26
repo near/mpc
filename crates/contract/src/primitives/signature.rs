@@ -6,7 +6,7 @@ use near_account_id::AccountId;
 use near_sdk::{near, CryptoHash};
 use std::fmt::Debug;
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd, Hash)]
 #[near(serializers=[borsh, json])]
 pub struct Tweak([u8; 32]);
 

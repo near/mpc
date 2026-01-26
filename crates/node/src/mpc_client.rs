@@ -1,8 +1,13 @@
 use crate::config::ConfigFile;
-use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
+use crate::foreign_chain_verifier::ForeignChainVerifierAPI;
+use crate::indexer::handler::{
+    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
+    VerifyForeignTxRequestFromChain,
+};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
+    ChainVerifyForeignTxRespondArgs,
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -14,6 +19,8 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::storage::VerifyForeignTxStorage;
+use crate::types::VerifyForeignTxRequest;
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::CKDRequest;
@@ -44,6 +51,8 @@ pub struct MpcClient {
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
+    verify_foreign_tx_store: Arc<VerifyForeignTxStorage>,
+    foreign_verifier: Arc<dyn ForeignChainVerifierAPI>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
@@ -58,6 +67,8 @@ impl MpcClient {
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
+        verify_foreign_tx_store: Arc<VerifyForeignTxStorage>,
+        foreign_verifier: Arc<dyn ForeignChainVerifierAPI>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
@@ -69,6 +80,8 @@ impl MpcClient {
             client,
             sign_request_store,
             ckd_request_store,
+            verify_foreign_tx_store,
+            foreign_verifier,
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
@@ -195,6 +208,13 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let mut pending_verify_foreign_txs =
+            PendingRequests::<VerifyForeignTxRequest, ChainVerifyForeignTxRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
 
         let start_time = Clock::real().now();
         loop {
@@ -276,7 +296,62 @@ impl MpcClient {
                         &block_update.block,
                     );
 
+                    // Process verify_foreign_tx requests
+                    let verify_requests = block_update
+                        .verify_foreign_tx_requests
+                        .into_iter()
+                        .map(|verify_request_from_chain| {
+                            let VerifyForeignTxRequestFromChain {
+                                verify_foreign_tx_id,
+                                receipt_id,
+                                request,
+                                predecessor_id: _,
+                                entropy,
+                                timestamp_nanosec,
+                            } = verify_request_from_chain;
+                            let verify_request = VerifyForeignTxRequest {
+                                id: verify_foreign_tx_id,
+                                receipt_id,
+                                chain: request.chain,
+                                tx_id: request.tx_id,
+                                finality: request.finality,
+                                tweak: request.tweak.clone(),
+                                entropy,
+                                timestamp_nanosec,
+                                domain: request.domain_id,
+                            };
 
+                            // Create the corresponding SignatureRequest.
+                            // The payload is derived from the tx_id (hash of the transaction identifier).
+                            let signature_request = SignatureRequest {
+                                id: verify_foreign_tx_id,
+                                receipt_id,
+                                payload: verify_request.payload(),
+                                tweak: request.tweak,
+                                entropy,
+                                timestamp_nanosec,
+                                domain: request.domain_id,
+                            };
+
+                            // Atomically write both requests to the database.
+                            // This ensures crash recovery consistency - if we crash between
+                            // writing to verify_foreign_tx_store and sign_request_store,
+                            // either both are written or neither, preventing stuck requests.
+                            self.verify_foreign_tx_store.add_with_signature_request(
+                                &verify_request,
+                                &signature_request,
+                                self.sign_request_store.sender(),
+                            );
+
+                            verify_request
+                        })
+                        .collect::<Vec<_>>();
+
+                    pending_verify_foreign_txs.notify_new_block(
+                        verify_requests,
+                        block_update.completed_verify_foreign_txs,
+                        &block_update.block,
+                    );
 
                 }
                 debug_request = debug_receiver.recv() => {
@@ -491,6 +566,171 @@ impl MpcClient {
                             .send(ChainSendTransactionRequest::CKDRespond(response))
                             .await;
                         ckd_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .last_response_submission = Some(Clock::real().now());
+
+                        anyhow::Ok(())
+                    },
+                );
+            }
+
+            // Process verify_foreign_tx requests
+            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+
+            for verify_attempt in verify_foreign_tx_attempts {
+                let this = self.clone();
+                let chain_txn_sender_verify = chain_txn_sender.clone();
+                tasks.spawn_checked(
+                    &format!(
+                        "leader for verify_foreign_tx request {:?}",
+                        verify_attempt.request.id
+                    ),
+                    async move {
+                        // Only process if we haven't computed a response in a previous attempt
+                        let existing_response = verify_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .computed_response
+                            .clone();
+                        let response = match existing_response {
+                            None => {
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&["total"])
+                                    .inc();
+
+                                // Step 1: Verify the foreign chain transaction
+                                let verification_result = this
+                                    .foreign_verifier
+                                    .verify(
+                                        &verify_attempt.request.chain,
+                                        &verify_attempt.request.tx_id,
+                                        &verify_attempt.request.finality,
+                                    )
+                                    .await;
+
+                                let verification_output = match verification_result {
+                                    Ok(output) => {
+                                        if !output.success {
+                                            // Transaction was found but failed
+                                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                                .with_label_values(&["verification_tx_failed"])
+                                                .inc();
+                                            tracing::warn!(
+                                                target: "mpc",
+                                                request_id = %verify_attempt.request.id,
+                                                tx_status = ?output.tx_status,
+                                                "Foreign chain transaction verification found failed tx"
+                                            );
+                                            return Err(anyhow::anyhow!(
+                                                "Foreign transaction failed with status: {:?}",
+                                                output.tx_status
+                                            ));
+                                        }
+                                        output
+                                    }
+                                    Err(e) => {
+                                        // Verification error (not found, RPC error, etc.)
+                                        metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                            .with_label_values(&["verification_error"])
+                                            .inc();
+                                        tracing::warn!(
+                                            target: "mpc",
+                                            request_id = %verify_attempt.request.id,
+                                            chain = %verify_attempt.request.chain,
+                                            tx_id = %verify_attempt.request.tx_id,
+                                            finality = %verify_attempt.request.finality,
+                                            error = %e,
+                                            "Foreign chain transaction verification failed"
+                                        );
+                                        return Err(anyhow::anyhow!(
+                                            "Foreign chain verification failed for {} tx {}: {}",
+                                            verify_attempt.request.chain,
+                                            verify_attempt.request.tx_id,
+                                            e
+                                        ));
+                                    }
+                                };
+
+                                tracing::info!(
+                                    target: "mpc",
+                                    request_id = %verify_attempt.request.id,
+                                    block_id = ?verification_output.block_id,
+                                    "Foreign chain transaction verified successfully, proceeding with MPC signing"
+                                );
+
+                                // Step 2: Proceed with MPC signing (only ECDSA for now)
+                                // verify_foreign_tx currently only supports legacy ECDSA
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&verify_attempt.request.domain)
+                                {
+                                    Some(SignatureScheme::Secp256k1) => {
+                                        let (signature, public_key) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.ecdsa_signature_provider
+                                                .clone()
+                                                .make_signature(verify_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainVerifyForeignTxRespondArgs::new_ecdsa(
+                                            &verify_attempt.request,
+                                            &signature,
+                                            &public_key,
+                                            verification_output.block_id,
+                                        )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::V2Secp256k1) => {
+                                        let (signature, public_key) = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.robust_ecdsa_signature_provider
+                                                .clone()
+                                                .make_signature(verify_attempt.request.id),
+                                        )
+                                        .await??;
+
+                                        let response = ChainVerifyForeignTxRespondArgs::new_ecdsa(
+                                            &verify_attempt.request,
+                                            &signature,
+                                            &public_key,
+                                            verification_output.block_id,
+                                        )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(other) => Err(anyhow::anyhow!(
+                                        "Unsupported signature scheme for verify_foreign_tx: {:?}",
+                                        other
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme not found for domain: {:?}",
+                                        verify_attempt.request.domain
+                                    )),
+                                }?;
+
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&["succeeded"])
+                                    .inc();
+
+                                verify_attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .computed_response = Some(response.clone());
+                                response
+                            }
+                            Some(response) => response,
+                        };
+
+                        let _ = chain_txn_sender_verify
+                            .send(ChainSendTransactionRequest::VerifyForeignTxRespond(response))
+                            .await;
+                        verify_attempt
                             .computation_progress
                             .lock()
                             .unwrap()

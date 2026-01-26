@@ -47,6 +47,14 @@ pub enum RespondError {
     TweakNotOnCurve,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum VerifyForeignTxError {
+    #[error("Foreign transaction verification is only supported for ECDSA domains.")]
+    UnsupportedSignatureScheme,
+    #[error("The provided chain is not supported: {chain}")]
+    UnsupportedChain { chain: String },
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
 pub enum PublicKeyError {
     #[error("Derived key conversion failed.")]
@@ -235,6 +243,9 @@ pub enum ErrorKind {
     // Tee errors
     #[error("{0}")]
     NodeMigrationError(#[from] NodeMigrationError),
+    // Foreign transaction verification errors
+    #[error("{0}")]
+    VerifyForeignTxError(#[from] VerifyForeignTxError),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

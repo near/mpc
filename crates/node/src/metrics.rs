@@ -143,6 +143,24 @@ pub static MPC_NUM_CKD_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = Laz
     .unwrap()
 });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_requests_indexed",
+            "Number of verify foreign transaction requests seen by the indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_responses_indexed",
+            "Number of verify foreign transaction responses seen by the indexer"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
         prometheus::register_int_counter_vec!(
@@ -158,6 +176,16 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
         prometheus::register_int_counter_vec!(
             "mpc_num_ckd_computations_led",
             "Number of ckd computations that this node led",
+            &["result"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_verify_foreign_tx_computations_led",
+            "Number of verify foreign tx computations that this node led",
             &["result"],
         )
         .unwrap()
@@ -250,6 +278,15 @@ pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLo
     )
     .unwrap()
 });
+
+pub static VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "verify_foreign_tx_request_channel_failed",
+            "failed to send on channel in verify_foreign_tx_request_channel",
+        )
+        .unwrap()
+    });
 
 pub static NETWORK_LIVE_CONNECTIONS: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
     prometheus::register_int_gauge_vec!(

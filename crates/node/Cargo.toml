@@ -48,11 +48,13 @@ pprof = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+reqwest = { workspace = true }
 rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+sha2 = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }

@@ -45,6 +45,55 @@ pub struct CKDConfig {
     pub timeout_sec: u64,
 }
 
+/// Configuration for foreign chain RPC endpoints
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ForeignChainConfig {
+    pub solana: Option<SolanaRpcConfig>,
+    // Future: ethereum, bitcoin, etc.
+}
+
+impl ForeignChainConfig {
+    /// Validate config on startup - returns error if Solana config is missing or invalid.
+    ///
+    /// This should be called during node startup to ensure all required
+    /// foreign chain RPC endpoints are configured.
+    pub fn validate(&self) -> Result<(), String> {
+        let solana = self.solana.as_ref().ok_or_else(|| {
+            "foreign_chains.solana configuration is required".to_string()
+        })?;
+
+        if solana.rpc_url.is_empty() {
+            return Err("foreign_chains.solana.rpc_url cannot be empty".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+/// Configuration for Solana RPC endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolanaRpcConfig {
+    /// Primary RPC endpoint
+    pub rpc_url: String,
+    /// Backup RPC endpoints for failover
+    #[serde(default)]
+    pub backup_rpc_urls: Vec<String>,
+    /// Request timeout in seconds
+    #[serde(default = "default_solana_timeout")]
+    pub timeout_sec: u64,
+    /// Max retries per RPC call
+    #[serde(default = "default_solana_retries")]
+    pub max_retries: u32,
+}
+
+fn default_solana_timeout() -> u64 {
+    30
+}
+
+fn default_solana_retries() -> u32 {
+    3
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeygenConfig {
     pub timeout_sec: u64,
@@ -164,6 +213,10 @@ pub struct ConfigFile {
     pub ckd: CKDConfig,
     #[serde(default)]
     pub keygen: KeygenConfig,
+    /// Foreign chain RPC configuration for transaction verification.
+    /// Required for foreign transaction verification feature.
+    #[serde(default)]
+    pub foreign_chains: ForeignChainConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
@@ -677,5 +730,46 @@ pub mod tests {
 
         let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
         assert_eq!(secrets_str, secrets_str_copy);
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_missing_solana() {
+        let config = ForeignChainConfig::default();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("foreign_chains.solana configuration is required"));
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_empty_rpc_url() {
+        let config = ForeignChainConfig {
+            solana: Some(SolanaRpcConfig {
+                rpc_url: "".to_string(),
+                backup_rpc_urls: vec![],
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("foreign_chains.solana.rpc_url cannot be empty"));
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_success() {
+        let config = ForeignChainConfig {
+            solana: Some(SolanaRpcConfig {
+                rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+                backup_rpc_urls: vec![],
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+        let result = config.validate();
+        assert!(result.is_ok());
     }
 }

@@ -23,8 +23,10 @@ use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
+use crate::foreign_chain_verifier::{ForeignChainVerifierAPI, ForeignChainVerifierRegistry};
 use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::storage::VerifyForeignTxStorage;
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use futures::future::BoxFuture;
@@ -65,6 +67,10 @@ pub struct Coordinator<TransactionSender> {
 
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
+
+    /// Optional override for the foreign chain verifier (for testing).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub foreign_verifier_override: Option<Arc<dyn ForeignChainVerifierAPI>>,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -170,6 +176,8 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
+                                #[cfg(any(test, feature = "test-utils"))]
+                                self.foreign_verifier_override.clone(),
                             ),
                         )?,
                         stop_fn,
@@ -324,6 +332,9 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
+        #[cfg(any(test, feature = "test-utils"))] foreign_verifier_override: Option<
+            Arc<dyn ForeignChainVerifierAPI>,
+        >,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -504,6 +515,19 @@ where
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
                 let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
+                let verify_foreign_tx_store =
+                    Arc::new(VerifyForeignTxStorage::new(secret_db.clone())?);
+
+                #[cfg(any(test, feature = "test-utils"))]
+                let foreign_verifier: Arc<dyn ForeignChainVerifierAPI> =
+                    if let Some(override_verifier) = &foreign_verifier_override {
+                        override_verifier.clone()
+                    } else {
+                        Arc::new(ForeignChainVerifierRegistry::new(&config_file.foreign_chains)?)
+                    };
+                #[cfg(not(any(test, feature = "test-utils")))]
+                let foreign_verifier: Arc<dyn ForeignChainVerifierAPI> =
+                    Arc::new(ForeignChainVerifierRegistry::new(&config_file.foreign_chains)?);
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
@@ -578,6 +602,8 @@ where
                     network_client,
                     sign_request_store,
                     ckd_request_store,
+                    verify_foreign_tx_store,
+                    foreign_verifier,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,

@@ -329,6 +329,16 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
             ),
+            // VerifyForeignTx uses signature metrics as placeholder
+            types::RequestType::VerifyForeignTx => (
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
+                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
+                &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
+            ),
         };
 
         mpc_pending_queue_blocks_indexed.inc();
@@ -519,6 +529,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                     &metrics::MPC_PENDING_CKDS_QUEUE_ATTEMPTS_GENERATED,
                 ),
                 types::RequestType::Signature => (
+                    &metrics::MPC_PENDING_SIGNATURES_QUEUE_SIZE,
+                    &metrics::MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED,
+                ),
+                // VerifyForeignTx uses signature metrics as placeholder
+                types::RequestType::VerifyForeignTx => (
                     &metrics::MPC_PENDING_SIGNATURES_QUEUE_SIZE,
                     &metrics::MPC_PENDING_SIGNATURES_QUEUE_ATTEMPTS_GENERATED,
                 ),
