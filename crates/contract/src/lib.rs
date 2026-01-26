@@ -21,6 +21,8 @@ pub mod utils;
 pub mod v3_0_2_state;
 pub mod v3_2_0_state;
 
+#[cfg(feature = "bench-contract-methods")]
+mod bench;
 mod dto_mapping;
 
 use std::{collections::BTreeMap, time::Duration};
@@ -1198,15 +1200,16 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
+        let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init: signer={}, parameters={:?}, init_config={:?}",
+            "init: signer={}, num_participants={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
-            parameters,
+            parameters.participants().len(),
+            params_hash,
             init_config,
         );
         parameters.validate()?;
-
-        parameters.validate().unwrap();
 
         // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
         // participants being immediately kicked out once contract transitions into running.
@@ -1241,12 +1244,16 @@ impl MpcContract {
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
+        // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
+        let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, parameters={:?}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
-            parameters,
+            parameters.participants().len(),
+            parameters.threshold().value(),
+            params_hash,
             init_config,
         );
         parameters.validate()?;

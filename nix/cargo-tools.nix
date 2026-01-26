@@ -51,6 +51,13 @@ in
     cargoHash = "sha256-2u1DQtvjRfwbCXnX70M7drrMEvNsrVxsbikgrnNOkUE=";
   })
 
+  (buildTool {
+    pname = "cargo-about";
+    version = "0.8.4";
+    hash = "sha256-DGuznLAalGVhooyU2RJfjFozP3/q2OCfVbgFFG+FcPk=";
+    cargoHash = "sha256-oO5Kp5A2v1w6EUwgcHhyagZDIK7a/2d9uTiCoXHuHhY=";
+  })
+
   # --- STANDARD NIXPKGS VERSIONS ---
   pkgs.cargo-binstall
   pkgs.cargo-insta

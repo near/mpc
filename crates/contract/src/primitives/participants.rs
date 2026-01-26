@@ -135,6 +135,7 @@ impl Participants {
             participants,
         }
     }
+
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
         self.participants
             .iter()

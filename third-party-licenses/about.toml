@@ -4,6 +4,8 @@ accepted = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC0-1.0",
+    "CDDL-1.0",
+    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "MPL-2.0",
@@ -15,7 +17,12 @@ accepted = [
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 
-workarounds = [
-    "ring",
-    "rustls",
-]
+workarounds = ["ring", "rustls"]
+
+[rkyv_derive.clarify]
+license = "MIT"
+
+[[rkyv_derive.clarify.files]]
+path = "LICENSE"
+checksum = "635111a955495b5d8d34b8052f69656e8e45f6437f9266329077b9aad5fbe8d3"
+license = "MIT"
