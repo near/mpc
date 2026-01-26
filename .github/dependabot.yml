@@ -15,3 +15,7 @@ updates:
       rust-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "rand"
+      - dependency-name: "rand_chacha"
+      - dependency-name: "rand_core"
