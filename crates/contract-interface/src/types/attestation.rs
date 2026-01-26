@@ -3,6 +3,7 @@ use std::fmt;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
+use serde_with::{hex::Hex, serde_as};
 
 type Sha256Digest = [u8; 32];
 
@@ -51,6 +52,7 @@ pub enum VerifiedAttestation {
     Mock(MockAttestation),
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -70,13 +72,16 @@ pub enum VerifiedAttestation {
 )]
 pub struct VerifiedDstackAttestation {
     /// The digest of the MPC image running.
+    #[serde_as(as = "Hex")]
     pub mpc_image_hash: Sha256Digest,
     /// The digest of the launcher compose file running.
+    #[serde_as(as = "Hex")]
     pub launcher_compose_hash: Sha256Digest,
     /// Unix time stamp for when this attestation expires.
     pub expiry_timestamp_seconds: u64,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Eq,
@@ -95,11 +100,13 @@ pub struct VerifiedDstackAttestation {
     derive(schemars::JsonSchema)
 )]
 pub struct DstackAttestation {
+    #[serde_as(as = "Hex")]
     pub quote: Vec<u8>,
     pub collateral: Collateral,
     pub tcb_info: TcbInfo,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -124,13 +131,16 @@ pub enum MockAttestation {
     Invalid,
     /// Pass validation depending on the set constraints
     WithConstraints {
+        #[serde_as(as = "Option<Hex>")]
         mpc_docker_image_hash: Option<Sha256Digest>,
+        #[serde_as(as = "Option<Hex>")]
         launcher_docker_compose_hash: Option<Sha256Digest>,
         /// Unix time stamp for when this attestation expires.
         expiry_timestamp_seconds: Option<u64>,
     },
 }
 
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -150,13 +160,17 @@ pub enum MockAttestation {
 )]
 pub struct Collateral {
     pub pck_crl_issuer_chain: String,
+    #[serde_as(as = "Hex")]
     pub root_ca_crl: Vec<u8>,
+    #[serde_as(as = "Hex")]
     pub pck_crl: Vec<u8>,
     pub tcb_info_issuer_chain: String,
     pub tcb_info: String,
+    #[serde_as(as = "Hex")]
     pub tcb_info_signature: Vec<u8>,
     pub qe_identity_issuer_chain: String,
     pub qe_identity: String,
+    #[serde_as(as = "Hex")]
     pub qe_identity_signature: Vec<u8>,
     pub pck_certificate_chain: Option<String>,
 }

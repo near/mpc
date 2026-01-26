@@ -92,3 +92,47 @@ pub fn mock_dto_dstack_attestation() -> contract_interface::types::Attestation {
         contract_interface::types::DstackAttestation::new(quote, collateral, tcb_info),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_mock_dto_dstack_attestation_works() {
+        mock_dto_dstack_attestation();
+    }
+
+    #[test]
+    fn test_mock_dstack_attestation_works() {
+        mock_dstack_attestation();
+    }
+
+    #[test]
+    fn test_near_p2p_tls_key_works() {
+        near_p2p_tls_key();
+    }
+
+    #[test]
+    fn test_near_account_key_works() {
+        near_account_key();
+    }
+
+    #[test]
+    fn test_p2p_tls_key_works() {
+        p2p_tls_key();
+    }
+
+    #[test]
+    fn test_account_key_works() {
+        account_key();
+    }
+
+    #[test]
+    fn test_launcher_compose_digest_works() {
+        launcher_compose_digest();
+    }
+
+    #[test]
+    fn test_image_digest_works() {
+        image_digest();
+    }
+}
