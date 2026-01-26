@@ -293,8 +293,8 @@ mod integration_tests {
             if let Some(transactions) = block_response["result"]["transactions"].as_array() {
                 // Find a successful transaction (no error in meta)
                 for tx in transactions {
-                    let has_error = tx["meta"]["err"].as_null().is_none();
-                    if !has_error {
+                    let has_error = tx["meta"]["err"].is_null();
+                    if has_error {
                         // This transaction succeeded - extract its signature
                         if let Some(signatures) = tx["transaction"]["signatures"].as_array() {
                             if let Some(first_sig) = signatures.first() {
