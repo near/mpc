@@ -1,5 +1,6 @@
 use std::{sync::LazyLock, time::Duration};
 
+pub(crate) mod networking_metrics;
 pub(crate) mod tokio_runtime_metrics;
 pub(crate) mod tokio_task_metrics;
 
@@ -247,15 +248,6 @@ pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLo
     prometheus::register_int_counter!(
         "ckd_request_channel_failed",
         "failed to send on channel in ckd_request_channel",
-    )
-    .unwrap()
-});
-
-pub static NETWORK_LIVE_CONNECTIONS: LazyLock<prometheus::IntGaugeVec> = LazyLock::new(|| {
-    prometheus::register_int_gauge_vec!(
-        "mpc_network_live_connections",
-        "Current state of the mesh network connections",
-        &["my_participant_id", "peer_participant_id"],
     )
     .unwrap()
 });
