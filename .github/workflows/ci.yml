@@ -322,7 +322,7 @@ jobs:
 
       - name: Install cargo-about
         run: |
-          cargo binstall --no-confirm --locked cargo-about@0.8.4
+          cargo binstall --force --no-confirm --locked cargo-about@0.8.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install cargo-deny
