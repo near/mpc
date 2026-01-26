@@ -11,9 +11,9 @@ dependencies = [
   "cargo-deny",
   "zizmor",
   "check",
+  "license-file",
   "clippy",
   "clippy-all-features",
-  "license-file",
 ]
 
 [tasks.check-all]
@@ -29,10 +29,10 @@ dependencies = [
   "cargo-deny",
   "zizmor",
   "check",
+  "license-file",
   "clippy",
   "clippy-all-features",
   "nextest",
-  "license-file",
 ]
 
 [tasks.check]
