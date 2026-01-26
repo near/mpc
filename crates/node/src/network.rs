@@ -4,7 +4,7 @@ pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
 
-use crate::metrics;
+use crate::metrics::networking_metrics;
 use crate::primitives::{
     ChannelId, IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, MpcStartMessage,
     MpcTaskId, ParticipantId, PeerMessage, UniqueId,
@@ -339,10 +339,10 @@ impl MeshNetworkClient {
     /// Emit network metrics through Prometheus counters
     pub fn emit_metrics(&self) {
         let my_participant_id = self.my_participant_id();
-        metrics::NETWORK_LIVE_CONNECTIONS.reset();
+        networking_metrics::NETWORK_LIVE_CONNECTIONS.reset();
 
         for id in self.all_participant_ids() {
-            let metric = metrics::NETWORK_LIVE_CONNECTIONS
+            let metric = networking_metrics::NETWORK_LIVE_CONNECTIONS
                 .with_label_values(&[&my_participant_id.to_string(), &id.to_string()]);
             if id == my_participant_id {
                 metric.set(1);

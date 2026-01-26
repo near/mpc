@@ -1,4 +1,7 @@
 use crate::config::MpcConfig;
+use crate::metrics::networking_metrics::{
+    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES, OUTGOING_CONNECTION,
+};
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
@@ -6,8 +9,8 @@ use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
 use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
-    IndexerHeightMessage, MpcMessage, MpcPeerMessage, ParticipantId, PeerIndexerHeightMessage,
-    PeerMessage,
+    IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
+    PeerIndexerHeightMessage, PeerMessage,
 };
 use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
@@ -114,6 +117,21 @@ enum Packet {
     IndexerHeight(IndexerHeightMessage),
 }
 
+impl Packet {
+    fn message_type_label(&self) -> &'static str {
+        match &self {
+            Packet::Ping => networking_metrics::PING_MESSAGE,
+            Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
+            Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
+                MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
+                MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
+                MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
+                MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
+            },
+        }
+    }
+}
+
 impl OutgoingConnection {
     /// Both sides of the connection must complete handshake within this time, or else
     /// the connection is considered not successful.
@@ -160,6 +178,8 @@ impl OutgoingConnection {
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 let mut sent_bytes: u64 = 0;
+                let peer_id_string = peer_id.to_string();
+
                 loop {
                     tokio::select! {
                         data = receiver.recv() => {
@@ -193,7 +213,21 @@ impl OutgoingConnection {
                                     ));
                                 }
                             }
-                            sent_bytes += 4 + len as u64;
+
+                            let header_size = 4;
+                            let tcp_read_size = (len as u64) + header_size;
+
+                            let metric_labels = [
+                                peer_id_string.as_str(),
+                                OUTGOING_CONNECTION,
+                                data.message_type_label(),
+                            ];
+
+                            MPC_P2P_TCP_WRITE_SIZE_BYTES
+                                .with_label_values(&metric_labels)
+                                .observe(tcp_read_size as f64);
+
+                            sent_bytes += tcp_read_size;
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
@@ -439,6 +473,9 @@ pub async fn new_tls_mesh_network(
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
+
+                        let peer_id_string = peer_id.to_string();
+
                         loop {
 
                             let len = tokio::time::timeout(
@@ -456,10 +493,12 @@ pub async fn new_tls_mesh_network(
                                 stream.read_exact(&mut buf),
                             )
                             .await??;
-                            received_bytes += 4 + len as u64;
 
                             let packet = Packet::try_from_slice(&buf)
                                 .context("Failed to deserialize packet")?;
+                            let message_label =
+                                packet.message_type_label();
+
                             match packet {
                                 Packet::Ping => {
                                     // Do nothing. Pings are just for TCP keepalive.
@@ -480,6 +519,20 @@ pub async fn new_tls_mesh_network(
                                 }
                             }
 
+                            let header_size = 4;
+                            let tcp_write_size = (len as u64) + header_size;
+
+                            let metric_labels = [
+                                peer_id_string.as_str(),
+                                INCOMING_CONNECTION,
+                                message_label,
+                            ];
+
+                            MPC_P2P_TCP_WRITE_SIZE_BYTES
+                                .with_label_values(&metric_labels)
+                                .observe(tcp_write_size as f64);
+
+                            received_bytes += 4 + len as u64;
                             tracking::set_progress(&format!(
                                 "Received {} bytes from {}",
                                 received_bytes, peer_id
