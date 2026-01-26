@@ -19,20 +19,30 @@ const LABEL_PEER_PARTICIPANT_ID: &str = "peer_participant_id";
 const LABEL_CONNECTION_DIRECTION: &str = "connection_direction";
 const LABEL_MESSAGE_TYPE: &str = "message_type";
 
-// Conservative Estimate
+// Conservative estimate of maximum transmission unit
 // https://en.wikipedia.org/wiki/Maximum_transmission_unit
 const MTU_BYTES: f64 = 1280.0;
 const NETWORK_MESSAGE_SIZES_BYTES_BUCKETS: &[f64] = &[
-    100.0,
-    200.0,
-    MTU_BYTES / 2.0,
+    16.0,
+    32.0,
+    64.0,
+    128.0,
+    512.0,
+    1024.0,
+    // approx number of Packet
     MTU_BYTES,
     MTU_BYTES * 2.0,
     MTU_BYTES * 4.0,
     MTU_BYTES * 8.0,
-    MTU_BYTES * 12.0,
     MTU_BYTES * 16.0,
-    MTU_BYTES * 20.0,
+    MTU_BYTES * 32.0,
+    MTU_BYTES * 64.0,
+    MTU_BYTES * 128.0,
+    MTU_BYTES * 256.0,
+    MTU_BYTES * 512.0,
+    MTU_BYTES * 1024.0, // ~1.3MB
+    MTU_BYTES * 2048.0, // ~2.6MiB
+    MTU_BYTES * 4096.0, // ~5.2MB
 ];
 
 pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
@@ -47,7 +57,7 @@ pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::ne
 pub(crate) static MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES: LazyLock<HistogramVec> =
     LazyLock::new(|| {
         register_histogram_vec!(
-            "mpc_p2p_network_message_sizes_bytes",
+            "mpc_p2p_message_size_bytes",
             "Number of bytes sent transmitted on this network connection",
             &[
                 LABEL_PEER_PARTICIPANT_ID,
