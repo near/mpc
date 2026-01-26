@@ -1,6 +1,6 @@
 use crate::config::MpcConfig;
 use crate::metrics::networking_metrics::{
-    self, INCOMING_CONNECTION, MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES,
+    self, INCOMING_CONNECTION, MPC_P2P_TCP_WRITE_SIZE_BYTES,
     OUTGOING_CONNECTION,
 };
 use crate::network::conn::{
@@ -216,7 +216,7 @@ impl OutgoingConnection {
                             }
 
                             let header_size = 4;
-                            let message_size = (len as u64) + header_size;
+                            let tcp_read_size = (len as u64) + header_size;
 
                             let metric_labels = [
                                 peer_id_string.as_str(),
@@ -224,11 +224,11 @@ impl OutgoingConnection {
                                 data.message_type_label(),
                             ];
 
-                            MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES
+                            MPC_P2P_TCP_WRITE_SIZE_BYTES
                                 .with_label_values(&metric_labels)
-                                .observe(message_size as f64);
+                                .observe(tcp_read_size as f64);
 
-                            sent_bytes += message_size;
+                            sent_bytes += tcp_read_size;
 
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
@@ -522,7 +522,7 @@ pub async fn new_tls_mesh_network(
                             }
 
                             let header_size = 4;
-                            let message_size = (len as u64) + header_size;
+                            let tcp_write_size = (len as u64) + header_size;
 
                             let metric_labels = [
                                 my_id_string.as_str(),
@@ -531,10 +531,10 @@ pub async fn new_tls_mesh_network(
                                 message_label,
                             ];
 
-                            MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES
+                            MPC_P2P_TCP_WRITE_SIZE_BYTES
                                 .with_label_values(&metric_labels)
-                                .observe(message_size as f64);
-
+                                .observe(tcp_write_size as f64);
+                            
                             received_bytes += 4 + len as u64;
                             tracking::set_progress(&format!(
                                 "Received {} bytes from {}",

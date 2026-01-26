@@ -54,17 +54,16 @@ pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::ne
     .unwrap()
 });
 
-pub(crate) static MPC_P2P_NETWORK_MESSAGE_SIZES_BYTES: LazyLock<HistogramVec> =
-    LazyLock::new(|| {
-        register_histogram_vec!(
-            "mpc_p2p_message_size_bytes",
-            "Number of bytes sent transmitted on this network connection",
-            &[
-                LABEL_PEER_PARTICIPANT_ID,
-                LABEL_CONNECTION_DIRECTION,
-                LABEL_MESSAGE_TYPE,
-            ],
-            NETWORK_MESSAGE_SIZES_BYTES_BUCKETS.to_vec()
-        )
-        .unwrap()
-    });
+pub(crate) static MPC_P2P_TCP_WRITE_SIZE_BYTES: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        "mpc_p2p_tcp_write_size_bytes",
+        "Number of bytes sent transmitted on this network connection",
+        &[
+            LABEL_PEER_PARTICIPANT_ID,
+            LABEL_CONNECTION_DIRECTION,
+            LABEL_MESSAGE_TYPE,
+        ],
+        NETWORK_MESSAGE_SIZES_BYTES_BUCKETS.to_vec()
+    )
+    .unwrap()
+});
