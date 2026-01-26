@@ -1247,11 +1247,12 @@ impl MpcContract {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, parameters_hash={:?}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
             parameters.participants().len(),
+            parameters.threshold().value(),
             params_hash,
             init_config,
         );
