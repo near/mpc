@@ -475,7 +475,6 @@ pub async fn new_tls_mesh_network(
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
 
-                        let my_id_string = my_id.to_string();
                         let peer_id_string = peer_id.to_string();
 
                         loop {
@@ -525,7 +524,6 @@ pub async fn new_tls_mesh_network(
                             let tcp_write_size = (len as u64) + header_size;
 
                             let metric_labels = [
-                                my_id_string.as_str(),
                                 peer_id_string.as_str(),
                                 INCOMING_CONNECTION,
                                 message_label,
