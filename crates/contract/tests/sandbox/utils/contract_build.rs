@@ -9,23 +9,39 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Maximum age (in seconds) before a cached WASM build is considered stale.
+const BUILD_CACHE_TTL_SECONDS: u64 = 4;
 const CURRENT_CONTRACT_PACKAGE_NAME: &str = "mpc-contract";
 const DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME: &str = "test-migration-contract";
 
 static CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
+static CONTRACT_WITH_BENCH_METHODS: OnceLock<Vec<u8>> = OnceLock::new();
 static MIGRATION_CONTRACT: OnceLock<Vec<u8>> = OnceLock::new();
 
+/// Returns the current contract WASM without benchmark utilities.
+/// Use this for most sandbox tests.
 pub fn current_contract() -> &'static [u8] {
-    CONTRACT.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME))
+    CONTRACT.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME, false))
+}
+
+/// Returns the current contract WASM with benchmark methods enabled.
+/// Use this only for gas benchmark tests that need the `bench_*` contract methods.
+pub fn current_contract_with_bench_methods() -> &'static [u8] {
+    CONTRACT_WITH_BENCH_METHODS.get_or_init(|| load_contract(CURRENT_CONTRACT_PACKAGE_NAME, true))
 }
 
 pub fn migration_contract() -> &'static [u8] {
-    MIGRATION_CONTRACT.get_or_init(|| load_contract(DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME))
+    MIGRATION_CONTRACT.get_or_init(|| load_contract(DUMMY_MIGRATION_CONTRACT_PACKAGE_NAME, false))
 }
 
-/// Generic contract builder
-fn load_contract(package_name: &str) -> Vec<u8> {
-    let lockfile_name = format!("{package_name}.itest.build.lock");
+/// Generic contract builder.
+///
+/// # Arguments
+/// * `package_name` - The cargo package name to build
+/// * `bench_methods` - If true, builds with `--features=bench-contract-methods` for benchmark methods
+fn load_contract(package_name: &str, bench_methods: bool) -> Vec<u8> {
+    let feature_suffix = if bench_methods { ".bench-methods" } else { "" };
+    let lockfile_name = format!("{package_name}{feature_suffix}.itest.build.lock");
 
     // Points to `/crates`
     let pkg_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -63,14 +79,21 @@ fn load_contract(package_name: &str) -> Vec<u8> {
     };
 
     if do_build {
+        let mut args = vec![
+            "build".to_string(),
+            format!("--package={package_name}"),
+            "--profile=release-contract".to_string(),
+            "--target=wasm32-unknown-unknown".to_string(),
+            "--locked".to_string(),
+        ];
+
+        // Include benchmark endpoints in WASM when requested.
+        if bench_methods {
+            args.push("--features=bench-contract-methods".to_string());
+        }
+
         let status = Command::new("cargo")
-            .args([
-                "build",
-                &format!("--package={package_name}"),
-                "--profile=release-contract",
-                "--target=wasm32-unknown-unknown",
-                "--locked",
-            ])
+            .args(&args)
             .current_dir(&project_dir)
             .status()
             .expect("Failed to run cargo build");
@@ -115,12 +138,12 @@ impl BuildLock {
         }
     }
 
-    /// checks if self is older than 4 seconds
+    /// Checks if the build is stale (older than [`BUILD_CACHE_TTL_SECONDS`]).
     fn expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        now.saturating_sub(self.timestamp) > 4
+        now.saturating_sub(self.timestamp) > BUILD_CACHE_TTL_SECONDS
     }
 }

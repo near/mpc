@@ -206,12 +206,14 @@ impl ProtocolContractState {
             ProtocolContractState::Resharing(_) => "Resharing",
         }
     }
+
     pub fn is_running_or_resharing(&self) -> bool {
         matches!(
             self,
             ProtocolContractState::Running(_) | ProtocolContractState::Resharing(_)
         )
     }
+
     pub fn authenticate_update_vote(&self) -> Result<(), Error> {
         match &self {
             ProtocolContractState::Initializing(state) => {
@@ -233,6 +235,7 @@ impl ProtocolContractState {
         };
         Ok(())
     }
+
     /// Returns a reference to the relevant `Participants` list
     /// based on the current protocol phase.
     ///
@@ -273,6 +276,19 @@ impl ProtocolContractState {
             }
         };
         Ok(is_existing_or_prospective_participant)
+    }
+}
+
+#[cfg(feature = "bench-contract-methods")]
+impl ProtocolContractState {
+    /// Returns mutable reference to active participants for benchmarking.
+    pub fn active_participants_mut(&mut self) -> &mut Participants {
+        match self {
+            ProtocolContractState::Running(state) => state.parameters.participants_mut(),
+            _ => panic!(
+                "bench-contract-methods: active_participants_mut only works in Running state"
+            ),
+        }
     }
 }
 
