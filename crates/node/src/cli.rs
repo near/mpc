@@ -510,6 +510,8 @@ impl StartCmd {
             indexer: indexer_api,
             currently_running_job_name: Arc::new(Mutex::new(String::new())),
             debug_request_sender,
+            #[cfg(any(test, feature = "test-utils"))]
+            foreign_verifier_override: None,
         };
         coordinator.run().await
     }

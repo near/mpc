@@ -700,6 +700,8 @@ pub mod testing {
         pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
         pub const RECONNECTION_TEST: Self = Self::new(19);
+        pub const VERIFY_FOREIGN_TX_TEST: Self = Self::new(20);
+        pub const VERIFY_FOREIGN_TX_NOT_FOUND_TEST: Self = Self::new(21);
     }
 
     pub fn generate_test_p2p_configs(

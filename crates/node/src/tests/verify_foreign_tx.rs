@@ -301,3 +301,205 @@ async fn test_mock_verifier_supports_all_chains() {
     // Mock verifier should support all chains for testing
     assert!(mock.supports_chain(&ForeignChain::Solana));
 }
+
+// Integration tests using the fake indexer and multiple signing nodes
+
+use crate::indexer::participants::ContractState;
+use crate::p2p::testing::PortSeed;
+use crate::tests::{
+    request_verify_foreign_tx_and_await_response, IntegrationTestSetup, DEFAULT_BLOCK_TIME,
+    DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+};
+use crate::tracking::AutoAbortTask;
+use mpc_contract::primitives::domain::DomainConfig;
+use near_o11y::testonly::init_integration_logger;
+use near_time::Clock;
+use rand::RngCore;
+use std::sync::Arc;
+
+/// Integration test that verifies the full verify_foreign_tx flow.
+///
+/// This test:
+/// 1. Creates a cluster of 4 MPC nodes with a threshold of 3
+/// 2. Configures a mock foreign chain verifier that returns success for all transactions
+/// 3. Generates keys for an ECDSA domain
+/// 4. Sends a verify_foreign_tx request with a Solana transaction ID
+/// 5. Verifies that a signature is generated and returned
+#[tokio::test]
+async fn test_verify_foreign_tx_integration() {
+    init_integration_logger();
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
+    const TXN_DELAY_BLOCKS: u64 = 1;
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
+        THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        PortSeed::VERIFY_FOREIGN_TX_TEST,
+        DEFAULT_BLOCK_TIME,
+    );
+
+    // Create a Solana transaction ID for verification (before mock setup to whitelist it)
+    let mut tx_bytes = [0u8; 64];
+    rand::thread_rng().fill_bytes(&mut tx_bytes);
+    let tx_id = TransactionId::SolanaSignature(SolanaSignature::new(tx_bytes));
+
+    // Create a mock foreign chain verifier that only succeeds for the specific tx_id
+    // Default is not found - this ensures the test fails if wrong tx_id is passed
+    let mock_verifier = Arc::new(MockForeignChainVerifier::new());
+    mock_verifier.set_default_not_found();
+    mock_verifier.set_success(
+        ForeignChain::Solana,
+        tx_id.clone(),
+        BlockId::SolanaSlot(12345),
+    );
+
+    // Set the mock verifier for all nodes
+    setup.set_foreign_verifier(mock_verifier);
+
+    // Configure domain for ECDSA signatures (required for verify_foreign_tx)
+    let signature_domain_ecdsa = DomainConfig {
+        id: DomainId::legacy_ecdsa_id(),
+        scheme: mpc_contract::primitives::domain::SignatureScheme::Secp256k1,
+    };
+
+    let domains = vec![signature_domain_ecdsa.clone()];
+
+    // Initialize the contract and add the domain
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(domains.clone());
+    }
+
+    // Start all the nodes
+    let _runs = setup
+        .configs
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+
+    // Wait for keygen to complete
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+        )
+        .await
+        .expect("timeout waiting for keygen to complete");
+
+    // Request verification and signature
+    let result = request_verify_foreign_tx_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &signature_domain_ecdsa,
+        ForeignChain::Solana,
+        tx_id,
+        DEFAULT_MAX_SIGNATURE_WAIT_TIME,
+    )
+    .await;
+
+    assert!(
+        result.is_some(),
+        "Expected to receive a signature for the verify_foreign_tx request"
+    );
+    tracing::info!(
+        "Successfully completed verify_foreign_tx in {:?}",
+        result.unwrap()
+    );
+}
+
+/// Integration test that verifies verify_foreign_tx fails when the transaction is not found.
+///
+/// This test configures the mock verifier to return "not found" and verifies that
+/// the request times out (no signature is generated for an unverified transaction).
+#[tokio::test]
+async fn test_verify_foreign_tx_not_found_integration() {
+    init_integration_logger();
+    const NUM_PARTICIPANTS: usize = 4;
+    const THRESHOLD: usize = 3;
+    const TXN_DELAY_BLOCKS: u64 = 1;
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let mut setup: IntegrationTestSetup = IntegrationTestSetup::new(
+        Clock::real(),
+        temp_dir.path(),
+        (0..NUM_PARTICIPANTS)
+            .map(|i| format!("test{}", i).parse().unwrap())
+            .collect(),
+        THRESHOLD,
+        TXN_DELAY_BLOCKS,
+        PortSeed::VERIFY_FOREIGN_TX_NOT_FOUND_TEST,
+        DEFAULT_BLOCK_TIME,
+    );
+
+    // Create a mock foreign chain verifier that returns "not found" for all transactions
+    let mock_verifier = Arc::new(MockForeignChainVerifier::new());
+    mock_verifier.set_default_not_found();
+
+    // Set the mock verifier for all nodes
+    setup.set_foreign_verifier(mock_verifier);
+
+    // Configure domain for ECDSA signatures
+    let signature_domain_ecdsa = DomainConfig {
+        id: DomainId::legacy_ecdsa_id(),
+        scheme: mpc_contract::primitives::domain::SignatureScheme::Secp256k1,
+    };
+
+    let domains = vec![signature_domain_ecdsa.clone()];
+
+    // Initialize the contract and add the domain
+    {
+        let mut contract = setup.indexer.contract_mut().await;
+        contract.initialize(setup.participants.clone());
+        contract.add_domains(domains.clone());
+    }
+
+    // Start all the nodes
+    let _runs = setup
+        .configs
+        .into_iter()
+        .map(|config| AutoAbortTask::from(tokio::spawn(config.run())))
+        .collect::<Vec<_>>();
+
+    // Wait for keygen to complete
+    setup
+        .indexer
+        .wait_for_contract_state(
+            |state| matches!(state, ContractState::Running(_)),
+            DEFAULT_MAX_PROTOCOL_WAIT_TIME * domains.len() as u32,
+        )
+        .await
+        .expect("timeout waiting for keygen to complete");
+
+    // Create a Solana transaction ID for verification
+    let mut tx_bytes = [0u8; 64];
+    rand::thread_rng().fill_bytes(&mut tx_bytes);
+    let tx_id = TransactionId::SolanaSignature(SolanaSignature::new(tx_bytes));
+
+    // Request verification - should timeout since the transaction is "not found"
+    // Use a shorter timeout to make the test faster
+    let short_timeout = std::time::Duration::from_secs(10);
+    let result = request_verify_foreign_tx_and_await_response(
+        &mut setup.indexer,
+        "user0",
+        &signature_domain_ecdsa,
+        ForeignChain::Solana,
+        tx_id,
+        short_timeout,
+    )
+    .await;
+
+    assert!(
+        result.is_none(),
+        "Expected no signature when transaction verification fails"
+    );
+    tracing::info!("Correctly timed out for unverified transaction");
+}

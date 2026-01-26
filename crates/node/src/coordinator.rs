@@ -67,6 +67,10 @@ pub struct Coordinator<TransactionSender> {
 
     /// For debug UI to send us debug requests.
     pub debug_request_sender: broadcast::Sender<DebugRequest>,
+
+    /// Optional override for the foreign chain verifier (for testing).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub foreign_verifier_override: Option<Arc<dyn ForeignChainVerifierAPI>>,
 }
 
 type StopFn = Box<dyn Fn(&ContractState) -> bool + Send>;
@@ -172,6 +176,8 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
+                                #[cfg(any(test, feature = "test-utils"))]
+                                self.foreign_verifier_override.clone(),
                             ),
                         )?,
                         stop_fn,
@@ -326,6 +332,9 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
+        #[cfg(any(test, feature = "test-utils"))] foreign_verifier_override: Option<
+            Arc<dyn ForeignChainVerifierAPI>,
+        >,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -509,6 +518,14 @@ where
                 let verify_foreign_tx_store =
                     Arc::new(VerifyForeignTxStorage::new(secret_db.clone())?);
 
+                #[cfg(any(test, feature = "test-utils"))]
+                let foreign_verifier: Arc<dyn ForeignChainVerifierAPI> =
+                    if let Some(override_verifier) = &foreign_verifier_override {
+                        override_verifier.clone()
+                    } else {
+                        Arc::new(ForeignChainVerifierRegistry::new(&config_file.foreign_chains)?)
+                    };
+                #[cfg(not(any(test, feature = "test-utils")))]
                 let foreign_verifier: Arc<dyn ForeignChainVerifierAPI> =
                     Arc::new(ForeignChainVerifierRegistry::new(&config_file.foreign_chains)?);
 

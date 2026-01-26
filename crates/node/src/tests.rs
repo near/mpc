@@ -13,8 +13,12 @@ use crate::config::{
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
+use crate::foreign_chain_verifier::ForeignChainVerifierAPI;
 use crate::indexer::fake::FakeIndexerManager;
-use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
+use crate::indexer::handler::{
+    CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain, VerifyForeignTxArgs,
+    VerifyForeignTxRequestFromChain,
+};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
@@ -26,7 +30,9 @@ use crate::tracking::{self, start_root_task, AutoAbortTask};
 use crate::web::{start_web_server, static_web_data};
 use assert_matches::assert_matches;
 use mpc_contract::primitives::domain::{DomainConfig, SignatureScheme};
+use mpc_contract::primitives::foreign_chain::{FinalityLevel, ForeignChain, TransactionId};
 use mpc_contract::primitives::signature::{Bytes, Payload};
+use mpc_contract::crypto_shared::derive_tweak;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use near_indexer_primitives::CryptoHash;
@@ -60,6 +66,8 @@ pub struct OneNodeTestConfig {
     indexer: IndexerAPI<MockTransactionSender>,
     _indexer_task: AutoAbortTask<()>,
     currently_running_job_name: Arc<std::sync::Mutex<String>>,
+    /// Optional override for the foreign chain verifier (for testing).
+    pub foreign_verifier_override: Option<Arc<dyn ForeignChainVerifierAPI>>,
 }
 
 pub fn make_key_storage_config(
@@ -140,6 +148,7 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
+                    foreign_verifier_override: self.foreign_verifier_override,
                 };
                 coordinator.run().await
             };
@@ -245,6 +254,7 @@ impl IntegrationTestSetup {
                 indexer: indexer_api,
                 _indexer_task: task,
                 currently_running_job_name,
+                foreign_verifier_override: None,
             });
         }
         IntegrationTestSetup {
@@ -256,6 +266,14 @@ impl IntegrationTestSetup {
 
     pub fn get_config(&self, node_index: usize) -> Option<&OneNodeTestConfig> {
         self.configs.get(node_index)
+    }
+
+    /// Set the foreign chain verifier override for all nodes.
+    /// This should be called before starting the nodes.
+    pub fn set_foreign_verifier(&mut self, verifier: Arc<dyn ForeignChainVerifierAPI>) {
+        for config in &mut self.configs {
+            config.foreign_verifier_override = Some(verifier.clone());
+        }
     }
 }
 /// Request a signature from the indexer and wait for the response.
@@ -415,6 +433,89 @@ pub async fn request_ckd_and_await_response(
             }
             Err(_) => {
                 tracing::info!("Timed out waiting for ckd response for user {}", user);
+                return None;
+            }
+        }
+    }
+}
+
+/// Request a verify_foreign_tx from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+pub async fn request_verify_foreign_tx_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    chain: ForeignChain,
+    tx_id: TransactionId,
+    timeout_duration: std::time::Duration,
+) -> Option<std::time::Duration> {
+    assert_matches!(
+        domain.scheme,
+        SignatureScheme::Secp256k1,
+        "`request_verify_foreign_tx_and_await_response` must be called with a Secp256k1 domain",
+    );
+
+    let predecessor_id: AccountId = user.parse().unwrap();
+    let path = "m/44'/60'/0'/0/0".to_string();
+    let tweak = derive_tweak(&predecessor_id, &path);
+
+    let request = VerifyForeignTxRequestFromChain {
+        verify_foreign_tx_id: CryptoHash(rand::random()),
+        receipt_id: CryptoHash(rand::random()),
+        predecessor_id,
+        entropy: rand::random(),
+        timestamp_nanosec: rand::random(),
+        request: VerifyForeignTxArgs {
+            chain: chain.clone(),
+            tx_id: tx_id.clone(),
+            finality: FinalityLevel::Final,
+            path,
+            domain_id: domain.id,
+            tweak,
+        },
+    };
+    tracing::info!(
+        "Sending verify_foreign_tx request from user {}, tx_id {:?}",
+        user,
+        request.request.tx_id
+    );
+    indexer.request_verify_foreign_tx(request.clone());
+    let start_time = std::time::Instant::now();
+    loop {
+        match timeout(timeout_duration, indexer.next_response_verify_foreign_tx()).await {
+            Ok(response) => {
+                if response.request.tx_id != request.request.tx_id {
+                    // This can legitimately happen when multiple nodes submit responses
+                    // for the same request. In tests this can happen if the
+                    // secondary leader thinks the primary leader is offline when in fact
+                    // the network just has not yet been fully established.
+                    tracing::info!(
+                        "Received verify_foreign_tx response is not for the request we sent (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request.tx_id,
+                        response.request.tx_id
+                    );
+                    continue;
+                }
+                if response.request.domain_id != domain.id {
+                    tracing::info!(
+                        "Received verify_foreign_tx response is not for the domain we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        domain.id,
+                        response.request.domain_id
+                    );
+                    continue;
+                }
+                tracing::info!("Got verify_foreign_tx response for user {}", user);
+                return Some(start_time.elapsed());
+            }
+            Err(_) => {
+                tracing::info!(
+                    "Timed out waiting for verify_foreign_tx response for user {}",
+                    user
+                );
                 return None;
             }
         }
