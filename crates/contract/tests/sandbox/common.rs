@@ -366,8 +366,12 @@ pub async fn submit_attestations(
     accounts: &[Account],
     participants: &Participants,
 ) {
-    let futures: Vec<_> = participants
-        .participants()
+    // Sort participants by ParticipantId to match the order of accounts
+    let mut sorted_participants: Vec<_> = participants.participants().collect();
+    sorted_participants.sort_by_key(|(_, participant_id, _)| participant_id.get());
+
+    let futures: Vec<_> = sorted_participants
+        .into_iter()
         .zip(accounts)
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {

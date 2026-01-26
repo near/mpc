@@ -83,9 +83,13 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
     // Now, we do a resharing. We only retain `threshold` of the initial participants
+    // Sort by ParticipantId to ensure deterministic selection regardless of iteration order
+    let mut sorted_participants: Vec<_> = initial_participants.participants().collect();
+    sorted_participants.sort_by_key(|(_, participant_id, _)| participant_id.get());
+
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
+    for (account_id, participant_id, participant_info) in sorted_participants
+        .into_iter()
         .take(threshold.value() as usize)
     {
         new_participants

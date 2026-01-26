@@ -2,13 +2,12 @@ use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
 use near_sdk::{near, PublicKey};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-};
+use std::{collections::BTreeMap, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
 use crate::tee::tee_state::NodeId;
+#[cfg(any(test, feature = "test-utils"))]
+use std::collections::BTreeSet;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -57,8 +56,6 @@ pub struct Participants {
     next_id: ParticipantId,
     /// Primary storage: AccountId -> (ParticipantId, ParticipantInfo)
     participants: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)>,
-    /// Secondary index to track used ParticipantIds for uniqueness validation
-    used_ids: BTreeSet<ParticipantId>,
 }
 
 // Custom Borsh serialization to maintain wire compatibility with Vec-based format
@@ -90,17 +87,14 @@ mod borsh_impl {
             let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> =
                 Vec::deserialize_reader(reader)?;
 
-            let mut participants = BTreeMap::new();
-            let mut used_ids = BTreeSet::new();
-            for (account_id, participant_id, info) in vec {
-                used_ids.insert(participant_id);
-                participants.insert(account_id, (participant_id, info));
-            }
+            let participants = vec
+                .into_iter()
+                .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+                .collect();
 
             Ok(Participants {
                 next_id,
                 participants,
-                used_ids,
             })
         }
     }
@@ -165,16 +159,14 @@ mod serde_impl {
     impl<'de> Deserialize<'de> for Participants {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             let json = ParticipantsJson::deserialize(deserializer)?;
-            let mut participants = BTreeMap::new();
-            let mut used_ids = BTreeSet::new();
-            for (account_id, participant_id, info) in json.participants {
-                used_ids.insert(participant_id);
-                participants.insert(account_id, (participant_id, info));
-            }
+            let participants = json
+                .participants
+                .into_iter()
+                .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+                .collect();
             Ok(Participants {
                 next_id: json.next_id,
                 participants,
-                used_ids,
             })
         }
     }
@@ -202,7 +194,6 @@ impl Participants {
         Participants {
             next_id: ParticipantId(0),
             participants: BTreeMap::new(),
-            used_ids: BTreeSet::new(),
         }
     }
 
@@ -221,15 +212,14 @@ impl Participants {
         if self.participants.contains_key(&account_id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
-        // O(log n) check for duplicate participant ID
-        if self.used_ids.contains(&id) {
+        // O(n) check for duplicate participant ID - insertions are rare
+        if self.participants.values().any(|(pid, _)| *pid == id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
         if id < self.next_id() {
             return Err(InvalidParameters::ParticipantAlreadyUsed.into());
         }
         self.participants.insert(account_id, (id, info));
-        self.used_ids.insert(id);
         self.next_id.0 = id.0 + 1;
         Ok(())
     }
@@ -263,21 +253,15 @@ impl Participants {
     }
 
     /// Validates that the fields are coherent:
-    ///  - All participant IDs are unique (enforced by used_ids set).
     ///  - All account IDs are unique (enforced by BTreeMap key).
     ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
         // Uniqueness of AccountId is guaranteed by BTreeMap
-        // Uniqueness of ParticipantId is guaranteed by used_ids BTreeSet
-        // Just need to verify next_id invariant
+        // Verify next_id invariant: next_id must be greater than all participant IDs
         for (pid, _) in self.participants.values() {
             if self.next_id.get() <= pid.get() {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
             }
-        }
-        // Verify used_ids is consistent with participants
-        if self.used_ids.len() != self.participants.len() {
-            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
         Ok(())
     }
@@ -291,16 +275,13 @@ impl Participants {
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
     ) -> Self {
-        let mut map = BTreeMap::new();
-        let mut used_ids = BTreeSet::new();
-        for (account_id, participant_id, info) in participants {
-            used_ids.insert(participant_id);
-            map.insert(account_id, (participant_id, info));
-        }
+        let map = participants
+            .into_iter()
+            .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+            .collect();
         Self {
             next_id,
             participants: map,
-            used_ids,
         }
     }
 
@@ -346,23 +327,16 @@ impl Participants {
     /// Returns a subset of the participants according to the given range of indices.
     /// Note: Since BTreeMap iteration is by AccountId order, this may differ from Vec order.
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
-        let participants: Vec<_> = self
+        let map: BTreeMap<_, _> = self
             .participants
             .iter()
             .skip(range.start)
             .take(range.end - range.start)
-            .map(|(a, (p, i))| (a.clone(), *p, i.clone()))
+            .map(|(a, (p, i))| (a.clone(), (*p, i.clone())))
             .collect();
-        let mut used_ids = BTreeSet::new();
-        let mut map = BTreeMap::new();
-        for (account_id, participant_id, info) in participants {
-            used_ids.insert(participant_id);
-            map.insert(account_id, (participant_id, info));
-        }
         Participants {
             next_id: self.next_id,
             participants: map,
-            used_ids,
         }
     }
 
@@ -376,9 +350,7 @@ impl Participants {
     }
 
     pub fn remove(&mut self, account: &AccountId) {
-        if let Some((participant_id, _)) = self.participants.remove(account) {
-            self.used_ids.remove(&participant_id);
-        }
+        self.participants.remove(account);
     }
 
     /// Returns the set of [`NodeId`]s corresponding to the participants.

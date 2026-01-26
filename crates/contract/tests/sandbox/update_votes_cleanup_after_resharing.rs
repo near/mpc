@@ -70,9 +70,13 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     // Reshare with threshold participants, excluding participant 0 who voted
+    // Sort by ParticipantId to ensure deterministic selection regardless of iteration order
+    let mut sorted_participants: Vec<_> = initial_participants.participants().collect();
+    sorted_participants.sort_by_key(|(_, participant_id, _)| participant_id.get());
+
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
+    for (account_id, participant_id, participant_info) in sorted_participants
+        .into_iter()
         .skip(1) // Skip participant 0, so participant 1-6 are included
         .take(threshold.value() as usize)
     {
