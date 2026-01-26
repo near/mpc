@@ -85,7 +85,7 @@ impl TestSetupBuilder {
 
         // 2. Data Generation
         let participants = gen_participants(participant_count);
-        let participants_list = participants.participants().clone();
+        let participants_list = participants.participants_vec();
 
         let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
             .expect("Failed to create threshold parameters");

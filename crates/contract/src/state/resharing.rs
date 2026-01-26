@@ -214,7 +214,6 @@ pub mod tests {
             .proposed_parameters()
             .participants()
             .participants()
-            .iter()
             .map(|(aid, _, _)| aid.clone())
             .collect();
 
@@ -376,8 +375,7 @@ pub mod tests {
                 .resharing_key
                 .proposed_parameters()
                 .participants()
-                .participants()
-                .clone();
+                .participants_vec();
             for (account, _, _) in new_participants {
                 env.set_signer(&account);
                 state.vote_reshared(first_key_event_id).unwrap();
@@ -416,7 +414,8 @@ pub mod tests {
 
         // Reproposing with invalid epoch ID should fail.
         {
-            env.set_signer(&old_participants.participants()[0].0);
+            let old_participants_vec = old_participants.participants_vec();
+            env.set_signer(&old_participants_vec[0].0);
             assert!(state
                 .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
                 .is_err());
@@ -426,13 +425,34 @@ pub mod tests {
         }
 
         // Repropose with new_params_1.
+        // Current participants (from previous running state) must vote first
+        let current_account_ids: BTreeSet<_> = state
+            .previous_running_state
+            .parameters
+            .participants()
+            .participants()
+            .map(|(a, _, _)| a.clone())
+            .collect();
         let mut new_state = None;
+        // First, current participants vote
         for (account, _, _) in new_params_1.participants().participants() {
-            env.set_signer(account);
-            assert!(new_state.is_none());
-            new_state = state
-                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
-                .unwrap();
+            if current_account_ids.contains(account) {
+                env.set_signer(account);
+                assert!(new_state.is_none());
+                new_state = state
+                    .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                    .unwrap();
+            }
+        }
+        // Then, new candidates vote
+        for (account, _, _) in new_params_1.participants().participants() {
+            if !current_account_ids.contains(account) {
+                env.set_signer(account);
+                assert!(new_state.is_none());
+                new_state = state
+                    .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                    .unwrap();
+            }
         }
         // We should've gotten a new resharing state.
         assert!(new_state.is_some());
@@ -455,7 +475,8 @@ pub mod tests {
         );
 
         // Repropose with new_params_2. That should fail.
-        env.set_signer(&old_participants.participants()[0].0);
+        let old_participants_vec2 = old_participants.participants_vec();
+        env.set_signer(&old_participants_vec2[0].0);
         assert!(new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .is_err());

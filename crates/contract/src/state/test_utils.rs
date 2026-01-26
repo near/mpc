@@ -22,27 +22,26 @@ pub fn gen_valid_params_proposal(params: &ThresholdParameters) -> ThresholdParam
     let current_participants = params.participants();
     let mut old_ids: BTreeSet<ParticipantId> = current_participants
         .participants()
-        .iter()
-        .map(|(_, id, _)| id.clone())
+        .map(|(_, id, _)| *id)
         .collect();
     let mut new_ids = BTreeSet::new();
     while new_ids.len() < (n_old_participants as usize) {
         let x: usize = rng.gen::<usize>() % old_ids.len();
-        let c = old_ids.iter().nth(x).unwrap().clone();
-        new_ids.insert(c.clone());
+        let c = *old_ids.iter().nth(x).unwrap();
+        new_ids.insert(c);
         old_ids.remove(&c);
     }
     let mut new_participants = Participants::default();
     for id in new_ids {
         let account_id = current_participants.account_id(&id).unwrap();
         let info = current_participants.info(&account_id).unwrap();
-        let _ = new_participants.insert_with_id(account_id, info.clone(), id.clone());
+        let _ = new_participants.insert_with_id(account_id, info.clone(), id);
     }
     let max_added: usize = rng.gen_range(0..10);
     let mut next_id = current_participants.next_id();
     for i in 0..max_added {
         let (account_id, info) = gen_participant(i);
-        let _ = new_participants.insert_with_id(account_id, info, next_id.clone());
+        let _ = new_participants.insert_with_id(account_id, info, next_id);
         next_id = next_id.next();
     }
 
@@ -58,12 +57,34 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let mut running = gen_running_state(num_domains);
     let proposal = gen_valid_params_proposal(&running.parameters);
     let mut resharing_state = None;
+
+    // Current participants must vote first (before new candidates can vote)
+    // Collect the account IDs to avoid borrowing issues
+    let current_account_ids: BTreeSet<_> = running
+        .parameters
+        .participants()
+        .participants()
+        .map(|(a, _, _)| a.clone())
+        .collect();
+
     for (account, _, _) in proposal.participants().participants() {
-        env.set_signer(account);
-        assert!(resharing_state.is_none());
-        resharing_state = running
-            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
-            .unwrap();
+        if current_account_ids.contains(account) {
+            env.set_signer(account);
+            assert!(resharing_state.is_none());
+            resharing_state = running
+                .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+                .unwrap();
+        }
+    }
+    // Then new candidates vote
+    for (account, _, _) in proposal.participants().participants() {
+        if !current_account_ids.contains(account) {
+            env.set_signer(account);
+            assert!(resharing_state.is_none());
+            resharing_state = running
+                .vote_new_parameters(running.keyset.epoch_id.next(), &proposal)
+                .unwrap();
+        }
     }
     (
         env,
@@ -107,7 +128,7 @@ pub fn gen_initializing_state(
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
-    for (account, _, _) in running.parameters.participants().participants().clone() {
+    for (account, _, _) in running.parameters.participants().participants_vec() {
         env.set_signer(&account);
         assert!(initializing_state.is_none());
         initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();

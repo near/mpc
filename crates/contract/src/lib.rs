@@ -718,7 +718,6 @@ impl MpcContract {
             } => {
                 let invalid_participants: Vec<_> = proposed_participants
                     .participants()
-                    .iter()
                     .filter(|(account_id, _, _)| {
                         !participants_with_valid_attestation.is_participant(account_id)
                     })
@@ -1008,11 +1007,10 @@ impl MpcContract {
             .parameters
             .participants()
             .participants()
-            .iter()
             .filter(|(account_id, _, _)| {
                 self.proposed_updates
                     .vote_by_participant
-                    .get(account_id)
+                    .get(*account_id)
                     .is_some_and(|voted_id| *voted_id == id)
             })
             .count();
@@ -1880,7 +1878,6 @@ mod tests {
             .protocol_state
             .active_participants()
             .participants()
-            .iter()
             .map(|(_, _, participant_info)| participant_info.sign_pk.clone())
             .collect();
 
@@ -2105,7 +2102,7 @@ mod tests {
         threshold_value: u64,
     ) -> (MpcContract, Participants, AccountId) {
         let participants = primitives::test_utils::gen_participants(num_participants);
-        let first_participant_id = participants.participants()[0].0.clone();
+        let first_participant_id = participants.participants_vec()[0].0.clone();
 
         let context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone().as_v1_account_id())
@@ -2127,7 +2124,7 @@ mod tests {
         participant_index: usize,
         is_valid: bool,
     ) -> Result<(), Error> {
-        let participants_list = participants.participants();
+        let participants_list = participants.participants_vec();
         let (account_id, _, participant_info) = &participants_list[participant_index];
         let attestation = if is_valid {
             MockAttestation::Valid
@@ -2291,9 +2288,9 @@ mod tests {
 
         let (participant_id, _, participant_info) = participants
             .participants()
-            .first()
-            .expect("at least one participant")
-            .clone();
+            .next()
+            .expect("at least one participant");
+        let (participant_id, participant_info) = (participant_id.clone(), participant_info.clone());
 
         let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
@@ -2689,7 +2686,7 @@ mod tests {
                 signer_account_pk: destination_node_info.signer_account_pk,
                 expected_error_kind: None,
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     destination_node_info.destination_node_info.clone(),
                 )),
             };
@@ -2718,7 +2715,7 @@ mod tests {
                     InvalidParameters::InvalidTeeRemoteAttestation,
                 )),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -2751,7 +2748,7 @@ mod tests {
                     NodeMigrationError::MigrationNotFound,
                 )),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -2785,7 +2782,7 @@ mod tests {
                     NodeMigrationError::KeysetMismatch,
                 )),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -2840,7 +2837,7 @@ mod tests {
                     InvalidState::ProtocolStateNotRunning,
                 )),
                 expected_post_call_info: Some((
-                    expected_participant_id.clone(),
+                    *expected_participant_id,
                     expected_participant_info.clone(),
                 )),
             };
@@ -3301,7 +3298,7 @@ mod tests {
         running_state.parameters =
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
 
-        let participants = running_state.parameters.participants().participants();
+        let participants = running_state.parameters.participants().participants_vec();
         let participant_1 = participants[0].0.clone();
         let participant_2 = participants[1].0.clone();
 
@@ -3362,8 +3359,8 @@ mod tests {
             .collect();
 
         // Add votes from 2 current participants
-        let participants = participants.participants();
-        let (p1, p2) = (participants[0].0.clone(), participants[1].0.clone());
+        let participants_vec = participants.participants_vec();
+        let (p1, p2) = (participants_vec[0].0.clone(), participants_vec[1].0.clone());
         contract.proposed_updates.vote(&update_id, p1.clone());
         contract.proposed_updates.vote(&update_id, p2.clone());
 
@@ -3415,7 +3412,6 @@ mod tests {
             .unwrap()
             .participants()
             .participants()
-            .iter()
             .map(|(account_id, _, _)| account_id.as_v1_account_id())
             .collect();
 
@@ -3486,7 +3482,7 @@ mod tests {
         ));
 
         // Get participant info for the target (last participant)
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let participant_list = participants.participants_vec();
         let (target_account_id, _, target_participant_info) = &participant_list[2];
 
         // Replace the target's attestation with an expired one
@@ -3540,7 +3536,7 @@ mod tests {
             ParticipantId(PARTICIPANT_COUNT as u32),
             participant_list[0..2]
                 .iter()
-                .map(|(acc, id, info)| (acc.clone(), id.clone(), info.clone()))
+                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
                 .collect(),
         );
         let expected_params =

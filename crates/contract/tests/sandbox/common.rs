@@ -368,7 +368,6 @@ pub async fn submit_attestations(
 ) {
     let futures: Vec<_> = participants
         .participants()
-        .iter()
         .zip(accounts)
         .enumerate()
         .map(|(i, ((_, _, participant), account))| async move {

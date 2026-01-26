@@ -86,14 +86,13 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
         .participants()
-        .iter()
         .take(threshold.value() as usize)
     {
         new_participants
             .insert_with_id(
                 account_id.clone(),
                 participant_info.clone(),
-                participant_id.clone(),
+                *participant_id,
             )
             .expect("Failed to insert participant");
     }

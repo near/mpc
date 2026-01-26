@@ -65,12 +65,11 @@ impl KeyEvent {
     /// The leader is the one with the lowest participant ID.
     pub fn verify_leader(&self) -> Result<(), Error> {
         let signer_account_id = env::signer_account_id().as_v2_account_id();
-        if self
+        if *self
             .parameters
             .participants()
             .participants()
-            .iter()
-            .min_by_key(|(_, participant_id, _)| participant_id)
+            .min_by_key(|(_, participant_id, _)| *participant_id)
             .unwrap()
             .0
             != signer_account_id
@@ -299,9 +298,8 @@ pub mod tests {
             .proposed_parameters()
             .participants()
             .participants()
-            .iter()
-            .min_by_key(|(_, id, _)| id)
+            .min_by_key(|(_, id, _)| *id)
             .unwrap();
-        (account_id.clone(), participant_id.clone())
+        (account_id.clone(), *participant_id)
     }
 }

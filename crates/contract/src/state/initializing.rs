@@ -170,7 +170,6 @@ pub mod tests {
             .proposed_parameters()
             .participants()
             .participants()
-            .iter()
             .map(|(aid, _, _)| aid.clone())
             .collect();
 
@@ -345,8 +344,7 @@ pub mod tests {
             .generating_key
             .proposed_parameters()
             .participants()
-            .participants()
-            .clone();
+            .participants_vec();
         let threshold = state
             .generating_key
             .proposed_parameters()

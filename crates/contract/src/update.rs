@@ -712,10 +712,8 @@ mod tests {
         let update_id = proposed_updates.propose(update.clone());
 
         let participants = gen_participants(2);
-        let (acc0, acc1) = (
-            &participants.participants()[0].0,
-            &participants.participants()[1].0,
-        );
+        let participants_list = participants.participants_vec();
+        let (acc0, acc1) = (&participants_list[0].0, &participants_list[1].0);
         let (acc2, acc3) = (gen_account_id(), gen_account_id());
 
         proposed_updates.vote(&update_id, acc0.clone());

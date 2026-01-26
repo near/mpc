@@ -86,8 +86,8 @@ impl ThresholdParameters {
         let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
         let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
         for (acc, id, info) in self.participants().participants() {
-            old_by_id.insert(id.clone(), acc.clone());
-            old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
+            old_by_id.insert(*id, acc.clone());
+            old_by_acc.insert(acc.clone(), (*id, info.clone()));
         }
         let new_participants = proposal.participants().participants();
         let mut new_min_id = u32::MAX;
@@ -308,16 +308,16 @@ mod tests {
     fn test_proposal_non_unique_ids() {
         let params = gen_threshold_params(10);
 
-        // Add duplicate participants
+        // With BTreeMap-based Participants, duplicate AccountIds are automatically deduplicated.
+        // We can still test that the validate_incoming_proposal catches proposals with
+        // incorrect participant counts (which could happen through other tampering).
+
+        // Create a tampered Participants with an invalid next_id (lower than max participant id)
+        let vec = params.participants.participants_vec();
+        let max_id = vec.iter().map(|(_, pid, _)| pid.get()).max().unwrap_or(0);
         let tampered_participants = Participants::init(
-            params.participants.next_id(),
-            params
-                .participants
-                .participants()
-                .iter()
-                .chain(params.participants.participants().iter())
-                .cloned()
-                .collect(),
+            ParticipantId(max_id), // next_id should be max_id + 1, so this is invalid
+            vec,
         );
         assert!(tampered_participants.validate().is_err());
 
@@ -348,9 +348,21 @@ mod tests {
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
+        // Get the account IDs to remove (first 2 by iteration order)
+        let accounts_to_remove: Vec<_> = params
+            .participants
+            .participants()
+            .take(2)
+            .map(|(acc, _, _)| acc.clone())
+            .collect();
+
         let mut new_participants = params.participants.clone();
-        new_participants.add_random_participants_till_n(n + 2);
-        let new_participants = new_participants.subset(2..n + 2);
+        // Remove exactly 2 old participants
+        for acc in &accounts_to_remove {
+            new_participants.remove(acc);
+        }
+        // Add 2 new participants
+        new_participants.add_random_participants_till_n(n);
 
         let new_params =
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
@@ -368,7 +380,7 @@ mod tests {
 
         for i in 0..=params.participants.next_id().0 + 2 {
             let new_participants =
-                Participants::init(ParticipantId(i), params.participants.participants().clone());
+                Participants::init(ParticipantId(i), params.participants.participants_vec());
             let new_params =
                 ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);
