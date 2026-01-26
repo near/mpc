@@ -41,6 +41,7 @@ const TCP_CONNECTION_RETRIES: u32 = 3;
 const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
 type FrameHeader = u32;
+const FRAME_HEADER_SIZE: usize = size_of::<FrameHeader>();
 
 /// TCP_USER_TIMEOUT: Maximum time that transmitted data may remain
 /// unacknowledged before TCP will forcibly close the connection.
@@ -192,7 +193,7 @@ impl OutgoingConnection {
                                 }
                             }
 
-                            sent_bytes += 4 + payload_size as u64;
+                            sent_bytes += FRAME_HEADER_SIZE as u64 + payload_size as u64;
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
                         _ = futures::StreamExt::next(&mut framed_tls_stream) => {
@@ -441,7 +442,7 @@ pub async fn new_tls_mesh_network(
                         loop {
                             let mut bytes = vec![];
                             framed_tls_stream_reader.read_to_end(&mut bytes).timeout(MESSAGE_READ_TIMEOUT_DURATION).await??;
-                            received_bytes += 4 + bytes.len() as u64;
+                            received_bytes += FRAME_HEADER_SIZE as u64 + bytes.len() as u64;
 
                             let packet = Packet::try_from_slice(&bytes)
                                 .context("Failed to deserialize packet")?;
@@ -531,7 +532,7 @@ where
 {
     let p2p_codec = tokio_util::codec::LengthDelimitedCodec::builder()
         .max_frame_length(MAX_MESSAGE_BYTES)
-        .length_field_length(size_of::<FrameHeader>())
+        .length_field_length(FRAME_HEADER_SIZE)
         .new_codec();
 
     tokio_util::codec::Framed::new(tls_stream, p2p_codec)
