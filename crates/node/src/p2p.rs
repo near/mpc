@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
-use futures::{AsyncReadExt, SinkExt, TryStreamExt};
+use futures::{SinkExt, StreamExt};
 use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -438,13 +438,18 @@ pub async fn new_tls_mesh_network(
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
-                        let mut framed_tls_stream_reader = configure_framed_stream(tls_stream).into_async_read();
-                        loop {
-                            let mut bytes = vec![];
-                            framed_tls_stream_reader.read_to_end(&mut bytes).timeout(MESSAGE_READ_TIMEOUT_DURATION).await??;
-                            received_bytes += FRAME_HEADER_SIZE as u64 + bytes.len() as u64;
+                        let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
 
-                            let packet = Packet::try_from_slice(&bytes)
+                        loop {
+                            let payload_bytes = framed_tls_stream_reader
+                                .next()
+                                .timeout(MESSAGE_READ_TIMEOUT_DURATION)
+                                .await?
+                                .ok_or(anyhow!("infallible, tls stream is unending"))??;
+
+                            received_bytes += FRAME_HEADER_SIZE as u64 + payload_bytes.len() as u64;
+
+                            let packet = Packet::try_from_slice(&payload_bytes)
                                 .context("Failed to deserialize packet")?;
 
                             match packet {
