@@ -2,7 +2,7 @@ use crate::config::MpcConfig;
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
-use crate::network::constants::{MAX_MESSAGE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
+use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
 use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
@@ -24,7 +24,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::FutureExt;
 use tracing::info;
@@ -41,7 +41,7 @@ const TCP_CONNECTION_RETRIES: u32 = 3;
 const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
 type FrameHeader = u32;
-const FRAME_HEADER_SIZE: usize = size_of::<FrameHeader>();
+const FRAME_HEADER_SIZE_BYTES: usize = size_of::<FrameHeader>();
 
 /// TCP_USER_TIMEOUT: Maximum time that transmitted data may remain
 /// unacknowledged before TCP will forcibly close the connection.
@@ -193,7 +193,7 @@ impl OutgoingConnection {
                                 }
                             }
 
-                            sent_bytes += FRAME_HEADER_SIZE as u64 + payload_size as u64;
+                            sent_bytes += FRAME_HEADER_SIZE_BYTES as u64 + payload_size as u64;
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
                         _ = futures::StreamExt::next(&mut framed_tls_stream) => {
@@ -447,7 +447,7 @@ pub async fn new_tls_mesh_network(
                                 .await?
                                 .ok_or(anyhow!("infallible, tls stream is unending"))??;
 
-                            received_bytes += FRAME_HEADER_SIZE as u64 + payload_bytes.len() as u64;
+                            received_bytes += FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
 
                             let packet = Packet::try_from_slice(&payload_bytes)
                                 .context("Failed to deserialize packet")?;
@@ -535,12 +535,11 @@ fn configure_framed_stream<T>(tls_stream: T) -> Framed<T, LengthDelimitedCodec>
 where
     T: AsyncRead + AsyncWrite + Unpin,
 {
-    let p2p_codec = tokio_util::codec::LengthDelimitedCodec::builder()
-        .max_frame_length(MAX_MESSAGE_BYTES)
-        .length_field_length(FRAME_HEADER_SIZE)
-        .new_codec();
-
-    tokio_util::codec::Framed::new(tls_stream, p2p_codec)
+    tokio_util::codec::LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_MESSAGE_SIZE_BYTES)
+        .length_field_length(FRAME_HEADER_SIZE_BYTES)
+        .new_codec()
+        .framed(tls_stream)
 }
 
 fn verify_peer_identity(
