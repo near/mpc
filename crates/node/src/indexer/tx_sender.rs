@@ -272,6 +272,24 @@ async fn observe_tx_result(
                 Ok(TransactionStatus::NotExecuted)
             }
         }
+        VerifyForeignTxRespond(respond_args) => {
+            // Confirm whether the respond call succeeded by checking whether the
+            // pending verify foreign tx request still exists in the contract state
+            let pending_request_response = indexer_state
+                .view_client
+                .get_pending_verify_foreign_tx_request(
+                    &indexer_state.mpc_contract_id,
+                    &respond_args.request,
+                )
+                .await?;
+
+            let transaction_status = match pending_request_response {
+                Some(_) => TransactionStatus::Executed,
+                None => TransactionStatus::NotExecuted,
+            };
+
+            Ok(transaction_status)
+        }
         // We don't care. The contract state change will handle this.
         StartKeygen(_)
         | StartReshare(_)
@@ -279,9 +297,7 @@ async fn observe_tx_result(
         | VoteReshared(_)
         | VoteAbortKeyEventInstance(_)
         | VerifyTee()
-        | ConcludeNodeMigration(_)
-        // TODO: implement proper verification for verify_foreign_tx response
-        | VerifyForeignTxRespond(_) => Ok(TransactionStatus::Unknown),
+        | ConcludeNodeMigration(_) => Ok(TransactionStatus::Unknown),
     }
 }
 

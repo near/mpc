@@ -187,6 +187,11 @@ pub struct ChainGetPendingCKDRequestArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct ChainGetPendingVerifyForeignTxRequestArgs {
+    pub request: ChainVerifyForeignTxRequest,
+}
+
+#[derive(Serialize, Debug)]
 pub struct GetAttestationArgs<'a> {
     pub tls_public_key: &'a contract_interface::types::Ed25519PublicKey,
 }
