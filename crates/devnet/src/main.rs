@@ -8,6 +8,7 @@ mod contracts;
 mod devnet;
 mod funding;
 mod loadtest;
+mod localnet;
 mod mpc;
 mod queries;
 mod rpc;

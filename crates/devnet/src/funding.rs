@@ -43,6 +43,8 @@ impl AccountToFund {
     }
 }
 
+/// TODO: re-use part of this logic
+
 /// Funds the given accounts, drawing from existing funding accounts when available, and creating
 /// new funding accounts from the faucet if needed. Any number of accounts and any amount of balance
 /// can be funded, up to a sanity limit of 100 NEAR total.

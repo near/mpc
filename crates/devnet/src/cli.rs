@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use near_account_id::AccountId;
 
-use crate::types::load_config;
+use crate::{localnet::RunLocalnet, types::load_config};
 
 #[derive(clap::Parser)]
 pub enum Cli {
@@ -24,6 +24,9 @@ impl Cli {
                 match cmd.subcmd {
                     MpcNetworkSubCmd::New(cmd) => {
                         cmd.run(&name, config).await;
+                    }
+                    MpcNetworkSubCmd::RunLocal(cmd) => {
+                        let _ = cmd.run(&name, config).await.unwrap();
                     }
                     MpcNetworkSubCmd::Update(cmd) => {
                         cmd.run(&name, config).await;
@@ -135,6 +138,8 @@ pub struct MpcAddKeysCmd {}
 pub enum MpcNetworkSubCmd {
     /// Create a new MPC network.
     New(NewMpcNetworkCmd),
+    /// starts a localnet
+    RunLocal(RunLocalnet),
     /// Update the parameters of an existing MPC network, including refilling accounts.
     Update(UpdateMpcNetworkCmd),
     /// Deploy the MPC contract code (without initializing it).

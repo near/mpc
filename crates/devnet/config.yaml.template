@@ -5,6 +5,7 @@ rpcs:
 
 infra_ops_path: /replace_me/infra-ops
 
+#  - url: https://localhost:3030/
 # Optional own funding account
 # funding_account:
 # account_id: your-funding-account.testnet

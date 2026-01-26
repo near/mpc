@@ -9,7 +9,9 @@ anyhow = { workspace = true }
 borsh = { workspace = true }
 bs58 = { workspace = true }
 clap = { workspace = true }
+ctrlc = { workspace = true }
 contract-interface = { workspace = true }
+dirs = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -26,6 +28,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+toml_edit = { workspace = true }
 utilities = { workspace = true }
 
 # TODO: #657 use workspace versions.
