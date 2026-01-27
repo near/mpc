@@ -1,6 +1,6 @@
 {
   "_comment": "Gas thresholds in GGas keyed by participant count. Fields correspond to Participants struct operations. buffer_percent is added to account for fluctuations.",
-  "buffer_percent": 25.0,
+  "buffer_percent": 20.0,
   "thresholds": {
     "10": {
       "len": 3052,
