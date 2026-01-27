@@ -602,10 +602,7 @@ where
             tracing::info!("Waiting on resharing handle.");
             resharing_handle.await?;
         }
-
-        running_handle.await??;
-
-        Ok(MpcJobResult::Done)
+        running_handle.await?
     }
 
     /// Entry point to handle the Resharing state of the contract.
