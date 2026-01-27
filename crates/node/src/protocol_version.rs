@@ -12,4 +12,6 @@ pub enum KnownMpcProtocols {
     Unsupported = 0,
     Dec2025 = 7,
     Jan2026 = 8,
+    #[num_enum(catch_all)]
+    Unknown(u32),
 }
