@@ -48,6 +48,7 @@ pub struct ParticipantEntry {
 }
 
 /// The data stored for each participant.
+#[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantData {
     pub id: ParticipantId,
@@ -55,9 +56,7 @@ pub struct ParticipantData {
 }
 
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
-///
-/// Internally uses a `BTreeMap` but serializes as a `Vec` for backward compatibility
-/// with existing contract state.
+#[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
     /// The next [`ParticipantId`] to assign when inserting a new participant.
@@ -65,127 +64,6 @@ pub struct Participants {
     next_id: ParticipantId,
     /// Primary storage mapping [`AccountId`] to [`ParticipantData`].
     participants: BTreeMap<AccountId, ParticipantData>,
-}
-
-// Custom Borsh serialization to maintain wire compatibility with Vec-based format
-mod borsh_impl {
-    use super::*;
-    use borsh::{BorshDeserialize, BorshSerialize};
-    use std::io::{Read, Write};
-
-    impl BorshSerialize for Participants {
-        fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            // Serialize next_id
-            self.next_id.serialize(writer)?;
-            // Convert BTreeMap to Vec for serialization (maintains original format)
-            let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> = self
-                .participants
-                .iter()
-                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
-                .collect();
-            vec.serialize(writer)?;
-            Ok(())
-        }
-    }
-
-    impl BorshDeserialize for Participants {
-        fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-            let next_id = ParticipantId::deserialize_reader(reader)?;
-            let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> =
-                Vec::deserialize_reader(reader)?;
-
-            let participants = vec
-                .into_iter()
-                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
-                .collect();
-
-            Ok(Participants {
-                next_id,
-                participants,
-            })
-        }
-    }
-
-    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-    impl borsh::BorshSchema for Participants {
-        fn declaration() -> borsh::schema::Declaration {
-            "Participants".to_string()
-        }
-
-        fn add_definitions_recursively(
-            definitions: &mut std::collections::BTreeMap<
-                borsh::schema::Declaration,
-                borsh::schema::Definition,
-            >,
-        ) {
-            <ParticipantId as borsh::BorshSchema>::add_definitions_recursively(definitions);
-            <Vec<(AccountId, ParticipantId, ParticipantInfo)> as borsh::BorshSchema>::add_definitions_recursively(definitions);
-
-            let fields = borsh::schema::Fields::NamedFields(vec![
-                ("next_id".to_string(), <ParticipantId as borsh::BorshSchema>::declaration()),
-                ("participants".to_string(), <Vec<(AccountId, ParticipantId, ParticipantInfo)> as borsh::BorshSchema>::declaration()),
-            ]);
-            let definition = borsh::schema::Definition::Struct { fields };
-            definitions.insert(Self::declaration(), definition);
-        }
-    }
-}
-
-// Custom JSON serialization to maintain wire compatibility
-mod serde_impl {
-    use super::*;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    #[derive(Serialize, Deserialize)]
-    #[cfg_attr(
-        all(feature = "abi", not(target_arch = "wasm32")),
-        derive(schemars::JsonSchema)
-    )]
-    pub struct ParticipantsJson {
-        next_id: ParticipantId,
-        participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-    }
-
-    impl Serialize for Participants {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> = self
-                .participants
-                .iter()
-                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
-                .collect();
-            ParticipantsJson {
-                next_id: self.next_id,
-                participants: vec,
-            }
-            .serialize(serializer)
-        }
-    }
-
-    impl<'de> Deserialize<'de> for Participants {
-        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let json = ParticipantsJson::deserialize(deserializer)?;
-            let participants = json
-                .participants
-                .into_iter()
-                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
-                .collect();
-            Ok(Participants {
-                next_id: json.next_id,
-                participants,
-            })
-        }
-    }
-
-    #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-    impl schemars::JsonSchema for Participants {
-        fn schema_name() -> String {
-            "Participants".to_string()
-        }
-
-        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-            ParticipantsJson::json_schema(gen)
-        }
-    }
 }
 
 impl Default for Participants {

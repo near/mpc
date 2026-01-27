@@ -207,6 +207,24 @@ impl KeyEvent {
     pub fn next_attempt_id(&self) -> AttemptId {
         self.next_attempt_id
     }
+
+    /// Constructs a KeyEvent from its parts during migration.
+    /// This bypasses the normal initialization logic.
+    pub fn from_migration(
+        epoch_id: EpochId,
+        domain: DomainConfig,
+        parameters: ThresholdParameters,
+        instance: Option<KeyEventInstance>,
+        next_attempt_id: AttemptId,
+    ) -> Self {
+        KeyEvent {
+            epoch_id,
+            domain,
+            parameters,
+            instance,
+            next_attempt_id,
+        }
+    }
 }
 
 /// See KeyEventInstance::vote_success.
