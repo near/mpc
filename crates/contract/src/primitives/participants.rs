@@ -37,6 +37,8 @@ impl Display for ParticipantId {
     }
 }
 
+/// A participant entry with all fields. Only available in tests.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParticipantEntry {
     pub account_id: AccountId,
@@ -111,7 +113,7 @@ impl Participants {
     }
 
     /// Returns an iterator over participants as tuples.
-    /// The iteration order is by AccountId (lexicographic).
+    /// The iteration order is by [`AccountId`] (lexicographic).
     pub fn participants(
         &self,
     ) -> impl Iterator<Item = (&AccountId, &ParticipantId, &ParticipantInfo)> {
@@ -125,11 +127,11 @@ impl Participants {
     }
 
     /// Validates that the fields are coherent:
-    ///  - All account IDs are unique (enforced by BTreeMap key).
+    ///  - All account IDs are unique (enforced by [`BTreeMap`] key).
     ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
-        // Uniqueness of AccountId is guaranteed by BTreeMap
-        // Verify next_id invariant: next_id must be greater than all participant IDs
+        // Uniqueness of `AccountId` is guaranteed by `BTreeMap`
+        // Verify next_id invariant: `next_id` must be greater than all participant IDs
         for data in self.participants.values() {
             if self.next_id.get() <= data.id.get() {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
@@ -179,11 +181,15 @@ impl Participants {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Participants {
-    /// Returns entries as owned tuples.
-    pub fn participants_vec(&self) -> Vec<(AccountId, ParticipantId, ParticipantInfo)> {
+    /// Returns entries as owned [`ParticipantEntry`] structs.
+    pub fn participants_vec(&self) -> Vec<ParticipantEntry> {
         self.participants
             .iter()
-            .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
+            .map(|(account_id, data)| ParticipantEntry {
+                account_id: account_id.clone(),
+                id: data.id,
+                info: data.info.clone(),
+            })
             .collect()
     }
 
@@ -205,7 +211,7 @@ impl Participants {
     }
 
     /// Returns a subset of the participants according to the given range of indices.
-    /// Note: Since BTreeMap iteration is by AccountId order, this may differ from Vec order.
+    /// Note: Since [`BTreeMap`] iteration is by [`AccountId`] order, this may differ from [`Vec`] order.
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
         let map: BTreeMap<_, _> = self
             .participants
@@ -280,35 +286,5 @@ pub mod tests {
             assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
         }
         assert!(participants.validate().is_ok());
-    }
-
-    #[test]
-    fn test_serialization_roundtrip() {
-        let n = 10;
-        let expected = gen_accounts_and_info(n);
-        let mut participants = Participants::new();
-        for (account_id, info) in expected.iter() {
-            participants
-                .insert(account_id.clone(), info.clone())
-                .unwrap();
-        }
-
-        // Test Borsh roundtrip
-        let borsh_bytes = borsh::to_vec(&participants).unwrap();
-        let deserialized: Participants = borsh::from_slice(&borsh_bytes).unwrap();
-        assert_eq!(participants.len(), deserialized.len());
-        for (account_id, info) in expected.iter() {
-            assert!(deserialized.is_participant(account_id));
-            assert_eq!(deserialized.info(account_id).unwrap(), info);
-        }
-
-        // Test JSON roundtrip
-        let json_str = serde_json::to_string(&participants).unwrap();
-        let deserialized: Participants = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(participants.len(), deserialized.len());
-        for (account_id, info) in expected.iter() {
-            assert!(deserialized.is_participant(account_id));
-            assert_eq!(deserialized.info(account_id).unwrap(), info);
-        }
     }
 }

@@ -128,8 +128,8 @@ pub fn gen_initializing_state(
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
-    for (account, _, _) in running.parameters.participants().participants_vec() {
-        env.set_signer(&account);
+    for entry in running.parameters.participants().participants_vec() {
+        env.set_signer(&entry.account_id);
         assert!(initializing_state.is_none());
         initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
     }

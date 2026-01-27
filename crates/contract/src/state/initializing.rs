@@ -350,7 +350,8 @@ pub mod tests {
             .proposed_parameters()
             .threshold()
             .value() as usize;
-        for (account, _, _) in &participants {
+        for entry in &participants {
+            let account = &entry.account_id;
             env.set_signer(account);
             state.vote_pk(first_key_event_id, pk.clone()).unwrap();
         }
@@ -358,8 +359,8 @@ pub mod tests {
         // we should have 3 keys now.
         assert!(state.generated_keys.len() == 3);
         let mut running = None;
-        for (account, _, _) in &participants[0..threshold] {
-            env.set_signer(account);
+        for entry in &participants[0..threshold] {
+            env.set_signer(&entry.account_id);
             assert!(running.is_none());
             // Check that using the wrong next_domain_id fails.
             assert!(state

@@ -376,8 +376,8 @@ pub mod tests {
                 .proposed_parameters()
                 .participants()
                 .participants_vec();
-            for (account, _, _) in new_participants {
-                env.set_signer(&account);
+            for entry in new_participants {
+                env.set_signer(&entry.account_id);
                 state.vote_reshared(first_key_event_id).unwrap();
             }
         }
@@ -415,7 +415,7 @@ pub mod tests {
         // Reproposing with invalid epoch ID should fail.
         {
             let old_participants_vec = old_participants.participants_vec();
-            env.set_signer(&old_participants_vec[0].0);
+            env.set_signer(&old_participants_vec[0].account_id);
             assert!(state
                 .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
                 .is_err());
@@ -476,7 +476,7 @@ pub mod tests {
 
         // Repropose with new_params_2. That should fail.
         let old_participants_vec2 = old_participants.participants_vec();
-        env.set_signer(&old_participants_vec2[0].0);
+        env.set_signer(&old_participants_vec2[0].account_id);
         assert!(new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .is_err());

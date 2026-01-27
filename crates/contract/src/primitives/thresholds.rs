@@ -314,10 +314,12 @@ mod tests {
 
         // Create a tampered Participants with an invalid next_id (lower than max participant id)
         let vec = params.participants.participants_vec();
-        let max_id = vec.iter().map(|(_, pid, _)| pid.get()).max().unwrap_or(0);
+        let max_id = vec.iter().map(|e| e.id.get()).max().unwrap_or(0);
         let tampered_participants = Participants::init(
             ParticipantId(max_id), // next_id should be max_id + 1, so this is invalid
-            vec,
+            vec.into_iter()
+                .map(|e| (e.account_id, e.id, e.info))
+                .collect(),
         );
         assert!(tampered_participants.validate().is_err());
 
@@ -379,8 +381,15 @@ mod tests {
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
         for i in 0..=params.participants.next_id().0 + 2 {
-            let new_participants =
-                Participants::init(ParticipantId(i), params.participants.participants_vec());
+            let new_participants = Participants::init(
+                ParticipantId(i),
+                params
+                    .participants
+                    .participants_vec()
+                    .into_iter()
+                    .map(|e| (e.account_id, e.id, e.info))
+                    .collect(),
+            );
             let new_params =
                 ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);

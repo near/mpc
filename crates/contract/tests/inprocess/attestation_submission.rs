@@ -4,7 +4,7 @@ use mpc_contract::{
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::{ParticipantId, ParticipantInfo},
+        participants::ParticipantEntry,
         test_utils::{bogus_ed25519_near_public_key, gen_participants},
         thresholds::{Threshold, ThresholdParameters},
     },
@@ -133,9 +133,9 @@ impl TestSetupBuilder {
         let all_nodes: Vec<NodeId> = setup
             .participants_list
             .iter()
-            .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
+            .map(|entry| NodeId {
+                account_id: entry.account_id.clone(),
+                tls_public_key: entry.info.sign_pk.clone(),
                 account_public_key: Some(bogus_ed25519_near_public_key()),
             })
             .collect();
@@ -193,7 +193,7 @@ impl TestSetupBuilder {
 
 struct TestSetup {
     contract: MpcContract,
-    participants_list: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+    participants_list: Vec<ParticipantEntry>,
 }
 
 impl TestSetup {
@@ -226,8 +226,8 @@ impl TestSetup {
 
     /// Makes all participants vote for a given code hash at a specific timestamp
     fn vote_with_all_participants(&mut self, hash: [u8; 32], timestamp: u64) {
-        for (account_id, _, _) in &self.participants_list.clone() {
-            self.with_env(account_id, timestamp);
+        for entry in &self.participants_list.clone() {
+            self.with_env(&entry.account_id, timestamp);
             self.contract.vote_code_hash(hash.into()).unwrap();
         }
     }
@@ -237,9 +237,9 @@ impl TestSetup {
     fn get_participant_node_ids(&self) -> Vec<NodeId> {
         self.participants_list
             .iter()
-            .map(|(account_id, _, participant_info)| NodeId {
-                account_id: account_id.clone(),
-                tls_public_key: participant_info.sign_pk.clone(),
+            .map(|entry| NodeId {
+                account_id: entry.account_id.clone(),
+                tls_public_key: entry.info.sign_pk.clone(),
                 account_public_key: None,
             })
             .collect()
@@ -293,9 +293,9 @@ fn test_clean_tee_status_removes_non_participants() {
         .iter()
         .take(2)
         .cloned()
-        .map(|(account_id, _, participant_info)| NodeId {
-            account_id,
-            tls_public_key: participant_info.sign_pk,
+        .map(|entry| NodeId {
+            account_id: entry.account_id,
+            tls_public_key: entry.info.sign_pk,
             account_public_key: Some(bogus_ed25519_near_public_key()),
         })
         .collect();

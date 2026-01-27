@@ -991,8 +991,8 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for only first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1025,8 +1025,8 @@ mod tests {
         let participant_list = participants.participants_vec();
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1037,8 +1037,8 @@ mod tests {
         }
 
         // Add expiring attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let entry = &participant_list[2];
+        let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
         let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -1075,8 +1075,8 @@ mod tests {
         // Add attestations for all participants, third one with future expiry
         let participant_list = participants.participants_vec();
 
-        for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for (i, entry) in participant_list.iter().enumerate() {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             let attestation = if i == 2 {
                 Attestation::Mock(MockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
@@ -1112,8 +1112,8 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1124,8 +1124,8 @@ mod tests {
         }
 
         // Add invalid attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let entry = &participant_list[2];
+        let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
         let add_participant_result = tee_state.add_participant(
             node_id,
             Attestation::Mock(MockAttestation::Invalid),

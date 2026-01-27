@@ -204,7 +204,8 @@ pub mod running_tests {
         let mut env = Environment::new(None, None, None);
         let participants = state.parameters.participants().participants_vec();
         // Assert that random proposals get rejected.
-        for (account_id, _, _) in &participants {
+        for entry in &participants {
+            let account_id = &entry.account_id;
             let ksp = gen_threshold_params(30);
             env.set_signer(account_id);
             assert!(state
@@ -214,7 +215,7 @@ pub mod running_tests {
         // Assert that proposals of the wrong epoch ID get rejected.
         {
             let ksp = gen_valid_params_proposal(&state.parameters);
-            env.set_signer(&participants[0].0);
+            env.set_signer(&participants[0].account_id);
             assert!(state
                 .vote_new_parameters(state.keyset.epoch_id, &ksp)
                 .is_err());
@@ -232,7 +233,9 @@ pub mod running_tests {
                     continue;
                 }
                 if i < participants.len()
-                    && !proposal.participants().is_participant(&participants[i].0)
+                    && !proposal
+                        .participants()
+                        .is_participant(&participants[i].account_id)
                 {
                     continue;
                 }
@@ -240,8 +243,8 @@ pub mod running_tests {
                 break;
             }
         }
-        for (i, (account_id, _, _)) in participants.iter().enumerate() {
-            env.set_signer(account_id);
+        for (i, entry) in participants.iter().enumerate() {
+            env.set_signer(&entry.account_id);
             assert!(state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
                 .unwrap()
@@ -255,12 +258,12 @@ pub mod running_tests {
         let mut resharing = None;
         // existing participants vote
         let mut n_votes = 0;
-        for (account_id, _, _) in &participants {
-            if !proposal.participants().is_participant(account_id) {
+        for entry in &participants {
+            if !proposal.participants().is_participant(&entry.account_id) {
                 continue;
             }
             n_votes += 1;
-            env.set_signer(account_id);
+            env.set_signer(&entry.account_id);
             let res = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
                 .unwrap();

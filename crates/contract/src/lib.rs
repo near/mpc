@@ -2111,7 +2111,7 @@ mod tests {
         threshold_value: u64,
     ) -> (MpcContract, Participants, AccountId) {
         let participants = primitives::test_utils::gen_participants(num_participants);
-        let first_participant_id = participants.participants_vec()[0].0.clone();
+        let first_participant_id = participants.participants_vec()[0].account_id.clone();
 
         let context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone().as_v1_account_id())
@@ -2134,7 +2134,8 @@ mod tests {
         is_valid: bool,
     ) -> Result<(), Error> {
         let participants_list = participants.participants_vec();
-        let (account_id, _, participant_info) = &participants_list[participant_index];
+        let entry = &participants_list[participant_index];
+        let (account_id, participant_info) = (&entry.account_id, &entry.info);
         let attestation = if is_valid {
             MockAttestation::Valid
         } else {
@@ -3308,8 +3309,8 @@ mod tests {
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
 
         let participants = running_state.parameters.participants().participants_vec();
-        let participant_1 = participants[0].0.clone();
-        let participant_2 = participants[1].0.clone();
+        let participant_1 = participants[0].account_id.clone();
+        let participant_2 = participants[1].account_id.clone();
 
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
@@ -3369,7 +3370,10 @@ mod tests {
 
         // Add votes from 2 current participants
         let participants_vec = participants.participants_vec();
-        let (p1, p2) = (participants_vec[0].0.clone(), participants_vec[1].0.clone());
+        let (p1, p2) = (
+            participants_vec[0].account_id.clone(),
+            participants_vec[1].account_id.clone(),
+        );
         contract.proposed_updates.vote(&update_id, p1.clone());
         contract.proposed_updates.vote(&update_id, p2.clone());
 
@@ -3492,12 +3496,12 @@ mod tests {
 
         // Get participant info for the target (last participant)
         let participant_list = participants.participants_vec();
-        let (target_account_id, _, target_participant_info) = &participant_list[2];
+        let target = &participant_list[2];
 
         // Replace the target's attestation with an expired one
         let node_id = NodeId {
-            account_id: target_account_id.clone(),
-            tls_public_key: target_participant_info.sign_pk.clone(),
+            account_id: target.account_id.clone(),
+            tls_public_key: target.info.sign_pk.clone(),
             account_public_key: Some(bogus_ed25519_near_public_key()),
         };
         let expiring_attestation = MpcAttestation::Mock(MpcMockAttestation::WithConstraints {
@@ -3517,10 +3521,10 @@ mod tests {
         let running_state_before = running_state_before.clone();
 
         // Set time to exact expiry boundary
-        let (first_account_id, _, _) = &participant_list[0];
+        let first = &participant_list[0];
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(first_account_id.as_v1_account_id())
-            .predecessor_account_id(first_account_id.as_v1_account_id())
+            .signer_account_id(first.account_id.as_v1_account_id())
+            .predecessor_account_id(first.account_id.as_v1_account_id())
             .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
             .build());
 
@@ -3545,7 +3549,7 @@ mod tests {
             ParticipantId(PARTICIPANT_COUNT as u32),
             participant_list[0..2]
                 .iter()
-                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
+                .map(|e| (e.account_id.clone(), e.id, e.info.clone()))
                 .collect(),
         );
         let expected_params =
