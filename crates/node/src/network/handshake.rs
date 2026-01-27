@@ -41,7 +41,7 @@ impl HandshakeRole {
     ///
     /// Jan2026:
     ///
-    /// Sender → Listener:
+    /// Dialer → Listener:
     /// ┌──────────────────────────┐
     /// │ u32                      │
     /// │ sender_connection_id     │
@@ -77,16 +77,8 @@ impl HandshakeRole {
                 HandshakeRole::Dialer(DialerData {
                     sender_connection_id,
                 }) => {
-                    let mut buf = [0u8; 5];
-                    buf[0] = MAGIC_BYTE;
-                    let version: u32 = CURRENT_PROTOCOL_VERSION.into();
-                    buf[1..5].copy_from_slice(&version.to_be_bytes());
-                    conn.write_all(&buf).await?;
-                    let other_magic_byte: u8 = conn.read_u8().await?;
-                    if other_magic_byte != MAGIC_BYTE {
-                        anyhow::bail!("Invalid magic byte in handshake")
-                    }
-                    let peer_protocol_version = conn.read_u32().await?;
+                    write_magic_byte_and_protocol_version(conn).await?;
+                    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
                     let protocol_version: KnownMpcProtocols = peer_protocol_version
                         .try_into()
                         .unwrap_or(CURRENT_PROTOCOL_VERSION);
@@ -119,11 +111,7 @@ impl HandshakeRole {
                 HandshakeRole::Listener(ListenerData {
                     min_expected_connection_id,
                 }) => {
-                    let other_magic_byte: u8 = conn.read_u8().await?;
-                    if other_magic_byte != MAGIC_BYTE {
-                        anyhow::bail!("Invalid magic byte in handshake");
-                    }
-                    let peer_protocol_version = conn.read_u32().await?;
+                    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
                     let protocol_version: KnownMpcProtocols = peer_protocol_version
                         .try_into()
                         .unwrap_or(CURRENT_PROTOCOL_VERSION);
@@ -145,8 +133,7 @@ impl HandshakeRole {
                             }
                             // we have no existing connection with this peer and are happy to
                             // accept this one.
-                            conn.write_u8(MAGIC_BYTE).await?;
-                            conn.write_u32(CURRENT_PROTOCOL_VERSION.into()).await?;
+                            write_magic_byte_and_protocol_version(conn).await?;
                             HandshakeOutcome {
                                 protocol_version: KnownMpcProtocols::Dec2025,
                                 sender_connection_id: 0,
@@ -154,9 +141,11 @@ impl HandshakeRole {
                             }
                         }
                         KnownMpcProtocols::Jan2026 => {
-                            conn.write_u8(MAGIC_BYTE).await?;
-                            conn.write_u32(CURRENT_PROTOCOL_VERSION.into()).await?;
-                            conn.write_u32(min_expected_connection_id).await?;
+                            write_magic_byte_protocol_version_and_expected_connection_version(
+                                conn,
+                                min_expected_connection_id,
+                            )
+                            .await?;
                             let sender_connection_id = conn.read_u32().await?;
                             HandshakeOutcome {
                                 protocol_version,
@@ -171,6 +160,73 @@ impl HandshakeRole {
         })
         .await?
     }
+}
+
+/// wrtes 5 bytes to `conn` (big-endian)
+///
+/// Offset  Size  Type  Name
+/// ──────────────────────────────
+/// 0       1     u8    MAGIC_BYTE
+/// 1       4     u32   CURRENT_PROTOCOL_VERSION
+///
+/// ┌───────────────┬───────────────────────────┐
+/// │ u8            │ u32                       │
+/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
+/// └───────────────┴───────────────────────────┘
+async fn write_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>(
+    conn: &mut T,
+) -> anyhow::Result<()> {
+    let mut buf = [0u8; 5];
+    buf[0] = MAGIC_BYTE;
+    let version: u32 = CURRENT_PROTOCOL_VERSION.into();
+    buf[1..5].copy_from_slice(&version.to_be_bytes());
+    conn.write_all(&buf).await?;
+    Ok(())
+}
+
+/// writes 9 bytes to `conn` (big-endian)
+///
+/// Offset  Size  Type  Name
+/// ────────────────────────────────────────
+/// 0       1     u8    MAGIC_BYTE
+/// 1       4     u32   CURRENT_PROTOCOL_VERSION
+/// 5       4     u32   min_expected_connection_id
+///
+/// ┌───────────────┬───────────────────────────┬────────────────────────────┐
+/// │ u8            │ u32                       │ u32                        │
+/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │ min_expected_connection_id │
+/// └───────────────┴───────────────────────────┴────────────────────────────┘
+async fn write_magic_byte_protocol_version_and_expected_connection_version<
+    T: AsyncRead + AsyncWrite + Unpin,
+>(
+    conn: &mut T,
+    min_expected_connection_id: u32,
+) -> anyhow::Result<()> {
+    let mut buf = [0u8; 9];
+    buf[0] = MAGIC_BYTE;
+    let version: u32 = CURRENT_PROTOCOL_VERSION.into();
+    buf[1..5].copy_from_slice(&version.to_be_bytes());
+    buf[5..9].copy_from_slice(&min_expected_connection_id.to_be_bytes());
+    conn.write_all(&buf).await?;
+    Ok(())
+}
+
+/// reads 5 bytes from `conn`
+/// returns an error if first byte does not match `MAGIC_BYTE`
+///
+/// Offset  Size  Type  Name
+/// ──────────────────────────────
+/// 0       1     u8    MAGIC_BYTE
+/// 1       4     u32   PROTOCOL_VERSION
+async fn read_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>(
+    conn: &mut T,
+) -> anyhow::Result<u32> {
+    let other_magic_byte: u8 = conn.read_u8().await?;
+    if other_magic_byte != MAGIC_BYTE {
+        anyhow::bail!("Invalid magic byte in handshake")
+    }
+    let peer_protocol_version = conn.read_u32().await?;
+    Ok(peer_protocol_version)
 }
 
 #[derive(Debug, PartialEq)]

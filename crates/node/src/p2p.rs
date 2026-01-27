@@ -7,7 +7,7 @@ use crate::network::conn::{
     SenderConnectionId,
 };
 use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
-use crate::network::handshake::{HandshakeRole, ListenerData, DialerData};
+use crate::network::handshake::{DialerData, HandshakeRole, ListenerData};
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
     IndexerHeightMessage, MpcMessage, MpcMessageKind, MpcPeerMessage, ParticipantId,
@@ -518,9 +518,8 @@ pub async fn new_tls_mesh_network(
                             tracing::info!("can't accept incoming connection: {}", err);
                             tls_stream.shutdown().await?;
                             return Ok(());
-
                         }
-                    
+
                         let mut received_bytes: u64 = 0;
                         let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
 
