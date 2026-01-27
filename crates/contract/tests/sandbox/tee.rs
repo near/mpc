@@ -730,7 +730,6 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     let final_accounts: Vec<_> = final_participants
         .participants()
-        .iter()
         .map(|(account_id, _, _)| account_id.clone())
         .collect();
     let expected_accounts: Vec<_> = remaining_accounts

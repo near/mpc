@@ -152,15 +152,14 @@ impl Keyset {
 pub struct AuthenticatedParticipantId(ParticipantId);
 impl AuthenticatedParticipantId {
     pub fn get(&self) -> ParticipantId {
-        self.0.clone()
+        self.0
     }
     pub fn new(participants: &Participants) -> Result<Self, Error> {
         let signer = env::signer_account_id().as_v2_account_id();
         participants
             .participants()
-            .iter()
-            .find(|(a_id, _, _)| *a_id == signer)
-            .map(|(_, p_id, _)| AuthenticatedParticipantId(p_id.clone()))
+            .find(|(a_id, _, _)| **a_id == signer)
+            .map(|(_, p_id, _)| AuthenticatedParticipantId(*p_id))
             .ok_or_else(|| InvalidState::NotParticipant.into())
     }
 }
@@ -179,7 +178,6 @@ impl AuthenticatedAccountId {
         let signer = env::signer_account_id().as_v2_account_id();
         if participants
             .participants()
-            .iter()
             .any(|(a_id, _, _)| *a_id == signer)
         {
             Ok(AuthenticatedAccountId(signer))
