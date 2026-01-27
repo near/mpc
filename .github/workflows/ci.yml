@@ -119,8 +119,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
-          cache-on-failure: true
-          cache-all-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
       - name: Install cargo-nextest
@@ -169,8 +168,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
-          cache-on-failure: true
-          cache-all-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
       - name: Install build dependencies
@@ -291,8 +289,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
-          cache-on-failure: true
-          cache-all-crates: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
       - name: Install ruff
