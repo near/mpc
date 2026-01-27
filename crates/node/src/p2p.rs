@@ -227,8 +227,6 @@ impl OutgoingConnection {
                                 .observe(total_message_size_bytes as f64);
 
                             sent_bytes += total_message_size_bytes;
-
-                            sent_bytes += FRAME_HEADER_SIZE_BYTES as u64 + payload_size as u64;
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
                         _ = futures::StreamExt::next(&mut framed_tls_stream) => {
