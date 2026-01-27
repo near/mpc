@@ -227,17 +227,16 @@ class MpcCluster:
             "threshold": threshold,
             "participants": {
                 "next_id": self.next_participant_id,
-                "participants": [
-                    [
-                        node.account_id(),
-                        node.participant_id,
-                        {
+                "participants": {
+                    node.account_id(): {
+                        "id": node.participant_id,
+                        "info": {
                             "sign_pk": node.p2p_public_key,
                             "url": node.p2p_url,
                         },
-                    ]
+                    }
                     for node in self.mpc_nodes
-                ],
+                },
             },
         }
 

@@ -5,9 +5,7 @@ use near_sdk::{near, PublicKey};
 use std::{collections::BTreeMap, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
-use crate::tee::tee_state::NodeId;
-#[cfg(any(test, feature = "test-utils"))]
-use std::collections::BTreeSet;
+use {crate::tee::tee_state::NodeId, std::collections::BTreeSet};
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -39,7 +37,6 @@ impl Display for ParticipantId {
     }
 }
 
-/// A named entry for a participant, replacing the tuple `(AccountId, ParticipantId, ParticipantInfo)`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ParticipantEntry {
     pub account_id: AccountId,
@@ -51,7 +48,9 @@ pub struct ParticipantEntry {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantData {
+    /// Unique identifier assigned to the participant, used for threshold signing.
     pub id: ParticipantId,
+    /// Connection and verification info (URL and public key) for this participant.
     pub info: ParticipantInfo,
 }
 
@@ -91,11 +90,10 @@ impl Participants {
         info: ParticipantInfo,
         id: ParticipantId,
     ) -> Result<(), Error> {
-        // O(log n) check for duplicate account
         if self.participants.contains_key(&account_id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
-        // O(n) check for duplicate participant ID - insertions are rare
+        // O(n) check for duplicate participant ID
         if self.participants.values().any(|data| data.id == id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
@@ -112,7 +110,7 @@ impl Participants {
         self.insert_with_id(account_id, info, self.next_id)
     }
 
-    /// Returns an iterator over participants as tuples for backward compatibility.
+    /// Returns an iterator over participants as tuples.
     /// The iteration order is by AccountId (lexicographic).
     pub fn participants(
         &self,
@@ -120,14 +118,6 @@ impl Participants {
         self.participants
             .iter()
             .map(|(account_id, data)| (account_id, &data.id, &data.info))
-    }
-
-    /// Returns entries as owned tuples (for cases requiring Vec compatibility).
-    pub fn participants_vec(&self) -> Vec<(AccountId, ParticipantId, ParticipantInfo)> {
-        self.participants
-            .iter()
-            .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
-            .collect()
     }
 
     pub fn next_id(&self) -> ParticipantId {
@@ -189,6 +179,14 @@ impl Participants {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Participants {
+    /// Returns entries as owned tuples.
+    pub fn participants_vec(&self) -> Vec<(AccountId, ParticipantId, ParticipantInfo)> {
+        self.participants
+            .iter()
+            .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
+            .collect()
+    }
+
     /// O(log n) lookup - test only. Returns ParticipantId by AccountId.
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants
