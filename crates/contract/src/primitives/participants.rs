@@ -95,10 +95,9 @@ impl Participants {
         if self.participants.contains_key(&account_id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
-        // O(n) check for duplicate participant ID
-        if self.participants.values().any(|data| data.id == id) {
-            return Err(InvalidParameters::ParticipantAlreadyInSet.into());
-        }
+        // ID uniqueness guaranteed by next_id invariant:
+        // - All existing IDs are < next_id (enforced by validate())
+        // - If id >= next_id, it's new; if id < next_id, rejected below
         if id < self.next_id() {
             return Err(InvalidParameters::ParticipantAlreadyUsed.into());
         }
