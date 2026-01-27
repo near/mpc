@@ -5,7 +5,7 @@ use crate::metrics::networking_metrics::{
 use crate::network::conn::{
     AllNodeConnectivities, ConnectionVersion, NodeConnectivity, NodeConnectivityInterface,
 };
-use crate::network::constants::{MAX_MESSAGE_LEN, MESSAGE_READ_TIMEOUT_SECS};
+use crate::network::constants::{MAX_MESSAGE_SIZE_BYTES, MESSAGE_READ_TIMEOUT_DURATION};
 use crate::network::handshake::p2p_handshake;
 use crate::network::{MeshNetworkTransportReceiver, MeshNetworkTransportSender};
 use crate::primitives::{
@@ -16,16 +16,20 @@ use crate::tracking::{self, AutoAbortTask, AutoAbortTaskCollection};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize};
+use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
+use futures::{SinkExt, StreamExt};
 use rustls::{ClientConfig, CommonState};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_rustls::TlsAcceptor;
+use tokio_util::codec::{Decoder, Framed, LengthDelimitedCodec};
 use tokio_util::sync::CancellationToken;
+use tokio_util::time::FutureExt;
 use tracing::info;
 
 /// Disables Nagle's algorithm, by setting TCP_NODELAY to true.
@@ -38,6 +42,9 @@ const TCP_CONNECTION_RETRY_DELAY: std::time::Duration = std::time::Duration::fro
 const TCP_CONNECTION_RETRIES: u32 = 3;
 
 const PING_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+type FrameHeader = u32;
+const FRAME_HEADER_SIZE_BYTES: usize = size_of::<FrameHeader>();
 
 /// TCP_USER_TIMEOUT: Maximum time that transmitted data may remain
 /// unacknowledged before TCP will forcibly close the connection.
@@ -150,12 +157,12 @@ impl OutgoingConnection {
             .context("TCP connect")?;
         let tcp_stream = configure_tcp_stream(tcp_stream)?;
 
-        let mut tls_conn = tokio_rustls::TlsConnector::from(client_config)
+        let mut tls_stream = tokio_rustls::TlsConnector::from(client_config)
             .connect("dummy".try_into().unwrap(), tcp_stream)
             .await
             .context("TLS connect")?;
 
-        let peer_id = verify_peer_identity(tls_conn.get_ref().1, participant_identities)
+        let peer_id = verify_peer_identity(tls_stream.get_ref().1, participant_identities)
             .context("Verify server identity")?;
         if peer_id != target_participant_id {
             anyhow::bail!(
@@ -166,9 +173,11 @@ impl OutgoingConnection {
         }
 
         info!("Performing P2P handshake with: {:?}", target_address);
-        p2p_handshake(&mut tls_conn, Self::HANDSHAKE_TIMEOUT)
+        p2p_handshake(&mut tls_stream, Self::HANDSHAKE_TIMEOUT)
             .await
             .context("p2p handshake")?;
+
+        let mut framed_tls_stream = configure_framed_stream(tls_stream);
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<Packet>();
         let closed = CancellationToken::new();
@@ -187,22 +196,12 @@ impl OutgoingConnection {
                                 break;
                             };
                             let serialized = borsh::to_vec(&data)?;
-                            let len: u32 = serialized.len().try_into().context("Message too long")?;
+                            let bytes = Bytes::from(serialized);
+                            let payload_size = bytes.len();
 
                             // Add timeout to write operations to detect if writes are hanging
                             // (e.g., due to half-open connection where peer stopped ACKing)
-                            match tokio::time::timeout(WRITE_OPERATION_TIMEOUT, tls_conn.write_u32(len)).await {
-                                Ok(Ok(_)) => {},
-                                Ok(Err(e)) => return Err(e.into()),
-                                Err(_) => {
-                                    // Write timed out - connection is likely stuck/half-open
-                                    return Err(anyhow::anyhow!(
-                                        "Write operation timed out after {}s (connection may be half-open)",
-                                        WRITE_OPERATION_TIMEOUT.as_secs()
-                                    ));
-                                }
-                            }
-                            match tokio::time::timeout(WRITE_OPERATION_TIMEOUT, tls_conn.write_all(&serialized)).await {
+                            match framed_tls_stream.send(bytes).timeout(WRITE_OPERATION_TIMEOUT).await {
                                 Ok(Ok(_)) => {},
                                 Ok(Err(e)) => return Err(e.into()),
                                 Err(_) => {
@@ -214,8 +213,8 @@ impl OutgoingConnection {
                                 }
                             }
 
-                            let header_size = 4;
-                            let tcp_read_size = (len as u64) + header_size;
+
+                            let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_size as u64;
 
                             let metric_labels = [
                                 peer_id_string.as_str(),
@@ -225,13 +224,12 @@ impl OutgoingConnection {
 
                             MPC_P2P_TCP_WRITE_SIZE_BYTES
                                 .with_label_values(&metric_labels)
-                                .observe(tcp_read_size as f64);
+                                .observe(total_message_size_bytes as f64);
 
-                            sent_bytes += tcp_read_size;
-
+                            sent_bytes += total_message_size_bytes;
                             tracking::set_progress(&format!("Sent {} bytes", sent_bytes));
                         }
-                        _ = tls_conn.read_u8() => {
+                        _ = futures::StreamExt::next(&mut framed_tls_stream) => {
                             // We do not expect any data from the other side. However,
                             // selecting on it will quickly return error if the connection
                             // is broken before we have data to send. That way we can
@@ -453,17 +451,17 @@ pub async fn new_tls_mesh_network(
                     "new connection handler tls mesh network",
                     async move {
                         let tcp_stream = configure_tcp_stream(tcp_stream)?;
-                        let mut stream = tls_acceptor.accept(tcp_stream).await?;
+                        let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
 
                         let peer_id =
-                            verify_peer_identity(stream.get_ref().1, &participant_identities)?;
+                            verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
                         tracking::set_progress(&format!("Authenticated as {}", peer_id));
                         if connectivities.get(peer_id)?.is_incoming_connected() {
                         tracing::info!("Connection attempt {} <-- {} ignored, keeping previous connection", my_id, peer_id);
-                            stream.shutdown().await?;
+                            tls_stream.shutdown().await?;
                             anyhow::bail!("Still have an active connection with that peer. Not accepting new one.");
                         }
-                        p2p_handshake(&mut stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
+                        p2p_handshake(&mut tls_stream, OutgoingConnection::HANDSHAKE_TIMEOUT)
                             .await
                             .context("p2p handshake")?;
                         tracing::info!("Incoming {} <-- {} connected", my_id, peer_id);
@@ -473,29 +471,22 @@ pub async fn new_tls_mesh_network(
                             .get(peer_id)?
                             .set_incoming_connection(&incoming_conn);
                         let mut received_bytes: u64 = 0;
+                        let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
 
                         let peer_id_string = peer_id.to_string();
 
                         loop {
+                            let payload_bytes = framed_tls_stream_reader
+                                .next()
+                                .timeout(MESSAGE_READ_TIMEOUT_DURATION)
+                                .await?
+                                .ok_or(anyhow!("infallible, tls stream is unending"))??;
 
-                            let len = tokio::time::timeout(
-                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
-                                stream.read_u32(),
-                            )
-                            .await??;
+                            let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
 
-                            if len >= MAX_MESSAGE_LEN {
-                                anyhow::bail!("Message too long");
-                            }
-                            let mut buf = vec![0; len as usize];
-                            tokio::time::timeout(
-                                std::time::Duration::from_secs(MESSAGE_READ_TIMEOUT_SECS),
-                                stream.read_exact(&mut buf),
-                            )
-                            .await??;
-
-                            let packet = Packet::try_from_slice(&buf)
+                            let packet = Packet::try_from_slice(&payload_bytes)
                                 .context("Failed to deserialize packet")?;
+
                             let message_label =
                                 packet.message_type_label();
 
@@ -519,9 +510,6 @@ pub async fn new_tls_mesh_network(
                                 }
                             }
 
-                            let header_size = 4;
-                            let tcp_write_size = (len as u64) + header_size;
-
                             let metric_labels = [
                                 peer_id_string.as_str(),
                                 INCOMING_CONNECTION,
@@ -530,9 +518,9 @@ pub async fn new_tls_mesh_network(
 
                             MPC_P2P_TCP_WRITE_SIZE_BYTES
                                 .with_label_values(&metric_labels)
-                                .observe(tcp_write_size as f64);
+                                .observe(total_message_size_bytes as f64);
 
-                            received_bytes += 4 + len as u64;
+                            received_bytes += total_message_size_bytes;
                             tracking::set_progress(&format!(
                                 "Received {} bytes from {}",
                                 received_bytes, peer_id
@@ -590,6 +578,17 @@ fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
     }
 
     Ok(TcpStream::from_std(socket.into())?)
+}
+
+fn configure_framed_stream<T>(tls_stream: T) -> Framed<T, LengthDelimitedCodec>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    tokio_util::codec::LengthDelimitedCodec::builder()
+        .max_frame_length(MAX_MESSAGE_SIZE_BYTES)
+        .length_field_length(FRAME_HEADER_SIZE_BYTES)
+        .new_codec()
+        .framed(tls_stream)
 }
 
 fn verify_peer_identity(
