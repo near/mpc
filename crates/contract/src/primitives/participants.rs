@@ -47,15 +47,24 @@ pub struct ParticipantEntry {
     pub info: ParticipantInfo,
 }
 
-/// Stores participants indexed by `AccountId` for O(log n) lookups.
+/// The data stored for each participant.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct ParticipantData {
+    pub id: ParticipantId,
+    pub info: ParticipantInfo,
+}
+
+/// Stores participants indexed by [`AccountId`] for O(log n) lookups.
 ///
 /// Internally uses a `BTreeMap` but serializes as a `Vec` for backward compatibility
 /// with existing contract state.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
+    /// The next [`ParticipantId`] to assign when inserting a new participant.
+    /// Always greater than all existing participant IDs.
     next_id: ParticipantId,
-    /// Primary storage: AccountId -> (ParticipantId, ParticipantInfo)
-    participants: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)>,
+    /// Primary storage mapping [`AccountId`] to [`ParticipantData`].
+    participants: BTreeMap<AccountId, ParticipantData>,
 }
 
 // Custom Borsh serialization to maintain wire compatibility with Vec-based format
@@ -72,9 +81,7 @@ mod borsh_impl {
             let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> = self
                 .participants
                 .iter()
-                .map(|(account_id, (participant_id, info))| {
-                    (account_id.clone(), *participant_id, info.clone())
-                })
+                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
                 .collect();
             vec.serialize(writer)?;
             Ok(())
@@ -89,7 +96,7 @@ mod borsh_impl {
 
             let participants = vec
                 .into_iter()
-                .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
                 .collect();
 
             Ok(Participants {
@@ -144,9 +151,7 @@ mod serde_impl {
             let vec: Vec<(AccountId, ParticipantId, ParticipantInfo)> = self
                 .participants
                 .iter()
-                .map(|(account_id, (participant_id, info))| {
-                    (account_id.clone(), *participant_id, info.clone())
-                })
+                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
                 .collect();
             ParticipantsJson {
                 next_id: self.next_id,
@@ -162,7 +167,7 @@ mod serde_impl {
             let participants = json
                 .participants
                 .into_iter()
-                .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
                 .collect();
             Ok(Participants {
                 next_id: json.next_id,
@@ -213,13 +218,14 @@ impl Participants {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
         // O(n) check for duplicate participant ID - insertions are rare
-        if self.participants.values().any(|(pid, _)| *pid == id) {
+        if self.participants.values().any(|data| data.id == id) {
             return Err(InvalidParameters::ParticipantAlreadyInSet.into());
         }
         if id < self.next_id() {
             return Err(InvalidParameters::ParticipantAlreadyUsed.into());
         }
-        self.participants.insert(account_id, (id, info));
+        self.participants
+            .insert(account_id, ParticipantData { id, info });
         self.next_id.0 = id.0 + 1;
         Ok(())
     }
@@ -235,16 +241,14 @@ impl Participants {
     ) -> impl Iterator<Item = (&AccountId, &ParticipantId, &ParticipantInfo)> {
         self.participants
             .iter()
-            .map(|(account_id, (participant_id, info))| (account_id, participant_id, info))
+            .map(|(account_id, data)| (account_id, &data.id, &data.info))
     }
 
     /// Returns entries as owned tuples (for cases requiring Vec compatibility).
     pub fn participants_vec(&self) -> Vec<(AccountId, ParticipantId, ParticipantInfo)> {
         self.participants
             .iter()
-            .map(|(account_id, (participant_id, info))| {
-                (account_id.clone(), *participant_id, info.clone())
-            })
+            .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
             .collect()
     }
 
@@ -258,8 +262,8 @@ impl Participants {
     pub fn validate(&self) -> Result<(), Error> {
         // Uniqueness of AccountId is guaranteed by BTreeMap
         // Verify next_id invariant: next_id must be greater than all participant IDs
-        for (pid, _) in self.participants.values() {
-            if self.next_id.get() <= pid.get() {
+        for data in self.participants.values() {
+            if self.next_id.get() <= data.id.get() {
                 return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
             }
         }
@@ -277,7 +281,7 @@ impl Participants {
     ) -> Self {
         let map = participants
             .into_iter()
-            .map(|(account_id, participant_id, info)| (account_id, (participant_id, info)))
+            .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
             .collect();
         Self {
             next_id,
@@ -287,7 +291,7 @@ impl Participants {
 
     /// O(log n) lookup to get participant info by account ID.
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
-        self.participants.get(account_id).map(|(_, info)| info)
+        self.participants.get(account_id).map(|data| &data.info)
     }
 
     /// O(log n) update of participant info.
@@ -296,8 +300,8 @@ impl Participants {
         account_id: AccountId,
         new_info: ParticipantInfo,
     ) -> Result<(), Error> {
-        if let Some((_, info)) = self.participants.get_mut(&account_id) {
-            *info = new_info;
+        if let Some(data) = self.participants.get_mut(&account_id) {
+            data.info = new_info;
             Ok(())
         } else {
             Err(crate::errors::InvalidState::NotParticipant.into())
@@ -307,11 +311,11 @@ impl Participants {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Participants {
-    /// O(n) lookup - test only. Returns ParticipantId by AccountId.
+    /// O(log n) lookup - test only. Returns ParticipantId by AccountId.
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants
             .get(account_id)
-            .map(|(p_id, _)| *p_id)
+            .map(|data| data.id)
             .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
     }
 
@@ -319,7 +323,7 @@ impl Participants {
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {
         self.participants
             .iter()
-            .find(|(_, (p_id, _))| p_id == id)
+            .find(|(_, data)| data.id == *id)
             .map(|(a_id, _)| a_id.clone())
             .ok_or_else(|| crate::errors::InvalidState::ParticipantIndexOutOfRange.into())
     }
@@ -332,7 +336,7 @@ impl Participants {
             .iter()
             .skip(range.start)
             .take(range.end - range.start)
-            .map(|(a, (p, i))| (a.clone(), (*p, i.clone())))
+            .map(|(a, data)| (a.clone(), data.clone()))
             .collect();
         Participants {
             next_id: self.next_id,
