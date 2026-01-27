@@ -48,4 +48,6 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/near/nearcore",
   "https://github.com/near/threshold-signatures",
+   # TODO: remove this once dcap-qvl 0.3.11 is released
+  "https://github.com/Phala-Network/dcap-qvl",
 ]

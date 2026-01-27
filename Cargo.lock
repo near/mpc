@@ -2289,8 +2289,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 [[package]]
 name = "dcap-qvl"
 version = "0.3.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3696cfa3d2b8b26df6dadafa67dd1fa69376c1e38971c207984bc3a9f0621d05"
+source = "git+https://github.com/Phala-Network/dcap-qvl?rev=58cc88ee8480b8b902154ccb793f4b4dcb2e7a89#58cc88ee8480b8b902154ccb793f4b4dcb2e7a89"
 dependencies = [
  "anyhow",
  "asn1_der",
@@ -2305,15 +2304,14 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "log",
- "p256",
  "parity-scale-codec",
  "pem",
+ "ring",
  "rustls-pki-types",
  "scale-info",
  "serde",
  "serde-human-bytes",
  "serde_json",
- "sha2",
  "urlencoding",
  "wasm-bindgen-futures",
  "x509-cert",
@@ -2325,15 +2323,9 @@ version = "0.103.4+dcap.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0af040afe66c4f26ca05f308482d98bd75a35a80a227d877c2e28c9947a9fa6"
 dependencies = [
- "ecdsa",
- "ed25519-dalek",
- "p256",
- "p384",
  "ring",
  "rsa",
  "rustls-pki-types",
- "sha2",
- "signature",
  "untrusted",
 ]
 
@@ -7133,30 +7125,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p256"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b"
-dependencies = [
- "ecdsa",
- "elliptic-curve",
- "primeorder",
- "sha2",
-]
-
-[[package]]
-name = "p384"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe42f1670a52a47d448f14b6a5c61dd78fce51856e68edaa38f7ae3a46b8d6b6"
-dependencies = [
- "ecdsa",
- "elliptic-curve",
- "primeorder",
- "sha2",
-]
-
-[[package]]
 name = "pairing"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7564,15 +7532,6 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "primeorder"
-version = "0.13.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
-dependencies = [
- "elliptic-curve",
 ]
 
 [[package]]
