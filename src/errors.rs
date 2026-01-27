@@ -16,6 +16,15 @@ pub enum ProtocolError {
     #[error("could not extract the verification key from the commitment")]
     ErrorExtractVerificationKey,
 
+    #[error("could not generate frost rerandomized parameters")]
+    ErrorFrostRerandomizingParameters,
+
+    #[error("could not generate valid frost signature")]
+    ErrorFrostSigningFailed,
+
+    #[error("could not aggregate frost signatures")]
+    ErrorFrostAggregation,
+
     #[error("panicked while encoding an input.")]
     ErrorEncoding,
 

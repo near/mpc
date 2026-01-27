@@ -230,6 +230,14 @@ pub fn sign(
         });
     }
 
+    // validate threshold
+    if threshold > participants.len() {
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold,
+            max: participants.len(),
+        });
+    }
+
     // ensure the coordinator is a participant
     if !participants.contains(coordinator) {
         return Err(InitializationError::MissingParticipant {
@@ -292,9 +300,11 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
     use crate::crypto::hash::hash;
-    use crate::eddsa::sign::sign;
-    use crate::eddsa::test::{build_key_packages_with_dealer, test_run_signature_protocols};
-    use crate::eddsa::{KeygenOutput, SignatureOption};
+    use crate::eddsa::frost::{
+        sign::sign,
+        test::{build_key_packages_with_dealer, test_run_signature_protocols},
+        KeygenOutput, SignatureOption,
+    };
     use crate::participants::{Participant, ParticipantList};
     use crate::protocol::Protocol;
     use crate::test_utils::{

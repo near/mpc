@@ -26,6 +26,7 @@ use zeroize::ZeroizeOnDrop;
 
 mod dkg;
 pub mod protocol;
+
 use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
 use crate::errors::InitializationError;
 use crate::participants::Participant;

@@ -68,8 +68,8 @@ impl TestGenerators {
     pub fn make_eddsa_keygens<R: CryptoRngCore + SeedableRng + Send + 'static>(
         &self,
         rng: &mut R,
-    ) -> HashMap<Participant, eddsa::KeygenOutput> {
-        let mut protocols: Vec<ParticipantAndProtocol<eddsa::KeygenOutput>> = Vec::new();
+    ) -> HashMap<Participant, eddsa::frost::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<eddsa::frost::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
             let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((

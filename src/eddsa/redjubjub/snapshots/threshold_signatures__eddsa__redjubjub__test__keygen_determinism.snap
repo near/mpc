@@ -1,0 +1,27 @@
+---
+source: src/eddsa/redjubjub/test.rs
+expression: result
+---
+[
+  [
+    0,
+    {
+      "private_share": "4fc37340e00d20d1831c3b54714e1f0f0c8d1c466fe3aedf44367c9e71e6070b",
+      "public_key": "fdeb888d5fd674a4ed10140f4351bf3b7c7efbe0663964ae9ae6a22ff129ee54"
+    }
+  ],
+  [
+    1,
+    {
+      "private_share": "2363ea4e993a4c5a00fe6b9139dae4a236ac64f63880ca936b87bafd17a0440a",
+      "public_key": "fdeb888d5fd674a4ed10140f4351bf3b7c7efbe0663964ae9ae6a22ff129ee54"
+    }
+  ],
+  [
+    2,
+    {
+      "private_share": "f702615d526778e37cdf9cce0166aa3661cbaca6021de64792d8f85cbe598109",
+      "public_key": "fdeb888d5fd674a4ed10140f4351bf3b7c7efbe0663964ae9ae6a22ff129ee54"
+    }
+  ]
+]
