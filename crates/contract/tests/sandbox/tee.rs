@@ -233,8 +233,9 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
 /// This is a helper function commonly used in tests that require pre-approved hashes.
 async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
     let mpc_hash = image_digest();
-    vote_for_hash(&accounts[0], contract, &mpc_hash).await?;
-    vote_for_hash(&accounts[1], contract, &mpc_hash).await?;
+    for account in accounts {
+        vote_for_hash(account, contract, &mpc_hash).await?;
+    }
     Ok(())
 }
 
@@ -254,7 +255,6 @@ async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed2551
 /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
 /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
 #[tokio::test]
-#[ignore]
 async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
     let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
@@ -266,7 +266,6 @@ async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Resul
 /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
 /// the attestation data.
 #[tokio::test]
-#[ignore]
 async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
     setup_approved_mpc_hash(&contract, &accounts).await?;
@@ -302,7 +301,6 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
 /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
 /// that attestation validation properly checks the TLS key embedded in the attestation report.
 #[tokio::test]
-#[ignore]
 async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
     let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
     setup_approved_mpc_hash(&contract, &accounts).await?;

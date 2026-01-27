@@ -49,6 +49,7 @@ pub async fn submit_participant_info(
         .max_gas()
         .transact()
         .await?;
+    dbg!(&result);
     Ok(result.is_success())
 }
 
