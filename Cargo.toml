@@ -49,7 +49,7 @@ aes-gcm = "0.10.3"
 anyhow = "1.0.92"
 assert_matches = "1.5.0"
 async-trait = "0.1.83"
-axum = "0.7.9"
+axum = "0.8.8"
 backon = { version = "1.5.1", features = ["tokio-sleep"] }
 base64 = "0.22"
 blstrs = "0.7.1"
