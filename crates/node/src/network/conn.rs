@@ -51,15 +51,18 @@ impl<T: Send + Sync + 'static> ConnectionWithVersion<T> {
     }
 }
 
-impl<T> SenderConnectionId for ConnectionWithVersion<T>
+pub(crate) trait OptionSenderConnectionId {
+    fn sender_connection_id(&self) -> Option<u32>;
+}
+
+impl<T> OptionSenderConnectionId for ConnectionWithVersion<T>
 where
     T: SenderConnectionId + Send + Sync + 'static,
 {
-    fn sender_connection_id(&self) -> u32 {
-        match self.connection.upgrade() {
-            Some(conn) => conn.sender_connection_id(),
-            None => 0,
-        }
+    fn sender_connection_id(&self) -> Option<u32> {
+        self.connection
+            .upgrade()
+            .map(|conn| conn.sender_connection_id())
     }
 }
 
@@ -124,8 +127,13 @@ impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
     /// as soon as this is called, the old connection is considered dropped.
     pub fn set_incoming_connection(&self, conn: &Arc<O>) -> anyhow::Result<()> {
         let modified = self.incoming_sender.send_if_modified(|existing| {
-            let should_replace = conn.sender_connection_id() == 0
-                || existing.sender_connection_id() < conn.sender_connection_id();
+            let should_replace = match existing.sender_connection_id() {
+                None => true, // we don't have an existing connection with this peer and accept the
+                // new one.
+                Some(existing_id) => existing_id < conn.sender_connection_id(),
+                // we do have an existing connection with this peer. We accept this new connection
+                // only if it is strictly newer than the existing one.
+            };
             if !should_replace {
                 return false;
             }
@@ -160,11 +168,6 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> NodeConnectivity<I, O> 
         let outgoing = self.outgoing_receiver.borrow();
         let incoming = self.incoming_receiver.borrow();
         outgoing.is_connected() && incoming.is_connected()
-    }
-
-    pub fn is_incoming_connected(&self) -> bool {
-        let incoming = self.incoming_receiver.borrow();
-        incoming.is_connected()
     }
 
     /// Given the result of a previous call to `connection_version()`, determine
@@ -215,9 +218,9 @@ pub trait SenderConnectionId {
 }
 
 impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
-    NodeConnectivity<I, O>
+    OptionSenderConnectionId for NodeConnectivity<I, O>
 {
-    pub fn sender_connection_id(&self) -> u32 {
+    fn sender_connection_id(&self) -> Option<u32> {
         let incoming = self.incoming_receiver.borrow();
         incoming.sender_connection_id()
     }
@@ -348,6 +351,7 @@ mod tests {
     use crate::async_testing::{run_future_once, MaybeReady};
     use crate::network::conn::{
         AllNodeConnectivities, ConnectionVersion, ConnectionWithVersion, NodeConnectivity,
+        OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
     use futures::FutureExt;
@@ -386,10 +390,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0, true)]
-    #[case(0, 1, true)]
-    #[case(42, 43, true)]
-    #[case(42, 41, false)]
+    #[case::equal_connection_id_is_rejected(0, 0, false)]
+    #[case::incremented_connection_id_is_accepted(0, 1, true)]
+    #[case::incremented_connection_id_is_accepted(42, 43, true)]
+    #[case::lower_connection_id_is_rejected(42, 41, false)]
     fn test_set_incoming_connection(
         #[case] previous_sender_connection_id: usize,
         #[case] sender_connection_id: usize,
@@ -401,6 +405,7 @@ mod tests {
             connection: Arc::downgrade(&init_conn),
             version: 0,
         };
+        // the first call must always succeed, because we have no existing connection
         connectivity.incoming_sender.send(init_conn).unwrap();
         {
             // sanity check
@@ -414,14 +419,18 @@ mod tests {
         let conn = Arc::new(sender_connection_id);
         let res = connectivity.set_incoming_connection(&conn);
         let found = connectivity.incoming_receiver.borrow().clone();
+        // the second call must only succeed if the connection id is strictly incrementing
         if success {
             res.unwrap();
-            assert_eq!(found.sender_connection_id(), conn.sender_connection_id());
+            assert_eq!(
+                found.sender_connection_id().unwrap(),
+                conn.sender_connection_id()
+            );
             assert_eq!(found.version(), 1);
         } else {
             matches!(res, Err(_));
             assert_eq!(
-                found.sender_connection_id(),
+                found.sender_connection_id().unwrap(),
                 previous_sender_connection_id.sender_connection_id()
             );
             assert_eq!(found.version(), 0);
@@ -453,7 +462,7 @@ mod tests {
         assert!(connectivity.was_connection_interrupted(ver(1, 1)));
         assert!(!connectivity.was_connection_interrupted(ver(2, 1)));
 
-        let conn3 = Arc::new(0);
+        let conn3 = Arc::new(1);
         connectivity.set_incoming_connection(&conn3).unwrap();
         assert_eq!(connectivity.connection_version(), ver(2, 2));
         assert!(!connectivity.is_bidirectionally_connected());
@@ -463,7 +472,7 @@ mod tests {
         drop(conn2);
         assert_eq!(connectivity.connection_version(), ver(2, 2));
 
-        let conn4 = Arc::new(0);
+        let conn4 = Arc::new(1);
         connectivity.set_outgoing_connection(&conn4);
         assert_eq!(connectivity.connection_version(), ver(2, 2));
         assert!(connectivity.is_bidirectionally_connected());

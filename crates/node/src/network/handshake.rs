@@ -1,3 +1,4 @@
+use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::protocol_version::{KnownMpcProtocols, CURRENT_PROTOCOL_VERSION};
@@ -7,159 +8,186 @@ use crate::protocol_version::{KnownMpcProtocols, CURRENT_PROTOCOL_VERSION};
 const MAGIC_BYTE: u8 = 0xcc;
 
 #[derive(Debug, Clone, Copy)]
-pub struct DialerData {
+pub(crate) struct DialerData {
     pub sender_connection_id: u32,
 }
 
+pub(crate) const MIN_EXPECTED_CONNECTION_ID: u32 = 0;
+
 #[derive(Debug, Clone, Copy)]
-pub struct ListenerData {
+pub(crate) struct ListenerData {
     pub min_expected_connection_id: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum HandshakeRole {
-    Dialer(DialerData),
-    Listener(ListenerData),
+/// Performs a P2P handshake over an async byte stream as the dialer
+///
+/// 1. Writes 5 bytes to byte stream
+/// Dialer --> Listener:
+/// ┌───────────────┬───────────────────────────┐
+/// │ u8            │ u32                       │
+/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
+/// └───────────────┴───────────────────────────┘
+/// 2. Reads 5 bytes from byte stream
+/// Dialer <-- Listener:
+/// ┌───────────────┬────────────────────────────┐
+/// │ u8            │ u32                        │
+/// │ MAGIC_BYTE    │ LISTENER_PROTOCOL_VERSION  │
+/// └───────────────┴────────────────────────────┘
+///
+/// 3. Compares `LISTENER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
+///    *Version-specific* behavior:
+///
+/// *Unsupported:*
+/// This function returns HandshakeOutcome::Unsupported(peer_protocol_version) in case the listener is running a deprecated
+/// protocol version.
+///
+/// *Dec2025:*
+/// Returns HandshakeOutcome::Dec2025(true), indicating that the listener is running Dec2025
+/// protocol and is expected to accept this connection.
+///
+/// *Jan2026:*
+/// Writes `sender_connection_id` to byte stream
+/// Dialer --> Listener:
+/// ┌──────────────────────────┐
+/// │ u32                      │
+/// │ sender_connection_id     │
+/// └──────────────────────────┘
+///
+/// Reads `min_expected_connection_id` from byte stream:
+/// Dialer <-- Listener:
+/// ┌────────────────────────────┐
+/// │ u32                        │
+/// │ min_expected_connection_id │
+/// └────────────────────────────┘
+/// Returns HandshakeOutcome::Jan2026(ConnectionInfo)
+pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
+    dialer_data: DialerData,
+    conn: &mut T,
+) -> anyhow::Result<HandshakeOutcome> {
+    let DialerData {
+        sender_connection_id,
+    } = dialer_data;
+    write_magic_byte_and_protocol_version(conn).await?;
+    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
+    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version.into();
+    let outcome = match peer_protocol_version {
+        KnownMpcProtocols::Unsupported => {
+            tracing::warn!(
+                "peer is using a legacy protocol: their version: {}, ours: {:?}",
+                peer_protocol_version,
+                CURRENT_PROTOCOL_VERSION,
+            );
+            HandshakeOutcome::Unsupported(peer_protocol_version)
+        }
+        KnownMpcProtocols::Dec2025 => {
+            // if we get here, the connection is always accepted
+            HandshakeOutcome::Dec2025(true)
+        }
+        KnownMpcProtocols::Jan2026 | KnownMpcProtocols::Unknown(_) => {
+            conn.write_u32(sender_connection_id).await?;
+            let min_expected_connection_id = conn.read_u32().await?;
+            HandshakeOutcome::Jan2026(ConnectionInfo {
+                peer_protocol_version,
+                sender_connection_id,
+                min_expected_connection_id,
+            })
+        }
+    };
+    Ok(outcome)
 }
 
-impl HandshakeRole {
-    /// Performs a P2P handshake over an async byte stream.
-    /// **P2P handshake wire format (big endian)**
-    ///
-    /// Common prefix (both peers, all supported protocol versions):
-    /// ┌───────────────┬───────────────────┐
-    /// │ u8            │ u32               │
-    /// │ MAGIC_BYTE    │ PROTOCOL_VERSION  │
-    /// └───────────────┴───────────────────┘
-    ///
-    /// Version-specific data:
-    ///
-    /// Dec2025:
-    /// ┌───────────────┐
-    /// │ (no payload)  │
-    /// └───────────────┘
-    ///
-    /// Jan2026:
-    ///
-    /// Dialer → Listener:
-    /// ┌──────────────────────────┐
-    /// │ u32                      │
-    /// │ sender_connection_id     │
-    /// └──────────────────────────┘
-    ///
-    /// Listener → Dialer:
-    /// ┌────────────────────────────┐
-    /// │ u32                        │
-    /// │ min_expected_connection_id │
-    /// └────────────────────────────┘
-    ///
-    /// **Differences between receiver and sender:**
-    /// - Listener **reads** common prefix before writing it, so the sender **must** write the prefix before
-    ///   reading.
-    ///   This is ensures that the receiver can stop the sender from concluding the handshake and
-    ///   thus early-aborting the connection attempt. This may no longer be required once all nodes
-    ///   migrate to Jan2026 protocol.
-    ///
-    /// **Variable explanation:**
-    /// - `MAGIC_BYTE`: to distinguish this protocol from (much) earlier protocol versions that did
-    ///   not include the byte.
-    /// - `PROTOCOL_VERSION`: the identifier for the current protocol version.  The responsibility
-    ///   is on the newer protocol versions to communicate in a backwards compatible way.
-    /// - `sender_connection_id`: an identifier for this connection by the sender
-    /// - `min_expected_connection_id`: the minimum expected identifier for this connection.
-    pub async fn p2p_handshake<T: AsyncRead + AsyncWrite + Unpin>(
-        self,
-        conn: &mut T,
-        timeout: std::time::Duration,
-    ) -> anyhow::Result<HandshakeOutcome> {
-        tokio::time::timeout(timeout, async move {
-            match self {
-                HandshakeRole::Dialer(DialerData {
-                    sender_connection_id,
-                }) => {
-                    write_magic_byte_and_protocol_version(conn).await?;
-                    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-                    let protocol_version: KnownMpcProtocols = peer_protocol_version
-                        .try_into()
-                        .unwrap_or(CURRENT_PROTOCOL_VERSION);
-                    let outcome = match protocol_version {
-                        KnownMpcProtocols::Unsupported => {
-                            anyhow::bail!(
-                                "peer is using a legacy protocol: their version: {}, ours: {:?}",
-                                peer_protocol_version,
-                                CURRENT_PROTOCOL_VERSION,
-                            )
-                        }
-                        KnownMpcProtocols::Dec2025 => HandshakeOutcome {
-                            protocol_version: KnownMpcProtocols::Dec2025,
-                            sender_connection_id: 0,
-                            min_expected_connection_id: 0, // by default, we assume this
-                                                           // connection is accepted
-                        },
-                        KnownMpcProtocols::Jan2026 => {
-                            conn.write_u32(sender_connection_id).await?;
-                            let min_expected_connection_id = conn.read_u32().await?;
-                            HandshakeOutcome {
-                                protocol_version,
-                                sender_connection_id,
-                                min_expected_connection_id,
-                            }
-                        }
-                    };
-                    Ok(outcome)
-                }
-                HandshakeRole::Listener(ListenerData {
-                    min_expected_connection_id,
-                }) => {
-                    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-                    let protocol_version: KnownMpcProtocols = peer_protocol_version
-                        .try_into()
-                        .unwrap_or(CURRENT_PROTOCOL_VERSION);
-                    let outcome = match protocol_version {
-                        KnownMpcProtocols::Unsupported => {
-                            // we don't even respond, we just bail
-                            anyhow::bail!(
-                                "peer is using a legacy protocol: their version: {}, ours: {:?}",
-                                peer_protocol_version,
-                                CURRENT_PROTOCOL_VERSION,
-                            )
-                        }
-                        KnownMpcProtocols::Dec2025 => {
-                            if min_expected_connection_id != 0 {
-                                // we have an existing connection with this peer, so we are not
-                                // interested in responding - we don't conclude the handshake and
-                                // return an error.
-                                anyhow::bail!("peer is already connected to us");
-                            }
-                            // we have no existing connection with this peer and are happy to
-                            // accept this one.
-                            write_magic_byte_and_protocol_version(conn).await?;
-                            HandshakeOutcome {
-                                protocol_version: KnownMpcProtocols::Dec2025,
-                                sender_connection_id: 0,
-                                min_expected_connection_id,
-                            }
-                        }
-                        KnownMpcProtocols::Jan2026 => {
-                            write_magic_byte_protocol_version_and_expected_connection_version(
-                                conn,
-                                min_expected_connection_id,
-                            )
-                            .await?;
-                            let sender_connection_id = conn.read_u32().await?;
-                            HandshakeOutcome {
-                                protocol_version,
-                                sender_connection_id,
-                                min_expected_connection_id,
-                            }
-                        }
-                    };
-                    Ok(outcome)
-                }
+/// Performs a P2P handshake over an async byte stream as the listener
+///
+/// 1. Reads 5 bytes to byte stream
+/// Listener <-- Dialer:
+/// ┌───────────────┬──────────────────────────┐
+/// │ u8            │ u32                      │
+/// │ MAGIC_BYTE    │ DIALER_PROTOCOL_VERSION  │
+/// └───────────────┴──────────────────────────┘
+///
+/// 2. Compares `DIALER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
+///    *Version-specific* behavior:
+///
+/// *Unsupported:*
+/// The listener aborts the handshake, not writing anything to the byte stream.
+/// This function returns HandshakeOutcome::Unsupported(peer_protocol_version).
+///
+/// *Dec2025:*
+/// If `min_expected_connection_id` is not 0, then this function aborts the handshake, not writing
+/// anything to byte stream and returns HandshakeOutcome::Dec2025(false).
+/// If `min_expected_connection_id` is 0, then this function writes `MAGIC_BYTE` and
+/// `CURRENT_PROTOCOL_VERSION` to byte steram and returns HandshakeOutcome::Dec2025(true)
+/// Listener --> Dialer:
+/// ┌───────────────┬───────────────────────────┐
+/// │ u8            │ u32                       │
+/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
+/// └───────────────┴───────────────────────────┘
+///
+/// *Jan2026:*
+/// Sends MAGIC_BYTE, CURRENT_PROTOCOL_VERSION and min_expected_connection_id to Dialer.
+/// Listener --> Dialer:
+/// ┌───────────────┬───────────────────────────┬────────────────────────────┐
+/// │ u8            │ u32                       │ u32                        │
+/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │ min_expected_connection_id │
+/// └───────────────┴───────────────────────────┴────────────────────────────┘
+///
+/// Reads `sender_connection_id` from byte stream:
+/// Listener <-- Dialer:
+/// ┌──────────────────────┐
+/// │ u32                  │
+/// │ sender_connection_id │
+/// └──────────────────────┘
+///
+/// Returns HandshakeOutcome::Jan2026(ConnectionInfo)
+pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
+    listener_data: ListenerData,
+    conn: &mut T,
+) -> anyhow::Result<HandshakeOutcome> {
+    let ListenerData {
+        min_expected_connection_id,
+    } = listener_data;
+    let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
+    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version
+        .try_into()
+        .unwrap_or(CURRENT_PROTOCOL_VERSION);
+    let outcome = match peer_protocol_version {
+        KnownMpcProtocols::Unsupported => {
+            tracing::warn!(
+                "peer is using a legacy protocol: their version: {}, ours: {:?}",
+                peer_protocol_version,
+                CURRENT_PROTOCOL_VERSION,
+            );
+            HandshakeOutcome::Unsupported(peer_protocol_version)
+        }
+        KnownMpcProtocols::Dec2025 => {
+            if min_expected_connection_id != MIN_EXPECTED_CONNECTION_ID {
+                // we have an existing connection with this peer, so we are not
+                // interested in responding - we don't conclude the handshake and
+                // return an error.
+                tracing::warn!("peer is already connected to us");
+                HandshakeOutcome::Dec2025(false)
+            } else {
+                // we have no existing connection with this peer and are happy to
+                // accept this one.
+                write_magic_byte_and_protocol_version(conn).await?;
+                HandshakeOutcome::Dec2025(true)
             }
-        })
-        .await?
-    }
+        }
+        KnownMpcProtocols::Jan2026 | KnownMpcProtocols::Unknown(_) => {
+            write_magic_byte_protocol_version_and_expected_connection_version(
+                conn,
+                min_expected_connection_id,
+            )
+            .await?;
+            let sender_connection_id = conn.read_u32().await?;
+            HandshakeOutcome::Jan2026(ConnectionInfo {
+                peer_protocol_version,
+                sender_connection_id,
+                min_expected_connection_id,
+            })
+        }
+    };
+    Ok(outcome)
 }
 
 /// wrtes 5 bytes to `conn` (big-endian)
@@ -176,10 +204,9 @@ impl HandshakeRole {
 async fn write_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>(
     conn: &mut T,
 ) -> anyhow::Result<()> {
-    let mut buf = [0u8; 5];
-    buf[0] = MAGIC_BYTE;
-    let version: u32 = CURRENT_PROTOCOL_VERSION.into();
-    buf[1..5].copy_from_slice(&version.to_be_bytes());
+    let mut buf = BytesMut::with_capacity(5);
+    buf.put_u8(MAGIC_BYTE);
+    buf.put_u32(CURRENT_PROTOCOL_VERSION.into());
     conn.write_all(&buf).await?;
     Ok(())
 }
@@ -202,11 +229,10 @@ async fn write_magic_byte_protocol_version_and_expected_connection_version<
     conn: &mut T,
     min_expected_connection_id: u32,
 ) -> anyhow::Result<()> {
-    let mut buf = [0u8; 9];
-    buf[0] = MAGIC_BYTE;
-    let version: u32 = CURRENT_PROTOCOL_VERSION.into();
-    buf[1..5].copy_from_slice(&version.to_be_bytes());
-    buf[5..9].copy_from_slice(&min_expected_connection_id.to_be_bytes());
+    let mut buf = BytesMut::with_capacity(9);
+    buf.put_u8(MAGIC_BYTE);
+    buf.put_u32(CURRENT_PROTOCOL_VERSION.into());
+    buf.put_u32(min_expected_connection_id);
     conn.write_all(&buf).await?;
     Ok(())
 }
@@ -230,32 +256,34 @@ async fn read_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>
 }
 
 #[derive(Debug, PartialEq)]
-pub struct HandshakeOutcome {
-    pub protocol_version: KnownMpcProtocols,
+pub(crate) enum HandshakeOutcome {
+    Unsupported(KnownMpcProtocols),
+    Dec2025(bool),
+    Jan2026(ConnectionInfo),
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) struct ConnectionInfo {
+    pub peer_protocol_version: KnownMpcProtocols,
     pub sender_connection_id: u32,
     pub min_expected_connection_id: u32,
 }
 
-impl HandshakeOutcome {
+impl ConnectionInfo {
     /// returns a bool indicating if the connection can be accepted or not
-    /// we accept the connection if `min_expected_connection_id` is zero (indicating the receiver
-    /// node does not yet have a connection with the node), or if
-    /// `min_expected_connection_id<=sender_connection_id`
-    pub fn accept_connection(&self) -> bool {
-        match self.protocol_version {
-            KnownMpcProtocols::Unsupported => false,
-            KnownMpcProtocols::Dec2025 => true,
-            KnownMpcProtocols::Jan2026 => {
-                self.min_expected_connection_id <= self.sender_connection_id
-            }
-        }
+    /// we accept the connectin if and only if
+    /// `min_expected_connection_id <= sender_connection_id`
+    pub(crate) fn accept_connection(&self) -> bool {
+        self.min_expected_connection_id <= self.sender_connection_id
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DialerData, HandshakeRole, ListenerData};
-    use crate::network::handshake::{HandshakeOutcome, MAGIC_BYTE};
+    use super::{
+        p2p_handshake_dialer, p2p_handshake_listener, DialerData, HandshakeOutcome, ListenerData,
+    };
+    use crate::network::handshake::{ConnectionInfo, MAGIC_BYTE};
     use crate::protocol_version::{KnownMpcProtocols, CURRENT_PROTOCOL_VERSION};
     use rstest::*;
     use std::future::Future;
@@ -267,45 +295,46 @@ mod tests {
     #[case::resetting_connection_id_by_sender_fails(100, 0, false)]
     #[case::lower_than_expected_connection_id_fails(22, 1, false)]
     #[case::higher_than_expected_connection_id_succeeds(0, 100, true)]
-    fn test_p2p_handshake_outcome_jan_2026(
+    fn test_p2p_handshake_outcome_data_jan_2026(
         #[case] min_expected_connection_id: u32,
         #[case] sender_connection_id: u32,
         #[case] outcome: bool,
     ) {
-        let expected_res = HandshakeOutcome {
-            protocol_version: CURRENT_PROTOCOL_VERSION,
+        let expected_res = ConnectionInfo {
+            peer_protocol_version: CURRENT_PROTOCOL_VERSION,
             sender_connection_id,
             min_expected_connection_id,
         };
         assert_eq!(expected_res.accept_connection(), outcome);
     }
 
-    #[rstest]
-    #[case::same_expected_connection_attempt(42, 42)]
-    #[case::resetting_connection_attempt(100, 0)]
-    #[case::higher_expected_connection_attempt(22, 1)]
-    #[case::lower_expected_connection_attempt(0, 100)]
-    fn test_p2p_handshake_outcome_pre_2026_always_accepts(
-        #[case] min_expected_connection_id: u32,
-        #[case] sender_connection_id: u32,
-    ) {
-        let expected_res = HandshakeOutcome {
-            protocol_version: KnownMpcProtocols::Dec2025,
-            sender_connection_id,
-            min_expected_connection_id,
-        };
-        assert!(expected_res.accept_connection());
-    }
-
     const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
-    const DEC_2025_PROTOCOL_VERSION: u32 = KnownMpcProtocols::Dec2025 as u32;
-    static DEPRECATED_PROTOCOLS: Range<u32> = 0..DEC_2025_PROTOCOL_VERSION;
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum HandshakeRole {
+        Dialer(DialerData),
+        Listener(ListenerData),
+    }
 
     fn execute_handshake(
         mut stream: tokio::io::DuplexStream,
         role: HandshakeRole,
     ) -> impl Future<Output = anyhow::Result<HandshakeOutcome>> {
-        let handle = tokio::spawn(async move { role.p2p_handshake(&mut stream, TIMEOUT).await });
+        let handle = tokio::spawn(async move {
+            match role {
+                HandshakeRole::Dialer(dialer_data) => {
+                    tokio::time::timeout(TIMEOUT, p2p_handshake_dialer(dialer_data, &mut stream))
+                        .await?
+                }
+                HandshakeRole::Listener(listener_data) => {
+                    tokio::time::timeout(
+                        TIMEOUT,
+                        p2p_handshake_listener(listener_data, &mut stream),
+                    )
+                    .await?
+                }
+            }
+        });
         async move { handle.await? }
     }
 
@@ -364,11 +393,11 @@ mod tests {
         let receiver_handle = execute_handshake(receiver, receive_role(min_expected_connection_id));
         let sender_result = sender_handle.await.unwrap();
         let receiver_result = receiver_handle.await.unwrap();
-        let expected_res = HandshakeOutcome {
-            protocol_version: CURRENT_PROTOCOL_VERSION,
+        let expected_res = HandshakeOutcome::Jan2026(ConnectionInfo {
+            peer_protocol_version: CURRENT_PROTOCOL_VERSION,
             sender_connection_id,
             min_expected_connection_id,
-        };
+        });
         assert_eq!(receiver_result, expected_res);
         assert_eq!(sender_result, expected_res);
     }
@@ -378,7 +407,8 @@ mod tests {
     #[case::receiver_handshake_must_fail(receive_role(42))]
     #[case::sender_handshake_must_fail(sender_role(42))]
     async fn test_p2p_handshake_fail_on_deprecated_protocols(#[case] role: HandshakeRole) {
-        for deprecated_version in DEPRECATED_PROTOCOLS.clone() {
+        let deprecated_protocols: Range<u32> = 0..KnownMpcProtocols::Dec2025.into();
+        for deprecated_version in deprecated_protocols.clone() {
             let (alice, mut bob) = tokio::io::duplex(1024);
             let alice_handle = execute_handshake(alice, role);
 
@@ -386,13 +416,10 @@ mod tests {
             buf[0] = MAGIC_BYTE;
             buf[1..].copy_from_slice(&(deprecated_version).to_be_bytes());
             bob.write_all(&buf).await.unwrap();
-            let err = alice_handle.await.unwrap_err();
+            let res = alice_handle.await.unwrap();
             assert_eq!(
-                err.to_string(),
-                format!(
-                    "peer is using a legacy protocol: their version: {}, ours: {:?}",
-                    deprecated_version, CURRENT_PROTOCOL_VERSION
-                )
+                res,
+                HandshakeOutcome::Unsupported(deprecated_version.into())
             );
         }
     }
@@ -406,7 +433,8 @@ mod tests {
     async fn test_p2p_handshake_future_protocol(#[case] role: HandshakeRole) {
         let (alice, mut bob) = tokio::io::duplex(1024);
         let alice_handle = execute_handshake(alice, role);
-        let future_version: u32 = CURRENT_PROTOCOL_VERSION as u32 + 1;
+        let current: u32 = CURRENT_PROTOCOL_VERSION.into();
+        let future_version: u32 = current + 1;
 
         let mut buf = [0u8; 10];
         buf[0] = MAGIC_BYTE;
@@ -416,11 +444,11 @@ mod tests {
         let res = alice_handle.await.unwrap();
         assert_eq!(
             res,
-            HandshakeOutcome {
-                protocol_version: CURRENT_PROTOCOL_VERSION,
+            HandshakeOutcome::Jan2026(ConnectionInfo {
+                peer_protocol_version: future_version.into(),
                 sender_connection_id: CONNECTION_ATTEMPT,
                 min_expected_connection_id: CONNECTION_ATTEMPT,
-            }
+            })
         );
     }
 
@@ -433,10 +461,10 @@ mod tests {
         let (this_node, old_node) = tokio::io::duplex(1024);
         let this_node_handle = execute_handshake(this_node, role);
         let old_node_handle = execute_legacy_handshake(old_node);
-        let this_node_res = this_node_handle.await;
+        let this_node_res = this_node_handle.await.unwrap();
         let old_node_res = old_node_handle.await;
         assert!(old_node_res.is_err());
-        assert!(this_node_res.is_err());
+        assert_eq!(this_node_res, HandshakeOutcome::Dec2025(false));
     }
 
     #[rstest]
@@ -450,14 +478,7 @@ mod tests {
         let this_node_res = this_node_handle.await.unwrap();
         let old_node_res = old_node_handle.await;
         assert!(old_node_res.is_ok());
-        assert_eq!(
-            this_node_res,
-            HandshakeOutcome {
-                protocol_version: DEC_2025_PROTOCOL_VERSION.try_into().unwrap(),
-                min_expected_connection_id: 0,
-                sender_connection_id: 0,
-            }
-        );
+        assert_eq!(this_node_res, HandshakeOutcome::Dec2025(true));
     }
 
     fn execute_legacy_handshake(
@@ -472,9 +493,10 @@ mod tests {
         timeout: std::time::Duration,
     ) -> anyhow::Result<()> {
         tokio::time::timeout(timeout, async move {
+            let dec_2025_protocol_version: u32 = KnownMpcProtocols::Dec2025.into();
             let mut handshake_buf = [0u8; 5];
             handshake_buf[0] = MAGIC_BYTE;
-            handshake_buf[1..].copy_from_slice(&DEC_2025_PROTOCOL_VERSION.to_be_bytes());
+            handshake_buf[1..].copy_from_slice(&dec_2025_protocol_version.to_be_bytes());
             conn.write_all(&handshake_buf).await?;
 
             let mut other_handshake = [0u8; 5];
@@ -485,10 +507,10 @@ mod tests {
 
             let other_protocol_version =
                 u32::from_be_bytes(other_handshake[1..].try_into().unwrap());
-            if other_protocol_version < DEC_2025_PROTOCOL_VERSION {
+            if other_protocol_version < dec_2025_protocol_version {
                 anyhow::bail!(
                     "Incompatible protocol version; we have {}, they have {}",
-                    DEC_2025_PROTOCOL_VERSION,
+                    dec_2025_protocol_version,
                     other_protocol_version
                 );
             }
