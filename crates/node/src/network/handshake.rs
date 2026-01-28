@@ -22,44 +22,40 @@ pub(crate) struct ListenerData {
 /// Performs a P2P handshake over an async byte stream as the dialer
 ///
 /// 1. Writes 5 bytes to byte stream
-/// Dialer --> Listener:
-/// ┌───────────────┬───────────────────────────┐
-/// │ u8            │ u32                       │
-/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
-/// └───────────────┴───────────────────────────┘
+///    Dialer --> Listener:
+///    ┌───────────────┬───────────────────────────┐
+///    │ u8            │ u32                       │
+///    │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
+///    └───────────────┴───────────────────────────┘
 /// 2. Reads 5 bytes from byte stream
-/// Dialer <-- Listener:
-/// ┌───────────────┬────────────────────────────┐
-/// │ u8            │ u32                        │
-/// │ MAGIC_BYTE    │ LISTENER_PROTOCOL_VERSION  │
-/// └───────────────┴────────────────────────────┘
+///    Dialer <-- Listener:
+///    ┌───────────────┬────────────────────────────┐
+///    │ u8            │ u32                        │
+///    │ MAGIC_BYTE    │ LISTENER_PROTOCOL_VERSION  │
+///    └───────────────┴────────────────────────────┘
 ///
 /// 3. Compares `LISTENER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
 ///    *Version-specific* behavior:
-///
-/// *Unsupported:*
-/// This function returns HandshakeOutcome::Unsupported(peer_protocol_version) in case the listener is running a deprecated
-/// protocol version.
-///
-/// *Dec2025:*
-/// Returns HandshakeOutcome::Dec2025(true), indicating that the listener is running Dec2025
-/// protocol and is expected to accept this connection.
-///
-/// *Jan2026:*
-/// Writes `sender_connection_id` to byte stream
-/// Dialer --> Listener:
-/// ┌──────────────────────────┐
-/// │ u32                      │
-/// │ sender_connection_id     │
-/// └──────────────────────────┘
-///
-/// Reads `min_expected_connection_id` from byte stream:
-/// Dialer <-- Listener:
-/// ┌────────────────────────────┐
-/// │ u32                        │
-/// │ min_expected_connection_id │
-/// └────────────────────────────┘
-/// Returns HandshakeOutcome::Jan2026(ConnectionInfo)
+///     - *Unsupported:*
+///       This function returns HandshakeOutcome::Unsupported(peer_protocol_version) in case the listener is running a deprecated
+///       protocol version.
+///     - *Dec2025:*
+///       Returns HandshakeOutcome::Dec2025(true), indicating that the listener is running Dec2025
+///       protocol and is expected to accept this connection.
+///     - *Jan2026:*
+///       1. Writes `sender_connection_id` to byte stream
+///          Dialer --> Listener:
+///          ┌──────────────────────────┐
+///          │ u32                      │
+///          │ sender_connection_id     │
+///          └──────────────────────────┘
+///       2. Reads `min_expected_connection_id` from byte stream:
+///          Dialer <-- Listener:
+///          ┌────────────────────────────┐
+///          │ u32                        │
+///          │ min_expected_connection_id │
+///          └────────────────────────────┘
+///       3. Returns HandshakeOutcome::Jan2026(ConnectionInfo)
 pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
     dialer_data: DialerData,
     conn: &mut T,
@@ -99,46 +95,42 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
 /// Performs a P2P handshake over an async byte stream as the listener
 ///
 /// 1. Reads 5 bytes to byte stream
-/// Listener <-- Dialer:
-/// ┌───────────────┬──────────────────────────┐
-/// │ u8            │ u32                      │
-/// │ MAGIC_BYTE    │ DIALER_PROTOCOL_VERSION  │
-/// └───────────────┴──────────────────────────┘
+///    Listener <-- Dialer:
+///    ┌───────────────┬──────────────────────────┐
+///    │ u8            │ u32                      │
+///    │ MAGIC_BYTE    │ DIALER_PROTOCOL_VERSION  │
+///    └───────────────┴──────────────────────────┘
 ///
 /// 2. Compares `DIALER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
 ///    *Version-specific* behavior:
+///     - *Unsupported:*
+///       The listener aborts the handshake, not writing anything to the byte stream.
+///       This function returns HandshakeOutcome::Unsupported(peer_protocol_version).
+///     - *Dec2025:*
+///       If `min_expected_connection_id` is not 0, then this function aborts the handshake, not writing
+///       anything to byte stream and returns HandshakeOutcome::Dec2025(false).
+///       If `min_expected_connection_id` is 0, then this function writes `MAGIC_BYTE` and
+///       `CURRENT_PROTOCOL_VERSION` to byte steram and returns HandshakeOutcome::Dec2025(true)
+///       Listener --> Dialer:
+///       ┌───────────────┬───────────────────────────┐
+///       │ u8            │ u32                       │
+///       │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
+///       └───────────────┴───────────────────────────┘
+///     - *Jan2026:*
+///         1. Sends MAGIC_BYTE, CURRENT_PROTOCOL_VERSION and min_expected_connection_id to Dialer.
+///            Listener --> Dialer:
+///            ┌───────────────┬───────────────────────────┬────────────────────────────┐
+///            │ u8            │ u32                       │ u32                        │
+///            │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │ min_expected_connection_id │
+///            └───────────────┴───────────────────────────┴────────────────────────────┘
 ///
-/// *Unsupported:*
-/// The listener aborts the handshake, not writing anything to the byte stream.
-/// This function returns HandshakeOutcome::Unsupported(peer_protocol_version).
-///
-/// *Dec2025:*
-/// If `min_expected_connection_id` is not 0, then this function aborts the handshake, not writing
-/// anything to byte stream and returns HandshakeOutcome::Dec2025(false).
-/// If `min_expected_connection_id` is 0, then this function writes `MAGIC_BYTE` and
-/// `CURRENT_PROTOCOL_VERSION` to byte steram and returns HandshakeOutcome::Dec2025(true)
-/// Listener --> Dialer:
-/// ┌───────────────┬───────────────────────────┐
-/// │ u8            │ u32                       │
-/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │
-/// └───────────────┴───────────────────────────┘
-///
-/// *Jan2026:*
-/// Sends MAGIC_BYTE, CURRENT_PROTOCOL_VERSION and min_expected_connection_id to Dialer.
-/// Listener --> Dialer:
-/// ┌───────────────┬───────────────────────────┬────────────────────────────┐
-/// │ u8            │ u32                       │ u32                        │
-/// │ MAGIC_BYTE    │ CURRENT_PROTOCOL_VERSION  │ min_expected_connection_id │
-/// └───────────────┴───────────────────────────┴────────────────────────────┘
-///
-/// Reads `sender_connection_id` from byte stream:
-/// Listener <-- Dialer:
-/// ┌──────────────────────┐
-/// │ u32                  │
-/// │ sender_connection_id │
-/// └──────────────────────┘
-///
-/// Returns HandshakeOutcome::Jan2026(ConnectionInfo)
+///         2. Reads `sender_connection_id` from byte stream:
+///            Listener <-- Dialer:
+///            ┌──────────────────────┐
+///            │ u32                  │
+///            │ sender_connection_id │
+///            └──────────────────────┘
+///         3. Returns HandshakeOutcome::Jan2026(ConnectionInfo)
 pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
     listener_data: ListenerData,
     conn: &mut T,
@@ -147,9 +139,7 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
         min_expected_connection_id,
     } = listener_data;
     let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version
-        .try_into()
-        .unwrap_or(CURRENT_PROTOCOL_VERSION);
+    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version.into();
     let outcome = match peer_protocol_version {
         KnownMpcProtocols::Unsupported => {
             tracing::warn!(

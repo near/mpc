@@ -428,7 +428,7 @@ mod tests {
             );
             assert_eq!(found.version(), 1);
         } else {
-            matches!(res, Err(_));
+            let _ = res.unwrap_err();
             assert_eq!(
                 found.sender_connection_id().unwrap(),
                 previous_sender_connection_id.sender_connection_id()
