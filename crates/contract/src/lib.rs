@@ -220,15 +220,14 @@ impl MpcContract {
         // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
-        let cost = MINIMUM_SIGN_REQUEST_DEPOSIT;
 
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -389,15 +388,14 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        let cost = MINIMUM_CKD_REQUEST_DEPOSIT;
 
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),

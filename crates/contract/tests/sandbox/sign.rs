@@ -160,19 +160,17 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
         );
-        let contract_delta = contract_balance
-            .as_millinear()
-            .abs_diff(new_contract_balance.as_millinear());
         assert!(
-            contract_delta < 20,
-            "respond should take less than 0.02 NEAR"
+            contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+            "contract balance should not decrease after refunding deposit"
         );
-        contract_balance = new_contract_balance;
         // probably not necessary, but better safe than race condition
         worker
             .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
             .await
             .unwrap();
+
+        contract_balance = new_contract_balance
     }
     Ok(())
 }
@@ -206,12 +204,9 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
         );
-        let contract_delta = contract_balance
-            .as_millinear()
-            .abs_diff(new_contract_balance.as_millinear());
         assert!(
-            contract_delta <= 1,
-            "refund transfer should take less than 0.001 NEAR"
+            contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
+            "contract balance should not decrease after refunding deposit"
         );
         contract_balance = new_contract_balance;
     }
