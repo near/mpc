@@ -9,7 +9,7 @@ use crate::participants::{Participant, ParticipantList, ParticipantMap};
 use crate::protocol::{
     echo_broadcast::do_broadcast, helpers::recv_from_others, internal::SharedChannel,
 };
-use crate::KeygenOutput;
+use crate::{KeygenOutput, ReconstructionLowerBound};
 
 use frost_core::keys::{
     CoefficientCommitment, SecretShare, SigningShare, VerifiableSecretSharingCommitment,
@@ -537,9 +537,10 @@ pub async fn do_keygen<C: Ciphersuite>(
     chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
+    let threshold = threshold.into().into();
     // pick share at random
     let secret = SigningKey::<C>::new(&mut rng).to_scalar();
     // call keyshare
@@ -553,8 +554,9 @@ pub async fn do_keygen<C: Ciphersuite>(
 pub fn assert_keygen_invariants(
     participants: &[Participant],
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
 ) -> Result<ParticipantList, InitializationError> {
+    let threshold = threshold.into().into();
     // need enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -595,12 +597,13 @@ pub async fn do_reshare<C: Ciphersuite>(
     chan: SharedChannel,
     participants: ParticipantList,
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
     mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
+    let threshold = threshold.into().into();
     let intersection = old_participants.intersection(&participants);
     // either extract the share and linearize it or set it to zero
     let secret = old_signing_key
@@ -631,11 +634,14 @@ pub async fn do_reshare<C: Ciphersuite>(
 pub fn reshare_assertions<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     old_signing_key: Option<SigningShare<C>>,
-    old_threshold: usize,
+    old_threshold: impl Into<ReconstructionLowerBound>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
+    let threshold = threshold.into().into();
+    let old_threshold = old_threshold.into().into();
+
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -691,10 +697,12 @@ pub mod test {
     use crate::crypto::ciphersuite::Ciphersuite;
     use crate::errors::InitializationError;
     use crate::participants::{Participant, ParticipantList};
-    use crate::test_utils::{assert_public_key_invariant, run_keygen, run_refresh, run_reshare};
-    use crate::test_utils::{generate_participants, GenOutput};
-    use crate::KeygenOutput;
+    use crate::test_utils::{
+        assert_public_key_invariant, generate_participants, run_keygen, run_refresh, run_reshare,
+        GenOutput,
+    };
     use crate::{keygen, reshare};
+    use crate::{KeygenOutput, ReconstructionLowerBound};
     use frost_core::{Field, Group};
     use rand_core::{CryptoRngCore, SeedableRng};
 
@@ -729,7 +737,7 @@ pub mod test {
 
     pub fn test_keygen<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
         participants: &[Participant],
-        threshold: usize,
+        threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
@@ -773,7 +781,7 @@ pub mod test {
 
     pub fn test_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
         participants: &[Participant],
-        threshold: usize,
+        threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where
@@ -794,8 +802,8 @@ pub mod test {
 
     pub fn test_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'static>(
         participants: &[Participant],
-        threshold0: usize,
-        threshold1: usize,
+        threshold0: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
+        threshold1: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
         rng: &mut R,
     ) -> Vec<(Participant, KeygenOutput<C>)>
     where

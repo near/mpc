@@ -26,12 +26,14 @@ use zeroize::ZeroizeOnDrop;
 
 mod dkg;
 pub mod protocol;
+mod thresholds;
 
 use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
 use crate::errors::InitializationError;
 use crate::participants::Participant;
 use crate::protocol::internal::{make_protocol, Comms};
 use crate::protocol::Protocol;
+use crate::thresholds::ReconstructionLowerBound;
 use rand_core::CryptoRngCore;
 use std::marker::Send;
 
@@ -86,7 +88,7 @@ impl<C: Ciphersuite> Tweak<C> {
 pub fn keygen<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound> + Send + Copy + 'static,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
 where
@@ -103,11 +105,11 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn reshare<C: Ciphersuite>(
     old_participants: &[Participant],
-    old_threshold: usize,
+    old_threshold: impl Into<ReconstructionLowerBound> + Send + 'static,
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     new_participants: &[Participant],
-    new_threshold: usize,
+    new_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
@@ -143,7 +145,7 @@ pub fn refresh<C: Ciphersuite>(
     old_signing_key: Option<SigningShare<C>>,
     old_public_key: VerifyingKey<C>,
     old_participants: &[Participant],
-    old_threshold: usize,
+    old_threshold: impl Into<ReconstructionLowerBound> + Copy + Send + 'static,
     me: Participant,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = KeygenOutput<C>>, InitializationError>
