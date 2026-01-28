@@ -148,7 +148,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
 
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
@@ -169,6 +169,8 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
             .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
             .await
             .unwrap();
+
+        contract_balance = new_contract_balance
     }
     Ok(())
 }
@@ -184,7 +186,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
@@ -206,6 +208,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
             contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
             "contract balance should not decrease after refunding deposit"
         );
+        contract_balance = new_contract_balance;
     }
     Ok(())
 }

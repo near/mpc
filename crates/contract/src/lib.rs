@@ -167,7 +167,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let request: SignRequest = request.try_into().unwrap();
 
@@ -221,18 +220,14 @@ impl MpcContract {
         // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
-
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -354,7 +349,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
@@ -394,18 +388,14 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let cost = std::cmp::max(storage_cost, MINIMUM_CKD_REQUEST_DEPOSIT);
-
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
