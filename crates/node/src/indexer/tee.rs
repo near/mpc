@@ -9,6 +9,8 @@ use tokio::sync::watch;
 
 use crate::indexer::IndexerState;
 
+use super::ALLOWED_IMAGE_HASHES_ENDPOINT;
+
 const ALLOWED_HASHES_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_secs(60);
@@ -84,7 +86,9 @@ pub async fn monitor_allowed_docker_images(
     indexer_state: Arc<IndexerState>,
 ) {
     let view_client = indexer_state.view_client.clone();
-    let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
+    //    let fetcher = { |id| view_client.get_mpc_allowed_image_hashes(id) };
+
+    let fetcher = { |id| view_client.get_mpc_state(id, ALLOWED_IMAGE_HASHES_ENDPOINT) };
 
     monitor_allowed_hashes(sender, indexer_state, &fetcher).await
 }
