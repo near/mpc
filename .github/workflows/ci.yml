@@ -42,6 +42,19 @@ jobs:
           export NODE_IMAGE_NAME=test_image_tag_ci
           ./scripts/check-mpc-node-docker-starts.sh
 
+  launcher-nontee-check:
+    name: "MPC Launcher non-tee check"
+    runs-on: warp-ubuntu-2204-x64-2x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
       - name: Check mpc-node docker image can initialize through the launcher and start
         run: |
           ./scripts/check-mpc-node-docker-starts.sh --launcher
