@@ -1756,6 +1756,7 @@ mod tests {
     use sha2::{Digest, Sha256};
     use test_utils::attestation::{
         image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
+        VALID_ATTESTATION_TIMESTAMP,
     };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
@@ -3613,9 +3614,6 @@ mod tests {
         // then panic
     }
 
-    // Unix time as of 2026/01/27 in nanoseconds
-    const CURRENT_BLOCK_TIME_STAMP: u64 = 1_769_527_031_000_000_000;
-
     /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
     /// This is a helper function that provides all the common components needed for TEE-related tests.
     fn setup_tee_test() -> (
@@ -3659,12 +3657,13 @@ mod tests {
         contract: &mut MpcContract,
         participant_account_ids: &[near_sdk::AccountId],
         mpc_hash: &Hash32<Image>,
+        block_timestamp_ns: u64,
     ) {
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
                 .predecessor_account_id(participant_account_id.clone())
-                .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+                .block_timestamp(block_timestamp_ns)
                 .build());
 
             contract
@@ -3688,8 +3687,15 @@ mod tests {
             near_public_key,
         ) = setup_tee_test();
 
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
         // when
-        setup_approved_mpc_hash(&mut contract, &participant_account_ids, &mpc_hash);
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
 
         let account_id = participant_account_ids[0].clone();
         testing_env!(VMContextBuilder::new()
@@ -3697,7 +3703,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .signer_account_pk(near_public_key.clone())
             .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+            .block_timestamp(block_timestamp_ns)
             .build());
         let result = contract.submit_participant_info(attestation, tls_key);
 
@@ -3719,6 +3725,8 @@ mod tests {
             near_public_key,
         ) = setup_tee_test();
 
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
         // when
 
         let account_id = participant_account_ids[0].clone();
@@ -3727,7 +3735,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .signer_account_pk(near_public_key.clone())
             .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+            .block_timestamp(block_timestamp_ns)
             .build());
         let result = contract.submit_participant_info(attestation, tls_key);
 
@@ -3751,8 +3759,15 @@ mod tests {
             near_public_key,
         ) = setup_tee_test();
 
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
         // when
-        setup_approved_mpc_hash(&mut contract, &participant_account_ids, &mpc_hash);
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
 
         // Create invalid TLS key by flipping the last bit
         let mut invalid_tls_key_bytes = *tls_key.as_bytes();
@@ -3766,7 +3781,7 @@ mod tests {
             .predecessor_account_id(account_id.clone())
             .signer_account_pk(near_public_key.clone())
             .attached_deposit(NearToken::from_near(1))
-            .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
+            .block_timestamp(block_timestamp_ns)
             .build());
 
         let result = contract.submit_participant_info(attestation, invalid_tls_key);
