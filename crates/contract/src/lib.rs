@@ -3653,7 +3653,7 @@ mod tests {
         )
     }
 
-    /// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
+    /// Sets up a contract with an approved MPC hash by having the participants vote for it.
     /// This is a helper function commonly used in tests that require pre-approved hashes.
     fn setup_approved_mpc_hash(
         contract: &mut MpcContract,
