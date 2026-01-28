@@ -355,7 +355,7 @@ pub async fn submit_tee_attestations(
             &node_id.tls_public_key.into_interface_type(),
         )
         .await?;
-        assert!(result);
+        assert!(result.is_success());
     }
     Ok(())
 }
@@ -376,7 +376,8 @@ pub async fn submit_attestations(
             let tls_key = (&participant.sign_pk).into_interface_type();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
-                .expect("submit_participant_info should not error");
+                .expect("submit_participant_info should not error")
+                .is_success();
             assert!(
                 success,
                 "submit_participant_info failed for participant {}",
@@ -537,7 +538,7 @@ pub async fn generate_participant_and_submit_attestation(
 
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
-    submit_participant_info(
+    let result = submit_participant_info(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
@@ -545,6 +546,7 @@ pub async fn generate_participant_and_submit_attestation(
     )
     .await
     .expect("Attestation submission for new account must succeed.");
+    assert!(result.is_success());
     (new_account, account_id, new_participant)
 }
 

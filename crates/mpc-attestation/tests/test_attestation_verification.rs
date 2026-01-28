@@ -5,7 +5,8 @@ use mpc_attestation::attestation::{
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use test_utils::attestation::{
-    account_key, image_digest, launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
+    VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
+    mock_dstack_attestation, p2p_tls_key,
 };
 
 #[test]
@@ -45,7 +46,7 @@ fn validated_dstack_attestation_can_be_reverified() {
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    let timestamp_s = 1763626832_u64;
+    let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
@@ -76,7 +77,7 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    let timestamp_s = 1763626832_u64;
+    let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];
 
@@ -124,7 +125,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
     let tls_key = p2p_tls_key();
     let account_key = account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let creation_time = 1763626832_u64;
+    let creation_time = VALID_ATTESTATION_TIMESTAMP;
 
     let allowed_mpc_hashes = [image_digest()];
     let allowed_launcher_hashes = [launcher_compose_digest()];

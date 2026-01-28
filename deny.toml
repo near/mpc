@@ -27,8 +27,6 @@ ignore = [
   "RUSTSEC-2025-0119", # number_prefix is unmaintained
   "RUSTSEC-2024-0384", # instant is unmaintained
   "RUSTSEC-2026-0002", # TODO(#1730): Remove once nearcore updates to a fixed version
-  # Remove when https://github.com/Phala-Network/dcap-qvl/issues/98 is closed
-  "RUSTSEC-2023-0071", # rsa has a timing vulnerability
 ]
 
 [bans]

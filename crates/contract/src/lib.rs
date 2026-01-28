@@ -1745,6 +1745,7 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
+    use mpc_primitives::hash::{Hash32, Image};
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
@@ -1753,6 +1754,10 @@ mod tests {
     use rand_core::CryptoRngCore;
     use rstest::rstest;
     use sha2::{Digest, Sha256};
+    use test_utils::attestation::{
+        image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
+        VALID_ATTESTATION_TIMESTAMP,
+    };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
@@ -3607,5 +3612,183 @@ mod tests {
         contract.post_upgrade_cleanup();
 
         // then panic
+    }
+
+    /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
+    /// This is a helper function that provides all the common components needed for TEE-related tests.
+    fn setup_tee_test() -> (
+        MpcContract,
+        Vec<near_sdk::AccountId>,
+        Attestation,
+        dtos::Ed25519PublicKey,
+        Hash32<Image>,
+        near_sdk::PublicKey,
+    ) {
+        let (_context, contract, _secret_key) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+
+        let participant_account_ids: Vec<_> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .collect();
+
+        let attestation = mock_dto_dstack_attestation();
+        let tls_key = p2p_tls_key().into();
+        let mpc_hash = image_digest();
+        let near_public_key = near_account_key();
+
+        (
+            contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
+        )
+    }
+
+    /// Sets up a contract with an approved MPC hash by having the participants vote for it.
+    /// This is a helper function commonly used in tests that require pre-approved hashes.
+    fn setup_approved_mpc_hash(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        mpc_hash: &Hash32<Image>,
+        block_timestamp_ns: u64,
+    ) {
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id.clone())
+                .block_timestamp(block_timestamp_ns)
+                .build());
+
+            contract
+                .vote_code_hash(mpc_hash.clone())
+                .expect("vote succeeds");
+        }
+    }
+
+    /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
+    /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
+    /// the attestation data.
+    #[test]
+    fn test_submit_participant_info_succeeds_with_valid_dstack_attestation() {
+        // given
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
+        // when
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
+
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+        let result = contract.submit_participant_info(attestation, tls_key);
+
+        // then
+        assert_matches::assert_matches!(result, Ok(()));
+    }
+
+    /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
+    /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
+    #[test]
+    fn test_submit_participant_info_fails_without_approved_mpc_hash() {
+        // given
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            _mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
+        // when
+
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+        let result = contract.submit_participant_info(attestation, tls_key);
+
+        // then
+        let error_string = result.unwrap_err().to_string();
+        assert!(error_string
+        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
+    }
+
+    /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
+    /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
+    /// that attestation validation properly checks the TLS key embedded in the attestation report.
+    #[test]
+    fn test_tee_attestation_fails_with_invalid_tls_key() {
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
+        // when
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
+
+        // Create invalid TLS key by flipping the last bit
+        let mut invalid_tls_key_bytes = *tls_key.as_bytes();
+        let last_byte_idx = invalid_tls_key_bytes.len() - 1;
+        invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
+        let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
+
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+
+        let result = contract.submit_participant_info(attestation, invalid_tls_key);
+
+        // then
+        let error_string = result.unwrap_err().to_string();
+        assert!(error_string
+        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
     }
 }

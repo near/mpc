@@ -68,13 +68,14 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         account_public_key: Some(bogus_ed25519_near_public_key()),
     };
     let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key
-    submit_participant_info(
+    let result = submit_participant_info(
         &mpc_signer_accounts[0],
         &contract,
         &attestation,
         &new_uid.tls_public_key.into_interface_type(),
     )
     .await?;
+    assert!(result.is_success());
 
     expected_node_ids.insert(new_uid);
 
