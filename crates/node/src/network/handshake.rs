@@ -274,7 +274,8 @@ impl ConnectionInfo {
     /// we accept the connectin if and only if
     /// `min_expected_connection_id <= sender_connection_id`
     pub(crate) fn accept_connection(&self) -> bool {
-        self.min_expected_connection_id <= self.sender_connection_id
+        self.sender_connection_id == MIN_EXPECTED_CONNECTION_ID
+            || self.min_expected_connection_id <= self.sender_connection_id
     }
 }
 
@@ -292,7 +293,7 @@ mod tests {
 
     #[rstest]
     #[case::expecting_connection_id_succeeds(42, 42, true)]
-    #[case::resetting_connection_id_by_sender_fails(100, 0, false)]
+    #[case::resetting_connection_id_by_sender_always_succeeds(100, 0, true)]
     #[case::lower_than_expected_connection_id_fails(22, 1, false)]
     #[case::higher_than_expected_connection_id_succeeds(0, 100, true)]
     fn test_p2p_handshake_outcome_data_jan_2026(

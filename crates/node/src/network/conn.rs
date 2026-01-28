@@ -1,3 +1,4 @@
+use crate::network::handshake::MIN_EXPECTED_CONNECTION_ID;
 use crate::primitives::ParticipantId;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -130,9 +131,13 @@ impl<I: Send + Sync + 'static, O: SenderConnectionId + Send + Sync + 'static>
             let should_replace = match existing.sender_connection_id() {
                 None => true, // we don't have an existing connection with this peer and accept the
                 // new one.
-                Some(existing_id) => existing_id < conn.sender_connection_id(),
-                // we do have an existing connection with this peer. We accept this new connection
-                // only if it is strictly newer than the existing one.
+                Some(existing_id) => {
+                    // we do have an existing connection with this peer. We accept this new connection
+                    // only if it is strictly newer than the existing one, or if this is a new
+                    // connection from the sender side (likely to occur during restarts)
+                    existing_id < conn.sender_connection_id()
+                        || conn.sender_connection_id() == MIN_EXPECTED_CONNECTION_ID
+                }
             };
             if !should_replace {
                 return false;
@@ -390,7 +395,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::equal_connection_id_is_rejected(0, 0, false)]
+    #[case::min_connection_id_is_accepted(0, 0, true)]
+    #[case::min_connection_id_is_accepted(10, 0, true)]
     #[case::incremented_connection_id_is_accepted(0, 1, true)]
     #[case::incremented_connection_id_is_accepted(42, 43, true)]
     #[case::lower_connection_id_is_rejected(42, 41, false)]
