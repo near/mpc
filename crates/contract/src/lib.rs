@@ -167,7 +167,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let request: SignRequest = request.try_into().unwrap();
 
@@ -221,10 +220,7 @@ impl MpcContract {
         // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
-
-        let cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
+        let cost = MINIMUM_SIGN_REQUEST_DEPOSIT;
 
         match deposit.checked_sub(cost) {
             None => {
@@ -354,7 +350,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
@@ -394,10 +389,7 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
-
-        let cost = std::cmp::max(storage_cost, MINIMUM_CKD_REQUEST_DEPOSIT);
+        let cost = MINIMUM_CKD_REQUEST_DEPOSIT;
 
         match deposit.checked_sub(cost) {
             None => {

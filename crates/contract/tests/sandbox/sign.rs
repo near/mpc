@@ -148,7 +148,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
 
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
@@ -160,10 +160,14 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
         );
+        let contract_delta = contract_balance
+            .as_millinear()
+            .abs_diff(new_contract_balance.as_millinear());
         assert!(
-            contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
-            "contract balance should not decrease after refunding deposit"
+            contract_delta < 20,
+            "respond should take less than 0.02 NEAR"
         );
+        contract_balance = new_contract_balance;
         // probably not necessary, but better safe than race condition
         worker
             .fast_forward(NUM_BLOCKS_BETWEEN_REQUESTS)
@@ -184,7 +188,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
     let mut rng = rand::rngs::StdRng::from_seed([2u8; 32]);
     let alice = worker.dev_create_account().await?;
     let balance = alice.view_account().await?.balance;
-    let contract_balance = contract.view_account().await?.balance;
+    let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
         let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
@@ -202,10 +206,14 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
             balance.as_millinear() - new_balance.as_millinear() < 10,
             "refund should happen"
         );
+        let contract_delta = contract_balance
+            .as_millinear()
+            .abs_diff(new_contract_balance.as_millinear());
         assert!(
-            contract_balance.as_millinear() <= new_contract_balance.as_millinear(),
-            "contract balance should not decrease after refunding deposit"
+            contract_delta <= 1,
+            "refund transfer should take less than 0.001 NEAR"
         );
+        contract_balance = new_contract_balance;
     }
     Ok(())
 }
