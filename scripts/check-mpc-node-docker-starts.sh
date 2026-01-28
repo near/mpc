@@ -25,6 +25,12 @@ if $USE_LAUNCHER; then
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
   sleep 10
+  launcher_logs=$(docker logs --tail 10 "$LAUNCHER_IMAGE_NAME" 2>&1)
+  if ! echo "$launcher_logs" | grep "MPC launched successfully."; then
+    echo "MPC launcher image did not start properly"
+    echo "$launcher_logs"
+    exit 1
+  fi
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 else
   touch /tmp/image-digest.bin
