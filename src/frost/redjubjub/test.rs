@@ -1,5 +1,5 @@
 use crate::crypto::hash::{hash, HashOutput};
-use crate::eddsa::redjubjub::{
+use crate::frost::redjubjub::{
     presign::presign, sign::sign, KeygenOutput, PresignArguments, PresignOutput, SignatureOption,
 };
 use crate::participants::{Participant, ParticipantList};

@@ -10,7 +10,7 @@ use rand_core::OsRng;
 
 use threshold_signatures::{
     self,
-    eddsa::frost::{sign::sign, Ed25519Sha512, SignatureOption},
+    frost::eddsa::{sign::sign, Ed25519Sha512, SignatureOption},
     participants::Participant,
 };
 

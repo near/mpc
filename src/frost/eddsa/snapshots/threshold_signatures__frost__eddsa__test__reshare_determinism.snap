@@ -1,5 +1,5 @@
 ---
-source: src/eddsa/frost/test.rs
+source: src/frost/eddsa/test.rs
 expression: result
 ---
 [

@@ -1,5 +1,5 @@
 ---
-source: src/eddsa/redjubjub/test.rs
+source: src/frost/redjubjub/test.rs
 expression: result
 ---
 [

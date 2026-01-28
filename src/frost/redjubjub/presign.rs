@@ -90,7 +90,7 @@ async fn do_presign(
 
 #[cfg(test)]
 mod test {
-    use crate::eddsa::redjubjub::test::{build_key_packages_with_dealer, test_run_presignature};
+    use crate::frost::redjubjub::test::{build_key_packages_with_dealer, test_run_presignature};
     use crate::test_utils::MockCryptoRng;
     use rand::SeedableRng;
 

@@ -1,5 +1,5 @@
 use crate::crypto::hash::HashOutput;
-use crate::eddsa::frost::{sign::sign, KeygenOutput, SignatureOption};
+use crate::frost::eddsa::{sign::sign, KeygenOutput, SignatureOption};
 use crate::participants::{Participant, ParticipantList};
 use crate::test_utils::{
     generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng,

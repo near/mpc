@@ -11,7 +11,7 @@ use crate::frost_ed25519::Ed25519Sha512;
 use crate::frost_secp256k1::Secp256K1Sha256;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
-use crate::{ecdsa, eddsa, ParticipantList};
+use crate::{ecdsa, frost, ParticipantList};
 use crate::{keygen, VerifyingKey};
 
 use crate::test_utils::run_protocol;
@@ -68,8 +68,8 @@ impl TestGenerators {
     pub fn make_eddsa_keygens<R: CryptoRngCore + SeedableRng + Send + 'static>(
         &self,
         rng: &mut R,
-    ) -> HashMap<Participant, eddsa::frost::KeygenOutput> {
-        let mut protocols: Vec<ParticipantAndProtocol<eddsa::frost::KeygenOutput>> = Vec::new();
+    ) -> HashMap<Participant, frost::eddsa::KeygenOutput> {
+        let mut protocols: Vec<ParticipantAndProtocol<frost::eddsa::KeygenOutput>> = Vec::new();
         for participant in &self.participants {
             let rng_p = R::seed_from_u64(rng.next_u64());
             protocols.push((

@@ -289,7 +289,7 @@ fn construct_key_package(
 #[cfg(test)]
 mod test {
     use crate::crypto::hash::hash;
-    use crate::eddsa::redjubjub::test::{build_key_packages_with_dealer, test_run_signature};
+    use crate::frost::redjubjub::test::{build_key_packages_with_dealer, test_run_signature};
 
     use crate::test_utils::{one_coordinator_output, MockCryptoRng};
     use rand::SeedableRng;

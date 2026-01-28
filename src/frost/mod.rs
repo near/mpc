@@ -1,2 +1,2 @@
-pub mod frost;
+pub mod eddsa;
 pub mod redjubjub;

@@ -300,7 +300,7 @@ async fn fut_wrapper(
 #[cfg(test)]
 mod test {
     use crate::crypto::hash::hash;
-    use crate::eddsa::frost::{
+    use crate::frost::eddsa::{
         sign::sign,
         test::{build_key_packages_with_dealer, test_run_signature_protocols},
         KeygenOutput, SignatureOption,
