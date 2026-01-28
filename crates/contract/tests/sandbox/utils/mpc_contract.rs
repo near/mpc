@@ -8,7 +8,7 @@ use mpc_contract::{
     tee::tee_state::NodeId,
 };
 use mpc_primitives::hash::MpcDockerImageHash;
-use near_workspaces::{Account, Contract};
+use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
 pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract.view("state").await.unwrap().json().unwrap()
@@ -42,14 +42,15 @@ pub async fn submit_participant_info(
     contract: &Contract,
     attestation: &Attestation,
     tls_key: &Ed25519PublicKey,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<ExecutionFinalResult> {
     let result = account
         .call(contract.id(), "submit_participant_info")
         .args_json((attestation, tls_key))
         .max_gas()
         .transact()
         .await?;
-    Ok(result.is_success())
+    dbg!(&result);
+    Ok(result)
 }
 
 pub async fn get_participant_attestation(

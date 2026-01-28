@@ -1110,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_rejects_invalid_attesations() {
+    fn add_participant_rejects_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
         let participant_list: Vec<_> = participants.participants().to_vec();
