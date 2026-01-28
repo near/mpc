@@ -24,7 +24,8 @@ if $USE_LAUNCHER; then
   cd tee_launcher
   export LAUNCHER_IMAGE_NAME
   docker compose -f launcher_docker_compose_nontee.yaml up -d
-  CONTAINER_ID=$(docker compose -f launcher_docker_compose_nontee.yaml ps -q launcher)
+  sleep 10
+  CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 else
   touch /tmp/image-digest.bin
   # Test container startup - fail if container can't start
