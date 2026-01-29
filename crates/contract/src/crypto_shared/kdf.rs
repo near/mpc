@@ -199,4 +199,44 @@ mod tests {
         let derived_verifying_key = VerifyingKey::new(derived_public_key);
         derived_verifying_key.verify(&message, &signature).unwrap();
     }
+
+    #[test]
+    fn test_derive_tweak_has_not_changed() {
+        let account_ids = ["dwefqwg", "qfweqwgwegqw", "fqwerijqw385", "fnwef0942534"];
+        let derivation_paths = [
+            "frwewegwegweg",
+            "fwei2.3f230",
+            "f23fjwef8232",
+            "fwefwo23fewfw",
+        ];
+        let mut tweaks = vec![];
+        for account_id in account_ids {
+            for derivation_path in derivation_paths {
+                let tweak = derive_tweak(&account_id.parse().unwrap(), derivation_path);
+                tweaks.push(tweak);
+            }
+        }
+
+        insta::assert_json_snapshot!(tweaks, {});
+    }
+
+    #[test]
+    fn test_derive_app_id_has_not_changed() {
+        let account_ids = ["dwefqwg", "qfweqwgwegqw", "fqwerijqw385", "fnwef0942534"];
+        let derivation_paths = [
+            "frwewegwegweg",
+            "fwei2.3f230",
+            "f23fjwef8232",
+            "fwefwo23fewfw",
+        ];
+        let mut tweaks = vec![];
+        for account_id in account_ids {
+            for derivation_path in derivation_paths {
+                let tweak = derive_tweak(&account_id.parse().unwrap(), derivation_path);
+                tweaks.push(tweak);
+            }
+        }
+
+        insta::assert_json_snapshot!(tweaks, {});
+    }
 }
