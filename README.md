@@ -44,32 +44,58 @@ generation (DKG) that is agnostic of the curve.
 
 ### Threshold ECDSA Functionalities
 
-The threshold ECDSA scheme is implemented over curve Secp256k1.
-The following functionalities are provided:
+The repository provides two different Threshold ECDSA schemes implemented
+over the Secp256k1 curve: an OT-based ECDSA scheme and a Robust ECDSA scheme.
+While both rely on the same DKG and key resharing, they differ in their
+signing workflows and preprocessing requirements.
+
+#### OT-based Threshold ECDSA
+
+The OT-based threshold ECDSA scheme relies on offline phase with two protocols (triple generation and presigning) to enable
+efficient online signing. The following functionalities are provided:
 
 1) **Distributed Key Generation (DKG)**: allows multiple parties to each
 generate its own secret key shares and a corresponding master public key.
 
-2) **Key Resharing**: allows multiple parties to reshare their keys adding new
-members or kicking old members. If the sets of new/old participants is the same,
-then we talk about *key refreshing*. A particular case is **Key Refresh**, which
-works in the same way but without any change in the member set.
+2) **Key Resharing / Key Refresh**: allows parties to reshare their keys,
+add new members, or remove existing ones. Key Refresh refers to resharing
+without changing the participant set.
 
-3) **Beaver Triple Generation (offline)**: Allows the distributive generation of
-multiplicative (Beaver) triples $(a,b,c)$ and their commitments $(A, B, C)$
-where $c = a\cdot b$ and where $(A,B,C) = (g^a, g^b, g^c)$. These triples are
-essential for creating the presignatures. More details in
+3) **Beaver Triple Generation (offline)**: allows the distributed generation
+of multiplicative Beaver triples $(a, b, c)$ and their commitments
+$(A, B, C)= (g^a, g^b, g^c)$ where $c = a \cdot b$. These triples are required for presigning.
+More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/triples.md).
 
-4) **Presigning (offline)**: Allows generating some presignatures during an
-offline signing phase that will be consumed during the online signing phase when
-the message to be signed is known to the signers. More details in
+4) **Presigning (offline)**: allows generating presignatures during an offline
+phase, which are later consumed during online signing when the message becomes
+known to the set of signers. More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
 
-5) **Signing (online)**: Corresponds to the online signing phase in which the
-signing parties produce a valid signature. More details in
+5) **Signing (online)**: corresponds to the online signing phase in which the
+signing parties produce a valid ECDSA signature using precomputed material.
+More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
 
+#### Robust Threshold ECDSA
+
+The Robust ECDSA scheme improves efficiency and communication overhead
+by avoiding Beaver triple generation. In this variant,
+the offline round consists of a single, round-efficient, presigning protocol. 
+
+The following functionalities are provided:
+
+1) **Distributed Key Generation (DKG)**: same as in OT-based ECDSA.
+
+2) **Key Resharing / Key Refresh**: same as in OT-based ECDSA.
+
+3) **Presigning (offline)**: allows generating presignatures during an offline
+phase using a different approach than OT-based ECDSA. These presignatures are
+later consumed during online signing when the message becomes known.
+More details can be found in
+[docs](docs/ecdsa/robust_ecdsa/signing.md).
+
+4) **Signing (online)**: signing is performed in a single round protocol between the signers. More details can be found in [docs](docs/ecdsa/robust_ecdsa/signing.md).
 ### Threshold EdDSA Functionalities
 
 The threshold EdDSA scheme is implemented over curve
@@ -107,10 +133,6 @@ key. More details in
   the message-signature pair can simply run the verification algorithm of the
   corresponding classic, non-distributed scheme using the master verification
   key.
-
-* Both implemented ECDSA and EdDSA schemes do not currently provide
-  **Robustness** i.e. recovery in case a participants drops out during
-  presigning/signing.
 
 * Our ECDSA signing scheme outsources the message hash to the function caller
   (i.e. expects a hashed message as input and does not internally hash the
@@ -206,9 +228,14 @@ contributors that actively put this together:
 
 * Mårten Blankfors
 * Robin Cheng
+* Kevin Deforth
 * Reynaldo Gil Pons
 * Chelsea Komlo
-* George Kuska
+* George Kuksa
 * Matej Pavlovic
 * Simon Rastikian
+* Daniel Sharifi
 * Bowen Wang
+
+### External Contributors
+[0xsecaas](https://github.com/0xsecaas), [Aditya2274](https://github.com/Aditya2274)
