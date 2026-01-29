@@ -2,7 +2,6 @@ use contract_interface::types::{self as dtos};
 use mpc_contract::primitives::{domain::DomainConfig, key_state::KeyEventId};
 use near_workspaces::{Account, Contract};
 use serde_json::json;
-use utilities::AccountIdExtV1;
 
 use super::{
     consts::{GAS_FOR_VOTE_NEW_DOMAIN, GAS_FOR_VOTE_PK},
@@ -37,7 +36,7 @@ pub async fn start_keygen_instance(
     let participants = state.active_participants();
     let leader = accounts
         .iter()
-        .min_by_key(|a| participants.id(&a.id().as_v2_account_id()).unwrap())
+        .min_by_key(|a| participants.id(a.id()).unwrap())
         .unwrap();
     let result = leader
         .call(contract.id(), "start_keygen_instance")
