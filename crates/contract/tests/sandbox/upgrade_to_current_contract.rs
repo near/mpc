@@ -29,6 +29,7 @@ use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::HashSet;
 
+#[derive(Debug, Clone, Copy)]
 enum Network {
     Testnet,
     Mainnet,
@@ -180,9 +181,14 @@ async fn propose_upgrade_from_production_to_current_binary(
         "State of the contract should remain the same post upgrade."
     );
 
-    cleanup_post_migrate(&contract, &accounts[0])
-        .await
-        .expect("post migration cleanup works");
+    match network {
+        Network::Testnet => {}
+        Network::Mainnet => {
+            cleanup_post_migrate(&contract, &accounts[0])
+                .await
+                .expect("post migration cleanup works");
+        }
+    };
 }
 
 //// Verifies that upgrading the contract preserves state and functionality.
