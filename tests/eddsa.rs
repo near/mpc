@@ -12,13 +12,14 @@ use threshold_signatures::{
     self,
     frost::eddsa::{sign::sign, Ed25519Sha512, SignatureOption},
     participants::Participant,
+    ReconstructionLowerBound,
 };
 
 type C = Ed25519Sha512;
 type KeygenOutput = threshold_signatures::KeygenOutput<C>;
 
 fn run_sign(
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     participants: &[(Participant, KeygenOutput)],
     coordinator: Participant,
     msg_hash: &[u8],
@@ -48,7 +49,7 @@ fn run_sign(
 fn test_sign() {
     let participants = generate_participants(5);
     let threshold = 4;
-    let keys = run_keygen::<C>(&participants, threshold);
+    let keys = run_keygen::<C>(&participants, threshold.into());
     assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
 
@@ -56,7 +57,7 @@ fn test_sign() {
     let coordinator = choose_coordinator_at_random(&participants);
     let participant_keys = keys.into_iter().collect::<Vec<_>>();
     let all_sigs = run_sign(
-        threshold,
+        threshold.into(),
         participant_keys.as_slice(),
         coordinator,
         &msg_hash,
@@ -81,8 +82,8 @@ fn test_sign() {
         &participants,
         &public_key,
         participant_keys.as_slice(),
-        threshold,
-        new_threshold,
+        threshold.into(),
+        new_threshold.into(),
         &new_participants,
     );
     let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;

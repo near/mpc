@@ -8,11 +8,12 @@ use rand_core::{CryptoRngCore, SeedableRng};
 use std::{env, sync::LazyLock};
 
 use threshold_signatures::{
-    ecdsa::ot_based_ecdsa,
-    ecdsa::robust_ecdsa,
     ecdsa::{
-        ot_based_ecdsa::triples::{generate_triple_many, TriplePub, TripleShare},
-        KeygenOutput, Scalar, SignatureOption,
+        ot_based_ecdsa::{
+            self,
+            triples::{generate_triple_many, TriplePub, TripleShare},
+        },
+        robust_ecdsa, KeygenOutput, Scalar, SignatureOption,
     },
     participants::Participant,
     protocol::Protocol,
@@ -20,6 +21,7 @@ use threshold_signatures::{
         create_rngs, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
         run_keygen, Simulator,
     },
+    MaxMalicious, ReconstructionLowerBound,
 };
 
 // fix malicious number of participants
@@ -108,7 +110,7 @@ pub fn analyze_received_sizes(
 /// Used to prepare ot based ecdsa triples for benchmarking
 pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>(
     participant_num: usize,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     rng: &mut R,
 ) -> OTECDSAPreparedTriples {
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
@@ -130,7 +132,7 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 /// Used to prepare ot based ecdsa presignatures for benchmarking
 pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     rng: &mut R,
 ) -> OTECDSAPreparedPresig {
     let mut two_triples = two_triples.to_owned();
@@ -181,7 +183,7 @@ pub fn ot_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>
 /// Used to prepare ot based ecdsa signatures for benchmarking
 pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, ot_based_ecdsa::PresignOutput)],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     pk: VerifyingKey,
     rng: &mut R,
 ) -> OTECDSAPreparedSig {
@@ -283,7 +285,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
             *p,
             robust_ecdsa::PresignArguments {
                 keygen_out: keygen_out.clone(),
-                threshold: *MAX_MALICIOUS,
+                max_malicious: (*MAX_MALICIOUS).into(),
             },
             rngs[i].clone(),
         )
@@ -301,7 +303,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
 /// Used to prepare robust ecdsa signatures for benchmarking
 pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     result: &[(Participant, robust_ecdsa::PresignOutput)],
-    max_malicious: usize,
+    max_malicious: MaxMalicious,
     pk: VerifyingKey,
     rng: &mut R,
 ) -> RobustECDSASig {

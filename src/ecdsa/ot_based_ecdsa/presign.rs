@@ -28,9 +28,9 @@ pub fn presign(
         });
     }
     // Spec 1.1
-    if args.threshold > participants.len() {
+    if args.threshold.value() > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold: args.threshold,
+            threshold: args.threshold.value(),
             max: participants.len(),
         });
     }
@@ -212,9 +212,9 @@ mod test {
         let threshold = 2;
 
         let (triple0_pub, triple0_shares) =
-            deal(&mut rng, &participants, original_threshold).unwrap();
+            deal(&mut rng, &participants, original_threshold.into()).unwrap();
         let (triple1_pub, triple1_shares) =
-            deal(&mut rng, &participants, original_threshold).unwrap();
+            deal(&mut rng, &participants, original_threshold.into()).unwrap();
 
         let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
 
@@ -239,7 +239,7 @@ mod test {
                     triple0: (triple0, triple0_pub.clone()),
                     triple1: (triple1, triple1_pub.clone()),
                     keygen_out,
-                    threshold,
+                    threshold: threshold.into(),
                 },
             )
             .unwrap();

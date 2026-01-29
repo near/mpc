@@ -1,17 +1,18 @@
 use elliptic_curve::scalar::IsHigh;
 
-use crate::errors::{InitializationError, ProtocolError};
-use crate::participants::{Participant, ParticipantList};
 use crate::{
     ecdsa::{
         robust_ecdsa::RerandomizedPresignOutput, x_coordinate, AffinePoint, Scalar,
         Secp256K1Sha256, Signature, SignatureOption,
     },
+    errors::{InitializationError, ProtocolError},
+    participants::{Participant, ParticipantList},
     protocol::{
         helpers::recv_from_others,
         internal::{make_protocol, Comms, SharedChannel},
         Protocol,
     },
+    MaxMalicious,
 };
 use frost_core::serialization::SerializableScalar;
 use subtle::ConditionallySelectable;
@@ -22,7 +23,7 @@ type C = Secp256K1Sha256;
 pub fn sign(
     participants: &[Participant],
     coordinator: Participant,
-    max_malicious: usize,
+    max_malicious: impl Into<MaxMalicious>,
     me: Participant,
     public_key: AffinePoint,
     presignature: RerandomizedPresignOutput,
@@ -55,6 +56,8 @@ pub fn sign(
 
     // ensure number of participants during the signing phase is >= 2 * max_malicious + 1
     let threshold = max_malicious
+        .into()
+        .value()
         .checked_mul(2)
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| {
@@ -265,7 +268,7 @@ mod test {
 
         let (_, sig) = run_sign_without_rerandomization(
             &participants_presign,
-            max_malicious,
+            max_malicious.into(),
             public_key,
             msg,
             &mut rng,
@@ -361,7 +364,7 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            max_malicious,
+            max_malicious.into(),
             public_key,
             &msg,
             &mut rng,
@@ -406,7 +409,7 @@ mod test {
 
         let result = crate::ecdsa::robust_ecdsa::test::run_sign_without_rerandomization(
             &presignatures,
-            max_malicious,
+            max_malicious.into(),
             public_key,
             &msg,
             &mut rng,

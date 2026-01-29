@@ -29,7 +29,7 @@ fn test_ckd() {
     let threshold = 2;
     let participants = generate_participants(3);
 
-    let keys = run_keygen(&participants, threshold);
+    let keys = run_keygen(&participants, threshold.into());
 
     assert!(keys.len() == participants.len());
 
@@ -84,8 +84,8 @@ fn test_ckd() {
         &participants,
         &public_key,
         participant_keys.as_slice(),
-        threshold,
-        new_threshold,
+        threshold.into(),
+        new_threshold.into(),
         &new_participants,
     );
     let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;

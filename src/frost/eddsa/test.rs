@@ -4,6 +4,7 @@ use crate::participants::{Participant, ParticipantList};
 use crate::test_utils::{
     generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng,
 };
+use crate::ReconstructionLowerBound;
 
 use frost_core::Scalar;
 use frost_ed25519::{keys::SigningShare, Ed25519Sha512, SigningKey, VerifyingKey};
@@ -60,7 +61,7 @@ pub fn test_run_signature_protocols(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinators: &[Participant],
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());

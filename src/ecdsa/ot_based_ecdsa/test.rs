@@ -4,19 +4,18 @@ use super::{
     triples::{generate_triple_many, test::deal, TriplePub, TripleShare},
     PresignArguments, PresignOutput, RerandomizedPresignOutput,
 };
-use crate::protocol::Protocol;
 use crate::test_utils::{
     assert_public_key_invariant, check_one_coordinator_output, generate_participants,
     generate_participants_with_random_ids, run_keygen, run_protocol, run_refresh, run_reshare,
-    run_sign, GenOutput, GenProtocol,
+    run_sign, GenOutput, GenProtocol, MockCryptoRng,
 };
+use crate::{protocol::Protocol, Participant, ReconstructionLowerBound};
 
 use crate::crypto::hash::test::scalar_hash_secp256k1;
 use crate::ecdsa::{
     Element, ParticipantList, RerandomizationArguments, Secp256K1Sha256, Signature,
     SignatureOption, Tweak,
 };
-use crate::{participants::Participant, test_utils::MockCryptoRng};
 
 use rand::Rng;
 use rand_core::{CryptoRngCore, SeedableRng};
@@ -26,7 +25,7 @@ use std::error::Error;
 /// This signing does not rerandomize the presignatures and tests only the core protocol
 pub fn run_sign_without_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     public_key: Element,
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
@@ -77,7 +76,7 @@ pub fn run_sign_without_rerandomization(
 /// rerandomizing the presignatures
 pub fn run_sign_with_rerandomization(
     participants_presign: &[(Participant, PresignOutput)],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     public_key: Element,
     msg: &[u8],
     rng: &mut impl CryptoRngCore,
@@ -150,7 +149,7 @@ pub fn run_presign(
     shares1: Vec<TripleShare>,
     pub0: &TriplePub,
     pub1: &TriplePub,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> Vec<(Participant, PresignOutput)> {
     assert!(participants.len() == shares0.len());
     assert!(participants.len() == shares1.len());
@@ -193,17 +192,24 @@ fn test_refresh() {
     let key_packages = run_refresh(&participants, &keys, threshold, &mut rng);
     let public_key = key_packages[0].1.public_key;
     assert_public_key_invariant(&key_packages);
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold).unwrap();
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold).unwrap();
+    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into()).unwrap();
+    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into()).unwrap();
 
     // Presign
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_without_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -239,17 +245,24 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
     // Prepare triples
-    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold)?;
-    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold.into())?;
 
     // Presign
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, new_threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        new_threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_without_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -284,16 +297,23 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
     // Prepare triples
-    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold)?;
-    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &new_participant, new_threshold.into())?;
+    let (pub1, shares1) = deal(&mut rng, &new_participant, new_threshold.into())?;
 
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, new_threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        new_threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_without_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -312,16 +332,23 @@ fn test_e2e() -> Result<(), Box<dyn Error>> {
     assert_public_key_invariant(&key_packages);
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold)?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
 
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_without_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -341,16 +368,23 @@ fn test_e2e_random_identifiers() -> Result<(), Box<dyn Error>> {
 
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold)?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
 
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_without_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -370,16 +404,23 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 
     let public_key = key_packages[0].1.public_key;
 
-    let (pub0, shares0) = deal(&mut rng, &participants, threshold)?;
-    let (pub1, shares1) = deal(&mut rng, &participants, threshold)?;
+    let (pub0, shares0) = deal(&mut rng, &participants, threshold.into())?;
+    let (pub1, shares1) = deal(&mut rng, &participants, threshold.into())?;
 
-    let presign_result = run_presign(key_packages, shares0, shares1, &pub0, &pub1, threshold);
+    let presign_result = run_presign(
+        key_packages,
+        shares0,
+        shares1,
+        &pub0,
+        &pub1,
+        threshold.into(),
+    );
 
     let msg = b"hello world";
     // internally verifies the signature's validity
     run_sign_with_rerandomization(
         &presign_result,
-        threshold,
+        threshold.into(),
         public_key.to_element(),
         msg,
         &mut rng,
@@ -416,7 +457,7 @@ fn test_robustness_with_rerandomization() {
 
 fn test_robustness<T, F, R: CryptoRngCore + SeedableRng + Send + 'static>(run_sign: F, rng: &mut R)
 where
-    F: Fn(&[(Participant, PresignOutput)], usize, Element, &[u8], &mut R) -> T,
+    F: Fn(&[(Participant, PresignOutput)], ReconstructionLowerBound, Element, &[u8], &mut R) -> T,
 {
     let participants_count = 7;
     let mut participants = generate_participants_with_random_ids(participants_count, rng);
@@ -458,11 +499,11 @@ where
         shares1,
         &pub0[0],
         &pub1[0],
-        threshold,
+        threshold.into(),
     );
 
     let msg = b"hello world";
     // Use less presignatures to sign
     presign_result.remove(0);
-    run_sign(&presign_result, threshold, public_key, msg, rng);
+    run_sign(&presign_result, threshold.into(), public_key, msg, rng);
 }

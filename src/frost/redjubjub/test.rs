@@ -9,6 +9,7 @@ use crate::test_utils::{
     one_coordinator_output, run_keygen, run_protocol, run_refresh, run_reshare, GenOutput,
     GenProtocol, MockCryptoRng,
 };
+use crate::thresholds::ReconstructionLowerBound;
 
 use frost_core::{Field, Scalar};
 use rand::Rng;
@@ -69,7 +70,7 @@ pub fn build_key_packages_with_dealer(
 
 pub fn test_run_presignature(
     participants: &[(Participant, KeygenOutput)],
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound> + Copy,
     actual_signers: usize,
 ) -> Result<Vec<(Participant, PresignOutput)>, Box<dyn Error>> {
     let mut protocols: GenProtocol<PresignOutput> = Vec::with_capacity(participants.len());
@@ -84,7 +85,7 @@ pub fn test_run_presignature(
         let rng = MockCryptoRng::seed_from_u64(42);
         let args = PresignArguments {
             keygen_out: keygen_out.clone(),
-            threshold,
+            threshold: threshold.into(),
         };
         // run the signing scheme
         let protocol = presign(&participants_list, *participant, &args, rng)?;
@@ -101,7 +102,7 @@ pub fn test_run_signature(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
     coordinators: &[Participant],
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(644_221);

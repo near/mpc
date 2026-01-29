@@ -8,11 +8,14 @@ pub mod triples;
 #[cfg(test)]
 mod test;
 
-use crate::ecdsa::{
-    ot_based_ecdsa::triples::{TriplePub, TripleShare},
-    AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
-};
 use crate::errors::ProtocolError;
+use crate::{
+    ecdsa::{
+        ot_based_ecdsa::triples::{TriplePub, TripleShare},
+        AffinePoint, KeygenOutput, RerandomizationArguments, Scalar,
+    },
+    ReconstructionLowerBound,
+};
 use serde::{Deserialize, Serialize};
 use zeroize::ZeroizeOnDrop;
 
@@ -27,7 +30,7 @@ pub struct PresignArguments {
     /// This is of type `KeygenOutput`<Secp256K1Sha256> from Frost implementation
     pub keygen_out: KeygenOutput,
     /// The desired threshold for the presignature, which must match the original threshold
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 /// The output of the presigning protocol.

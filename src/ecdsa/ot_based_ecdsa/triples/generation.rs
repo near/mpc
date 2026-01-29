@@ -4,6 +4,7 @@ use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::participants::{Participant, ParticipantList, ParticipantMap};
+use crate::thresholds::ReconstructionLowerBound;
 use crate::{
     crypto::{
         commitment::{commit, Commitment},
@@ -472,7 +473,7 @@ async fn do_generation(
             big_b,
             big_c,
             participants: participants.into(),
-            threshold,
+            threshold: threshold.into(),
         },
     ))
 }
@@ -1054,7 +1055,7 @@ async fn do_generation_many<const N: usize>(
                 big_b,
                 big_c,
                 participants: participants.clone().into(),
-                threshold,
+                threshold: threshold.into(),
             },
         ));
     }
@@ -1072,9 +1073,10 @@ async fn do_generation_many<const N: usize>(
 pub fn generate_triple(
     participants: &[Participant],
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
+    let threshold = usize::from(threshold.into());
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -1103,9 +1105,10 @@ pub fn generate_triple(
 pub fn generate_triple_many<const N: usize>(
     participants: &[Participant],
     me: Participant,
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
+    let threshold = usize::from(threshold.into());
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),

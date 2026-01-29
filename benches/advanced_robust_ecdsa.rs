@@ -116,7 +116,7 @@ fn prepare_simulate_presign(num_participants: usize) -> PreparedPresig {
         real_participant,
         PresignArguments {
             keygen_out,
-            threshold: *MAX_MALICIOUS,
+            max_malicious: (*MAX_MALICIOUS).into(),
         },
         real_participant_rng, // provide the exact same randomness
     )
@@ -141,7 +141,7 @@ fn prepare_simulated_sign(
     pk: VerifyingKey,
 ) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
-    let preps = robust_ecdsa_prepare_sign(result, max_malicious, pk, &mut rng);
+    let preps = robust_ecdsa_prepare_sign(result, max_malicious.into(), pk, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 

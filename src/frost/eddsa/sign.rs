@@ -6,6 +6,7 @@ use crate::participants::{Participant, ParticipantList};
 use crate::protocol::helpers::recv_from_others;
 use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
 use crate::protocol::Protocol;
+use crate::ReconstructionLowerBound;
 
 use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
 use frost_ed25519::{aggregate, rand_core, round1, round2, VerifyingKey};
@@ -206,13 +207,14 @@ async fn do_sign_participant(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 pub fn sign(
     participants: &[Participant],
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
     message: Vec<u8>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+    let threshold = usize::from(threshold.into());
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -327,11 +329,12 @@ mod test {
 
         let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
         let coordinators = vec![key_packages[0].0];
+        let threshold: usize = threshold.into();
         let data = test_run_signature_protocols(
             &key_packages,
             actual_signers,
             &coordinators,
-            threshold.into(),
+            threshold,
             msg_hash,
         )
         .unwrap();
@@ -351,11 +354,12 @@ mod test {
                 let key_packages =
                     build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
                 let coordinators = vec![key_packages[0].0];
+                let min_signers: usize = min_signers.into();
                 let data = test_run_signature_protocols(
                     &key_packages,
                     actual_signers.into(),
                     &coordinators,
-                    min_signers.into(),
+                    min_signers,
                     msg_hash,
                 )
                 .unwrap();

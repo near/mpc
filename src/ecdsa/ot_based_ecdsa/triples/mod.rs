@@ -45,6 +45,7 @@ use zeroize::ZeroizeOnDrop;
 use crate::{
     ecdsa::{AffinePoint, Scalar},
     participants::Participant,
+    ReconstructionLowerBound,
 };
 
 /// Represents the public part of a triple.
@@ -60,7 +61,7 @@ pub struct TriplePub {
     /// The participants in generating this triple.
     pub participants: Vec<Participant>,
     /// The threshold which will be able to reconstruct it.
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 /// Represents a share of a triple.

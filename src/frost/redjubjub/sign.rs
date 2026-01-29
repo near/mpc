@@ -7,6 +7,7 @@ use crate::protocol::{
     internal::{make_protocol, Comms, SharedChannel},
     Protocol,
 };
+use crate::thresholds::ReconstructionLowerBound;
 
 use reddsa::frost::redjubjub::{
     aggregate,
@@ -34,7 +35,7 @@ use zeroize::Zeroizing;
 #[allow(clippy::too_many_arguments)]
 pub fn sign(
     participants: &[Participant],
-    threshold: usize,
+    threshold: impl Into<ReconstructionLowerBound>,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -42,6 +43,7 @@ pub fn sign(
     message: Vec<u8>,
     randomizer: Option<Randomizer>,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+    let threshold = usize::from(threshold.into());
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -306,12 +308,13 @@ mod test {
             for actual_signers in min_signers..=max_signers {
                 let key_packages =
                     build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
+                let min_signers: usize = min_signers.into();
                 let coordinators = vec![key_packages[0].0];
                 let data = test_run_signature(
                     &key_packages,
                     actual_signers.into(),
                     &coordinators,
-                    min_signers.into(),
+                    min_signers,
                     msg_hash,
                 )
                 .unwrap();

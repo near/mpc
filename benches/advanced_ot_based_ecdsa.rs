@@ -28,6 +28,7 @@ use threshold_signatures::{
         run_protocol, run_protocol_and_take_snapshots, run_simulated_protocol, MockCryptoRng,
         Simulator,
     },
+    ReconstructionLowerBound,
 };
 
 type PreparedSimulatedTriples = PreparedOutputs<Vec<(TripleShare, TriplePub)>>;
@@ -74,8 +75,9 @@ fn bench_presign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
     let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
 
+    let threshold = ReconstructionLowerBound::from(threshold());
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let preps = ot_ecdsa_prepare_triples(num, threshold(), &mut rng);
+    let preps = ot_ecdsa_prepare_triples(num, threshold, &mut rng);
     let two_triples =
         run_protocol(preps.protocols).expect("Running triple preparations should succeed");
 
@@ -104,13 +106,13 @@ fn bench_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
     let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
-
+    let threshold = ReconstructionLowerBound::from(threshold());
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let preps = ot_ecdsa_prepare_triples(num, threshold(), &mut rng);
+    let preps = ot_ecdsa_prepare_triples(num, threshold, &mut rng);
     let two_triples =
         run_protocol(preps.protocols).expect("Running triples preparation should succeed");
 
-    let preps = ot_ecdsa_prepare_presign(&two_triples, threshold(), &mut rng);
+    let preps = ot_ecdsa_prepare_presign(&two_triples, threshold, &mut rng);
     let result = run_protocol(preps.protocols).expect("Running presign preparation should succeed");
     let pk = preps.key_packages[0].1.public_key;
 
@@ -121,7 +123,7 @@ fn bench_sign(c: &mut Criterion) {
         |b| {
             b.iter_batched(
                 || {
-                    let preps = prepare_simulated_sign(&result, threshold(), pk);
+                    let preps = prepare_simulated_sign(&result, threshold, pk);
                     // collecting data sizes
                     sizes.push(preps.simulator.get_view_size());
                     preps
@@ -142,7 +144,8 @@ criterion_main!(benches);
 fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples {
     let mut rng = MockCryptoRng::seed_from_u64(42);
 
-    let preps = ot_ecdsa_prepare_triples(participant_num, threshold(), &mut rng);
+    let threshold = ReconstructionLowerBound::from(threshold());
+    let preps = ot_ecdsa_prepare_triples(participant_num, threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -160,7 +163,7 @@ fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples
     let real_protocol = generate_triple_many::<2>(
         &preps.participants,
         real_participant,
-        threshold(),
+        threshold,
         real_participant_rng,
     )
     .map(|prot| Box::new(prot) as Box<dyn Protocol<Output = Vec<(TripleShare, TriplePub)>>>)
@@ -181,7 +184,8 @@ fn prepare_simulated_presign(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
 ) -> PreparedSimulatedPresig {
     let mut rng = MockCryptoRng::seed_from_u64(40);
-    let preps = ot_ecdsa_prepare_presign(two_triples, threshold(), &mut rng);
+    let threshold = ReconstructionLowerBound::from(threshold());
+    let preps = ot_ecdsa_prepare_presign(two_triples, threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 
@@ -201,7 +205,7 @@ fn prepare_simulated_presign(
             triple0: (share0, pub0),
             triple1: (share1, pub1),
             keygen_out,
-            threshold: threshold(),
+            threshold,
         },
     )
     .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = PresignOutput>>)
@@ -221,7 +225,7 @@ fn prepare_simulated_presign(
 /// Used to simulate ot based ecdsa signatures for benchmarking
 pub fn prepare_simulated_sign(
     result: &[(Participant, PresignOutput)],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     pk: VerifyingKey,
 ) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(40);

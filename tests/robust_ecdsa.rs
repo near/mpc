@@ -44,7 +44,7 @@ fn run_presign(
             p,
             PresignArguments {
                 keygen_out,
-                threshold: max_malicious,
+                max_malicious: max_malicious.into(),
             },
             OsRng,
         )
@@ -154,7 +154,7 @@ fn test_sign() {
     let participants = generate_participants(11);
     let max_malicious = 5;
     let threshold = max_malicious + 1;
-    let keys = run_keygen(&participants, threshold);
+    let keys = run_keygen(&participants, threshold.into());
     assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
     let presign_result = run_presign(keys.clone(), max_malicious);
@@ -199,8 +199,8 @@ fn test_sign() {
         &participants,
         &public_key,
         participant_keys.as_slice(),
-        threshold,
-        new_threshold,
+        threshold.into(),
+        new_threshold.into(),
         &new_participants,
     );
     let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;

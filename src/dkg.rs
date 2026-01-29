@@ -540,7 +540,7 @@ pub async fn do_keygen<C: Ciphersuite>(
     threshold: impl Into<ReconstructionLowerBound>,
     mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
-    let threshold = threshold.into().into();
+    let threshold = usize::from(threshold.into());
     // pick share at random
     let secret = SigningKey::<C>::new(&mut rng).to_scalar();
     // call keyshare
@@ -556,7 +556,7 @@ pub fn assert_keygen_invariants(
     me: Participant,
     threshold: impl Into<ReconstructionLowerBound>,
 ) -> Result<ParticipantList, InitializationError> {
-    let threshold = threshold.into().into();
+    let threshold = usize::from(threshold.into());
     // need enough participants
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
@@ -603,7 +603,7 @@ pub async fn do_reshare<C: Ciphersuite>(
     old_participants: ParticipantList,
     mut rng: impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
-    let threshold = threshold.into().into();
+    let threshold = usize::from(threshold.into());
     let intersection = old_participants.intersection(&participants);
     // either extract the share and linearize it or set it to zero
     let secret = old_signing_key
@@ -639,8 +639,8 @@ pub fn reshare_assertions<C: Ciphersuite>(
     old_threshold: impl Into<ReconstructionLowerBound>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
-    let threshold = threshold.into().into();
-    let old_threshold = old_threshold.into().into();
+    let threshold = usize::from(threshold.into());
+    let old_threshold = usize::from(old_threshold.into());
 
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {

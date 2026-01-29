@@ -7,7 +7,10 @@ pub mod sign;
 #[cfg(test)]
 mod test;
 
-use crate::crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat};
+use crate::{
+    crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat},
+    ReconstructionLowerBound,
+};
 
 use reddsa::frost::redjubjub::{
     round1::{SigningCommitments, SigningNonces},
@@ -33,7 +36,7 @@ pub struct PresignArguments {
     /// The output of key generation, i.e. our share of the secret key, and the public key package.
     pub keygen_out: KeygenOutput,
     /// The threshold for the scheme
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 /// The output of the presigning protocol.

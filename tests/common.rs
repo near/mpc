@@ -12,7 +12,7 @@ use threshold_signatures::{
     keygen,
     participants::Participant,
     protocol::{Action, Protocol},
-    reshare, Ciphersuite, Element, KeygenOutput, Scalar,
+    reshare, Ciphersuite, Element, KeygenOutput, ReconstructionLowerBound, Scalar,
 };
 
 pub type GenProtocol<C> = Vec<(Participant, Box<dyn Protocol<Output = C>>)>;
@@ -77,7 +77,7 @@ pub fn run_protocol<T>(
 #[allow(clippy::missing_panics_doc)]
 pub fn run_keygen<C: Ciphersuite>(
     participants: &[Participant],
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> HashMap<Participant, KeygenOutput<C>>
 where
     Element<C>: std::marker::Send,
@@ -100,8 +100,8 @@ pub fn run_reshare<C: Ciphersuite>(
     participants: &[Participant],
     pub_key: &VerifyingKey<C>,
     keys: &[(Participant, KeygenOutput<C>)],
-    old_threshold: usize,
-    new_threshold: usize,
+    old_threshold: ReconstructionLowerBound,
+    new_threshold: ReconstructionLowerBound,
     new_participants: &[Participant],
 ) -> HashMap<Participant, KeygenOutput<C>>
 where

@@ -5,12 +5,12 @@ use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 use std::collections::HashMap;
 
-use crate::confidential_key_derivation as ckd;
 use crate::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use crate::frost_ed25519::Ed25519Sha512;
 use crate::frost_secp256k1::Secp256K1Sha256;
 use crate::participants::Participant;
 use crate::protocol::Protocol;
+use crate::{confidential_key_derivation as ckd, ReconstructionLowerBound};
 use crate::{ecdsa, frost, ParticipantList};
 use crate::{keygen, VerifyingKey};
 
@@ -18,13 +18,13 @@ use crate::test_utils::run_protocol;
 
 pub struct TestGenerators {
     pub participants: Vec<Participant>,
-    pub threshold: usize,
+    pub threshold: ReconstructionLowerBound,
 }
 
 type ParticipantAndProtocol<T> = (Participant, Box<dyn Protocol<Output = T>>);
 
 impl TestGenerators {
-    pub fn new(num_participants: usize, threshold: usize) -> Self {
+    pub fn new(num_participants: usize, threshold: ReconstructionLowerBound) -> Self {
         Self {
             participants: (0..num_participants)
                 .map(|_| Participant::from(rand::random::<u32>()))
@@ -33,7 +33,10 @@ impl TestGenerators {
         }
     }
 
-    pub fn new_contiguous_participant_ids(num_participants: usize, threshold: usize) -> Self {
+    pub fn new_contiguous_participant_ids(
+        num_participants: usize,
+        threshold: ReconstructionLowerBound,
+    ) -> Self {
         Self {
             participants: (0..num_participants)
                 .map(|i| Participant::from(i as u32))
@@ -165,7 +168,7 @@ impl TestGenerators {
 
     pub fn make_signature(
         &self,
-        threshold: usize,
+        threshold: ReconstructionLowerBound,
         presignatures: &HashMap<Participant, ecdsa::ot_based_ecdsa::PresignOutput>,
         public_key: AffinePoint,
         msg_hash: ecdsa::Scalar,
