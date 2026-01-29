@@ -106,6 +106,7 @@ near-sdk = { version = "5.18.1", features = [
     "unstable",
 ] }
 near-workspaces = { version = "0.21.0" }
+num_enum = { version = "0.7", features = ["complex-expressions"] }
 pprof = { version = "0.15.0", features = ["cpp", "flamegraph"], default-features = false }
 proc-macro2 = "1.0"
 prometheus = { version = "0.13.4", default-features = false }
@@ -117,7 +118,7 @@ rcgen = "0.13.1"
 regex = "1.12.2"
 reqwest = { version = "0.12.9", features = ["multipart", "json"] }
 rocksdb = "0.21.0"
-rstest = "0.25.0"
+rstest = { version = "0.26.1" }
 rustls = { version = "0.23.31", default-features = false, features = ["std"] }
 schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
 serde = { version = "1.0.225", features = ["derive"] }
