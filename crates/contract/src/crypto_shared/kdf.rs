@@ -137,7 +137,7 @@ mod tests {
     use super::*;
     use curve25519_dalek::Scalar;
     use rand::rngs::OsRng;
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
     use threshold_signatures::eddsa::KeygenOutput;
     use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_core::VerifyingKey;
@@ -202,6 +202,7 @@ mod tests {
 
     #[test]
     fn test_derive_tweak_has_not_changed() {
+        // given
         let account_ids = ["dwefqwg", "qfweqwgwegqw", "fqwerijqw385", "fnwef0942534"];
         let derivation_paths = [
             "frwewegwegweg",
@@ -209,6 +210,8 @@ mod tests {
             "f23fjwef8232",
             "fwefwo23fewfw",
         ];
+
+        // when
         let mut tweaks = vec![];
         for account_id in account_ids {
             for derivation_path in derivation_paths {
@@ -217,11 +220,13 @@ mod tests {
             }
         }
 
+        // then
         insta::assert_json_snapshot!(tweaks, {});
     }
 
     #[test]
     fn test_derive_app_id_has_not_changed() {
+        // given
         let account_ids = ["dwefqwg", "qfweqwgwegqw", "fqwerijqw385", "fnwef0942534"];
         let derivation_paths = [
             "frwewegwegweg",
@@ -229,6 +234,8 @@ mod tests {
             "f23fjwef8232",
             "fwefwo23fewfw",
         ];
+
+        // when
         let mut tweaks = vec![];
         for account_id in account_ids {
             for derivation_path in derivation_paths {
@@ -237,6 +244,39 @@ mod tests {
             }
         }
 
+        // then
         insta::assert_json_snapshot!(tweaks, {});
+    }
+
+    #[test]
+    fn test_derive_key_secp256k1_has_not_changed() {
+        // given
+        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).gen();
+        let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
+        let scalar = k256::Scalar::from_repr(random_bytes.into()).unwrap();
+        let public_key_element = k256::ProjectivePoint::GENERATOR * scalar;
+
+        // when
+        let derived_public_key =
+            derive_key_secp256k1(&public_key_element.to_affine(), &tweak).unwrap();
+
+        // then
+        insta::assert_json_snapshot!(derived_public_key, {});
+    }
+
+    #[test]
+    fn test_derive_public_key_edwards_point_ed25519_has_not_changed() {
+        // given
+        let random_bytes: [u8; 32] = rand::rngs::StdRng::from_seed([42u8; 32]).gen();
+        let tweak = derive_tweak(&"hello".parse().unwrap(), "my-path");
+        let scalar = Scalar::from_bytes_mod_order(random_bytes);
+        let public_key_element = Ed25519Group::generator() * scalar;
+
+        // when
+        let derived_public_key =
+            derive_public_key_edwards_point_ed25519(&public_key_element, &tweak);
+
+        // then
+        insta::assert_json_snapshot!(derived_public_key, {});
     }
 }
