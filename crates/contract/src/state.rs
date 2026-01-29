@@ -9,6 +9,7 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    foreign_chain::ForeignChainPolicy,
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
@@ -175,6 +176,41 @@ impl ProtocolContractState {
         self.domain_registry()?
             .most_recent_domain_for_protocol(signature_scheme)
             .ok_or_else(|| DomainError::NoSuchDomain.into())
+    }
+
+    /// Casts a vote for a new foreign chain policy.
+    /// Requires unanimous agreement from all participants.
+    /// Returns true if the policy was updated (unanimous agreement reached).
+    /// Only valid when in Running state.
+    pub fn vote_foreign_chain_policy(
+        &mut self,
+        proposal: &ForeignChainPolicy,
+    ) -> Result<bool, Error> {
+        match self {
+            ProtocolContractState::Running(state) => state.vote_foreign_chain_policy(proposal),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+    }
+
+    /// Get the current foreign chain policy.
+    /// Only valid when in Running or Resharing state.
+    pub fn get_foreign_chain_policy(&self) -> Result<&ForeignChainPolicy, Error> {
+        match self {
+            ProtocolContractState::Running(state) => Ok(state.get_foreign_chain_policy()),
+            ProtocolContractState::Resharing(state) => {
+                Ok(state.previous_running_state.get_foreign_chain_policy())
+            }
+            _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        }
+    }
+
+    /// Get pending foreign chain policy proposals with their vote counts.
+    /// Only valid when in Running state.
+    pub fn get_foreign_chain_policy_proposals(&self) -> Result<Vec<(ForeignChainPolicy, u64)>, Error> {
+        match self {
+            ProtocolContractState::Running(state) => Ok(state.get_foreign_chain_policy_proposals()),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
     }
 
     pub(super) fn threshold_parameters(

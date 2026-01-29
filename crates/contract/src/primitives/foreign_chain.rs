@@ -16,6 +16,123 @@ pub enum ForeignChain {
     // Future: Ethereum, Bitcoin, Polygon, etc.
 }
 
+/// RPC provider identifier (e.g., "alchemy", "quicknode", "helius")
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RpcProviderName(pub String);
+
+impl RpcProviderName {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for RpcProviderName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Configuration for a supported foreign chain
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ForeignChainEntry {
+    pub chain: ForeignChain,
+    /// At least 1 provider is required for each chain
+    pub required_providers: Vec<RpcProviderName>,
+}
+
+impl ForeignChainEntry {
+    pub fn new(chain: ForeignChain, required_providers: Vec<RpcProviderName>) -> Self {
+        Self {
+            chain,
+            required_providers,
+        }
+    }
+}
+
+/// Complete foreign chain policy stored in contract state.
+/// Defines which foreign chains are supported and what RPC providers
+/// are required for each chain.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ForeignChainPolicy {
+    pub chains: Vec<ForeignChainEntry>,
+}
+
+impl ForeignChainPolicy {
+    pub fn new(chains: Vec<ForeignChainEntry>) -> Self {
+        Self { chains }
+    }
+
+    /// Check if this policy is empty (no chains configured)
+    pub fn is_empty(&self) -> bool {
+        self.chains.is_empty()
+    }
+
+    /// Get the entry for a specific chain, if it exists
+    pub fn get_chain_entry(&self, chain: &ForeignChain) -> Option<&ForeignChainEntry> {
+        self.chains.iter().find(|entry| &entry.chain == chain)
+    }
+
+    /// Check if a chain is supported by this policy
+    pub fn supports_chain(&self, chain: &ForeignChain) -> bool {
+        self.get_chain_entry(chain).is_some()
+    }
+
+    /// Validate the policy structure
+    /// - Each chain must have at least 1 provider
+    /// - No duplicate chains
+    pub fn validate(&self) -> Result<(), ForeignChainPolicyValidationError> {
+        use std::collections::HashSet;
+        let mut seen_chains = HashSet::new();
+
+        for entry in &self.chains {
+            // Check for duplicate chains
+            if !seen_chains.insert(&entry.chain) {
+                return Err(ForeignChainPolicyValidationError::DuplicateChain(
+                    entry.chain.clone(),
+                ));
+            }
+
+            // Check that at least 1 provider is specified
+            if entry.required_providers.is_empty() {
+                return Err(ForeignChainPolicyValidationError::NoProvidersForChain(
+                    entry.chain.clone(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Errors that can occur when validating a ForeignChainPolicy
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForeignChainPolicyValidationError {
+    /// A chain appears more than once in the policy
+    DuplicateChain(ForeignChain),
+    /// A chain has no providers specified
+    NoProvidersForChain(ForeignChain),
+}
+
+impl std::fmt::Display for ForeignChainPolicyValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ForeignChainPolicyValidationError::DuplicateChain(chain) => {
+                write!(f, "Duplicate chain in policy: {}", chain)
+            }
+            ForeignChainPolicyValidationError::NoProvidersForChain(chain) => {
+                write!(f, "Chain {} has no providers specified", chain)
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for ForeignChain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -280,5 +397,113 @@ mod tests {
         let json = serde_json::to_string(&tx_id).unwrap();
         let deserialized: TransactionId = serde_json::from_str(&json).unwrap();
         assert_eq!(tx_id, deserialized);
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_empty() {
+        let policy = ForeignChainPolicy::default();
+        assert!(policy.is_empty());
+        assert!(!policy.supports_chain(&ForeignChain::Solana));
+        assert!(policy.validate().is_ok());
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_with_solana() {
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![RpcProviderName::new("alchemy")],
+        )]);
+        assert!(!policy.is_empty());
+        assert!(policy.supports_chain(&ForeignChain::Solana));
+        assert!(policy.validate().is_ok());
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_multiple_providers() {
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![
+                RpcProviderName::new("alchemy"),
+                RpcProviderName::new("quicknode"),
+            ],
+        )]);
+        assert!(policy.validate().is_ok());
+        let entry = policy.get_chain_entry(&ForeignChain::Solana).unwrap();
+        assert_eq!(entry.required_providers.len(), 2);
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_validation_no_providers() {
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![], // No providers - invalid
+        )]);
+        assert!(matches!(
+            policy.validate(),
+            Err(ForeignChainPolicyValidationError::NoProvidersForChain(_))
+        ));
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_validation_duplicate_chains() {
+        let policy = ForeignChainPolicy::new(vec![
+            ForeignChainEntry::new(ForeignChain::Solana, vec![RpcProviderName::new("alchemy")]),
+            ForeignChainEntry::new(ForeignChain::Solana, vec![RpcProviderName::new("quicknode")]),
+        ]);
+        assert!(matches!(
+            policy.validate(),
+            Err(ForeignChainPolicyValidationError::DuplicateChain(_))
+        ));
+    }
+
+    #[test]
+    fn test_foreign_chain_policy_json_roundtrip() {
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![
+                RpcProviderName::new("alchemy"),
+                RpcProviderName::new("quicknode"),
+            ],
+        )]);
+        let json = serde_json::to_string(&policy).unwrap();
+        let deserialized: ForeignChainPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(policy, deserialized);
+    }
+
+    #[test]
+    fn test_rpc_provider_name_display() {
+        let provider = RpcProviderName::new("alchemy");
+        assert_eq!(provider.to_string(), "alchemy");
+        assert_eq!(provider.as_str(), "alchemy");
+    }
+
+    /// Test: supports_chain returns false for empty policy
+    ///
+    /// This validates the `ChainNotInPolicy` rejection logic in verify_foreign_transaction.
+    /// Note: With only Solana as a ForeignChain variant, a non-empty policy always includes
+    /// Solana, so `ChainNotInPolicy` is only reachable when additional chains (e.g., Ethereum)
+    /// are added. This test ensures the supports_chain logic works correctly for that case.
+    #[test]
+    fn test_supports_chain_returns_false_when_chain_not_in_policy() {
+        // Empty policy doesn't support any chain
+        let empty_policy = ForeignChainPolicy::default();
+        assert!(
+            !empty_policy.supports_chain(&ForeignChain::Solana),
+            "Empty policy should not support any chain"
+        );
+
+        // Non-empty policy only supports configured chains
+        // When more chains are added (e.g., Ethereum), this test pattern ensures
+        // that supports_chain correctly returns false for unconfigured chains
+        let solana_only_policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![RpcProviderName::new("alchemy")],
+        )]);
+        assert!(
+            solana_only_policy.supports_chain(&ForeignChain::Solana),
+            "Policy with Solana should support Solana"
+        );
+        // When ForeignChain::Ethereum is added:
+        // assert!(!solana_only_policy.supports_chain(&ForeignChain::Ethereum));
     }
 }

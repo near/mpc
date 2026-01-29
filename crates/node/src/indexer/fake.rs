@@ -98,6 +98,7 @@ impl FakeMpcContractState {
                 state.parameters.clone(),
             ),
             cancel_votes: BTreeSet::new(),
+            foreign_chain_policy: state.foreign_chain_policy.clone(),
         };
         self.state = ProtocolContractState::Initializing(new_state);
     }
@@ -111,10 +112,11 @@ impl FakeMpcContractState {
             _ => panic!("Cannot start resharing from non-running state"),
         };
         self.state = ProtocolContractState::Resharing(ResharingContractState {
-            previous_running_state: RunningContractState::new(
+            previous_running_state: RunningContractState::with_foreign_chain_policy(
                 previous_running_state.domains.clone(),
                 previous_running_state.keyset.clone(),
                 previous_running_state.parameters.clone(),
+                previous_running_state.foreign_chain_policy.clone(),
             ),
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(
@@ -255,15 +257,12 @@ impl FakeMpcContractState {
                 let new_parameters =
                     ThresholdParameters::new(new_participants, state.parameters.threshold())
                         .unwrap();
-                let new_state = RunningContractState {
-                    domains: state.domains.clone(),
-                    keyset: state.keyset.clone(),
-                    parameters: new_parameters,
-                    parameters_votes: state.parameters_votes.clone(),
-                    add_domains_votes: state.add_domains_votes.clone(),
-                    previously_cancelled_resharing_epoch_id: state
-                        .previously_cancelled_resharing_epoch_id,
-                };
+                let new_state = RunningContractState::with_foreign_chain_policy(
+                    state.domains.clone(),
+                    state.keyset.clone(),
+                    new_parameters,
+                    state.foreign_chain_policy.clone(),
+                );
                 self.state = ProtocolContractState::Running(new_state);
             }
             _ => {
@@ -586,6 +585,13 @@ impl FakeIndexerCore {
                                 respond.request.tx_id
                             );
                         }
+                    }
+                    ChainSendTransactionRequest::VoteForeignChainPolicy(_vote_policy) => {
+                        // Foreign chain policy voting is not implemented in the fake indexer.
+                        // The real contract handles unanimous voting logic.
+                        tracing::info!(
+                            "VoteForeignChainPolicy transaction received (not implemented in fake indexer)"
+                        );
                     }
                 }
             }

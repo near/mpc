@@ -53,6 +53,16 @@ pub enum VerifyForeignTxError {
     UnsupportedSignatureScheme,
     #[error("The provided chain is not supported: {chain}")]
     UnsupportedChain { chain: String },
+    #[error("Foreign chain verification not enabled. No policy has been configured.")]
+    PolicyNotConfigured,
+    #[error("Chain {chain} is not supported by the current policy.")]
+    ChainNotInPolicy { chain: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ForeignChainPolicyError {
+    #[error("Foreign chain policy validation failed: {0}")]
+    ValidationFailed(String),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
@@ -246,6 +256,9 @@ pub enum ErrorKind {
     // Foreign transaction verification errors
     #[error("{0}")]
     VerifyForeignTxError(#[from] VerifyForeignTxError),
+    // Foreign chain policy errors
+    #[error("{0}")]
+    ForeignChainPolicyError(#[from] ForeignChainPolicyError),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

@@ -3,13 +3,20 @@
 //! This module provides the infrastructure for verifying transactions on foreign chains
 //! (non-NEAR chains) before MPC signing. Each supported chain has its own verifier
 //! implementation that connects to the chain's RPC endpoints.
+//!
+//! Provider Selection:
+//! Each MPC node is assigned a specific RPC provider to query based on a deterministic
+//! hash of (participant_id, request_id). This ensures that different nodes query different
+//! providers for the same request, reducing the risk of a single provider returning bad data.
 
 pub mod solana;
 pub mod types;
 
 use crate::config::ForeignChainConfig;
+use crate::primitives::ParticipantId;
 use async_trait::async_trait;
 use mpc_contract::primitives::foreign_chain::{FinalityLevel, ForeignChain, TransactionId};
+use near_indexer_primitives::CryptoHash;
 pub use types::{TxStatus, VerificationError, VerificationOutput};
 
 use self::solana::SolanaVerifier;
@@ -32,15 +39,31 @@ pub trait ForeignChainVerifier: Send + Sync {
     ) -> Result<VerificationOutput, VerificationError>;
 }
 
+/// Context for provider selection, passed from the MPC client to the verifier.
+/// This allows deterministic provider selection based on (participant_id, request_id).
+#[derive(Debug, Clone)]
+pub struct ProviderSelectionContext {
+    /// The current node's participant ID
+    pub my_participant_id: ParticipantId,
+    /// The request ID (used for deterministic provider selection)
+    pub request_id: CryptoHash,
+}
+
 /// Trait for the verifier registry, allowing for mockable verification in tests.
 #[async_trait]
 pub trait ForeignChainVerifierAPI: Send + Sync {
     /// Verify a transaction on the specified chain.
+    ///
+    /// The `provider_context` is used to deterministically select which RPC provider
+    /// this node should query. Each node will query a different provider based on
+    /// hash(participant_id, request_id), reducing the risk of a single provider
+    /// returning bad data.
     async fn verify(
         &self,
         chain: &ForeignChain,
         tx_id: &TransactionId,
         finality: &FinalityLevel,
+        provider_context: &ProviderSelectionContext,
     ) -> Result<VerificationOutput, VerificationError>;
 
     /// Check if a specific chain is supported (configured).
@@ -75,11 +98,13 @@ impl ForeignChainVerifierAPI for ForeignChainVerifierRegistry {
     /// Verify a transaction on the specified chain.
     ///
     /// Routes the verification request to the appropriate chain-specific verifier.
+    /// Uses the provider_context to deterministically select which RPC provider to use.
     async fn verify(
         &self,
         chain: &ForeignChain,
         tx_id: &TransactionId,
         finality: &FinalityLevel,
+        provider_context: &ProviderSelectionContext,
     ) -> Result<VerificationOutput, VerificationError> {
         match chain {
             ForeignChain::Solana => {
@@ -92,7 +117,7 @@ impl ForeignChainVerifierAPI for ForeignChainVerifierRegistry {
                 // Extract Solana signature from TransactionId
                 match tx_id {
                     TransactionId::SolanaSignature(sig) => {
-                        verifier.verify_transaction(sig, finality).await
+                        verifier.verify_transaction(sig, finality, provider_context).await
                     }
                 }
             }
@@ -203,6 +228,7 @@ pub mod mock {
             chain: &ForeignChain,
             tx_id: &TransactionId,
             _finality: &FinalityLevel,
+            _provider_context: &ProviderSelectionContext,
         ) -> Result<VerificationOutput, VerificationError> {
             // Check for specific response
             if let Some(response) = self
@@ -236,7 +262,17 @@ pub mod mock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::SolanaRpcConfig;
+    use crate::config::{SolanaProviderConfig, SolanaRpcEndpoint};
+    use std::collections::HashMap;
+
+    fn create_test_context(request_id_seed: u8) -> ProviderSelectionContext {
+        let mut request_id_bytes = [0u8; 32];
+        request_id_bytes[0] = request_id_seed;
+        ProviderSelectionContext {
+            my_participant_id: ParticipantId::from_raw(1),
+            request_id: CryptoHash(request_id_bytes),
+        }
+    }
 
     #[test]
     fn test_registry_creation_without_config() {
@@ -247,10 +283,17 @@ mod tests {
 
     #[test]
     fn test_registry_creation_with_solana_config() {
-        let config = ForeignChainConfig {
-            solana: Some(SolanaRpcConfig {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "mainnet".to_string(),
+            SolanaRpcEndpoint {
                 rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
-                backup_rpc_urls: vec![],
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
                 timeout_sec: 30,
                 max_retries: 3,
             }),
@@ -266,11 +309,12 @@ mod tests {
         let mock = mock::MockForeignChainVerifier::new();
         let tx_id = TransactionId::SolanaSignature(SolanaSignature::new([1u8; 64]));
         let block_id = BlockId::SolanaSlot(12345);
+        let context = create_test_context(1);
 
         mock.set_success(ForeignChain::Solana, tx_id.clone(), block_id.clone());
 
         let result = mock
-            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final)
+            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final, &context)
             .await;
 
         assert!(result.is_ok());
@@ -286,11 +330,12 @@ mod tests {
 
         let mock = mock::MockForeignChainVerifier::new();
         let tx_id = TransactionId::SolanaSignature(SolanaSignature::new([2u8; 64]));
+        let context = create_test_context(2);
 
         mock.set_not_found(ForeignChain::Solana, tx_id.clone());
 
         let result = mock
-            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final)
+            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final, &context)
             .await;
 
         assert!(result.is_err());
@@ -307,11 +352,12 @@ mod tests {
         let mock = mock::MockForeignChainVerifier::new();
         let tx_id = TransactionId::SolanaSignature(SolanaSignature::new([3u8; 64]));
         let block_id = BlockId::SolanaSlot(12345);
+        let context = create_test_context(3);
 
         mock.set_failed_tx(ForeignChain::Solana, tx_id.clone(), block_id);
 
         let result = mock
-            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final)
+            .verify(&ForeignChain::Solana, &tx_id, &FinalityLevel::Final, &context)
             .await;
 
         assert!(result.is_ok());
@@ -332,12 +378,14 @@ mod tests {
         // Any tx_id should return success
         let tx_id1 = TransactionId::SolanaSignature(SolanaSignature::new([10u8; 64]));
         let tx_id2 = TransactionId::SolanaSignature(SolanaSignature::new([20u8; 64]));
+        let context1 = create_test_context(10);
+        let context2 = create_test_context(20);
 
         let result1 = mock
-            .verify(&ForeignChain::Solana, &tx_id1, &FinalityLevel::Final)
+            .verify(&ForeignChain::Solana, &tx_id1, &FinalityLevel::Final, &context1)
             .await;
         let result2 = mock
-            .verify(&ForeignChain::Solana, &tx_id2, &FinalityLevel::Optimistic)
+            .verify(&ForeignChain::Solana, &tx_id2, &FinalityLevel::Optimistic, &context2)
             .await;
 
         assert!(result1.is_ok());

@@ -25,6 +25,7 @@ pub mod cli;
 pub mod config;
 mod coordinator;
 mod db;
+pub mod foreign_chain_policy_voter;
 pub mod foreign_chain_verifier;
 mod indexer;
 mod key_events;

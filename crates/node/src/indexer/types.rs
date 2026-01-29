@@ -10,7 +10,7 @@ use mpc_contract::{
     crypto_shared::CKDResponse,
     primitives::{
         domain::DomainId,
-        foreign_chain::{BlockId, FinalityLevel, ForeignChain, TransactionId},
+        foreign_chain::{BlockId, FinalityLevel, ForeignChain, ForeignChainPolicy, TransactionId},
         key_state::{KeyEventId, Keyset},
         signature::Tweak,
     },
@@ -232,6 +232,11 @@ pub struct SubmitParticipantInfoArgs {
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
 }
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ChainVoteForeignChainPolicyArgs {
+    pub proposal: ForeignChainPolicy,
+}
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -254,6 +259,7 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 
     ConcludeNodeMigration(ConcludeNodeMigrationArgs),
+    VoteForeignChainPolicy(ChainVoteForeignChainPolicyArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -272,6 +278,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
             ChainSendTransactionRequest::ConcludeNodeMigration(_) => "conclude_node_migration",
+            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => "vote_foreign_chain_policy",
         }
     }
 
@@ -288,7 +295,8 @@ impl ChainSendTransactionRequest {
             // This is too high in most settings, see https://github.com/near/mpc/issues/166
             | Self::VerifyTee()
             | Self::SubmitParticipantInfo(_)
-            | Self::ConcludeNodeMigration(_) => MAX_GAS,
+            | Self::ConcludeNodeMigration(_)
+            | Self::VoteForeignChainPolicy(_) => MAX_GAS,
         }
     }
 }

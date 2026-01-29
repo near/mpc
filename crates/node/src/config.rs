@@ -45,10 +45,28 @@ pub struct CKDConfig {
     pub timeout_sec: u64,
 }
 
-/// Configuration for foreign chain RPC endpoints
+use mpc_contract::primitives::foreign_chain::{
+    ForeignChain, ForeignChainEntry, ForeignChainPolicy, RpcProviderName,
+};
+use std::collections::HashMap;
+
+/// Configuration for foreign chain RPC endpoints.
+///
+/// Example YAML config with provider-based format:
+/// ```yaml
+/// foreign_chains:
+///   solana:
+///     timeout_sec: 30
+///     max_retries: 3
+///     providers:
+///       alchemy:
+///         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+///       quicknode:
+///         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/${QN_API_KEY}"
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ForeignChainConfig {
-    pub solana: Option<SolanaRpcConfig>,
+    pub solana: Option<SolanaProviderConfig>,
     // Future: ethereum, bitcoin, etc.
 }
 
@@ -58,32 +76,104 @@ impl ForeignChainConfig {
     /// This should be called during node startup to ensure all required
     /// foreign chain RPC endpoints are configured.
     pub fn validate(&self) -> Result<(), String> {
-        let solana = self.solana.as_ref().ok_or_else(|| {
-            "foreign_chains.solana configuration is required".to_string()
-        })?;
+        if let Some(solana) = &self.solana {
+            if solana.providers.is_empty() {
+                return Err("foreign_chains.solana.providers cannot be empty".to_string());
+            }
+            for (name, endpoint) in &solana.providers {
+                if endpoint.rpc_url.is_empty() {
+                    return Err(format!(
+                        "foreign_chains.solana.providers.{}.rpc_url cannot be empty",
+                        name
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 
-        if solana.rpc_url.is_empty() {
-            return Err("foreign_chains.solana.rpc_url cannot be empty".to_string());
+    /// Validate the local config against a contract policy.
+    /// Returns an error if any required providers are missing from the local config
+    /// or if any required provider has an empty rpc_url.
+    pub fn validate_against_policy(&self, policy: &ForeignChainPolicy) -> Result<(), String> {
+        for entry in &policy.chains {
+            match &entry.chain {
+                ForeignChain::Solana => {
+                    let solana = self.solana.as_ref().ok_or_else(|| {
+                        format!(
+                            "Policy requires Solana chain, but foreign_chains.solana is not configured"
+                        )
+                    })?;
+
+                    for required_provider in &entry.required_providers {
+                        let provider_name = required_provider.as_str();
+                        let endpoint = solana.providers.get(provider_name).ok_or_else(|| {
+                            format!(
+                                "Policy requires Solana provider '{}', but it is not configured in foreign_chains.solana.providers",
+                                provider_name
+                            )
+                        })?;
+
+                        // Verify the provider has a usable endpoint
+                        if endpoint.rpc_url.is_empty() {
+                            return Err(format!(
+                                "Policy requires Solana provider '{}', but its rpc_url is empty",
+                                provider_name
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Convert local config to a ForeignChainPolicy for voting.
+    /// Only chains that are configured will be included in the policy.
+    /// Provider names are sorted to ensure deterministic ordering across nodes.
+    pub fn to_policy(&self) -> ForeignChainPolicy {
+        let mut chains = Vec::new();
+
+        if let Some(solana) = &self.solana {
+            if !solana.providers.is_empty() {
+                let mut provider_names: Vec<RpcProviderName> = solana
+                    .providers
+                    .keys()
+                    .map(|k| RpcProviderName::new(k.clone()))
+                    .collect();
+                // Sort provider names to ensure deterministic ordering across nodes
+                provider_names.sort();
+                chains.push(ForeignChainEntry::new(ForeignChain::Solana, provider_names));
+            }
         }
 
-        Ok(())
+        ForeignChainPolicy::new(chains)
     }
 }
 
-/// Configuration for Solana RPC endpoint
+/// Provider-based configuration for Solana RPC endpoints.
+/// Allows specifying multiple named providers for redundancy and policy compliance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SolanaRpcConfig {
-    /// Primary RPC endpoint
-    pub rpc_url: String,
-    /// Backup RPC endpoints for failover
+pub struct SolanaProviderConfig {
+    /// Named providers mapping (e.g., "alchemy" -> endpoint config)
     #[serde(default)]
-    pub backup_rpc_urls: Vec<String>,
-    /// Request timeout in seconds
+    pub providers: HashMap<String, SolanaRpcEndpoint>,
+    /// Request timeout in seconds (applies to all providers)
     #[serde(default = "default_solana_timeout")]
     pub timeout_sec: u64,
-    /// Max retries per RPC call
+    /// Max retries per RPC call (applies to all providers)
     #[serde(default = "default_solana_retries")]
     pub max_retries: u32,
+}
+
+/// Configuration for a single Solana RPC endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolanaRpcEndpoint {
+    /// Primary RPC endpoint URL
+    pub rpc_url: String,
+    /// Backup RPC endpoints for failover (optional)
+    #[serde(default)]
+    pub backup_urls: Vec<String>,
 }
 
 fn default_solana_timeout() -> u64 {
@@ -733,21 +823,18 @@ pub mod tests {
     }
 
     #[test]
-    fn test_foreign_chain_config_validate_missing_solana() {
+    fn test_foreign_chain_config_validate_no_solana_ok() {
+        // Empty config is valid - Solana is not required by default
         let config = ForeignChainConfig::default();
         let result = config.validate();
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("foreign_chains.solana configuration is required"));
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn test_foreign_chain_config_validate_empty_rpc_url() {
+    fn test_foreign_chain_config_validate_empty_providers() {
         let config = ForeignChainConfig {
-            solana: Some(SolanaRpcConfig {
-                rpc_url: "".to_string(),
-                backup_rpc_urls: vec![],
+            solana: Some(SolanaProviderConfig {
+                providers: HashMap::new(),
                 timeout_sec: 30,
                 max_retries: 3,
             }),
@@ -756,20 +843,183 @@ pub mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("foreign_chains.solana.rpc_url cannot be empty"));
+            .contains("foreign_chains.solana.providers cannot be empty"));
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_empty_rpc_url() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "".to_string(),
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("rpc_url cannot be empty"));
     }
 
     #[test]
     fn test_foreign_chain_config_validate_success() {
-        let config = ForeignChainConfig {
-            solana: Some(SolanaRpcConfig {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
                 rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
-                backup_rpc_urls: vec![],
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
                 timeout_sec: 30,
                 max_retries: 3,
             }),
         };
         let result = config.validate();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_foreign_chain_config_to_policy() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+                backup_urls: vec![],
+            },
+        );
+        providers.insert(
+            "quicknode".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "https://quicknode.example.com".to_string(),
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+        let policy = config.to_policy();
+        assert_eq!(policy.chains.len(), 1);
+        assert_eq!(policy.chains[0].chain, ForeignChain::Solana);
+        assert_eq!(policy.chains[0].required_providers.len(), 2);
+        // Verify providers are sorted (deterministic ordering)
+        assert_eq!(
+            policy.chains[0].required_providers[0].as_str(),
+            "alchemy"
+        );
+        assert_eq!(
+            policy.chains[0].required_providers[1].as_str(),
+            "quicknode"
+        );
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_against_policy_success() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![RpcProviderName::new("alchemy")],
+        )]);
+
+        let result = config.validate_against_policy(&policy);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_against_policy_missing_provider() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+
+        // Policy requires both alchemy and quicknode
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![
+                RpcProviderName::new("alchemy"),
+                RpcProviderName::new("quicknode"),
+            ],
+        )]);
+
+        let result = config.validate_against_policy(&policy);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("quicknode"));
+    }
+
+    #[test]
+    fn test_foreign_chain_config_validate_against_policy_empty_rpc_url() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "alchemy".to_string(),
+            SolanaRpcEndpoint {
+                rpc_url: "".to_string(), // Empty URL - should fail validation
+                backup_urls: vec![],
+            },
+        );
+        let config = ForeignChainConfig {
+            solana: Some(SolanaProviderConfig {
+                providers,
+                timeout_sec: 30,
+                max_retries: 3,
+            }),
+        };
+
+        // Policy requires alchemy provider
+        let policy = ForeignChainPolicy::new(vec![ForeignChainEntry::new(
+            ForeignChain::Solana,
+            vec![RpcProviderName::new("alchemy")],
+        )]);
+
+        let result = config.validate_against_policy(&policy);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("rpc_url is empty"),
+            "Expected error about empty rpc_url, got: {}",
+            err_msg
+        );
     }
 }

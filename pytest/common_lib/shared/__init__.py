@@ -85,6 +85,7 @@ def create_mpc_function_call_access_key_action(
     mpc_methods_used_by_node = [
         "respond",
         "respond_ckd",
+        "respond_verify_foreign_tx",
         "vote_pk",
         "start_keygen_instance",
         "vote_reshared",
@@ -93,6 +94,7 @@ def create_mpc_function_call_access_key_action(
         "verify_tee",
         "submit_participant_info",
         "conclude_node_migration",
+        "vote_foreign_chain_policy",
     ]
 
     return create_function_call_access_key_action(
@@ -358,6 +360,35 @@ def adjust_indexing_shard(near_node: LocalNode):
     print(f"Updated near node config: {path}")
 
 
+def fix_boot_nodes_in_config(observers: list[LocalNode], boot_node: LocalNode):
+    """
+    Fix the boot_nodes address in observer nodes' config.json.
+
+    When observer nodes are initially started, they're given --boot-nodes on
+    the command line. But when they restart (e.g., as MPC nodes), they use
+    the config.json which may have a different boot_nodes address.
+
+    This function updates the config.json to have the correct boot_nodes address
+    so that restarts work correctly.
+
+    Args:
+        observers: List of observer nodes whose configs need to be fixed.
+        boot_node: The validator/boot node to connect to.
+    """
+    # Use addr_with_pk() which formats the address correctly
+    boot_node_addr = boot_node.addr_with_pk()
+    for observer in observers:
+        path = os.path.join(observer.node_dir, "config.json")
+        with open(path, "r+") as f:
+            config = json.load(f)
+            old_boot_nodes = config.get("network", {}).get("boot_nodes", "")
+            config["network"]["boot_nodes"] = boot_node_addr
+            f.seek(0)
+            json.dump(config, f, indent=2)
+            f.truncate()
+        print(f"Fixed boot_nodes in {path}: {old_boot_nodes} -> {boot_node_addr}")
+
+
 def move_mpc_configs(observers: list[LocalNode]):
     """
     Rust code generates a folder per each participant, we want to move everything in one place
@@ -380,27 +411,51 @@ def add_foreign_chains_config(
     foreign_chains_config: dict,
 ):
     """
-    Add foreign_chains configuration to MPC node config.yaml files.
+    Add or update foreign_chains configuration in MPC node config.yaml files.
 
     This is needed for tests that require foreign chain transaction verification.
+
+    Note: We use a regex-based approach rather than parsing the entire YAML file,
+    because SafeLoaderIgnoreUnknown corrupts Rust enum tags (like !Block -> null)
+    during the YAML round-trip.
 
     Args:
         observers: List of observer nodes (MPC nodes).
         foreign_chains_config: The foreign_chains config dict to add.
-            Example: {"solana": {"rpc_url": "https://api.mainnet-beta.solana.com", ...}}
+            Example: {"solana": {"providers": {"mainnet": {"rpc_url": "..."}}, ...}}
     """
+    import re
+
     for observer in observers:
         config_file_path = os.path.join(observer.node_dir, CONFIG_YAML)
 
+        # Read existing content
         with open(config_file_path, "r") as f:
-            config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
+            existing_content = f.read()
 
-        config["foreign_chains"] = foreign_chains_config
+        # Generate the new foreign_chains YAML block
+        foreign_chains_yaml = yaml.dump(
+            {"foreign_chains": foreign_chains_config},
+            default_flow_style=False
+        )
 
+        # Check if foreign_chains already exists
+        if "foreign_chains:" in existing_content:
+            # Remove existing foreign_chains section (and everything after it
+            # until next top-level key or end of file)
+            # This regex matches "foreign_chains:" and everything until the next
+            # non-indented line or end of file
+            pattern = r'foreign_chains:.*?(?=\n[^\s\n]|\Z)'
+            existing_content = re.sub(pattern, '', existing_content, flags=re.DOTALL)
+            print(f"Replacing foreign_chains in: {config_file_path}")
+        else:
+            print(f"Adding foreign_chains to: {config_file_path}")
+
+        # Append the new foreign_chains section
         with open(config_file_path, "w") as f:
-            yaml.dump(config, f, default_flow_style=False)
-
-        print(f"Added foreign_chains config to: {config_file_path}")
+            f.write(existing_content.rstrip())
+            f.write("\n")  # Ensure there's a newline separator
+            f.write(foreign_chains_yaml)
 
 
 def start_cluster_with_mpc(
@@ -438,6 +493,8 @@ def start_cluster_with_mpc(
     cluster = MpcCluster(
         main=main_node,
     )
+    # Store reference to boot node for tests that need to fix boot_nodes in config
+    cluster._boot_node = validators[0]
 
     create_txs = []
     mpc_nodes: list[MpcNode] = []

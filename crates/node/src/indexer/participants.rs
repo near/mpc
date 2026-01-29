@@ -6,6 +6,7 @@ use anyhow::Context;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::primitives::{
     domain::DomainConfig,
+    foreign_chain::ForeignChainPolicy,
     key_state::{KeyEventId, KeyForDomain, Keyset},
     thresholds::ThresholdParameters,
 };
@@ -107,6 +108,8 @@ pub struct ContractRunningState {
     pub keyset: Keyset,
     pub participants: ParticipantsConfig,
     pub resharing_state: Option<ContractResharingState>,
+    /// The current foreign chain policy from the contract state.
+    pub foreign_chain_policy: ForeignChainPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,6 +197,7 @@ impl ContractState {
                         port_override,
                     )?,
                     resharing_state: None,
+                    foreign_chain_policy: running_state.foreign_chain_policy.clone(),
                 })
             }
             ProtocolContractState::Resharing(state) => {
@@ -222,6 +226,7 @@ impl ContractState {
                         port_override,
                     )?,
                     resharing_state,
+                    foreign_chain_policy: running_state.foreign_chain_policy.clone(),
                 })
             }
         })

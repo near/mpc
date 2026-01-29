@@ -1,5 +1,5 @@
 use crate::config::ConfigFile;
-use crate::foreign_chain_verifier::ForeignChainVerifierAPI;
+use crate::foreign_chain_verifier::{ForeignChainVerifierAPI, ProviderSelectionContext};
 use crate::indexer::handler::{
     CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
     VerifyForeignTxRequestFromChain,
@@ -601,6 +601,12 @@ impl MpcClient {
                                     .with_label_values(&["total"])
                                     .inc();
 
+                                // Create provider selection context for deterministic provider selection
+                                let provider_context = ProviderSelectionContext {
+                                    my_participant_id: this.client.my_participant_id(),
+                                    request_id: verify_attempt.request.id,
+                                };
+
                                 // Step 1: Verify the foreign chain transaction
                                 let verification_result = this
                                     .foreign_verifier
@@ -608,6 +614,7 @@ impl MpcClient {
                                         &verify_attempt.request.chain,
                                         &verify_attempt.request.tx_id,
                                         &verify_attempt.request.finality,
+                                        &provider_context,
                                     )
                                     .await;
 

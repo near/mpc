@@ -66,10 +66,11 @@ impl ResharingContractState {
             .process_new_parameters_proposal(proposal)?
         {
             return Ok(Some(ResharingContractState {
-                previous_running_state: RunningContractState::new(
+                previous_running_state: RunningContractState::with_foreign_chain_policy(
                     self.previous_running_state.domains.clone(),
                     self.previous_running_state.keyset.clone(),
                     self.previous_running_state.parameters.clone(),
+                    self.previous_running_state.foreign_chain_policy.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(
@@ -137,10 +138,11 @@ impl ResharingContractState {
                     self.resharing_key.proposed_parameters().clone(),
                 );
             } else {
-                return Ok(Some(RunningContractState::new(
+                return Ok(Some(RunningContractState::with_foreign_chain_policy(
                     self.previous_running_state.domains.clone(),
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
                     self.resharing_key.proposed_parameters().clone(),
+                    self.previous_running_state.foreign_chain_policy.clone(),
                 )));
             }
         }

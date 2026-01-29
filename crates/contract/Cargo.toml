@@ -86,6 +86,7 @@ utilities = { workspace = true }
 getrandom = { workspace = true, features = ["custom"] }
 
 [dev-dependencies]
+bs58 = { workspace = true }
 cargo-near-build = { workspace = true }
 contract-history = { workspace = true }
 digest = { workspace = true }

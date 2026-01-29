@@ -9,7 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from common_lib import constants
 from common_lib import signature
-from common_lib import ckd
+# NOTE: ckd is imported lazily in functions that use it to avoid blspy dependency
+# when running tests that don't need CKD functionality
 from common_lib.constants import TGAS
 from common_lib.contract_state import (
     ContractState,
@@ -29,7 +30,7 @@ from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.signature import generate_sign_args
-from common_lib.ckd import generate_ckd_args
+# NOTE: generate_ckd_args is imported lazily in functions that use it
 from common_lib.constants import TRANSACTION_TIMEOUT
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
@@ -487,6 +488,9 @@ class MpcCluster:
         Returns:
             A list of signed transactions
         """
+        # Lazy import to avoid blspy dependency when not needed
+        from common_lib.ckd import generate_ckd_args
+
         txs = []
         gas = constants.GAS_FOR_CKD_CALL * TGAS + (add_gas or 0)
         deposit = constants.CKD_DEPOSIT + (add_deposit or 0)
@@ -512,7 +516,7 @@ class MpcCluster:
     def send_and_await_ckd_requests(
         self,
         requests_per_domains: int,
-        ckd_verification=ckd.assert_ckd_success,
+        ckd_verification=None,
         add_gas: Optional[int] = None,
         add_deposit: Optional[int] = None,
     ):
@@ -524,6 +528,11 @@ class MpcCluster:
                 - If the indexers fail to observe the ckd requests before `constants.TIMEOUT` is reached.
                 - If `ckd_verification` raises an AssertionError.
         """
+        # Lazy import to avoid blspy dependency when not needed
+        if ckd_verification is None:
+            from common_lib import ckd
+            ckd_verification = ckd.assert_ckd_success
+
         txs = self.make_ckd_request_txns(
             requests_per_domains, add_gas=add_gas, add_deposit=add_deposit
         )

@@ -11,10 +11,20 @@ use near_indexer_primitives::CryptoHash;
 
 use crate::{
     foreign_chain_verifier::{
-        mock::MockForeignChainVerifier, ForeignChainVerifierAPI, TxStatus, VerificationError,
+        mock::MockForeignChainVerifier, ForeignChainVerifierAPI, ProviderSelectionContext,
+        TxStatus, VerificationError,
     },
+    primitives::ParticipantId,
     types::VerifyForeignTxRequest,
 };
+
+/// Create a test provider selection context with a random participant ID
+fn create_test_provider_context(request_id: CryptoHash) -> ProviderSelectionContext {
+    ProviderSelectionContext {
+        my_participant_id: ParticipantId::from_raw(1),
+        request_id,
+    }
+}
 
 fn create_test_verify_request(tx_bytes: [u8; 64]) -> VerifyForeignTxRequest {
     VerifyForeignTxRequest {
@@ -35,6 +45,7 @@ async fn test_verify_foreign_tx_success() {
     let mock = MockForeignChainVerifier::new();
     let request = create_test_verify_request([1u8; 64]);
     let block_id = BlockId::SolanaSlot(12345);
+    let provider_context = create_test_provider_context(request.id);
 
     // Configure mock to return success for this specific tx
     mock.set_success(
@@ -45,7 +56,12 @@ async fn test_verify_foreign_tx_success() {
 
     // Verify the transaction
     let result = mock
-        .verify(&request.chain, &request.tx_id, &request.finality)
+        .verify(
+            &request.chain,
+            &request.tx_id,
+            &request.finality,
+            &provider_context,
+        )
         .await;
 
     assert!(result.is_ok());
@@ -60,6 +76,7 @@ async fn test_verify_foreign_tx_failed_transaction() {
     let mock = MockForeignChainVerifier::new();
     let request = create_test_verify_request([2u8; 64]);
     let block_id = BlockId::SolanaSlot(12345);
+    let provider_context = create_test_provider_context(request.id);
 
     // Configure mock to return failed tx (tx exists but reverted)
     mock.set_failed_tx(
@@ -69,7 +86,12 @@ async fn test_verify_foreign_tx_failed_transaction() {
     );
 
     let result = mock
-        .verify(&request.chain, &request.tx_id, &request.finality)
+        .verify(
+            &request.chain,
+            &request.tx_id,
+            &request.finality,
+            &provider_context,
+        )
         .await;
 
     // Verification succeeds (tx was found) but success flag is false
@@ -83,12 +105,18 @@ async fn test_verify_foreign_tx_failed_transaction() {
 async fn test_verify_foreign_tx_not_found() {
     let mock = MockForeignChainVerifier::new();
     let request = create_test_verify_request([3u8; 64]);
+    let provider_context = create_test_provider_context(request.id);
 
     // Configure mock to return not found
     mock.set_not_found(request.chain.clone(), request.tx_id.clone());
 
     let result = mock
-        .verify(&request.chain, &request.tx_id, &request.finality)
+        .verify(
+            &request.chain,
+            &request.tx_id,
+            &request.finality,
+            &provider_context,
+        )
         .await;
 
     assert!(result.is_err());
@@ -100,6 +128,7 @@ async fn test_verify_foreign_tx_not_found() {
 async fn test_verify_foreign_tx_rpc_error() {
     let mock = MockForeignChainVerifier::new();
     let request = create_test_verify_request([4u8; 64]);
+    let provider_context = create_test_provider_context(request.id);
 
     // Configure mock to return an RPC error
     mock.set_error(
@@ -109,7 +138,12 @@ async fn test_verify_foreign_tx_rpc_error() {
     );
 
     let result = mock
-        .verify(&request.chain, &request.tx_id, &request.finality)
+        .verify(
+            &request.chain,
+            &request.tx_id,
+            &request.finality,
+            &provider_context,
+        )
         .await;
 
     assert!(result.is_err());
@@ -121,6 +155,7 @@ async fn test_verify_foreign_tx_rpc_error() {
 async fn test_verify_foreign_tx_not_finalized() {
     let mock = MockForeignChainVerifier::new();
     let request = create_test_verify_request([5u8; 64]);
+    let provider_context = create_test_provider_context(request.id);
 
     // Configure mock to return not finalized error
     mock.set_error(
@@ -130,7 +165,12 @@ async fn test_verify_foreign_tx_not_finalized() {
     );
 
     let result = mock
-        .verify(&request.chain, &request.tx_id, &request.finality)
+        .verify(
+            &request.chain,
+            &request.tx_id,
+            &request.finality,
+            &provider_context,
+        )
         .await;
 
     assert!(result.is_err());
@@ -150,15 +190,33 @@ async fn test_verify_foreign_tx_default_success_for_any_tx() {
     let request1 = create_test_verify_request([10u8; 64]);
     let request2 = create_test_verify_request([20u8; 64]);
     let request3 = create_test_verify_request([30u8; 64]);
+    let provider_context1 = create_test_provider_context(request1.id);
+    let provider_context2 = create_test_provider_context(request2.id);
+    let provider_context3 = create_test_provider_context(request3.id);
 
     let result1 = mock
-        .verify(&request1.chain, &request1.tx_id, &request1.finality)
+        .verify(
+            &request1.chain,
+            &request1.tx_id,
+            &request1.finality,
+            &provider_context1,
+        )
         .await;
     let result2 = mock
-        .verify(&request2.chain, &request2.tx_id, &request2.finality)
+        .verify(
+            &request2.chain,
+            &request2.tx_id,
+            &request2.finality,
+            &provider_context2,
+        )
         .await;
     let result3 = mock
-        .verify(&request3.chain, &request3.tx_id, &request3.finality)
+        .verify(
+            &request3.chain,
+            &request3.tx_id,
+            &request3.finality,
+            &provider_context3,
+        )
         .await;
 
     assert!(result1.is_ok());
@@ -179,12 +237,24 @@ async fn test_verify_foreign_tx_default_not_found_for_any_tx() {
     // Any transaction should fail with not found
     let request1 = create_test_verify_request([40u8; 64]);
     let request2 = create_test_verify_request([50u8; 64]);
+    let provider_context1 = create_test_provider_context(request1.id);
+    let provider_context2 = create_test_provider_context(request2.id);
 
     let result1 = mock
-        .verify(&request1.chain, &request1.tx_id, &request1.finality)
+        .verify(
+            &request1.chain,
+            &request1.tx_id,
+            &request1.finality,
+            &provider_context1,
+        )
         .await;
     let result2 = mock
-        .verify(&request2.chain, &request2.tx_id, &request2.finality)
+        .verify(
+            &request2.chain,
+            &request2.tx_id,
+            &request2.finality,
+            &provider_context2,
+        )
         .await;
 
     assert!(result1.is_err());
@@ -217,12 +287,15 @@ async fn test_verify_foreign_tx_specific_override_default() {
 
     // Another tx should use default (not found)
     let other_request = create_test_verify_request([200u8; 64]);
+    let specific_provider_context = create_test_provider_context(specific_request.id);
+    let other_provider_context = create_test_provider_context(other_request.id);
 
     let specific_result = mock
         .verify(
             &specific_request.chain,
             &specific_request.tx_id,
             &specific_request.finality,
+            &specific_provider_context,
         )
         .await;
     let other_result = mock
@@ -230,6 +303,7 @@ async fn test_verify_foreign_tx_specific_override_default() {
             &other_request.chain,
             &other_request.tx_id,
             &other_request.finality,
+            &other_provider_context,
         )
         .await;
 

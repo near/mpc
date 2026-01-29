@@ -4,9 +4,9 @@ use std::fmt;
 use crate::crypto_shared::kdf::TweakNotOnCurve;
 
 use super::{
-    ConversionError, DomainError, Error, ErrorKind, ErrorRepr, InvalidCandidateSet,
-    InvalidParameters, InvalidState, InvalidThreshold, KeyEventError, NodeMigrationError,
-    PublicKeyError, RespondError, SignError, TeeError, VoteError,
+    ConversionError, DomainError, Error, ErrorKind, ErrorRepr, ForeignChainPolicyError,
+    InvalidCandidateSet, InvalidParameters, InvalidState, InvalidThreshold, KeyEventError,
+    NodeMigrationError, PublicKeyError, RespondError, SignError, TeeError, VoteError,
 };
 
 impl Error {
@@ -192,5 +192,11 @@ impl From<TweakNotOnCurve> for PublicKeyError {
 impl From<TweakNotOnCurve> for RespondError {
     fn from(_: TweakNotOnCurve) -> Self {
         Self::TweakNotOnCurve
+    }
+}
+
+impl From<ForeignChainPolicyError> for Error {
+    fn from(code: ForeignChainPolicyError) -> Self {
+        Self::simple(ErrorKind::ForeignChainPolicyError(code))
     }
 }

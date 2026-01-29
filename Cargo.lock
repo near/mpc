@@ -4802,6 +4802,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "borsh",
+ "bs58 0.5.1",
  "cargo-near-build",
  "contract-history",
  "contract-interface",

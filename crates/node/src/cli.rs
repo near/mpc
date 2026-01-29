@@ -6,7 +6,11 @@ use crate::{
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
+    foreign_chain_policy_voter,
+    indexer::{
+        participants::ContractState, real::spawn_real_indexer, tx_sender::TransactionSender,
+        IndexerAPI,
+    },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -500,6 +504,38 @@ impl StartCmd {
             indexer_api.txn_sender.clone(),
         )
         .await?;
+
+        // Validate foreign chain config against contract policy and vote if needed
+        {
+            let contract_state = indexer_api.contract_state_receiver.borrow().clone();
+            if let ContractState::Running(running_state) = &contract_state {
+                // Validate that local config satisfies the contract policy
+                if let Err(e) = foreign_chain_policy_voter::validate_config_against_policy(
+                    &config.foreign_chains,
+                    &running_state.foreign_chain_policy,
+                ) {
+                    return Err(anyhow!(
+                        "Foreign chain configuration validation failed: {}. \
+                         Please update your config.yaml to include the required providers.",
+                        e
+                    ));
+                }
+
+                // Vote for policy if local config differs from contract
+                if let Err(e) = foreign_chain_policy_voter::vote_if_needed(
+                    &config.foreign_chains,
+                    &running_state.foreign_chain_policy,
+                    &indexer_api.txn_sender,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        "Failed to vote for foreign chain policy (non-fatal): {}",
+                        e
+                    );
+                }
+            }
+        }
 
         let coordinator = Coordinator {
             clock: Clock::real(),

@@ -3,6 +3,7 @@ use super::running::RunningContractState;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidParameters};
 use crate::primitives::domain::DomainRegistry;
+use crate::primitives::foreign_chain::ForeignChainPolicy;
 use crate::primitives::key_state::{
     AuthenticatedParticipantId, EpochId, KeyEventId, KeyForDomain, Keyset,
 };
@@ -40,6 +41,8 @@ pub struct InitializingContractState {
     pub generating_key: KeyEvent,
     /// Votes that have been cast to cancel the key generation.
     pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+    /// The foreign chain policy carried over from the Running state.
+    pub foreign_chain_policy: ForeignChainPolicy,
 }
 
 impl InitializingContractState {
@@ -90,10 +93,11 @@ impl InitializingContractState {
                     self.generating_key.proposed_parameters().clone(),
                 );
             } else {
-                return Ok(Some(RunningContractState::new(
+                return Ok(Some(RunningContractState::with_foreign_chain_policy(
                     self.domains.clone(),
                     Keyset::new(self.epoch_id, self.generated_keys.clone()),
                     self.generating_key.proposed_parameters().clone(),
+                    self.foreign_chain_policy.clone(),
                 )));
             }
         }
@@ -131,10 +135,11 @@ impl InitializingContractState {
         if self.cancel_votes.insert(participant) && self.cancel_votes.len() >= required_threshold {
             let mut domains = self.domains.clone();
             domains.retain_domains(self.generated_keys.len());
-            return Ok(Some(RunningContractState::new(
+            return Ok(Some(RunningContractState::with_foreign_chain_policy(
                 domains,
                 Keyset::new(self.epoch_id, self.generated_keys.clone()),
                 self.generating_key.proposed_parameters().clone(),
+                self.foreign_chain_policy.clone(),
             )));
         }
         Ok(None)

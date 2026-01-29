@@ -1,9 +1,11 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
+use crate::errors::{DomainError, Error, ForeignChainPolicyError, InvalidParameters, VoteError};
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    foreign_chain::ForeignChainPolicy,
+    foreign_chain_policy_votes::ForeignChainPolicyVotes,
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
@@ -20,6 +22,8 @@ use std::collections::{BTreeSet, HashSet};
 ///  - vote_new_parameters, upon threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
+///  - vote_foreign_chain_policy, upon unanimous agreement, updates the
+///    foreign chain policy configuration.
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
@@ -38,6 +42,11 @@ pub struct RunningContractState {
     /// This epoch id is tracked, as the next time the state transitions to resharing,
     /// we can't reuse a previously cancelled epoch id.
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+    /// The current foreign chain policy configuration.
+    /// Defines which foreign chains are supported and required RPC providers.
+    pub foreign_chain_policy: ForeignChainPolicy,
+    /// Votes for proposals to change the foreign chain policy.
+    pub foreign_chain_policy_votes: ForeignChainPolicyVotes,
 }
 
 impl RunningContractState {
@@ -49,6 +58,28 @@ impl RunningContractState {
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
             previously_cancelled_resharing_epoch_id: None,
+            foreign_chain_policy: ForeignChainPolicy::default(),
+            foreign_chain_policy_votes: ForeignChainPolicyVotes::default(),
+        }
+    }
+
+    /// Creates a new RunningContractState with a specific foreign chain policy.
+    /// Used when migrating from an existing state that already has a policy.
+    pub fn with_foreign_chain_policy(
+        domains: DomainRegistry,
+        keyset: Keyset,
+        parameters: ThresholdParameters,
+        foreign_chain_policy: ForeignChainPolicy,
+    ) -> Self {
+        RunningContractState {
+            domains,
+            keyset,
+            parameters,
+            parameters_votes: ThresholdParametersVotes::default(),
+            add_domains_votes: AddDomainsVotes::default(),
+            previously_cancelled_resharing_epoch_id: None,
+            foreign_chain_policy,
+            foreign_chain_policy_votes: ForeignChainPolicyVotes::default(),
         }
     }
 
@@ -60,10 +91,11 @@ impl RunningContractState {
             let epoch_id = self.prospective_epoch_id();
 
             Some(ResharingContractState {
-                previous_running_state: RunningContractState::new(
+                previous_running_state: RunningContractState::with_foreign_chain_policy(
                     self.domains.clone(),
                     self.keyset.clone(),
                     self.parameters.clone(),
+                    self.foreign_chain_policy.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(epoch_id, first_domain.clone(), proposal.clone()),
@@ -72,10 +104,11 @@ impl RunningContractState {
         } else {
             // A new ThresholdParameters was proposed, but we have no keys, so directly
             // transition into Running state but bump the EpochId.
-            *self = RunningContractState::new(
+            *self = RunningContractState::with_foreign_chain_policy(
                 self.domains.clone(),
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.clone(),
+                self.foreign_chain_policy.clone(),
             );
             None
         }
@@ -171,6 +204,7 @@ impl RunningContractState {
                     self.parameters.clone(),
                 ),
                 cancel_votes: BTreeSet::new(),
+                foreign_chain_policy: self.foreign_chain_policy.clone(),
             }))
         } else {
             Ok(None)
@@ -179,6 +213,48 @@ impl RunningContractState {
 
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.parameters.participants().is_participant(account_id)
+    }
+
+    /// Casts a vote for a new foreign chain policy.
+    /// Requires unanimous agreement (all participants must vote for the same policy).
+    /// Returns true if the policy was updated (unanimous agreement reached).
+    pub fn vote_foreign_chain_policy(
+        &mut self,
+        proposal: &ForeignChainPolicy,
+    ) -> Result<bool, Error> {
+        // Validate the proposal
+        proposal
+            .validate()
+            .map_err(|e| ForeignChainPolicyError::ValidationFailed(e.to_string()))?;
+
+        // Ensure the signer is a current participant
+        let participant = AuthenticatedAccountId::new(self.parameters.participants())?;
+
+        // Cast the vote
+        let n_votes = self.foreign_chain_policy_votes.vote(proposal, participant);
+
+        // Check for unanimous agreement
+        let num_participants = self.parameters.participants().len() as u64;
+        if n_votes == num_participants {
+            // Unanimous agreement reached - update the policy
+            self.foreign_chain_policy = proposal.clone();
+            // Clear votes after successful policy update
+            self.foreign_chain_policy_votes = ForeignChainPolicyVotes::default();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get the current foreign chain policy.
+    pub fn get_foreign_chain_policy(&self) -> &ForeignChainPolicy {
+        &self.foreign_chain_policy
+    }
+
+    /// Get pending foreign chain policy proposals with their vote counts.
+    pub fn get_foreign_chain_policy_proposals(&self) -> Vec<(ForeignChainPolicy, u64)> {
+        self.foreign_chain_policy_votes
+            .get_proposals_with_counts(self.parameters.participants())
     }
 }
 

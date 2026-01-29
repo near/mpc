@@ -31,7 +31,8 @@ use crate::{
     errors::{Error, RequestError, VerifyForeignTxError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     primitives::foreign_chain::{
-        VerifyForeignTxRequest, VerifyForeignTxRequestArgs, VerifyForeignTxResponse,
+        ForeignChainPolicy, VerifyForeignTxRequest, VerifyForeignTxRequestArgs,
+        VerifyForeignTxResponse,
     },
     state::ContractNotInitialized,
     storage_keys::StorageKey,
@@ -516,6 +517,27 @@ impl MpcContract {
             }
         }
 
+        // Enforce foreign chain policy
+        let policy = match self.protocol_state.get_foreign_chain_policy() {
+            Ok(policy) => policy,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+
+        // Check if policy is configured
+        if policy.is_empty() {
+            env::panic_str(&VerifyForeignTxError::PolicyNotConfigured.to_string());
+        }
+
+        // Check if the requested chain is in the policy
+        if !policy.supports_chain(&request.chain) {
+            env::panic_str(
+                &VerifyForeignTxError::ChainNotInPolicy {
+                    chain: request.chain.to_string(),
+                }
+                .to_string(),
+            );
+        }
+
         let gas_required =
             Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
 
@@ -969,6 +991,51 @@ impl MpcContract {
             self.protocol_state = new_state;
         }
         Ok(())
+    }
+
+    /// Casts a vote for a new foreign chain policy configuration.
+    /// A policy defines which foreign chains are supported and what RPC providers are required.
+    ///
+    /// Requires unanimous agreement from all current participants to update the policy.
+    /// Each participant can only have one active vote at a time - voting for a different
+    /// proposal replaces any previous vote.
+    ///
+    /// The proposal must be valid:
+    /// - Each chain must have at least 1 provider specified
+    /// - No duplicate chains in the policy
+    ///
+    /// When policy is empty (default), `verify_foreign_transaction` returns an error
+    /// "Foreign chain verification not enabled".
+    #[handle_result]
+    pub fn vote_foreign_chain_policy(
+        &mut self,
+        proposal: ForeignChainPolicy,
+    ) -> Result<(), Error> {
+        log!(
+            "vote_foreign_chain_policy: signer={}, proposal={:?}",
+            env::signer_account_id(),
+            proposal,
+        );
+
+        self.protocol_state.vote_foreign_chain_policy(&proposal)?;
+        Ok(())
+    }
+
+    /// Gets the current foreign chain policy.
+    /// Returns the policy even if empty (no chains configured).
+    #[handle_result]
+    pub fn get_foreign_chain_policy(&self) -> Result<ForeignChainPolicy, Error> {
+        self.protocol_state
+            .get_foreign_chain_policy()
+            .cloned()
+    }
+
+    /// Gets all pending foreign chain policy proposals with their vote counts.
+    /// Returns a list of (proposal, vote_count) pairs.
+    /// Only includes votes from current participants.
+    #[handle_result]
+    pub fn get_foreign_chain_policy_proposals(&self) -> Result<Vec<(ForeignChainPolicy, u64)>, Error> {
+        self.protocol_state.get_foreign_chain_policy_proposals()
     }
 
     /// Starts a new attempt to generate a key for the current domain.
