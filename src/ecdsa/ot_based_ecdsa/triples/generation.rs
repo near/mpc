@@ -33,7 +33,7 @@ use super::{
 ///     LABEL, NAME, Participants, threshold
 fn create_transcript(
     participants: &ParticipantList,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
 ) -> Result<Transcript, ProtocolError> {
     let mut transcript = Transcript::new(NEAR_TRIPLE_GENERATION_LABEL);
 
@@ -44,7 +44,7 @@ fn create_transcript(
     // To allow interop between platforms where usize is different
     transcript.message(
         b"threshold",
-        &u64::try_from(threshold)
+        &u64::try_from(threshold.value())
             .expect("threshold should always fit in u64")
             .to_be_bytes(),
     );
@@ -83,12 +83,12 @@ async fn do_generation(
     comms: Comms,
     participants: ParticipantList,
     me: Participant,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutput, ProtocolError> {
     let mut chan = comms.shared_channel();
     let mut transcript = create_transcript(&participants, threshold)?;
-
+    let threshold = threshold.value();
     let degree1 = threshold
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
@@ -504,7 +504,7 @@ async fn do_generation_many<const N: usize>(
     comms: Comms,
     participants: ParticipantList,
     me: Participant,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     mut rng: impl CryptoRngCore,
 ) -> Result<TripleGenerationOutputMany, ProtocolError> {
     assert!(N > 0);
@@ -522,9 +522,11 @@ async fn do_generation_many<const N: usize>(
     let mut big_l_i_v = vec![];
 
     let degree1 = threshold
+        .value()
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
     let degree2 = threshold
+        .value()
         .checked_sub(2)
         .ok_or(ProtocolError::IntegerOverflow)?;
 
@@ -732,10 +734,10 @@ async fn do_generation_many<const N: usize>(
                 let their_randomizer = &their.randomizer_v[i];
                 let their_phi_proof0 = &their.phi_proof0_v[i];
                 let their_phi_proof1 = &their.phi_proof1_v[i];
-                if their_big_e.degree() != threshold - 1
-                    || their_big_f.degree() != threshold - 1
+                if their_big_e.degree() != threshold.value() - 1
+                    || their_big_f.degree() != threshold.value() - 1
                     // degree is threshold - 2 because the constant element identity is not serializable
-                    || their_big_l.degree() != threshold - 2
+                    || their_big_l.degree() != threshold.value() - 2
                 {
                     return Err(ProtocolError::AssertionFailed(format!(
                         "polynomial from {from:?} has the wrong length"
@@ -1055,7 +1057,7 @@ async fn do_generation_many<const N: usize>(
                 big_b,
                 big_c,
                 participants: participants.clone().into(),
-                threshold: threshold.into(),
+                threshold,
             },
         ));
     }
@@ -1076,21 +1078,25 @@ pub fn generate_triple(
     threshold: impl Into<ReconstructionLowerBound>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutput>, InitializationError> {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into();
+    let threshold_value = threshold.value();
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
     }
     // Spec 1.1
-    if threshold > participants.len() {
+    if threshold_value > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold,
+            threshold: threshold_value,
             max: participants.len(),
         });
     }
-    if threshold < 2 {
-        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
+    if threshold_value < 2 {
+        return Err(InitializationError::ThresholdTooSmall {
+            threshold: threshold_value,
+            min: 2,
+        });
     }
 
     let participants =
@@ -1108,21 +1114,25 @@ pub fn generate_triple_many<const N: usize>(
     threshold: impl Into<ReconstructionLowerBound>,
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = TripleGenerationOutputMany>, InitializationError> {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into();
+    let threshold_value = threshold.value();
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
         });
     }
     // Spec 1.1
-    if threshold > participants.len() {
+    if threshold_value > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold,
+            threshold: threshold_value,
             max: participants.len(),
         });
     }
-    if threshold < 2 {
-        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
+    if threshold_value < 2 {
+        return Err(InitializationError::ThresholdTooSmall {
+            threshold: threshold_value,
+            min: 2,
+        });
     }
 
     let participants =

@@ -43,7 +43,7 @@ pub fn sign(
     message: Vec<u8>,
     randomizer: Option<Randomizer>,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
-    let threshold = usize::from(threshold.into());
+    let threshold = threshold.into();
     if participants.len() < 2 {
         return Err(InitializationError::NotEnoughParticipants {
             participants: participants.len(),
@@ -62,9 +62,9 @@ pub fn sign(
     }
 
     // validate threshold
-    if threshold > participants.len() {
+    if threshold.value() > participants.len() {
         return Err(InitializationError::ThresholdTooLarge {
-            threshold,
+            threshold: threshold.value(),
             max: participants.len(),
         });
     }
@@ -97,7 +97,7 @@ pub fn sign(
 async fn fut_wrapper(
     chan: SharedChannel,
     participants: ParticipantList,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -158,7 +158,7 @@ async fn fut_wrapper(
 async fn do_sign_coordinator(
     mut chan: SharedChannel,
     participants: ParticipantList,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     me: Participant,
     keygen_output: KeygenOutput,
     presignature: PresignOutput,
@@ -224,7 +224,7 @@ async fn do_sign_coordinator(
 /// For reference, see how RFC 8032 handles "pre-hashing".
 async fn do_sign_participant(
     mut chan: SharedChannel,
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     me: Participant,
     coordinator: Participant,
     keygen_output: KeygenOutput,
@@ -266,7 +266,7 @@ async fn do_sign_participant(
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
-    threshold: usize,
+    threshold: ReconstructionLowerBound,
     me: Participant,
     keygen_output: &KeygenOutput,
 ) -> Result<KeyPackage, ProtocolError> {
@@ -279,7 +279,7 @@ fn construct_key_package(
         signing_share,
         verifying_share,
         verifying_key,
-        u16::try_from(threshold).map_err(|_| {
+        u16::try_from(threshold.value()).map_err(|_| {
             ProtocolError::Other("threshold cannot be converted to u16".to_string())
         })?,
     );

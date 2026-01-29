@@ -205,9 +205,10 @@ mod test {
     type PresigSimulationOutput = (Scalar, Polynomial, Polynomial, Polynomial, ProjectivePoint);
 
     fn simulate_presignature(
-        max_malicious: usize,
+        max_malicious: impl Into<MaxMalicious>,
         rng: &mut impl CryptoRngCore,
     ) -> PresigSimulationOutput {
+        let max_malicious = max_malicious.into().value();
         // the presignatures scheme requires the generation of 5 different polynomials
         // (fk, fa, fb, fd, fe)
         // Here we do not need fb as it is only used to mask some values before sending
