@@ -150,17 +150,17 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
             HandshakeOutcome::Unsupported(peer_protocol_version)
         }
         KnownMpcProtocols::Dec2025 => {
-            if min_expected_connection_id != MIN_EXPECTED_CONNECTION_ID {
+            if min_expected_connection_id == MIN_EXPECTED_CONNECTION_ID {
+                // we have no existing connection with this peer and are happy to
+                // accept this one.
+                write_magic_byte_and_protocol_version(conn).await?;
+                HandshakeOutcome::Dec2025(true)
+            } else {
                 // we have an existing connection with this peer, so we are not
                 // interested in responding - we don't conclude the handshake and
                 // return an error.
                 tracing::warn!("peer is already connected to us");
                 HandshakeOutcome::Dec2025(false)
-            } else {
-                // we have no existing connection with this peer and are happy to
-                // accept this one.
-                write_magic_byte_and_protocol_version(conn).await?;
-                HandshakeOutcome::Dec2025(true)
             }
         }
         KnownMpcProtocols::Jan2026 | KnownMpcProtocols::Unknown(_) => {
