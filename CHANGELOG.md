@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.3.3] - 2026-01-29
+## [3.4.0] - 2026-01-29
 
 ### 🚀 Features
 
@@ -56,6 +56,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1896](https://github.com/near/mpc/pull/1896)(@gilcu3): Add 3.3.2 contract to contract-history (#1896)
 
+- [#1899](https://github.com/near/mpc/pull/1899)(@gilcu3): Add fixture tests for key derivation path (#1899)
+
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -86,6 +88,10 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1873](https://github.com/near/mpc/pull/1873)(@DSharifi): Bump `axum` to 0.8.8 (#1873)
 
 - [#1878](https://github.com/near/mpc/pull/1878)(@gilcu3): Enable ignored tests (#1878)
+
+- [#1881](https://github.com/near/mpc/pull/1881)(@DSharifi): Bump flume to version `0.12.0` (#1881)
+
+- : Bump crate versions to 3.4.0 and update changelog
 
 
 ## [3.3.2] - 2026-01-20
