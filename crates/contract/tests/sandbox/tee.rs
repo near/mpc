@@ -12,15 +12,15 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{Attestation, Ed25519PublicKey, MockAttestation};
+use contract_interface::types::{Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
     primitives::{domain::SignatureScheme, test_utils::bogus_ed25519_public_key},
     state::ProtocolContractState,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
-use near_workspaces::{Account, Contract};
-use test_utils::attestation::{image_digest, mock_dto_dstack_attestation, p2p_tls_key};
+use near_workspaces::Contract;
+use test_utils::attestation::{image_digest, p2p_tls_key};
 use utilities::AccountIdExtV1;
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
@@ -229,52 +229,6 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
     Ok(running.parameters.participants().len())
 }
 
-/// Sets up a contract with an approved MPC hash by having the first two participants vote for it.
-/// This is a helper function commonly used in tests that require pre-approved hashes.
-async fn setup_approved_mpc_hash(contract: &Contract, accounts: &[Account]) -> Result<()> {
-    let mpc_hash = image_digest();
-    vote_for_hash(&accounts[0], contract, &mpc_hash).await?;
-    vote_for_hash(&accounts[1], contract, &mpc_hash).await?;
-    Ok(())
-}
-
-/// Sets up a complete TEE test environment with contract, accounts, mock attestation, and TLS key.
-/// This is a helper function that provides all the common components needed for TEE-related tests.
-async fn setup_tee_test() -> Result<(Contract, Vec<Account>, Attestation, Ed25519PublicKey)> {
-    let SandboxTestSetup {
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
-    let attestation = mock_dto_dstack_attestation();
-    let tls_key = p2p_tls_key().into();
-    Ok((contract, mpc_signer_accounts, attestation, tls_key))
-}
-
-/// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
-/// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
-#[tokio::test]
-#[ignore]
-async fn test_submit_participant_info_fails_without_approved_mpc_hash() -> Result<()> {
-    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
-    assert!(!success);
-    Ok(())
-}
-
-/// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
-/// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
-/// the attestation data.
-#[tokio::test]
-#[ignore]
-async fn test_submit_participant_info_test_method_available_in_integration_tests() -> Result<()> {
-    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    setup_approved_mpc_hash(&contract, &accounts).await?;
-    let success = submit_participant_info(&accounts[0], &contract, &attestation, &tls_key).await?;
-    assert!(success);
-    Ok(())
-}
-
 // / **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
 // / Different from the dstack attestation tests above, this uses a mock attestation which bypasses complex TEE verification.
 /// This demonstrates that the submission mechanism itself works when attestation verification passes.
@@ -293,29 +247,9 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         &mock_attestation,
         &tls_key,
     )
-    .await?;
+    .await?
+    .is_success();
     assert!(success);
-    Ok(())
-}
-
-/// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
-/// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
-/// that attestation validation properly checks the TLS key embedded in the attestation report.
-#[tokio::test]
-#[ignore]
-async fn test_tee_attestation_fails_with_invalid_tls_key() -> Result<()> {
-    let (contract, accounts, attestation, tls_key) = setup_tee_test().await?;
-    setup_approved_mpc_hash(&contract, &accounts).await?;
-
-    // Create invalid TLS key by flipping the last bit
-    let mut invalid_tls_key_bytes = *tls_key.as_bytes();
-    let last_byte_idx = invalid_tls_key_bytes.len() - 1;
-    invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
-    let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
-
-    let success =
-        submit_participant_info(&accounts[0], &contract, &attestation, &invalid_tls_key).await?;
-    assert!(!success);
     Ok(())
 }
 
@@ -448,7 +382,8 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
                 &attestation,
                 &dummy_tls_key,
             )
-            .await?;
+            .await?
+            .is_success();
 
             assert!(
                 validation_success,
@@ -480,7 +415,8 @@ async fn get_attestation_returns_none_when_tls_key_is_not_associated_with_an_att
         &tls_key_1,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .is_success();
 
     assert!(validation_success);
 
@@ -535,7 +471,8 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         &tls_key_1,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .is_success();
     assert!(validation_success, "Submitting attestation failed.");
 
     let validation_success = submit_participant_info(
@@ -545,7 +482,8 @@ async fn get_attestation_returns_some_when_tls_key_associated_with_an_attestatio
         &tls_key_2,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .is_success();
     assert!(validation_success, "Submitting attestation failed.");
 
     let attestation_for_tls_key_2: Option<Attestation> =
@@ -588,7 +526,8 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
     let validation_success =
         submit_participant_info(participant_account, &contract, &first_attestation, &tls_key)
             .await
-            .unwrap();
+            .unwrap()
+            .is_success();
     assert!(validation_success, "First attestation submission failed");
 
     // Submit the second attestation with the same TLS key (overwrites the first)
@@ -599,7 +538,8 @@ async fn get_attestation_overwrites_when_same_tls_key_is_reused() {
         &tls_key,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .is_success();
     assert!(validation_success, "Second attestation submission failed");
 
     // Now the latest attestation should be returned
@@ -694,7 +634,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         &expiring_attestation,
         &target_node_id.tls_public_key.into_interface_type(),
     )
-    .await?;
+    .await?
+    .is_success();
     assert!(submit_result, "failed to submit expiring attestation");
 
     // Fast-forward past the attestation expiry

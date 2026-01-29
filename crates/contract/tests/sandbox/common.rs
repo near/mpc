@@ -23,10 +23,12 @@ use mpc_contract::{
     update::{ProposeUpdateArgs, UpdateId},
 };
 use near_account_id::AccountId;
+use near_sdk::NearToken;
 use near_workspaces::{
     network::Sandbox,
     result::{ExecutionFailure, ExecutionSuccess},
-    Contract,
+    types::AccessKeyPermission,
+    AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -74,13 +76,41 @@ pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
 }
 
 /// Create `amount` accounts and return them along with the candidate info.
+/// This creates accounts async, but as this is not supported by
+/// near_workspaces, hence the way to do so is very low level
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
+    let root_account = worker.root_account().unwrap();
     let mut accounts = Vec::with_capacity(amount);
     let mut account_ids = Vec::with_capacity(amount);
+    let mut account_creation_transactions = Vec::with_capacity(amount);
     for _ in 0..amount {
-        let (account, account_id) = gen_account(worker).await;
+        let (account_id, sk) = worker.generate_dev_account_credentials();
+        let account_id = format!("{}.{}", account_id, root_account.id())
+            .parse()
+            .unwrap();
+        let transaction = root_account
+            .batch(&account_id)
+            .create_account()
+            .add_key(
+                sk.public_key(),
+                AccessKey {
+                    nonce: 0,
+                    permission: AccessKeyPermission::FullAccess,
+                },
+            )
+            .transfer(NearToken::from_near(100))
+            .transact_async()
+            .await
+            .unwrap();
+        account_creation_transactions.push(transaction);
+        let account = Account::from_secret_key(account_id.clone(), sk, worker);
         accounts.push(account);
-        account_ids.push(account_id);
+        account_ids.push(account_id.as_v2_account_id());
+    }
+    for transaction in account_creation_transactions {
+        let result = transaction.await.unwrap();
+        dbg!(&result);
+        assert!(result.is_success());
     }
     let candidates = candidates(Some(account_ids));
     (accounts, candidates)
@@ -355,7 +385,7 @@ pub async fn submit_tee_attestations(
             &node_id.tls_public_key.into_interface_type(),
         )
         .await?;
-        assert!(result);
+        assert!(result.is_success());
     }
     Ok(())
 }
@@ -376,7 +406,8 @@ pub async fn submit_attestations(
             let tls_key = (&participant.sign_pk).into_interface_type();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
                 .await
-                .expect("submit_participant_info should not error");
+                .expect("submit_participant_info should not error")
+                .is_success();
             assert!(
                 success,
                 "submit_participant_info failed for participant {}",
@@ -537,7 +568,7 @@ pub async fn generate_participant_and_submit_attestation(
 
     // Submit attestation for the new participant, otherwise
     // the contract will reject the resharing.
-    submit_participant_info(
+    let result = submit_participant_info(
         &new_account,
         contract,
         &dtos::Attestation::Mock(dtos::MockAttestation::Valid),
@@ -545,6 +576,7 @@ pub async fn generate_participant_and_submit_attestation(
     )
     .await
     .expect("Attestation submission for new account must succeed.");
+    assert!(result.is_success());
     (new_account, account_id, new_participant)
 }
 

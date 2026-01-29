@@ -1,8 +1,8 @@
 {
     "manifest_version": 2,
-    "name": "sam_tee",
+    "name": "barak-test-71c5-node6-testnet-tee",
     "runner": "docker-compose",
-    "docker_compose_file": "version: '3.8'\n\nservices:\n  launcher:\n    image: nearone/mpc-launcher@sha256:4b7ab5fac94b7ecd6ba180cf655c5700595c61a3945c321ddbe104b3993aaf83\n\n    container_name: launcher\n\n    environment:\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:7c0ee6d08f253f7f890883ce4d64c387aab0d1a192a8a827f7db8cdf55a6a3b8\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume\n",
+    "docker_compose_file": "version: '3.8'\n\nservices:\n  launcher:\n    image: nearone/mpc-launcher@sha256:17243e65f47c69a4735c507ea91aefa0bdd761d9a267e28221232d748518bad3\n\n    container_name: launcher\n\n    environment:\n      - PLATFORM=TEE\n      - DOCKER_CONTENT_TRUST=1\n      - DEFAULT_IMAGE_DIGEST=sha256:6e5b08f91752fd7cb10349de45f74272f340fe42a172d2cbc237f3f1d5527a45\n\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/run/dstack.sock:/var/run/dstack.sock\n      - /tapp:/tapp:ro\n      - shared-volume:/mnt/shared:ro\n\n    security_opt:\n      - no-new-privileges:true\n\n    read_only: true\n\n    tmpfs:\n      - /tmp\n\nvolumes:\n  shared-volume:\n    name: shared-volume\n",
     "kms_enabled": false,
     "gateway_enabled": false,
     "local_key_provider_enabled": true,
