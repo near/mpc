@@ -76,13 +76,13 @@ pub struct VerifyForeignTxRequestArgs {
 
 pub struct VerifyForeignTxRequest {
     // Constructed from the args
-    pub chain: ForeignChain,
+    pub chain: ForeignChainConfig,
     pub tx_id: TransactionId,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
 
-pub enum ForeignChain {
+pub enum ForeignChainConfig {
     Solana(SolanaConfig),
     Bitcoin(BitcoinConfig),
     // Future chains...
@@ -104,6 +104,34 @@ pub struct BitcoinConfig {
 pub struct VerifyForeignTxResponse {
     pub verified_at_block: BlockId,
     pub signature: SignatureResponse,
+}
+```
+
+### Contract state (Foreign Chain Policy)
+
+The contract maintains a *foreign chain policy* that defines which chains and RPC providers are allowed.
+
+```rust
+pub struct ForeignChainPolicy {
+    pub chains: Vec<ForeignChainEntry>,
+}
+
+pub struct ForeignChainProviders {
+    pub chain: ForeignChain,
+    pub providers: Vec<RpcProviderName>,
+}
+
+pub enum ForeignChain {
+    Solana,
+    Bitcoin,
+    // Future chains...
+}
+
+pub struct RpcProviderName(String);
+
+pub struct ForeignChainPolicyVotes {
+    // Each authenticated participant has one active vote for a proposal.
+    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
 ```
 
@@ -159,24 +187,7 @@ flowchart TD
 ```
 
 ### Contract Policy State (Types)
-
-```rust
-pub struct ForeignChainPolicy {
-    pub chains: Vec<ForeignChainEntry>,
-}
-
-pub struct ForeignChainEntry {
-    pub chain: ForeignChain,
-    pub required_providers: Vec<RpcProviderName>,
-}
-
-pub struct RpcProviderName(pub String);
-
-pub struct ForeignChainPolicyVotes {
-    // Each authenticated participant has one active vote for a proposal.
-    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
-}
-```
+See "Contract state (Foreign Chain Policy)" above.
 
 ### Node Configuration and Policy Updates
 
