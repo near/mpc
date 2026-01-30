@@ -69,38 +69,6 @@ flowchart TD
     FC@{ shape: cylinder}
 ```
 
-### Core Flow: Verify Foreign Transaction
-
-```mermaid
----
-title: Verify Foreign Transaction - High Level
----
-flowchart TD
-    DEV["**Developer / Bridge Service**
-      _Submits verification request._"]
-
-    SC["**MPC Signer Contract**
-      _Validates policy + enqueues request._"]
-
-    MPC["**MPC Nodes**
-      _Verify foreign tx + sign._"]
-
-    RPC["**RPC Providers**
-      _Return tx status._"]
-
-    DEV -->|"1. verify_foreign_transaction()"| SC
-    SC -->|"2. request observed by nodes"| MPC
-    MPC -->|"3. verify tx status"| RPC
-    MPC -->|"4. sign payload = sha256(tx_id)"| MPC
-    MPC -->|"5. respond_verify_foreign_tx()"| SC
-    SC -->|"6. resolve promise"| DEV
-
-    DEV@{ shape: manual-input}
-    SC@{ shape: db}
-    MPC@{ shape: proc}
-    RPC@{ shape: proc}
-```
-
 ### Core Flow: Foreign Chain Policy Updates (New Chains / Providers)
 
 ```mermaid
@@ -114,13 +82,21 @@ flowchart TD
     SC["**MPC Signer Contract**
       _Foreign chain policy._"]
 
+    COMP["**Compare**
+      _Local config vs policy._"]
+
+    UPDATED["**Policy Updated**
+      _Unanimous vote reached._"]
+
     NODE -->|"1. read policy"| SC
-    NODE -->|"2. compare to local config"| NODE
-    NODE -->|"3. vote if different"| SC
-    SC -->|"4. update policy on unanimity"| SC
+    NODE -->|"2. compare"| COMP
+    COMP -->|"3. vote if different"| SC
+    SC -->|"4. update policy on unanimity"| UPDATED
 
     NODE@{ shape: proc}
     SC@{ shape: db}
+    COMP@{ shape: proc}
+    UPDATED@{ shape: proc}
 ```
 
 ### Key Components and Responsibilities
