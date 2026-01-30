@@ -215,11 +215,13 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
-        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        api_key:
+          env: ALCHEMY_API_KEY
       quicknode:
-        rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/${QN_API_KEY}"
-        backup_urls:
-          - "https://backup.solana.quiknode.pro/${QN_API_KEY}"
+        rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
+        api_key:
+          val: "<your-api-key-here>"
 ```
 
 The contract policy references providers by **name**, and nodes must have matching
@@ -239,6 +241,7 @@ provider entries in config (including API keys) to satisfy the policy.
 
 ## Discussion points
 - Finality interface right now diverges from the original PR. Are we okay with this new structure?
+- Can we assume all RPC providers take API keys as bearer tokens?
 - Should we identify RPC providers by a base URL instead of an arbitrary name?
 - Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
 - Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
