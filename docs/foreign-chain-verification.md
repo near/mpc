@@ -2,7 +2,7 @@
 
 ## Status
 
-- Implemented in `read-foreign-chain` (PR #1851)
+- Draft implementation in [PR #1851](https://github.com/near/mpc/pull/1851)
 
 ## Summary
 
@@ -18,12 +18,14 @@ Key points:
 
 ## Background and Motivation (Why This Feature)
 
-- **Omnibridge depends on Chain Signatures from day 1.** Near -> foreign chain transfers already use Chain Signatures for Bitcoin, Zcash, Solana, Ethereum, etc. The opposite direction (foreign -> Near) currently uses a mix of light clients and Wormhole, but the roadmap is to migrate that direction to Chain Signatures as well. This feature expands Chain Signatures to cover verified foreign transactions, which is required to unify both directions under a single signing system.
-- **Scaling vs cost trade-off.** The network can scale beyond 21 nodes and new cryptography is in progress to improve scalability. However, in the short to medium term, 21 nodes is a reasonable cost/performance target. Deterministic provider selection and unanimous policy voting are designed to work well at this scale while avoiding unnecessary duplication or trust concentration.
+**Omnibridge depends on Chain Signatures from day 1.**
+
+- ✅ Near -> foreign chain transfers already use Chain Signatures for Bitcoin, Zcash, Solana, Ethereum, etc.
+- ❌ foreign -> Near transfer currently uses a mix of light clients and Wormhole, but the roadmap is to migrate that direction to Chain Signatures as well. This feature expands Chain Signatures to cover verified foreign transactions, which is required to unify both directions under a single signing system.
 
 ## Goals
 
-- Allow users to request MPC signatures for foreign-chain transactions after verification.
+- Allow users to request MPC signatures for foreign-chain transactions after verification by querying foreign chains.
 - Ensure the network agrees on supported chains and provider names via an on-chain policy.
 - Distribute RPC trust by deterministic provider selection per request.
 - Keep foreign-chain RPC usage strictly read-only.
