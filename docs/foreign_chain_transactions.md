@@ -103,7 +103,7 @@ pub struct BitcoinConfig {
 
 pub struct VerifyForeignTxResponse {
     pub verified_at_block: BlockId,
-    pub signature: SignatureResponse,
+    pub signature: SignatureResponse, // Signature over `sha256(tx_id_bytes)` where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
 }
 ```
 
@@ -134,20 +134,6 @@ pub struct ForeignChainPolicyVotes {
     pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
 ```
-
-**Contract behavior**
-
-- Policy gating:
-  - If policy is empty, verification is **disabled**.
-  - Request chain must be in policy.
-  - Policy includes **provider names only** (no secrets).
-- Verification parameters are chain-specific (e.g., Solana finality or Bitcoin confirmations).
-
-**Signing semantics**
-
-- Payload is `sha256(tx_id_bytes)`, where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
-- Signature is ECDSA over that payload using the domain key derived with `tweak` (i.e., the derived key for `domain_id` + `tweak`).
-- `tweak` should be derived deterministically (prototype uses `derive_tweak(predecessor_account_id, path)`), unless we explicitly move to passing raw tweaks.
 
 ### Failure and Timeout Behavior
 
