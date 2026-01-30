@@ -16,12 +16,6 @@ Primary motivations and use cases:
 - Broader chain abstraction efforts where a single MPC network can verify foreign chain state and sign conditional payloads.
 - Reduce reliance on centralized oracles by having MPC nodes independently verify foreign-chain transaction status.
 
-Scope notes from the initial discussion:
-
-- Start with **foreign transaction status verification** only.
-- This enables bridge use cases but does **not** migrate the hot-wallet use case.
-- "Hot bridge" can work with this but would require significant refactors on their end.
-
 ## Goals
 
 - Provide a **contract-level API** to request verification + signing for a foreign transaction.
@@ -35,7 +29,6 @@ Scope notes from the initial discussion:
 - Provide on-chain light client verification (too heavy for the contract).
 - Provide cryptographic proofs of foreign chain state.
 - Support non-ECDSA signature schemes for verify_foreign_transaction (initially ECDSA only).
-- Support hot-wallet migration or generalized signing conditioned on arbitrary predicates.
 
 ## High-Level Design
 
