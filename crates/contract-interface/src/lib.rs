@@ -9,12 +9,15 @@ pub mod types {
     pub use crypto::{
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
+    pub use foreign_chain::*;
+
     pub use primitives::{AccountId, CkdAppId};
     pub use updates::{ProposedUpdates, UpdateHash};
 
     mod attestation;
     mod config;
     mod crypto;
+    mod foreign_chain;
     mod primitives;
     mod updates;
 }
