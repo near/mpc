@@ -197,7 +197,7 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
 /// Tests the resharing protocol when more participants are added to the pool
 fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let participants = generate_participants(11);
+    let participants = generate_participants(12);
 
     let max_malicious = 3;
     let threshold = max_malicious + 1;
@@ -207,7 +207,7 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
     let pub_key = result0[2].1.public_key;
 
     // Run heavy reshare
-    let max_malicious = 4;
+    let max_malicious = 7;
     let new_threshold = max_malicious + 1;
 
     let mut new_participant = participants.clone();
@@ -244,9 +244,9 @@ fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
 /// Tests the resharing protocol when participants are kicked out of the pool
 fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let participants = generate_participants(5);
+    let participants = generate_participants(6);
 
-    let max_malicious = 2;
+    let max_malicious = 3;
     let threshold = max_malicious + 1;
     let result0 = run_keygen(&participants, threshold, &mut rng);
     assert_public_key_invariant(&result0);
@@ -254,7 +254,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
     let pub_key = result0[2].1.public_key;
 
     // Run heavy reshare
-    let max_malicious = 1;
+    let max_malicious = 2;
     let new_threshold = max_malicious + 1;
     let mut new_participant = participants.clone();
     new_participant.pop();
@@ -286,7 +286,7 @@ fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
 #[test]
 fn test_e2e() -> Result<(), Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let participants = generate_participants(8);
+    let participants = generate_participants(7);
     let max_malicious = 3;
 
     let keygen_result = run_keygen(&participants, max_malicious + 1, &mut rng);
@@ -359,6 +359,7 @@ fn test_e2e_random_identifiers_with_rerandomization() -> Result<(), Box<dyn Erro
 }
 
 #[test]
+#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
 fn test_robustness_without_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail
@@ -367,6 +368,7 @@ fn test_robustness_without_rerandomization() {
 }
 
 #[test]
+#[ignore] // this test is ignored because our scheme is not yet robust due to split-view attacks
 fn test_robustness_with_rerandomization() {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     // Without robustness, the signature verification would fail

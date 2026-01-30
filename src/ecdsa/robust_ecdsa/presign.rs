@@ -39,31 +39,6 @@ pub fn presign(
         });
     }
 
-    if args.max_malicious.value() > participants.len() {
-        return Err(InitializationError::BadParameters(
-            "threshold must be less than or equals to participant count".to_string(),
-        ));
-    }
-
-    // if 2 * args.threshold + 1 > participants.len()
-    // this complex way prevents overflowing
-    if args
-        .max_malicious
-        .value()
-        .checked_mul(2)
-        .and_then(|v| v.checked_add(1))
-        .ok_or_else(|| {
-            InitializationError::BadParameters(
-                "2*threshold+1 must be less than usize::MAX".to_string(),
-            )
-        })?
-        > participants.len()
-    {
-        return Err(InitializationError::BadParameters(
-            "2*threshold+1 must be less than or equals to participant count".to_string(),
-        ));
-    }
-
     let participants =
         ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
 
@@ -72,6 +47,35 @@ pub fn presign(
             role: "self",
             participant: me,
         });
+    }
+
+    if args.max_malicious.value() > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "max_malicious must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    let robust_ecdsa_threshold = args
+        .max_malicious
+        .value()
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(1))
+        .ok_or_else(|| {
+            InitializationError::BadParameters(
+                "2*max_malicious+1 must be less than usize::MAX".to_string(),
+            )
+        })?;
+    if robust_ecdsa_threshold > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    // To prevent split-view attacks documented in docs/ecdsa/robust_ecdsa/signing.md
+    if participants.len() != robust_ecdsa_threshold {
+        return Err(InitializationError::BadParameters(
+            "the number of participants during presigning must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+        ));
     }
 
     let ctx = Comms::new();

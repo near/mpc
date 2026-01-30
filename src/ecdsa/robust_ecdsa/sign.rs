@@ -55,7 +55,7 @@ pub fn sign(
     }
 
     // ensure number of participants during the signing phase is >= 2 * max_malicious + 1
-    let threshold = max_malicious
+    let robust_ecdsa_threshold = max_malicious
         .into()
         .value()
         .checked_mul(2)
@@ -65,11 +65,23 @@ pub fn sign(
                 "2*threshold+1 must be less than usize::MAX".to_string(),
             )
         })?;
-    if participants.len() < threshold {
-        return Err(InitializationError::NotEnoughParticipantsForThreshold {
-            threshold,
-            participants: participants.len(),
-        });
+    if robust_ecdsa_threshold > participants.len() {
+        return Err(InitializationError::BadParameters(
+            "2*max_malicious+1 must be less than or equals to participant count".to_string(),
+        ));
+    }
+
+    // The next two conditions prevent split-view attacks
+    // documented in docs/ecdsa/robust_ecdsa/signing.md
+    if participants.len() != robust_ecdsa_threshold {
+        return Err(InitializationError::BadParameters(
+            "the number of participants during signing must be exactly 2*max_malicious+1 to avoid split view attacks".to_string(),
+        ));
+    }
+    if bool::from(msg_hash.is_zero()) {
+        return Err(InitializationError::BadParameters(
+            "msg_hash cannot be 0 to avoid potential split view attacks".to_string(),
+        ));
     }
 
     let ctx = Comms::new();
@@ -384,7 +396,7 @@ mod test {
     }
 
     #[test]
-    fn test_sign_fails_if_threshold_too_high() {
+    fn test_sign_fails_if_max_malicious_too_high() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants(2);
         let max_malicious = 1;
@@ -421,7 +433,7 @@ mod test {
             Err(err) => {
                 let text = err.to_string();
                 assert!(
-                    text.contains("Participant count cannot be"),
+                    text.contains("bad parameters: 2*max_malicious+1 must be less than or equals to participant count"),
                     "unexpected error type: {text}"
                 );
             }
