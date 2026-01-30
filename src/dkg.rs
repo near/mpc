@@ -553,7 +553,7 @@ pub async fn do_keygen<C: Ciphersuite>(
 
 /// This function is to be called before running DKG
 /// It ensures that the input parameters are valid
-pub fn assert_keygen_invariants(
+pub fn assert_key_invariants(
     participants: &[Participant],
     me: Participant,
     threshold: impl Into<ReconstructionLowerBound>,
@@ -633,7 +633,7 @@ pub async fn do_reshare<C: Ciphersuite>(
 }
 
 // Step 1.1
-pub fn reshare_assertions<C: Ciphersuite>(
+pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
     threshold: impl Into<ReconstructionLowerBound>,
@@ -644,33 +644,7 @@ pub fn reshare_assertions<C: Ciphersuite>(
     let threshold = usize::from(threshold.into());
     let old_threshold = usize::from(old_threshold.into());
 
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-    // Step 1.1
-    if threshold > participants.len() {
-        return Err(InitializationError::ThresholdTooLarge {
-            threshold,
-            max: participants.len(),
-        });
-    }
-
-    // Step 1.1
-    if threshold < 2 {
-        return Err(InitializationError::ThresholdTooSmall { threshold, min: 2 });
-    }
-
-    let participants =
-        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
-
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
+    let participants = assert_key_invariants(participants, me, threshold)?;
 
     let old_participants =
         ParticipantList::new(old_participants).ok_or(InitializationError::DuplicateParticipants)?;

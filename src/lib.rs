@@ -28,7 +28,7 @@ mod dkg;
 pub mod protocol;
 mod thresholds;
 
-use crate::dkg::{assert_keygen_invariants, do_keygen, do_reshare, reshare_assertions};
+use crate::dkg::{assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare};
 use crate::errors::InitializationError;
 use crate::participants::Participant;
 use crate::protocol::internal::{make_protocol, Comms};
@@ -96,7 +96,7 @@ where
     Scalar<C>: Send,
 {
     let comms = Comms::new();
-    let participants = assert_keygen_invariants(participants, me, threshold)?;
+    let participants = assert_key_invariants(participants, me, threshold)?;
     let fut = do_keygen::<C>(comms.shared_channel(), participants, me, threshold, rng);
     Ok(make_protocol(comms, fut))
 }
@@ -119,7 +119,7 @@ where
 {
     let comms = Comms::new();
     let threshold = new_threshold;
-    let (participants, old_participants) = reshare_assertions::<C>(
+    let (participants, old_participants) = assert_reshare_keys_invariants::<C>(
         new_participants,
         me,
         threshold,
@@ -162,7 +162,7 @@ where
     // NOTE: this equality must be kept, as changing the threshold during `key refresh`
     // might lead to insecure scenarios. For more information see https://github.com/ZcashFoundation/frost/security/advisories/GHSA-wgq8-vr6r-mqxm
     let threshold = old_threshold;
-    let (participants, old_participants) = reshare_assertions::<C>(
+    let (participants, old_participants) = assert_reshare_keys_invariants::<C>(
         old_participants,
         me,
         threshold,
