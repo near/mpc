@@ -115,10 +115,24 @@ flowchart TD
   - `VerifyForeignTxStorage` persists verification requests.
   - Atomic write with `SignRequestStorage` to avoid crash inconsistencies.
 
-### New public types
+### New contract methods
+```rust
+verify_foreign_transaction(request: VerifyForeignTxRequestArgs) -> VerifyForeignTxResponse // Through a promise
+respond_verify_foreign_tx({ request, response }) // Respond method for signers
+```
+
+### New contract types
 
 ```rust
+pub struct VerifyForeignTxRequestArgs {
+    pub chain: ForeignChain,
+    pub tx_id: TransactionId, // TxID is the payload we're signing
+    pub path: String, // Key derivation path
+    pub domain_id: Option<DomainId>, // Defaults to 0 (legacy ECDSA)
+}
+
 pub struct VerifyForeignTxRequest {
+    // Constructed from the args
     pub chain: ForeignChain,
     pub tx_id: TransactionId,
     pub tweak: Tweak,
@@ -148,11 +162,6 @@ pub struct VerifyForeignTxResponse {
     pub verified_at_block: BlockId,
     pub signature: SignatureResponse,
 }
-```
-
-```rust
-verify_foreign_transaction(request) -> promise (callback on success)
-respond_verify_foreign_tx({ request, response })
 ```
 
 **What is signed and over what key**
