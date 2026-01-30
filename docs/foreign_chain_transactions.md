@@ -35,57 +35,92 @@ Scope notes from the initial discussion:
 
 ## High-Level Design
 
-### C4 Context Diagram
+### System Context Diagram
 
 ```mermaid
-C4Context
-title Foreign Chain Transaction Verification - Context
+---
+title: Foreign Chain Verification - System Context
+---
+flowchart TD
+    DEV["**Developer / Bridge Service**
+      _Submits verify_foreign_transaction requests._"]
 
-Person(dev, "Developer / Bridge Service")
-System_Boundary(near, "NEAR MPC Network") {
-  System(mpc_contract, "MPC Signer Contract", "NEAR smart contract")
-  System(mpc_nodes, "MPC Nodes", "Threshold signing + foreign tx verification")
-}
-System_Ext(foreign_chain, "Foreign Chain", "Solana, future chains")
-System_Ext(rpc_providers, "RPC Providers", "JSON-RPC endpoints")
+    SC["**MPC Signer Contract**
+      _On-chain policy + pending requests._"]
 
-Rel(dev, mpc_contract, "verify_foreign_transaction()")
-Rel(mpc_nodes, mpc_contract, "respond_verify_foreign_tx()")
-Rel(mpc_nodes, rpc_providers, "Query tx status")
-Rel(rpc_providers, foreign_chain, "Read chain state")
+    MPC["**MPC Nodes**
+      _Verify foreign tx status and sign._"]
+
+    RPC["**RPC Providers**
+      _JSON-RPC endpoints._"]
+
+    FC["**Foreign Chain**
+      _Solana, future chains._"]
+
+    DEV -->|"1. verify_foreign_transaction()"| SC
+    MPC -->|"3. respond_verify_foreign_tx()"| SC
+    MPC -->|"2. query tx status"| RPC
+    RPC -->|"read chain state"| FC
+
+    DEV@{ shape: manual-input}
+    SC@{ shape: db}
+    MPC@{ shape: proc}
+    RPC@{ shape: proc}
+    FC@{ shape: cylinder}
 ```
 
-### C4 Container Diagram
+### Component Diagram
 
 ```mermaid
-C4Container
-title Foreign Chain Transaction Verification - Containers
+---
+title: Foreign Chain Verification - Components
+---
+flowchart TD
+    DEV["**Developer / Bridge Service**
+      _Calls verify_foreign_transaction._"]
 
-System_Boundary(near, "NEAR MPC Network") {
-  Container(mpc_contract, "MPC Signer Contract", "Rust / NEAR", "Stores policy + pending requests; verifies signatures")
+    SC["**MPC Signer Contract**
+      _Stores policy + pending requests.
+      Verifies signatures._"]
 
-  Container(mpc_node, "MPC Node", "Rust", "Indexer + MPC client + foreign verifier")
-  Container(indexer, "Indexer", "Rust", "Watches contract receipts")
-  ContainerDb(rocksdb, "RocksDB", "Keyshare + request storage")
+    IDX["**Indexer**
+      _Watches contract receipts._"]
 
-  Container(foreign_verifier, "Foreign Chain Verifier", "Rust", "RPC-based verification per chain")
-}
+    MPC["**MPC Client**
+      _Coordinates verification + signing._"]
 
-System_Ext(rpc_providers, "RPC Providers", "JSON-RPC / HTTP")
-Person(dev, "Developer / Bridge Service")
+    VER["**Foreign Chain Verifier**
+      _RPC-based chain verification._"]
 
-Rel(dev, mpc_contract, "verify_foreign_transaction()", "NEAR tx")
-Rel(indexer, mpc_contract, "index receipts / state")
-Rel(mpc_node, indexer, "block updates")
-Rel(mpc_node, foreign_verifier, "verify(tx_id, finality)")
-Rel(foreign_verifier, rpc_providers, "getSignatureStatuses / chain-specific RPC")
-Rel(mpc_node, rocksdb, "persist requests")
-Rel(mpc_node, mpc_contract, "respond_verify_foreign_tx()", "NEAR tx")
+    DB["**RocksDB**
+      _Request + keyshare storage._"]
+
+    RPC["**RPC Providers**
+      _Chain JSON-RPC endpoints._"]
+
+    DEV -->|"1. verify_foreign_transaction()"| SC
+    SC -->|"2. receipts / state"| IDX
+    IDX -->|"3. block updates"| MPC
+    MPC -->|"4. verify(tx_id, finality)"| VER
+    VER -->|"5. chain RPC calls"| RPC
+    MPC -->|"6. persist requests"| DB
+    MPC -->|"7. respond_verify_foreign_tx()"| SC
+
+    DEV@{ shape: manual-input}
+    SC@{ shape: db}
+    IDX@{ shape: proc}
+    MPC@{ shape: proc}
+    VER@{ shape: proc}
+    DB@{ shape: cylinder}
+    RPC@{ shape: proc}
 ```
 
 ### Core Flow: Verify Foreign Transaction
 
 ```mermaid
+---
+title: Verify Foreign Transaction - Sequence
+---
 sequenceDiagram
   participant User as Developer / Bridge
   participant Contract as MPC Signer Contract
@@ -117,6 +152,9 @@ sequenceDiagram
 ### Core Flow: Foreign Chain Policy Updates (New Chains / Providers)
 
 ```mermaid
+---
+title: Foreign Chain Policy Updates - Sequence
+---
 sequenceDiagram
   participant Node as MPC Node
   participant Contract as MPC Signer Contract
@@ -245,4 +283,3 @@ provider entries in config (including API keys) to satisfy the policy.
 - Should nodes keep a minimum number of independent providers per chain?
 - Should we add optional multi-provider verification for high-value requests?
 - How do we standardize finality mapping for additional chains (Ethereum, Bitcoin, etc.)?
-
