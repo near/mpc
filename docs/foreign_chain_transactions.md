@@ -2,33 +2,17 @@
 
 Status: Draft (based on PR #1851 / branch `read-foreign-chain`)
 
-## Purpose
+## Purpose & Motivation
 
-This document describes the design for a proposed feature that allows the MPC network to sign payloads attesting to the presence of transactions on other chains.
-
-## Motivation
-
-The MPC network supports signing arbitrary payloads for NEAR users. This allows NEAR contracts to manage custody of funds on other chains. However, there is no way for these contracts to respond to or interact with events happening on other chains (for example, proving that a specific foreign-chain transaction finalized). This feature adds a way to request signatures that are conditional on foreign-chain transaction status.
-
-Primary motivations and use cases:
+This feature lets the MPC network sign payloads only after verifying a specific foreign-chain transaction, so NEAR contracts can react to external chain events without a trusted relayer. Primary use cases:
 
 - Omnibridge inbound flow (foreign chain -> NEAR) where Chain Signatures are required to attest that a foreign transaction finalized successfully.
-- Broader chain abstraction efforts where a single MPC network can verify foreign chain state and sign conditional payloads.
-- Reduce reliance on centralized oracles by having MPC nodes independently verify foreign-chain transaction status.
+- Broader chain abstraction: a single MPC network verifies foreign chain state and signs conditional payloads.
 
-## Goals
+## Scope
 
-- Provide a **contract-level API** to request verification + signing for a foreign transaction.
-- Ensure each MPC node independently verifies the transaction using **configured RPC providers**.
-- Avoid extra consensus rounds: nodes that cannot verify simply **abstain**.
-- Support deterministic provider selection to reduce reliance on any single RPC endpoint.
-- Make it easy to extend support to additional foreign chains over time.
-
-## Non-Goals
-
-- Provide on-chain light client verification (too heavy for the contract).
-- Provide cryptographic proofs of foreign chain state.
-- Support non-ECDSA signature schemes for verify_foreign_transaction (initially ECDSA only).
+- In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain verifiers.
+- Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results, and non-ECDSA schemes for verify_foreign_transaction (initially ECDSA only).
 
 ## High-Level Design
 
@@ -101,8 +85,8 @@ flowchart TD
 **On-chain (mpc-contract)**
 
 - New API:
-  - `verify_foreign_transaction(request)` - stores request, yields a callback.
-  - `respond_verify_foreign_tx(request, response)` - validates signature + resolves the callback.
+  - `verify_foreign_transaction(request)` - stores request, yields a callback. Request includes `chain`, `tx_id`, `finality`, `path`, and optional `domain_id`.
+  - `respond_verify_foreign_tx(request, response)` - validates signature + resolves the callback. Response includes `verified_at_block` and the signature.
   - `vote_foreign_chain_policy(proposal)` - unanimous vote to update supported chains/providers.
   - `get_foreign_chain_policy()` and `get_foreign_chain_policy_proposals()`.
 - Policy gating:
@@ -110,7 +94,9 @@ flowchart TD
   - Request chain must be in policy.
   - Policy includes **provider names only** (no secrets).
 - Payload derivation:
-  - `payload = sha256(tx_id)` (ECDSA only).
+  - `payload = sha256(tx_id_bytes)` (ECDSA only).
+  - For Solana, `tx_id` is a base58 signature in JSON, but the hash uses the raw 64-byte signature bytes.
+  - Tweak derivation: `tweak = derive_tweak(predecessor_account_id, path)`.
 - Finality levels:
   - `Optimistic` (e.g., Solana confirmed)
   - `Final` (e.g., Solana finalized)
@@ -130,6 +116,23 @@ flowchart TD
 - **Storage**
   - `VerifyForeignTxStorage` persists verification requests.
   - Atomic write with `SignRequestStorage` to avoid crash inconsistencies.
+
+### Request/Response Summary (Contract)
+
+```
+verify_foreign_transaction({
+  chain, tx_id, finality, path, domain_id?
+}) -> promise (callback on success)
+
+respond_verify_foreign_tx({
+  request, response: { verified_at_block, signature }
+})
+```
+
+### Failure and Timeout Behavior
+
+- Nodes **abstain** if verification fails (RPC error, tx not found, or not finalized).
+- A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
 
 ### Deterministic Provider Selection
 
@@ -180,30 +183,10 @@ provider entries in config (including API keys) to satisfy the policy.
 - **Operational friction**: Unanimous voting for policy updates may slow rollouts and hot fixes.
 - **Config drift**: Nodes missing required provider keys will fail startup validation.
 
-## Alternatives Considered
-
-1. **On-chain light clients / proofs**
-   - Strong security but high on-chain cost and complexity.
-   - Not practical for multiple chains and frequent requests.
-
-2. **Dedicated oracle / relayer**
-   - Simpler operational model but introduces a new trusted party.
-
-3. **Explicit MPC consensus on verification result**
-   - Adds a round of agreement on foreign tx status.
-   - Increases latency and protocol complexity.
-
-4. **Each node queries multiple providers and cross-checks**
-   - More robust to bad data but higher latency and RPC costs.
-   - Could be added later as a hardening option.
-
-5. **Sign full transaction data or proofs instead of tx_id hash**
-   - Larger payloads, chain-specific parsing, and validation logic.
-   - Current design keeps payload small and stable.
-
 ## Open Questions / Follow-ups
 
 - Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
 - Should nodes keep a minimum number of independent providers per chain?
 - Should we add optional multi-provider verification for high-value requests?
 - How do we standardize finality mapping for additional chains (Ethereum, Bitcoin, etc.)?
+- Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
