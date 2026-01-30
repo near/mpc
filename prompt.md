@@ -38,4 +38,13 @@ See this quote from Bowen - this feature is key to allow using the MPC network t
 
 > Chain Signatures is used in Omnibridge starting from Day 1. Near → Foreign Chain always uses chain signatures, whether the destination chain is Bitcoin, Zcash, Solana, Ethereum, etc. The other direction (foreign chain to Near) uses a variety of proving mechanisms including light clients and wormhole. However, we are also working on migrating that entirely to chain signatures.
 
+PR description summary
+This PR introduces a new MPC signing flow that conditionally signs only after independently verifying that a foreign-chain transaction has succeeded. Users submit a verification request containing a transaction hash, target chain, and finality level. Each MPC node independently verifies the transaction via RPC before participating in signing, with no additional consensus round required—nodes simply abstain if verification fails.
+
+The initial implementation supports Solana and is designed to be easily extensible to additional chains. The contract exposes a new `verify_foreign_transaction` function that derives the signing payload from the transaction ID (SHA-256) and supports ECDSA domains. On-chain policy controls which foreign chains and RPC providers are allowed, with unanimous voting required for policy changes. Nodes automatically validate and synchronize their local configuration against this policy on startup.
+
+Verification uses deterministic RPC provider selection based on participant ID and request ID, ensuring that different nodes query different providers for the same request, reducing reliance on any single RPC endpoint. Fallback to alternate providers is deterministic, improving resilience against faulty or malicious RPC responses.
+
+This design enables secure, trust-minimized cross-chain signing and significantly extends Omnibridge’s multi-chain capabilities, providing a robust foundation for supporting additional foreign chains in the future.
+
 The #1851 PR os on branch `read-foreign-chain`. Please inspect the diff to understand the current idea better. Also please look at key files to understand how the system works around these changes.
