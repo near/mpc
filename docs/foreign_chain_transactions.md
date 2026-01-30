@@ -2,9 +2,13 @@
 
 Status: Draft (based on PR #1851 / branch `read-foreign-chain`)
 
+## Purpose
+
+This document describes the design for a proposed feature that allows the MPC network to sign payloads attesting to the presence of transactions on other chains.
+
 ## Motivation
 
-The MPC network currently signs payloads that are already known to be valid within NEAR. For cross-chain use cases, we need to ensure that a foreign-chain transaction has actually succeeded before the MPC network signs a message derived from it.
+The MPC network supports signing arbitrary payloads for NEAR users. This allows NEAR contracts to manage custody of funds on other chains. However, there is no way for these contracts to respond to or interact with events happening on other chains (for example, proving that a specific foreign-chain transaction finalized). This feature adds a way to request signatures that are conditional on foreign-chain transaction status.
 
 Primary motivations and use cases:
 
