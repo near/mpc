@@ -1,5 +1,5 @@
 pub const fn current_mainnet() -> &'static [u8] {
-    version_3_2_0()
+    version_3_3_2()
 }
 
 pub const fn current_testnet() -> &'static [u8] {
