@@ -1,4 +1,4 @@
-Hey! Can you help me with this issue:
+Hey! Can you help draft an initial design doc in `docs/foreign_chain_transactions.md`? Heres a description of the issue:
 
 ### Background
 
@@ -15,7 +15,7 @@ As a developer I'd like to have key design decisions documented to ensure we're 
 We have a design doc for the foreign transaction validation feature. The design doc should contain the following:
 
 1. **Motivation.** Why is this feature important? What are the use-cases we want to support?
-2. **High level component design.** What are the major components we're implementing, and how are they interacting? How does the flow look end to end when using this feature? Charts following the c4 model would be helpful here.
+2. **High level component design.** What are the major components we're implementing, and how are they interacting? How does the flow look end to end when using this feature? Mermaid charts following the c4 model would be helpful here, as well as sequence diagrams for user flows and the voting flows (config updates + proposing new chains) etc.
 3. **Risks**. What are the major risks if we implement this feature? Can we migrate pieces of it, or will this cause a big maintenance burden going forward.
 4. **Alternatives considered.** Outline some of the alternatives to the design we've considered, and why we chose to proceed with the existing design.
 
@@ -37,3 +37,5 @@ Meeting notes from a discussion on this:
 See this quote from Bowen - this feature is key to allow using the MPC network to move assets from other chains to near.
 
 > Chain Signatures is used in Omnibridge starting from Day 1. Near → Foreign Chain always uses chain signatures, whether the destination chain is Bitcoin, Zcash, Solana, Ethereum, etc. The other direction (foreign chain to Near) uses a variety of proving mechanisms including light clients and wormhole. However, we are also working on migrating that entirely to chain signatures.
+
+The #1851 PR os on branch `read-foreign-chain`. Please inspect the diff to understand the current idea better. Also please look at key files to understand how the system works around these changes.
