@@ -77,34 +77,36 @@ pub struct VerifyForeignTxRequestArgs {
 
 pub struct VerifyForeignTxRequest {
     // Constructed from the args
-    pub chain: ForeignChainConfig,
+    pub chain: ForeignChainRpcRequest,
     pub tx_id: TransactionId,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
 
-pub enum ForeignChainConfig {
-    Solana(SolanaConfig),
-    Bitcoin(BitcoinConfig),
-    // Future chains...
-}
-
-pub struct SolanaConfig {
-    pub finality: SolanaFinality, // Optimistic or Final
-}
-
-pub enum SolanaFinality {
-    Optimistic,
-    Final,
-}
-
-pub struct BitcoinConfig {
-    pub confirmations: usize, // required confirmations before considering final
-}
-
 pub struct VerifyForeignTxResponse {
     pub verified_at_block: BlockId,
     pub signature: SignatureResponse, // Signature over `sha256(tx_id_bytes)` where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
+}
+
+pub enum ForeignChainRpcRequest {
+    Solana(SolanaRpcRequest),
+    Bitcoin(BitcoinRpcRequest),
+    // Future chains...
+}
+
+pub struct SolanaRpcRequest {
+    pub tx_id: SolanaTxId,
+    pub finality: Finality, // Optimistic or Final
+}
+
+pub struct BitcoinRpcRequest {
+    pub tx_id: BitcoinTxId,
+    pub confirmations: usize, // required confirmations before considering final
+}
+
+pub enum Finality{
+    Optimistic,
+    Final,
 }
 ```
 
@@ -114,12 +116,12 @@ The contract maintains a *foreign chain policy* that defines which chains and RP
 
 ```rust
 pub struct ForeignChainPolicy {
-    pub chains: Vec<ForeignChainEntry>,
+    pub chains: BTreeSet<ForeignChainConfig>,
 }
 
-pub struct ForeignChainProviders {
+pub struct ForeignChainConfig {
     pub chain: ForeignChain,
-    pub providers: Vec<RpcProviderName>,
+    pub providers: NonEmptyVec<RpcProviderName>,
 }
 
 pub enum ForeignChain {
@@ -237,5 +239,6 @@ provider entries in config (including API keys) to satisfy the policy.
 
 ## Discussion points
 - Finality interface right now diverges from the original PR. Are we okay with this new structure?
+- Should we identify RPC providers by a base URL instead of an arbitrary name?
 - Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
 - Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
