@@ -38,7 +38,6 @@ use threshold_signatures::{
     frost_ed25519::{self},
     KeygenOutput,
 };
-use utilities::AccountIdExtV1;
 
 #[derive(Debug)]
 pub enum DomainResponseTest {
@@ -417,11 +416,11 @@ pub async fn make_and_submit_requests(
     const NUM_TESTS: usize = 2;
 
     let alice = worker.dev_create_account().await.unwrap();
-    let alice_id = alice.id().as_v2_account_id();
+    let alice_id = alice.id();
 
     for key in keys {
         for _ in 0..NUM_TESTS {
-            match DomainResponseTest::new(rng, key, &alice_id) {
+            match DomainResponseTest::new(rng, key, alice_id) {
                 DomainResponseTest::Sign(inner) => {
                     let transaction = submit_sign_request(&alice, &inner.args, contract)
                         .await

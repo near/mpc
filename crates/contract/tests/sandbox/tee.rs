@@ -21,7 +21,6 @@ use mpc_contract::{
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
-use utilities::AccountIdExtV1;
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -619,7 +618,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let target_node_id = initial_participants
         .get_node_ids()
         .into_iter()
-        .find(|node| node.account_id == target_account.id().as_v2_account_id())
+        .find(|node| &node.account_id == target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
@@ -674,10 +673,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         .iter()
         .map(|(account_id, _, _)| account_id.clone())
         .collect();
-    let expected_accounts: Vec<_> = remaining_accounts
-        .iter()
-        .map(|a| a.id().as_v2_account_id())
-        .collect();
+    let expected_accounts: Vec<_> = remaining_accounts.iter().map(|a| a.id().clone()).collect();
     assert_eq!(final_accounts, expected_accounts);
 
     Ok(())

@@ -52,13 +52,12 @@ use k256::elliptic_curve::PrimeField;
 
 use mpc_attestation::attestation::Attestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
     store::{IterableMap, LookupMap},
-    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -73,7 +72,6 @@ use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
-use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Register used to receive data id from `promise_await_data`.
 /// Note: This is an implementation constant, not a configurable policy value.
@@ -244,7 +242,7 @@ impl MpcContract {
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
-            &predecessor.as_v2_account_id(),
+            &predecessor,
             &request.path,
         );
 
@@ -298,8 +296,7 @@ impl MpcContract {
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
     ) -> Result<dtos::PublicKey, Error> {
-        let predecessor: AccountId =
-            predecessor.unwrap_or_else(|| env::predecessor_account_id().as_v2_account_id());
+        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
@@ -415,7 +412,7 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let account_id = env::predecessor_account_id().as_v2_account_id();
+        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             request.domain_id,
@@ -636,9 +633,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.as_v1_account_id())
-                        .transfer(diff)
-                        .detach();
+                    Promise::new(account_id).transfer(diff).detach();
                 }
             }
         }
@@ -936,7 +931,7 @@ impl MpcContract {
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
-        let proposer = self.voter_or_panic().as_v1_account_id();
+        let proposer = self.voter_or_panic();
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
@@ -1432,7 +1427,7 @@ impl MpcContract {
         if !Self::caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
-        let voter = env::signer_account_id().as_v2_account_id();
+        let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1493,7 +1488,7 @@ impl MpcContract {
             signer_id, predecessor_id
         );
 
-        signer_id.as_v2_account_id()
+        signer_id
     }
 }
 
@@ -1840,9 +1835,7 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        let contract_account_id = AccountId::from_str("contract_account.near")
-            .unwrap()
-            .as_v1_account_id();
+        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .predecessor_account_id(contract_account_id.clone())
@@ -1892,8 +1885,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone().as_v1_account_id())
-            .predecessor_account_id(node_id.account_id.clone().as_v1_account_id())
+            .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1929,17 +1922,14 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
         contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
-        let derivation_path = derive_tweak(
-            &context.predecessor_account_id.as_v2_account_id(),
-            &key_path,
-        );
+        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
         let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
@@ -2010,7 +2000,7 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
@@ -2040,7 +2030,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2081,7 +2071,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2103,8 +2093,8 @@ mod tests {
         let first_participant_id = participants.participants()[0].0.clone();
 
         let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -2137,8 +2127,8 @@ mod tests {
             .unwrap();
 
         let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone().as_v1_account_id())
-            .predecessor_account_id(account_id.clone().as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -2170,8 +2160,8 @@ mod tests {
         threshold: Threshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2294,7 +2284,7 @@ mod tests {
 
         // ❌ Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone().as_v1_account_id())
+            .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
             .attached_deposit(NearToken::from_near(1))
             .build();
@@ -2331,8 +2321,8 @@ mod tests {
 
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
@@ -2375,7 +2365,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
             request.domain_id,
-            &context.predecessor_account_id.clone().as_v2_account_id(),
+            &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
 
@@ -2394,8 +2384,8 @@ mod tests {
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -2418,8 +2408,8 @@ mod tests {
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -3206,8 +3196,8 @@ mod tests {
 
             // Remove the vote
             testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
                 .build());
 
             contract.remove_update_vote();
@@ -3244,8 +3234,8 @@ mod tests {
         let account_id = test_update.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
 
         contract.remove_update_vote();
@@ -3259,8 +3249,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3274,8 +3264,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3316,8 +3306,8 @@ mod tests {
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_1.as_v1_account_id())
-            .predecessor_account_id(participant_1.as_v1_account_id())
+            .signer_account_id(participant_1.clone())
+            .predecessor_account_id(participant_1)
             .build());
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
@@ -3329,8 +3319,8 @@ mod tests {
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_2.as_v1_account_id())
-            .predecessor_account_id(participant_2.as_v1_account_id())
+            .signer_account_id(participant_2.clone())
+            .predecessor_account_id(participant_2)
             .build());
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
@@ -3411,13 +3401,13 @@ mod tests {
             .participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id)
+                .predecessor_account_id(participant_account_id.clone())
                 .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
                 .build());
 
@@ -3509,8 +3499,8 @@ mod tests {
         // Set time to exact expiry boundary
         let (first_account_id, _, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(first_account_id.as_v1_account_id())
-            .predecessor_account_id(first_account_id.as_v1_account_id())
+            .signer_account_id(first_account_id.clone())
+            .predecessor_account_id(first_account_id.clone())
             .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
             .build());
 
@@ -3623,7 +3613,7 @@ mod tests {
             .participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         let attestation = mock_dto_dstack_attestation();

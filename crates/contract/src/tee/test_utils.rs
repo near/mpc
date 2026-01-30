@@ -8,7 +8,6 @@ use near_account_id::AccountId;
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{testing_env, BlockHeight, PublicKey};
 use rand::Rng;
-use utilities::AccountIdExtV2;
 
 /// Test environment for managing VM context state.
 ///
@@ -36,8 +35,8 @@ impl Environment {
         ctx.block_height(block_height);
         ctx.random_seed(seed);
         let signer = signer.unwrap_or(gen_account_id());
-        ctx.signer_account_id(signer.clone().as_v1_account_id());
-        ctx.predecessor_account_id(signer.clone().as_v1_account_id());
+        ctx.signer_account_id(signer.clone());
+        ctx.predecessor_account_id(signer.clone());
         testing_env!(ctx.build());
         Environment {
             signer,
@@ -52,8 +51,8 @@ impl Environment {
         ctx.signer_account_pk(pk);
         ctx.block_height(self.block_height);
         ctx.random_seed(self.seed);
-        ctx.signer_account_id(self.signer.clone().as_v1_account_id());
-        ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
+        ctx.signer_account_id(self.signer.clone());
+        ctx.predecessor_account_id(self.signer.clone());
         testing_env!(ctx.build());
     }
 
@@ -68,8 +67,8 @@ impl Environment {
         let mut ctx = VMContextBuilder::new();
         ctx.block_height(self.block_height);
         ctx.random_seed(self.seed);
-        ctx.signer_account_id(self.signer.clone().as_v1_account_id());
-        ctx.predecessor_account_id(self.signer.clone().as_v1_account_id());
+        ctx.signer_account_id(self.signer.clone());
+        ctx.predecessor_account_id(self.signer.clone());
         testing_env!(ctx.build());
     }
 

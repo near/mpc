@@ -21,7 +21,6 @@ use near_account_id::AccountId;
 use near_workspaces::types::NearToken;
 use rand::SeedableRng;
 use std::time::Duration;
-use utilities::AccountIdExtV1;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
 const NUM_BLOCKS_BETWEEN_REQUESTS: u64 = 2;
@@ -53,8 +52,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
         let predecessor_id = alice.id();
         for key in &keys {
             {
-                let req =
-                    DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+                let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
                 req.run(&alice, &contract, attested_account)
                     .await
                     .with_context(|| format!("{:?}", req))
@@ -80,7 +78,7 @@ async fn test_contract_request_duplicate_requests_all_schemes() -> anyhow::Resul
         let alice = worker.dev_create_account().await.unwrap();
         let predecessor_id = alice.id();
         // check that in case of duplicate request, only the most recent will be signed:
-        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let status_1 = req
             .submit_request_ensure_included(&alice, &contract)
             .await?;
@@ -125,7 +123,7 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
         let alice = worker.dev_create_account().await.unwrap();
         let predecessor_id = alice.id();
         // Check that a sign with no response from MPC network properly errors out:
-        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let status = req
             .submit_request_ensure_included(&alice, &contract)
             .await?;
@@ -151,7 +149,7 @@ async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
     let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
-        let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
+        let req = DomainResponseTest::new(&mut rng, key, alice.id());
         req.run(&alice, &contract, attested_account).await?;
 
         let new_balance = alice.view_account().await?.balance;
@@ -189,7 +187,7 @@ async fn test_contract_fail_refund_all_schemes() -> anyhow::Result<()> {
     let mut contract_balance = contract.view_account().await?.balance;
 
     for key in &keys {
-        let req = DomainResponseTest::new(&mut rng, key, &alice.id().as_v2_account_id());
+        let req = DomainResponseTest::new(&mut rng, key, alice.id());
         let status = req
             .submit_request_ensure_included(&alice, &contract)
             .await?;
@@ -227,7 +225,7 @@ async fn test_contract_request_deposits_all_schemes() -> anyhow::Result<()> {
 
     for key in &keys {
         // Try to sign with no deposit, should fail.
-        let req = DomainResponseTest::new(&mut rng, key, &predecessor_id.as_v2_account_id());
+        let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
         let status = match &req {
             DomainResponseTest::Sign(req) => {
                 let status = contract
@@ -291,12 +289,7 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
     let predecessor_id = contract.id();
 
     for _ in 0..NUM_MSGS {
-        let req = gen_secp_256k1_sign_test(
-            &mut rng,
-            key.domain_id(),
-            &predecessor_id.as_v2_account_id(),
-            sk,
-        );
+        let req = gen_secp_256k1_sign_test(&mut rng, key.domain_id(), predecessor_id, sk);
 
         let status = contract
             .call("sign")
