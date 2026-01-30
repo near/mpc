@@ -14,9 +14,15 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 - In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain verifiers.
 - Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results, and non-ECDSA schemes for verify_foreign_transaction (initially ECDSA only).
 
-## High-Level Design
+## Overview
 
-### System Context Diagram
+At a high level:
+
+1. A user submits a `verify_foreign_transaction` request with a chain-specific verification config.
+2. MPC nodes verify the foreign transaction via configured RPC providers.
+3. If verified, MPC signs `sha256(tx_id_bytes)` with the derived domain key and returns the signature on-chain.
+
+### User Flow: Verify a Foreign Transaction
 
 ```mermaid
 ---
@@ -50,78 +56,15 @@ flowchart TD
     FC@{ shape: cylinder}
 ```
 
-### Core Flow: Foreign Chain Policy Updates (New Chains / Providers)
+With the user flow in mind, the on-chain interface is:
 
-```mermaid
----
-title: Foreign Chain Policy Updates - High Level
----
-flowchart TD
-    NODE["**MPC Node**
-      _Local config + API keys._"]
+### Contract Interface (Request/Response)
 
-    SC["**MPC Signer Contract**
-      _Foreign chain policy._"]
-
-    COMP["**Compare**
-      _Local config vs policy._"]
-
-    UPDATED["**Policy Updated**
-      _Unanimous vote reached._"]
-
-    NODE -->|"1. read policy"| SC
-    NODE -->|"2. compare"| COMP
-    COMP -->|"3. vote if different"| SC
-    SC -->|"4. update policy on unanimity"| UPDATED
-
-    NODE@{ shape: proc}
-    SC@{ shape: db}
-    COMP@{ shape: proc}
-    UPDATED@{ shape: proc}
-```
-
-### Key Components and Responsibilities
-
-**On-chain (mpc-contract)**
-
-- New API:
-  - `verify_foreign_transaction(request)` - stores request, yields a callback. Request includes `chain`, `tx_id`, `finality`, `path`, and optional `domain_id`.
-  - `respond_verify_foreign_tx(request, response)` - validates signature + resolves the callback. Response includes `verified_at_block` and the signature.
-  - `vote_foreign_chain_policy(proposal)` - unanimous vote to update supported chains/providers.
-  - `get_foreign_chain_policy()` and `get_foreign_chain_policy_proposals()`.
-- Policy gating:
-  - If policy is empty, verification is **disabled**.
-  - Request chain must be in policy.
-  - Policy includes **provider names only** (no secrets).
-- Payload derivation:
-  - `payload = sha256(tx_id_bytes)` (ECDSA only).
-  - For Solana, `tx_id` is a base58 signature in JSON, but the hash uses the raw 64-byte signature bytes.
-  - The signed key is derived from the domain key and `tweak`.
-- Chain-specific verification parameters (e.g., Solana finality or Bitcoin confirmations).
-
-**Off-chain (mpc-node)**
-
-- **ForeignChainVerifierRegistry**
-  - Dispatches to chain-specific verifiers (initially Solana).
-  - Uses deterministic provider selection.
-- **Foreign Chain Policy Voter**
-  - On startup: validates local config vs on-chain policy.
-  - Auto-votes if policy differs from local config.
-- **MPC Client**
-  - Indexes verify_foreign_tx requests.
-  - Verifies transaction via RPC, then runs MPC signing.
-  - Responds to contract with `verified_at_block` + signature.
-- **Storage**
-  - `VerifyForeignTxStorage` persists verification requests.
-  - Atomic write with `SignRequestStorage` to avoid crash inconsistencies.
-
-### New contract methods
 ```rust
+// Contract methods
 verify_foreign_transaction(request: VerifyForeignTxRequestArgs) -> VerifyForeignTxResponse // Through a promise
 respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```
-
-### New contract types
 
 ```rust
 pub struct VerifyForeignTxRequestArgs {
@@ -164,7 +107,15 @@ pub struct VerifyForeignTxResponse {
 }
 ```
 
-**What is signed and over what key**
+**Contract behavior**
+
+- Policy gating:
+  - If policy is empty, verification is **disabled**.
+  - Request chain must be in policy.
+  - Policy includes **provider names only** (no secrets).
+- Verification parameters are chain-specific (e.g., Solana finality or Bitcoin confirmations).
+
+**Signing semantics**
 
 - Payload is `sha256(tx_id_bytes)`, where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
 - Signature is ECDSA over that payload using the domain key derived with `tweak` (i.e., the derived key for `domain_id` + `tweak`).
@@ -174,6 +125,68 @@ pub struct VerifyForeignTxResponse {
 
 - Nodes **abstain** if verification fails (RPC error, tx not found, or not finalized).
 - A failed verification does **not** produce an on-chain failure response. The request eventually times out and fails with the standard timeout error.
+
+For operators, policy updates control which chains/providers are allowed:
+
+### Operator Flow: Policy Updates (New Chains / Providers)
+
+```mermaid
+---
+title: Foreign Chain Policy Updates - High Level
+---
+flowchart TD
+    NODE["**MPC Node**
+      _Local config + API keys._"]
+
+    SC["**MPC Signer Contract**
+      _Foreign chain policy._"]
+
+    COMP["**Compare**
+      _Local config vs policy._"]
+
+    UPDATED["**Policy Updated**
+      _Unanimous vote reached._"]
+
+    NODE -->|"1. read policy"| SC
+    NODE -->|"2. compare"| COMP
+    COMP -->|"3. vote if different"| SC
+    SC -->|"4. update policy on unanimity"| UPDATED
+
+    NODE@{ shape: proc}
+    SC@{ shape: db}
+    COMP@{ shape: proc}
+    UPDATED@{ shape: proc}
+```
+
+### Contract Policy State (Types)
+
+```rust
+pub struct ForeignChainPolicy {
+    pub chains: Vec<ForeignChainEntry>,
+}
+
+pub struct ForeignChainEntry {
+    pub chain: ForeignChain,
+    pub required_providers: Vec<RpcProviderName>,
+}
+
+pub struct RpcProviderName(pub String);
+
+pub struct ForeignChainPolicyVotes {
+    // Each authenticated participant has one active vote for a proposal.
+    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
+}
+```
+
+### Node Configuration and Policy Updates
+
+- Node config contains chain RPC providers and timeouts (API keys stay local).
+- On startup, nodes compare local config to the on-chain policy.
+- If different, a node submits a vote for the policy derived from its local config.
+- Policy updates are applied only when all current participants vote for the same proposal.
+- Pending proposals and vote counts are visible via `get_foreign_chain_policy_proposals()`.
+
+Provider selection is deterministic across nodes:
 
 ### Deterministic Provider Selection
 
