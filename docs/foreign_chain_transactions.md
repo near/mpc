@@ -69,107 +69,58 @@ flowchart TD
     FC@{ shape: cylinder}
 ```
 
-### Component Diagram
-
-```mermaid
----
-title: Foreign Chain Verification - Components
----
-flowchart TD
-    DEV["**Developer / Bridge Service**
-      _Calls verify_foreign_transaction._"]
-
-    SC["**MPC Signer Contract**
-      _Stores policy + pending requests.
-      Verifies signatures._"]
-
-    IDX["**Indexer**
-      _Watches contract receipts._"]
-
-    MPC["**MPC Client**
-      _Coordinates verification + signing._"]
-
-    VER["**Foreign Chain Verifier**
-      _RPC-based chain verification._"]
-
-    DB["**RocksDB**
-      _Request + keyshare storage._"]
-
-    RPC["**RPC Providers**
-      _Chain JSON-RPC endpoints._"]
-
-    DEV -->|"1. verify_foreign_transaction()"| SC
-    SC -->|"2. receipts / state"| IDX
-    IDX -->|"3. block updates"| MPC
-    MPC -->|"4. verify(tx_id, finality)"| VER
-    VER -->|"5. chain RPC calls"| RPC
-    MPC -->|"6. persist requests"| DB
-    MPC -->|"7. respond_verify_foreign_tx()"| SC
-
-    DEV@{ shape: manual-input}
-    SC@{ shape: db}
-    IDX@{ shape: proc}
-    MPC@{ shape: proc}
-    VER@{ shape: proc}
-    DB@{ shape: cylinder}
-    RPC@{ shape: proc}
-```
-
 ### Core Flow: Verify Foreign Transaction
 
 ```mermaid
 ---
-title: Verify Foreign Transaction - Sequence
+title: Verify Foreign Transaction - High Level
 ---
-sequenceDiagram
-  participant User as Developer / Bridge
-  participant Contract as MPC Signer Contract
-  participant Indexer as Node Indexer
-  participant MPC as MPC Client
-  participant Verifier as Foreign Chain Verifier
-  participant RPC as RPC Provider
+flowchart TD
+    DEV["**Developer / Bridge Service**
+      _Submits verification request._"]
 
-  User->>Contract: verify_foreign_transaction(chain, tx_id, finality, path, domain_id?)
-  Contract->>Contract: validate policy, scheme (ECDSA only), deposit, gas
-  Contract-->>User: promise yield (return_verify_foreign_tx_on_success)
+    SC["**MPC Signer Contract**
+      _Validates policy + enqueues request._"]
 
-  Indexer-->>MPC: new VerifyForeignTx request (from receipts)
-  MPC->>Verifier: verify(chain, tx_id, finality, provider_context)
-  Verifier->>RPC: query tx status
-  RPC-->>Verifier: status + block/slot
-  Verifier-->>MPC: VerificationOutput(success, block_id)
+    MPC["**MPC Nodes**
+      _Verify foreign tx + sign._"]
 
-  alt verification succeeds
-    MPC->>MPC: run MPC signing with payload = sha256(tx_id)
-    MPC->>Contract: respond_verify_foreign_tx(request, {verified_at_block, signature})
-    Contract->>Contract: verify signature against derived payload
-    Contract-->>User: resolve promise with VerifyForeignTxResponse
-  else verification fails / not found / not final
-    MPC-->>Contract: no response (node abstains)
-  end
+    RPC["**RPC Providers**
+      _Return tx status._"]
+
+    DEV -->|"1. verify_foreign_transaction()"| SC
+    SC -->|"2. request observed by nodes"| MPC
+    MPC -->|"3. verify tx status"| RPC
+    MPC -->|"4. sign payload = sha256(tx_id)"| MPC
+    MPC -->|"5. respond_verify_foreign_tx()"| SC
+    SC -->|"6. resolve promise"| DEV
+
+    DEV@{ shape: manual-input}
+    SC@{ shape: db}
+    MPC@{ shape: proc}
+    RPC@{ shape: proc}
 ```
 
 ### Core Flow: Foreign Chain Policy Updates (New Chains / Providers)
 
 ```mermaid
 ---
-title: Foreign Chain Policy Updates - Sequence
+title: Foreign Chain Policy Updates - High Level
 ---
-sequenceDiagram
-  participant Node as MPC Node
-  participant Contract as MPC Signer Contract
+flowchart TD
+    NODE["**MPC Node**
+      _Local config + API keys._"]
 
-  Node->>Contract: get_foreign_chain_policy()
-  Node->>Node: validate local config against policy
+    SC["**MPC Signer Contract**
+      _Foreign chain policy._"]
 
-  alt policy differs from local config
-    Node->>Contract: vote_foreign_chain_policy(proposal from local config)
-    Contract->>Contract: record vote
-    Contract-->>Node: ok
-    Contract->>Contract: if unanimous, update policy + clear votes
-  else policy matches
-    Node-->>Node: no vote needed
-  end
+    NODE -->|"1. read policy"| SC
+    NODE -->|"2. compare to local config"| NODE
+    NODE -->|"3. vote if different"| SC
+    SC -->|"4. update policy on unanimity"| SC
+
+    NODE@{ shape: proc}
+    SC@{ shape: db}
 ```
 
 ### Key Components and Responsibilities
