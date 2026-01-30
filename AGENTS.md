@@ -31,8 +31,6 @@ pytest -m "not slow"                           # Skip slow tests
 pytest --non-reproducible tests/path/test.py::test_name  # Single test
 ```
 
-Requires building node with: `cargo build -p mpc-node --release --features=network-hardship-simulation`
-
 ## Architecture Overview
 
 This is a **Threshold Signature Scheme (TSS)** implementation on NEAR blockchain. Users submit signature requests to an on-chain contract, and MPC nodes collaboratively generate signatures without any single party possessing the complete key.
