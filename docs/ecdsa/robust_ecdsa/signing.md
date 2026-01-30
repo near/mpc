@@ -143,3 +143,39 @@ The scheme remains correct after this rerandomization and key derivation.
 
 ### Outsourcing the message hash
 Providing the signing phase with raw hashes as inputs instead of the original messages is beneficial for many use cases, e.g., the signing nodes receive a hashed payload and are required to generate a signature that is valid for a "universal verifier". Note that such API is quite common in cryptographic libraries and has been intensively studied for the non-distributed case in [[PR24](https://link.springer.com/chapter/10.1007/978-3-031-57718-5_10)] and [[R25](https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/729349/uploaded-version.pdf?sequence=1)].
+
+# Security considerations
+
+Before implementing or using the robust ECDSA scheme implemented here,
+be aware that it is vulnerable to **split-view attacks** in the robust setting when the
+signing parameters are not globally consistent. If different subsets of size at least
+$2t + 1$ sign different $(h, \epsilon)$ values using shares derived from the same
+presignature, the resulting signatures use multiplicatively related nonces and the
+secret key can be recovered using standard ECDSA nonce-reuse attacks.
+
+Moreover, due to protocol modifications relative to [[DJNPO20](https://eprint.iacr.org/2020/501)] (notably signature-share
+linearization), **a novel split-view attack exists that can extract the secret key using as
+few as $2t + 2$ presigning participants**, with as few as two signing sessions.
+
+To reduce the risk of accidental misuse, enforce the following constraints:
+
+1. **Use exactly $N_1 = N_2 = 2t + 1$ participants for both presigning and signing.**
+   Do **not** allow any deviation from this value. In particular:
+
+   * Do **not** allow $N_1 > 2t + 1$, and
+   * Do **not** allow $N_2 < N_1$.
+
+   Allowing larger presigning sets or smaller signing sets enables split-view and
+   presignature-reuse attacks when a coordinator can run parallel or partially overlapping
+   signing sessions.
+
+2. **Ensure all participants agree on $(h, \epsilon)$ and the signing set.**
+   The coordinator must not be able to present different message hashes, tweaks, or
+   participant lists to different signers.
+
+3. **Never reuse a presignature**, even across failed, aborted, or partially completed
+   signing sessions.
+
+4. **Do not sign with $h = 0$** (the zero message hash).
+   This input enables a related algebraic split-view attack in the modified scheme when
+   $N_1 > 2t + 1$.
