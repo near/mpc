@@ -96,10 +96,8 @@ flowchart TD
 - Payload derivation:
   - `payload = sha256(tx_id_bytes)` (ECDSA only).
   - For Solana, `tx_id` is a base58 signature in JSON, but the hash uses the raw 64-byte signature bytes.
-  - Tweak derivation: `tweak = derive_tweak(predecessor_account_id, path)`.
-- Finality levels:
-  - `Optimistic` (e.g., Solana confirmed)
-  - `Final` (e.g., Solana finalized)
+  - The signed key is derived from the domain key and `tweak`.
+- Chain-specific verification parameters (e.g., Solana finality or Bitcoin confirmations).
 
 **Off-chain (mpc-node)**
 
@@ -117,17 +115,51 @@ flowchart TD
   - `VerifyForeignTxStorage` persists verification requests.
   - Atomic write with `SignRequestStorage` to avoid crash inconsistencies.
 
-### Request/Response Summary (Contract)
+### New public types
 
-```
-verify_foreign_transaction({
-  chain, tx_id, finality, path, domain_id?
-}) -> promise (callback on success)
+```rust
+pub struct VerifyForeignTxRequest {
+    pub chain: ForeignChain,
+    pub tx_id: TransactionId,
+    pub tweak: Tweak,
+    pub domain_id: DomainId,
+}
 
-respond_verify_foreign_tx({
-  request, response: { verified_at_block, signature }
-})
+pub enum ForeignChain {
+    Solana(SolanaConfig),
+    Bitcoin(BitcoinConfig),
+    // Future chains...
+}
+
+pub struct SolanaConfig {
+    pub finality: SolanaFinality, // Optimistic or Final
+}
+
+pub enum SolanaFinality {
+    Optimistic,
+    Final,
+}
+
+pub struct BitcoinConfig {
+    pub confirmations: usize, // required confirmations before considering final
+}
+
+pub struct VerifyForeignTxResponse {
+    pub verified_at_block: BlockId,
+    pub signature: SignatureResponse,
+}
 ```
+
+```rust
+verify_foreign_transaction(request) -> promise (callback on success)
+respond_verify_foreign_tx({ request, response })
+```
+
+**What is signed and over what key**
+
+- Payload is `sha256(tx_id_bytes)`, where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
+- Signature is ECDSA over that payload using the domain key derived with `tweak` (i.e., the derived key for `domain_id` + `tweak`).
+- `tweak` should be derived deterministically (prototype uses `derive_tweak(predecessor_account_id, path)`), unless we explicitly move to passing raw tweaks.
 
 ### Failure and Timeout Behavior
 
@@ -183,10 +215,7 @@ provider entries in config (including API keys) to satisfy the policy.
 - **Operational friction**: Unanimous voting for policy updates may slow rollouts and hot fixes.
 - **Config drift**: Nodes missing required provider keys will fail startup validation.
 
-## Open Questions / Follow-ups
-
+## Discussion points
+- Finality interface right now diverges from the original PR. Are we okay with this new structure?
 - Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
-- Should nodes keep a minimum number of independent providers per chain?
-- Should we add optional multi-provider verification for high-value requests?
-- How do we standardize finality mapping for additional chains (Ethereum, Bitcoin, etc.)?
 - Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
