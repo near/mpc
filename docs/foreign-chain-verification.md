@@ -1,31 +1,38 @@
-# Foreign Chain Transaction Verification & Policy Voting
+# Foreign Chain Transaction Verification and Policy Voting
 
 ## Status
-- Proposed/Implemented in `read-foreign-chain` (PR #1851)
+- Implemented in `read-foreign-chain` (PR #1851)
 
 ## Summary
-This document describes the foreign-chain transaction verification feature (currently Solana) and the on-chain policy mechanism that governs which chains/providers are allowed. The feature enables users to submit a foreign transaction ID, have MPC nodes verify the transaction via RPC, then return a signature over a payload derived from the transaction ID.
+This document describes the foreign-chain transaction verification feature (currently Solana) and the on-chain policy mechanism that governs which chains and RPC providers are allowed. Users submit a foreign transaction ID; MPC nodes verify the transaction via read-only RPC queries; then the contract returns an MPC signature over a payload derived from the transaction ID.
 
 Key points:
 - New on-chain policy: `ForeignChainPolicy` (chains + required provider names).
 - Policy changes require unanimous participant votes.
 - Nodes auto-validate config vs policy and auto-vote for policy derived from local config.
-- Verification is off-chain via RPC; on-chain contract only checks policy + signature.
+- Verification is off-chain via RPC; on-chain contract only checks policy and signature.
+- All RPC calls are read-only query requests (no writes to the foreign chain).
+
+## Background and Motivation (Why This Feature)
+- **Omnibridge depends on Chain Signatures from day 1.** Near -> foreign chain transfers already use Chain Signatures for Bitcoin, Zcash, Solana, Ethereum, etc. The opposite direction (foreign -> Near) currently uses a mix of light clients and Wormhole, but the roadmap is to migrate that direction to Chain Signatures as well. This feature expands Chain Signatures to cover verified foreign transactions, which is required to unify both directions under a single signing system.
+- **Operational cost constraints require practical policy controls.** Bare-metal Intel TDX nodes are expensive because only 5th/6th gen Xeon fully support TDX; 4th gen does not. A single TDX machine on OVH costs roughly $1500 per month. While AMD SEV-SNP support is planned to reduce cost, the network must operate efficiently with constrained node budgets today. A policy-driven model makes it possible to support foreign-chain verification without forcing every node to configure every provider or chain.
+- **Scaling vs cost trade-off.** The network can scale beyond 21 nodes and new cryptography is in progress to improve scalability. However, in the short to medium term, 21 nodes is a reasonable cost/performance target. Deterministic provider selection and unanimous policy voting are designed to work well at this scale while avoiding unnecessary duplication or trust concentration.
 
 ## Goals
 - Allow users to request MPC signatures for foreign-chain transactions after verification.
-- Ensure the network agrees on supported chains/providers via an on-chain policy.
+- Ensure the network agrees on supported chains and provider names via an on-chain policy.
 - Distribute RPC trust by deterministic provider selection per request.
+- Keep foreign-chain RPC usage strictly read-only.
 
 ## Non-Goals
-- On-chain cryptographic proof verification (no light-client/proof).
+- On-chain cryptographic proof verification (no light client or proof verification).
 - Non-ECDSA signing for foreign-chain verification.
 - Multi-chain support beyond Solana (future work).
 
 ## Actors
 - **User**: Calls `verify_foreign_transaction` with foreign tx ID and finality.
 - **MPC Contract**: Enforces policy and returns response after node verification.
-- **MPC Node**: Verifies foreign tx via RPC, runs MPC signing, responds to contract.
+- **MPC Node**: Verifies foreign tx via RPC (read-only), runs MPC signing, responds to contract.
 - **RPC Providers**: External Solana JSON-RPC endpoints.
 
 ## Architecture Overview
@@ -134,15 +141,16 @@ Algorithm:
 3. Contract derives `tweak` from `predecessor_id` and `path`.
 4. Stores request and yields callback.
 
-### 3) Indexing & Queueing
+### 3) Indexing and Queueing
 1. Indexer sees `verify_foreign_transaction` call and parses args.
 2. Node creates `VerifyForeignTxRequest` plus a corresponding `SignatureRequest`:
    - Signature payload = `sha256(tx_id_bytes)`.
 3. Both are stored atomically to avoid crash inconsistencies.
 
-### 4) Verification + MPC Signing
+### 4) Verification and MPC Signing
 1. Leader node is selected by existing request queue logic.
 2. Leader verifies foreign tx via RPC using selected provider order.
+   - All RPC calls are read-only queries; no writes are sent to the foreign chain.
 3. If tx is successful and meets finality:
    - Run MPC signing (ECDSA only).
    - Construct `VerifyForeignTxResponse` with `verified_at_block` + signature.
@@ -170,7 +178,7 @@ sequenceDiagram
   Contract->>Contract: store pending request + yield
 
   Indexer-->>Node: indexed verify_foreign_tx request
-  Node->>RPC: getSignatureStatuses(tx_id) via selected provider
+  Node->>RPC: getSignatureStatuses(tx_id) via selected provider (read-only)
   RPC-->>Node: status + slot
   Node-->>Node: if finalized + success, sign payload
   Node->>Contract: respond_verify_foreign_tx(request, response)
@@ -208,6 +216,7 @@ sequenceDiagram
 - No cryptographic foreign-chain proofs; trust delegated to RPC providers.
 - Policy only encodes provider names, not URLs. Operators must ensure names map to intended endpoints.
 - Deterministic provider selection reduces single-provider dependency but does not enforce multi-source quorum verification.
+- RPC usage is read-only, which limits risk of unintended foreign-chain writes.
 
 ## Observability
 New metrics:
@@ -228,7 +237,7 @@ New metrics:
 4. Confirm policy established via `get_foreign_chain_policy`.
 5. Enable user traffic.
 
-## Open Questions / Risks
+## Open Questions and Risks
 - No explicit error returned to user for verification failure (only timeout).
 - Policy does not pin provider URLs.
 - No on-chain proof verification; RPC correctness assumed.
