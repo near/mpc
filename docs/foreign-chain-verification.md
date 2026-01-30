@@ -130,6 +130,11 @@ foreign_chains:
 - Nodes convert local config to a `ForeignChainPolicy` for voting.
 - Provider names are sorted to ensure deterministic policy equality across nodes.
 
+### Startup Validation
+
+- Local config is validated for basic correctness (e.g., non-empty providers and non-empty `rpc_url`).
+- Local config is validated against the on-chain policy to ensure all required providers are configured.
+
 ## Provider Selection
 
 Deterministic provider selection ensures different nodes query different providers for the same request.
