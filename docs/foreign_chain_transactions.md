@@ -67,6 +67,7 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```
 
 ```rust
+// Contract DTOs
 pub struct VerifyForeignTxRequestArgs {
     pub chain: ForeignChain,
     pub tx_id: TransactionId, // TxID is the payload we're signing
