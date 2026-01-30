@@ -251,7 +251,7 @@ fn dkg_refresh_sign_test() {
     let mut key_packages = run_keygen(&participants, threshold, &mut rng);
     // test dkg
     for i in 0..3 {
-        let msg = format!("hellprotocolo_near_{i}");
+        let msg = format!("hello_near_{i}");
         let msg_hash = hash(&msg).unwrap();
         assert_public_key_invariant(&key_packages);
         let coordinators = vec![key_packages[0].0];

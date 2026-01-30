@@ -310,36 +310,12 @@ mod test {
     use crate::participants::{Participant, ParticipantList};
     use crate::protocol::Protocol;
     use crate::test_utils::{
-        assert_public_key_invariant, generate_participants, one_coordinator_output, run_keygen,
-        run_refresh, run_reshare, MockCryptoRng,
+        assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
+        one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
     };
-    use frost_core::{Field, Group};
-    use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512};
+    use frost_core::{Field, Group, Scalar};
+    use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
     use rand::{Rng, RngCore, SeedableRng};
-
-    #[test]
-    fn basic_two_participants() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-
-        let max_signers = 2;
-        let threshold = 2;
-        let actual_signers = 2;
-        let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
-
-        let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
-        let coordinators = vec![key_packages[0].0];
-        let threshold: usize = threshold.into();
-        let data = test_run_signature_protocols(
-            &key_packages,
-            actual_signers,
-            &coordinators,
-            threshold,
-            msg_hash,
-        )
-        .unwrap();
-        one_coordinator_output(data, coordinators[0]).unwrap();
-    }
 
     #[test]
     fn stress() {
@@ -369,223 +345,171 @@ mod test {
     }
 
     #[test]
-    fn dkg_sign_test() {
+    fn dkg_refresh_sign_test() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = vec![
-            Participant::from(0u32),
-            Participant::from(31u32),
-            Participant::from(1u32),
-            Participant::from(2u32),
-        ];
+        let participants = generate_participants_with_random_ids(4, &mut rng);
         let actual_signers = participants.len();
         let threshold = 2;
-        let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
+        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
+        for i in 0..3 {
+            let msg = format!("hello_near_{i}");
+            let msg_hash = hash(&msg).unwrap();
+            assert_public_key_invariant(&key_packages);
+            let coordinators = vec![participants[0]];
+            // This internally verifies with the public key
+            let data = test_run_signature_protocols(
+                &key_packages,
+                actual_signers,
+                &coordinators,
+                threshold,
+                msg_hash,
+            )
+            .unwrap();
+            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
 
-        // test dkg
-        let key_packages = run_keygen(&participants, threshold, &mut rng);
-        assert_public_key_invariant(&key_packages);
-        let coordinators = vec![key_packages[0].0];
-        let data = test_run_signature_protocols(
-            &key_packages,
-            actual_signers,
-            &coordinators,
-            threshold,
-            msg_hash,
-        )
-        .unwrap();
-        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
+            // externally verify with the signature
+            assert!(key_packages[0]
+                .1
+                .public_key
+                .verify(msg_hash.as_ref(), &signature)
+                .is_ok());
+            // test refresh
+            key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
+        }
+    }
 
-        assert!(key_packages[0]
-            .1
-            .public_key
-            .verify(msg_hash.as_ref(), &signature)
-            .is_ok());
-
-        // // test refresh
-        let key_packages1 = run_refresh(&participants, &key_packages, threshold, &mut rng);
-        assert_public_key_invariant(&key_packages1);
-        let msg = "hello_near_2";
-        let msg_hash = hash(&msg).unwrap();
-        let data = test_run_signature_protocols(
-            &key_packages1,
-            actual_signers,
-            &coordinators,
-            threshold,
-            msg_hash,
-        )
-        .unwrap();
-        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
-        let pub_key = key_packages1[2].1.public_key;
-        assert!(key_packages1[0]
-            .1
-            .public_key
-            .verify(msg_hash.as_ref(), &signature)
-            .is_ok());
-
-        // test reshare
-        let mut new_participant = participants.clone();
-        new_participant.push(Participant::from(20u32));
-        let new_threshold = 4;
-        let key_packages2 = run_reshare(
-            &participants,
-            &pub_key,
-            &key_packages1,
-            threshold,
-            new_threshold,
-            &new_participant,
-            &mut rng,
-        );
-        assert_public_key_invariant(&key_packages2);
-        let msg = "hello_near_3";
-        let msg_hash = hash(&msg).unwrap();
-        let coordinators = vec![key_packages2[0].0];
-        let data = test_run_signature_protocols(
-            &key_packages2,
-            actual_signers,
-            &coordinators,
-            new_threshold,
-            msg_hash,
-        )
-        .unwrap();
-        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
-        assert!(key_packages2[0]
-            .1
-            .public_key
-            .verify(msg_hash.as_ref(), &signature)
-            .is_ok());
+    fn test_public_key(
+        participants: &[Participant],
+        pub_key: VerifyingKey,
+        shares: &[Scalar<Ed25519Sha512>],
+    ) {
+        let p_list = ParticipantList::new(participants).unwrap();
+        let mut x = Ed25519ScalarField::zero();
+        for (p, share) in participants.iter().zip(shares.iter()) {
+            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
+        }
+        assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
     }
 
     #[test]
     fn test_reshare_sign_more_participants() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(4);
-        let threshold = 3;
-        let result0 = run_keygen(&participants, threshold, &mut rng);
-        assert_public_key_invariant(&result0);
+        let mut participants = generate_participants(4);
+        let mut threshold = 3;
 
-        let pub_key = result0[2].1.public_key;
+        let mut new_participants = participants.clone();
+        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
+        let pub_key = key_packages[2].1.public_key;
+        // test dkg
+        for i in 0..3 {
+            let msg = format!("hello_near_{i}");
+            let msg_hash = hash(&msg).unwrap();
+            assert_public_key_invariant(&key_packages);
+            let coordinators = vec![participants[0]];
+            // This internally verifies with the rerandomized public key
+            let data = test_run_signature_protocols(
+                &key_packages,
+                participants.len(),
+                &coordinators,
+                threshold,
+                msg_hash,
+            )
+            .unwrap();
+            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
 
-        // Run heavy reshare
-        let new_threshold = 5;
-        let mut new_participant = participants.clone();
-        new_participant.push(Participant::from(31u32));
-        new_participant.push(Participant::from(32u32));
-        let key_packages = run_reshare(
-            &participants,
-            &pub_key,
-            &result0,
-            threshold,
-            new_threshold,
-            &new_participant,
-            &mut rng,
-        );
-        assert_public_key_invariant(&key_packages);
+            // externally verify with the signature
+            assert!(key_packages[0]
+                .1
+                .public_key
+                .verify(msg_hash.as_ref(), &signature)
+                .is_ok());
+            // test refresh
+            new_participants.push(Participant::from(20u32 + i));
+            let new_threshold = threshold + 1;
 
-        let participants: Vec<_> = key_packages
-            .iter()
-            .take(key_packages.len())
-            .map(|(val, _)| *val)
-            .collect();
-        let shares: Vec<_> = key_packages
-            .iter()
-            .take(key_packages.len())
-            .map(|(_, keygen)| keygen.private_share.to_scalar())
-            .collect();
+            key_packages = run_reshare(
+                &participants,
+                &pub_key,
+                &key_packages,
+                threshold,
+                new_threshold,
+                &new_participants,
+                &mut rng,
+            );
 
-        // Test public key
-        let p_list = ParticipantList::new(&participants).unwrap();
-        let mut x = Ed25519ScalarField::zero();
-        for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
+            let shares: Vec<_> = key_packages
+                .iter()
+                .map(|(_, keygen)| keygen.private_share.to_scalar())
+                .collect();
+
+            // update the old parameters
+            threshold = new_threshold;
+            participants = new_participants.clone();
+
+            // Test public key
+            test_public_key(&participants, pub_key, &shares);
         }
-        assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
-
-        // Sign
-        let actual_signers = participants.len();
-        let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
-
-        let coordinators = vec![key_packages[0].0];
-        let data = test_run_signature_protocols(
-            &key_packages,
-            actual_signers,
-            &coordinators,
-            new_threshold,
-            msg_hash,
-        )
-        .unwrap();
-        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
-        assert!(key_packages[0]
-            .1
-            .public_key
-            .verify(msg_hash.as_ref(), &signature)
-            .is_ok());
     }
 
     #[test]
     fn test_reshare_sign_less_participants() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants(5);
-        let threshold = 4;
-        let result0 = run_keygen(&participants, threshold, &mut rng);
-        assert_public_key_invariant(&result0);
-        let coordinators = vec![result0[0].0];
+        let mut participants = generate_participants(6);
+        let mut threshold = 5;
 
-        let pub_key = result0[2].1.public_key;
+        let mut new_participants = participants.clone();
+        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
+        let pub_key = key_packages[2].1.public_key;
+        // test dkg
+        for i in 0..3 {
+            let msg = format!("hello_near_{i}");
+            let msg_hash = hash(&msg).unwrap();
+            assert_public_key_invariant(&key_packages);
+            let coordinators = vec![participants[0]];
+            // This internally verifies with the rerandomized public key
+            // This internally verifies with the public key
+            let data = test_run_signature_protocols(
+                &key_packages,
+                participants.len(),
+                &coordinators,
+                threshold,
+                msg_hash,
+            )
+            .unwrap();
+            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
 
-        // Run heavy reshare
-        let new_threshold = 3;
-        let mut new_participant = participants.clone();
-        new_participant.pop();
-        let key_packages = run_reshare(
-            &participants,
-            &pub_key,
-            &result0,
-            threshold,
-            new_threshold,
-            &new_participant,
-            &mut rng,
-        );
-        assert_public_key_invariant(&key_packages);
+            // externally verify with the signature
+            assert!(key_packages[0]
+                .1
+                .public_key
+                .verify(msg_hash.as_ref(), &signature)
+                .is_ok());
+            // test refresh
+            new_participants.pop();
+            let new_threshold = threshold - 1;
 
-        let participants: Vec<_> = key_packages
-            .iter()
-            .take(key_packages.len())
-            .map(|(val, _)| *val)
-            .collect();
-        let shares: Vec<_> = key_packages
-            .iter()
-            .take(key_packages.len())
-            .map(|(_, keygen)| keygen.private_share.to_scalar())
-            .collect();
+            key_packages = run_reshare(
+                &participants,
+                &pub_key,
+                &key_packages,
+                threshold,
+                new_threshold,
+                &new_participants,
+                &mut rng,
+            );
 
-        // Test public key
-        let p_list = ParticipantList::new(&participants).unwrap();
-        let mut x = Ed25519ScalarField::zero();
-        for (p, share) in participants.iter().zip(shares.iter()) {
-            x += p_list.lagrange::<Ed25519Sha512>(*p).unwrap() * share;
+            let shares: Vec<_> = key_packages
+                .iter()
+                .map(|(_, keygen)| keygen.private_share.to_scalar())
+                .collect();
+
+            // update the old parameters
+            threshold = new_threshold;
+            participants = new_participants.clone();
+
+            // Test public key
+            test_public_key(&participants, pub_key, &shares);
         }
-        assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
-
-        // Sign
-        let msg = "hello_near";
-        let msg_hash = hash(&msg).unwrap();
-
-        let data = test_run_signature_protocols(
-            &key_packages,
-            new_threshold,
-            &coordinators,
-            new_threshold,
-            msg_hash,
-        )
-        .unwrap();
-        let signature = one_coordinator_output(data, coordinators[0]).unwrap();
-        assert!(key_packages[0]
-            .1
-            .public_key
-            .verify(msg_hash.as_ref(), &signature)
-            .is_ok());
     }
 
     #[test]
@@ -595,7 +519,7 @@ mod test {
         let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
         let public_key = keys[0].1.public_key.to_element();
 
-        let msg = b"hello worldhello worldhello worlregerghwhrth".to_vec();
+        let msg = b"hello world with near".to_vec();
         let index = rng.gen_range(0..keys.len());
         let coordinator = keys[index as usize].0;
 
