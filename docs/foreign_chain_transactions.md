@@ -240,6 +240,8 @@ provider entries in config (including API keys) to satisfy the policy.
 - **Config drift**: Nodes missing required provider keys will fail startup validation.
 
 ## Discussion points
+- Why do we return a signature? Can't we just return a bool.
+  - A signature suggests this is a "proof" that can be validated by someone else than the caller, but currently it seems like this proof could easily be forged by just calling the normal "sign" method.
 - Finality interface right now diverges from the original PR. Are we okay with this new structure?
 - Can we assume all RPC providers take API keys as bearer tokens?
 - Should we identify RPC providers by a base URL instead of an arbitrary name?
