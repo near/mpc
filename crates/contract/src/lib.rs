@@ -1299,19 +1299,6 @@ impl MpcContract {
         }
     }
 
-    /// Removes stale data from the contract to be removed after a contract upgrade. Some
-    /// containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,
-    /// as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.
-    pub fn post_upgrade_cleanup(&mut self) {
-        let Some(mut attestations) = self.stale_data.participant_attestations.take() else {
-            panic!("stale participant_attestations data has already been cleared");
-        };
-
-        attestations.clear();
-
-        log!("Successfully cleared stale TEE attestations.");
-    }
-
     pub fn state(&self) -> &ProtocolContractState {
         &self.protocol_state
     }
@@ -3534,55 +3521,6 @@ mod tests {
         };
 
         assert_eq!(*resharing_state, expected_resharing_state);
-    }
-
-    #[test]
-    fn test_post_upgrade_cleanup_success() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        let mut mock_stale_map = IterableMap::new(StorageKey::_DeprecatedTeeParticipantAttestation);
-        let node_pk = bogus_ed25519_near_public_key();
-        let node_id = NodeId {
-            account_id: gen_account_id(),
-            tls_public_key: bogus_ed25519_near_public_key(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
-        };
-        let attestation = mpc_attestation::attestation::Attestation::Mock(
-            mpc_attestation::attestation::MockAttestation::Valid,
-        );
-
-        mock_stale_map.insert(node_pk.clone(), (node_id, attestation));
-
-        contract.stale_data.participant_attestations = Some(mock_stale_map);
-
-        // when
-        contract.post_upgrade_cleanup();
-
-        // then
-        assert_matches::assert_matches!(contract.stale_data.participant_attestations, None);
-    }
-
-    #[test]
-    #[should_panic(expected = "stale participant_attestations data has already been cleared")]
-    fn test_post_upgrade_cleanup_panics_if_already_cleared() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        contract.stale_data.participant_attestations = None;
-
-        // when
-        contract.post_upgrade_cleanup();
-
-        // then panic
     }
 
     /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.

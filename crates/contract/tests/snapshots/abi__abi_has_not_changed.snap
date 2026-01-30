@@ -433,11 +433,6 @@ expression: abi
         }
       },
       {
-        "name": "post_upgrade_cleanup",
-        "doc": " Removes stale data from the contract to be removed after a contract upgrade. Some\n containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,\n as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.",
-        "kind": "call"
-      },
-      {
         "name": "propose_update",
         "doc": " Propose update to either code or config, but not both of them at the same time.",
         "kind": "call",
