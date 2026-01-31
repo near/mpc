@@ -11,6 +11,16 @@ use crate::types::{
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+pub struct VerifyForeignTransactionRequestArgs {
+    pub foreign_transaction: ForeignTransactionConfig,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct VerifyForeignTransactionRequest {
     pub foreign_transaction: ForeignTransactionConfig,
     pub tweak: Tweak,
@@ -22,53 +32,9 @@ pub struct VerifyForeignTransactionRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct VerifyForeignTransactionRequestArgs {
-    pub foreign_transaction: ForeignTransactionConfig,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
 pub struct VerifyForeignTransactionResponse {
     pub signature: SignatureResponse,
     pub public_key: PublicKey,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-enum ForeignChain {
-    Solana,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-// The request coming from the user
-pub struct VerifyForeignRequest {
-    pub rpc_request: ForeignTransactionConfig,
-    pub tweak: Tweak,
-    pub domain_id: DomainId,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -179,11 +145,4 @@ pub struct SolanaTransactionId(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinTransactionId(
-    #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
-        )]
-    #[serde_as(as = "[_; 64]")]
-    pub [u8; 64],
-);
+pub struct BitcoinTransactionId(pub [u8; 32]);
