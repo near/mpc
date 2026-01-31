@@ -12,7 +12,7 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 ## Scope
 
 - In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain verifiers.
-- Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results, and non-ECDSA schemes for verify_foreign_transaction (initially ECDSA only).
+- Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results.
 
 ## Overview
 
