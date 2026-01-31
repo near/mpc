@@ -157,8 +157,7 @@ pub enum ForeignChain {
 }
 
 pub struct RpcProvider{
-    name: String,
-    base_url: String, // Configurations of this provider must lead with this base URL
+    rpc_url: String,
 };
 
 pub struct ForeignChainPolicyVotes {
@@ -219,10 +218,10 @@ Provider selection is deterministic across nodes:
 
 ### Deterministic Provider Selection
 
-Each node selects a provider using a deterministic hash of:
+Each node selects a provider using a deterministic hash of the policy identity (provider RPC URL):
 
 ```
-hash = sha256(participant_id || request_id || provider_name)
+hash = sha256(participant_id || request_id || provider_rpc_url)
 ```
 
 Providers are sorted by this hash to build a deterministic ordering:
@@ -253,7 +252,7 @@ foreign_chains:
           val: "<your-api-key-here>"
 ```
 
-The contract policy references providers by **name**, and nodes must have matching
+The contract policy references providers by **rpc_url**, and nodes must have matching
 provider entries in config (including API keys) to satisfy the policy.
 
 ## Risks
@@ -273,6 +272,6 @@ provider entries in config (including API keys) to satisfy the policy.
   - A signature suggests this is a "proof" that can be validated by someone else than the caller, but currently it seems like this proof could easily be forged by just calling the normal "sign" method.
 - Finality interface right now diverges from the original PR. Are we okay with this new structure?
 - Can we assume all RPC providers take API keys as bearer tokens?
-- Should we identify RPC providers by a base URL instead of an arbitrary name?
+- Should we allow multiple policy entries with the same `rpc_url` but different credentials?
 - Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
 - Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
