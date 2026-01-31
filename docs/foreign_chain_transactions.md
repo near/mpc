@@ -147,7 +147,7 @@ pub struct ForeignChainPolicy {
 
 pub struct ForeignChainConfig {
     pub chain: ForeignChain,
-    pub providers: NonEmptyVec<RpcProviderName>,
+    pub providers: NonEmptyVec<RpcProvider>,
 }
 
 pub enum ForeignChain {
@@ -156,7 +156,10 @@ pub enum ForeignChain {
     // Future chains...
 }
 
-pub struct RpcProviderName(String);
+pub struct RpcProvider{
+    name: String,
+    base_url: String, // Configurations of this provider must lead with this base URL
+};
 
 pub struct ForeignChainPolicyVotes {
     // Each authenticated participant has one active vote for a proposal.
