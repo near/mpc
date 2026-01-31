@@ -56,7 +56,7 @@ flowchart TD
     FC@{ shape: cylinder}
 ```
 
-With the user flow in mind, the on-chain interface is:
+With the user flow in mind, this design extends the on-chain interface with the following methods:
 
 ### Contract Interface (Request/Response)
 
@@ -109,6 +109,32 @@ pub enum Finality{
     Final,
 }
 ```
+
+### Domain Separation
+
+To prevent callers from using plain `sign()` requests that could be mistaken for validated foreign-chain
+transactions, we enforce domain separation by extending `DomainConfig` with a `DomainPurpose` enum.
+Requests are only accepted for domains matching the purpose:
+- `sign()` may only target domains with purpose `Sign`.
+- `verify_foreign_transaction()` may only target domains with purpose `ForeignTx`.
+
+```rust
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
+pub struct DomainConfig {
+    pub id: DomainId,
+    pub scheme: SignatureScheme,
+    pub purpose: DomainPurpose,
+}
+```
+
+Compatibility note: legacy contract state does not include `DomainPurpose`. New nodes reading old state
+must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
+Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 
 ### Contract state (Foreign Chain Policy)
 
