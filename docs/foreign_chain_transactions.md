@@ -244,16 +244,38 @@ foreign_chains:
     providers:
       alchemy:
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
-        api_key:
-          env: ALCHEMY_API_KEY
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
       quicknode:
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
-        api_key:
-          val: "<your-api-key-here>"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            val: "<your-api-key-here>"
+      ankr:
+        rpc_url: "https://rpc.ankr.com/near/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      public:
+        rpc_url: "https://rpc.public.example.com"
+        auth:
+          kind: none
 ```
 
 The contract policy references providers by **rpc_url**, and nodes must have matching
 provider entries in config (including API keys) to satisfy the policy.
+
+Auth variants are explicitly modeled because providers differ in how they expect API keys
+to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
+providers require no auth at all.
 
 ## Risks
 
@@ -269,5 +291,3 @@ provider entries in config (including API keys) to satisfy the policy.
 
 ## Discussion points
 - The current design only proves transactions exists. For most bridges you'd want to verify the execution result, and potentially check values in transaction logs or events. How can we update the design to support this?
-- Can we assume all RPC providers take API keys as bearer tokens?
-  - Need to investigate this.
