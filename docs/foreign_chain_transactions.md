@@ -72,7 +72,7 @@ pub struct VerifyForeignTxRequestArgs {
     pub chain: ForeignChain,
     pub tx_id: TransactionId, // TxID is the payload we're signing
     pub path: String, // Key derivation path
-    pub domain_id: Option<DomainId>, // Defaults to 0 (legacy ECDSA)
+    pub domain_id: DomainId,
 }
 
 pub struct VerifyForeignTxRequest {
