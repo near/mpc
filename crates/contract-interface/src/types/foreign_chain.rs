@@ -1,48 +1,43 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::types::primitives::{DomainId, Tweak};
+use crate::types::{
+    PublicKey,
+    primitives::{DomainId, SignatureResponse, Tweak},
+};
 
-// The request coming from the user
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct VerifyForeignTxRequestArgs {
-    pub chain: ForeignChain,
-    pub tx_id: TransactionId,        // TxID is the payload we're signing
-    pub path: String,                // Key derivation path
-    pub domain_id: Option<DomainId>, // Defaults to 0 (legacy ECDSA)
+pub struct VerifyForeignTransactionRequest {
+    pub foreign_transaction: ForeignTransactionConfig,
+    pub tweak: Tweak,
+    pub domain_id: DomainId,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
 )]
+pub struct VerifyForeignTransactionRequestArgs {
+    pub foreign_transaction: ForeignTransactionConfig,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct VerifyForeignTransactionResponse {
+    pub signature: SignatureResponse,
+    pub public_key: PublicKey,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -71,7 +66,7 @@ enum ForeignChain {
 )]
 // The request coming from the user
 pub struct VerifyForeignRequest {
-    pub rpc_request: ForeignChainRpcRequest,
+    pub rpc_request: ForeignTransactionConfig,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
@@ -81,9 +76,9 @@ pub struct VerifyForeignRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum ForeignChainRpcRequest {
-    Solana(SolanaRpcRequest),
-    Bitcoin(BitcoinRpcRequest),
+pub enum ForeignTransactionConfig {
+    Solana(SolanaTransaction),
+    Bitcoin(BitcoinTransaction),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -91,8 +86,8 @@ pub enum ForeignChainRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct SolanaRpcRequest {
-    pub tx_id: SolanaSignature,
+pub struct SolanaTransaction {
+    pub transaction_id: SolanaTransactionId,
     pub finality: Finality,
 }
 
@@ -101,8 +96,8 @@ pub struct SolanaRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinRpcRequest {
-    pub tx_id: BitcoinSignature,
+pub struct BitcoinTransaction {
+    pub transaction_id: BitcoinTransactionId,
     pub confirmations: BlockConfirmations,
 }
 
@@ -156,7 +151,7 @@ pub struct BlockConfirmations(pub u64);
     derive(schemars::JsonSchema)
 )]
 
-pub struct SolanaSignature(
+pub struct SolanaTransactionId(
     #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
@@ -184,7 +179,7 @@ pub struct SolanaSignature(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinSignature(
+pub struct BitcoinTransactionId(
     #[cfg_attr(
             all(feature = "abi", not(target_arch = "wasm32")),
             schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
