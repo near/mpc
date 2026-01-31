@@ -268,10 +268,6 @@ provider entries in config (including API keys) to satisfy the policy.
 - **Config drift**: Nodes missing required provider keys will fail startup validation.
 
 ## Discussion points
-- Why do we return a signature? Can't we just return a bool.
-  - A signature suggests this is a "proof" that can be validated by someone else than the caller, but currently it seems like this proof could easily be forged by just calling the normal "sign" method.
-- Finality interface right now diverges from the original PR. Are we okay with this new structure?
+- The current design only proves transactions exists. For most bridges you'd want to verify the execution result, and potentially check values in transaction logs or events. How can we update the design to support this?
 - Can we assume all RPC providers take API keys as bearer tokens?
-- Should we allow multiple policy entries with the same `rpc_url` but different credentials?
-- Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
-- Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
+  - Need to investigate this.
