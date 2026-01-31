@@ -1,6 +1,6 @@
 # Foreign Chain Transaction Verification (Design Proposal)
 
-Status: Draft (based on PR #1851 / branch `read-foreign-chain`)
+Status: Under discussion/design iterations
 
 ## Purpose & Motivation
 
