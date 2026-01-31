@@ -724,6 +724,33 @@ expression: abi
         }
       },
       {
+        "name": "respond_foreign_transaction",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            },
+            {
+              "name": "response",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "return_ck_and_clean_state_on_success",
         "doc": " Upon success, removes the confidential key from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
         "kind": "call",
@@ -928,6 +955,25 @@ expression: abi
               "name": "config",
               "type_schema": {
                 "$ref": "#/definitions/Config"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "verify_foreign_transaction",
+        "doc": " Submit a verification + signing request for a foreign chain transaction.\n MPC nodes will verify the transaction on the foreign chain before signing.\n The signed payload is derived from the transaction ID (hash of tx_id).",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "foreign_transaction",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequestArgs"
               }
             }
           ]
@@ -1188,6 +1234,22 @@ expression: abi
             }
           }
         },
+        "AffinePoint": {
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              }
+            }
+          }
+        },
         "AttemptId": {
           "type": "integer",
           "format": "uint64",
@@ -1243,6 +1305,34 @@ expression: abi
               "$ref": "#/definitions/Ed25519PublicKey"
             }
           }
+        },
+        "BitcoinTransaction": {
+          "type": "object",
+          "required": [
+            "confirmations",
+            "transaction_id"
+          ],
+          "properties": {
+            "confirmations": {
+              "$ref": "#/definitions/BlockConfirmations"
+            },
+            "transaction_id": {
+              "$ref": "#/definitions/BitcoinTransactionId"
+            }
+          }
+        },
+        "BitcoinTransactionId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
+        },
+        "BlockConfirmations": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         "Bls12381G1PublicKey": {
           "type": "string"
@@ -1495,6 +1585,11 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "DomainId2": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "DomainRegistry": {
           "description": "All the domains present in the contract, as well as the next domain ID which is kept to ensure that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to add domains but ultimately canceled that process.)",
           "type": "object",
@@ -1546,6 +1641,14 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
+        "Ed25519Signature": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
+        },
         "EpochId": {
           "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
@@ -1588,6 +1691,41 @@ expression: abi
               "minimum": 0.0
             }
           }
+        },
+        "Finality": {
+          "type": "string",
+          "enum": [
+            "Optimistic",
+            "Final"
+          ]
+        },
+        "ForeignTransactionConfig": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Solana"
+              ],
+              "properties": {
+                "Solana": {
+                  "$ref": "#/definitions/SolanaTransaction"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bitcoin"
+              ],
+              "properties": {
+                "Bitcoin": {
+                  "$ref": "#/definitions/BitcoinTransaction"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -1745,6 +1883,16 @@ expression: abi
               ]
             }
           }
+        },
+        "K256Scalar": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
         },
         "KeyEvent": {
           "description": "Maintains the state for the current key generation or resharing.",
@@ -2608,6 +2756,56 @@ expression: abi
             }
           ]
         },
+        "SignatureResponse2": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "big_r",
+                "recovery_id",
+                "s",
+                "scheme"
+              ],
+              "properties": {
+                "big_r": {
+                  "$ref": "#/definitions/AffinePoint"
+                },
+                "recovery_id": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "s": {
+                  "$ref": "#/definitions/K256Scalar"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Secp256k1"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "scheme",
+                "signature"
+              ],
+              "properties": {
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Ed25519"
+                  ]
+                },
+                "signature": {
+                  "$ref": "#/definitions/Ed25519Signature"
+                }
+              }
+            }
+          ]
+        },
         "SignatureScheme": {
           "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
           "type": "string",
@@ -2617,6 +2815,29 @@ expression: abi
             "Bls12381",
             "V2Secp256k1"
           ]
+        },
+        "SolanaTransaction": {
+          "type": "object",
+          "required": [
+            "finality",
+            "transaction_id"
+          ],
+          "properties": {
+            "finality": {
+              "$ref": "#/definitions/Finality"
+            },
+            "transaction_id": {
+              "$ref": "#/definitions/SolanaTransactionId"
+            }
+          }
+        },
+        "SolanaTransactionId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
@@ -2726,6 +2947,16 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
+        "Tweak2": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
         "UpdateHash": {
           "description": "An update hash",
           "oneOf": [
@@ -2825,6 +3056,55 @@ expression: abi
               "description": "The digest of the MPC image running.",
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "VerifyForeignTransactionRequest": {
+          "type": "object",
+          "required": [
+            "domain_id",
+            "foreign_transaction",
+            "tweak"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "foreign_transaction": {
+              "$ref": "#/definitions/ForeignTransactionConfig"
+            },
+            "tweak": {
+              "$ref": "#/definitions/Tweak2"
+            }
+          }
+        },
+        "VerifyForeignTransactionRequestArgs": {
+          "type": "object",
+          "required": [
+            "foreign_transaction",
+            "path"
+          ],
+          "properties": {
+            "foreign_transaction": {
+              "$ref": "#/definitions/ForeignTransactionConfig"
+            },
+            "path": {
+              "type": "string"
+            }
+          }
+        },
+        "VerifyForeignTransactionResponse": {
+          "type": "object",
+          "required": [
+            "public_key",
+            "signature"
+          ],
+          "properties": {
+            "public_key": {
+              "$ref": "#/definitions/PublicKey"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse2"
             }
           }
         },
