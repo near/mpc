@@ -39,7 +39,10 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use contract_interface::types as dtos;
+use contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
+};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
@@ -445,6 +448,18 @@ impl MpcContract {
 
         env::promise_return(promise_index);
     }
+
+    /// Submit a verification + signing request for a foreign chain transaction.
+    /// MPC nodes will verify the transaction on the foreign chain before signing.
+    /// The signed payload is derived from the transaction ID (hash of tx_id).
+    #[handle_result]
+    #[payable]
+    pub fn verify_foreign_transaction(
+        &mut self,
+        #[allow(unused_variables)] foreign_transaction: VerifyForeignTransactionRequestArgs,
+    ) {
+        unimplemented!()
+    }
 }
 
 // Node API
@@ -560,6 +575,15 @@ impl MpcContract {
         } else {
             Err(InvalidParameters::RequestNotFound.into())
         }
+    }
+
+    #[handle_result]
+    pub fn respond_foreign_transaction(
+        &mut self,
+        #[allow(unused_variables)] request: VerifyForeignTransactionRequest,
+        #[allow(unused_variables)] response: VerifyForeignTransactionResponse,
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
     /// (Prospective) Participants can submit their tee participant information through this
