@@ -70,7 +70,7 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 // Contract DTOs
 pub struct VerifyForeignTxRequestArgs {
     pub chain: ForeignChain,
-    pub tx_id: TransactionId, // TxID is the payload we're signing
+    pub tx_id: ForeignTransactionId, // TxID is the payload we're signing
     pub path: String, // Key derivation path
     pub domain_id: DomainId,
 }
@@ -78,13 +78,13 @@ pub struct VerifyForeignTxRequestArgs {
 pub struct VerifyForeignTxRequest {
     // Constructed from the args
     pub chain: ForeignChainRpcRequest,
-    pub tx_id: TransactionId,
+    pub tx_id: ForeignTransactionId,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
 
 pub struct VerifyForeignTxResponse {
-    pub verified_at_block: BlockId,
+    pub verified_at_block: ForeignBlockId,
     pub signature: SignatureResponse, // Signature over `sha256(tx_id_bytes)` where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
 }
 
