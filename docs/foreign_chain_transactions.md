@@ -69,16 +69,13 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```rust
 // Contract DTOs
 pub struct VerifyForeignTxRequestArgs {
-    pub chain: ForeignChain,
-    pub tx_id: ForeignTransactionId, // TxID is the payload we're signing
+    pub request: ForeignChainRpcRequest,
     pub path: String, // Key derivation path
     pub domain_id: DomainId,
 }
 
 pub struct VerifyForeignTxRequest {
-    // Constructed from the args
-    pub chain: ForeignChainRpcRequest,
-    pub tx_id: ForeignTransactionId,
+    pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
@@ -95,12 +92,12 @@ pub enum ForeignChainRpcRequest {
 }
 
 pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId,
+    pub tx_id: SolanaTxId, // This is the payload we're signing
     pub finality: Finality, // Optimistic or Final
 }
 
 pub struct BitcoinRpcRequest {
-    pub tx_id: BitcoinTxId,
+    pub tx_id: BitcoinTxId, // This is the payload we're signing
     pub confirmations: usize, // required confirmations before considering final
 }
 
