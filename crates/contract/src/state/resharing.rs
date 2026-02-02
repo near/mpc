@@ -247,7 +247,7 @@ pub mod tests {
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            let _ = state.start(first_key_event_id, 0).unwrap();
+            state.start(first_key_event_id, 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -270,7 +270,7 @@ pub mod tests {
 
             // assert that votes for a different resharings do not count
             env.set_signer(&leader.0);
-            let _ = state.start(first_key_event_id.next_attempt(), 0).unwrap();
+            state.start(first_key_event_id.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -301,15 +301,15 @@ pub mod tests {
             // check that vote_abort immediately causes failure.
             env.advance_block_height(1);
             env.set_signer(&leader.0);
-            let _ = state.start(key_event.next_attempt(), 0).unwrap();
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            let _ = state.vote_abort(key_event).unwrap();
+            state.vote_abort(key_event).unwrap();
             assert!(!state.resharing_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            let _ = state.start(key_event.next_attempt(), 0).unwrap();
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             for (i, c) in candidates.clone().into_iter().enumerate() {
                 env.set_signer(&c);
@@ -364,7 +364,7 @@ pub mod tests {
                 .id,
             epoch_id: state.prospective_epoch_id(),
         };
-        let _ = state.start(first_key_event_id, 0).unwrap();
+        state.start(first_key_event_id, 0).unwrap();
 
         let old_participants = state
             .previous_running_state
@@ -400,29 +400,29 @@ pub mod tests {
         let new_params_1 =
             ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
-        assert!(state
+        state
             .previous_running_state
             .parameters
             .validate_incoming_proposal(&new_params_1)
-            .is_ok());
-        assert!(new_params_1
+            .unwrap();
+        new_params_1
             .validate_incoming_proposal(&new_params_2)
-            .is_ok());
-        assert!(state
+            .unwrap();
+        let _ = state
             .previous_running_state
             .parameters
             .validate_incoming_proposal(&new_params_2)
-            .is_err());
+            .unwrap_err();
 
         // Reproposing with invalid epoch ID should fail.
         {
             env.set_signer(&old_participants.participants()[0].0);
-            assert!(state
+            let _ = state
                 .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
-                .is_err());
-            assert!(state
+                .unwrap_err();
+            let _ = state
                 .vote_new_parameters(state.prospective_epoch_id().next().next(), &new_params_1)
-                .is_err());
+                .unwrap_err();
         }
 
         // Repropose with new_params_1.
@@ -456,8 +456,8 @@ pub mod tests {
 
         // Repropose with new_params_2. That should fail.
         env.set_signer(&old_participants.participants()[0].0);
-        assert!(new_state
+        let _ = new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
-            .is_err());
+            .unwrap_err();
     }
 }

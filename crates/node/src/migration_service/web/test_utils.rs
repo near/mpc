@@ -56,14 +56,14 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
         keyshare_storage: keyshare_storage.clone(),
         backup_encryption_key: backup_encryption_key.into(),
     });
-    assert!(start_web_server(
+    start_web_server(
         web_server_state.clone(),
         config,
         migration_state_receiver,
         &server_key,
     )
     .await
-    .is_ok());
+    .expect("Web server should start successfully for test setup");
     let target_address = format!("{LOCALHOST_IP}:{port}");
     TestSetup {
         backup_encryption_key: backup_encryption_key.into(),

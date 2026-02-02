@@ -841,7 +841,7 @@ mod tests {
         };
 
         let result = futures::executor::block_on(import_cmd.run());
-        let _ = result.expect("Import command should succeed for valid input");
+        result.expect("Import command should succeed for valid input");
 
         // Test export functionality
         let export_cmd = ExportKeyshareCmd {
@@ -850,7 +850,7 @@ mod tests {
         };
 
         let result = futures::executor::block_on(export_cmd.run());
-        let _ = result.expect("Export command should succeed after import");
+        result.expect("Export command should succeed after import");
 
         // Verify the exported data matches what we imported
         // For a more thorough test, we could capture stdout and verify the JSON content

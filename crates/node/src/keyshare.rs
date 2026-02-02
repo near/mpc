@@ -564,10 +564,10 @@ pub mod tests {
             0,
             &[key_1_epoch_0_non_final.clone(), key_2_epoch_0_final.clone()],
         );
-        assert!(storage
+        let _ = storage
             .update_permanent_keyshares(&conflicting_keyset.keyset())
             .await
-            .is_err());
+            .unwrap_err();
 
         // Load the same keyset again; this should succeed.
         let loaded1 = storage
@@ -643,10 +643,10 @@ pub mod tests {
             // Check that finalizing an invalid key is not possible
             let mut invalid_keyset = keyset.clone();
             invalid_keyset.add_keyshare(key_2_epoch_1_invalid);
-            assert!(storage
+            let _ = storage
                 .update_permanent_keyshares(&keyset.keyset())
                 .await
-                .is_err());
+                .unwrap_err();
         }
         keyset.add_keyshare(key_2_epoch_1.clone());
 
@@ -658,10 +658,10 @@ pub mod tests {
         assert_eq!(&loaded3, &keyset.keyshares());
 
         // Cannot load the old keyset anymore.
-        assert!(storage
+        let _ = storage
             .update_permanent_keyshares(&old_keyset.keyset())
             .await
-            .is_err());
+            .unwrap_err();
 
         // Add another key to the same epoch via key generation; this is fine.
         let key_3_epoch_1 = generate_dummy_keyshare(1, 3, 1, &mut rng);
@@ -710,7 +710,7 @@ pub mod tests {
         let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1, key_2]);
 
         let (mut storage, _tempdir) = generate_key_storage().await;
-        let _ = storage
+        storage
             .import_backup(keyset.keyshares().to_vec(), &keyset.keyset())
             .await
             .expect("Backup import should succeed for empty storage");
@@ -741,7 +741,7 @@ pub mod tests {
         let res = storage
             .import_backup(full_keyset.keyshares().to_vec(), &full_keyset.keyset())
             .await;
-        let _ = res.expect("Backup import should succeed with matching permanent shares");
+        res.expect("Backup import should succeed with matching permanent shares");
 
         let loaded = storage
             .update_permanent_keyshares(&full_keyset.keyset())
@@ -804,7 +804,7 @@ pub mod tests {
             .await
             .unwrap();
 
-        let _ = storage
+        storage
             .import_backup(expected.keyshares().to_vec(), &expected.keyset())
             .await
             .expect("Backup import should succeed with matching temporary shares");
@@ -894,7 +894,7 @@ pub mod tests {
         let mut previous_keyset = KeysetBuilder::from_keyshares(previous_epoch, &[]);
         populate_permanent_keystore(previous_key_1, &mut previous_keyset, &mut storage).await;
 
-        let _ = storage
+        storage
             .import_backup(
                 current_keyset.keyshares().to_vec(),
                 &current_keyset.keyset(),

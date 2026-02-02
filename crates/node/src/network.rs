@@ -1239,7 +1239,7 @@ mod fault_handling_tests {
 
         match test_case.as_ref() {
             FaultTestCase::NoFault => {
-                let _ = result.expect("No-fault case should complete successfully");
+                result.expect("No-fault case should complete successfully");
             }
             FaultTestCase::Crash(participant_id) => {
                 let err_string = result
@@ -1258,7 +1258,7 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::Slow(participant_id, cancellation_token) => {
-                let _ = result.expect("Slow case should still complete successfully");
+                result.expect("Slow case should still complete successfully");
                 if is_leader || *participant_id == client.my_participant_id() {
                     assert!(cancellation_token.is_cancelled());
                 } else {
@@ -1266,7 +1266,7 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::SlowNoWaitSuccess(participant_id, cancellation_token) => {
-                let _ = result.expect("SlowNoWaitSuccess should complete successfully");
+                result.expect("SlowNoWaitSuccess should complete successfully");
                 if *participant_id == client.my_participant_id() {
                     assert!(cancellation_token.is_cancelled());
                 } else {

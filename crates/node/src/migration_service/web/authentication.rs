@@ -67,7 +67,7 @@ mod tests {
 
         let _ = authenticate_peer(server_stream.get_ref().1, &other_pk)
             .expect_err("Authentication should fail for a different public key");
-        let _ = authenticate_peer(server_stream.get_ref().1, &client_key.verifying_key())
+        authenticate_peer(server_stream.get_ref().1, &client_key.verifying_key())
             .expect("Authentication should succeed for the client key");
     }
 }

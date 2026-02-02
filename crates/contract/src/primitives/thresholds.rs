@@ -193,7 +193,7 @@ mod tests {
             let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
         }
         for k in min_threshold..(n + 1) {
-            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
+            ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
         }
         let _ = ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).unwrap_err();
     }
@@ -338,7 +338,7 @@ mod tests {
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
-        let _ = result.unwrap();
+        result.unwrap();
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod tests {
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
-        let _ = result.unwrap();
+        result.unwrap();
     }
 
     #[test]
@@ -371,7 +371,7 @@ mod tests {
                 ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);
             if i >= params.participants.next_id().0 {
-                let _ = result.unwrap();
+                result.unwrap();
             } else {
                 let _ = result.unwrap_err();
             }

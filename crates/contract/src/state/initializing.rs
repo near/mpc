@@ -200,7 +200,7 @@ pub mod tests {
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            let _ = state.start(first_key_event_id, 0).unwrap();
+            state.start(first_key_event_id, 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
@@ -227,7 +227,7 @@ pub mod tests {
 
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
-            let _ = state.start(first_key_event_id.next_attempt(), 0).unwrap();
+            state.start(first_key_event_id.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -272,15 +272,15 @@ pub mod tests {
 
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
-            let _ = state.start(key_event.next_attempt(), 0).unwrap();
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            let _ = state.vote_abort(key_event).unwrap();
+            state.vote_abort(key_event).unwrap();
             assert!(!state.generating_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            let _ = state.start(key_event.next_attempt(), 0).unwrap();
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = bogus_ed25519_public_key_extended();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -338,7 +338,7 @@ pub mod tests {
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
-        let _ = state.start(first_key_event_id, 0).unwrap();
+        state.start(first_key_event_id, 0).unwrap();
 
         let pk = bogus_ed25519_public_key_extended();
         let participants = state
@@ -364,9 +364,9 @@ pub mod tests {
             env.set_signer(account);
             assert!(running.is_none());
             // Check that using the wrong next_domain_id fails.
-            assert!(state
+            let _ = state
                 .vote_cancel(state.domains.next_domain_id() - 1)
-                .is_err());
+                .unwrap_err();
             running = state.vote_cancel(state.domains.next_domain_id()).unwrap();
         }
         let running = running.expect("Enough votes to cancel should transition into running");

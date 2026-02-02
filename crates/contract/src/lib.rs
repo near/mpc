@@ -2479,7 +2479,7 @@ mod tests {
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
-            let _ = res.expect("Participant should be able to start node migration");
+            res.expect("Participant should be able to start node migration");
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2580,7 +2580,7 @@ mod tests {
                 public_key: bogus_ed25519_public_key(),
             };
             let res = contract.register_backup_service(backup_service_info.clone());
-            let _ = res.expect("Participant should be able to register backup service");
+            res.expect("Participant should be able to register backup service");
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2890,7 +2890,7 @@ mod tests {
             if let Some(expected_error_kind) = &self.expected_error_kind {
                 assert_eq!(res.unwrap_err().kind(), expected_error_kind);
             } else {
-                let _ = res.expect("Concluding a valid migration should succeed");
+                res.expect("Concluding a valid migration should succeed");
             }
             if let Some((expected_participant_id, expected_participant_info)) =
                 &self.expected_post_call_info
