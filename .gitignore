@@ -25,6 +25,7 @@ venv
 
 # Nix
 .direnv/
+/result
 
 # TODO(#1768): potentially remove
 .envrc
