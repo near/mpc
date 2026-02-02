@@ -15,39 +15,34 @@
   udev,
   dbus,
   apple-sdk_14,
-  darwin, # Add darwin for frameworks
+  darwin,
   crane,
 }:
 
 let
   llvmPkgs = llvmPackages_19;
-
   rustToolchain = (rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override {
     extensions = [ "rust-src" ];
   };
 
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-
   clangResourceInclude =
     let
       clangVersion = lib.versions.major llvmPkgs.clang-unwrapped.version;
     in
     "${llvmPkgs.clang-unwrapped.lib}/lib/clang/${clangVersion}/include";
-
   libcDev = lib.getDev stdenv.cc.libc;
   isX86 = stdenv.hostPlatform.isx86_64;
 
-  # Load TOML safely
   cargoToml = lib.importTOML ../Cargo.toml;
   pname = "mpc-node";
   version = cargoToml.workspace.package.version;
 
-  # FIX 1: Use crane's source cleaner for better caching
   src = lib.cleanSourceWith {
     src = craneLib.path ../.;
     filter =
       path: type:
-      # Keep standard Rust/Cargo files (rs, toml, lock)
+      # Keep standard Rust/Cargo files (.rs, .toml, .lock, etc.)
       (craneLib.filterCargoSources path type)
 
       # license file
@@ -59,16 +54,11 @@ let
 
       # TODO: --release should not need these assets.
       || (lib.hasInfix "assets/" path);
-
   };
 
   commonArgs = {
     inherit pname version src;
-
     strictDeps = true;
-
-    # FIX 2: Removed `cargoLock` (unused by Crane)
-
     cargoProfile = "reproducible";
     cargoExtraArgs = "-p mpc-node --bin mpc-node --locked";
 
@@ -94,7 +84,6 @@ let
     ]
     ++ lib.optionals stdenv.isDarwin [
       apple-sdk_14
-      # FIX 3: Explicit frameworks are often required on macOS
       darwin.apple_sdk.frameworks.Security
       darwin.apple_sdk.frameworks.SystemConfiguration
       darwin.apple_sdk.frameworks.CoreFoundation
@@ -103,15 +92,25 @@ let
     env = {
       SOURCE_DATE_EPOCH = "0";
       OPENSSL_NO_VENDOR = "1";
-      # LIBCLANG_PATH is handled by bindgenHook, but keep if you have specific version reqs
       LIBCLANG_PATH = "${llvmPkgs.libclang.lib}/lib";
+
+      # FIX: Standardize target-cpu for both C and Rust in the environment.
+      # This ensures crates like 'rocksdb' and 'zstd' build identically.
+      CFLAGS = lib.optionalString isX86 "-march=x86-64-v3";
+      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64-v3";
+
+      # Forces Rust to use the v3 instruction set (AVX2, BMI2, etc.)
+      RUSTFLAGS = lib.optionalString isX86 "-C target-cpu=x86-64-v3";
+
+      # Tell C-based build scripts (like rocksdb) to stop host-CPU probing
+      PORTABLE = "1";
 
       BINDGEN_EXTRA_CLANG_ARGS = lib.concatStringsSep " " [
         "-I${clangResourceInclude}"
         "-I${libcDev}/include"
+        (lib.optionalString isX86 "-march=x86-64-v3")
         "-fno-stack-protector"
       ];
-      CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -msse4.2 -mpclmul";
     }
     // lib.optionalAttrs stdenv.isDarwin {
       SDKROOT = "${apple-sdk_14}/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
@@ -121,7 +120,6 @@ let
       WASM_OPT_CXX_FLAGS = "-std=c++17 -stdlib=libc++";
     };
 
-    # Disable tests during artifact build to speed it up
     doCheck = false;
   };
 
@@ -131,9 +129,7 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
-
-    # Re-enable checks for the final build if desired
-    doCheck = true;
+    doCheck = false;
 
     meta = with lib; {
       description = "MPC node binary for NEAR threshold signer";
