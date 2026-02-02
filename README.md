@@ -129,9 +129,25 @@ For more information, refer to the [Rustup book on overrides](https://rust-lang.
 
 ## Reproducible Builds
 
-This project supports reproducible builds for both the node and launcher Docker images. Reproducible builds ensure that the same source code always produces identical binaries, which is important for security and verification purposes.
+This project supports reproducible builds via Nix for the `mpc-node` binary, and via Docker for the node and launcher images. Reproducible builds ensure that the same source code always produces identical binaries, which is important for security and verification purposes.
 
-### Prerequisites
+### Nix (mpc-node binary)
+
+**Prerequisites**:
+
+- Nix with flakes enabled.
+
+**Build the reproducible `mpc-node` binary**:
+
+```bash
+nix build .#mpc-node
+```
+
+This builds the default flake package using the pinned toolchain and the `reproducible` Cargo profile. The resulting binary is available at `./result/bin/mpc-node`.
+
+### Docker images
+
+#### Prerequisites
 
 **Common requirements** (for both node and launcher):
 
