@@ -1,6 +1,6 @@
-# Foreign Chain Transaction Verification (Design Proposal)
+# Foreign Chain Transaction Verification Design
 
-Status: Under discussion/design iterations
+Status: Ready for development
 
 ## Purpose & Motivation
 
@@ -34,12 +34,12 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 Not all extractors can be satisfied by a single RPC method call.
 
 * **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy (with fallbacks).
-* **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For example:
+* **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
-  * EVM confirmations require a transaction receipt **and** the current head block number.
-  * Bitcoin confirmations require the transaction’s inclusion height **and** the current best height.
-  * Solana instruction extraction requires `getTransaction`, but slot/finality may require an additional slot query.
-* **Shared fetches**: When multiple extractors require the same underlying data (e.g. an EVM receipt), nodes perform the RPC call once and share the result across extractors.
+  * **BlockHash (EVM)**: `eth_getTransactionReceipt` (or equivalent) for `blockHash`.
+  * **BlockHash (Bitcoin)**: `getrawtransaction` (with verbose) to get the containing `blockhash` (and `getblock` if needed).
+  * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
+* **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
 
 To keep behavior predictable and auditable, each extractor family must have a fixed, well-specified set of RPC methods it may invoke, with strict timeouts and response-size limits.
 
@@ -167,25 +167,35 @@ Extractors are strongly typed, bounded operations defined by the MPC protocol im
 * Each `Extractor` identifies a built-in extractor and its parameters.
 * Each extractor must return exactly one `ExtractedValue`.
 * Extractors must be deterministic and specified independently of provider-specific JSON formatting.
+* Initial extractor set is intentionally limited and isolated to avoid ambiguity.
 
 ```rust
 pub enum EvmExtractor {
-    EvmConfirmations,
-    EvmTxSucceeded,
-    EvmLogDigest { log_index: u32 },
+    BlockHash,
 }
 
 pub enum SolanaExtractor {
-    SolanaTxSucceeded,
-    SolanaSlot,
-    SolanaInstructionDigest { ix_index: u32 },
+    // Resolves instruction.programIdIndex to the actual program pubkey via account keys.
+    SolanaProgramIdIndex { ix_index: u32 },
+    // Hash of the instruction data bytes for ix_index.
+    SolanaDataHash { ix_index: u32 },
 }
 
 pub enum BitcoinExtractor {
-    BitcoinConfirmations,
-    BitcoinOutputDigest { vout: u32 },
+    BlockHash,
 }
 ```
+
+#### Solana extractor details (context from RPC responses)
+
+Solana transaction RPC responses encode the instruction’s program as an index (`programIdIndex`) into the
+transaction’s account list. To make the value useful on-chain, `SolanaProgramIdIndex` **resolves the index**
+to the actual 32-byte program pubkey using the `accountKeys` / loaded addresses arrays from `getTransaction`.
+This avoids relying on caller-side mapping and keeps the extracted value self-contained.
+
+`SolanaDataHash` hashes the raw instruction data bytes for the requested `ix_index` so large instruction payloads
+never appear on-chain. The hash function is fixed by the extractor definition (e.g., `sha256`) and must be
+documented alongside the extractor implementation.
 
 ## Domain Separation
 
@@ -369,13 +379,3 @@ providers require no auth at all.
 * **Operational friction**: Unanimous voting for policy updates may slow rollouts and hot fixes.
 * **Config drift**: Nodes missing required provider keys will fail startup validation.
 * **Extractor correctness**: Bugs or ambiguous specifications in extractors could produce incorrect values.
-
-## Discussion Points
-
-1. **Extractor set required by the bridge team:**
-
-   * Which EVM extractors are needed (confirmations, success, specific log digest, log topic0, etc.)?
-   * Which Solana extractors are needed (tx success, slot, instruction digest vs account-state digest)?
-   * Which Bitcoin extractors are needed (confirmations, output digest/value/script hash)?
-
-2. Should we group extractors per-chain (i.e. a `SolanaRpcRequest` could only include solana-specific extractors)?
