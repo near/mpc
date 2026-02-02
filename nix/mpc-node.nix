@@ -56,8 +56,10 @@ let
       || (lib.hasInfix "assets/" path);
   };
 
+  cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
+
   commonArgs = {
-    inherit pname version src;
+    inherit pname version src cargoVendorDir;
     strictDeps = true;
     cargoProfile = "reproducible";
     cargoExtraArgs = "-p mpc-node --bin mpc-node --locked";
@@ -100,7 +102,13 @@ let
       CXXFLAGS = "-include cstdint" + lib.optionalString isX86 " -march=x86-64-v3";
 
       # Forces Rust to use the v3 instruction set (AVX2, BMI2, etc.)
-      RUSTFLAGS = lib.optionalString isX86 "-C target-cpu=x86-64-v3";
+      RUSTFLAGS = lib.concatStringsSep " " (
+        lib.optionals isX86 [ "-C target-cpu=x86-64-v3" ]
+        ++ [
+          "--remap-path-prefix=${src}=/build/source"
+          "--remap-path-prefix=${cargoVendorDir}=/cargo-vendor"
+        ]
+      );
 
       # Tell C-based build scripts (like rocksdb) to stop host-CPU probing
       PORTABLE = "1";
