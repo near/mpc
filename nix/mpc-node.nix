@@ -111,6 +111,9 @@ let
         (lib.optionalString isX86 "-march=x86-64-v3")
         "-fno-stack-protector"
       ];
+
+      SHELL = "${pkgs.bash}/bin/bash";
+      CONFIG_SHELL = "${pkgs.bash}/bin/bash";
     }
     // lib.optionalAttrs stdenv.isDarwin {
       SDKROOT = "${apple-sdk_14}/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
