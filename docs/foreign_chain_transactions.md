@@ -167,7 +167,7 @@ Extractors are strongly typed, bounded operations defined by the MPC protocol im
 * Each `Extractor` identifies a built-in extractor and its parameters.
 * Each extractor must return exactly one `ExtractedValue`.
 * Extractors must be deterministic and specified independently of provider-specific JSON formatting.
-* Initial extractor set is intentionally limited and isolated to avoid ambiguity.
+* Initial extractor set is intentionally limited and isolated to avoid ambiguity. We'll add more as we uncover more use cases and needs.
 
 ```rust
 pub enum EvmExtractor {
@@ -194,8 +194,7 @@ to the actual 32-byte program pubkey using the `accountKeys` / loaded addresses 
 This avoids relying on caller-side mapping and keeps the extracted value self-contained.
 
 `SolanaDataHash` hashes the raw instruction data bytes for the requested `ix_index` so large instruction payloads
-never appear on-chain. The hash function is fixed by the extractor definition (e.g., `sha256`) and must be
-documented alongside the extractor implementation.
+never appear on-chain. The hash function is fixed by the extractor definition and is **sha256**.
 
 ## Domain Separation
 
