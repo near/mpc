@@ -901,7 +901,6 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "attestation"
 version = "3.4.0"
 dependencies = [
- "assert_matches",
  "borsh",
  "dcap-qvl",
  "derive_more 2.1.1",
@@ -1123,7 +1122,6 @@ name = "backup-cli"
 version = "3.4.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "clap",
  "contract-interface",
  "ed25519-dalek",
@@ -4044,7 +4042,6 @@ name = "include-measurements"
 version = "3.4.0"
 dependencies = [
  "anyhow",
- "assert_matches",
  "attestation",
  "hex",
  "proc-macro2",
