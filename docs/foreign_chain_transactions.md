@@ -1,6 +1,6 @@
 # Foreign Chain Transaction Verification (Design Proposal)
 
-Status: Draft (based on PR #1851 / branch `read-foreign-chain`)
+Status: Under discussion/design iterations
 
 ## Purpose & Motivation
 
@@ -12,7 +12,7 @@ This feature lets the MPC network sign payloads only after verifying a specific 
 ## Scope
 
 - In scope: contract-level API for verify+sign requests, node-side verification via configured RPC providers, deterministic provider selection, and extensible per-chain verifiers.
-- Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results, and non-ECDSA schemes for verify_foreign_transaction (initially ECDSA only).
+- Out of scope: on-chain light clients / cryptographic proofs, multi-round MPC consensus on verification results.
 
 ## Overview
 
@@ -56,7 +56,7 @@ flowchart TD
     FC@{ shape: cylinder}
 ```
 
-With the user flow in mind, the on-chain interface is:
+With the user flow in mind, this design extends the on-chain interface with the following methods:
 
 ### Contract Interface (Request/Response)
 
@@ -69,22 +69,19 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```rust
 // Contract DTOs
 pub struct VerifyForeignTxRequestArgs {
-    pub chain: ForeignChain,
-    pub tx_id: TransactionId, // TxID is the payload we're signing
+    pub request: ForeignChainRpcRequest,
     pub path: String, // Key derivation path
-    pub domain_id: Option<DomainId>, // Defaults to 0 (legacy ECDSA)
+    pub domain_id: DomainId,
 }
 
 pub struct VerifyForeignTxRequest {
-    // Constructed from the args
-    pub chain: ForeignChainRpcRequest,
-    pub tx_id: TransactionId,
+    pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
 }
 
 pub struct VerifyForeignTxResponse {
-    pub verified_at_block: BlockId,
+    pub verified_at_block: ForeignBlockId,
     pub signature: SignatureResponse, // Signature over `sha256(tx_id_bytes)` where `tx_id_bytes` are chain-native bytes (e.g., Solana 64-byte signature).
 }
 
@@ -95,12 +92,12 @@ pub enum ForeignChainRpcRequest {
 }
 
 pub struct SolanaRpcRequest {
-    pub tx_id: SolanaTxId,
+    pub tx_id: SolanaTxId, // This is the payload we're signing
     pub finality: Finality, // Optimistic or Final
 }
 
 pub struct BitcoinRpcRequest {
-    pub tx_id: BitcoinTxId,
+    pub tx_id: BitcoinTxId, // This is the payload we're signing
     pub confirmations: usize, // required confirmations before considering final
 }
 
@@ -109,6 +106,32 @@ pub enum Finality{
     Final,
 }
 ```
+
+### Domain Separation
+
+To prevent callers from using plain `sign()` requests that could be mistaken for validated foreign-chain
+transactions, we enforce domain separation by extending `DomainConfig` with a `DomainPurpose` enum.
+Requests are only accepted for domains matching the purpose:
+- `sign()` may only target domains with purpose `Sign`.
+- `verify_foreign_transaction()` may only target domains with purpose `ForeignTx`.
+
+```rust
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
+pub struct DomainConfig {
+    pub id: DomainId,
+    pub scheme: SignatureScheme,
+    pub purpose: DomainPurpose,
+}
+```
+
+Compatibility note: legacy contract state does not include `DomainPurpose`. New nodes reading old state
+must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
+Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 
 ### Contract state (Foreign Chain Policy)
 
@@ -121,7 +144,7 @@ pub struct ForeignChainPolicy {
 
 pub struct ForeignChainConfig {
     pub chain: ForeignChain,
-    pub providers: NonEmptyVec<RpcProviderName>,
+    pub providers: NonEmptyVec<RpcProvider>,
 }
 
 pub enum ForeignChain {
@@ -130,7 +153,9 @@ pub enum ForeignChain {
     // Future chains...
 }
 
-pub struct RpcProviderName(String);
+pub struct RpcProvider{
+    rpc_url: String,
+};
 
 pub struct ForeignChainPolicyVotes {
     // Each authenticated participant has one active vote for a proposal.
@@ -190,10 +215,10 @@ Provider selection is deterministic across nodes:
 
 ### Deterministic Provider Selection
 
-Each node selects a provider using a deterministic hash of:
+Each node selects a provider using a deterministic hash of the policy identity (provider RPC URL):
 
 ```
-hash = sha256(participant_id || request_id || provider_name)
+hash = sha256(participant_id || request_id || provider_rpc_url)
 ```
 
 Providers are sorted by this hash to build a deterministic ordering:
@@ -216,16 +241,38 @@ foreign_chains:
     providers:
       alchemy:
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
-        api_key:
-          env: ALCHEMY_API_KEY
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
       quicknode:
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
-        api_key:
-          val: "<your-api-key-here>"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            val: "<your-api-key-here>"
+      ankr:
+        rpc_url: "https://rpc.ankr.com/near/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      public:
+        rpc_url: "https://rpc.public.example.com"
+        auth:
+          kind: none
 ```
 
-The contract policy references providers by **name**, and nodes must have matching
+The contract policy references providers by **rpc_url**, and nodes must have matching
 provider entries in config (including API keys) to satisfy the policy.
+
+Auth variants are explicitly modeled because providers differ in how they expect API keys
+to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
+providers require no auth at all.
 
 ## Risks
 
@@ -240,10 +287,4 @@ provider entries in config (including API keys) to satisfy the policy.
 - **Config drift**: Nodes missing required provider keys will fail startup validation.
 
 ## Discussion points
-- Why do we return a signature? Can't we just return a bool.
-  - A signature suggests this is a "proof" that can be validated by someone else than the caller, but currently it seems like this proof could easily be forged by just calling the normal "sign" method.
-- Finality interface right now diverges from the original PR. Are we okay with this new structure?
-- Can we assume all RPC providers take API keys as bearer tokens?
-- Should we identify RPC providers by a base URL instead of an arbitrary name?
-- Should the policy vote threshold stay **unanimous**, or be configurable (e.g., threshold)?
-- Startup validation: when policy is empty, nodes skip config validation and can still boot/vote an initial policy. Is this the desired operational behavior?
+- The current design only proves transactions exists. For most bridges you'd want to verify the execution result, and potentially check values in transaction logs or events. How can we update the design to support this?
