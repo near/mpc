@@ -1689,6 +1689,7 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::NodeId;
+    use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
@@ -3479,12 +3480,11 @@ mod tests {
             .build());
 
         // Call verify_tee - should trigger resharing
-        let result = contract
-            .verify_tee()
-            .expect("verify_tee should succeed at expiry boundary");
-        assert!(
+        let result = contract.verify_tee();
+        assert_matches!(
             result,
-            "verify_tee should return true when threshold is met"
+            Ok(true),
+            "verify_tee should return Ok(true) when threshold is met"
         );
 
         // Verify contract transitioned to Resharing state
