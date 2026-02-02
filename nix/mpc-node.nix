@@ -43,7 +43,24 @@ let
   version = cargoToml.workspace.package.version;
 
   # FIX 1: Use crane's source cleaner for better caching
-  src = craneLib.cleanCargoSource ../.;
+  src = lib.cleanSourceWith {
+    src = craneLib.path ../.;
+    filter =
+      path: type:
+      # Keep standard Rust/Cargo files (rs, toml, lock)
+      (craneLib.filterCargoSources path type)
+
+      # license file
+      || (lib.hasSuffix "hird-party-licenses/licenses.html" path)
+
+      # README files that are included in docs
+      || (lib.hasSuffix "crates/contract-interface/README.md" path)
+      || (lib.hasSuffix "crates/contract/README.md" path)
+
+      # TODO: --release should not need these assets.
+      || (lib.hasInfix "assets/" path);
+
+  };
 
   commonArgs = {
     inherit pname version src;
