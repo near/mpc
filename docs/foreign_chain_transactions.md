@@ -152,11 +152,8 @@ pub struct VerifyForeignTxResponse {
 }
 
 pub enum ExtractedValue {
-    Bool(bool),
     U64(u64),
-    Bytes(Vec<u8>),          // length-capped
-    H160([u8; 20]),
-    H256([u8; 32]),
+    Hash256([u8; 32]),
 }
 ```
 
