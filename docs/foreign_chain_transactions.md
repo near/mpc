@@ -169,22 +169,21 @@ Extractors are strongly typed, bounded operations defined by the MPC protocol im
 * Extractors must be deterministic and specified independently of provider-specific JSON formatting.
 
 ```rust
-pub enum Extractor {
-    // EVM family
+pub enum EvmExtractor {
     EvmConfirmations,
     EvmTxSucceeded,
     EvmLogDigest { log_index: u32 },
+}
 
-    // Solana family
+pub enum SolanaExtractor {
     SolanaTxSucceeded,
     SolanaSlot,
     SolanaInstructionDigest { ix_index: u32 },
+}
 
-    // Bitcoin
+pub enum BitcoinExtractor {
     BitcoinConfirmations,
     BitcoinOutputDigest { vout: u32 },
-
-    // Future: state-based extraction, generic extraction, etc.
 }
 ```
 
