@@ -49,13 +49,12 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
-use mpc_attestation::attestation::Attestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
-    store::{IterableMap, LookupMap},
+    store::LookupMap,
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
@@ -116,12 +115,7 @@ pub struct MpcContract {
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct StaleData {
-    /// Holds the TEE attestations from the previous contract version.
-    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
-    /// ensuring the `IterableMap` handle is properly dropped.
-    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
-}
+struct StaleData {}
 
 impl MpcContract {
     pub(crate) fn public_key_extended(

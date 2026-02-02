@@ -8,7 +8,11 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::{env, store::LookupMap};
+use mpc_attestation::attestation::Attestation;
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -17,10 +21,18 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::TeeState,
+    tee::tee_state::{NodeId, TeeState},
     update::ProposedUpdates,
-    Config, StaleData,
+    Config,
 };
+
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+struct StaleData {
+    /// Holds the TEE attestations from the previous contract version.
+    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
+    /// ensuring the `IterableMap` handle is properly dropped.
+    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
+}
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -52,9 +64,7 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: crate::StaleData {
-                participant_attestations: None,
-            },
+            stale_data: crate::StaleData {},
         }
     }
 }
