@@ -13,8 +13,8 @@ fn test_collateral_missing_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let err = result.expect_err("Missing required field should error");
+    match err {
         CollateralError::MissingField(field) => {
             assert_eq!(field, "tcb_info");
         }
@@ -30,8 +30,8 @@ fn test_collateral_invalid_hex() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let err = result.expect_err("Invalid hex should error");
+    match err {
         CollateralError::HexDecode { field, .. } => {
             assert_eq!(field, "tcb_info_signature");
         }
@@ -47,8 +47,8 @@ fn test_collateral_null_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let err = result.expect_err("Null required field should error");
+    match err {
         CollateralError::MissingField(field) => {
             assert_eq!(field, "qe_identity");
         }
@@ -64,8 +64,8 @@ fn test_collateral_wrong_type_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let err = result.expect_err("Wrong field type should error");
+    match err {
         CollateralError::MissingField(field) => {
             assert_eq!(field, "tcb_info_issuer_chain");
         }
@@ -111,8 +111,8 @@ fn test_from_str_invalid_json() {
     let invalid_json = "{ invalid json }";
     let result = Collateral::from_str(invalid_json);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let err = result.expect_err("Invalid JSON should error");
+    match err {
         CollateralError::InvalidJson => {}
         _ => panic!("Expected InvalidJson error"),
     }

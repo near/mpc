@@ -1239,11 +1239,12 @@ mod fault_handling_tests {
 
         match test_case.as_ref() {
             FaultTestCase::NoFault => {
-                assert!(result.is_ok());
+                let _ = result.expect("No-fault case should complete successfully");
             }
             FaultTestCase::Crash(participant_id) => {
-                assert!(result.is_err());
-                let err_string = result.as_ref().unwrap_err().to_string();
+                let err_string = result
+                    .expect_err("Crash case should return an error")
+                    .to_string();
                 assert!(err_string.contains("Crashed"), "{}", err_string);
                 if participant_id == &client.my_participant_id() {
                 } else if me.raw() == 0 {
@@ -1257,7 +1258,7 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::Slow(participant_id, cancellation_token) => {
-                assert!(result.is_ok());
+                let _ = result.expect("Slow case should still complete successfully");
                 if is_leader || *participant_id == client.my_participant_id() {
                     assert!(cancellation_token.is_cancelled());
                 } else {
@@ -1265,7 +1266,7 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::SlowNoWaitSuccess(participant_id, cancellation_token) => {
-                assert!(result.is_ok());
+                let _ = result.expect("SlowNoWaitSuccess should complete successfully");
                 if *participant_id == client.my_participant_id() {
                     assert!(cancellation_token.is_cancelled());
                 } else {
@@ -1273,8 +1274,9 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::Timeout(participant_id) => {
-                assert!(result.is_err());
-                let err_string = result.as_ref().unwrap_err().to_string();
+                let err_string = result
+                    .expect_err("Timeout case should return an error")
+                    .to_string();
                 assert!(err_string.contains("Timeout"), "{}", err_string);
                 if participant_id == &client.my_participant_id() {
                 } else if me.raw() == 0 {
@@ -1288,8 +1290,9 @@ mod fault_handling_tests {
                 }
             }
             FaultTestCase::AllTimeout => {
-                assert!(result.is_err());
-                let err_string = result.as_ref().unwrap_err().to_string();
+                let err_string = result
+                    .expect_err("AllTimeout case should return an error")
+                    .to_string();
                 assert!(err_string.contains("Timeout"), "{}", err_string);
             }
         }

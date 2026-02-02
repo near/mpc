@@ -240,11 +240,17 @@ mod tests {
         assert_eq!(loaded, permanent_keyshare);
 
         // Cannot store the same permanent keyshare twice.
-        assert!(storage.store(&permanent_keyshare).await.is_err());
+        let _ = storage
+            .store(&permanent_keyshare)
+            .await
+            .expect_err("Storing duplicate permanent keyshare should fail");
         // Cannot store current epoch with fewer domains.
         let keys = vec![key_1];
         let permanent_keyshare = KeysetBuilder::from_keyshares(1, &keys).permanent_key_data();
-        assert!(storage.store(&permanent_keyshare).await.is_err());
+        let _ = storage
+            .store(&permanent_keyshare)
+            .await
+            .expect_err("Storing fewer domains for current epoch should fail");
         // Cannot store older epoch than current.
         let keys = vec![
             Keyshare {
@@ -257,7 +263,10 @@ mod tests {
             },
         ];
         let permanent_keyshare = KeysetBuilder::from_keyshares(0, &keys).permanent_key_data();
-        assert!(storage.store(&permanent_keyshare).await.is_err());
+        let _ = storage
+            .store(&permanent_keyshare)
+            .await
+            .expect_err("Storing an older epoch should fail");
 
         // Can store newer epoch than current.
         let keys = vec![

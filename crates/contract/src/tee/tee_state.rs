@@ -804,8 +804,9 @@ mod tests {
             .expect("Attestation is valid on insertion");
 
         // 4. Verify check passes
-        let result = tee_state.is_caller_an_attested_participant(&participants);
-        assert!(result.is_ok());
+        let _ = tee_state
+            .is_caller_an_attested_participant(&participants)
+            .expect("Attested participant should be accepted");
     }
 
     #[test]

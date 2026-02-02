@@ -91,13 +91,8 @@ mod tests {
         let result = storage.store_keyshares(&[]).await;
 
         // Then
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Cannot store empty keyshares")
-        );
+        let err = result.expect_err("Storing empty keyshares should fail");
+        assert!(err.to_string().contains("Cannot store empty keyshares"));
     }
 
     #[tokio::test]
@@ -118,8 +113,9 @@ mod tests {
         let result = storage.store_keyshares(&keyshares).await;
 
         // Then
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
+        let error_msg = result
+            .expect_err("Storing keyshares from different epochs should fail")
+            .to_string();
         assert!(error_msg.contains("Inconsistent"));
     }
 
@@ -156,7 +152,7 @@ mod tests {
         let result = storage.store_keyshares(&keyshares2).await;
 
         // Then
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("older epoch"));
+        let err = result.expect_err("Storing keyshares from an older epoch should fail");
+        assert!(err.to_string().contains("older epoch"));
     }
 }

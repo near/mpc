@@ -236,26 +236,26 @@ pub mod tests {
             for c in &candidates {
                 env.set_signer(c);
                 // verify that no votes can be cast before the resharing started.
-                assert!(state.vote_reshared(first_key_event_id).is_err());
-                assert!(state.vote_abort(first_key_event_id).is_err());
+                let _ = state.vote_reshared(first_key_event_id).unwrap_err();
+                let _ = state.vote_abort(first_key_event_id).unwrap_err();
                 if *c != leader.0 {
-                    assert!(state.start(first_key_event_id, 1).is_err());
+                    let _ = state.start(first_key_event_id, 1).unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
-                    assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
+                    let _ = state.start(first_key_event_id.next_attempt(), 1).unwrap_err();
                 }
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id, 0).is_ok());
+            let _ = state.start(first_key_event_id, 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
             // check that randos can't vote.
             for _ in 0..20 {
                 env.set_signer(&gen_account_id());
-                assert!(state.vote_reshared(key_event).is_err());
-                assert!(state.vote_abort(key_event).is_err());
+                let _ = state.vote_reshared(key_event).unwrap_err();
+                let _ = state.vote_abort(key_event).unwrap_err();
             }
 
             // check that timing out will abort the instance
@@ -263,14 +263,14 @@ pub mod tests {
             assert!(!state.resharing_key.is_active());
             for c in &candidates {
                 env.set_signer(c);
-                assert!(state.vote_reshared(key_event).is_err());
-                assert!(state.vote_abort(key_event).is_err());
+                let _ = state.vote_reshared(key_event).unwrap_err();
+                let _ = state.vote_abort(key_event).unwrap_err();
                 assert!(!state.resharing_key.is_active());
             }
 
             // assert that votes for a different resharings do not count
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id.next_attempt(), 0).is_ok());
+            let _ = state.start(first_key_event_id.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -292,8 +292,8 @@ pub mod tests {
             for bad_key_event in bad_key_events {
                 for c in &candidates {
                     env.set_signer(c);
-                    assert!(state.vote_reshared(bad_key_event).is_err());
-                    assert!(state.vote_abort(bad_key_event).is_err());
+                    let _ = state.vote_reshared(bad_key_event).unwrap_err();
+                    let _ = state.vote_abort(bad_key_event).unwrap_err();
                 }
             }
             assert_eq!(state.resharing_key.num_completed(), 0);
@@ -301,22 +301,22 @@ pub mod tests {
             // check that vote_abort immediately causes failure.
             env.advance_block_height(1);
             env.set_signer(&leader.0);
-            assert!(state.start(key_event.next_attempt(), 0).is_ok());
+            let _ = state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            assert!(state.vote_abort(key_event).is_ok());
+            let _ = state.vote_abort(key_event).unwrap();
             assert!(!state.resharing_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            assert!(state.start(key_event.next_attempt(), 0).is_ok());
+            let _ = state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.resharing_key.current_key_event_id().unwrap();
             for (i, c) in candidates.clone().into_iter().enumerate() {
                 env.set_signer(&c);
                 assert!(resulting_running_state.is_none());
                 assert_eq!(state.resharing_key.num_completed(), i);
                 resulting_running_state = state.vote_reshared(key_event).unwrap();
-                assert!(state.vote_abort(key_event).is_err());
+                let _ = state.vote_abort(key_event).unwrap_err();
             }
         }
 
@@ -364,7 +364,7 @@ pub mod tests {
                 .id,
             epoch_id: state.prospective_epoch_id(),
         };
-        assert!(state.start(first_key_event_id, 0).is_ok());
+        let _ = state.start(first_key_event_id, 0).unwrap();
 
         let old_participants = state
             .previous_running_state

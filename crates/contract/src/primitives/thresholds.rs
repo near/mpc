@@ -190,12 +190,12 @@ mod tests {
         let n = rand::thread_rng().gen_range(2..600) as u64;
         let min_threshold = ((n as f64) * 0.6).ceil() as u64;
         for k in 0..min_threshold {
-            assert!(ThresholdParameters::validate_threshold(n, Threshold::new(k)).is_err());
+            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap_err();
         }
         for k in min_threshold..(n + 1) {
-            assert!(ThresholdParameters::validate_threshold(n, Threshold::new(k)).is_ok());
+            let _ = ThresholdParameters::validate_threshold(n, Threshold::new(k)).unwrap();
         }
-        assert!(ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).is_err());
+        let _ = ThresholdParameters::validate_threshold(n, Threshold::new(n + 1)).unwrap_err();
     }
 
     #[test]
@@ -206,17 +206,16 @@ mod tests {
         let participants = gen_participants(n);
         for k in 1..min_threshold {
             let invalid_threshold = Threshold::new(k as u64);
-            assert!(ThresholdParameters::new(participants.clone(), invalid_threshold).is_err());
+            let _ = ThresholdParameters::new(participants.clone(), invalid_threshold).unwrap_err();
         }
-        assert!(
-            ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64)).is_err()
-        );
+        let _ = ThresholdParameters::new(participants.clone(), Threshold::new((n + 1) as u64))
+            .unwrap_err();
         for k in min_threshold..(n + 1) {
             let threshold = Threshold::new(k as u64);
             let tp = ThresholdParameters::new(participants.clone(), threshold.clone());
-            assert!(tp.is_ok(), "{:?}", tp);
-            let tp = tp.unwrap();
-            assert!(tp.validate().is_ok());
+            let tp = tp.expect("Threshold parameters should be valid for the given threshold");
+            tp.validate()
+                .expect("Threshold parameters should validate");
             assert_eq!(tp.threshold(), threshold);
             assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
@@ -238,11 +237,13 @@ mod tests {
         // Valid proposals should validate.
         let params = gen_threshold_params(10);
         let proposal = gen_valid_params_proposal(&params);
-        assert!(params.validate_incoming_proposal(&proposal).is_ok());
+        params
+            .validate_incoming_proposal(&proposal)
+            .expect("Valid proposal should validate");
 
         // Random proposals should not validate.
         let proposal = gen_threshold_params(10);
-        assert!(params.validate_incoming_proposal(&proposal).is_err());
+        let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
 
         // Proposal with threshold number of shared participants should be allowed.
         let mut new_participants = params
@@ -251,12 +252,9 @@ mod tests {
         new_participants.add_random_participants_till_n(params.participants.len());
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
-        assert!(
-            params.validate_incoming_proposal(&proposal).is_ok(),
-            "{:?} -> {:?}",
-            params,
-            proposal
-        );
+        params
+            .validate_incoming_proposal(&proposal)
+            .expect("Proposal with threshold shared participants should validate");
 
         // Proposal with less than threshold number of shared participants should not be allowed,
         // even if the new threshold is lower.
@@ -268,7 +266,7 @@ mod tests {
             new_participants,
             Threshold(params.threshold.value() - 1),
         );
-        assert!(params.validate_incoming_proposal(&proposal).is_err());
+        let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
 
         // Proposal with the new threshold being invalid should not be allowed.
         let mut new_participants = params
@@ -277,7 +275,7 @@ mod tests {
         new_participants.add_random_participants_till_n(50);
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
-        assert!(params.validate_incoming_proposal(&proposal).is_err());
+        let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
     }
 
     #[test]
@@ -301,7 +299,7 @@ mod tests {
         };
 
         let result = params.validate_incoming_proposal(&tampered_params);
-        assert!(result.is_err());
+        let _ = result.unwrap_err();
     }
 
     #[test]
@@ -319,13 +317,13 @@ mod tests {
                 .cloned()
                 .collect(),
         );
-        assert!(tampered_participants.validate().is_err());
+        let _ = tampered_participants.validate().unwrap_err();
 
         let tampered_params = ThresholdParameters {
             participants: tampered_participants,
             threshold: params.threshold.clone(),
         };
-        assert!(params.validate_incoming_proposal(&tampered_params).is_err());
+        let _ = params.validate_incoming_proposal(&tampered_params).unwrap_err();
     }
 
     #[test]
@@ -340,7 +338,7 @@ mod tests {
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
-        assert!(result.is_ok());
+        let _ = result.unwrap();
     }
 
     #[test]
@@ -356,7 +354,7 @@ mod tests {
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
 
         let result = params.validate_incoming_proposal(&new_params);
-        assert!(result.is_ok());
+        let _ = result.unwrap();
     }
 
     #[test]
@@ -373,14 +371,9 @@ mod tests {
                 ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);
             if i >= params.participants.next_id().0 {
-                assert!(result.is_ok());
+                let _ = result.unwrap();
             } else {
-                assert!(
-                    result.is_err(),
-                    "i: {}, max_id: {}",
-                    i,
-                    new_params.participants.next_id().0
-                );
+                let _ = result.unwrap_err();
             }
         }
     }
