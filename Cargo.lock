@@ -4876,7 +4876,6 @@ dependencies = [
  "thiserror 2.0.17",
  "threshold-signatures",
  "tokio",
- "utilities",
  "zstd",
 ]
 
@@ -9794,6 +9793,7 @@ dependencies = [
 name = "test-parallel-contract"
 version = "3.4.0"
 dependencies = [
+ "assert_matches",
  "blstrs",
  "borsh",
  "contract-interface",

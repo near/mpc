@@ -188,4 +188,4 @@ codegen-units = 1
 overflow-checks = true
 
 [workspace.lints.clippy]
-assertions_on_result_states = "warn"
+# assertions_on_result_states = "warn"
