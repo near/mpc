@@ -202,8 +202,8 @@ mod tests {
         for i in 0..ciphertext.len() {
             let mut corrupted = ciphertext.clone();
             corrupted[i] ^= 1;
-            let _ = decrypt(&cipher, &corrupted)
-                .expect_err("Corrupted ciphertext should not decrypt");
+            let _ =
+                decrypt(&cipher, &corrupted).expect_err("Corrupted ciphertext should not decrypt");
         }
         let incorrect_key = [2; 16];
         let cipher = AesGcm::new(&incorrect_key.into());

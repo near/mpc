@@ -214,8 +214,7 @@ mod tests {
             let threshold = Threshold::new(k as u64);
             let tp = ThresholdParameters::new(participants.clone(), threshold.clone());
             let tp = tp.expect("Threshold parameters should be valid for the given threshold");
-            tp.validate()
-                .expect("Threshold parameters should validate");
+            tp.validate().expect("Threshold parameters should validate");
             assert_eq!(tp.threshold(), threshold);
             assert_eq!(tp.participants.len(), participants.len());
             assert_eq!(participants, *tp.participants());
@@ -323,7 +322,9 @@ mod tests {
             participants: tampered_participants,
             threshold: params.threshold.clone(),
         };
-        let _ = params.validate_incoming_proposal(&tampered_params).unwrap_err();
+        let _ = params
+            .validate_incoming_proposal(&tampered_params)
+            .unwrap_err();
     }
 
     #[test]

@@ -3479,9 +3479,13 @@ mod tests {
             .build());
 
         // Call verify_tee - should trigger resharing
-        let result =
-            contract.verify_tee().expect("verify_tee should succeed at expiry boundary");
-        assert!(result, "verify_tee should return true when threshold is met");
+        let result = contract
+            .verify_tee()
+            .expect("verify_tee should succeed at expiry boundary");
+        assert!(
+            result,
+            "verify_tee should return true when threshold is met"
+        );
 
         // Verify contract transitioned to Resharing state
         let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {

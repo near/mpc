@@ -176,9 +176,10 @@ mod tests {
 
         // Then
         let err = result.expect_err("Missing key-provider event should fail");
-        assert!(err
-            .to_string()
-            .contains("Expected exactly one key-provider event, found 0"));
+        assert!(
+            err.to_string()
+                .contains("Expected exactly one key-provider event, found 0")
+        );
     }
 
     #[test]
@@ -217,8 +218,9 @@ mod tests {
 
         // Then
         let err = result.expect_err("Multiple key-provider events should fail");
-        assert!(err
-            .to_string()
-            .contains("Expected exactly one key-provider event, found 2"));
+        assert!(
+            err.to_string()
+                .contains("Expected exactly one key-provider event, found 2")
+        );
     }
 }

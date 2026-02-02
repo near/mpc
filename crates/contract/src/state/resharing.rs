@@ -242,7 +242,9 @@ pub mod tests {
                     let _ = state.start(first_key_event_id, 1).unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
-                    let _ = state.start(first_key_event_id.next_attempt(), 1).unwrap_err();
+                    let _ = state
+                        .start(first_key_event_id.next_attempt(), 1)
+                        .unwrap_err();
                 }
             }
             // start the resharing; verify that the resharing is for the right epoch and domain ID.

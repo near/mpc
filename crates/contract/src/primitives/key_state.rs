@@ -254,8 +254,7 @@ pub mod tests {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());
             testing_env!(context.build());
-            let _ =
-                AuthenticatedParticipantId::new(proposed_parameters.participants()).unwrap();
+            let _ = AuthenticatedParticipantId::new(proposed_parameters.participants()).unwrap();
             let mut context = VMContextBuilder::new();
             context.signer_account_id(gen_account_id());
             testing_env!(context.build());
@@ -278,8 +277,7 @@ pub mod tests {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(gen_account_id());
             testing_env!(context.build());
-            let _ =
-                AuthenticatedAccountId::new(proposed_parameters.participants()).unwrap_err();
+            let _ = AuthenticatedAccountId::new(proposed_parameters.participants()).unwrap_err();
         }
     }
 }
