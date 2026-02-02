@@ -25,10 +25,7 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_sdk::NearToken;
 use near_workspaces::{
-    network::Sandbox,
-    result::{ExecutionFailure, ExecutionSuccess},
-    types::AccessKeyPermission,
-    AccessKey, Contract,
+    network::Sandbox, result::ExecutionSuccess, types::AccessKeyPermission, AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
@@ -571,17 +568,4 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
-}
-
-pub async fn cleanup_post_migrate(
-    contract: &Contract,
-    account: &Account,
-) -> Result<ExecutionSuccess, ExecutionFailure> {
-    account
-        .call(contract.id(), "post_upgrade_cleanup")
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result()
 }
