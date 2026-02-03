@@ -2,7 +2,7 @@ use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
 use near_sdk::{near, PublicKey};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -59,7 +59,8 @@ pub struct ParticipantData {
 
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
 #[near(serializers=[borsh])]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+#[serde(from = "ParticipantsJson", into = "ParticipantsJsonVec")]
 pub struct Participants {
     /// The next [`ParticipantId`] to assign when inserting a new participant.
     /// Always greater than all existing participant IDs.
@@ -87,35 +88,47 @@ impl schemars::JsonSchema for Participants {
 }
 
 #[derive(Serialize, Deserialize)]
-struct ParticipantsJson {
+struct ParticipantsJsonVec {
     next_id: ParticipantId,
     participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
 
-impl Serialize for Participants {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let json = ParticipantsJson {
-            next_id: self.next_id,
-            participants: self
-                .participants
-                .iter()
-                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
-                .collect(),
-        };
-        json.serialize(serializer)
+#[derive(Deserialize)]
+struct ParticipantsJsonMap {
+    next_id: ParticipantId,
+    participants: BTreeMap<AccountId, ParticipantData>,
+}
+
+/// Supports both Vec format (contract ABI) and BTreeMap format (fixtures).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ParticipantsJson {
+    Vec(ParticipantsJsonVec),
+    Map(ParticipantsJsonMap),
+}
+
+impl From<ParticipantsJson> for Participants {
+    fn from(json: ParticipantsJson) -> Self {
+        match json {
+            ParticipantsJson::Vec(v) => Participants::init(v.next_id, v.participants),
+            ParticipantsJson::Map(m) => Participants {
+                next_id: m.next_id,
+                participants: m.participants,
+            },
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for Participants {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let json = ParticipantsJson::deserialize(deserializer)?;
-        Ok(Participants::init(json.next_id, json.participants))
+impl From<Participants> for ParticipantsJsonVec {
+    fn from(p: Participants) -> Self {
+        ParticipantsJsonVec {
+            next_id: p.next_id,
+            participants: p
+                .participants
+                .into_iter()
+                .map(|(account_id, data)| (account_id, data.id, data.info))
+                .collect(),
+        }
     }
 }
 
