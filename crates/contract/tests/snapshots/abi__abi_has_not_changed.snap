@@ -724,7 +724,7 @@ expression: abi
         }
       },
       {
-        "name": "respond_foreign_transaction",
+        "name": "respond_verify_foreign_tx",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -971,7 +971,7 @@ expression: abi
           "serialization_type": "json",
           "args": [
             {
-              "name": "foreign_transaction",
+              "name": "request",
               "type_schema": {
                 "$ref": "#/definitions/VerifyForeignTransactionRequestArgs"
               }
@@ -1306,28 +1306,43 @@ expression: abi
             }
           }
         },
-        "BitcoinTransaction": {
+        "BitcoinExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "BitcoinRpcRequest": {
           "type": "object",
           "required": [
             "confirmations",
-            "transaction_id"
+            "extractors",
+            "tx_id"
           ],
           "properties": {
             "confirmations": {
               "$ref": "#/definitions/BlockConfirmations"
             },
-            "transaction_id": {
-              "$ref": "#/definitions/BitcoinTransactionId"
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/BitcoinExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/BitcoinTxId"
             }
           }
         },
-        "BitcoinTransactionId": {
+        "BitcoinTxId": {
           "type": "array",
           "items": {
             "type": "integer",
             "format": "uint8",
             "minimum": 0.0
-          }
+          },
+          "maxItems": 32,
+          "minItems": 32
         },
         "BlockConfirmations": {
           "type": "integer",
@@ -1692,6 +1707,74 @@ expression: abi
             }
           }
         },
+        "EvmExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "EvmRpcRequest": {
+          "type": "object",
+          "required": [
+            "chain",
+            "extractors",
+            "tx_id"
+          ],
+          "properties": {
+            "chain": {
+              "$ref": "#/definitions/ForeignChain"
+            },
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EvmExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EvmTxId"
+            }
+          }
+        },
+        "EvmTxId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
+        "ExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "U64"
+              ],
+              "properties": {
+                "U64": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Hash256"
+              ],
+              "properties": {
+                "Hash256": {
+                  "$ref": "#/definitions/Hash256"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "Finality": {
           "type": "string",
           "enum": [
@@ -1699,8 +1782,41 @@ expression: abi
             "Final"
           ]
         },
-        "ForeignTransactionConfig": {
+        "ForeignBlockId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
+        "ForeignChain": {
+          "type": "string",
+          "enum": [
+            "Solana",
+            "Bitcoin",
+            "Ethereum",
+            "Base",
+            "Bnb",
+            "Arbitrum"
+          ]
+        },
+        "ForeignChainRpcRequest": {
           "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Evm"
+              ],
+              "properties": {
+                "Evm": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
             {
               "type": "object",
               "required": [
@@ -1708,7 +1824,7 @@ expression: abi
               ],
               "properties": {
                 "Solana": {
-                  "$ref": "#/definitions/SolanaTransaction"
+                  "$ref": "#/definitions/SolanaRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -1720,12 +1836,22 @@ expression: abi
               ],
               "properties": {
                 "Bitcoin": {
-                  "$ref": "#/definitions/BitcoinTransaction"
+                  "$ref": "#/definitions/BitcoinRpcRequest"
                 }
               },
               "additionalProperties": false
             }
           ]
+        },
+        "Hash256": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -2816,22 +2942,77 @@ expression: abi
             "V2Secp256k1"
           ]
         },
-        "SolanaTransaction": {
+        "SolanaExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "SolanaProgramIdIndex"
+              ],
+              "properties": {
+                "SolanaProgramIdIndex": {
+                  "type": "object",
+                  "required": [
+                    "ix_index"
+                  ],
+                  "properties": {
+                    "ix_index": {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "SolanaDataHash"
+              ],
+              "properties": {
+                "SolanaDataHash": {
+                  "type": "object",
+                  "required": [
+                    "ix_index"
+                  ],
+                  "properties": {
+                    "ix_index": {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "SolanaRpcRequest": {
           "type": "object",
           "required": [
+            "extractors",
             "finality",
-            "transaction_id"
+            "tx_id"
           ],
           "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SolanaExtractor"
+              }
+            },
             "finality": {
               "$ref": "#/definitions/Finality"
             },
-            "transaction_id": {
-              "$ref": "#/definitions/SolanaTransactionId"
+            "tx_id": {
+              "$ref": "#/definitions/SolanaTxId"
             }
           }
         },
-        "SolanaTransactionId": {
+        "SolanaTxId": {
           "type": "array",
           "items": {
             "type": "integer",
@@ -3063,15 +3244,15 @@ expression: abi
           "type": "object",
           "required": [
             "domain_id",
-            "foreign_transaction",
+            "request",
             "tweak"
           ],
           "properties": {
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
             },
-            "foreign_transaction": {
-              "$ref": "#/definitions/ForeignTransactionConfig"
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
             },
             "tweak": {
               "$ref": "#/definitions/Tweak2"
@@ -3081,30 +3262,41 @@ expression: abi
         "VerifyForeignTransactionRequestArgs": {
           "type": "object",
           "required": [
-            "foreign_transaction",
-            "path"
+            "domain_id",
+            "path",
+            "request"
           ],
           "properties": {
-            "foreign_transaction": {
-              "$ref": "#/definitions/ForeignTransactionConfig"
+            "domain_id": {
+              "$ref": "#/definitions/DomainId2"
             },
             "path": {
               "type": "string"
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
             }
           }
         },
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "public_key",
-            "signature"
+            "observed_at_block",
+            "signature",
+            "values"
           ],
           "properties": {
-            "public_key": {
-              "$ref": "#/definitions/PublicKey"
+            "observed_at_block": {
+              "$ref": "#/definitions/ForeignBlockId"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
             }
           }
         },
