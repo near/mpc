@@ -58,12 +58,6 @@ pub struct ParticipantData {
 }
 
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
-///
-/// JSON serialization/deserialization uses the old Vec format for backwards compatibility:
-/// `{ "next_id": N, "participants": [["account", 0, {...}], ...] }`
-///
-/// JSON deserialization also supports the new BTreeMap format:
-/// `{ "next_id": N, "participants": { "account": { "id": 0, "info": ... } } }`
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
@@ -74,82 +68,21 @@ pub struct Participants {
     participants: BTreeMap<AccountId, ParticipantData>,
 }
 
-#[cfg(feature = "abi")]
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+#[derive(schemars::JsonSchema)]
+struct ParticipantsSchema {
+    next_id: ParticipantId,
+    participants: Vec<(String, ParticipantId, ParticipantInfo)>,
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 impl schemars::JsonSchema for Participants {
     fn schema_name() -> String {
         "Participants".to_string()
     }
 
     fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        // Build schema that matches the old serialization format:
-        // { "next_id": { "$ref": "#/definitions/ParticipantId" }, "participants": [[string, u32, {...}], ...] }
-        // We use references to the types since they'll be defined elsewhere in the ABI.
-        use schemars::schema::{InstanceType, ObjectValidation, SchemaObject};
-
-        // For ParticipantInfo, we'll reference it by name
-        let participant_info_ref = SchemaObject {
-            reference: Some("#/definitions/ParticipantInfo".to_string()),
-            ..Default::default()
-        };
-
-        // For ParticipantId
-        let participant_id_ref = SchemaObject {
-            reference: Some("#/definitions/ParticipantId".to_string()),
-            ..Default::default()
-        };
-
-        // For AccountId (string)
-        let account_id_schema = gen.subschema_for::<String>();
-
-        // Create tuple schema: [AccountId, ParticipantId, ParticipantInfo]
-        let tuple_schema = SchemaObject {
-            instance_type: Some(InstanceType::Array.into()),
-            array: Some(Box::new(schemars::schema::ArrayValidation {
-                items: Some(schemars::schema::SingleOrVec::Vec(vec![
-                    account_id_schema,
-                    participant_id_ref.into(),
-                    participant_info_ref.into(),
-                ])),
-                min_items: Some(3),
-                max_items: Some(3),
-                ..Default::default()
-            })),
-            ..Default::default()
-        };
-
-        // Create array of tuples schema
-        let participants_array_schema = SchemaObject {
-            instance_type: Some(InstanceType::Array.into()),
-            array: Some(Box::new(schemars::schema::ArrayValidation {
-                items: Some(schemars::schema::SingleOrVec::Single(Box::new(
-                    tuple_schema.into(),
-                ))),
-                ..Default::default()
-            })),
-            ..Default::default()
-        };
-
-        // Create the main object schema
-        let mut obj = ObjectValidation::default();
-        obj.properties.insert(
-            "next_id".to_string(),
-            SchemaObject {
-                reference: Some("#/definitions/ParticipantId".to_string()),
-                ..Default::default()
-            }
-            .into(),
-        );
-        obj.properties
-            .insert("participants".to_string(), participants_array_schema.into());
-        obj.required.insert("next_id".to_string());
-        obj.required.insert("participants".to_string());
-
-        SchemaObject {
-            instance_type: Some(InstanceType::Object.into()),
-            object: Some(Box::new(obj)),
-            ..Default::default()
-        }
-        .into()
+        ParticipantsSchema::json_schema(gen)
     }
 }
 

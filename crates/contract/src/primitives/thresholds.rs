@@ -313,7 +313,7 @@ mod tests {
 
         // With BTreeMap-based Participants, duplicate AccountIds are automatically deduplicated.
         // We can still test that the validate_incoming_proposal catches proposals with
-        // incorrect participant counts (which could happen through other tampering).
+        // incorrect participant counts.
 
         // Create a tampered Participants with an invalid next_id (lower than max participant id)
         let vec = params.participants.participants_vec();

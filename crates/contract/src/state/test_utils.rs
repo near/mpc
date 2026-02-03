@@ -59,7 +59,6 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let mut resharing_state = None;
 
     // Current participants must vote first (before new candidates can vote)
-    // Collect the account IDs to avoid borrowing issues
     let current_account_ids: BTreeSet<_> = running
         .parameters
         .participants()
