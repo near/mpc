@@ -680,11 +680,12 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let final_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(final_participants.len(), PARTICIPANT_COUNT - 1);
 
-    let final_accounts: Vec<_> = final_participants
+    let final_accounts: std::collections::BTreeSet<_> = final_participants
         .participants()
         .map(|(account_id, _, _)| account_id.clone())
         .collect();
-    let expected_accounts: Vec<_> = remaining_accounts.iter().map(|a| a.id().clone()).collect();
+    let expected_accounts: std::collections::BTreeSet<_> =
+        remaining_accounts.iter().map(|a| a.id().clone()).collect();
     assert_eq!(final_accounts, expected_accounts);
 
     Ok(())

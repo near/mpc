@@ -385,21 +385,26 @@ pub mod tests {
         }
         assert!(state.reshared_keys.len() == 1);
 
-        // Generate two sets of params:
-        //  - old params -> new_params_1 is a valid proposal.
-        //  - new_params_1 -> new_params_2 is a valid proposal.
-        //  - old params -> new_params_2 is NOT a valid proposal.
+        // Generate two sets of params where:
+        //  - old params -> new_params_1 is valid
+        //  - new_params_1 -> new_params_2 is valid
+        //  - old params -> new_params_2 is NOT valid (no old participants retained)
         //
-        // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
-        // should be rejected, since all re-proposals must be valid against the original.
+        // Triple the participants: new_params_1 = old + 2*old new participants.
+        // This ensures new_params_2 (only new participants) can meet the 60% threshold requirement.
         let mut new_participants_1 = old_participants.clone();
-        let new_threshold = Threshold::new(old_participants.len() as u64);
-        new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
-        let new_participants_2 = new_participants_1
-            .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
+        new_participants_1.add_random_participants_till_n(old_participants.len() * 3);
+        let new_threshold = Threshold::new((new_participants_1.len() as u64 * 6 + 9) / 10); // ceil(60%)
+
+        // new_participants_2 = only the newly added participants (exclude all old ones)
+        let mut new_participants_2 = new_participants_1.clone();
+        for (account, _, _) in old_participants.participants() {
+            new_participants_2.remove(account);
+        }
+        let new_threshold_2 = Threshold::new((new_participants_2.len() as u64 * 6 + 9) / 10);
         let new_params_1 =
             ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
-        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold_2).unwrap();
         state
             .previous_running_state
             .parameters
