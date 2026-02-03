@@ -28,6 +28,17 @@ The script is **resume‑safe** and can continue from any phase.
 
 ### NEAR / Localnet
 - Local NEAR network running (`mpc-localnet`)
+
+you can do this by running:
+
+```bash
+ rm -rf ~/.near/mpc-localnet #clean up any existing localnet
+neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
+cp -rf deployment/localnet/. ~/.near/mpc-localnet
+NEAR_ENV=mpc-localnet neard --home ~/.near/mpc-localnet run
+```
+
+
 - NEAR CLI installed
 - Validator key available at:
   ```
@@ -38,7 +49,7 @@ The script is **resume‑safe** and can continue from any phase.
 - MPC repository cloned
 - Script path:
   ```
-  deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
+deployment/localnet/tee/scripts/deploy_tee_localnet.sh
   ```
 
 ---
@@ -80,7 +91,7 @@ export FUNDER_PRIVATE_KEY=$(jq -r '.secret_key' ~/.near/mpc-localnet/validator_k
 ### Optional Control Variables
 
 ```bash
-export START_FROM_PHASE=render|deploy|init_args|near_keys|near_init|near_vote_code|near_vote_domain
+export START_FROM_PHASE=render|deploy|init_args|near_keys|near_init|near_vote_hash|near_vote_domain
 export STOP_AFTER_PHASE=<phase>
 export RESUME=1
 export FORCE_REDEPLOY=1
@@ -97,7 +108,7 @@ unset START_FROM_PHASE STOP_AFTER_PHASE
 export MODE=localnet
 export RESUME=0
 
-bash deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
+bash deployment/localnet/tee/scripts/deploy_tee_localnet.sh
 ```
 
 ---
@@ -109,21 +120,21 @@ bash deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
 export START_FROM_PHASE=render
 export STOP_AFTER_PHASE=render
 export RESUME=0
-bash deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
+bash deployment/localnet/tee/scripts/deploy_tee_localnet.sh
 ```
 
 ### Resume from deploy
 ```bash
 export START_FROM_PHASE=deploy
 export RESUME=1
-bash deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
+bash deployment/localnet/tee/scripts/deploy_tee_localnet.sh
 ```
 
 ### Resume from contract initialization
 ```bash
 export START_FROM_PHASE=init_args
 export RESUME=1
-bash deployment/testnet/scripts/scale_testnet_tee_localnet_ports.sh
+bash deployment/localnet/tee/scripts/deploy_tee_localnet.sh
 ```
 
 ---
@@ -146,10 +157,22 @@ Important artifacts:
 ## Sending a Sign Request
 
 After the script completes successfully:
+get state of the contract:
 
 ```bash
-near contract call-function as-transaction   mpc-contract.test.near   sign   file-args docs/localnet/args/sign.json   prepaid-gas '300.0 Tgas'   attached-deposit '100 yoctoNEAR'   sign-as node0.mpc-local.test.near   network-config mpc-localnet   sign-with-keychain   send
+near contract call-function as-read-only mpc.mpc-local.test.near state json-args {} network-config mpc-localnet now
 ```
+
+get tee accounts:
+```bash
+ near contract call-function as-transaction mpc.mpc-local.test.near get_tee_accounts json-args {} prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as mpc-local.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+generate sign request:
+```bash
+near contract call-function as-transaction    mpc.mpc-local.test.near   sign   file-args docs/localnet/args/sign_ecdsa.json   prepaid-gas '300.0 Tgas'   attached-deposit '100 yoctoNEAR'   sign-as node0.mpc-local.test.near   network-config mpc-localnet   sign-with-keychain   send
+```
+
 
 ---
 
