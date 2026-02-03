@@ -519,7 +519,7 @@ mod tests {
             print!("\n\nmy params: \n{:?}\n", params);
             let converted = convert_participant_infos(params, None);
             print!("\n\nmyconverted: \n{:?}\n", converted);
-            assert!(converted.is_err());
+            let _ = converted.expect_err("Invalid participant data should be rejected");
         }
     }
 }

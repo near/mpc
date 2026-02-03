@@ -574,7 +574,8 @@ pub mod tests {
         let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 1)?;
 
         // check that the key will not be overwritten
-        assert!(PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242).is_ok());
+        let _ = PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242)
+            .expect("Existing secrets should be reusable");
 
         let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
 
@@ -673,7 +674,10 @@ pub mod tests {
 
         let msg = b"hello world";
         let signature = secrets.near_signer_key.try_sign(msg).unwrap();
-        assert!(secrets.near_signer_key.verify(msg, &signature).is_ok());
+        secrets
+            .near_signer_key
+            .verify(msg, &signature)
+            .expect("Signature should verify with matching key");
 
         let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
         assert_eq!(secrets_str, secrets_str_copy);

@@ -81,29 +81,23 @@ flowchart TD
 
 ```rust
 // Contract methods
-verify_foreign_transaction(request: VerifyForeignTxRequestArgs) -> VerifyForeignTxResponse // Through a promise
+verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs) -> VerifyForeignTransactionResponse // Through a promise
 respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```
 
 ### Request DTOs
 
 ```rust
-pub struct VerifyForeignTxRequestArgs {
+pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub path: String, // Key derivation path
     pub domain_id: DomainId,
-
-    // Extractor-based observation request
-    pub extractors: Vec<Extractor>,
-    // (caller contracts validate extracted values on-chain)
 }
 
-pub struct VerifyForeignTxRequest {
+pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-
-    pub extractors: Vec<Extractor>,
 }
 ```
 
@@ -120,16 +114,20 @@ pub enum ForeignChainRpcRequest {
 pub struct EvmRpcRequest {
     // Ethereum/Base/Bnb/Arbitrum
     pub chain: ForeignChain,
+    pub tx_id: EvmTxId,
+    pub extractors: Vec<EvmExtractor>,
 }
 
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId, // This is the payload we're signing
     pub finality: Finality, // Optimistic or Final
+    pub extractors: Vec<SolanaExtractor>,
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
-    pub confirmations: usize, // required confirmations before considering final
+    pub confirmations: u64, // required confirmations before considering final
+    pub extractors: Vec<BitcoinExtractor>,
 }
 
 pub enum Finality {
@@ -141,15 +139,17 @@ pub enum Finality {
 ### Response DTOs
 
 ```rust
-pub struct VerifyForeignTxResponse {
+pub struct VerifyForeignTransactionResponse {
     pub observed_at_block: ForeignBlockId,
 
-    // One value per extractor (same ordering as request.extractors)
+    // One value per extractor (same ordering as request's extractors)
     pub values: Vec<ExtractedValue>,
 
     // Signature over canonical bytes of (request, observed_at_block, values)
     pub signature: SignatureResponse,
 }
+
+pub struct ForeignBlockId([u8; 32]); // Block hash for the observed transaction
 
 pub enum ExtractedValue {
     U64(u64),

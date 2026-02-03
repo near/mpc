@@ -437,8 +437,10 @@ pub mod tests {
         }
         assert_eq!(participants.len(), n);
         for i in 0..n {
-            assert!(participants.account_id(&ParticipantId(i as u32)).is_ok());
+            let _ = participants.account_id(&ParticipantId(i as u32)).unwrap();
         }
-        assert!(participants.validate().is_ok());
+        participants
+            .validate()
+            .expect("Participants should validate after inserts");
     }
 }

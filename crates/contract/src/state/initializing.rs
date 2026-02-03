@@ -186,30 +186,32 @@ pub mod tests {
             for c in &candidates {
                 env.set_signer(c);
                 // verify that no votes can be cast before the keygen started.
-                assert!(state
+                let _ = state
                     .vote_pk(first_key_event_id, bogus_ed25519_public_key_extended())
-                    .is_err());
-                assert!(state.vote_abort(first_key_event_id).is_err());
+                    .unwrap_err();
+                let _ = state.vote_abort(first_key_event_id).unwrap_err();
                 if *c != leader.0 {
-                    assert!(state.start(first_key_event_id, 1).is_err());
+                    let _ = state.start(first_key_event_id, 1).unwrap_err();
                 } else {
                     // Also check that starting with the wrong KeyEventId fails.
-                    assert!(state.start(first_key_event_id.next_attempt(), 1).is_err());
+                    let _ = state
+                        .start(first_key_event_id.next_attempt(), 1)
+                        .unwrap_err();
                 }
             }
             // start the keygen; verify that the keygen is for the right epoch and domain ID.
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id, 0).is_ok());
+            state.start(first_key_event_id, 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             assert_eq!(key_event, first_key_event_id);
 
             // check that randos can't vote.
             for _ in 0..20 {
                 env.set_signer(&gen_account_id());
-                assert!(state
+                let _ = state
                     .vote_pk(key_event, bogus_ed25519_public_key_extended())
-                    .is_err());
-                assert!(state.vote_abort(key_event).is_err());
+                    .unwrap_err();
+                let _ = state.vote_abort(key_event).unwrap_err();
             }
 
             // check that timing out will abort the instance
@@ -217,16 +219,16 @@ pub mod tests {
             assert!(!state.generating_key.is_active());
             for c in &candidates {
                 env.set_signer(c);
-                assert!(state
+                let _ = state
                     .vote_pk(key_event, bogus_ed25519_public_key_extended())
-                    .is_err());
-                assert!(state.vote_abort(key_event).is_err());
+                    .unwrap_err();
+                let _ = state.vote_abort(key_event).unwrap_err();
                 assert!(!state.generating_key.is_active());
             }
 
             // assert that votes for a different keygen do not count
             env.set_signer(&leader.0);
-            assert!(state.start(first_key_event_id.next_attempt(), 0).is_ok());
+            state.start(first_key_event_id.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let bad_key_events = [
                 KeyEventId::new(
@@ -248,10 +250,10 @@ pub mod tests {
             for bad_key_event in bad_key_events {
                 for c in &candidates {
                     env.set_signer(c);
-                    assert!(state
+                    let _ = state
                         .vote_pk(bad_key_event, bogus_ed25519_public_key_extended())
-                        .is_err());
-                    assert!(state.vote_abort(bad_key_event).is_err());
+                        .unwrap_err();
+                    let _ = state.vote_abort(bad_key_event).unwrap_err();
                 }
             }
             assert_eq!(state.generating_key.num_completed(), 0);
@@ -265,21 +267,21 @@ pub mod tests {
                     assert!(res.expect("Should not fail").is_none());
                 } else {
                     assert!(!state.generating_key.is_active());
-                    assert!(res.is_err());
+                    let _ = res.unwrap_err();
                 }
             }
 
             // check that vote_abort immediately causes failure.
             env.set_signer(&leader.0);
-            assert!(state.start(key_event.next_attempt(), 0).is_ok());
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             env.set_signer(candidates.iter().next().unwrap());
-            assert!(state.vote_abort(key_event).is_ok());
+            state.vote_abort(key_event).unwrap();
             assert!(!state.generating_key.is_active());
 
             // assert that valid votes get counted correctly
             env.set_signer(&leader.0);
-            assert!(state.start(key_event.next_attempt(), 0).is_ok());
+            state.start(key_event.next_attempt(), 0).unwrap();
             let key_event = state.generating_key.current_key_event_id().unwrap();
             let pk = bogus_ed25519_public_key_extended();
             for (i, c) in candidates.clone().into_iter().enumerate() {
@@ -287,7 +289,7 @@ pub mod tests {
                 assert!(resulting_running_state.is_none());
                 assert_eq!(state.generating_key.num_completed(), i);
                 resulting_running_state = state.vote_pk(key_event, pk.clone()).unwrap();
-                assert!(state.vote_abort(key_event).is_err());
+                let _ = state.vote_abort(key_event).unwrap_err();
             }
         }
 
@@ -337,7 +339,7 @@ pub mod tests {
             domain_id: state.domains.get_domain_by_index(2).unwrap().id,
             epoch_id: state.epoch_id,
         };
-        assert!(state.start(first_key_event_id, 0).is_ok());
+        state.start(first_key_event_id, 0).unwrap();
 
         let pk = bogus_ed25519_public_key_extended();
         let participants = state
@@ -363,9 +365,9 @@ pub mod tests {
             env.set_signer(&entry.account_id);
             assert!(running.is_none());
             // Check that using the wrong next_domain_id fails.
-            assert!(state
+            let _ = state
                 .vote_cancel(state.domains.next_domain_id() - 1)
-                .is_err());
+                .unwrap_err();
             running = state.vote_cancel(state.domains.next_domain_id()).unwrap();
         }
         let running = running.expect("Enough votes to cancel should transition into running");

@@ -38,7 +38,10 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use contract_interface::types as dtos;
+use contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
+};
 use crypto_shared::{
     derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
@@ -438,6 +441,18 @@ impl MpcContract {
 
         env::promise_return(promise_index);
     }
+
+    /// Submit a verification + signing request for a foreign chain transaction.
+    /// MPC nodes will verify the transaction on the foreign chain before signing.
+    /// The signed payload is derived from the transaction ID (hash of tx_id).
+    #[handle_result]
+    #[payable]
+    pub fn verify_foreign_transaction(
+        &mut self,
+        #[allow(unused_variables)] request: VerifyForeignTransactionRequestArgs,
+    ) {
+        unimplemented!()
+    }
 }
 
 // Node API
@@ -553,6 +568,15 @@ impl MpcContract {
         } else {
             Err(InvalidParameters::RequestNotFound.into())
         }
+    }
+
+    #[handle_result]
+    pub fn respond_verify_foreign_tx(
+        &mut self,
+        #[allow(unused_variables)] request: VerifyForeignTransactionRequest,
+        #[allow(unused_variables)] response: VerifyForeignTransactionResponse,
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
     /// (Prospective) Participants can submit their tee participant information through this
@@ -1695,6 +1719,7 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::NodeId;
+    use assert_matches::assert_matches;
     use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
@@ -2456,7 +2481,7 @@ mod tests {
         Environment::new(None, Some(non_participant), None);
 
         let res = contract.start_node_migration(destination_node_info);
-        assert!(res.is_err());
+        let _ = res.expect_err("Non-participants should not start node migrations");
         assert!(contract.migration_info().is_empty());
     }
 
@@ -2485,7 +2510,7 @@ mod tests {
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
-            assert!(res.is_ok(), "res: {:?}", res);
+            res.expect("Participant should be able to start node migration");
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2586,7 +2611,7 @@ mod tests {
                 public_key: bogus_ed25519_public_key(),
             };
             let res = contract.register_backup_service(backup_service_info.clone());
-            assert!(res.is_ok(), "res: {:?}", res);
+            res.expect("Participant should be able to register backup service");
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2896,7 +2921,7 @@ mod tests {
             if let Some(expected_error_kind) = &self.expected_error_kind {
                 assert_eq!(res.unwrap_err().kind(), expected_error_kind);
             } else {
-                assert!(res.is_ok());
+                res.expect("Concluding a valid migration should succeed");
             }
             if let Some((expected_participant_id, expected_participant_info)) =
                 &self.expected_post_call_info
@@ -2962,7 +2987,9 @@ mod tests {
             .node_migrations
             .set_backup_service_info(non_participant_account_id.clone(), backup_service_info);
 
-        assert!(contract.cleanup_orphaned_node_migrations().is_ok());
+        contract
+            .cleanup_orphaned_node_migrations()
+            .expect("Cleanup should succeed for valid migrations");
         let result = contract.migration_info();
         assert_eq!(result, expected_vals);
     }
@@ -3486,10 +3513,10 @@ mod tests {
 
         // Call verify_tee - should trigger resharing
         let result = contract.verify_tee();
-        assert!(result.is_ok());
-        assert!(
-            result.unwrap(),
-            "verify_tee should return true when threshold is met"
+        assert_matches!(
+            result,
+            Ok(true),
+            "verify_tee should return Ok(true) when threshold is met"
         );
 
         // Verify contract transitioned to Resharing state

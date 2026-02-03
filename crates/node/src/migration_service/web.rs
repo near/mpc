@@ -64,7 +64,7 @@ mod tests {
         .unwrap();
 
         let res = make_hello_request(&mut send_request).await;
-        assert!(res.is_err());
+        let _ = res.expect_err("Hello request should fail after server closes connection");
     }
 
     #[tokio::test]
@@ -171,6 +171,8 @@ mod tests {
             .migration_state_sender
             .send(wrong_backup_service_info)
             .unwrap();
-        assert!(make_hello_request(&mut send_request).await.is_err());
+        let _ = make_hello_request(&mut send_request)
+            .await
+            .expect_err("Hello request should fail after migration info changes");
     }
 }

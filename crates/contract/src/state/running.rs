@@ -208,20 +208,20 @@ pub mod running_tests {
             let account_id = &entry.account_id;
             let ksp = gen_threshold_params(30);
             env.set_signer(account_id);
-            assert!(state
+            let _ = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &ksp)
-                .is_err());
+                .unwrap_err();
         }
         // Assert that proposals of the wrong epoch ID get rejected.
         {
             let ksp = gen_valid_params_proposal(&state.parameters);
-            env.set_signer(&participants[0].account_id);
-            assert!(state
+            env.set_signer(&participants.participants()[0].0);
+            let _ = state
                 .vote_new_parameters(state.keyset.epoch_id, &ksp)
-                .is_err());
-            assert!(state
+                .unwrap_err();
+            let _ = state
                 .vote_new_parameters(state.keyset.epoch_id.next().next(), &ksp)
-                .is_err());
+                .unwrap_err();
         }
         // Assert that disagreeing proposals do not reach consensus.
         // Generate an extra proposal for the next step.
