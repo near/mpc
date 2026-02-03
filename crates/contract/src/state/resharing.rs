@@ -394,14 +394,14 @@ pub mod tests {
         // This ensures new_params_2 (only new participants) can meet the 60% threshold requirement.
         let mut new_participants_1 = old_participants.clone();
         new_participants_1.add_random_participants_till_n(old_participants.len() * 3);
-        let new_threshold = Threshold::new((new_participants_1.len() as u64 * 6 + 9) / 10); // ceil(60%)
+        let new_threshold = Threshold::new((new_participants_1.len() as u64 * 6).div_ceil(10));
 
         // new_participants_2 = only the newly added participants (exclude all old ones)
         let mut new_participants_2 = new_participants_1.clone();
         for (account, _, _) in old_participants.participants() {
             new_participants_2.remove(account);
         }
-        let new_threshold_2 = Threshold::new((new_participants_2.len() as u64 * 6 + 9) / 10);
+        let new_threshold_2 = Threshold::new((new_participants_2.len() as u64 * 6).div_ceil(10));
         let new_params_1 =
             ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
         let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold_2).unwrap();
@@ -430,38 +430,31 @@ pub mod tests {
                 .unwrap_err();
         }
 
-        // Repropose with new_params_1.
-        // Current participants (from previous running state) must vote first
-        let current_account_ids: BTreeSet<_> = state
-            .previous_running_state
-            .parameters
-            .participants()
-            .participants()
-            .map(|(a, _, _)| a.clone())
-            .collect();
+        // Repropose with new_params_1. Current participants must vote before new candidates.
         let mut new_state = None;
-        // First, current participants vote
-        for (account, _, _) in new_params_1.participants().participants() {
-            if current_account_ids.contains(account) {
-                env.set_signer(account);
-                assert!(new_state.is_none());
-                new_state = state
-                    .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
-                    .unwrap();
-            }
+        let is_current = |a: &AccountId| old_participants.is_participant(a);
+        for (account, _, _) in new_params_1
+            .participants()
+            .participants()
+            .filter(|(a, _, _)| is_current(a))
+        {
+            env.set_signer(account);
+            assert!(new_state.is_none());
+            new_state = state
+                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .unwrap();
         }
-        // Then, new candidates vote
-        for (account, _, _) in new_params_1.participants().participants() {
-            if !current_account_ids.contains(account) {
-                env.set_signer(account);
-                assert!(new_state.is_none());
-                new_state = state
-                    .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
-                    .unwrap();
-            }
+        for (account, _, _) in new_params_1
+            .participants()
+            .participants()
+            .filter(|(a, _, _)| !is_current(a))
+        {
+            env.set_signer(account);
+            assert!(new_state.is_none());
+            new_state = state
+                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .unwrap();
         }
-        // We should've gotten a new resharing state.
-        assert!(new_state.is_some());
         let mut new_state = new_state.unwrap();
         // New state should start from the beginning, with the epoch ID bumped.
         assert_eq!(new_state.reshared_keys.len(), 0);
