@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{hex::Hex, serde_as};
 
 /// A Near AccountId
 #[derive(
@@ -134,9 +134,8 @@ pub struct K256Signature {
     derive(schemars::JsonSchema)
 )]
 pub struct AffinePoint {
-    // TODO: Figure out how to represent affine_point to be backwards compatible with
-    // SerializableAffinePoint in contract::crypto_shared::SerializableAffinePoint
-    pub affine_point: Vec<u8>,
+    #[serde_as(as = "Hex")]
+    pub affine_point: [u8; 33],
 }
 
 #[serde_as]
@@ -145,4 +144,7 @@ pub struct AffinePoint {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct K256Scalar(pub [u8; 32]);
+pub struct K256Scalar {
+    #[serde_as(as = "Hex")]
+    scalar: [u8; 32],
+}
