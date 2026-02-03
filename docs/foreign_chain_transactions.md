@@ -115,25 +115,19 @@ pub struct EvmRpcRequest {
     // Ethereum/Base/Bnb/Arbitrum
     pub chain: ForeignChain,
     pub tx_id: EvmTxId,
-    // Extractor-based observation request
     pub extractors: Vec<EvmExtractor>,
-    // (caller contracts validate extracted values on-chain)
 }
 
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId, // This is the payload we're signing
     pub finality: Finality, // Optimistic or Final
-    // Extractor-based observation request
     pub extractors: Vec<SolanaExtractor>,
-    // (caller contracts validate extracted values on-chain)
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
     pub confirmations: u64, // required confirmations before considering final
-    // Extractor-based observation request
     pub extractors: Vec<BitcoinExtractor>,
-    // (caller contracts validate extracted values on-chain)
 }
 
 pub enum Finality {
