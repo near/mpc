@@ -976,18 +976,18 @@ mod tests {
             sender2.wait_for_ready(4, all_participants2).await.unwrap();
             // Node 3 should not be able to connect to node 0, so if we wait for 4,
             // it should fail. This goes both ways (3 to 0 and 0 to 3).
-            assert!(timeout(
+            let _ = timeout(
                 Duration::from_secs(1),
-                sender0.wait_for_ready(4, all_participants0)
+                sender0.wait_for_ready(4, all_participants0),
             )
             .await
-            .is_err());
-            assert!(timeout(
+            .unwrap_err();
+            let _ = timeout(
                 Duration::from_secs(1),
-                sender3.wait_for_ready(4, all_participants3)
+                sender3.wait_for_ready(4, all_participants3),
             )
             .await
-            .is_err());
+            .unwrap_err();
 
             // But if we wait for 3, it should succeed.
             sender0.wait_for_ready(3, all_participants0).await.unwrap();

@@ -21,3 +21,6 @@ schemars = { workspace = true, optional = true }
 [dev-dependencies]
 near-sdk = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

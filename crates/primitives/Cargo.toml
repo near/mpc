@@ -23,3 +23,6 @@ schemars = { workspace = true, optional = true }
 [dev-dependencies]
 rand = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

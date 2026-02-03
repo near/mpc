@@ -163,6 +163,9 @@ near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.1
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
 
+[workspace.lints.clippy]
+assertions_on_result_states = "warn"
+
 [profile.test-release]
 inherits = "release"
 overflow-checks = true
