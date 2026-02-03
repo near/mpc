@@ -25,12 +25,16 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_sdk::NearToken;
 use near_workspaces::{
-    network::Sandbox, result::ExecutionSuccess, types::AccessKeyPermission, AccessKey, Contract,
+    network::Sandbox,
+    operations::TransactionStatus,
+    result::{ExecutionFinalResult, ExecutionSuccess},
+    types::AccessKeyPermission,
+    AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, task::Poll};
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -102,7 +106,8 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         account_ids.push(account_id);
     }
     for transaction in account_creation_transactions {
-        let result = transaction.await.unwrap();
+        // We had a flaky test here #1913 before the retries, hopefully 5 retries is enough
+        let result = retry_wait_transaction(5, transaction).await.unwrap();
         dbg!(&result);
         assert!(result.is_success());
     }
@@ -568,4 +573,32 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
+}
+
+// This function is needed because in case of timeouts the wait function
+// for transactions fails instead of retrying.
+// See near_workspaces::operations::TransactionStatus in
+// https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
+pub async fn retry_wait_transaction(
+    max_retries: usize,
+    transaction: TransactionStatus,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let mut last_err = None;
+    let mut retries = 0;
+    while retries < max_retries {
+        match transaction.status().await {
+            Ok(Poll::Ready(val)) => return Ok(val),
+            Ok(Poll::Pending) => {}
+            Err(err) => {
+                last_err = Some(err);
+                retries += 1;
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+    match last_err {
+        Some(err) => Err(anyhow::anyhow!(err).context("Transaction failed after max retries")),
+        None => anyhow::bail!("Transaction timed out without returning an error"),
+    }
 }
