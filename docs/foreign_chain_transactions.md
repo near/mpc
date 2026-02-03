@@ -220,6 +220,40 @@ Compatibility note: legacy contract state does not include `DomainPurpose`. New 
 must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
 Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 
+## Tweak Derivation (Sign vs ForeignTx)
+
+`verify_foreign_transaction()` uses a **different tweak derivation prefix** than `sign()` so the same
+`(predecessor_id, path)` can never yield the same derived key across the two purposes.
+
+Design:
+
+* Keep the existing sign tweak derivation prefix unchanged.
+* Introduce a foreign-tx-specific prefix and derive the tweak from the same `(predecessor_id, path)`
+  input using the same hash construction.
+* The contract derives the tweak internally from `request.path` (callers do not submit raw tweaks).
+
+Example:
+
+```rust
+const SIGN_TWEAK_DERIVATION_PREFIX: &str =
+    "near-mpc-recovery v0.1.0 epsilon derivation:";
+const FOREIGN_TX_TWEAK_DERIVATION_PREFIX: &str =
+    "near-mpc-recovery v0.1.0 foreign-tx epsilon derivation:";
+
+pub fn derive_sign_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
+    let hash: [u8; 32] = derive_from_path(SIGN_TWEAK_DERIVATION_PREFIX, predecessor_id, path);
+    Tweak::new(hash)
+}
+
+pub fn derive_foreign_tx_tweak(predecessor_id: &AccountId, path: &str) -> Tweak {
+    let hash: [u8; 32] = derive_from_path(FOREIGN_TX_TWEAK_DERIVATION_PREFIX, predecessor_id, path);
+    Tweak::new(hash)
+}
+```
+
+This ensures key material used for validated foreign transactions is **always** distinct from
+general-purpose `sign()` keys, even if the same account and derivation path are reused.
+
 ## Contract State (Foreign Chain Policy)
 
 The contract maintains a *foreign chain policy* that defines which chains and RPC providers are allowed.
