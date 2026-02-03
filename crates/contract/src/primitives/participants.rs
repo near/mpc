@@ -86,11 +86,10 @@ impl schemars::JsonSchema for Participants {
     }
 }
 
-/// Helper for serializing Participants in the old Vec format for backwards compatibility.
-#[derive(Serialize)]
-struct OldParticipantsJsonForSerialize<'a> {
-    next_id: &'a ParticipantId,
-    participants: Vec<(&'a AccountId, &'a ParticipantId, &'a ParticipantInfo)>,
+#[derive(Serialize, Deserialize)]
+struct ParticipantsJson {
+    next_id: ParticipantId,
+    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
 
 impl Serialize for Participants {
@@ -98,31 +97,16 @@ impl Serialize for Participants {
     where
         S: Serializer,
     {
-        // Serialize in the old Vec format for backwards compatibility with old contracts
-        let old_format = OldParticipantsJsonForSerialize {
-            next_id: &self.next_id,
+        let json = ParticipantsJson {
+            next_id: self.next_id,
             participants: self
                 .participants
                 .iter()
-                .map(|(account_id, data)| (account_id, &data.id, &data.info))
+                .map(|(account_id, data)| (account_id.clone(), data.id, data.info.clone()))
                 .collect(),
         };
-        old_format.serialize(serializer)
+        json.serialize(serializer)
     }
-}
-
-/// Helper for deserializing the old Vec-based participants format.
-#[derive(Deserialize)]
-struct OldParticipantsJson {
-    next_id: ParticipantId,
-    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-}
-
-/// Helper for deserializing the new BTreeMap-based participants format.
-#[derive(Deserialize)]
-struct NewParticipantsJson {
-    next_id: ParticipantId,
-    participants: BTreeMap<AccountId, ParticipantData>,
 }
 
 impl<'de> Deserialize<'de> for Participants {
@@ -130,28 +114,8 @@ impl<'de> Deserialize<'de> for Participants {
     where
         D: Deserializer<'de>,
     {
-        // First, deserialize into a generic JSON value
-        let value = serde_json::Value::deserialize(deserializer)?;
-
-        // Check if participants is an array (old format) or object (new format)
-        if let Some(participants) = value.get("participants") {
-            if participants.is_array() {
-                // Old format: Vec<(AccountId, ParticipantId, ParticipantInfo)>
-                let old: OldParticipantsJson =
-                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-                Ok(Participants::init(old.next_id, old.participants))
-            } else {
-                // New format: BTreeMap<AccountId, ParticipantData>
-                let new: NewParticipantsJson =
-                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-                Ok(Participants {
-                    next_id: new.next_id,
-                    participants: new.participants,
-                })
-            }
-        } else {
-            Err(serde::de::Error::missing_field("participants"))
-        }
+        let json = ParticipantsJson::deserialize(deserializer)?;
+        Ok(Participants::init(json.next_id, json.participants))
     }
 }
 
