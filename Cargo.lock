@@ -8448,6 +8448,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpc-extractor"
+version = "3.4.0"
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

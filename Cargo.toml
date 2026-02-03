@@ -14,6 +14,7 @@ members = [
     "crates/node",
     "crates/node-types",
     "crates/primitives",
+    "crates/rpc-extractor",
     "crates/tee-authority",
     "crates/test-migration-contract",
     "crates/test-parallel-contract",
