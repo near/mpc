@@ -92,18 +92,12 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub path: String, // Key derivation path
     pub domain_id: DomainId,
-
-    // Extractor-based observation request
-    pub extractors: Vec<Extractor>,
-    // (caller contracts validate extracted values on-chain)
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-
-    pub extractors: Vec<Extractor>,
 }
 ```
 
@@ -121,16 +115,25 @@ pub struct EvmRpcRequest {
     // Ethereum/Base/Bnb/Arbitrum
     pub chain: ForeignChain,
     pub tx_id: EvmTxId,
+    // Extractor-based observation request
+    pub extractors: Vec<EvmExtractor>,
+    // (caller contracts validate extracted values on-chain)
 }
 
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId, // This is the payload we're signing
     pub finality: Finality, // Optimistic or Final
+    // Extractor-based observation request
+    pub extractors: Vec<SolanaExtractor>,
+    // (caller contracts validate extracted values on-chain)
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
     pub confirmations: u64, // required confirmations before considering final
+    // Extractor-based observation request
+    pub extractors: Vec<BitcoinExtractor>,
+    // (caller contracts validate extracted values on-chain)
 }
 
 pub enum Finality {
@@ -145,7 +148,7 @@ pub enum Finality {
 pub struct VerifyForeignTransactionResponse {
     pub observed_at_block: ForeignBlockId,
 
-    // One value per extractor (same ordering as request.extractors)
+    // One value per extractor (same ordering as request's extractors)
     pub values: Vec<ExtractedValue>,
 
     // Signature over canonical bytes of (request, observed_at_block, values)

@@ -12,7 +12,6 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub path: String,
     pub domain_id: DomainId,
-    pub extractors: Vec<Extractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -24,7 +23,6 @@ pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
-    pub extractors: Vec<Extractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -57,6 +55,7 @@ pub enum ForeignChainRpcRequest {
 pub struct EvmRpcRequest {
     pub chain: ForeignChain,
     pub tx_id: EvmTxId,
+    pub extractors: Vec<EvmExtractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -67,6 +66,7 @@ pub struct EvmRpcRequest {
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId,
     pub finality: Finality,
+    pub extractors: Vec<SolanaExtractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -77,6 +77,7 @@ pub struct SolanaRpcRequest {
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId,
     pub confirmations: BlockConfirmations,
+    pub extractors: Vec<BitcoinExtractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -94,12 +95,6 @@ pub enum Finality {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum Extractor {
-    Evm(EvmExtractor),
-    Solana(SolanaExtractor),
-    Bitcoin(BitcoinExtractor),
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
