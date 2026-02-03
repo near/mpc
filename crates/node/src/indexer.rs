@@ -3,7 +3,8 @@ use crate::{
         migrations::ContractMigrationInfo,
         types::{
             ChainCKDRequest, ChainGetPendingCKDRequestArgs, ChainGetPendingSignatureRequestArgs,
-            ChainSignatureRequest, GetAttestationArgs,
+            ChainGetPendingVerifyForeignTxRequestArgs, ChainSignatureRequest,
+            ChainVerifyForeignTransactionRequest, GetAttestationArgs,
         },
     },
     migration_service::types::MigrationInfo,
@@ -97,6 +98,7 @@ struct IndexerViewClient {
 // indexer_state.view_client.get_mpc_tee_accounts().await
 // This pattern repeats for all the methods.
 impl IndexerViewClient {
+    // TODO: There is a lot of duplicate code here that could be simplified
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
@@ -172,6 +174,47 @@ impl IndexerViewClient {
             QueryResponseKind::CallResult(call_result) => {
                 serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
                     .context("failed to deserialize pending CKD request response")
+            }
+            _ => {
+                anyhow::bail!("Unexpected result from a view client function call");
+            }
+        }
+    }
+
+    pub(crate) async fn get_pending_verify_foreign_tx_request(
+        &self,
+        mpc_contract_id: &AccountId,
+        chain_verify_foreign_tx_request: &ChainVerifyForeignTransactionRequest,
+    ) -> anyhow::Result<Option<YieldIndex>> {
+        let get_pending_request_args: Vec<u8> =
+            serde_json::to_string(&ChainGetPendingVerifyForeignTxRequestArgs {
+                request: chain_verify_foreign_tx_request.clone(),
+            })
+            .unwrap()
+            .into_bytes();
+
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id.clone(),
+            method_name: "get_pending_verify_foreign_tx_request".to_string(), // TODO: add this function in the contract
+            args: get_pending_request_args.into(),
+        };
+        let block_reference = BlockReference::Finality(Finality::Final);
+
+        let query = near_client::Query {
+            block_reference,
+            request,
+        };
+
+        let query_response = self
+            .view_client
+            .send_async(query)
+            .await
+            .context("failed to query for pending verify foreign tx request")??;
+
+        match query_response.kind {
+            QueryResponseKind::CallResult(call_result) => {
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
+                    .context("failed to deserialize pending verify foreign tx request response")
             }
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");

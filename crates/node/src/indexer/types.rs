@@ -78,8 +78,13 @@ impl ChainCKDRequest {
     }
 }
 
+pub type ChainVerifyForeignTransactionRequest =
+    contract_interface::types::VerifyForeignTransactionRequest;
+
 pub type ChainSignatureResponse = mpc_contract::crypto_shared::SignatureResponse;
 pub type ChainCKDResponse = mpc_contract::crypto_shared::CKDResponse;
+pub type ChainVerifyForeignTransactionResponse =
+    contract_interface::types::VerifyForeignTransactionResponse;
 
 pub use mpc_contract::crypto_shared::k256_types;
 use mpc_contract::crypto_shared::{ed25519_types, SignatureResponse};
@@ -126,6 +131,14 @@ pub struct ChainCKDRespondArgs {
 
 impl ChainRespondArgs for ChainCKDRespondArgs {}
 
+#[derive(Serialize, Debug, Deserialize, Clone)]
+pub struct ChainVerifyForeignTransactionRespondArgs {
+    pub request: ChainVerifyForeignTransactionRequest,
+    response: ChainVerifyForeignTransactionResponse,
+}
+
+impl ChainRespondArgs for ChainVerifyForeignTransactionRespondArgs {}
+
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingSignatureRequestArgs {
     pub request: ChainSignatureRequest,
@@ -134,6 +147,11 @@ pub struct ChainGetPendingSignatureRequestArgs {
 #[derive(Serialize, Debug)]
 pub struct ChainGetPendingCKDRequestArgs {
     pub request: ChainCKDRequest,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChainGetPendingVerifyForeignTxRequestArgs {
+    pub request: ChainVerifyForeignTransactionRequest,
 }
 
 #[derive(Serialize, Debug)]
@@ -198,6 +216,7 @@ pub enum ChainSendTransactionRequest {
     SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
 
     ConcludeNodeMigration(ConcludeNodeMigrationArgs),
+    VerifyForeignTransactionRespond(ChainVerifyForeignTransactionRespondArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -215,6 +234,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VerifyTee() => "verify_tee",
             ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
             ChainSendTransactionRequest::ConcludeNodeMigration(_) => "conclude_node_migration",
+            ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
+                "respond_verify_foreign_tx"
+            }
         }
     }
 
@@ -227,16 +249,16 @@ impl ChainSendTransactionRequest {
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
-            // This is too high in most settings, see https://github.com/near/mpc/issues/166
+            // TODO(#166): This is too high in most settings
             | Self::VerifyTee()
             | Self::SubmitParticipantInfo(_)
-            | Self::ConcludeNodeMigration(_) => MAX_GAS,
+            | Self::ConcludeNodeMigration(_)
+            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
         }
     }
 }
 
 impl ChainSignatureRespondArgs {
-    /// WARNING: this function assumes the input full signature is valid and comes from an authentic response
     pub fn new_ecdsa(
         request: &SignatureRequest,
         response: &Signature,
@@ -316,6 +338,7 @@ impl ChainCKDRespondArgs {
     }
 }
 
+// TODO: This code does not belong here in the indexer module
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;

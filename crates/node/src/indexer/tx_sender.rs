@@ -202,6 +202,24 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
+        VerifyForeignTransactionRespond(respond_args) => {
+            // Confirm whether the respond call succeeded by checking whether the
+            // pending verify foreign tx request still exists in the contract state
+            let pending_request_response = indexer_state
+                .view_client
+                .get_pending_verify_foreign_tx_request(
+                    &indexer_state.mpc_contract_id,
+                    &respond_args.request,
+                )
+                .await?;
+
+            let transaction_status = match pending_request_response {
+                Some(_) => TransactionStatus::Executed,
+                None => TransactionStatus::NotExecuted,
+            };
+
+            Ok(transaction_status)
+        }
         SubmitParticipantInfo(submit_participant_info_args) => {
             let tls_public_key = &submit_participant_info_args.tls_public_key;
 
