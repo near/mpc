@@ -6,7 +6,7 @@ use crate::sandbox::{
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
-        mpc_contract::{get_participants, get_state, get_tee_accounts},
+        mpc_contract::{get_state, get_tee_accounts},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
@@ -41,6 +41,27 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
+/// Converts ThresholdParameters to old JSON format where participants is a Vec.
+/// Old contracts expect: {"next_id": N, "participants": [[account, id, info], ...]}
+/// New format serializes as: {"next_id": N, "participants": {account: {id, info}, ...}}
+fn threshold_parameters_to_old_json(params: &ThresholdParameters) -> serde_json::Value {
+    let participants_vec: Vec<serde_json::Value> = params
+        .participants()
+        .participants()
+        .map(|(account_id, participant_id, info)| {
+            serde_json::json!([account_id, participant_id, info])
+        })
+        .collect();
+
+    serde_json::json!({
+        "participants": {
+            "next_id": params.participants().next_id(),
+            "participants": participants_vec
+        },
+        "threshold": params.threshold()
+    })
+}
+
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
@@ -52,10 +73,13 @@ async fn init_old_contract(
     let threshold = Threshold::new(threshold);
     let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
+    // Use old JSON format for compatibility with old contracts
+    let old_params_json = threshold_parameters_to_old_json(&threshold_parameters);
+
     contract
         .call("init")
         .args_json(serde_json::json!({
-            "parameters": threshold_parameters,
+            "parameters": old_params_json,
         }))
         .transact()
         .await?
@@ -251,9 +275,9 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
-
-    let initial_participants = get_participants(&contract).await?;
+    // Store the participants from init, don't query old contract (different JSON format)
+    let (_accounts, initial_participants) =
+        init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
     let participant_set_is_not_empty = initial_participants.len() > 0;
     assert!(
         participant_set_is_not_empty,

@@ -1,6 +1,11 @@
 //! ## Overview
 //! This module stores the previous contract state—the one you want to migrate from.
-//! The migration handles the change from Vec-based Participants serialization to BTreeMap-based.
+//! The goal is to describe the data layout _exactly_ as it existed before.
+//!
+//! ## Guideline
+//! In theory, you could copy-paste every struct from the specific commit you're migrating from.
+//! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
+//! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 //!
 //! ## Changes in 3.3.2
 //! - `Participants` struct changed from serializing participants as
@@ -8,28 +13,34 @@
 //!   `BTreeMap<AccountId, ParticipantData>` where `ParticipantData { id, info }`.
 //! - `StaleData` was cleaned up (participant_attestations field removed).
 
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::Attestation;
 use near_account_id::AccountId;
-use near_sdk::store::IterableMap;
+use near_sdk::{
+    env,
+    store::{IterableMap, LookupMap},
+};
 use std::collections::{BTreeSet, HashSet};
 
 use crate::{
+    node_migrations::NodeMigrations,
     primitives::{
+        ckd::CKDRequest,
         domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
+        participants::{ParticipantId, ParticipantInfo},
+        signature::{SignatureRequest, YieldIndex},
         thresholds::Threshold,
         votes::ThresholdParametersVotes,
     },
     state::key_event::KeyEventInstance,
-    tee::tee_state::NodeId,
+    tee::tee_state::{NodeId, TeeState},
+    update::ProposedUpdates,
+    Config,
 };
-
-// Re-use unchanged types from current crate
-use crate::primitives::participants::{ParticipantId, ParticipantInfo};
 
 /// Old Participants format that serialized as Vec.
 #[derive(Debug, BorshDeserialize)]
@@ -178,40 +189,39 @@ impl From<OldProtocolContractState> for crate::state::ProtocolContractState {
 
 /// Old StaleData that contained participant_attestations.
 /// The new StaleData is empty after cleanup.
-#[derive(Debug, Default, BorshDeserialize)]
-#[allow(dead_code)] // Fields are needed for deserialization but not read directly
-struct OldStaleData {
+#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
+struct StaleData {
     /// Holds the TEE attestations from the previous contract version.
     /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
     /// ensuring the `IterableMap` handle is properly dropped.
     participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
 }
 
-/// Old MpcContract with OldProtocolContractState and OldStaleData.
+/// Old MpcContract with OldProtocolContractState and StaleData.
 #[derive(Debug, BorshDeserialize)]
 #[allow(dead_code)] // stale_data field is needed for deserialization but dropped during migration
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
-    pending_signature_requests: near_sdk::store::LookupMap<
-        crate::primitives::signature::SignatureRequest,
-        crate::primitives::signature::YieldIndex,
-    >,
-    pending_ckd_requests: near_sdk::store::LookupMap<
-        crate::primitives::ckd::CKDRequest,
-        crate::primitives::signature::YieldIndex,
-    >,
-    proposed_updates: crate::update::ProposedUpdates,
-    config: crate::Config,
-    tee_state: crate::TeeState,
+    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    proposed_updates: ProposedUpdates,
+    config: Config,
+    tee_state: TeeState,
     accept_requests: bool,
-    node_migrations: crate::node_migrations::NodeMigrations,
-    stale_data: OldStaleData,
+    node_migrations: NodeMigrations,
+    stale_data: StaleData,
 }
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
+        let protocol_state: crate::state::ProtocolContractState = value.protocol_state.into();
+
+        let crate::ProtocolContractState::Running(_running_state) = &protocol_state else {
+            env::panic_str("Contract must be in running state when migrating.");
+        };
+
         Self {
-            protocol_state: value.protocol_state.into(),
+            protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             proposed_updates: value.proposed_updates,
@@ -220,7 +230,7 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             // Old stale_data is dropped, new StaleData is empty
-            stale_data: crate::StaleData::default(),
+            stale_data: crate::StaleData {},
         }
     }
 }
