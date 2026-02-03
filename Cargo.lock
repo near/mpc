@@ -8450,6 +8450,9 @@ dependencies = [
 [[package]]
 name = "rpc-extractor"
 version = "3.4.0"
+dependencies = [
+ "mpc-primitives",
+]
 
 [[package]]
 name = "rsa"

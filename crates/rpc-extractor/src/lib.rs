@@ -1,16 +1,45 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+#![allow(dead_code)]
+
+use mpc_primitives::hash::Hash32;
+
+trait RpcExtractor {
+    type Chain;
+    type Extractor;
+    type Finality;
+    type ExtractedValue;
+
+    fn extract(
+        extractors: Vec<Self::Extractor>,
+        finality: Self::Finality,
+    ) -> impl Future<Output = Self::ExtractedValue>;
 }
 
-trait RpcExtractor {}
+struct Bitcoin;
+enum BitcoinExtractor {
+    BlockHash(BitcoinBlockHash),
+}
+struct BlockConfirmations(u64);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+struct BitcoinBlock;
+type BitcoinBlockHash = Hash32<BitcoinBlock>;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+enum BitcoinExtractedValue {
+    Hash,
+}
+
+struct BitcoinRpcExtractor;
+
+impl RpcExtractor for BitcoinExtractor {
+    type Chain = Bitcoin;
+    type Extractor = BitcoinExtractor;
+    type Finality = BlockConfirmations;
+    type ExtractedValue = BitcoinExtractedValue;
+
+    // TODO: continue from here.
+    async fn extract(
+        extractors: Vec<Self::Extractor>,
+        finality: Self::Finality,
+    ) -> Self::ExtractedValue {
+        async { todo!() }
     }
 }
