@@ -96,9 +96,5 @@ fn test_from_str_invalid_json() {
     let invalid_json = "{ invalid json }";
     let result = Collateral::from_str(invalid_json);
 
-    let err = result.expect_err("Invalid JSON should error");
-    match err {
-        CollateralError::InvalidJson => {}
-        _ => panic!("Expected InvalidJson error"),
-    }
+    assert_matches!(result, Err(CollateralError::InvalidJson));
 }
