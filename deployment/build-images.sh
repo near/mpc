@@ -85,6 +85,12 @@ DOCKERFILE_LAUNCHER=deployment/Dockerfile-launcher
 
 
 SOURCE_DATE_EPOCH=0
+export RUSTFLAGS=" \
+  -C target-cpu=x86-64 \
+  -C metadata=reproducible \
+  -C codegen-units=1 \
+  -Clink-arg=-Wl,--sort-section=alignment \
+  -Clink-arg=-Wl,--build-id=non"
 GIT_COMMIT_HASH=$(git rev-parse HEAD)
 
 # This might be necessary to fix reproducibility with old docker versions where
@@ -122,7 +128,7 @@ if $USE_LAUNCHER; then
 fi
 
 if $USE_NODE || $USE_NODE_GCP; then
-    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH -- cargo build -p mpc-node --profile reproducible --locked
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH repro-env build --env SOURCE_DATE_EPOCH --env RUSTFLAGS -- cargo build -p mpc-node --profile reproducible --locked
     node_binary_hash=$(sha256sum target/reproducible/mpc-node | cut -d' ' -f1)
 fi
 
