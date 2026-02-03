@@ -36,7 +36,7 @@ Not all extractors can be satisfied by a single RPC method call.
 * **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy (with fallbacks).
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
-  * **BlockHash (EVM)**: `eth_getTransactionReceipt` (or equivalent) for `blockHash`.
+  * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` (or equivalent) for `blockHash`.
   * **BlockHash (Bitcoin)**: `getrawtransaction` (with verbose) to get the containing `blockhash` (and `getblock` if needed).
   * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
@@ -63,7 +63,7 @@ flowchart TD
       _JSON-RPC endpoints._"]
 
     FC["**Foreign Chain**
-      _EVM, Solana, Bitcoin, future families._"]
+      _Ethereum, Solana, Bitcoin, future families._"]
 
     DEV -->|"1. verify_foreign_transaction()"| SC
     MPC -->|"3. respond_verify_foreign_tx()"| SC
@@ -105,15 +105,15 @@ pub struct VerifyForeignTransactionRequest {
 
 ```rust
 pub enum ForeignChainRpcRequest {
-    Ethereum(EvmRpcRequest),
+    Ethereum(EthereumRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     // Future chains...
 }
 
-pub struct EvmRpcRequest {
-    pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+pub struct EthereumRpcRequest {
+    pub tx_id: EthereumTxId,
+    pub extractors: Vec<EthereumExtractor>,
 }
 
 pub struct SolanaRpcRequest {
@@ -165,7 +165,7 @@ Extractors are strongly typed, bounded operations defined by the MPC protocol im
 * Initial extractor set is intentionally limited and isolated to avoid ambiguity. We'll add more as we uncover more use cases and needs.
 
 ```rust
-pub enum EvmExtractor {
+pub enum EthereumExtractor {
     BlockHash,
 }
 
