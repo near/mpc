@@ -18,8 +18,6 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_0_2_state;
-pub mod v3_2_0_state;
 pub mod v3_3_2_state;
 
 #[cfg(feature = "bench-contract-methods")]
@@ -51,15 +49,13 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
-use mpc_attestation::attestation::Attestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
     log, near_bindgen,
     state::ContractState,
-    store::{IterableMap, LookupMap},
-    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+    store::LookupMap,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
@@ -74,7 +70,6 @@ use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
-use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Register used to receive data id from `promise_await_data`.
 /// Note: This is an implementation constant, not a configurable policy value.
@@ -120,12 +115,7 @@ pub struct MpcContract {
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct StaleData {
-    /// Holds the TEE attestations from the previous contract version.
-    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
-    /// ensuring the `IterableMap` handle is properly dropped.
-    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
-}
+struct StaleData {}
 
 impl MpcContract {
     pub(crate) fn public_key_extended(
@@ -168,7 +158,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let request: SignRequest = request.try_into().unwrap();
 
@@ -222,18 +211,14 @@ impl MpcContract {
         // Check deposit and refund if required
         let predecessor = env::predecessor_account_id();
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let cost = std::cmp::max(storage_cost, MINIMUM_SIGN_REQUEST_DEPOSIT);
-
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -250,7 +235,7 @@ impl MpcContract {
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
-            &predecessor.as_v2_account_id(),
+            &predecessor,
             &request.path,
         );
 
@@ -304,8 +289,7 @@ impl MpcContract {
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
     ) -> Result<dtos::PublicKey, Error> {
-        let predecessor: AccountId =
-            predecessor.unwrap_or_else(|| env::predecessor_account_id().as_v2_account_id());
+        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
@@ -355,7 +339,6 @@ impl MpcContract {
             env::predecessor_account_id(),
             request
         );
-        let initial_storage = env::storage_usage();
 
         let domains = match self.protocol_state.domain_registry() {
             Ok(domains) => domains,
@@ -395,18 +378,14 @@ impl MpcContract {
         let predecessor = env::predecessor_account_id();
         // Check deposit and refund if required
         let deposit = env::attached_deposit();
-        let storage_used = env::storage_usage() - initial_storage;
-        let storage_cost = env::storage_byte_cost().saturating_mul(u128::from(storage_used));
 
-        let cost = std::cmp::max(storage_cost, MINIMUM_CKD_REQUEST_DEPOSIT);
-
-        match deposit.checked_sub(cost) {
+        match deposit.checked_sub(MINIMUM_CKD_REQUEST_DEPOSIT) {
             None => {
                 env::panic_str(
                     &InvalidParameters::InsufficientDeposit
                         .message(format!(
                             "Require a deposit of {} yoctonear, found: {}",
-                            cost.as_yoctonear(),
+                            MINIMUM_CKD_REQUEST_DEPOSIT.as_yoctonear(),
                             deposit.as_yoctonear(),
                         ))
                         .to_string(),
@@ -426,7 +405,7 @@ impl MpcContract {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let account_id = env::predecessor_account_id().as_v2_account_id();
+        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             request.domain_id,
@@ -647,9 +626,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.as_v1_account_id())
-                        .transfer(diff)
-                        .detach();
+                    Promise::new(account_id).transfer(diff).detach();
                 }
             }
         }
@@ -946,7 +923,7 @@ impl MpcContract {
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
-        let proposer = self.voter_or_panic().as_v1_account_id();
+        let proposer = self.voter_or_panic();
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
@@ -1299,19 +1276,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_0_2_state::MpcContract>() {
+        match try_state_read::<v3_3_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3_0_2 state: {:?}", err);
-            }
-        };
-
-        match try_state_read::<v3_2_0_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
-            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
-            Err(err) => {
-                log!("failed to deserialize state into 3_2_0 state: {:?}", err);
+                log!("failed to deserialize state into 3_3_2 state: {:?}", err);
             }
         };
 
@@ -1328,19 +1297,6 @@ impl MpcContract {
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
-    }
-
-    /// Removes stale data from the contract to be removed after a contract upgrade. Some
-    /// containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,
-    /// as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.
-    pub fn post_upgrade_cleanup(&mut self) {
-        let Some(mut attestations) = self.stale_data.participant_attestations.take() else {
-            panic!("stale participant_attestations data has already been cleared");
-        };
-
-        attestations.clear();
-
-        log!("Successfully cleared stale TEE attestations.");
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -1449,7 +1405,7 @@ impl MpcContract {
         if !Self::caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
-        let voter = env::signer_account_id().as_v2_account_id();
+        let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1510,7 +1466,7 @@ impl MpcContract {
             signer_id, predecessor_id
         );
 
-        signer_id.as_v2_account_id()
+        signer_id
     }
 }
 
@@ -1752,6 +1708,7 @@ mod tests {
     use mpc_attestation::attestation::{
         Attestation as MpcAttestation, MockAttestation as MpcMockAttestation,
     };
+    use mpc_primitives::hash::{Hash32, Image};
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
@@ -1760,6 +1717,10 @@ mod tests {
     use rand_core::CryptoRngCore;
     use rstest::rstest;
     use sha2::{Digest, Sha256};
+    use test_utils::attestation::{
+        image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
+        VALID_ATTESTATION_TIMESTAMP,
+    };
     use test_utils::contract_types::dummy_config;
     use threshold_signatures::confidential_key_derivation as ckd;
     use threshold_signatures::frost_core::Group as _;
@@ -1852,9 +1813,7 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        let contract_account_id = AccountId::from_str("contract_account.near")
-            .unwrap()
-            .as_v1_account_id();
+        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .predecessor_account_id(contract_account_id.clone())
@@ -1903,8 +1862,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone().as_v1_account_id())
-            .predecessor_account_id(node_id.account_id.clone().as_v1_account_id())
+            .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1940,17 +1899,14 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
         contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
-        let derivation_path = derive_tweak(
-            &context.predecessor_account_id.as_v2_account_id(),
-            &key_path,
-        );
+        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
         let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
@@ -2021,7 +1977,7 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
@@ -2051,7 +2007,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2092,7 +2048,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2114,8 +2070,8 @@ mod tests {
         let first_participant_id = participants.participants_vec()[0].account_id.clone();
 
         let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -2149,8 +2105,8 @@ mod tests {
             .unwrap();
 
         let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone().as_v1_account_id())
-            .predecessor_account_id(account_id.clone().as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -2182,8 +2138,8 @@ mod tests {
         threshold: Threshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2306,7 +2262,7 @@ mod tests {
 
         // ❌ Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone().as_v1_account_id())
+            .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
             .attached_deposit(NearToken::from_near(1))
             .build();
@@ -2343,8 +2299,8 @@ mod tests {
 
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
@@ -2387,7 +2343,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
             request.domain_id,
-            &context.predecessor_account_id.clone().as_v2_account_id(),
+            &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
 
@@ -2406,8 +2362,8 @@ mod tests {
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -2430,8 +2386,8 @@ mod tests {
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -3218,8 +3174,8 @@ mod tests {
 
             // Remove the vote
             testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
                 .build());
 
             contract.remove_update_vote();
@@ -3256,8 +3212,8 @@ mod tests {
         let account_id = test_update.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
 
         contract.remove_update_vote();
@@ -3271,8 +3227,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3286,8 +3242,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3328,8 +3284,8 @@ mod tests {
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_1.as_v1_account_id())
-            .predecessor_account_id(participant_1.as_v1_account_id())
+            .signer_account_id(participant_1.clone())
+            .predecessor_account_id(participant_1)
             .build());
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
@@ -3341,8 +3297,8 @@ mod tests {
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_2.as_v1_account_id())
-            .predecessor_account_id(participant_2.as_v1_account_id())
+            .signer_account_id(participant_2.clone())
+            .predecessor_account_id(participant_2)
             .build());
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
@@ -3425,13 +3381,13 @@ mod tests {
             .unwrap()
             .participants()
             .participants()
-            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id)
+                .predecessor_account_id(participant_account_id.clone())
                 .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
                 .build());
 
@@ -3523,8 +3479,8 @@ mod tests {
         // Set time to exact expiry boundary
         let first = &participant_list[0];
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(first.account_id.as_v1_account_id())
-            .predecessor_account_id(first.account_id.as_v1_account_id())
+            .signer_account_id(first.account_id.clone())
+            .predecessor_account_id(first.account_id.clone())
             .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
             .build());
 
@@ -3569,52 +3525,180 @@ mod tests {
         assert_eq!(*resharing_state, expected_resharing_state);
     }
 
-    #[test]
-    fn test_post_upgrade_cleanup_success() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
+    /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
+    /// This is a helper function that provides all the common components needed for TEE-related tests.
+    fn setup_tee_test() -> (
+        MpcContract,
+        Vec<near_sdk::AccountId>,
+        Attestation,
+        dtos::Ed25519PublicKey,
+        Hash32<Image>,
+        near_sdk::PublicKey,
+    ) {
+        let (_context, contract, _secret_key) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+
+        let participant_account_ids: Vec<_> = contract
+            .protocol_state
+            .threshold_parameters()
+            .unwrap()
+            .participants()
+            .participants()
+            .map(|(account_id, _, _)| account_id.clone())
+            .collect();
+
+        let attestation = mock_dto_dstack_attestation();
+        let tls_key = p2p_tls_key().into();
+        let mpc_hash = image_digest();
+        let near_public_key = near_account_key();
+
+        (
+            contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
         )
-        .unwrap();
-
-        let mut mock_stale_map = IterableMap::new(StorageKey::_DeprecatedTeeParticipantAttestation);
-        let node_pk = bogus_ed25519_near_public_key();
-        let node_id = NodeId {
-            account_id: gen_account_id(),
-            tls_public_key: bogus_ed25519_near_public_key(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
-        };
-        let attestation = mpc_attestation::attestation::Attestation::Mock(
-            mpc_attestation::attestation::MockAttestation::Valid,
-        );
-
-        mock_stale_map.insert(node_pk.clone(), (node_id, attestation));
-
-        contract.stale_data.participant_attestations = Some(mock_stale_map);
-
-        // when
-        contract.post_upgrade_cleanup();
-
-        // then
-        assert_matches::assert_matches!(contract.stale_data.participant_attestations, None);
     }
 
-    #[test]
-    #[should_panic(expected = "stale participant_attestations data has already been cleared")]
-    fn test_post_upgrade_cleanup_panics_if_already_cleared() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
-        )
-        .unwrap();
+    /// Sets up a contract with an approved MPC hash by having the participants vote for it.
+    /// This is a helper function commonly used in tests that require pre-approved hashes.
+    fn setup_approved_mpc_hash(
+        contract: &mut MpcContract,
+        participant_account_ids: &[near_sdk::AccountId],
+        mpc_hash: &Hash32<Image>,
+        block_timestamp_ns: u64,
+    ) {
+        for participant_account_id in participant_account_ids {
+            testing_env!(VMContextBuilder::new()
+                .signer_account_id(participant_account_id.clone())
+                .predecessor_account_id(participant_account_id.clone())
+                .block_timestamp(block_timestamp_ns)
+                .build());
 
-        contract.stale_data.participant_attestations = None;
+            contract
+                .vote_code_hash(mpc_hash.clone())
+                .expect("vote succeeds");
+        }
+    }
+
+    /// **Test method with matching measurements** - Tests that participant info submission succeeds with the test-only method.
+    /// Unlike the test above, this one has an approved MPC hash. It uses the test method with custom measurements that match
+    /// the attestation data.
+    #[test]
+    fn test_submit_participant_info_succeeds_with_valid_dstack_attestation() {
+        // given
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
 
         // when
-        contract.post_upgrade_cleanup();
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
 
-        // then panic
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+        let result = contract.submit_participant_info(attestation, tls_key);
+
+        // then
+        assert_matches::assert_matches!(result, Ok(()));
+    }
+
+    /// **No MPC hash approval** - Tests that participant info submission fails when no MPC hash has been approved yet.
+    /// This verifies the prerequisite step: the contract requires MPC hash approval before accepting any participant TEE information.
+    #[test]
+    fn test_submit_participant_info_fails_without_approved_mpc_hash() {
+        // given
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            _mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
+        // when
+
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+        let result = contract.submit_participant_info(attestation, tls_key);
+
+        // then
+        let error_string = result.unwrap_err().to_string();
+        assert!(error_string
+        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: Custom(\"the allowed mpc image hashes list is empty\")"), "Got error: {}", &error_string);
+    }
+
+    /// **TLS key validation** - Tests that TEE attestation fails when TLS key doesn't match the one in report data.
+    /// Similar to the successful test method case above, but uses a deliberately corrupted TLS key to verify
+    /// that attestation validation properly checks the TLS key embedded in the attestation report.
+    #[test]
+    fn test_tee_attestation_fails_with_invalid_tls_key() {
+        let (
+            mut contract,
+            participant_account_ids,
+            attestation,
+            tls_key,
+            mpc_hash,
+            near_public_key,
+        ) = setup_tee_test();
+
+        let block_timestamp_ns = VALID_ATTESTATION_TIMESTAMP * 1_000_000_000;
+
+        // when
+        setup_approved_mpc_hash(
+            &mut contract,
+            &participant_account_ids,
+            &mpc_hash,
+            block_timestamp_ns,
+        );
+
+        // Create invalid TLS key by flipping the last bit
+        let mut invalid_tls_key_bytes = *tls_key.as_bytes();
+        let last_byte_idx = invalid_tls_key_bytes.len() - 1;
+        invalid_tls_key_bytes[last_byte_idx] ^= 0x01;
+        let invalid_tls_key = Ed25519PublicKey::from(invalid_tls_key_bytes);
+
+        let account_id = participant_account_ids[0].clone();
+        testing_env!(VMContextBuilder::new()
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
+            .signer_account_pk(near_public_key.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(block_timestamp_ns)
+            .build());
+
+        let result = contract.submit_participant_info(attestation, invalid_tls_key);
+
+        // then
+        let error_string = result.unwrap_err().to_string();
+        assert!(error_string
+        .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
     }
 }

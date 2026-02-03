@@ -5,7 +5,6 @@ use crate::errors::{DomainError, Error, InvalidState};
 use near_account_id::AccountId;
 use near_sdk::{env, near};
 use std::fmt::Display;
-use utilities::AccountIdExtV1;
 
 /// An EpochId uniquely identifies a ThresholdParameters (but not vice-versa).
 /// Every time we change the ThresholdParameters (participants and threshold),
@@ -155,7 +154,7 @@ impl AuthenticatedParticipantId {
         self.0
     }
     pub fn new(participants: &Participants) -> Result<Self, Error> {
-        let signer = env::signer_account_id().as_v2_account_id();
+        let signer = env::signer_account_id();
         participants
             .participants()
             .find(|(a_id, _, _)| **a_id == signer)
@@ -175,7 +174,7 @@ impl AuthenticatedAccountId {
         &self.0
     }
     pub fn new(participants: &Participants) -> Result<Self, Error> {
-        let signer = env::signer_account_id().as_v2_account_id();
+        let signer = env::signer_account_id();
         if participants
             .participants()
             .any(|(a_id, _, _)| *a_id == signer)
@@ -199,7 +198,6 @@ pub mod tests {
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rand::Rng;
-    use utilities::AccountIdExtV2;
 
     const MAX_N: usize = 900;
 
@@ -250,11 +248,11 @@ pub mod tests {
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone().as_v1_account_id());
+            context.signer_account_id(account_id.clone());
             testing_env!(context.build());
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_ok());
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id().as_v1_account_id());
+            context.signer_account_id(gen_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedParticipantId::new(proposed_parameters.participants()).is_err());
         }
@@ -266,11 +264,11 @@ pub mod tests {
         assert!(proposed_parameters.validate().is_ok());
         for (account_id, _, _) in proposed_parameters.participants().participants() {
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone().as_v1_account_id());
+            context.signer_account_id(account_id.clone());
             testing_env!(context.build());
             assert!(AuthenticatedAccountId::new(proposed_parameters.participants()).is_ok());
             let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id().as_v1_account_id());
+            context.signer_account_id(gen_account_id());
             testing_env!(context.build());
             assert!(AuthenticatedAccountId::new(proposed_parameters.participants()).is_err());
         }

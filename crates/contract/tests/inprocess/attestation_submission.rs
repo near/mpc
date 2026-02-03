@@ -18,7 +18,6 @@ use near_account_id::AccountId;
 use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
-use utilities::AccountIdExtV2;
 
 use crate::sandbox::utils::interface::IntoInterfaceType;
 
@@ -108,9 +107,7 @@ impl TestSetupBuilder {
             scheme: SignatureScheme::Secp256k1,
         }];
 
-        let contract_account_id = AccountId::from_str("contract_account.near")
-            .unwrap()
-            .as_v1_account_id();
+        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
 
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
@@ -219,8 +216,8 @@ impl TestSetup {
     fn with_env(&mut self, account_id: &AccountId, timestamp: u64) {
         testing_env!(VMContextBuilder::new()
             .block_timestamp(timestamp)
-            .signer_account_id(account_id.clone().as_v1_account_id())
-            .predecessor_account_id(account_id.clone().as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .build());
     }
 
@@ -256,8 +253,8 @@ impl TestSetup {
 
 fn create_context_for_participant(account_id: &AccountId) -> VMContext {
     VMContextBuilder::new()
-        .signer_account_id(account_id.clone().as_v1_account_id())
-        .predecessor_account_id(account_id.clone().as_v1_account_id())
+        .signer_account_id(account_id.clone())
+        .predecessor_account_id(account_id.clone())
         .block_timestamp(near_sdk::env::block_timestamp())
         .build()
 }

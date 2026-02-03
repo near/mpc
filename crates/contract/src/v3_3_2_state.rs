@@ -6,9 +6,12 @@
 //! - `Participants` struct changed from serializing participants as
 //!   `Vec<(AccountId, ParticipantId, ParticipantInfo)>` to
 //!   `BTreeMap<AccountId, ParticipantData>` where `ParticipantData { id, info }`.
+//! - `StaleData` was cleaned up (participant_attestations field removed).
 
 use borsh::BorshDeserialize;
+use mpc_attestation::attestation::Attestation;
 use near_account_id::AccountId;
+use near_sdk::store::IterableMap;
 use std::collections::{BTreeSet, HashSet};
 
 use crate::{
@@ -22,6 +25,7 @@ use crate::{
         votes::ThresholdParametersVotes,
     },
     state::key_event::KeyEventInstance,
+    tee::tee_state::NodeId,
 };
 
 // Re-use unchanged types from current crate
@@ -172,8 +176,20 @@ impl From<OldProtocolContractState> for crate::state::ProtocolContractState {
     }
 }
 
-/// Old MpcContract with OldProtocolContractState.
+/// Old StaleData that contained participant_attestations.
+/// The new StaleData is empty after cleanup.
+#[derive(Debug, Default, BorshDeserialize)]
+#[allow(dead_code)] // Fields are needed for deserialization but not read directly
+struct OldStaleData {
+    /// Holds the TEE attestations from the previous contract version.
+    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
+    /// ensuring the `IterableMap` handle is properly dropped.
+    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
+}
+
+/// Old MpcContract with OldProtocolContractState and OldStaleData.
 #[derive(Debug, BorshDeserialize)]
+#[allow(dead_code)] // stale_data field is needed for deserialization but dropped during migration
 pub struct MpcContract {
     protocol_state: OldProtocolContractState,
     pending_signature_requests: near_sdk::store::LookupMap<
@@ -189,7 +205,7 @@ pub struct MpcContract {
     tee_state: crate::TeeState,
     accept_requests: bool,
     node_migrations: crate::node_migrations::NodeMigrations,
-    stale_data: crate::StaleData,
+    stale_data: OldStaleData,
 }
 
 impl From<MpcContract> for crate::MpcContract {
@@ -203,7 +219,8 @@ impl From<MpcContract> for crate::MpcContract {
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
-            stale_data: value.stale_data,
+            // Old stale_data is dropped, new StaleData is empty
+            stale_data: crate::StaleData::default(),
         }
     }
 }

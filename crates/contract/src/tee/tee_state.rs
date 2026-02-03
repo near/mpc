@@ -18,7 +18,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 use std::{collections::HashSet, time::Duration};
-use utilities::AccountIdExtV1;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Ord, PartialOrd, Clone)]
@@ -357,7 +356,7 @@ impl TeeState {
         participants: &Participants,
     ) -> Result<(), AttestationCheckError> {
         let signer_pk = env::signer_account_pk();
-        let signer_id = env::signer_account_id().as_v2_account_id();
+        let signer_id = env::signer_account_id();
 
         let info = participants
             .info(&signer_id)
@@ -402,13 +401,12 @@ mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
-    use utilities::AccountIdExtV2;
 
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
         let mut builder = VMContextBuilder::new();
         builder
-            .signer_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
             .signer_account_pk(public_key.clone());
         testing_env!(builder.build());
     }
@@ -1105,7 +1103,7 @@ mod tests {
     }
 
     #[test]
-    fn add_participant_rejects_invalid_attesations() {
+    fn add_participant_rejects_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
         let participant_list = participants.participants_vec();

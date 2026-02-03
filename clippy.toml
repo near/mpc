@@ -3,7 +3,6 @@ disallowed-types = [
     { path = "near_crypto::Secp256K1PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
     { path = "near_crypto::PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
     { path = "near_crypto::PrivateKey", reason = "Use the crates `secp256k1` or `ed25519_dalek` instead for private keys. This type provides no functionality benefit for the MPC project. For more context see https://github.com/near/mpc/issues/880" },
-    { path = "near_sdk::AccountId", reason = "We've migrated to v2 of `near_account_id` crate. The `near_sdk` currently just re-exports v1 of this crate." },
 ]
 
 disallowed-methods = [

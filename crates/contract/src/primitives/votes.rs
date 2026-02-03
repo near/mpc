@@ -56,7 +56,6 @@ mod tests {
         test_utils::{gen_participant, gen_threshold_params},
     };
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
-    use utilities::AccountIdExtV2;
 
     #[test]
     fn test_voting_and_removal() {
@@ -64,7 +63,7 @@ mod tests {
         let p0 = gen_participant(0);
         participants.insert(p0.0.clone(), p0.1).expect("error");
         let mut ctx = VMContextBuilder::new();
-        ctx.signer_account_id(p0.0.as_v1_account_id());
+        ctx.signer_account_id(p0.0);
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
@@ -80,7 +79,7 @@ mod tests {
         // new participant
         let p1 = gen_participant(1);
         participants.insert(p1.0.clone(), p1.1).expect("error");
-        ctx.signer_account_id(p1.0.as_v1_account_id());
+        ctx.signer_account_id(p1.0);
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
@@ -102,12 +101,12 @@ mod tests {
 
         let mut ctx = VMContextBuilder::new();
         let auth_p0 = {
-            ctx.signer_account_id(p0.0.as_v1_account_id());
+            ctx.signer_account_id(p0.0);
             testing_env!(ctx.build());
             AuthenticatedAccountId::new(&old_participants).unwrap()
         };
         let auth_p1 = {
-            ctx.signer_account_id(p1.0.as_v1_account_id());
+            ctx.signer_account_id(p1.0);
             testing_env!(ctx.build());
             AuthenticatedAccountId::new(&old_participants).unwrap()
         };
@@ -126,7 +125,7 @@ mod tests {
         // then: votes from non-participants are not counted
         assert_eq!(votes.n_votes(&params, &new_participants), 0);
 
-        ctx.signer_account_id(p2.0.as_v1_account_id());
+        ctx.signer_account_id(p2.0);
         testing_env!(ctx.build());
         let auth_p2 = AuthenticatedAccountId::new(&new_participants).unwrap();
         votes.vote(&params, auth_p2);

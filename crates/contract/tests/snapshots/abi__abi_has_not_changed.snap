@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.3.2",
+    "version": "3.4.0",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -431,11 +431,6 @@ expression: abi
             }
           }
         }
-      },
-      {
-        "name": "post_upgrade_cleanup",
-        "doc": " Removes stale data from the contract to be removed after a contract upgrade. Some\n containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,\n as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.",
-        "kind": "call"
       },
       {
         "name": "propose_update",

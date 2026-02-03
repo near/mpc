@@ -54,7 +54,7 @@ Participants can propose and vote on contract updates (code or configuration cha
 
 ### Submitting a signature Request
 
-Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit is required to cover storage costs** (minimum 1 yoctoNEAR) to prevent abuse by malicious frontends. Any excess deposit is automatically refunded to the user.
+Users can submit a signature request to the MPC network via the `sign` endpoint of this contract. Note that a **deposit of 1 yoctonear is required** to prevent abuse by malicious frontends.
 
 The sign request takes the following arguments:
 
@@ -103,7 +103,8 @@ Note that an Ecdsa payload is subsequently represented as a Scalar on curve Secp
 ### Submitting a confidential key derivation (ckd) request
 
 Users can submit a ckd request to the MPC network via the
-`request_app_private_key` endpoint of this contract. Note that a **deposit is required to cover storage costs** (minimum 1 yoctoNEAR) to prevent abuse by malicious frontends. Any excess deposit is automatically refunded to the user.
+`request_app_private_key` endpoint of this contract. Note that a **deposit of 1
+yoctonear is required** to prevent abuse by malicious frontends.
 
 The ckd request takes the following arguments:
 
@@ -224,8 +225,8 @@ stateDiagram-v2
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
-| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit to cover storage costs (minimum 1 yoctoNEAR). Excess deposit is refunded. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail.             | deferred to promise        | `15 Tgas`       | `~7 Tgas`          |
-| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (CKD) request to the contract. Requires a deposit to cover storage costs (minimum 1 yoctoNEAR). Excess deposit is refunded. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail. | deferred to promise        | `15 Tgas`       | `~7 Tgas`          |
+| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Re-submitting the same request before the original request timed out or has been responded to may cause both requests to fail. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
 | `public_key(domain: Option<DomainId>)`                                                       | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain: Option<DomainId>)` | Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 

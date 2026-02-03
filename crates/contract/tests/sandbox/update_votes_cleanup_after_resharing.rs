@@ -21,7 +21,6 @@ use near_workspaces::Account;
 use serde_json::json;
 use sha2::Digest;
 use std::collections::BTreeMap;
-use utilities::AccountIdExtV1;
 
 /// Tests that update votes from non-participants are cleared after resharing.
 #[tokio::test]
@@ -135,7 +134,7 @@ pub fn assert_expected_proposed_update(
 ) {
     let mut expected_votes: Vec<_> = expected_voter_accounts
         .iter()
-        .map(|a| dtos::AccountId(a.id().as_v2_account_id().to_string()))
+        .map(|a| dtos::AccountId(a.id().to_string()))
         .collect();
     expected_votes.sort();
 
