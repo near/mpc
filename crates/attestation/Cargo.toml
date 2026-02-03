@@ -5,7 +5,6 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
-assert_matches = { workspace = true }
 borsh = { workspace = true }
 dcap-qvl = { workspace = true }
 derive_more = { workspace = true }
@@ -19,6 +18,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 rstest = { workspace = true }
 test-utils = { workspace = true }
 
