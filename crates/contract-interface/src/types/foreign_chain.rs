@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::types::{
-    PublicKey,
-    primitives::{DomainId, SignatureResponse, Tweak},
-};
+use crate::types::primitives::{DomainId, SignatureResponse, Tweak};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
@@ -12,8 +9,10 @@ use crate::types::{
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionRequestArgs {
-    pub foreign_transaction: ForeignTransactionConfig,
+    pub request: ForeignChainRpcRequest,
     pub path: String,
+    pub domain_id: DomainId,
+    pub extractors: Vec<Extractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -22,9 +21,10 @@ pub struct VerifyForeignTransactionRequestArgs {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionRequest {
-    pub foreign_transaction: ForeignTransactionConfig,
+    pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
+    pub extractors: Vec<Extractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -33,8 +33,9 @@ pub struct VerifyForeignTransactionRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
+    pub observed_at_block: ForeignBlockId,
+    pub values: Vec<ExtractedValue>,
     pub signature: SignatureResponse,
-    pub public_key: PublicKey,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -42,9 +43,10 @@ pub struct VerifyForeignTransactionResponse {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub enum ForeignTransactionConfig {
-    Solana(SolanaTransaction),
-    Bitcoin(BitcoinTransaction),
+pub enum ForeignChainRpcRequest {
+    Evm(EvmRpcRequest),
+    Solana(SolanaRpcRequest),
+    Bitcoin(BitcoinRpcRequest),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -52,8 +54,18 @@ pub enum ForeignTransactionConfig {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct SolanaTransaction {
-    pub transaction_id: SolanaTransactionId,
+pub struct EvmRpcRequest {
+    pub chain: ForeignChain,
+    pub tx_id: EvmTxId,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct SolanaRpcRequest {
+    pub tx_id: SolanaTxId,
     pub finality: Finality,
 }
 
@@ -62,8 +74,8 @@ pub struct SolanaTransaction {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinTransaction {
-    pub transaction_id: BitcoinTransactionId,
+pub struct BitcoinRpcRequest {
+    pub tx_id: BitcoinTxId,
     pub confirmations: BlockConfirmations,
 }
 
@@ -75,6 +87,69 @@ pub struct BitcoinTransaction {
 pub enum Finality {
     Optimistic,
     Final,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum Extractor {
+    Evm(EvmExtractor),
+    Solana(SolanaExtractor),
+    Bitcoin(BitcoinExtractor),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum EvmExtractor {
+    BlockHash,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum SolanaExtractor {
+    SolanaProgramIdIndex { ix_index: u32 },
+    SolanaDataHash { ix_index: u32 },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum BitcoinExtractor {
+    BlockHash,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum ExtractedValue {
+    U64(u64),
+    Hash256(Hash256),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum ForeignChain {
+    Solana,
+    Bitcoin,
+    Ethereum,
+    Base,
+    Bnb,
+    Arbitrum,
 }
 
 #[derive(
@@ -116,12 +191,74 @@ pub struct BlockConfirmations(pub u64);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+pub struct Hash256(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
 
-pub struct SolanaTransactionId(
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignBlockId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct EvmTxId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct SolanaTxId(
     #[cfg_attr(
-            all(feature = "abi", not(target_arch = "wasm32")),
-            schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32. 
-        )]
+        all(feature = "abi", not(target_arch = "wasm32")),
+        schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
+    )]
     #[serde_as(as = "[_; 64]")]
     pub [u8; 64],
 );
@@ -145,4 +282,4 @@ pub struct SolanaTransactionId(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinTransactionId(pub [u8; 32]);
+pub struct BitcoinTxId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);

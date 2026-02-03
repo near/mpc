@@ -449,7 +449,7 @@ impl MpcContract {
     #[payable]
     pub fn verify_foreign_transaction(
         &mut self,
-        #[allow(unused_variables)] foreign_transaction: VerifyForeignTransactionRequestArgs,
+        #[allow(unused_variables)] request: VerifyForeignTransactionRequestArgs,
     ) {
         unimplemented!()
     }
@@ -571,7 +571,7 @@ impl MpcContract {
     }
 
     #[handle_result]
-    pub fn respond_foreign_transaction(
+    pub fn respond_verify_foreign_tx(
         &mut self,
         #[allow(unused_variables)] request: VerifyForeignTransactionRequest,
         #[allow(unused_variables)] response: VerifyForeignTransactionResponse,
