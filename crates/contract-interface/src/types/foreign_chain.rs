@@ -95,11 +95,6 @@ pub enum Finality {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
 pub enum EvmExtractor {
     BlockHash,
 }
