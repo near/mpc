@@ -154,14 +154,14 @@ x509-parser = "0.16.0"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.10.5" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
