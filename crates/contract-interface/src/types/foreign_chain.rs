@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{hex::Hex, serde_as};
 
 use crate::types::primitives::{DomainId, SignatureResponse, Tweak};
 
@@ -188,7 +188,7 @@ pub struct BlockConfirmations(pub u64);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct Hash256(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
@@ -209,7 +209,7 @@ pub struct Hash256(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ForeignBlockId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+pub struct ForeignBlockId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
@@ -230,7 +230,7 @@ pub struct ForeignBlockId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EvmTxId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
@@ -256,7 +256,7 @@ pub struct SolanaTxId(
         all(feature = "abi", not(target_arch = "wasm32")),
         schemars(with = "Vec<u8>") // Schemars doesn't support arrays of size greater than 32.
     )]
-    #[serde_as(as = "[_; 64]")]
+    #[serde_as(as = "Hex")]
     pub [u8; 64],
 );
 
@@ -279,4 +279,4 @@ pub struct SolanaTxId(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct BitcoinTxId(#[serde_as(as = "[_; 32]")] pub [u8; 32]);
+pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
