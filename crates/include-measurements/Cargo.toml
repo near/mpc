@@ -16,7 +16,5 @@ quote = { workspace = true }
 serde_json = { workspace = true }
 syn = { workspace = true }
 
-[dev-dependencies]
-
 [lints]
 workspace = true
