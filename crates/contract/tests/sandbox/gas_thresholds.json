@@ -1,51 +1,51 @@
 {
   "_comment": "Gas thresholds in GGas keyed by participant count. Fields correspond to Participants struct operations. buffer_percent is added to account for fluctuations.",
-  "buffer_percent": 25.0,
+  "buffer_percent": 15.0,
   "thresholds": {
     "10": {
-      "len": 3052,
-      "is_participant": 3074,
-      "info": 3074,
-      "validate": 3083,
-      "serialization": 3067,
-      "insert": 3477,
-      "update_info": 3495
+      "len": 2868,
+      "is_participant": 2890,
+      "info": 2890,
+      "validate": 2869,
+      "serialization": 2884,
+      "insert": 3220,
+      "update_info": 3235
     },
     "30": {
-      "len": 3445,
-      "is_participant": 3475,
-      "info": 3475,
-      "validate": 3576,
-      "serialization": 3500,
-      "insert": 4356,
-      "update_info": 4384
+      "len": 3249,
+      "is_participant": 3270,
+      "info": 3270,
+      "validate": 3252,
+      "serialization": 3302,
+      "insert": 4050,
+      "update_info": 4060
     },
     "40": {
-      "len": 3659,
-      "is_participant": 3690,
-      "info": 3690,
-      "validate": 3858,
-      "serialization": 3728,
-      "insert": 4793,
-      "update_info": 4823
+      "len": 3455,
+      "is_participant": 3476,
+      "info": 3476,
+      "validate": 3459,
+      "serialization": 3525,
+      "insert": 4460,
+      "update_info": 4472
     },
     "100": {
-      "len": 4865,
-      "is_participant": 4924,
-      "info": 4924,
-      "validate": 5444,
-      "serialization": 5060,
-      "insert": 7386,
-      "update_info": 7448
+      "len": 4620,
+      "is_participant": 4650,
+      "info": 4650,
+      "validate": 4627,
+      "serialization": 4810,
+      "insert": 6895,
+      "update_info": 6910
     },
     "400": {
-      "len": 10898,
-      "is_participant": 11078,
-      "info": 11078,
-      "validate": 13701,
-      "serialization": 11676,
-      "insert": 20449,
-      "update_info": 20612
+      "len": 10520,
+      "is_participant": 10540,
+      "info": 10540,
+      "validate": 10540,
+      "serialization": 11260,
+      "insert": 19200,
+      "update_info": 19210
     }
   }
 }
