@@ -69,8 +69,10 @@ pub struct Participants {
     participants: BTreeMap<AccountId, ParticipantData>,
 }
 
+/// Helper for JsonSchema - fields used by derive macro to generate schema matching serialized format.
 #[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
 #[derive(schemars::JsonSchema)]
+#[allow(dead_code)]
 struct ParticipantsSchema {
     next_id: ParticipantId,
     participants: Vec<(String, ParticipantId, ParticipantInfo)>,
