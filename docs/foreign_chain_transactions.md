@@ -36,7 +36,7 @@ Not all extractors can be satisfied by a single RPC method call.
 * **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy (with fallbacks).
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
-  * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` (or equivalent) for `blockHash`.
+  * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`.
   * **BlockHash (Bitcoin)**: `getrawtransaction` (with verbose) to get the containing `blockhash` (and `getblock` if needed).
   * **SolanaProgramIdIndex / SolanaDataHash**: `getTransaction` to access `transaction.message` + `meta` and instruction data.
 * **Shared fetches**: When multiple extractors require the same underlying data, nodes may perform the RPC call once and share the result across extractors.
