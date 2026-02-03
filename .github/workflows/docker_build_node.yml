@@ -13,7 +13,7 @@ on:
 jobs:
   build-and-push-images:
     name: "Build and push Docker node image with commit hash"
-    runs-on: ubuntu-22.04
+    runs-on: warp-ubuntu-2204-x64-16x
     permissions:
       contents: read
 
@@ -38,4 +38,11 @@ jobs:
       - name: Build and push node image
         run: |
           export NODE_IMAGE_NAME=mpc-node
-          ./deployment/build-images.sh --node --push
+          ./deployment/build-images.sh --node
+
+      - name: Upload target directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-target-dir
+          path: target/
+          retention-days: 1
