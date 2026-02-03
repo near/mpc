@@ -41,6 +41,7 @@ pub struct VerifyForeignTransactionResponse {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum ForeignChainRpcRequest {
     Evm(EvmRpcRequest),
     Solana(SolanaRpcRequest),
@@ -85,6 +86,7 @@ pub struct BitcoinRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum Finality {
     Optimistic,
     Final,
@@ -95,6 +97,7 @@ pub enum Finality {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum EvmExtractor {
     BlockHash,
 }
@@ -104,6 +107,7 @@ pub enum EvmExtractor {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum SolanaExtractor {
     SolanaProgramIdIndex { ix_index: u32 },
     SolanaDataHash { ix_index: u32 },
@@ -114,6 +118,7 @@ pub enum SolanaExtractor {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum BitcoinExtractor {
     BlockHash,
 }
@@ -123,6 +128,7 @@ pub enum BitcoinExtractor {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum ExtractedValue {
     U64(u64),
     Hash256(Hash256),
@@ -133,6 +139,7 @@ pub enum ExtractedValue {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum ForeignChain {
     Solana,
     Bitcoin,
