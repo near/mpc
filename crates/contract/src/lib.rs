@@ -1308,14 +1308,6 @@ impl MpcContract {
             }
         };
 
-        match try_state_read::<v3_3_2_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
-            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
-            Err(err) => {
-                log!("failed to deserialize state into 3_3_2 state: {:?}", err);
-            }
-        };
-
         match try_state_read::<Self>() {
             Ok(Some(state)) => Ok(state),
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
