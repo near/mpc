@@ -1235,6 +1235,7 @@ expression: abi
           }
         },
         "AffinePoint": {
+          "description": "AffinePoint on the Secp256k1 curve",
           "type": "object",
           "required": [
             "affine_point"
@@ -1331,14 +1332,8 @@ expression: abi
           }
         },
         "BitcoinTxId": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "BlockConfirmations": {
           "type": "integer",
@@ -1732,14 +1727,8 @@ expression: abi
           }
         },
         "EvmTxId": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "ExtractedValue": {
           "oneOf": [
@@ -1779,14 +1768,8 @@ expression: abi
           ]
         },
         "ForeignBlockId": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "ForeignChain": {
           "type": "string",
@@ -1840,14 +1823,8 @@ expression: abi
           ]
         },
         "Hash256": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
