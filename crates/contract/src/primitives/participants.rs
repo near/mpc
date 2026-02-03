@@ -2,6 +2,7 @@ use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 
 use near_account_id::AccountId;
 use near_sdk::{near, PublicKey};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{collections::BTreeMap, fmt::Display};
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -57,7 +58,13 @@ pub struct ParticipantData {
 }
 
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
-#[near(serializers=[borsh, json])]
+///
+/// JSON serialization/deserialization uses the old Vec format for backwards compatibility:
+/// `{ "next_id": N, "participants": [["account", 0, {...}], ...] }`
+///
+/// JSON deserialization also supports the new BTreeMap format:
+/// `{ "next_id": N, "participants": { "account": { "id": 0, "info": ... } } }`
+#[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Participants {
     /// The next [`ParticipantId`] to assign when inserting a new participant.
@@ -65,6 +72,154 @@ pub struct Participants {
     next_id: ParticipantId,
     /// Primary storage mapping [`AccountId`] to [`ParticipantData`].
     participants: BTreeMap<AccountId, ParticipantData>,
+}
+
+#[cfg(feature = "abi")]
+impl schemars::JsonSchema for Participants {
+    fn schema_name() -> String {
+        "Participants".to_string()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        // Build schema that matches the old serialization format:
+        // { "next_id": { "$ref": "#/definitions/ParticipantId" }, "participants": [[string, u32, {...}], ...] }
+        // We use references to the types since they'll be defined elsewhere in the ABI.
+        use schemars::schema::{InstanceType, ObjectValidation, SchemaObject};
+
+        // For ParticipantInfo, we'll reference it by name
+        let participant_info_ref = SchemaObject {
+            reference: Some("#/definitions/ParticipantInfo".to_string()),
+            ..Default::default()
+        };
+
+        // For ParticipantId
+        let participant_id_ref = SchemaObject {
+            reference: Some("#/definitions/ParticipantId".to_string()),
+            ..Default::default()
+        };
+
+        // For AccountId (string)
+        let account_id_schema = gen.subschema_for::<String>();
+
+        // Create tuple schema: [AccountId, ParticipantId, ParticipantInfo]
+        let tuple_schema = SchemaObject {
+            instance_type: Some(InstanceType::Array.into()),
+            array: Some(Box::new(schemars::schema::ArrayValidation {
+                items: Some(schemars::schema::SingleOrVec::Vec(vec![
+                    account_id_schema,
+                    participant_id_ref.into(),
+                    participant_info_ref.into(),
+                ])),
+                min_items: Some(3),
+                max_items: Some(3),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        // Create array of tuples schema
+        let participants_array_schema = SchemaObject {
+            instance_type: Some(InstanceType::Array.into()),
+            array: Some(Box::new(schemars::schema::ArrayValidation {
+                items: Some(schemars::schema::SingleOrVec::Single(Box::new(
+                    tuple_schema.into(),
+                ))),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        // Create the main object schema
+        let mut obj = ObjectValidation::default();
+        obj.properties.insert(
+            "next_id".to_string(),
+            SchemaObject {
+                reference: Some("#/definitions/ParticipantId".to_string()),
+                ..Default::default()
+            }
+            .into(),
+        );
+        obj.properties
+            .insert("participants".to_string(), participants_array_schema.into());
+        obj.required.insert("next_id".to_string());
+        obj.required.insert("participants".to_string());
+
+        SchemaObject {
+            instance_type: Some(InstanceType::Object.into()),
+            object: Some(Box::new(obj)),
+            ..Default::default()
+        }
+        .into()
+    }
+}
+
+/// Helper for serializing Participants in the old Vec format for backwards compatibility.
+#[derive(Serialize)]
+struct OldParticipantsJsonForSerialize<'a> {
+    next_id: &'a ParticipantId,
+    participants: Vec<(&'a AccountId, &'a ParticipantId, &'a ParticipantInfo)>,
+}
+
+impl Serialize for Participants {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize in the old Vec format for backwards compatibility with old contracts
+        let old_format = OldParticipantsJsonForSerialize {
+            next_id: &self.next_id,
+            participants: self
+                .participants
+                .iter()
+                .map(|(account_id, data)| (account_id, &data.id, &data.info))
+                .collect(),
+        };
+        old_format.serialize(serializer)
+    }
+}
+
+/// Helper for deserializing the old Vec-based participants format.
+#[derive(Deserialize)]
+struct OldParticipantsJson {
+    next_id: ParticipantId,
+    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+}
+
+/// Helper for deserializing the new BTreeMap-based participants format.
+#[derive(Deserialize)]
+struct NewParticipantsJson {
+    next_id: ParticipantId,
+    participants: BTreeMap<AccountId, ParticipantData>,
+}
+
+impl<'de> Deserialize<'de> for Participants {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First, deserialize into a generic JSON value
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Check if participants is an array (old format) or object (new format)
+        if let Some(participants) = value.get("participants") {
+            if participants.is_array() {
+                // Old format: Vec<(AccountId, ParticipantId, ParticipantInfo)>
+                let old: OldParticipantsJson =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(Participants::init(old.next_id, old.participants))
+            } else {
+                // New format: BTreeMap<AccountId, ParticipantData>
+                let new: NewParticipantsJson =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(Participants {
+                    next_id: new.next_id,
+                    participants: new.participants,
+                })
+            }
+        } else {
+            Err(serde::de::Error::missing_field("participants"))
+        }
+    }
 }
 
 impl Default for Participants {
