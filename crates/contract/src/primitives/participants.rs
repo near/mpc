@@ -303,10 +303,16 @@ impl Participants {
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
     ) -> Self {
-        let map = participants
+        let expected_len = participants.len();
+        let map: BTreeMap<_, _> = participants
             .into_iter()
             .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
             .collect();
+        assert_eq!(
+            map.len(),
+            expected_len,
+            "Participants::init received duplicate AccountIds"
+        );
         Self {
             next_id,
             participants: map,
