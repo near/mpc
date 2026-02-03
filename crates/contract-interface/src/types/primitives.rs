@@ -133,6 +133,7 @@ pub struct K256Signature {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+/// AffinePoint on the Secp256k1 curve
 pub struct AffinePoint {
     #[serde_as(as = "Hex")]
     pub affine_point: [u8; 33],
