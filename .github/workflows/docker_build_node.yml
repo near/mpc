@@ -38,11 +38,4 @@ jobs:
       - name: Build and push node image
         run: |
           export NODE_IMAGE_NAME=mpc-node
-          ./deployment/build-images.sh --node
-
-      - name: Upload target directory
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-target-dir
-          path: target/
-          retention-days: 1
+          ./deployment/build-images.sh --node --push
