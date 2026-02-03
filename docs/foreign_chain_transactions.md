@@ -105,15 +105,13 @@ pub struct VerifyForeignTransactionRequest {
 
 ```rust
 pub enum ForeignChainRpcRequest {
-    Evm(EvmRpcRequest),
+    Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     // Future chains...
 }
 
 pub struct EvmRpcRequest {
-    // Ethereum/Base/Bnb/Arbitrum
-    pub chain: ForeignChain,
     pub tx_id: EvmTxId,
     pub extractors: Vec<EvmExtractor>,
 }
