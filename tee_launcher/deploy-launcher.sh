@@ -120,7 +120,7 @@ INTERNAL_SSH_PORT=22
 INTERNAL_AGENT_ADDR=8090
 
 # Do not change these variables - those are measured and reflected in the attestation
-VCPU=8 # Number of vCPUs for the VM
+VCPU=4 # Number of vCPUs for the VM
 MEMORY=64G # Memory for the VM
 
 
