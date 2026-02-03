@@ -1241,12 +1241,8 @@ expression: abi
           ],
           "properties": {
             "affine_point": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint8",
-                "minimum": 0.0
-              }
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -2011,14 +2007,16 @@ expression: abi
           }
         },
         "K256Scalar": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          },
-          "maxItems": 32,
-          "minItems": 32
+          "type": "object",
+          "required": [
+            "scalar"
+          ],
+          "properties": {
+            "scalar": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
         },
         "KeyEvent": {
           "description": "Maintains the state for the current key generation or resharing.",
