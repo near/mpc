@@ -9,7 +9,7 @@ services:
     environment:
       - PLATFORM=TEE
       - DOCKER_CONTENT_TRUST=1
-      - DEFAULT_IMAGE_DIGEST=sha256:00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e
+      - DEFAULT_IMAGE_DIGEST=sha256:6e5b08f91752fd7cb10349de45f74272f340fe42a172d2cbc237f3f1d5527a45
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
