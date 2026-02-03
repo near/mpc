@@ -174,6 +174,7 @@ mod tests {
         },
         state::test_utils::gen_valid_params_proposal,
     };
+    use assert_matches::assert_matches;
     use rand::Rng;
 
     #[test]
@@ -251,9 +252,14 @@ mod tests {
         new_participants.add_random_participants_till_n(params.participants.len());
         let proposal =
             ThresholdParameters::new_unvalidated(new_participants, params.threshold.clone());
-        params
-            .validate_incoming_proposal(&proposal)
-            .expect("Proposal with threshold shared participants should validate");
+
+        assert_matches!(
+            params.validate_incoming_proposal(&proposal),
+            Ok(_),
+            "{:?} -> {:?}",
+            params,
+            proposal
+        );
 
         // Proposal with less than threshold number of shared participants should not be allowed,
         // even if the new threshold is lower.
