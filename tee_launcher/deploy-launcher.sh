@@ -12,6 +12,7 @@ check_ports_in_use() {
     EXTERNAL_MPC_LOCAL_DEBUG_PORT
     EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC
     EXTERNAL_MPC_MAIN_PORT
+    EXTERNAL_MPC_FUTURE_PORT
     "
 
     if ! command -v ss >/dev/null 2>&1; then
@@ -84,6 +85,10 @@ while [[ "$#" -gt 0 ]]; do
       pythonExec="$2"
       shift 2
       ;;
+      -y|--yes)
+      AUTO_YES=1
+      shift 1
+      ;;
     *)
       echo "Unknown option: $1"
       echo "Usage: $0 [--env-file <path>] [--base-path <path>] [--python-exec <path>]"
@@ -136,6 +141,8 @@ for var in "${required_env_vars[@]}"; do
     exit 1
   fi
 done
+
+
 
 # Default basePath if not provided via CLI
 if [ -z "$basePath" ]; then
@@ -195,8 +202,12 @@ rm "$COMPOSE_TMP"
 
 
 echo -e "Deploying $APP_NAME to dstack-vmm..."
-echo "Press enter to continue..."
-read
+if [ -z "${AUTO_YES:-}" ]; then
+  echo "Press enter to continue..."
+  read
+else
+  echo "--yes set: continuing without prompt"
+fi
 
 # check if port are free
 check_ports_in_use
@@ -211,6 +222,7 @@ cmd="$CLI deploy \
   --port tcp:$EXTERNAL_MPC_LOCAL_DEBUG_PORT:$INTERNAL_MPC_LOCAL_DEBUG_PORT \
   --port tcp:$EXTERNAL_MPC_MAIN_PORT:$INTERNAL_MPC_MAIN_PORT \
   --port tcp:$EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC:$INTERNAL_MPC_DECENTRALIZED_STATE_SYNC \
+  --port tcp:$EXTERNAL_MPC_FUTURE_PORT:$INTERNAL_MPC_FUTURE_PORT \
   --user-config $USER_CONFIG_FILE_PATH \
   --vcpu $VCPU \
   --memory $MEMORY \
