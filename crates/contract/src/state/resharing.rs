@@ -416,7 +416,7 @@ pub mod tests {
 
         // Reproposing with invalid epoch ID should fail.
         {
-            env.set_signer(&old_participants.participants()[0].0);
+            env.set_signer(old_participants.participants().next().unwrap().0);
             let _ = state
                 .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
                 .unwrap_err();
@@ -476,7 +476,7 @@ pub mod tests {
         );
 
         // Repropose with new_params_2. That should fail.
-        env.set_signer(&old_participants.participants()[0].0);
+        env.set_signer(old_participants.participants().next().unwrap().0);
         let _ = new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .unwrap_err();

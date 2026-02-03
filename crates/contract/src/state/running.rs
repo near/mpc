@@ -215,7 +215,7 @@ pub mod running_tests {
         // Assert that proposals of the wrong epoch ID get rejected.
         {
             let ksp = gen_valid_params_proposal(&state.parameters);
-            env.set_signer(&participants.participants()[0].0);
+            env.set_signer(participants.participants().next().unwrap().0);
             let _ = state
                 .vote_new_parameters(state.keyset.epoch_id, &ksp)
                 .unwrap_err();
