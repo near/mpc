@@ -54,7 +54,6 @@ pub enum ForeignChainRpcRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct EvmRpcRequest {
-    pub chain: ForeignChain,
     pub tx_id: EvmTxId,
     pub extractors: Vec<EvmExtractor>,
 }
@@ -132,21 +131,6 @@ pub enum BitcoinExtractor {
 pub enum ExtractedValue {
     U64(u64),
     Hash256(Hash256),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-#[non_exhaustive]
-pub enum ForeignChain {
-    Solana,
-    Bitcoin,
-    Ethereum,
-    Base,
-    Bnb,
-    Arbitrum,
 }
 
 #[derive(
