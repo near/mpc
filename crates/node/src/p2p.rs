@@ -778,7 +778,7 @@ pub mod testing {
             .enumerate()
         {
             participants.push(ParticipantInfo {
-                id: ParticipantId::from_raw(rand::random()),
+                id: ParticipantId::from_raw(i as u32),
                 address: "127.0.0.1".to_string(),
                 port: port_seed.p2p_port(i),
                 p2p_public_key: p2p_signing_key.verifying_key(),
