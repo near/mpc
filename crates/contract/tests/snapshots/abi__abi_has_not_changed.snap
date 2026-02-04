@@ -1661,6 +1661,34 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "EthereumExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "EthereumRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EthereumExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EthereumTxId"
+            }
+          }
+        },
+        "EthereumTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
         "EventLog": {
           "description": "Represents an event log entry in the system",
           "type": "object",
@@ -1697,38 +1725,6 @@ expression: abi
               "minimum": 0.0
             }
           }
-        },
-        "EvmExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
-          ]
-        },
-        "EvmRpcRequest": {
-          "type": "object",
-          "required": [
-            "chain",
-            "extractors",
-            "tx_id"
-          ],
-          "properties": {
-            "chain": {
-              "$ref": "#/definitions/ForeignChain"
-            },
-            "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/EvmExtractor"
-              }
-            },
-            "tx_id": {
-              "$ref": "#/definitions/EvmTxId"
-            }
-          }
-        },
-        "EvmTxId": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "ExtractedValue": {
           "oneOf": [
@@ -1771,27 +1767,16 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
-        "ForeignChain": {
-          "type": "string",
-          "enum": [
-            "Solana",
-            "Bitcoin",
-            "Ethereum",
-            "Base",
-            "Bnb",
-            "Arbitrum"
-          ]
-        },
         "ForeignChainRpcRequest": {
           "oneOf": [
             {
               "type": "object",
               "required": [
-                "Evm"
+                "Ethereum"
               ],
               "properties": {
-                "Evm": {
-                  "$ref": "#/definitions/EvmRpcRequest"
+                "Ethereum": {
+                  "$ref": "#/definitions/EthereumRpcRequest"
                 }
               },
               "additionalProperties": false
