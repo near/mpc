@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::protocol_version::{KnownMpcProtocols, CURRENT_PROTOCOL_VERSION};
+use crate::protocol_version::{CommunicationProtocols, CURRENT_PROTOCOL_VERSION};
 
 /// Arbitrary magic byte to distinguish from older protocol where we didn't send
 /// the protocol version at all.
@@ -34,7 +34,7 @@ pub(crate) struct ListenerData {
 ///    │ MAGIC_BYTE    │ LISTENER_PROTOCOL_VERSION  │
 ///    └───────────────┴────────────────────────────┘
 ///
-/// 3. Compares `LISTENER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
+/// 3. Compares `LISTENER_PROTOCOL_VERSION` against the list of CommunicationProtocols and engages in
 ///    *Version-specific* behavior:
 ///     - *Unsupported:*
 ///       This function returns HandshakeOutcome::Unsupported(peer_protocol_version) in case the listener is running a deprecated
@@ -65,9 +65,9 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
     } = dialer_data;
     write_magic_byte_and_protocol_version(conn).await?;
     let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version.into();
+    let peer_protocol_version: CommunicationProtocols = peer_protocol_version.into();
     let outcome = match peer_protocol_version {
-        KnownMpcProtocols::Unsupported => {
+        CommunicationProtocols::Unsupported => {
             tracing::warn!(
                 "peer is using a legacy protocol: their version: {}, ours: {:?}",
                 peer_protocol_version,
@@ -75,11 +75,11 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
             );
             HandshakeOutcome::Unsupported(peer_protocol_version)
         }
-        KnownMpcProtocols::Dec2025 => {
+        CommunicationProtocols::Dec2025 => {
             // if we get here, the connection is always accepted
             HandshakeOutcome::Dec2025(true)
         }
-        KnownMpcProtocols::Jan2026 | KnownMpcProtocols::Unknown(_) => {
+        CommunicationProtocols::Jan2026 | CommunicationProtocols::Unknown(_) => {
             conn.write_u32(sender_connection_id).await?;
             let min_expected_connection_id = conn.read_u32().await?;
             HandshakeOutcome::Jan2026(ConnectionInfo {
@@ -101,7 +101,7 @@ pub(crate) async fn p2p_handshake_dialer<T: AsyncRead + AsyncWrite + Unpin>(
 ///    │ MAGIC_BYTE    │ DIALER_PROTOCOL_VERSION  │
 ///    └───────────────┴──────────────────────────┘
 ///
-/// 2. Compares `DIALER_PROTOCOL_VERSION` against the list of KnownMpcProtocols and engages in
+/// 2. Compares `DIALER_PROTOCOL_VERSION` against the list of CommunicationProtocols and engages in
 ///    *Version-specific* behavior:
 ///     - *Unsupported:*
 ///       The listener aborts the handshake, not writing anything to the byte stream.
@@ -139,9 +139,9 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
         min_expected_connection_id,
     } = listener_data;
     let peer_protocol_version = read_magic_byte_and_protocol_version(conn).await?;
-    let peer_protocol_version: KnownMpcProtocols = peer_protocol_version.into();
+    let peer_protocol_version: CommunicationProtocols = peer_protocol_version.into();
     let outcome = match peer_protocol_version {
-        KnownMpcProtocols::Unsupported => {
+        CommunicationProtocols::Unsupported => {
             tracing::warn!(
                 "peer is using a legacy protocol: their version: {}, ours: {:?}",
                 peer_protocol_version,
@@ -149,7 +149,7 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
             );
             HandshakeOutcome::Unsupported(peer_protocol_version)
         }
-        KnownMpcProtocols::Dec2025 => {
+        CommunicationProtocols::Dec2025 => {
             if min_expected_connection_id == MIN_EXPECTED_CONNECTION_ID {
                 // we have no existing connection with this peer and are happy to
                 // accept this one.
@@ -163,7 +163,7 @@ pub(crate) async fn p2p_handshake_listener<T: AsyncRead + AsyncWrite + Unpin>(
                 HandshakeOutcome::Dec2025(false)
             }
         }
-        KnownMpcProtocols::Jan2026 | KnownMpcProtocols::Unknown(_) => {
+        CommunicationProtocols::Jan2026 | CommunicationProtocols::Unknown(_) => {
             write_magic_byte_protocol_version_and_expected_connection_version(
                 conn,
                 min_expected_connection_id,
@@ -247,14 +247,14 @@ async fn read_magic_byte_and_protocol_version<T: AsyncRead + AsyncWrite + Unpin>
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum HandshakeOutcome {
-    Unsupported(KnownMpcProtocols),
+    Unsupported(CommunicationProtocols),
     Dec2025(bool),
     Jan2026(ConnectionInfo),
 }
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ConnectionInfo {
-    pub peer_protocol_version: KnownMpcProtocols,
+    pub peer_protocol_version: CommunicationProtocols,
     pub sender_connection_id: u32,
     pub min_expected_connection_id: u32,
 }
@@ -274,7 +274,7 @@ mod tests {
         p2p_handshake_dialer, p2p_handshake_listener, DialerData, HandshakeOutcome, ListenerData,
     };
     use crate::network::handshake::{ConnectionInfo, MAGIC_BYTE};
-    use crate::protocol_version::{KnownMpcProtocols, CURRENT_PROTOCOL_VERSION};
+    use crate::protocol_version::{CommunicationProtocols, CURRENT_PROTOCOL_VERSION};
     use rstest::*;
     use std::future::Future;
     use std::ops::Range;
@@ -397,7 +397,7 @@ mod tests {
     #[case::receiver_handshake_must_fail(receive_role(42))]
     #[case::sender_handshake_must_fail(sender_role(42))]
     async fn test_p2p_handshake_fail_on_deprecated_protocols(#[case] role: HandshakeRole) {
-        let deprecated_protocols: Range<u32> = 0..KnownMpcProtocols::Dec2025.into();
+        let deprecated_protocols: Range<u32> = 0..CommunicationProtocols::Dec2025.into();
         for deprecated_version in deprecated_protocols.clone() {
             let (alice, mut bob) = tokio::io::duplex(1024);
             let alice_handle = execute_handshake(alice, role);
@@ -483,7 +483,7 @@ mod tests {
         timeout: std::time::Duration,
     ) -> anyhow::Result<()> {
         tokio::time::timeout(timeout, async move {
-            let dec_2025_protocol_version: u32 = KnownMpcProtocols::Dec2025.into();
+            let dec_2025_protocol_version: u32 = CommunicationProtocols::Dec2025.into();
             let mut handshake_buf = [0u8; 5];
             handshake_buf[0] = MAGIC_BYTE;
             handshake_buf[1..].copy_from_slice(&dec_2025_protocol_version.to_be_bytes());
