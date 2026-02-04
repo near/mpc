@@ -9,6 +9,7 @@ use serde_json::json;
 
 const JSON_RPC_VERSION: &str = "1.0";
 const JSON_RPC_CLIENT_ID: &str = "client";
+/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 
 #[derive(Debug, Clone)]
@@ -51,13 +52,17 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
         transaction: BitcoinTransactionHash,
         _finality: BlockConfirmations,
     ) -> Result<BitcoinRpcResponse, RpcError> {
-        let params = json!([transaction.as_hex(), true]);
+        let rpc_parameters = json!([
+            transaction,
+            // enable verbose response
+            true
+        ]);
 
         let request = JsonRpcRequest {
             jsonrpc: JSON_RPC_VERSION,
             id: JSON_RPC_CLIENT_ID,
             method: GET_RAW_TRANSACTION_METHOD,
-            params,
+            rpc_parameters,
         };
 
         let response = self

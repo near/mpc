@@ -5,7 +5,7 @@ pub(crate) struct JsonRpcRequest<P> {
     pub(crate) jsonrpc: &'static str,
     pub(crate) id: &'static str,
     pub(crate) method: &'static str,
-    pub(crate) params: P,
+    pub(crate) rpc_parameters: P,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
