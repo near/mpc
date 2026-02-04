@@ -27,7 +27,6 @@ fn compile_project() -> (Vec<u8>, serde_json::Value) {
 // this only tests that contract can be built with ABI and responds to __contract_abi
 // view call
 #[tokio::test]
-#[ignore] // TODO(#1828): remove this once cargo-near releases a new version of cargo-near-build
 async fn test_embedded_abi() -> anyhow::Result<()> {
     let (wasm, _abi) = compile_project();
     let worker = near_workspaces::sandbox().await?;
