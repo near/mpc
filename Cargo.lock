@@ -8513,6 +8513,7 @@ dependencies = [
  "mpc-primitives",
  "reqwest 0.12.24",
  "serde",
+ "serde_json",
  "serde_with",
 ]
 

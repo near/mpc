@@ -16,8 +16,15 @@ enum RpcError {
     BadResponse,
 }
 
-trait RpcExtractor {
-    type Chain;
+struct BlockConfirmations(u64);
+
+enum Finality {
+    Optimistic,
+    Final,
+}
+
+trait ForeignChainInspector {
+    // type Chain;
     type Extractor;
     type Finality;
     type TxId;
