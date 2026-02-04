@@ -54,6 +54,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient() {
 
 #[tokio::test]
 async fn extract_returns_error_when_confirmations_insufficient() {
+    // given
     let tx_id = BitcoinTransactionHash::from([1; 32]);
     let expected_block_hash = BitcoinBlockHash::from([2; 32]);
 
@@ -77,21 +78,25 @@ async fn extract_returns_error_when_confirmations_insufficient() {
 
     let inspector = BitcoinInspector::new(client);
 
-    let result = inspector
+    // when
+    let error = inspector
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
-        .await;
+        .await
+        .expect_err("extract should fail with insufficient confirmations");
 
+    // then
     assert_matches!(
-        result,
-        Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+        error,
+        ForeignChainInspectionError::NotEnoughBlockConfirmations {
             expected,
             got
-        }) if expected == threshold && got == confirmations
+        } if expected == threshold && got == confirmations
     );
 }
 
 #[tokio::test]
 async fn extract_propagates_rpc_client_errors() {
+    // given
     let tx_id = BitcoinTransactionHash::from([9; 32]);
     let threshold = BlockConfirmations::from(1u64);
 
@@ -104,14 +109,15 @@ async fn extract_propagates_rpc_client_errors() {
 
     let inspector = BitcoinInspector::new(client);
 
-    let result = inspector
+    // when
+    let error = inspector
         .extract(tx_id, threshold, vec![BitcoinExtractor::BlockHash])
-        .await;
+        .await
+        .expect_err("extract should propagate rpc client errors");
 
+    // then
     assert_matches!(
-        result,
-        Err(ForeignChainInspectionError::RpcClientError(
-            RpcError::ClientError
-        ))
+        error,
+        ForeignChainInspectionError::RpcClientError(RpcError::ClientError)
     );
 }
