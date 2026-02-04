@@ -18,7 +18,7 @@ mpc-contract = { workspace = true, features = ["test-utils", "dev-utils"] }
 near-account-id = { workspace = true }
 near-sdk = { workspace = true }
 node-types = { workspace = true }
-# TODO: #658 use workspace version
+# TODO(#658): use workspace version
 rand = "0.9.0"
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -28,8 +28,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 utilities = { workspace = true }
 
-# TODO: #657 use workspace versions.
-# https://github.com/near/mpc/issues/657 
+# TODO(#657): use workspace versions
 near-crypto = "0.28.0"
 near-jsonrpc-client = "0.15.1"
 near-jsonrpc-primitives = "0.28.0"

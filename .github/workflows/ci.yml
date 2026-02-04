@@ -119,7 +119,7 @@ jobs:
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -196,7 +196,7 @@ jobs:
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

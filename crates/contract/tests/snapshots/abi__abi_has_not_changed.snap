@@ -200,6 +200,26 @@ expression: abi
         }
       },
       {
+        "name": "get_foreign_chain_policy",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainPolicy"
+          }
+        }
+      },
+      {
+        "name": "get_foreign_chain_policy_proposals",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainPolicyVotes"
+          }
+        }
+      },
+      {
         "name": "get_pending_ckd_request",
         "kind": "view",
         "params": {
@@ -1111,6 +1131,28 @@ expression: abi
         }
       },
       {
+        "name": "vote_foreign_chain_policy",
+        "doc": " Propose a new foreign chain policy.\n If all current participants vote for the exact same policy, it is applied.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "policy",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignChainPolicy"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_new_parameters",
         "doc": " Propose a new set of parameters (participants and threshold) for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.",
         "kind": "call",
@@ -1661,6 +1703,34 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "EthereumExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "EthereumRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EthereumExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EthereumTxId"
+            }
+          }
+        },
+        "EthereumTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
         "EventLog": {
           "description": "Represents an event log entry in the system",
           "type": "object",
@@ -1697,38 +1767,6 @@ expression: abi
               "minimum": 0.0
             }
           }
-        },
-        "EvmExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
-          ]
-        },
-        "EvmRpcRequest": {
-          "type": "object",
-          "required": [
-            "chain",
-            "extractors",
-            "tx_id"
-          ],
-          "properties": {
-            "chain": {
-              "$ref": "#/definitions/ForeignChain"
-            },
-            "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/EvmExtractor"
-              }
-            },
-            "tx_id": {
-              "$ref": "#/definitions/EvmTxId"
-            }
-          }
-        },
-        "EvmTxId": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "ExtractedValue": {
           "oneOf": [
@@ -1782,16 +1820,64 @@ expression: abi
             "Arbitrum"
           ]
         },
+        "ForeignChainConfig": {
+          "type": "object",
+          "required": [
+            "chain",
+            "providers"
+          ],
+          "properties": {
+            "chain": {
+              "$ref": "#/definitions/ForeignChain"
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/RpcProvider"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "ForeignChainPolicy": {
+          "type": "object",
+          "required": [
+            "chains"
+          ],
+          "properties": {
+            "chains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ForeignChainConfig"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "ForeignChainPolicyVotes": {
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ForeignChainPolicy"
+              }
+            }
+          }
+        },
         "ForeignChainRpcRequest": {
           "oneOf": [
             {
               "type": "object",
               "required": [
-                "Evm"
+                "Ethereum"
               ],
               "properties": {
-                "Evm": {
-                  "$ref": "#/definitions/EvmRpcRequest"
+                "Ethereum": {
+                  "$ref": "#/definitions/EthereumRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -2621,6 +2707,17 @@ expression: abi
             },
             "resharing_key": {
               "$ref": "#/definitions/KeyEvent"
+            }
+          }
+        },
+        "RpcProvider": {
+          "type": "object",
+          "required": [
+            "rpc_url"
+          ],
+          "properties": {
+            "rpc_url": {
+              "type": "string"
             }
           }
         },

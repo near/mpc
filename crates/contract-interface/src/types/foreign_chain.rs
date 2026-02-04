@@ -1,7 +1,9 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::primitives::{DomainId, SignatureResponse, Tweak};
+use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
@@ -43,7 +45,7 @@ pub struct VerifyForeignTransactionResponse {
 )]
 #[non_exhaustive]
 pub enum ForeignChainRpcRequest {
-    Evm(EvmRpcRequest),
+    Ethereum(EthereumRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
 }
@@ -53,10 +55,9 @@ pub enum ForeignChainRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EvmRpcRequest {
-    pub chain: ForeignChain,
-    pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+pub struct EthereumRpcRequest {
+    pub tx_id: EthereumTxId,
+    pub extractors: Vec<EthereumExtractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -98,7 +99,7 @@ pub enum Finality {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
-pub enum EvmExtractor {
+pub enum EthereumExtractor {
     BlockHash,
 }
 
@@ -134,7 +135,19 @@ pub enum ExtractedValue {
     Hash256(Hash256),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -147,6 +160,93 @@ pub enum ForeignChain {
     Base,
     Bnb,
     Arbitrum,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainPolicy {
+    pub chains: BTreeSet<ForeignChainConfig>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainConfig {
+    pub chain: ForeignChain,
+    pub providers: BTreeSet<RpcProvider>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct RpcProvider {
+    pub rpc_url: String,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainPolicyVotes {
+    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
 
 #[derive(
@@ -230,7 +330,7 @@ pub struct ForeignBlockId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+pub struct EthereumTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
