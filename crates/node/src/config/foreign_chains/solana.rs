@@ -16,6 +16,7 @@ impl SolanaChainConfig {
         foreign_chains::validate_chain_config(
             "solana",
             self.timeout_sec,
+            self.max_retries,
             &self.providers,
             |provider| provider.rpc_url.as_str(),
             |provider, provider_name| provider.validate("solana", provider_name),
