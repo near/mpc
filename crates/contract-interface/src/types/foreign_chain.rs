@@ -1,7 +1,9 @@
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::types::primitives::{DomainId, SignatureResponse, Tweak};
+use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
@@ -131,6 +133,120 @@ pub enum BitcoinExtractor {
 pub enum ExtractedValue {
     U64(u64),
     Hash256(Hash256),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum ForeignChain {
+    Solana,
+    Bitcoin,
+    Ethereum,
+    Base,
+    Bnb,
+    Arbitrum,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainPolicy {
+    pub chains: BTreeSet<ForeignChainConfig>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainConfig {
+    pub chain: ForeignChain,
+    pub providers: BTreeSet<RpcProvider>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct RpcProvider {
+    pub rpc_url: String,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct ForeignChainPolicyVotes {
+    pub proposal_by_account: BTreeMap<AccountId, ForeignChainPolicy>,
 }
 
 #[derive(
