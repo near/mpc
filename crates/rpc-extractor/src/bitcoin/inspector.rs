@@ -1,5 +1,5 @@
 use crate::{
-    BlockConfirmations, ForeignChainInspector, RpcClient,
+    BlockConfirmations, ForeignChainInspector, ForeignChainRpcClient,
     bitcoin::{BitcoinBlockHash, BitcoinTransactionHash},
 };
 
@@ -20,7 +20,7 @@ pub enum BitcoinExtractor {
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: RpcClient,
+    Client: ForeignChainRpcClient,
 {
     // type Chain = Bitcoin;
     type Extractor = BitcoinExtractor;

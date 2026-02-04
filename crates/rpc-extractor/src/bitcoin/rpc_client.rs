@@ -1,5 +1,5 @@
 use crate::{
-    BlockConfirmations, RpcAuthentication, RpcClient, RpcError,
+    BlockConfirmations, ForeignChainRpcClient, RpcAuthentication, RpcError,
     bitcoin::{BitcoinBlockHash, BitcoinTransactionHash},
     rpc_types::{JsonRpcRequest, JsonRpcResponse},
 };
@@ -60,7 +60,7 @@ struct GetRawTransactionVerboseResponse {
     confirmations: u64,
 }
 
-impl RpcClient for BitcoinCoreRpcClient {
+impl ForeignChainRpcClient for BitcoinCoreRpcClient {
     type Finality = BlockConfirmations;
     type TxId = BitcoinTransactionHash;
     type RpcResponse = BitcoinRpcResponse;

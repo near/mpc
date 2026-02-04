@@ -30,29 +30,19 @@ enum Finality {
     Final,
 }
 
-pub trait ForeignChainInspector {
-    type Extractor;
-    type Finality;
-    type TxId;
-    type ExtractedValue;
-
+pub trait ForeignChainInspector<TxId, Finality, Extractor, ExtractedValue> {
     fn extract(
         &self,
-        tx_id: Self::TxId,
-        extractors: Vec<Self::Extractor>,
-        finality: Self::Finality,
-    ) -> impl Future<Output = Self::ExtractedValue>;
+        tx_id: TxId,
+        finality: Finality,
+        extractors: Vec<Extractor>,
+    ) -> impl Future<Output = ExtractedValue>;
 }
 
-pub trait RpcClient {
-    type Finality;
-    type TxId;
-    type RpcResponse;
-    // type RpcError;
-
+pub trait ForeignChainRpcClient<TxId, Finality, RpcResponse> {
     fn get(
         &self,
-        transaction: Self::TxId,
-        finality: Self::Finality,
-    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
+        transaction: TxId,
+        finality: Finality,
+    ) -> impl Future<Output = Result<RpcResponse, RpcError>>;
 }
