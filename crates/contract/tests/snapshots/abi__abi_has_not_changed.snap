@@ -2337,6 +2337,32 @@ expression: abi
             }
           }
         },
+        "ParticipantData": {
+          "description": "The data stored for each participant.",
+          "type": "object",
+          "required": [
+            "id",
+            "info"
+          ],
+          "properties": {
+            "id": {
+              "description": "Unique identifier assigned to the participant, used for threshold signing.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantId"
+                }
+              ]
+            },
+            "info": {
+              "description": "Connection and verification info (URL and public key) for this participant.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantInfo"
+                }
+              ]
+            }
+          }
+        },
         "ParticipantId": {
           "type": "integer",
           "format": "uint32",
@@ -2359,7 +2385,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "Schema helper matching serialized Vec format (fields used by derive macro).",
+          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.",
           "type": "object",
           "required": [
             "next_id",
@@ -2367,25 +2393,18 @@ expression: abi
           ],
           "properties": {
             "next_id": {
-              "$ref": "#/definitions/ParticipantId"
+              "description": "The next [`ParticipantId`] to assign when inserting a new participant. Always greater than all existing participant IDs.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantId"
+                }
+              ]
             },
             "participants": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantId"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantInfo"
-                  }
-                ],
-                "maxItems": 3,
-                "minItems": 3
+              "description": "Primary storage mapping [`AccountId`] to [`ParticipantData`].",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ParticipantData"
               }
             }
           }
