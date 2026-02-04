@@ -2,6 +2,16 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod auth;
+mod bitcoin;
+mod ethereum;
+mod solana;
+
+pub use auth::{AuthConfig, TokenConfig};
+pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
+pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
+pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
@@ -32,179 +42,7 @@ impl ForeignChainsConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SolanaChainConfig {
-    pub timeout_sec: u64,
-    pub max_retries: u64,
-    pub providers: BTreeMap<String, SolanaProviderConfig>,
-}
-
-impl SolanaChainConfig {
-    fn validate(&self) -> anyhow::Result<()> {
-        validate_chain_config(
-            "solana",
-            self.timeout_sec,
-            &self.providers,
-            |provider| provider.rpc_url.as_str(),
-            |provider, provider_name| provider.validate("solana", provider_name),
-        )
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BitcoinChainConfig {
-    pub timeout_sec: u64,
-    pub max_retries: u64,
-    pub providers: BTreeMap<String, BitcoinProviderConfig>,
-}
-
-impl BitcoinChainConfig {
-    fn validate(&self) -> anyhow::Result<()> {
-        validate_chain_config(
-            "bitcoin",
-            self.timeout_sec,
-            &self.providers,
-            |provider| provider.rpc_url.as_str(),
-            |provider, provider_name| provider.validate("bitcoin", provider_name),
-        )
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EthereumChainConfig {
-    pub timeout_sec: u64,
-    pub max_retries: u64,
-    pub providers: BTreeMap<String, EthereumProviderConfig>,
-}
-
-impl EthereumChainConfig {
-    fn validate(&self) -> anyhow::Result<()> {
-        validate_chain_config(
-            "ethereum",
-            self.timeout_sec,
-            &self.providers,
-            |provider| provider.rpc_url.as_str(),
-            |provider, provider_name| provider.validate("ethereum", provider_name),
-        )
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SolanaProviderConfig {
-    pub rpc_url: String,
-    pub api_variant: SolanaApiVariant,
-    #[serde(default)]
-    pub auth: AuthConfig,
-}
-
-impl SolanaProviderConfig {
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
-        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BitcoinProviderConfig {
-    pub rpc_url: String,
-    pub api_variant: BitcoinApiVariant,
-    #[serde(default)]
-    pub auth: AuthConfig,
-}
-
-impl BitcoinProviderConfig {
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
-        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EthereumProviderConfig {
-    pub rpc_url: String,
-    pub api_variant: EthereumApiVariant,
-    #[serde(default)]
-    pub auth: AuthConfig,
-}
-
-impl EthereumProviderConfig {
-    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
-        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum SolanaApiVariant {
-    Standard,
-    Alchemy,
-    Helius,
-    Quicknode,
-    Ankr,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum BitcoinApiVariant {
-    Standard,
-    #[serde(alias = "blockstream")]
-    #[serde(alias = "mempool-space")]
-    Esplora,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum EthereumApiVariant {
-    Standard,
-    Alchemy,
-    Infura,
-    Quicknode,
-    Ankr,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum AuthConfig {
-    None,
-    Header {
-        name: String,
-        #[serde(default)]
-        scheme: Option<String>,
-        token: TokenConfig,
-    },
-    Path {
-        placeholder: String,
-        token: TokenConfig,
-    },
-    Query {
-        name: String,
-        token: TokenConfig,
-    },
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum TokenConfig {
-    Env { env: String },
-    Val { val: String },
-}
-
-impl TokenConfig {
-    pub fn resolve(&self) -> anyhow::Result<String> {
-        match self {
-            TokenConfig::Env { env } => {
-                std::env::var(env).with_context(|| format!("environment variable {env} is not set"))
-            }
-            TokenConfig::Val { val } => Ok(val.clone()),
-        }
-    }
-}
-
-fn validate_chain_config<P>(
+pub(crate) fn validate_chain_config<P>(
     chain_label: &str,
     timeout_sec: u64,
     providers: &BTreeMap<String, P>,
@@ -236,48 +74,6 @@ fn validate_chain_config<P>(
     }
 
     Ok(())
-}
-
-fn validate_auth_config(
-    auth: &AuthConfig,
-    rpc_url: &str,
-    chain_label: &str,
-    provider_name: &str,
-) -> anyhow::Result<()> {
-    match auth {
-        AuthConfig::None => Ok(()),
-        AuthConfig::Header { name, scheme, .. } => {
-            anyhow::ensure!(
-                !name.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
-            );
-            if let Some(scheme) = scheme {
-                anyhow::ensure!(
-                    !scheme.trim().is_empty(),
-                    "foreign_chains.{chain_label}.providers.{provider_name}.auth.scheme must be non-empty if provided"
-                );
-            }
-            Ok(())
-        }
-        AuthConfig::Path { placeholder, .. } => {
-            anyhow::ensure!(
-                !placeholder.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.placeholder must be non-empty"
-            );
-            anyhow::ensure!(
-                rpc_url.contains(placeholder),
-                "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must include the path placeholder"
-            );
-            Ok(())
-        }
-        AuthConfig::Query { name, .. } => {
-            anyhow::ensure!(
-                !name.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
-            );
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]
