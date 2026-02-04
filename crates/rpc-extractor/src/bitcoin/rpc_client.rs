@@ -62,7 +62,7 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
             jsonrpc: JSON_RPC_VERSION,
             id: JSON_RPC_CLIENT_ID,
             method: GET_RAW_TRANSACTION_METHOD,
-            rpc_parameters,
+            params: rpc_parameters,
         };
 
         let response = self

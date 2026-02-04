@@ -5,7 +5,7 @@ pub(crate) struct JsonRpcRequest<P> {
     pub(crate) jsonrpc: &'static str,
     pub(crate) id: &'static str,
     pub(crate) method: &'static str,
-    pub(crate) rpc_parameters: P,
+    pub(crate) params: P,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -53,7 +53,7 @@ mod tests {
     use serde_json::from_str;
 
     #[test]
-    fn should_deserialize_successful_response() {
+    fn rpc_response_should_deserialize_successful_response() {
         // Given
         let json = r#"{
             "result": "Everything is fine",
@@ -72,7 +72,7 @@ mod tests {
     }
 
     #[test]
-    fn should_deserialize_error_response() {
+    fn rpc_response_should_deserialize_error_response() {
         // given
         let json: &str = r#"{
             "result": null,
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     // Some RPC 1.0 implementations might omit the null field entirely.
-    fn should_handle_missing_null_fields_gracefully() {
+    fn rpc_response_should_handle_missing_null_fields_gracefully() {
         // Given
         let json = r#"{
             "result": "Still works",
@@ -113,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn should_fail_when_neither_result_nor_error_is_present() {
+    fn rpc_response_should_fail_when_neither_result_nor_error_is_present() {
         // Given
         let json = r#"{
             "id": 1
@@ -131,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn should_deserialize_complex_struct_result() {
+    fn rpc_response_should_deserialize_complex_struct_result() {
         // Given
         #[derive(Deserialize, PartialEq, Debug)]
         struct MyData {
@@ -155,6 +155,76 @@ mod tests {
                 id: 99,
                 active: true
             }))
+        );
+    }
+
+    #[test]
+    fn rpc_request_should_serialize_request_with_positional_params() {
+        // Given
+        let request = JsonRpcRequest {
+            jsonrpc: "1.0",
+            id: "req-id-1",
+            method: "subtract",
+            params: vec![42, 23],
+        };
+
+        // When
+        let json = serde_json::to_string(&request).expect("Should serialize");
+
+        // Then
+        assert_eq!(
+            json,
+            r#"{"jsonrpc":"1.0","id":"req-id-1","method":"subtract","params":[42,23]}"#
+        );
+    }
+
+    #[test]
+    fn should_serialize_request_with_named_params() {
+        // Given
+        #[derive(Serialize)]
+        struct MyParams {
+            subtrahend: i32,
+            minuend: i32,
+        }
+
+        let request = JsonRpcRequest {
+            jsonrpc: "1.0",
+            id: "req-id-2",
+            method: "subtract",
+            params: MyParams {
+                subtrahend: 23,
+                minuend: 42,
+            },
+        };
+
+        // When
+        let json = serde_json::to_string(&request).expect("Should serialize");
+
+        // Then
+        assert_eq!(
+            json,
+            r#"{"jsonrpc":"1.0","id":"req-id-2","method":"subtract","params":{"subtrahend":23,"minuend":42}}"#
+        );
+    }
+
+    #[test]
+    fn should_serialize_request_with_no_params() {
+        // Given
+        // Using unit type () for empty parameters
+        let request = JsonRpcRequest {
+            jsonrpc: "1.0",
+            id: "req-id-3",
+            method: "get_status",
+            params: (),
+        };
+
+        // When
+        let json = serde_json::to_string(&request).expect("Should serialize");
+
+        // Then
+        assert_eq!(
+            json,
+            r#"{"jsonrpc":"1.0","id":"req-id-3","method":"get_status","params":null}"#
         );
     }
 }
