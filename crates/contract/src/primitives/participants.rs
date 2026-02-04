@@ -60,78 +60,16 @@ pub struct ParticipantData {
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-#[serde(from = "ParticipantsJson", into = "ParticipantsJsonVec")]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct Participants {
     /// The next [`ParticipantId`] to assign when inserting a new participant.
     /// Always greater than all existing participant IDs.
     next_id: ParticipantId,
     /// Primary storage mapping [`AccountId`] to [`ParticipantData`].
     participants: BTreeMap<AccountId, ParticipantData>,
-}
-
-/// Schema helper matching serialized Vec format (fields used by derive macro).
-#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-#[derive(schemars::JsonSchema)]
-#[allow(dead_code)]
-struct ParticipantsSchema {
-    next_id: ParticipantId,
-    participants: Vec<(String, ParticipantId, ParticipantInfo)>,
-}
-
-#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
-impl schemars::JsonSchema for Participants {
-    fn schema_name() -> String {
-        "Participants".to_string()
-    }
-
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        ParticipantsSchema::json_schema(gen)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct ParticipantsJsonVec {
-    next_id: ParticipantId,
-    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-}
-
-#[derive(Deserialize)]
-struct ParticipantsJsonMap {
-    next_id: ParticipantId,
-    participants: BTreeMap<AccountId, ParticipantData>,
-}
-
-/// Supports both Vec format (contract ABI) and BTreeMap format (fixtures).
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ParticipantsJson {
-    Vec(ParticipantsJsonVec),
-    Map(ParticipantsJsonMap),
-}
-
-impl From<ParticipantsJson> for Participants {
-    fn from(json: ParticipantsJson) -> Self {
-        match json {
-            ParticipantsJson::Vec(v) => Participants::init(v.next_id, v.participants),
-            ParticipantsJson::Map(m) => Participants {
-                next_id: m.next_id,
-                participants: m.participants,
-            },
-        }
-    }
-}
-
-impl From<Participants> for ParticipantsJsonVec {
-    fn from(p: Participants) -> Self {
-        ParticipantsJsonVec {
-            next_id: p.next_id,
-            participants: p
-                .participants
-                .into_iter()
-                .map(|(account_id, data)| (account_id, data.id, data.info))
-                .collect(),
-        }
-    }
 }
 
 impl Default for Participants {
