@@ -6,59 +6,30 @@ use std::collections::{BTreeMap, BTreeSet};
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
     #[serde(default)]
-    pub solana: Option<ForeignChainNodeConfig>,
+    pub solana: Option<SolanaChainConfig>,
     #[serde(default)]
-    pub bitcoin: Option<ForeignChainNodeConfig>,
+    pub bitcoin: Option<BitcoinChainConfig>,
     #[serde(default)]
-    pub ethereum: Option<ForeignChainNodeConfig>,
-    #[serde(default)]
-    pub base: Option<ForeignChainNodeConfig>,
-    #[serde(default)]
-    pub bnb: Option<ForeignChainNodeConfig>,
-    #[serde(default)]
-    pub arbitrum: Option<ForeignChainNodeConfig>,
+    pub ethereum: Option<EthereumChainConfig>,
 }
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.solana.is_none()
-            && self.bitcoin.is_none()
-            && self.ethereum.is_none()
-            && self.base.is_none()
-            && self.bnb.is_none()
-            && self.arbitrum.is_none()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (ForeignChainName, &ForeignChainNodeConfig)> {
-        [
-            (ForeignChainName::Solana, self.solana.as_ref()),
-            (ForeignChainName::Bitcoin, self.bitcoin.as_ref()),
-            (ForeignChainName::Ethereum, self.ethereum.as_ref()),
-            (ForeignChainName::Base, self.base.as_ref()),
-            (ForeignChainName::Bnb, self.bnb.as_ref()),
-            (ForeignChainName::Arbitrum, self.arbitrum.as_ref()),
-        ]
-        .into_iter()
-        .filter_map(|(chain, config)| config.map(|cfg| (chain, cfg)))
+        self.solana.is_none() && self.bitcoin.is_none() && self.ethereum.is_none()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        for (chain, chain_config) in self.iter() {
-            chain_config.validate(chain)?;
+        if let Some(config) = &self.solana {
+            config.validate()?;
+        }
+        if let Some(config) = &self.bitcoin {
+            config.validate()?;
+        }
+        if let Some(config) = &self.ethereum {
+            config.validate()?;
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum ForeignChainName {
-    Solana,
-    Bitcoin,
-    Ethereum,
-    Base,
-    Bnb,
-    Arbitrum,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -71,26 +42,9 @@ pub enum SolanaApiVariant {
     Ankr,
 }
 
-impl SolanaApiVariant {
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "standard" => Some(Self::Standard),
-            "alchemy" => Some(Self::Alchemy),
-            "helius" => Some(Self::Helius),
-            "quicknode" => Some(Self::Quicknode),
-            "ankr" => Some(Self::Ankr),
-            _ => None,
-        }
-    }
-
-    fn allowed_values() -> &'static [&'static str] {
-        &["standard", "alchemy", "helius", "quicknode", "ankr"]
-    }
-}
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
-pub enum EvmApiVariant {
+pub enum EthereumApiVariant {
     Standard,
     Alchemy,
     Infura,
@@ -98,192 +52,111 @@ pub enum EvmApiVariant {
     Ankr,
 }
 
-impl EvmApiVariant {
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "standard" => Some(Self::Standard),
-            "alchemy" => Some(Self::Alchemy),
-            "infura" => Some(Self::Infura),
-            "quicknode" => Some(Self::Quicknode),
-            "ankr" => Some(Self::Ankr),
-            _ => None,
-        }
-    }
-
-    fn allowed_values() -> &'static [&'static str] {
-        &["standard", "alchemy", "infura", "quicknode", "ankr"]
-    }
-}
-
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum BitcoinApiVariant {
     Standard,
+    #[serde(alias = "blockstream")]
+    #[serde(alias = "mempool-space")]
     Esplora,
 }
 
-impl BitcoinApiVariant {
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "standard" => Some(Self::Standard),
-            "esplora" | "blockstream" | "mempool-space" => Some(Self::Esplora),
-            _ => None,
-        }
-    }
-
-    fn allowed_values() -> &'static [&'static str] {
-        &["standard", "esplora", "blockstream", "mempool-space"]
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ChainApiVariant {
-    Solana(SolanaApiVariant),
-    Bitcoin(BitcoinApiVariant),
-    Evm(EvmApiVariant),
-}
-
-impl ChainApiVariant {
-    fn parse(chain: ForeignChainName, raw: &str) -> Option<Self> {
-        match chain {
-            ForeignChainName::Solana => SolanaApiVariant::parse(raw).map(Self::Solana),
-            ForeignChainName::Bitcoin => BitcoinApiVariant::parse(raw).map(Self::Bitcoin),
-            ForeignChainName::Ethereum
-            | ForeignChainName::Base
-            | ForeignChainName::Bnb
-            | ForeignChainName::Arbitrum => EvmApiVariant::parse(raw).map(Self::Evm),
-        }
-    }
-
-    fn allowed_values(chain: ForeignChainName) -> &'static [&'static str] {
-        match chain {
-            ForeignChainName::Solana => SolanaApiVariant::allowed_values(),
-            ForeignChainName::Bitcoin => BitcoinApiVariant::allowed_values(),
-            ForeignChainName::Ethereum
-            | ForeignChainName::Base
-            | ForeignChainName::Bnb
-            | ForeignChainName::Arbitrum => EvmApiVariant::allowed_values(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ForeignChainNodeConfig {
+pub struct SolanaChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
-    pub providers: BTreeMap<String, ProviderConfig>,
+    pub providers: BTreeMap<String, SolanaProviderConfig>,
 }
 
-impl ForeignChainNodeConfig {
-    fn validate(&self, chain: ForeignChainName) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.timeout_sec > 0,
-            "foreign_chains.{:?}.timeout_sec must be > 0",
-            chain
-        );
-        anyhow::ensure!(
-            !self.providers.is_empty(),
-            "foreign_chains.{:?} must include at least one provider",
-            chain
-        );
-
-        let mut seen_rpc_urls = BTreeSet::new();
-        for (provider_name, provider) in &self.providers {
-            anyhow::ensure!(
-                !provider.rpc_url.trim().is_empty(),
-                "foreign_chains.{:?}.providers.{}.rpc_url must be non-empty",
-                chain,
-                provider_name
-            );
-            anyhow::ensure!(
-                seen_rpc_urls.insert(provider.rpc_url.clone()),
-                "foreign_chains.{:?}.providers.{}.rpc_url duplicates another provider URL",
-                chain,
-                provider_name
-            );
-            provider
-                .validate(chain, provider_name)
-                .with_context(|| format!("invalid provider {provider_name} for {chain:?}"))?;
-        }
-
-        Ok(())
+impl SolanaChainConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        validate_chain_config(
+            "solana",
+            self.timeout_sec,
+            &self.providers,
+            |provider| provider.rpc_url.as_str(),
+            |provider, provider_name| provider.validate("solana", provider_name),
+        )
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProviderConfig {
+pub struct BitcoinChainConfig {
+    pub timeout_sec: u64,
+    pub max_retries: u64,
+    pub providers: BTreeMap<String, BitcoinProviderConfig>,
+}
+
+impl BitcoinChainConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        validate_chain_config(
+            "bitcoin",
+            self.timeout_sec,
+            &self.providers,
+            |provider| provider.rpc_url.as_str(),
+            |provider, provider_name| provider.validate("bitcoin", provider_name),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EthereumChainConfig {
+    pub timeout_sec: u64,
+    pub max_retries: u64,
+    pub providers: BTreeMap<String, EthereumProviderConfig>,
+}
+
+impl EthereumChainConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        validate_chain_config(
+            "ethereum",
+            self.timeout_sec,
+            &self.providers,
+            |provider| provider.rpc_url.as_str(),
+            |provider, provider_name| provider.validate("ethereum", provider_name),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SolanaProviderConfig {
     pub rpc_url: String,
-    pub api_variant: String,
+    pub api_variant: SolanaApiVariant,
     #[serde(default)]
     pub auth: AuthConfig,
 }
 
-impl ProviderConfig {
-    fn validate(&self, chain: ForeignChainName, provider_name: &str) -> anyhow::Result<()> {
-        self.api_variant_for_chain(chain).with_context(|| {
-            format!(
-                "foreign_chains.{:?}.providers.{}.api_variant must be one of {:?}",
-                chain,
-                provider_name,
-                ChainApiVariant::allowed_values(chain)
-            )
-        })?;
-        match &self.auth {
-            AuthConfig::None => Ok(()),
-            AuthConfig::Header { name, scheme, .. } => {
-                anyhow::ensure!(
-                    !name.trim().is_empty(),
-                    "foreign_chains.{:?}.providers.{}.auth.name must be non-empty",
-                    chain,
-                    provider_name
-                );
-                if let Some(scheme) = scheme {
-                    anyhow::ensure!(
-                        !scheme.trim().is_empty(),
-                        "foreign_chains.{:?}.providers.{}.auth.scheme must be non-empty if provided",
-                        chain,
-                        provider_name
-                    );
-                }
-                Ok(())
-            }
-            AuthConfig::Path { placeholder, .. } => {
-                anyhow::ensure!(
-                    !placeholder.trim().is_empty(),
-                    "foreign_chains.{:?}.providers.{}.auth.placeholder must be non-empty",
-                    chain,
-                    provider_name
-                );
-                anyhow::ensure!(
-                    self.rpc_url.contains(placeholder),
-                    "foreign_chains.{:?}.providers.{}.rpc_url must include the path placeholder",
-                    chain,
-                    provider_name
-                );
-                Ok(())
-            }
-            AuthConfig::Query { name, .. } => {
-                anyhow::ensure!(
-                    !name.trim().is_empty(),
-                    "foreign_chains.{:?}.providers.{}.auth.name must be non-empty",
-                    chain,
-                    provider_name
-                );
-                Ok(())
-            }
-        }
+impl SolanaProviderConfig {
+    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
+        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
+}
 
-    pub fn api_variant_for_chain(
-        &self,
-        chain: ForeignChainName,
-    ) -> anyhow::Result<ChainApiVariant> {
-        let raw = self.api_variant.trim();
-        anyhow::ensure!(!raw.is_empty(), "api_variant must be non-empty");
-        let normalized = raw.to_ascii_lowercase().replace('_', "-");
-        ChainApiVariant::parse(chain, &normalized).ok_or_else(|| {
-            anyhow::anyhow!("unsupported api_variant {normalized} for chain {chain:?}")
-        })
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BitcoinProviderConfig {
+    pub rpc_url: String,
+    pub api_variant: BitcoinApiVariant,
+    #[serde(default)]
+    pub auth: AuthConfig,
+}
+
+impl BitcoinProviderConfig {
+    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
+        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EthereumProviderConfig {
+    pub rpc_url: String,
+    pub api_variant: EthereumApiVariant,
+    #[serde(default)]
+    pub auth: AuthConfig,
+}
+
+impl EthereumProviderConfig {
+    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
+        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
 }
 
@@ -331,9 +204,85 @@ impl TokenConfig {
     }
 }
 
+fn validate_chain_config<P>(
+    chain_label: &str,
+    timeout_sec: u64,
+    providers: &BTreeMap<String, P>,
+    rpc_url: impl Fn(&P) -> &str,
+    validate_provider: impl Fn(&P, &str) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        timeout_sec > 0,
+        "foreign_chains.{chain_label}.timeout_sec must be > 0"
+    );
+    anyhow::ensure!(
+        !providers.is_empty(),
+        "foreign_chains.{chain_label} must include at least one provider"
+    );
+
+    let mut seen_rpc_urls = BTreeSet::new();
+    for (provider_name, provider) in providers {
+        let provider_rpc_url = rpc_url(provider);
+        anyhow::ensure!(
+            !provider_rpc_url.trim().is_empty(),
+            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must be non-empty"
+        );
+        anyhow::ensure!(
+            seen_rpc_urls.insert(provider_rpc_url.to_string()),
+            "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url duplicates another provider URL"
+        );
+        validate_provider(provider, provider_name)
+            .with_context(|| format!("invalid provider {provider_name} for {chain_label}"))?;
+    }
+
+    Ok(())
+}
+
+fn validate_auth_config(
+    auth: &AuthConfig,
+    rpc_url: &str,
+    chain_label: &str,
+    provider_name: &str,
+) -> anyhow::Result<()> {
+    match auth {
+        AuthConfig::None => Ok(()),
+        AuthConfig::Header { name, scheme, .. } => {
+            anyhow::ensure!(
+                !name.trim().is_empty(),
+                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
+            );
+            if let Some(scheme) = scheme {
+                anyhow::ensure!(
+                    !scheme.trim().is_empty(),
+                    "foreign_chains.{chain_label}.providers.{provider_name}.auth.scheme must be non-empty if provided"
+                );
+            }
+            Ok(())
+        }
+        AuthConfig::Path { placeholder, .. } => {
+            anyhow::ensure!(
+                !placeholder.trim().is_empty(),
+                "foreign_chains.{chain_label}.providers.{provider_name}.auth.placeholder must be non-empty"
+            );
+            anyhow::ensure!(
+                rpc_url.contains(placeholder),
+                "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must include the path placeholder"
+            );
+            Ok(())
+        }
+        AuthConfig::Query { name, .. } => {
+            anyhow::ensure!(
+                !name.trim().is_empty(),
+                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
+            );
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
-#[allow(non_snake_case)]
 mod tests {
+    use super::*;
     use crate::config::ConfigFile;
 
     #[test]
@@ -456,6 +405,28 @@ foreign_chains:
           name: api_key
           token:
             val: "local"
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: esplora
+        rpc_url: "https://blockstream.info/api"
+        auth:
+          kind: none
+  ethereum:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        api_variant: alchemy
+        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
 "#;
 
         // When
@@ -464,6 +435,8 @@ foreign_chains:
         // Then
         config.validate()?;
         assert!(config.foreign_chains.solana.is_some());
+        assert!(config.foreign_chains.bitcoin.is_some());
+        assert!(config.foreign_chains.ethereum.is_some());
         Ok(())
     }
 
@@ -572,8 +545,7 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml).expect("config should parse");
-        let result = config.validate();
+        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
         assert!(result.is_err());
