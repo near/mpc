@@ -32,35 +32,6 @@ impl ForeignChainsConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum SolanaApiVariant {
-    Standard,
-    Alchemy,
-    Helius,
-    Quicknode,
-    Ankr,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum EthereumApiVariant {
-    Standard,
-    Alchemy,
-    Infura,
-    Quicknode,
-    Ankr,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum BitcoinApiVariant {
-    Standard,
-    #[serde(alias = "blockstream")]
-    #[serde(alias = "mempool-space")]
-    Esplora,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SolanaChainConfig {
     pub timeout_sec: u64,
@@ -158,6 +129,35 @@ impl EthereumProviderConfig {
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
         validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum SolanaApiVariant {
+    Standard,
+    Alchemy,
+    Helius,
+    Quicknode,
+    Ankr,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum BitcoinApiVariant {
+    Standard,
+    #[serde(alias = "blockstream")]
+    #[serde(alias = "mempool-space")]
+    Esplora,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum EthereumApiVariant {
+    Standard,
+    Alchemy,
+    Infura,
+    Quicknode,
+    Ankr,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
