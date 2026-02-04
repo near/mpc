@@ -1775,7 +1775,10 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
-    use std::{collections::{BTreeSet, HashSet}, str::FromStr};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        str::FromStr,
+    };
 
     use super::*;
     use crate::crypto_shared::k256_types;
