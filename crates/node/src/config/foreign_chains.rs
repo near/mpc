@@ -77,8 +77,8 @@ pub(crate) fn validate_chain_config<P>(
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
-    use super::*;
     use crate::config::ConfigFile;
 
     #[test]
