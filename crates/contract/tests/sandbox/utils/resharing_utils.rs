@@ -12,7 +12,6 @@ use mpc_contract::{
 };
 use near_workspaces::{Account, Contract};
 use serde_json::json;
-use utilities::AccountIdExtV1;
 
 pub async fn conclude_resharing(
     contract: &Contract,
@@ -97,7 +96,7 @@ pub async fn start_reshare_instance(
     let participants = state.active_participants();
     let leader = accounts
         .iter()
-        .min_by_key(|a| participants.id(&a.id().as_v2_account_id()).unwrap())
+        .min_by_key(|a| participants.id(a.id()).unwrap())
         .unwrap();
     let result = leader
         .call(contract.id(), "start_reshare_instance")

@@ -22,3 +22,6 @@ tokio = { workspace = true }
 [dev-dependencies]
 mpc-node = { workspace = true, features = ["test-utils"] }
 tempfile = { workspace = true }
+
+[lints]
+workspace = true

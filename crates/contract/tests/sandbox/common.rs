@@ -25,25 +25,19 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_sdk::NearToken;
 use near_workspaces::{
-    network::Sandbox,
-    result::{ExecutionFailure, ExecutionSuccess},
-    types::AccessKeyPermission,
-    AccessKey, Contract,
+    network::Sandbox, result::ExecutionSuccess, types::AccessKeyPermission, AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
 use std::collections::BTreeSet;
-use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
 ) -> Result<Execution<Account>, near_workspaces::error::Error> {
     let (_, sk) = worker.generate_dev_account_credentials();
-    worker
-        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
-        .await
+    worker.create_root_account_subaccount(account_id, sk).await
 }
 
 pub fn gen_participant_info() -> ParticipantInfo {
@@ -71,7 +65,7 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
 
 pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
     let account = worker.dev_create_account().await.unwrap();
-    let id = account.id().as_v2_account_id();
+    let id = account.id().into();
     (account, id)
 }
 
@@ -105,7 +99,7 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         account_creation_transactions.push(transaction);
         let account = Account::from_secret_key(account_id.clone(), sk, worker);
         accounts.push(account);
-        account_ids.push(account_id.as_v2_account_id());
+        account_ids.push(account_id);
     }
     for transaction in account_creation_transactions {
         let result = transaction.await.unwrap();
@@ -372,11 +366,7 @@ pub async fn submit_tee_attestations(
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(
-            *account.id().as_v2_account_id(),
-            node_id.account_id,
-            "AccountId mismatch"
-        );
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result = submit_participant_info(
             account,
@@ -578,17 +568,4 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
-}
-
-pub async fn cleanup_post_migrate(
-    contract: &Contract,
-    account: &Account,
-) -> Result<ExecutionSuccess, ExecutionFailure> {
-    account
-        .call(contract.id(), "post_upgrade_cleanup")
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result()
 }

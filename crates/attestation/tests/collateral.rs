@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use assert_matches::assert_matches;
 use attestation::collateral::{Collateral, CollateralError};
 use dcap_qvl::QuoteCollateralV3;
 use serde_json::json;
@@ -13,13 +14,9 @@ fn test_collateral_missing_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CollateralError::MissingField(field) => {
-            assert_eq!(field, "tcb_info");
-        }
-        _ => panic!("Expected MissingField error"),
-    }
+    assert_matches!(result, Err(CollateralError::MissingField(field)) => {
+        assert_eq!(field, "tcb_info");
+    });
 }
 
 #[test]
@@ -30,13 +27,9 @@ fn test_collateral_invalid_hex() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CollateralError::HexDecode { field, .. } => {
-            assert_eq!(field, "tcb_info_signature");
-        }
-        _ => panic!("Expected HexDecode error"),
-    }
+    assert_matches!(result, Err(CollateralError::HexDecode { field, ..}) => {
+        assert_eq!(field, "tcb_info_signature");
+    });
 }
 
 #[test]
@@ -47,13 +40,9 @@ fn test_collateral_null_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CollateralError::MissingField(field) => {
-            assert_eq!(field, "qe_identity");
-        }
-        _ => panic!("Expected MissingField error"),
-    }
+    assert_matches!(result, Err(CollateralError::MissingField(field)) => {
+        assert_eq!(field, "qe_identity");
+    });
 }
 
 #[test]
@@ -64,13 +53,9 @@ fn test_collateral_wrong_type_field() {
 
     let result = Collateral::try_from_json(json_value);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CollateralError::MissingField(field) => {
-            assert_eq!(field, "tcb_info_issuer_chain");
-        }
-        _ => panic!("Expected MissingField error"),
-    }
+    assert_matches!(result, Err(CollateralError::MissingField(field)) => {
+        assert_eq!(field, "tcb_info_issuer_chain");
+    });
 }
 
 #[test]
@@ -111,9 +96,5 @@ fn test_from_str_invalid_json() {
     let invalid_json = "{ invalid json }";
     let result = Collateral::from_str(invalid_json);
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CollateralError::InvalidJson => {}
-        _ => panic!("Expected InvalidJson error"),
-    }
+    assert_matches!(result, Err(CollateralError::InvalidJson));
 }

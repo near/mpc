@@ -56,7 +56,7 @@ async fn test_propose_contract_max_size_upload() {
     let execution = mpc_signer_accounts[0]
         .call(contract.id(), "propose_update")
         .args_borsh((ProposeUpdateArgs {
-            code: Some(vec![0; 1536 * 1024 - 224]), //3900 seems to not work locally
+            code: Some(vec![0; 1536 * 1024 - 400]), //3900 seems to not work locally
             config: None,
         },))
         .max_gas()

@@ -236,7 +236,7 @@ pub mod tests {
             id: DomainId(5),
             scheme: SignatureScheme::Secp256k1,
         }];
-        assert!(new_registry.add_domains(domains3).is_err());
+        let _ = new_registry.add_domains(domains3).unwrap_err();
 
         // This fails because the domain IDs are not sorted.
         let domains4 = vec![
@@ -249,7 +249,7 @@ pub mod tests {
                 scheme: SignatureScheme::Secp256k1,
             },
         ];
-        assert!(new_registry.add_domains(domains4).is_err());
+        let _ = new_registry.add_domains(domains4).unwrap_err();
     }
 
     #[test]
