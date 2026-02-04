@@ -243,6 +243,112 @@ pub enum ForeignChainName {
     Arbitrum,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum SolanaApiVariant {
+    Standard,
+    Alchemy,
+    Helius,
+    Quicknode,
+    Ankr,
+}
+
+impl SolanaApiVariant {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "standard" => Some(Self::Standard),
+            "alchemy" => Some(Self::Alchemy),
+            "helius" => Some(Self::Helius),
+            "quicknode" => Some(Self::Quicknode),
+            "ankr" => Some(Self::Ankr),
+            _ => None,
+        }
+    }
+
+    fn allowed_values() -> &'static [&'static str] {
+        &["standard", "alchemy", "helius", "quicknode", "ankr"]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvmApiVariant {
+    Standard,
+    Alchemy,
+    Infura,
+    Quicknode,
+    Ankr,
+}
+
+impl EvmApiVariant {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "standard" => Some(Self::Standard),
+            "alchemy" => Some(Self::Alchemy),
+            "infura" => Some(Self::Infura),
+            "quicknode" => Some(Self::Quicknode),
+            "ankr" => Some(Self::Ankr),
+            _ => None,
+        }
+    }
+
+    fn allowed_values() -> &'static [&'static str] {
+        &["standard", "alchemy", "infura", "quicknode", "ankr"]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum BitcoinApiVariant {
+    Standard,
+    Esplora,
+}
+
+impl BitcoinApiVariant {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "standard" => Some(Self::Standard),
+            "esplora" | "blockstream" | "mempool-space" => Some(Self::Esplora),
+            _ => None,
+        }
+    }
+
+    fn allowed_values() -> &'static [&'static str] {
+        &["standard", "esplora", "blockstream", "mempool-space"]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ChainApiVariant {
+    Solana(SolanaApiVariant),
+    Bitcoin(BitcoinApiVariant),
+    Evm(EvmApiVariant),
+}
+
+impl ChainApiVariant {
+    fn parse(chain: ForeignChainName, raw: &str) -> Option<Self> {
+        match chain {
+            ForeignChainName::Solana => SolanaApiVariant::parse(raw).map(Self::Solana),
+            ForeignChainName::Bitcoin => BitcoinApiVariant::parse(raw).map(Self::Bitcoin),
+            ForeignChainName::Ethereum
+            | ForeignChainName::Base
+            | ForeignChainName::Bnb
+            | ForeignChainName::Arbitrum => EvmApiVariant::parse(raw).map(Self::Evm),
+        }
+    }
+
+    fn allowed_values(chain: ForeignChainName) -> &'static [&'static str] {
+        match chain {
+            ForeignChainName::Solana => SolanaApiVariant::allowed_values(),
+            ForeignChainName::Bitcoin => BitcoinApiVariant::allowed_values(),
+            ForeignChainName::Ethereum
+            | ForeignChainName::Base
+            | ForeignChainName::Bnb
+            | ForeignChainName::Arbitrum => EvmApiVariant::allowed_values(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ForeignChainNodeConfig {
     pub timeout_sec: u64,
@@ -289,12 +395,22 @@ impl ForeignChainNodeConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub rpc_url: String,
+    #[serde(default = "default_api_variant")]
+    pub api_variant: String,
     #[serde(default)]
     pub auth: AuthConfig,
 }
 
 impl ProviderConfig {
     fn validate(&self, chain: ForeignChainName, provider_name: &str) -> anyhow::Result<()> {
+        self.api_variant_for_chain(chain).with_context(|| {
+            format!(
+                "foreign_chains.{:?}.providers.{}.api_variant must be one of {:?}",
+                chain,
+                provider_name,
+                ChainApiVariant::allowed_values(chain)
+            )
+        })?;
         match &self.auth {
             AuthConfig::None => Ok(()),
             AuthConfig::Header { name, scheme, .. } => {
@@ -340,6 +456,24 @@ impl ProviderConfig {
             }
         }
     }
+
+    pub fn api_variant_for_chain(
+        &self,
+        chain: ForeignChainName,
+    ) -> anyhow::Result<ChainApiVariant> {
+        let raw = self.api_variant.trim();
+        let normalized = if raw.is_empty() { "standard" } else { raw };
+        let normalized = normalized.to_ascii_lowercase().replace('_', "-");
+        ChainApiVariant::parse(chain, &normalized).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unsupported api_variant {normalized} for chain {chain:?}"
+            )
+        })
+    }
+}
+
+fn default_api_variant() -> String {
+    "standard".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -969,6 +1103,7 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
+        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -977,6 +1112,7 @@ foreign_chains:
           token:
             env: ALCHEMY_API_KEY
       quicknode:
+        api_variant: quicknode
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
         auth:
           kind: header
@@ -984,6 +1120,7 @@ foreign_chains:
           token:
             val: "local"
       ankr:
+        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
