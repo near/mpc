@@ -100,3 +100,70 @@ struct GetRawTransactionVerboseResponse {
     // The number of confirmations
     confirmations: u64,
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use httpmock::prelude::*;
+    use serde::de::DeserializeOwned;
+    use serde_json::json;
+
+    // --- Mocks to make the test compile standalone ---
+    // (In your actual project, these come from your module imports)
+    #[derive(Debug, PartialEq)]
+    struct BitcoinRpcResponse {
+        block_hash: String,
+        confirmations: u64,
+    }
+
+    #[derive(Deserialize)]
+    struct JsonRpcResponse<T>(#[serde(with = "mock_rpc_deser")] Result<T, ()>)
+    where
+        T: DeserializeOwned;
+
+    mod mock_rpc_deser {
+        use serde::de::DeserializeOwned;
+        use serde::{Deserialize, Deserializer};
+        use serde_json::Value;
+
+        pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Result<T, ()>, D::Error>
+        where
+            D: Deserializer<'de>,
+            T: DeserializeOwned,
+        {
+            let v: Value = Deserialize::deserialize(deserializer)?;
+            // precise logic depends on your actual struct, this is a simplified mock
+            if let Some(res) = v.get("result") {
+                if !res.is_null() {
+                    let t: T =
+                        serde_json::from_value(res.clone()).map_err(serde::de::Error::custom)?;
+                    return Ok(Ok(t));
+                }
+            }
+            Ok(Err(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_error_handling() {
+        // Given
+        let server = MockServer::start();
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(500); // Simulate server failure
+        });
+
+        // When
+        let result = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        assert_matches!(result, Err(RpcError::BadResponse));
+    }
+}
