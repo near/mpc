@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::auth::{validate_auth_config, AuthConfig};
-use super::validate_chain_config;
+use crate::config::foreign_chains;
+use crate::config::foreign_chains::auth;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BitcoinChainConfig {
@@ -13,7 +13,7 @@ pub struct BitcoinChainConfig {
 
 impl BitcoinChainConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        validate_chain_config(
+        foreign_chains::validate_chain_config(
             "bitcoin",
             self.timeout_sec,
             &self.providers,
@@ -28,12 +28,12 @@ pub struct BitcoinProviderConfig {
     pub rpc_url: String,
     pub api_variant: BitcoinApiVariant,
     #[serde(default)]
-    pub auth: AuthConfig,
+    pub auth: auth::AuthConfig,
 }
 
 impl BitcoinProviderConfig {
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
-        validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
+        auth::validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
 }
 
