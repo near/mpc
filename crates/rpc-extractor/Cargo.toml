@@ -6,6 +6,9 @@ license.workspace = true
 
 [dependencies]
 mpc-primitives = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_with = { workspace = true }
 
 [lints]
 workspace = true

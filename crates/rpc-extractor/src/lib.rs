@@ -1,52 +1,44 @@
 #![allow(dead_code)]
 
-use mpc_primitives::hash::Hash32;
+//! Design
+//! extractor
+//!     ^
+//!     |
+//! client
+//!     ^
+//!     |
+//!
+
+pub mod bitcoin;
+
+enum RpcError {
+    ClientError,
+    BadResponse,
+}
 
 trait RpcExtractor {
     type Chain;
     type Extractor;
     type Finality;
+    type TxId;
     type ExtractedValue;
 
     fn extract(
+        tx_id: Self::TxId,
         extractors: Vec<Self::Extractor>,
         finality: Self::Finality,
     ) -> impl Future<Output = Self::ExtractedValue>;
 }
 
-struct Bitcoin;
-enum BitcoinExtractor {
-    BlockHash(BitcoinBlockHash),
-}
-struct BlockConfirmations(u64);
-
-struct BitcoinBlock;
-type BitcoinBlockHash = Hash32<BitcoinBlock>;
-
-enum BitcoinExtractedValue {
-    Hash,
-}
-
-struct BitcoinRpcExtractor;
-
 trait RpcClient {
     type Finality;
     type TxId;
+    type RpcResponse;
+    // type RpcError;
 
-    async fn get()
-}
-
-impl RpcExtractor for BitcoinExtractor {
-    type Chain = Bitcoin;
-    type Extractor = BitcoinExtractor;
-    type Finality = BlockConfirmations;
-    type ExtractedValue = BitcoinExtractedValue;
-
-    // TODO: continue from here.
-    async fn extract(
-        extractors: Vec<Self::Extractor>,
+    fn get(
+        &self,
+        transaction: Self::TxId,
         finality: Self::Finality,
-    ) -> Self::ExtractedValue {
-        todo!()
-    }
+    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
 }

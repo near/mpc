@@ -8452,6 +8452,9 @@ name = "rpc-extractor"
 version = "3.4.0"
 dependencies = [
  "mpc-primitives",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
