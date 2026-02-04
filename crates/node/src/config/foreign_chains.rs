@@ -288,7 +288,7 @@ foreign_chains:
         let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -344,7 +344,7 @@ foreign_chains:
         let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[test]
@@ -409,6 +409,6 @@ foreign_chains:
         let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
 
         // Then
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 }
