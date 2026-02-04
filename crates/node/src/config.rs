@@ -395,7 +395,6 @@ impl ForeignChainNodeConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub rpc_url: String,
-    #[serde(default = "default_api_variant")]
     pub api_variant: String,
     #[serde(default)]
     pub auth: AuthConfig,
@@ -462,18 +461,14 @@ impl ProviderConfig {
         chain: ForeignChainName,
     ) -> anyhow::Result<ChainApiVariant> {
         let raw = self.api_variant.trim();
-        let normalized = if raw.is_empty() { "standard" } else { raw };
-        let normalized = normalized.to_ascii_lowercase().replace('_', "-");
+        anyhow::ensure!(!raw.is_empty(), "api_variant must be non-empty");
+        let normalized = raw.to_ascii_lowercase().replace('_', "-");
         ChainApiVariant::parse(chain, &normalized).ok_or_else(|| {
             anyhow::anyhow!(
                 "unsupported api_variant {normalized} for chain {chain:?}"
             )
         })
     }
-}
-
-fn default_api_variant() -> String {
-    "standard".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -1128,10 +1123,12 @@ foreign_chains:
           token:
             env: ANKR_API_KEY
       public:
+        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
       query:
+        api_variant: standard
         rpc_url: "https://rpc.example.com"
         auth:
           kind: query
