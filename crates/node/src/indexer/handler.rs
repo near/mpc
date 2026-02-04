@@ -6,6 +6,7 @@ use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
 use contract_interface::types as dtos;
+use contract_interface::types::VerifyForeignTransactionRequest;
 use contract_interface::types::VerifyForeignTransactionRequestArgs;
 use futures::StreamExt;
 use mpc_contract::primitives::ckd::{CKDRequest, CKDRequestArgs};
@@ -29,6 +30,11 @@ struct UnvalidatedSignArgs {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedCKDArgs {
     request: CKDRequestArgs,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct UnvalidatedVerifyForeignTxArgs {
+    request: VerifyForeignTransactionRequestArgs,
 }
 
 /// A validated version of the signature request
@@ -84,9 +90,9 @@ pub struct ChainBlockUpdate {
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
     pub completed_ckds: Vec<CKDId>,
-    #[allow(dead_code)] // TODO: remove when integrating with node
+    #[allow(dead_code)] // TODO(#1960): remove when integrating with node
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
-    #[allow(dead_code)] // TODO: remove when integrating with node
+    #[allow(dead_code)] // TODO(#1960): remove when integrating with node
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 
@@ -231,8 +237,7 @@ async fn handle_message(
                                         .header
                                         .timestamp_nanosec,
                                 });
-                                // TODO: add metrics
-                                // metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                             }
                         }
                         _ => {}
@@ -251,11 +256,10 @@ async fn handle_message(
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
-                        // TODO: this function is also missing in the contract
+                        // TODO(#1959): add this function to the contract
                         "return_verify_foreign_tx_and_clean_state_on_success" => {
                             completed_verify_foreign_txs.push(request_id);
-                            // TODO: add metrics
-                            // metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
+                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }
                         _ => {}
                     }
@@ -410,14 +414,45 @@ fn try_get_ckd_args(
     ))
 }
 
-#[allow(unused_variables)]
 fn try_get_verify_foreign_tx_args(
     receipt: &ReceiptView,
     next_receipt_id: CryptoHash,
     args: &FunctionArgs,
     expected_name: &str,
 ) -> Option<(VerifyForeignTxId, VerifyForeignTransactionRequestArgs)> {
-    unimplemented!()
+    let verify_foreign_tx_args = match serde_json::from_slice::<'_, UnvalidatedVerifyForeignTxArgs>(
+        args,
+    ) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            return None;
+        }
+    };
+
+    let verify_foreign_tx_request = VerifyForeignTransactionRequest {
+        request: verify_foreign_tx_args.request.request.clone(),
+        // TODO(#1965): implement this correctly once the tweak derivation is implemented in the contract
+        tweak: [0u8; 32].into(),
+        domain_id: verify_foreign_tx_args.request.domain_id.clone(),
+    };
+
+    tracing::info!(
+        target: "mpc",
+        receipt_id = %receipt.receipt_id,
+        next_receipt_id = %next_receipt_id,
+        caller_id = receipt.predecessor_id.to_string(),
+        request = ?verify_foreign_tx_request,
+        "indexed new `{}` function call", expected_name
+    );
+    Some((
+        next_receipt_id,
+        VerifyForeignTransactionRequestArgs {
+            request: verify_foreign_tx_args.request.request,
+            path: verify_foreign_tx_args.request.path,
+            domain_id: verify_foreign_tx_args.request.domain_id,
+        },
+    ))
 }
 
 fn try_get_request_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {

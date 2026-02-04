@@ -97,8 +97,8 @@ struct IndexerViewClient {
 // =>
 // indexer_state.view_client.get_mpc_tee_accounts().await
 // This pattern repeats for all the methods.
+// TODO(#1956): There is a lot of duplicate code here that could be simplified
 impl IndexerViewClient {
-    // TODO: There is a lot of duplicate code here that could be simplified
     pub(crate) async fn get_pending_request(
         &self,
         mpc_contract_id: &AccountId,
@@ -195,7 +195,8 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: "get_pending_verify_foreign_tx_request".to_string(), // TODO: add this function in the contract
+            // TODO(#1959): add this function in the contract
+            method_name: "get_pending_verify_foreign_tx_request".to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);

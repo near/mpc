@@ -338,7 +338,7 @@ impl ChainCKDRespondArgs {
     }
 }
 
-// TODO: This code does not belong here in the indexer module
+// TODO(#1957): This code does not belong here in the indexer module
 #[cfg(test)]
 mod recovery_id_tests {
     use crate::indexer::types::ChainSignatureRespondArgs;

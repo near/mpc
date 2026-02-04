@@ -42,7 +42,7 @@ pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
     config: dtos::InitConfig,
     env: Environment,
-    // TODO: Although this is only used in tests, it does not seem correct to
+    // TODO(#1958): Although this is only used in tests, it does not seem correct to
     // group signatures by Payload. We should use the same we use in the contract
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
@@ -555,7 +555,9 @@ impl FakeIndexerCore {
                             self.verify_foreign_tx_response_sender
                                 .send(respond.clone())
                                 .unwrap();
-                            block_update.completed_ckds.push(verify_foreign_tx_id);
+                            block_update
+                                .completed_verify_foreign_txs
+                                .push(verify_foreign_tx_id);
                         } else {
                             tracing::warn!(
                                 "Ignoring respond_verify_foreign_tx transaction for unknown (possibly already-responded-to) verify foreign tx: {:?}",
@@ -873,8 +875,6 @@ impl FakeIndexerManager {
     }
 
     /// Waits for the next verify foreign tx response submitted by any node.
-    // TODO: remove this exception
-    #[allow(dead_code)]
     pub async fn next_response_verify_foreign_tx(
         &mut self,
     ) -> ChainVerifyForeignTransactionRespondArgs {
@@ -895,8 +895,6 @@ impl FakeIndexerManager {
     }
 
     /// Sends a verify foreign tx request to the fake blockchain.
-    // TODO: remove this exception
-    #[allow(dead_code)]
     pub fn request_verify_foreign_tx(&self, request: VerifyForeignTxRequestFromChain) {
         self.verify_foreign_tx_request_sender.send(request).unwrap();
     }
