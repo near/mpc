@@ -58,6 +58,8 @@ Replace this with whatever release version you're making.
 We use `git-cliff` to maintain the changelog.
 Installation instructions can be found [here](https://git-cliff.org/docs/installation/).
 
+> ⚠️ Ensure your current branch is pushed to GitHub (e.g. `origin`). Otherwise `git-cliff` will not be able to resolve PR links in the generated notes.
+
 For typical releases, the following command should be sufficient.
 ```sh
 git-cliff -t 3.1.0 > CHANGELOG.md
