@@ -58,9 +58,9 @@ use k256::elliptic_curve::PrimeField;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_sdk::{
     env::{self, ed25519_verify},
-    log, near_bindgen,
+    log, near, near_bindgen,
     state::ContractState,
-    store::LookupMap,
+    store::{IterableMap, LookupMap},
     AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
@@ -102,7 +102,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
-    foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -124,6 +124,33 @@ pub struct MpcContract {
 ///    separate transactions to gradually deallocate this storage.
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
 struct StaleData {}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+struct ForeignChainPolicyVotes {
+    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
+}
+
+impl Default for ForeignChainPolicyVotes {
+    fn default() -> Self {
+        Self {
+            proposal_by_account: IterableMap::new(StorageKey::ForeignChainPolicyVotes),
+        }
+    }
+}
+
+impl ForeignChainPolicyVotes {
+    fn to_dto(&self) -> dtos::ForeignChainPolicyVotes {
+        let mut proposal_by_account = BTreeMap::new();
+        for (account_id, policy) in self.proposal_by_account.iter() {
+            proposal_by_account.insert(account_id.clone(), policy.clone());
+        }
+
+        dtos::ForeignChainPolicyVotes {
+            proposal_by_account,
+        }
+    }
+}
 
 impl MpcContract {
     pub(crate) fn public_key_extended(
@@ -1427,7 +1454,7 @@ impl MpcContract {
     }
 
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
-        self.foreign_chain_policy_votes.clone()
+        self.foreign_chain_policy_votes.to_dto()
     }
 
     // contract version
