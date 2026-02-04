@@ -263,7 +263,7 @@ impl ConnectionInfo {
     /// returns a bool indicating if the connection can be accepted or not
     /// we accept the connectin if and only if
     /// `min_expected_connection_id <= sender_connection_id`
-    pub(crate) fn accept_connection(&self) -> bool {
+    pub(crate) fn is_accepted(&self) -> bool {
         self.min_expected_connection_id <= self.sender_connection_id
     }
 }
@@ -295,7 +295,7 @@ mod tests {
             sender_connection_id,
             min_expected_connection_id,
         };
-        assert_eq!(expected_res.accept_connection(), outcome);
+        assert_eq!(expected_res.is_accepted(), outcome);
     }
 
     const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);

@@ -206,7 +206,7 @@ impl OutgoingConnection {
                 // always assumed to be accepted
             }
             HandshakeOutcome::Jan2026(handshake_data) => {
-                if !handshake_data.accept_connection() {
+                if !handshake_data.is_accepted() {
                     tracing::warn!(
                         "peer is not accepting this connection attempt {:?}",
                         handshake_data
@@ -553,7 +553,7 @@ pub async fn new_tls_mesh_network(
                                 1
                             }
                             HandshakeOutcome::Jan2026(connection_info) => {
-                                if !connection_info.accept_connection() {
+                                if !connection_info.is_accepted() {
                                     if let Err(err) = tls_stream.shutdown().await {
                                         tracing::error!(err = %err, "TLS shutdown failed");
                                     }
