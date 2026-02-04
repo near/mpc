@@ -467,7 +467,7 @@ mod tests {
         let old_node_handle = execute_legacy_handshake(old_node);
         let this_node_res = this_node_handle.await.unwrap();
         let old_node_res = old_node_handle.await;
-        assert!(old_node_res.is_ok());
+        old_node_res.unwrap();
         assert_eq!(this_node_res, HandshakeOutcome::Dec2025(true));
     }
 
