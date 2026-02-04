@@ -35,8 +35,8 @@ type PreparedSimulatedTriples = PreparedOutputs<Vec<(TripleShare, TriplePub)>>;
 type PreparedSimulatedPresig = PreparedOutputs<PresignOutput>;
 type PreparedSimulatedSig = PreparedOutputs<SignatureOption>;
 
-fn threshold() -> usize {
-    *MAX_MALICIOUS + 1
+fn threshold() -> ReconstructionLowerBound {
+    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
 }
 
 fn participants_num() -> usize {
@@ -75,7 +75,7 @@ fn bench_presign(c: &mut Criterion) {
     let max_malicious = *MAX_MALICIOUS;
     let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
 
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = ot_ecdsa_prepare_triples(num, threshold, &mut rng);
     let two_triples =
@@ -106,7 +106,7 @@ fn bench_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
     let mut sizes = Vec::with_capacity(*SAMPLE_SIZE);
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let preps = ot_ecdsa_prepare_triples(num, threshold, &mut rng);
     let two_triples =
@@ -144,7 +144,7 @@ criterion_main!(benches);
 fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples {
     let mut rng = MockCryptoRng::seed_from_u64(42);
 
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
     let preps = ot_ecdsa_prepare_triples(participant_num, threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
@@ -184,7 +184,7 @@ fn prepare_simulated_presign(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
 ) -> PreparedSimulatedPresig {
     let mut rng = MockCryptoRng::seed_from_u64(40);
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
     let preps = ot_ecdsa_prepare_presign(two_triples, threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");

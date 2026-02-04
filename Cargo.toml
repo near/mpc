@@ -91,6 +91,11 @@ name = "advanced_ot_based_ecdsa"
 harness = false
 required-features = ["test-utils"]
 
+[[bench]]
+name = "advanced_eddsa_frost"
+harness = false
+required-features = ["test-utils"]
+
 [profile.test-release]
 inherits = "release"
 overflow-checks = true

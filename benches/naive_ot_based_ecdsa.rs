@@ -12,8 +12,8 @@ use threshold_signatures::{
     ReconstructionLowerBound,
 };
 
-fn threshold() -> usize {
-    *MAX_MALICIOUS + 1
+fn threshold() -> ReconstructionLowerBound {
+    ReconstructionLowerBound::from(*MAX_MALICIOUS + 1)
 }
 
 fn participants_num() -> usize {
@@ -26,7 +26,7 @@ fn bench_triples(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
 
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
     let mut group = c.benchmark_group("triples");
     group.sample_size(*SAMPLE_SIZE);
     group.bench_function(
@@ -46,7 +46,7 @@ fn bench_presign(c: &mut Criterion) {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
 
     let preps = ot_ecdsa_prepare_triples(participants_num(), threshold, &mut rng);
     let two_triples =
@@ -72,7 +72,7 @@ fn bench_sign(c: &mut Criterion) {
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
 
-    let threshold = ReconstructionLowerBound::from(threshold());
+    let threshold = threshold();
 
     let preps = ot_ecdsa_prepare_triples(participants_num(), threshold, &mut rng);
     let two_triples =

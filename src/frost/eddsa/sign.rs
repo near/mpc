@@ -14,26 +14,72 @@ use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
-/// A function that takes a signing share and a keygenOutput
-/// and construct a public key package used for frost signing
-fn construct_key_package(
-    threshold: ReconstructionLowerBound,
+/// Depending on whether the current participant is a coordinator or not,
+/// runs the signature protocol as either a participant or a coordinator.
+///
+/// WARNING: Extracted from FROST documentation:
+/// In all of the main FROST ciphersuites, the entire message must be sent
+/// to participants. In some cases, where the message is too big, it may be
+/// necessary to send a hash of the message instead. We strongly suggest
+/// creating a specific ciphersuite for this, and not just sending the hash
+/// as if it were the message.
+/// For reference, see how RFC 8032 handles "pre-hashing".
+pub fn sign(
+    participants: &[Participant],
+    threshold: impl Into<ReconstructionLowerBound>,
     me: Participant,
-    signing_share: SigningShare,
-    verifying_key: &VerifyingKey,
-) -> Result<KeyPackage, ProtocolError> {
-    let identifier = me.to_identifier()?;
-    let verifying_share = signing_share.into();
+    coordinator: Participant,
+    keygen_output: KeygenOutput,
+    message: Vec<u8>,
+    rng: impl CryptoRngCore + Send + 'static,
+) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+    let threshold = threshold.into();
+    if participants.len() < 2 {
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len(),
+        });
+    }
+    let Some(participants) = ParticipantList::new(participants) else {
+        return Err(InitializationError::DuplicateParticipants);
+    };
 
-    Ok(KeyPackage::new(
-        identifier,
-        signing_share,
-        verifying_share,
-        *verifying_key,
-        u16::try_from(threshold.value()).map_err(|_| {
-            ProtocolError::Other("threshold cannot be converted to u16".to_string())
-        })?,
-    ))
+    // ensure my presence in the participant list
+    if !participants.contains(me) {
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
+    }
+
+    // validate threshold
+    if threshold.value() > participants.len() {
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: threshold.value(),
+            max: participants.len(),
+        });
+    }
+
+    // ensure the coordinator is a participant
+    if !participants.contains(coordinator) {
+        return Err(InitializationError::MissingParticipant {
+            role: "coordinator",
+            participant: coordinator,
+        });
+    }
+
+    let comms = Comms::new();
+    let chan = comms.shared_channel();
+    let fut = fut_wrapper(
+        chan,
+        participants,
+        threshold,
+        me,
+        coordinator,
+        keygen_output,
+        message,
+        rng,
+    );
+    Ok(make_protocol(comms, fut))
 }
 
 /// Returns a future that executes signature protocol for *the Coordinator*.
@@ -195,72 +241,26 @@ async fn do_sign_participant(
     Ok(None)
 }
 
-/// Depending on whether the current participant is a coordinator or not,
-/// runs the signature protocol as either a participant or a coordinator.
-///
-/// WARNING: Extracted from FROST documentation:
-/// In all of the main FROST ciphersuites, the entire message must be sent
-/// to participants. In some cases, where the message is too big, it may be
-/// necessary to send a hash of the message instead. We strongly suggest
-/// creating a specific ciphersuite for this, and not just sending the hash
-/// as if it were the message.
-/// For reference, see how RFC 8032 handles "pre-hashing".
-pub fn sign(
-    participants: &[Participant],
-    threshold: impl Into<ReconstructionLowerBound>,
+/// A function that takes a signing share and a keygenOutput
+/// and construct a public key package used for frost signing
+fn construct_key_package(
+    threshold: ReconstructionLowerBound,
     me: Participant,
-    coordinator: Participant,
-    keygen_output: KeygenOutput,
-    message: Vec<u8>,
-    rng: impl CryptoRngCore + Send + 'static,
-) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
-    let threshold = threshold.into();
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-    let Some(participants) = ParticipantList::new(participants) else {
-        return Err(InitializationError::DuplicateParticipants);
-    };
+    signing_share: SigningShare,
+    verifying_key: &VerifyingKey,
+) -> Result<KeyPackage, ProtocolError> {
+    let identifier = me.to_identifier()?;
+    let verifying_share = signing_share.into();
 
-    // ensure my presence in the participant list
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    // validate threshold
-    if threshold.value() > participants.len() {
-        return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold.value(),
-            max: participants.len(),
-        });
-    }
-
-    // ensure the coordinator is a participant
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
-
-    let comms = Comms::new();
-    let chan = comms.shared_channel();
-    let fut = fut_wrapper(
-        chan,
-        participants,
-        threshold,
-        me,
-        coordinator,
-        keygen_output,
-        message,
-        rng,
-    );
-    Ok(make_protocol(comms, fut))
+    Ok(KeyPackage::new(
+        identifier,
+        signing_share,
+        verifying_share,
+        *verifying_key,
+        u16::try_from(threshold.value()).map_err(|_| {
+            ProtocolError::Other("threshold cannot be converted to u16".to_string())
+        })?,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]

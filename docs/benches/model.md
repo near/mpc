@@ -63,6 +63,7 @@ In this section, we present a couple of results. The two following tables repres
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 198.95 ms  | 206.52 µs | 111.76 µs |
 | **Robust ECDSA**   | 13 | N/A       | 4.90 ms | 114.63 µs |
+| **Ed25519 Frost**   | 7 | N/A       | N/A | 849.67 µs |
 
 | **Maximum number of malicious parties: 6** | **Network Latency: 0 ms** |
 |---------------------------------------------|----------------------------|
@@ -75,6 +76,7 @@ With a larger number of accepted malicious parties, the numbers are as follows:
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 544.94 ms  | 257.05 µs | 119.65 µs |
 | **Robust ECDSA**   | 31 | N/A       | 24.56 ms | 129.45 µs |
+| **Ed25519 Frost**   | 16 | N/A       | N/A | 1.7412 ms |
 
 | **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
 |---------------------------------------------|----------------------------|
@@ -93,6 +95,7 @@ Due to the fact that the computation time of both schemes is roughly small, addi
 |:------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 8*  | 2 | 1 |
 | **Robust ECDSA**   | N/A       | 3 | 1 |
+| **Ed25519 Frost**   | N/A | N/A  | 3 |
 
 | **Number of rounds** |
 |---------------------------------------------|
@@ -107,6 +110,7 @@ Thus with network latency, the numbers are computed using the formula: **network
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 1.344 s  | 200.25 ms | 100.11 ms |
 | **Robust ECDSA**   | 31 | N/A       | 324.56 ms | 100.12 ms |
+| **Ed25519 Frost**  | 16 | N/A | N/A  | 301.74 ms |
 
 | **Maximum number of malicious parties: 15** | **Network Latency: 100 ms** |
 |---------------------------------------------|----------------------------|
@@ -126,6 +130,7 @@ In the case where the protocol allows distinguishing between normal participants
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 7 | 595260 Bytes  | 1416 Bytes | 557 Bytes |
 | **Robust ECDSA**   | 13 | N/A       | 6387 Bytes | 1096 Bytes |
+| **Ed25519 Frost**   | 7 | N/A       | N/A | 1510 Bytes |
 
 | **Maximum number of malicious parties: 6** | **Network Latency: 0 ms** |
 |---------------------------------------------|----------------------------|
@@ -138,6 +143,7 @@ In the case where the protocol allows distinguishing between normal participants
 |:------:|:-------:|-----------:|--------:|-----:|
 | **OT based ECDSA** | 16 | 2088966 Bytes  | 3485 Bytes | 1360 Bytes |
 | **Robust ECDSA**   | 31 | N/A       | 15986 Bytes | 2752 Bytes |
+| **Ed25519 Frost**   | 16 | N/A       | N/A | 3818 Bytes |
 
 | **Maximum number of malicious parties: 15** | **Network Latency: 0 ms** |
 |---------------------------------------------|----------------------------|
