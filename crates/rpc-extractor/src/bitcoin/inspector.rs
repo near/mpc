@@ -1,20 +1,27 @@
 use crate::{
-    BlockConfirmations, ForeignChainInspector,
+    BlockConfirmations, ForeignChainInspector, RpcClient,
     bitcoin::{BitcoinBlockHash, BitcoinTransactionHash},
 };
 
-struct BitcoinRpcExtractor;
+pub struct BitcoinInspector<Client> {
+    client: Client,
+    extractor: BitcoinExtractor,
+}
+
 struct Bitcoin;
 
-enum BitcoinExtractedValue {
+pub enum BitcoinExtractedValue {
     Hash,
 }
 
-enum BitcoinExtractor {
+pub enum BitcoinExtractor {
     BlockHash(BitcoinBlockHash),
 }
 
-impl ForeignChainInspector for BitcoinRpcExtractor {
+impl<Client> ForeignChainInspector for BitcoinInspector<Client>
+where
+    Client: RpcClient,
+{
     // type Chain = Bitcoin;
     type Extractor = BitcoinExtractor;
     type Finality = BlockConfirmations;
@@ -22,10 +29,13 @@ impl ForeignChainInspector for BitcoinRpcExtractor {
     type TxId = BitcoinTransactionHash;
 
     async fn extract(
+        &self,
         tx_id: Self::TxId,
         extractors: Vec<Self::Extractor>,
         finality: Self::Finality,
     ) -> Self::ExtractedValue {
-        todo!()
+        let response = self.client.get(tx_id, finality).await;
+
+        todo!();
     }
 }

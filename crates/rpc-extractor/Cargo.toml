@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+http = { workspace = true }
 mpc-primitives = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

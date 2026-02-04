@@ -3,8 +3,10 @@ use mpc_primitives::hash::Hash32;
 pub mod inspector;
 pub mod rpc_client;
 
-struct BitcoinBlock;
-struct BitcoinTransaction;
+#[derive(Debug, Clone)]
+pub struct BitcoinBlock;
+#[derive(Debug, Clone)]
+pub struct BitcoinTransaction;
 
-type BitcoinBlockHash = Hash32<BitcoinBlock>;
-type BitcoinTransactionHash = Hash32<BitcoinTransaction>;
+pub type BitcoinBlockHash = Hash32<BitcoinBlock>;
+pub type BitcoinTransactionHash = Hash32<BitcoinTransaction>;
