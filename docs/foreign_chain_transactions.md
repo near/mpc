@@ -359,6 +359,7 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
+        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -392,6 +393,9 @@ provider entries in config (including API keys) to satisfy the policy.
 Auth variants are explicitly modeled because providers differ in how they expect API keys
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
+
+`api_variant` is a node-only setting used to select chain-specific response parsing behavior for
+providers that diverge from the standard API shape. It defaults to `standard` when omitted.
 
 ## Risks
 
