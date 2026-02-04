@@ -1,5 +1,6 @@
 use derive_more::{Deref, Display, From};
 use http::{HeaderName, HeaderValue};
+use serde::Deserialize;
 use thiserror::Error;
 
 pub mod bitcoin;

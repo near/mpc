@@ -4,7 +4,7 @@ use crate::{
     rpc_types::{JsonRpcRequest, JsonRpcResponse},
 };
 use reqwest::{Method, StatusCode, header::HeaderMap};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const JSON_RPC_VERSION: &str = "1.0";
@@ -93,66 +93,30 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
 
 /// The RPC response for `getrawtransaction`. See link below for full spec;
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct GetRawTransactionVerboseResponse {
     // The block hash the transaction is in
     blockhash: BitcoinBlockHash,
     // The number of confirmations
     confirmations: u64,
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use httpmock::prelude::*;
-    use serde::de::DeserializeOwned;
     use serde_json::json;
 
-    // --- Mocks to make the test compile standalone ---
-    // (In your actual project, these come from your module imports)
-    #[derive(Debug, PartialEq)]
-    struct BitcoinRpcResponse {
-        block_hash: String,
-        confirmations: u64,
-    }
-
-    #[derive(Deserialize)]
-    struct JsonRpcResponse<T>(#[serde(with = "mock_rpc_deser")] Result<T, ()>)
-    where
-        T: DeserializeOwned;
-
-    mod mock_rpc_deser {
-        use serde::de::DeserializeOwned;
-        use serde::{Deserialize, Deserializer};
-        use serde_json::Value;
-
-        pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Result<T, ()>, D::Error>
-        where
-            D: Deserializer<'de>,
-            T: DeserializeOwned,
-        {
-            let v: Value = Deserialize::deserialize(deserializer)?;
-            // precise logic depends on your actual struct, this is a simplified mock
-            if let Some(res) = v.get("result") {
-                if !res.is_null() {
-                    let t: T =
-                        serde_json::from_value(res.clone()).map_err(serde::de::Error::custom)?;
-                    return Ok(Ok(t));
-                }
-            }
-            Ok(Err(()))
-        }
-    }
-
     #[tokio::test]
-    async fn test_http_error_handling() {
+    async fn http_error_status_code_returns_bad_response() {
         // Given
         let server = MockServer::start();
         let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
 
         server.mock(|when, then| {
             when.method(POST);
-            then.status(500); // Simulate server failure
+            then.status(500);
         });
 
         // When
@@ -165,5 +129,189 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(RpcError::BadResponse));
+    }
+
+    #[tokio::test]
+    async fn success_transaction_response_is_parsed_correctly() {
+        // Given
+        let server = MockServer::start();
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+
+        let transaction_hash = BitcoinTransactionHash::from([12; 32]);
+
+        let expected_block_hash = BitcoinBlockHash::from([42; 32]);
+        let expected_confirmations = 250;
+
+        let raw_response: GetRawTransactionVerboseResponse = GetRawTransactionVerboseResponse {
+            blockhash: expected_block_hash.clone(),
+            confirmations: expected_confirmations,
+        };
+
+        server.mock(|when, then| {
+            when.method(POST).path("/");
+
+            let json_rpc_response = json!({
+                    "result": raw_response,
+                    "error": null,
+                    "id": "client"
+            });
+
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json_rpc_response);
+        });
+
+        // When
+        let result = client
+            .get(transaction_hash, BlockConfirmations::from(1))
+            .await;
+
+        // Then
+        let response = result.unwrap();
+        let expected_response = BitcoinRpcResponse {
+            block_hash: expected_block_hash,
+            confirmations: BlockConfirmations::from(expected_confirmations),
+        };
+        assert_eq!(expected_response, response);
+    }
+
+    #[tokio::test]
+    async fn custom_header_authentication_values_are_used() {
+        // Given
+        let server = MockServer::start();
+
+        let header = "X-Auth-Token";
+        let header_value = "secret-123";
+
+        let auth = RpcAuthentication::CustomHeader {
+            header_name: header.parse().unwrap(),
+            header_value: header_value.parse().unwrap(),
+        };
+
+        let client = BitcoinCoreRpcClient::new(server.url("/"), auth);
+
+        let mock = server.mock(|when, then| {
+            // Assert header is present
+            when.method(POST).header(header, header_value);
+            then.status(200).json_body(json!({
+                "result": {
+                    "blockhash": "valid_hash",
+                    "confirmations": 1
+                }
+            }));
+        });
+
+        // When
+        let _ = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn http_status_unauthorized_error_returns_bad_response() {
+        // Given
+        let server = MockServer::start();
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(401); // Unauthorized
+        });
+
+        // When
+        let result = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        assert_matches!(result, Err(RpcError::BadResponse));
+    }
+
+    #[tokio::test]
+    async fn malformed_json_response() {
+        // Given
+        let server = MockServer::start();
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(200).body("this is not json");
+        });
+
+        // When
+        let result = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(RpcError::BadResponse),
+            "Should fail at json deserialization step"
+        );
+    }
+
+    #[tokio::test]
+    async fn bad_response_is_returned_for_rpc_errors() {
+        // Given
+        let server = MockServer::start();
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+
+        // Simulation of a Bitcoin node error (e.g., tx not found)
+        server.mock(|when, then| {
+            when.method(POST);
+            then.status(200).json_body(json!({
+                "result": null,
+                "error": { "code": -1, "message": "Transaction not found" },
+                "id": "client"
+            }));
+        });
+
+        // When
+        let result = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        assert_matches!(result, Err(RpcError::BadResponse));
+    }
+
+    #[tokio::test]
+    async fn client_connection_error_returns_clienterror() {
+        // Given
+        // point to a closed socket address
+        let invalid_url = "http://127.0.0.1:0";
+        let client =
+            BitcoinCoreRpcClient::new(invalid_url.to_string(), RpcAuthentication::KeyInUrl);
+
+        // When
+        let result = client
+            .get(
+                BitcoinTransactionHash::from([1; 32]),
+                BlockConfirmations::from(1),
+            )
+            .await;
+
+        // Then
+        assert_matches!(
+            result,
+            Err(RpcError::ClientError),
+            "Reqwest fails to connect, mapping to RpcError::ClientError"
+        );
     }
 }
