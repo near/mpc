@@ -25,12 +25,17 @@ use mpc_contract::{
 use near_account_id::AccountId;
 use near_sdk::NearToken;
 use near_workspaces::{
-    network::Sandbox, result::ExecutionSuccess, types::AccessKeyPermission, AccessKey, Contract,
+    network::Sandbox,
+    operations::TransactionStatus,
+    result::{ExecutionFinalResult, ExecutionSuccess},
+    types::AccessKeyPermission,
+    AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, task::Poll, time::Duration};
+use tokio::time::timeout;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -102,7 +107,10 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         account_ids.push(account_id);
     }
     for transaction in account_creation_transactions {
-        let result = transaction.await.unwrap();
+        // We had a flaky test here (#1913) before timeout, hopefully 10 seconds is enough
+        let result = wait_for_transaction(Duration::from_secs(10), transaction)
+            .await
+            .unwrap();
         dbg!(&result);
         assert!(result.is_success());
     }
@@ -568,4 +576,38 @@ pub async fn generate_participant_and_submit_attestation(
     .expect("Attestation submission for new account must succeed.");
     assert!(result.is_success());
     (new_account, account_id, new_participant)
+}
+
+// This function is needed because in case of timeouts the wait function
+// for transactions fails instead of retrying.
+// See near_workspaces::operations::TransactionStatus in
+// https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
+pub async fn wait_for_transaction(
+    timeout_s: Duration,
+    transaction: TransactionStatus,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let mut result = None;
+    let loop_future = async {
+        loop {
+            match transaction.status().await {
+                Ok(Poll::Ready(val)) => {
+                    result = Some(Ok(val));
+                    break;
+                }
+                Ok(Poll::Pending) => {}
+                Err(err) => {
+                    result = Some(Err(err));
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    };
+
+    match timeout(timeout_s, loop_future).await {
+        Ok(_) => match result {
+            Some(result) => Ok(result?),
+            None => anyhow::bail!("Transaction timed out without returning an error"),
+        },
+        Err(_) => anyhow::bail!("Loop timed out"),
+    }
 }

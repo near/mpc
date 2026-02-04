@@ -45,6 +45,7 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
+num_enum = { workspace = true }
 pprof = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
@@ -78,7 +79,7 @@ url = { workspace = true }
 pprof = { workspace = true, features = ["frame-pointer"] }
 
 [build-dependencies]
-built = { version = "0.8", features = ["git2", "chrono"] }
+built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }

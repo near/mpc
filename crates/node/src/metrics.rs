@@ -128,6 +128,15 @@ pub static MPC_NUM_CKD_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = Lazy
     .unwrap()
 });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_requests_indexed",
+            "Number of verify foreign tx requests seen by the indexer"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_SIGN_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_responses_indexed",
@@ -143,6 +152,15 @@ pub static MPC_NUM_CKD_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> = Laz
     )
     .unwrap()
 });
+
+pub static MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_verify_foreign_tx_responses_indexed",
+            "Number of verify foreign tx responses seen by the indexer"
+        )
+        .unwrap()
+    });
 
 pub static MPC_NUM_SIGNATURE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
     LazyLock::new(|| {
