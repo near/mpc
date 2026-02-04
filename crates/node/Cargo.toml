@@ -79,7 +79,7 @@ url = { workspace = true }
 pprof = { workspace = true, features = ["frame-pointer"] }
 
 [build-dependencies]
-built = { version = "0.8", features = ["git2", "chrono"] }
+built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
