@@ -40,7 +40,7 @@ pub enum RpcAuthentication {
     },
 }
 
-#[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
 #[derive(Debug)]
@@ -58,6 +58,7 @@ pub trait ForeignChainInspector<TransactionId, Finality, Extractor, ExtractedVal
     ) -> impl Future<Output = Result<Vec<ExtractedValue>, ForeignChainInspectionError>>;
 }
 
+#[mockall::automock]
 pub trait ForeignChainRpcClient<TransactionId, Finality, RpcResponse> {
     fn get(
         &self,

@@ -55,10 +55,12 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BitcoinExtractedValue {
     BlockHash(BitcoinBlockHash),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BitcoinExtractor {
     BlockHash,
 }
