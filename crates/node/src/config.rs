@@ -187,18 +187,46 @@ impl ConfigFile {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ForeignChainsConfig {
-    #[serde(default, flatten)]
-    pub chains: BTreeMap<ForeignChainName, ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub solana: Option<ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub bitcoin: Option<ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub ethereum: Option<ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub base: Option<ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub bnb: Option<ForeignChainNodeConfig>,
+    #[serde(default)]
+    pub arbitrum: Option<ForeignChainNodeConfig>,
 }
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.chains.is_empty()
+        self.solana.is_none()
+            && self.bitcoin.is_none()
+            && self.ethereum.is_none()
+            && self.base.is_none()
+            && self.bnb.is_none()
+            && self.arbitrum.is_none()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ForeignChainName, &ForeignChainNodeConfig)> {
+        [
+            (ForeignChainName::Solana, self.solana.as_ref()),
+            (ForeignChainName::Bitcoin, self.bitcoin.as_ref()),
+            (ForeignChainName::Ethereum, self.ethereum.as_ref()),
+            (ForeignChainName::Base, self.base.as_ref()),
+            (ForeignChainName::Bnb, self.bnb.as_ref()),
+            (ForeignChainName::Arbitrum, self.arbitrum.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(chain, config)| config.map(|cfg| (chain, cfg)))
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        for (chain, chain_config) in &self.chains {
-            chain_config.validate(*chain)?;
+        for (chain, chain_config) in self.iter() {
+            chain_config.validate(chain)?;
         }
         Ok(())
     }
@@ -976,7 +1004,7 @@ foreign_chains:
 "#;
         let config: ConfigFile = serde_yaml::from_str(yaml)?;
         config.validate()?;
-        assert_eq!(config.foreign_chains.chains.len(), 1);
+        assert!(config.foreign_chains.solana.is_some());
         Ok(())
     }
 }
