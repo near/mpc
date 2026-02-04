@@ -2385,7 +2385,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.\n\n# Serialization For JSON backward compatibility with the old `Vec`-based format, this struct serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples.",
+          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.\n\n# Serialization For JSON backward compatibility with the old `Vec`-based format, this struct serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples. Deserialization supports both the old Vec format and the new Map format.",
           "type": "object",
           "required": [
             "next_id",

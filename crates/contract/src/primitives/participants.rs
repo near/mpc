@@ -58,20 +58,38 @@ pub struct ParticipantData {
 }
 
 /// Helper type for JSON serialization that matches the old Vec-based format.
-/// Used via `#[serde(from, into)]` for backward compatibility.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 struct ParticipantsJson {
     next_id: ParticipantId,
     participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
 
-impl From<ParticipantsJson> for Participants {
-    fn from(json: ParticipantsJson) -> Self {
-        let participants = json
-            .participants
-            .into_iter()
-            .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
-            .collect();
+/// Helper enum for deserializing both old Vec and new Map formats.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ParticipantsField {
+    /// Old format: array of [AccountId, ParticipantId, ParticipantInfo] tuples
+    Vec(Vec<(AccountId, ParticipantId, ParticipantInfo)>),
+    /// New format: map of AccountId -> ParticipantData
+    Map(BTreeMap<AccountId, ParticipantData>),
+}
+
+/// Helper for deserializing Participants from either Vec or Map format.
+#[derive(Deserialize)]
+struct ParticipantsJsonDeserialize {
+    next_id: ParticipantId,
+    participants: ParticipantsField,
+}
+
+impl From<ParticipantsJsonDeserialize> for Participants {
+    fn from(json: ParticipantsJsonDeserialize) -> Self {
+        let participants = match json.participants {
+            ParticipantsField::Vec(vec) => vec
+                .into_iter()
+                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
+                .collect(),
+            ParticipantsField::Map(map) => map,
+        };
         Participants {
             next_id: json.next_id,
             participants,
@@ -98,9 +116,10 @@ impl From<Participants> for ParticipantsJson {
 /// # Serialization
 /// For JSON backward compatibility with the old `Vec`-based format, this struct
 /// serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples.
+/// Deserialization supports both the old Vec format and the new Map format.
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-#[serde(from = "ParticipantsJson", into = "ParticipantsJson")]
+#[serde(into = "ParticipantsJson", from = "ParticipantsJsonDeserialize")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
