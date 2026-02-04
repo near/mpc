@@ -831,7 +831,6 @@ impl MpcContract {
             .parameters
             .participants()
             .participants()
-            .iter()
             .filter(|(account_id, _, _)| {
                 self.foreign_chain_policy_votes
                     .proposal_by_account
@@ -3894,11 +3893,12 @@ mod tests {
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
-        let participants = running_state
+        let participants: Vec<_> = running_state
             .parameters
             .participants()
             .participants()
-            .clone();
+            .map(|(account_id, id, info)| (account_id.clone(), *id, info.clone()))
+            .collect();
         let first_account = participants[0].0.clone();
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
@@ -3936,11 +3936,12 @@ mod tests {
     fn vote_foreign_chain_policy__should_apply_policy_after_unanimous_votes() {
         // Given
         let running_state = gen_running_state(1);
-        let participants = running_state
+        let participants: Vec<_> = running_state
             .parameters
             .participants()
             .participants()
-            .clone();
+            .map(|(account_id, id, info)| (account_id.clone(), *id, info.clone()))
+            .collect();
         let first_account = participants[0].0.clone();
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
@@ -3974,11 +3975,12 @@ mod tests {
     fn vote_foreign_chain_policy__should_ignore_votes_from_non_participants() {
         // Given
         let running_state = gen_running_state(1);
-        let participants = running_state
+        let participants: Vec<_> = running_state
             .parameters
             .participants()
             .participants()
-            .clone();
+            .map(|(account_id, id, info)| (account_id.clone(), *id, info.clone()))
+            .collect();
         let first_account = participants[0].0.clone();
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
