@@ -87,7 +87,43 @@ impl PermanentKeyStorage {
 
     pub async fn load(&self) -> anyhow::Result<Option<PermanentKeyshareData>> {
         let data = self.backend.load().await?;
-        Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
+
+        match &data {
+            Some(raw) => {
+                tracing::info!(
+                    bytes = raw.len(),
+                    "PermanentKeyStorage::load: loaded raw permanent keystore bytes"
+                );
+            }
+            None => {
+                tracing::info!("PermanentKeyStorage::load: no permanent keystore found");
+            }
+        }
+
+        let parsed: Option<PermanentKeyshareData> = data
+            .map(|data| {
+                let parsed: PermanentKeyshareData = serde_json::from_slice(&data)?;
+                tracing::info!(
+                    epoch_id = ?parsed.epoch_id,
+                    num_keyshares = parsed.keyshares.len(),
+                    "PermanentKeyStorage::load: parsed permanent keystore"
+                );
+
+                for (i, ks) in parsed.keyshares.iter().enumerate() {
+                    let actual_pk = ks.public_key().ok();
+                    tracing::info!(
+                        index = i,
+                        key_id = ?ks.key_id,
+                        public_key = ?actual_pk,
+                        "PermanentKeyStorage::load: permanent keyshare entry"
+                    );
+                }
+
+                Ok::<_, anyhow::Error>(parsed)
+            })
+            .transpose()?;
+
+        Ok(parsed)
     }
 
     /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
