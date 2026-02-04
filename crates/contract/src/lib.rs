@@ -807,11 +807,17 @@ impl MpcContract {
             log!("removed old vote for signer");
         }
 
-        let total_votes = self
-            .foreign_chain_policy_votes
-            .proposal_by_account
-            .values()
-            .filter(|&prop| prop == &policy)
+        let total_votes = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .filter(|(account_id, _, _)| {
+                self.foreign_chain_policy_votes
+                    .proposal_by_account
+                    .get(&dtos::AccountId(account_id.to_string()))
+                    .is_some_and(|prop| prop == &policy)
+            })
             .count();
 
         if total_votes == running_state.parameters.participants().len() {
@@ -3939,5 +3945,51 @@ mod tests {
             .get_foreign_chain_policy_proposals()
             .proposal_by_account
             .is_empty());
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_ignore_votes_from_non_participants() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::from([dtos::RpcProvider {
+                    rpc_url: "https://example.com".to_string(),
+                }]),
+            }]),
+        };
+        let non_participant = gen_account_id();
+        contract
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .insert(dtos::AccountId(non_participant.to_string()), policy.clone());
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When
+        contract
+            .vote_foreign_chain_policy(policy.clone())
+            .expect("vote should succeed");
+
+        // Then
+        assert_eq!(
+            contract.get_foreign_chain_policy(),
+            dtos::ForeignChainPolicy::default()
+        );
+        let votes = contract.get_foreign_chain_policy_proposals();
+        assert!(votes
+            .proposal_by_account
+            .contains_key(&dtos::AccountId(non_participant.to_string())));
+        assert!(votes
+            .proposal_by_account
+            .contains_key(&dtos::AccountId(first_account.to_string())));
     }
 }
