@@ -783,12 +783,6 @@ impl MpcContract {
         &mut self,
         policy: dtos::ForeignChainPolicy,
     ) -> Result<(), Error> {
-        log!(
-            "vote_foreign_chain_policy: signer={}, policy={:?}",
-            env::signer_account_id(),
-            policy,
-        );
-
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
