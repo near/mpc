@@ -11,10 +11,16 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1923](https://github.com/near/mpc/pull/1923)(@DSharifi): *(contract)* Define contract API for verification of foreign transactions (#1923)
 
+- [#1948](https://github.com/near/mpc/pull/1948)(@gilcu3): Added indexer types for verify foreign tx (#1948)
+
+- [#1961](https://github.com/near/mpc/pull/1961)(@netrome): Add foreign chain policy types and voting method (#1961)
+
 
 ### 🐛 Bug Fixes
 
 - [#1939](https://github.com/near/mpc/pull/1939)(@gilcu3): Ensure test_verify_tee_expired_attestation_triggers_resharing is not flaky (#1939)
+
+- [#1831](https://github.com/near/mpc/pull/1831)(@kevindeforth): Properly fix network race condition (#1831)
 
 
 ### 📚 Documentation
@@ -28,6 +34,17 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1931](https://github.com/near/mpc/pull/1931)(@netrome): Extractor-based foreign chain transaction validation design update (#1931)
 
 - [#1938](https://github.com/near/mpc/pull/1938)(@netrome): Derive separate tweak for foreign transaction validation (#1938)
+
+- [#1953](https://github.com/near/mpc/pull/1953)(@DSharifi): Include set of reommended extensions for VSCode (#1953)
+
+- [#1964](https://github.com/near/mpc/pull/1964)(@DSharifi): Add note on branch being pushed to github pre `git-cliff` instructions (#1964)
+
+
+### 🧪 Testing
+
+- [#1945](https://github.com/near/mpc/pull/1945)(@gilcu3): Add timeout/retry mechanism to try to fix flaky test creating many accounts (#1945)
+
+- [#1951](https://github.com/near/mpc/pull/1951)(@gilcu3): Enable test_embedded abi test (#1951)
 
 
 ### ⚙️ Miscellaneous Tasks
@@ -45,6 +62,10 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1933](https://github.com/near/mpc/pull/1933)(@DSharifi): *(clippy)* Enable warning on `assertions_on_result_states` clippy lint (#1933)
 
 - [#1947](https://github.com/near/mpc/pull/1947)(@gilcu3): Update nearcore to 2.10.6 (#1947)
+
+- [#1950](https://github.com/near/mpc/pull/1950)(@DSharifi): RPC requests to EVM chains should have separate struct per chain (#1950)
+
+- [#1973](https://github.com/near/mpc/pull/1973)(@gilcu3): Remove extra license file (#1973)
 
 
 ## [3.4.0] - 2026-01-29
