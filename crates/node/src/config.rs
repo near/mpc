@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::Path,
@@ -164,6 +165,8 @@ pub struct ConfigFile {
     pub ckd: CKDConfig,
     #[serde(default)]
     pub keygen: KeygenConfig,
+    #[serde(default)]
+    pub foreign_chains: ForeignChainsConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
@@ -173,7 +176,185 @@ impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
         let config: Self = serde_yaml::from_str(&file)?;
+        config.validate().context("Validate config.yaml")?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.foreign_chains.validate()
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ForeignChainsConfig {
+    #[serde(default, flatten)]
+    pub chains: BTreeMap<ForeignChainName, ForeignChainNodeConfig>,
+}
+
+impl ForeignChainsConfig {
+    pub fn is_empty(&self) -> bool {
+        self.chains.is_empty()
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        for (chain, chain_config) in &self.chains {
+            chain_config.validate(*chain)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum ForeignChainName {
+    Solana,
+    Bitcoin,
+    Ethereum,
+    Base,
+    Bnb,
+    Arbitrum,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ForeignChainNodeConfig {
+    pub timeout_sec: u64,
+    pub max_retries: u64,
+    pub providers: BTreeMap<String, ProviderConfig>,
+}
+
+impl ForeignChainNodeConfig {
+    fn validate(&self, chain: ForeignChainName) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.timeout_sec > 0,
+            "foreign_chains.{:?}.timeout_sec must be > 0",
+            chain
+        );
+        anyhow::ensure!(
+            !self.providers.is_empty(),
+            "foreign_chains.{:?} must include at least one provider",
+            chain
+        );
+
+        let mut seen_rpc_urls = BTreeSet::new();
+        for (provider_name, provider) in &self.providers {
+            anyhow::ensure!(
+                !provider.rpc_url.trim().is_empty(),
+                "foreign_chains.{:?}.providers.{}.rpc_url must be non-empty",
+                chain,
+                provider_name
+            );
+            anyhow::ensure!(
+                seen_rpc_urls.insert(provider.rpc_url.clone()),
+                "foreign_chains.{:?}.providers.{}.rpc_url duplicates another provider URL",
+                chain,
+                provider_name
+            );
+            provider
+                .validate(chain, provider_name)
+                .with_context(|| format!("invalid provider {provider_name} for {chain:?}"))?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub rpc_url: String,
+    #[serde(default)]
+    pub auth: AuthConfig,
+}
+
+impl ProviderConfig {
+    fn validate(&self, chain: ForeignChainName, provider_name: &str) -> anyhow::Result<()> {
+        match &self.auth {
+            AuthConfig::None => Ok(()),
+            AuthConfig::Header { name, scheme, .. } => {
+                anyhow::ensure!(
+                    !name.trim().is_empty(),
+                    "foreign_chains.{:?}.providers.{}.auth.name must be non-empty",
+                    chain,
+                    provider_name
+                );
+                if let Some(scheme) = scheme {
+                    anyhow::ensure!(
+                        !scheme.trim().is_empty(),
+                        "foreign_chains.{:?}.providers.{}.auth.scheme must be non-empty if provided",
+                        chain,
+                        provider_name
+                    );
+                }
+                Ok(())
+            }
+            AuthConfig::Path { placeholder, .. } => {
+                anyhow::ensure!(
+                    !placeholder.trim().is_empty(),
+                    "foreign_chains.{:?}.providers.{}.auth.placeholder must be non-empty",
+                    chain,
+                    provider_name
+                );
+                anyhow::ensure!(
+                    self.rpc_url.contains(placeholder),
+                    "foreign_chains.{:?}.providers.{}.rpc_url must include the path placeholder",
+                    chain,
+                    provider_name
+                );
+                Ok(())
+            }
+            AuthConfig::Query { name, .. } => {
+                anyhow::ensure!(
+                    !name.trim().is_empty(),
+                    "foreign_chains.{:?}.providers.{}.auth.name must be non-empty",
+                    chain,
+                    provider_name
+                );
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum AuthConfig {
+    None,
+    Header {
+        name: String,
+        #[serde(default)]
+        scheme: Option<String>,
+        token: TokenConfig,
+    },
+    Path {
+        placeholder: String,
+        token: TokenConfig,
+    },
+    Query {
+        name: String,
+        token: TokenConfig,
+    },
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum TokenConfig {
+    Env { env: String },
+    Val { val: String },
+}
+
+impl TokenConfig {
+    pub fn resolve(&self) -> anyhow::Result<String> {
+        match self {
+            TokenConfig::Env { env } => {
+                std::env::var(env).with_context(|| format!("environment variable {env} is not set"))
+            }
+            TokenConfig::Val { val } => Ok(val.clone()),
+        }
     }
 }
 
@@ -681,5 +862,121 @@ pub mod tests {
 
         let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
         assert_eq!(secrets_str, secrets_str_copy);
+    }
+
+    #[test]
+    fn test_config_parses_without_foreign_chains() -> anyhow::Result<()> {
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+"#;
+        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        config.validate()?;
+        assert!(config.foreign_chains.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_config_parses_with_foreign_chains() -> anyhow::Result<()> {
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
+      quicknode:
+        rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
+        auth:
+          kind: header
+          name: x-api-key
+          token:
+            val: "local"
+      ankr:
+        rpc_url: "https://rpc.ankr.com/near/{api_key}"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            env: ANKR_API_KEY
+      public:
+        rpc_url: "https://rpc.public.example.com"
+        auth:
+          kind: none
+      query:
+        rpc_url: "https://rpc.example.com"
+        auth:
+          kind: query
+          name: api_key
+          token:
+            val: "local"
+"#;
+        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        config.validate()?;
+        assert_eq!(config.foreign_chains.chains.len(), 1);
+        Ok(())
     }
 }

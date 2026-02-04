@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy (with fallbacks).
+* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`.
@@ -297,8 +297,6 @@ hash = sha256(participant_id || request_id || provider_rpc_url)
 Providers are sorted by this hash to build a deterministic ordering:
 
 * **Primary provider** = first in the ordering.
-* **Fallback** = subsequent providers in order.
-* Each provider can include backup URLs for failover.
 
 This ensures different nodes query different providers for the same request while preserving determinism.
 

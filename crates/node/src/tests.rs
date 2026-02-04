@@ -12,8 +12,9 @@ use std::net::{Ipv4Addr, SocketAddr};
 use tokio::sync::{watch, RwLock};
 
 use crate::config::{
-    CKDConfig, ConfigFile, IndexerConfig, KeygenConfig, ParticipantsConfig, PersistentSecrets,
-    PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, ParticipantsConfig,
+    PersistentSecrets, PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
+    WebUIConfig,
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
@@ -208,6 +209,7 @@ impl IntegrationTestSetup {
                 },
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
+                foreign_chains: ForeignChainsConfig::default(),
                 triple: TripleConfig {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
