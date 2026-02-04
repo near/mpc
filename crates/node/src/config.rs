@@ -186,6 +186,7 @@ impl ConfigFile {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
     #[serde(default)]
     pub solana: Option<ForeignChainNodeConfig>,
@@ -464,9 +465,7 @@ impl ProviderConfig {
         anyhow::ensure!(!raw.is_empty(), "api_variant must be non-empty");
         let normalized = raw.to_ascii_lowercase().replace('_', "-");
         ChainApiVariant::parse(chain, &normalized).ok_or_else(|| {
-            anyhow::anyhow!(
-                "unsupported api_variant {normalized} for chain {chain:?}"
-            )
+            anyhow::anyhow!("unsupported api_variant {normalized} for chain {chain:?}")
         })
     }
 }
@@ -888,6 +887,7 @@ fn default_pprof_bind_address() -> SocketAddr {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 pub mod tests {
     use assert_matches::assert_matches;
     use k256::ecdsa::signature::SignerMut;
@@ -1022,7 +1022,8 @@ pub mod tests {
     }
 
     #[test]
-    fn test_config_parses_without_foreign_chains() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_unset() -> anyhow::Result<()> {
+        // Given
         let yaml = r#"
 my_near_account_id: test.near
 near_responder_account_id: test.near
@@ -1054,14 +1055,19 @@ signature:
 ckd:
   timeout_sec: 60
 "#;
+
+        // When
         let config: ConfigFile = serde_yaml::from_str(yaml)?;
+
+        // Then
         config.validate()?;
         assert!(config.foreign_chains.is_empty());
         Ok(())
     }
 
     #[test]
-    fn test_config_parses_with_foreign_chains() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_set() -> anyhow::Result<()> {
+        // Given
         let yaml = r#"
 my_near_account_id: test.near
 near_responder_account_id: test.near
@@ -1136,9 +1142,190 @@ foreign_chains:
           token:
             val: "local"
 "#;
+
+        // When
         let config: ConfigFile = serde_yaml::from_str(yaml)?;
+
+        // Then
         config.validate()?;
         assert!(config.foreign_chains.solana.is_some());
         Ok(())
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_api_variant_is_missing() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
+"#;
+
+        // When
+        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
+
+        // Then
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_api_variant_is_invalid_for_chain() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        api_variant: infura
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).expect("config should parse");
+        let result = config.validate();
+
+        // Then
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_foreign_chain_key_is_unknown() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        api_variant: alchemy
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
+  polygon:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://rpc.public.example.com"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let result: Result<ConfigFile, _> = serde_yaml::from_str(yaml);
+
+        // Then
+        assert!(result.is_err());
     }
 }
