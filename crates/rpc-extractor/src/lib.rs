@@ -29,6 +29,13 @@ enum BitcoinExtractedValue {
 
 struct BitcoinRpcExtractor;
 
+trait RpcClient {
+    type Finality;
+    type TxId;
+
+    async fn get()
+}
+
 impl RpcExtractor for BitcoinExtractor {
     type Chain = Bitcoin;
     type Extractor = BitcoinExtractor;
@@ -40,6 +47,6 @@ impl RpcExtractor for BitcoinExtractor {
         extractors: Vec<Self::Extractor>,
         finality: Self::Finality,
     ) -> Self::ExtractedValue {
-        async { todo!() }
+        todo!()
     }
 }
