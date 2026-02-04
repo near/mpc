@@ -57,9 +57,50 @@ pub struct ParticipantData {
     pub info: ParticipantInfo,
 }
 
+/// Helper type for JSON serialization that matches the old Vec-based format.
+/// Used via `#[serde(from, into)]` for backward compatibility.
+#[derive(Serialize, Deserialize)]
+struct ParticipantsJson {
+    next_id: ParticipantId,
+    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+}
+
+impl From<ParticipantsJson> for Participants {
+    fn from(json: ParticipantsJson) -> Self {
+        let participants = json
+            .participants
+            .into_iter()
+            .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
+            .collect();
+        Participants {
+            next_id: json.next_id,
+            participants,
+        }
+    }
+}
+
+impl From<Participants> for ParticipantsJson {
+    fn from(p: Participants) -> Self {
+        let participants = p
+            .participants
+            .into_iter()
+            .map(|(account_id, data)| (account_id, data.id, data.info))
+            .collect();
+        ParticipantsJson {
+            next_id: p.next_id,
+            participants,
+        }
+    }
+}
+
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
+///
+/// # Serialization
+/// For JSON backward compatibility with the old `Vec`-based format, this struct
+/// serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples.
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+#[serde(from = "ParticipantsJson", into = "ParticipantsJson")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
