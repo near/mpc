@@ -263,7 +263,7 @@ pub struct ForeignChainPolicy {
 
 pub struct ForeignChainConfig {
     pub chain: ForeignChain,
-    pub providers: NonEmptyVec<RpcProvider>,
+    pub providers: BTreeSet<RpcProvider>,
 }
 
 pub enum ForeignChain {

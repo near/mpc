@@ -225,6 +225,8 @@ impl From<MpcContract> for crate::MpcContract {
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
             proposed_updates: value.proposed_updates,
+            foreign_chain_policy: Default::default(),
+            foreign_chain_policy_votes: Default::default(),
             config: value.config,
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,
