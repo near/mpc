@@ -1,4 +1,8 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
+use contract_interface::types::{
+    BitcoinExtractor, BitcoinRpcRequest, ForeignChainRpcRequest,
+    VerifyForeignTransactionRequestArgs,
+};
 use mpc_contract::primitives::key_state::Keyset;
 use mpc_contract::state::ProtocolContractState;
 use rand::rngs::OsRng;
@@ -14,7 +18,10 @@ use crate::config::{
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::fake::FakeIndexerManager;
-use crate::indexer::handler::{CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain};
+use crate::indexer::handler::{
+    CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
+    VerifyForeignTxRequestFromChain,
+};
 use crate::indexer::IndexerAPI;
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
@@ -413,6 +420,84 @@ pub async fn request_ckd_and_await_response(
             }
             Err(_) => {
                 tracing::info!("Timed out waiting for ckd response for user {}", user);
+                return None;
+            }
+        }
+    }
+}
+
+/// Request a verify foreign tx from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+#[allow(dead_code)] // TODO(#1960): remove when integrating with node
+pub async fn request_verify_foreign_tx_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    assert_matches!(
+        domain.scheme,
+        SignatureScheme::Secp256k1,
+        "`request_ckd_and_await_response` must be called with a compatible domain",
+    );
+    let request = VerifyForeignTxRequestFromChain {
+        verify_foreign_tx_id: CryptoHash(rand::random()),
+        receipt_id: CryptoHash(rand::random()),
+        predecessor_id: user.parse().unwrap(),
+        entropy: rand::random(),
+        timestamp_nanosec: rand::random(),
+        request: VerifyForeignTransactionRequestArgs {
+            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [42u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+            domain_id: domain.id.0.into(),
+            path: "m/44'/60'/0'/0/0".to_string(),
+        },
+    };
+    tracing::info!(
+        "Sending verify foreign tx request from user {}, request {:?}",
+        user,
+        request.request,
+    );
+    indexer.request_verify_foreign_tx(request.clone());
+    let start_time = std::time::Instant::now();
+    loop {
+        match timeout(timeout_sec, indexer.next_response_verify_foreign_tx()).await {
+            Ok(verify_foreign_tx_response_args) => {
+                if verify_foreign_tx_response_args.request.request != request.request.request {
+                    // This can legitimately happen when multiple nodes submit responses
+                    // for the same verify foreign tx request. In tests this can happen if the
+                    // secondary leader thinks the primary leader is offline when in fact
+                    // the network just has not yet been fully established.
+                    tracing::info!(
+                        "Received verify foreign tx is not for the verify foreign tx request we sent (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request.request,
+                        verify_foreign_tx_response_args.request.request
+                    );
+                    continue;
+                }
+                if verify_foreign_tx_response_args.request.domain_id.0 != domain.id.0 {
+                    tracing::info!(
+                        "Received verify foreign tx is not for the domain we requested (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        domain.id,
+                        verify_foreign_tx_response_args.request.domain_id
+                    );
+                    continue;
+                }
+                tracing::info!("Got response verify foreign tx for user {}", user);
+                return Some(start_time.elapsed());
+            }
+            Err(_) => {
+                tracing::info!(
+                    "Timed out waiting for verify foreign tx response for user {}",
+                    user
+                );
                 return None;
             }
         }

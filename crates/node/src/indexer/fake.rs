@@ -6,15 +6,15 @@ use super::types::{
 };
 use super::IndexerAPI;
 use crate::config::{self, ParticipantsConfig};
-use crate::indexer::handler::CKDRequestFromChain;
-use crate::indexer::types::ChainCKDRespondArgs;
+use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
+use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
 use crate::migration_service::types::MigrationInfo;
 use crate::providers::PublicKeyConversion;
 use crate::requests::recent_blocks_tracker::tests::TestBlockMaker;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
-use crate::types::CKDId;
 use crate::types::SignatureId;
+use crate::types::{CKDId, VerifyForeignTxId};
 use anyhow::Context;
 use contract_interface::types as dtos;
 use derive_more::From;
@@ -42,8 +42,11 @@ pub struct FakeMpcContractState {
     pub state: ProtocolContractState,
     config: dtos::InitConfig,
     env: Environment,
+    // TODO(#1958): Although this is only used in tests, it does not seem correct to
+    // group signatures by Payload. We should use the same we use in the contract
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
+    pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
     pub migration_service: NodeMigrations,
 }
 
@@ -61,6 +64,7 @@ impl FakeMpcContractState {
             env,
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
+            pending_verify_foreign_txs: BTreeMap::new(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -327,6 +331,8 @@ struct FakeIndexerCore {
     signature_request_receiver: mpsc::UnboundedReceiver<SignatureRequestFromChain>,
     /// Receives ckd requests from the FakeIndexerManager.
     ckd_request_receiver: mpsc::UnboundedReceiver<CKDRequestFromChain>,
+    /// Receives verify foreign tx requests from the FakeIndexerManager.
+    verify_foreign_tx_request_receiver: mpsc::UnboundedReceiver<VerifyForeignTxRequestFromChain>,
     /// Broadcasts the contract state to each node.
     state_change_sender: broadcast::Sender<ContractState>,
     /// Broadcasts block updates to each node.
@@ -343,6 +349,12 @@ struct FakeIndexerCore {
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
     /// code.
     ckd_response_sender: mpsc::UnboundedSender<ChainCKDRespondArgs>,
+
+    /// When the core receives verify foreign response txns, it processes them by sending them through
+    /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
+    /// code.
+    verify_foreign_tx_response_sender:
+        mpsc::UnboundedSender<ChainVerifyForeignTransactionRespondArgs>,
 
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
@@ -458,12 +470,38 @@ impl FakeIndexerCore {
                     .insert(ckd_request.request.app_id.clone(), ckd_id);
             }
 
+            let mut verify_foreign_tx_requests = Vec::new();
+            loop {
+                match self.verify_foreign_tx_request_receiver.try_recv() {
+                    Ok(request) => {
+                        verify_foreign_tx_requests.push(request);
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        return;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                }
+            }
+
+            for verify_foreign_tx_request in &verify_foreign_tx_requests {
+                let mut contract = contract.lock().await;
+                let verify_foreign_tx_id = verify_foreign_tx_request.verify_foreign_tx_id;
+                contract.pending_verify_foreign_txs.insert(
+                    verify_foreign_tx_request.request.request.clone(),
+                    verify_foreign_tx_id,
+                );
+            }
+
             let mut block_update = ChainBlockUpdate {
                 block: block.to_block_view(),
                 signature_requests,
                 completed_signatures: Vec::new(),
                 ckd_requests,
                 completed_ckds: Vec::new(),
+                verify_foreign_tx_requests,
+                completed_verify_foreign_txs: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -505,6 +543,25 @@ impl FakeIndexerCore {
                             tracing::warn!(
                                 "Ignoring respond_ckd transaction for unknown (possibly already-responded-to) ckd: {:?}",
                                 respond.request.app_id
+                            );
+                        }
+                    }
+                    ChainSendTransactionRequest::VerifyForeignTransactionRespond(respond) => {
+                        let mut contract = contract.lock().await;
+                        let verify_foreign_tx_id = contract
+                            .pending_verify_foreign_txs
+                            .remove(&respond.request.request);
+                        if let Some(verify_foreign_tx_id) = verify_foreign_tx_id {
+                            self.verify_foreign_tx_response_sender
+                                .send(respond.clone())
+                                .unwrap();
+                            block_update
+                                .completed_verify_foreign_txs
+                                .push(verify_foreign_tx_id);
+                        } else {
+                            tracing::warn!(
+                                "Ignoring respond_verify_foreign_tx transaction for unknown (possibly already-responded-to) verify foreign tx: {:?}",
+                                respond.request
                             );
                         }
                     }
@@ -564,11 +621,18 @@ pub struct FakeIndexerManager {
     /// Used to send signature requests to the core.
     signature_request_sender: mpsc::UnboundedSender<SignatureRequestFromChain>,
 
-    /// Collects signature responses from the core. When the core processes signature
-    /// response transactions, it sends them to this receiver. See `next_response()`.
+    /// Collects ckd responses from the core. When the core processes ckd
+    /// response transactions, it sends them to this receiver. See `next_response_ckd()`.
     ckd_response_receiver: mpsc::UnboundedReceiver<ChainCKDRespondArgs>,
-    /// Used to send signature requests to the core.
+    /// Used to send ckd requests to the core.
     ckd_request_sender: mpsc::UnboundedSender<CKDRequestFromChain>,
+
+    /// Collects verify foreign tx responses from the core. When the core processes verify foreign tx
+    /// response transactions, it sends them to this receiver. See `next_response_verify_foreign_tx()`.
+    verify_foreign_tx_response_receiver:
+        mpsc::UnboundedReceiver<ChainVerifyForeignTransactionRespondArgs>,
+    /// Used to send verify foreign tx requests to the core.
+    verify_foreign_tx_request_sender: mpsc::UnboundedSender<VerifyForeignTxRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See `disable()`.
     node_disabler: HashMap<TestNodeUid, NodeDisabler>,
@@ -757,6 +821,10 @@ impl FakeIndexerManager {
         let (signature_response_sender, signature_response_receiver) = mpsc::unbounded_channel();
         let (ckd_request_sender, ckd_request_receiver) = mpsc::unbounded_channel();
         let (ckd_response_sender, ckd_response_receiver) = mpsc::unbounded_channel();
+        let (verify_foreign_tx_request_sender, verify_foreign_tx_request_receiver) =
+            mpsc::unbounded_channel();
+        let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
+            mpsc::unbounded_channel();
         let contract = Arc::new(tokio::sync::Mutex::new(FakeMpcContractState::new()));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -773,6 +841,8 @@ impl FakeIndexerManager {
             ckd_response_sender,
             block_time,
             account_id_by_uid: account_id_by_uid.clone(),
+            verify_foreign_tx_response_sender,
+            verify_foreign_tx_request_receiver,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
@@ -789,6 +859,8 @@ impl FakeIndexerManager {
             indexer_pauser: HashMap::new(),
             contract,
             account_id_by_uid,
+            verify_foreign_tx_response_receiver,
+            verify_foreign_tx_request_sender,
         }
     }
 
@@ -802,6 +874,16 @@ impl FakeIndexerManager {
         self.ckd_response_receiver.recv().await.unwrap()
     }
 
+    /// Waits for the next verify foreign tx response submitted by any node.
+    pub async fn next_response_verify_foreign_tx(
+        &mut self,
+    ) -> ChainVerifyForeignTransactionRespondArgs {
+        self.verify_foreign_tx_response_receiver
+            .recv()
+            .await
+            .unwrap()
+    }
+
     /// Sends a signature request to the fake blockchain.
     pub fn request_signature(&self, request: SignatureRequestFromChain) {
         self.signature_request_sender.send(request).unwrap();
@@ -810,6 +892,11 @@ impl FakeIndexerManager {
     /// Sends a ckd request to the fake blockchain.
     pub fn request_ckd(&self, request: CKDRequestFromChain) {
         self.ckd_request_sender.send(request).unwrap();
+    }
+
+    /// Sends a verify foreign tx request to the fake blockchain.
+    pub fn request_verify_foreign_tx(&self, request: VerifyForeignTxRequestFromChain) {
+        self.verify_foreign_tx_request_sender.send(request).unwrap();
     }
 
     /// Adds a new node to the fake indexer. Returns the API for the node, a task that

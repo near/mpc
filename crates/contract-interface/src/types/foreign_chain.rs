@@ -43,7 +43,7 @@ pub struct VerifyForeignTransactionResponse {
 )]
 #[non_exhaustive]
 pub enum ForeignChainRpcRequest {
-    Evm(EvmRpcRequest),
+    Ethereum(EthereumRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
 }
@@ -53,10 +53,9 @@ pub enum ForeignChainRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EvmRpcRequest {
-    pub chain: ForeignChain,
-    pub tx_id: EvmTxId,
-    pub extractors: Vec<EvmExtractor>,
+pub struct EthereumRpcRequest {
+    pub tx_id: EthereumTxId,
+    pub extractors: Vec<EthereumExtractor>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -98,7 +97,7 @@ pub enum Finality {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
-pub enum EvmExtractor {
+pub enum EthereumExtractor {
     BlockHash,
 }
 
@@ -132,21 +131,6 @@ pub enum BitcoinExtractor {
 pub enum ExtractedValue {
     U64(u64),
     Hash256(Hash256),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-#[non_exhaustive]
-pub enum ForeignChain {
-    Solana,
-    Bitcoin,
-    Ethereum,
-    Base,
-    Bnb,
-    Arbitrum,
 }
 
 #[derive(
@@ -230,7 +214,7 @@ pub struct ForeignBlockId(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct EvmTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
+pub struct EthereumTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
 #[derive(
