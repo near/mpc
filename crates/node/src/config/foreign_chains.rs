@@ -411,4 +411,401 @@ foreign_chains:
         // Then
         result.unwrap_err();
     }
+
+    #[test]
+    fn validation__should_fail_when_providers_have_duplicate_rpc_urls() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      provider1:
+        api_variant: standard
+        rpc_url: "https://rpc.example.com"
+        auth:
+          kind: none
+      provider2:
+        api_variant: standard
+        rpc_url: "https://rpc.example.com"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("duplicates another provider URL"));
+    }
+
+    #[test]
+    fn validation__should_fail_when_provider_list_is_empty() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers: {}
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("must include at least one provider"));
+    }
+
+    #[test]
+    fn validation__should_fail_when_timeout_sec_is_zero() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 0
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://rpc.example.com"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("timeout_sec must be > 0"));
+    }
+
+    #[test]
+    fn validation__should_fail_when_rpc_url_is_empty() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: ""
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("rpc_url must be non-empty"));
+    }
+
+    #[test]
+    fn validation__should_fail_when_auth_header_name_is_empty() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      alchemy:
+        api_variant: alchemy
+        rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: ""
+          token:
+            val: "test-token"
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let error_messages = err.chain().map(|e| e.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(error_messages.contains("auth.name must be non-empty"), "Error messages: {}", error_messages);
+    }
+
+    #[test]
+    fn validation__should_fail_when_auth_placeholder_is_empty() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      ankr:
+        api_variant: ankr
+        rpc_url: "https://rpc.ankr.com/solana/"
+        auth:
+          kind: path
+          placeholder: ""
+          token:
+            val: "test-token"
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let error_messages = err.chain().map(|e| e.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(error_messages.contains("auth.placeholder must be non-empty"), "Error messages: {}", error_messages);
+    }
+
+    #[test]
+    fn validation__should_fail_when_path_placeholder_missing_in_rpc_url() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      ankr:
+        api_variant: ankr
+        rpc_url: "https://rpc.ankr.com/solana/"
+        auth:
+          kind: path
+          placeholder: "{api_key}"
+          token:
+            val: "test-token"
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+
+        // Then
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let error_messages = err.chain().map(|e| e.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(error_messages.contains("rpc_url must include the path placeholder"), "Error messages: {}", error_messages);
+    }
 }
