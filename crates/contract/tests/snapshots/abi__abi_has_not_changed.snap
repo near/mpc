@@ -2385,7 +2385,7 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.",
+          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.\n\n# Serialization For JSON backward compatibility with the old `Vec`-based format, this struct serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples.",
           "type": "object",
           "required": [
             "next_id",
