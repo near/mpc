@@ -1,6 +1,6 @@
 use crate::{
     BlockConfirmations, ForeignChainRpcClient, RpcAuthentication, RpcError,
-    bitcoin::{BitcoinBlockHash, BitcoinTransactionHash},
+    bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
     rpc_types::{JsonRpcRequest, JsonRpcResponse},
 };
 use reqwest::{Method, StatusCode, header::HeaderMap};
@@ -11,13 +11,6 @@ const JSON_RPC_VERSION: &str = "1.0";
 const JSON_RPC_CLIENT_ID: &str = "client";
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 
-/// Normalized response.
-#[derive(Debug, Clone)]
-pub struct BitcoinRpcResponse {
-    pub block_hash: BitcoinBlockHash,
-    pub confirmations: u64,
-}
-
 #[derive(Debug, Clone)]
 pub struct BitcoinCoreRpcClient {
     request_client: reqwest::Client,
@@ -25,10 +18,10 @@ pub struct BitcoinCoreRpcClient {
 }
 
 impl BitcoinCoreRpcClient {
-    pub fn new(base_url: String, auth: RpcAuthentication) -> Self {
+    pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Self {
         let mut headers = HeaderMap::new();
 
-        match auth {
+        match rpc_authentication {
             RpcAuthentication::KeyInUrl => {}
             RpcAuthentication::CustomHeader {
                 header_name,
@@ -50,26 +43,14 @@ impl BitcoinCoreRpcClient {
     }
 }
 
-/// The RPC response for `getrawtransaction`. See link below for full spec;
-/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-#[derive(Deserialize)]
-struct GetRawTransactionVerboseResponse {
-    // The block hash the transaction is in
-    blockhash: BitcoinBlockHash,
-    // The number of confirmations
-    confirmations: u64,
-}
-
-impl ForeignChainRpcClient for BitcoinCoreRpcClient {
-    type Finality = BlockConfirmations;
-    type TxId = BitcoinTransactionHash;
-    type RpcResponse = BitcoinRpcResponse;
-
+impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>
+    for BitcoinCoreRpcClient
+{
     async fn get(
         &self,
-        transaction: Self::TxId,
-        _finality: Self::Finality,
-    ) -> Result<Self::RpcResponse, RpcError> {
+        transaction: BitcoinTransactionHash,
+        _finality: BlockConfirmations,
+    ) -> Result<BitcoinRpcResponse, RpcError> {
         let params = json!([transaction.as_hex(), true]);
 
         let request = JsonRpcRequest {
@@ -100,7 +81,17 @@ impl ForeignChainRpcClient for BitcoinCoreRpcClient {
 
         Ok(BitcoinRpcResponse {
             block_hash: rpc_response.blockhash,
-            confirmations: rpc_response.confirmations,
+            confirmations: rpc_response.confirmations.into(),
         })
     }
+}
+
+/// The RPC response for `getrawtransaction`. See link below for full spec;
+/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
+#[derive(Deserialize)]
+struct GetRawTransactionVerboseResponse {
+    // The block hash the transaction is in
+    blockhash: BitcoinBlockHash,
+    // The number of confirmations
+    confirmations: u64,
 }

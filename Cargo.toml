@@ -64,12 +64,13 @@ curve25519-dalek = { version = "4.1.3", features = [
     "serde",
 ], default-features = false }
 dcap-qvl = { version = "0.3.11", default-features = false, features = ["contract", "borsh", "std", "ring"] }
-derive_more = { version = "2.0.1", features = [
-    "from",
-    "deref",
-    "into",
+derive_more = { version = "2.1.0", features = [
     "as_ref",
     "constructor",
+    "deref",
+    "display",
+    "from",
+    "into",
 ] }
 digest = "0.10.7"
 dstack-sdk = { version = "0.1.1" }

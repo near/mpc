@@ -1,41 +1,74 @@
 use crate::{
-    BlockConfirmations, ForeignChainInspector, ForeignChainRpcClient,
-    bitcoin::{BitcoinBlockHash, BitcoinTransactionHash},
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ForeignChainRpcClient,
+    bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
 };
 
 pub struct BitcoinInspector<Client> {
     client: Client,
-    extractor: BitcoinExtractor,
 }
 
-struct Bitcoin;
+impl<Client>
+    ForeignChainInspector<
+        BitcoinTransactionHash,
+        BlockConfirmations,
+        BitcoinExtractor,
+        BitcoinExtractedValue,
+    > for BitcoinInspector<Client>
+where
+    Client: ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>,
+{
+    async fn extract(
+        &self,
+        tx_id: BitcoinTransactionHash,
+        block_confirmations_threshold: BlockConfirmations,
+        extractors: Vec<BitcoinExtractor>,
+    ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
+        let response = self
+            .client
+            .get(tx_id, block_confirmations_threshold)
+            .await?;
+
+        let enough_block_confirmations = block_confirmations_threshold <= response.confirmations;
+
+        if !enough_block_confirmations {
+            return Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
+                expected: block_confirmations_threshold,
+                got: response.confirmations,
+            });
+        }
+
+        let extracted_values = extractors
+            .iter()
+            .map(|extractor| extractor.extract_value(&response))
+            .collect();
+
+        Ok(extracted_values)
+    }
+}
+
+impl<Client> BitcoinInspector<Client>
+where
+    Client: ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>,
+{
+    pub fn new(client: Client) -> Self {
+        Self { client }
+    }
+}
 
 pub enum BitcoinExtractedValue {
-    Hash,
-}
-
-pub enum BitcoinExtractor {
     BlockHash(BitcoinBlockHash),
 }
 
-impl<Client> ForeignChainInspector for BitcoinInspector<Client>
-where
-    Client: ForeignChainRpcClient,
-{
-    // type Chain = Bitcoin;
-    type Extractor = BitcoinExtractor;
-    type Finality = BlockConfirmations;
-    type ExtractedValue = BitcoinExtractedValue;
-    type TxId = BitcoinTransactionHash;
+pub enum BitcoinExtractor {
+    BlockHash,
+}
 
-    async fn extract(
-        &self,
-        tx_id: Self::TxId,
-        extractors: Vec<Self::Extractor>,
-        finality: Self::Finality,
-    ) -> Self::ExtractedValue {
-        let response = self.client.get(tx_id, finality).await;
-
-        todo!();
+impl BitcoinExtractor {
+    fn extract_value(&self, rpc_response: &BitcoinRpcResponse) -> BitcoinExtractedValue {
+        match self {
+            BitcoinExtractor::BlockHash => {
+                BitcoinExtractedValue::BlockHash(rpc_response.block_hash.clone())
+            }
+        }
     }
 }
