@@ -10,6 +10,10 @@ pub mod types {
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
     pub use foreign_chain::*;
+    pub use participants::{
+        ParticipantData, ParticipantId, ParticipantInfo, ParticipantsField, ParticipantsJson,
+        ParticipantsJsonDeserialize,
+    };
 
     pub use primitives::{AccountId, CkdAppId};
     pub use updates::{ProposedUpdates, UpdateHash};
@@ -18,6 +22,7 @@ pub mod types {
     mod config;
     mod crypto;
     mod foreign_chain;
+    mod participants;
     mod primitives;
     mod updates;
 }
