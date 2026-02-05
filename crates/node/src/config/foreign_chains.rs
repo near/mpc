@@ -42,13 +42,16 @@ impl ForeignChainsConfig {
     }
 }
 
-pub(crate) fn validate_chain_config<P>(
+pub(crate) trait ForeignChainProviderConfig {
+    fn rpc_url(&self) -> &str;
+    fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()>;
+}
+
+pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
     chain_label: &str,
     timeout_sec: u64,
     max_retries: u64,
     providers: &BTreeMap<String, P>,
-    rpc_url: impl Fn(&P) -> &str,
-    validate_provider: impl Fn(&P, &str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
         timeout_sec > 0,
@@ -65,7 +68,7 @@ pub(crate) fn validate_chain_config<P>(
 
     let mut seen_rpc_urls = BTreeSet::new();
     for (provider_name, provider) in providers {
-        let provider_rpc_url = rpc_url(provider);
+        let provider_rpc_url = provider.rpc_url();
         anyhow::ensure!(
             !provider_rpc_url.trim().is_empty(),
             "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url must be non-empty"
@@ -74,7 +77,8 @@ pub(crate) fn validate_chain_config<P>(
             seen_rpc_urls.insert(provider_rpc_url.to_string()),
             "foreign_chains.{chain_label}.providers.{provider_name}.rpc_url duplicates another provider URL"
         );
-        validate_provider(provider, provider_name)
+        provider
+            .validate(chain_label, provider_name)
             .with_context(|| format!("invalid provider {provider_name} for {chain_label}"))?;
     }
 

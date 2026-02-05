@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::config::foreign_chains;
 use crate::config::foreign_chains::auth;
+use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumChainConfig {
@@ -18,8 +18,6 @@ impl EthereumChainConfig {
             self.timeout_sec,
             self.max_retries,
             &self.providers,
-            |provider| provider.rpc_url.as_str(),
-            |provider, provider_name| provider.validate("ethereum", provider_name),
         )
     }
 }
@@ -32,7 +30,11 @@ pub struct EthereumProviderConfig {
     pub auth: auth::AuthConfig,
 }
 
-impl EthereumProviderConfig {
+impl ForeignChainProviderConfig for EthereumProviderConfig {
+    fn rpc_url(&self) -> &str {
+        self.rpc_url.as_str()
+    }
+
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {
         auth::validate_auth_config(&self.auth, &self.rpc_url, chain_label, provider_name)
     }
