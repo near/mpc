@@ -24,7 +24,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.4.0"
+version = "3.4.1"
 edition = "2024"
 license = "MIT"
 
@@ -56,6 +56,7 @@ base64 = "0.22"
 blstrs = "0.7.1"
 borsh = { version = "1.6.0", features = ["derive"] }
 bs58 = { version = "0.5.1" }
+built = { version = "0.8", features = ["git2", "chrono"] }
 bytes = { version = "1.11.0" }
 cargo-near-build = "0.11.1"
 clap = { version = "4.5.20", features = ["derive", "env"] }
