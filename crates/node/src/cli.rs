@@ -1,8 +1,9 @@
 use crate::{
     config::{
         generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
-        ConfigFile, IndexerConfig, KeygenConfig, PersistentSecrets, PresignatureConfig,
-        RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PersistentSecrets,
+        PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
+        WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -698,6 +699,7 @@ impl Cli {
             signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: ForeignChainsConfig::default(),
             cores: Some(4),
         })
     }
