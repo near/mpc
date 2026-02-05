@@ -1,4 +1,5 @@
 use anyhow::Context;
+use contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,6 +41,48 @@ impl ForeignChainsConfig {
         }
         Ok(())
     }
+
+    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let mut chains = BTreeSet::new();
+
+        if let Some(config) = &self.solana {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        if let Some(config) = &self.bitcoin {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Bitcoin,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        if let Some(config) = &self.ethereum {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Ethereum,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        Some(dtos::ForeignChainPolicy { chains })
+    }
+}
+
+fn providers_to_set<P: ForeignChainProviderConfig>(
+    providers: &BTreeMap<String, P>,
+) -> BTreeSet<dtos::RpcProvider> {
+    providers
+        .values()
+        .map(|provider| dtos::RpcProvider {
+            rpc_url: provider.rpc_url().trim().to_string(),
+        })
+        .collect()
 }
 
 pub(crate) trait ForeignChainProviderConfig {
