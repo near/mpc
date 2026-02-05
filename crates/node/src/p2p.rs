@@ -419,6 +419,8 @@ impl SenderConnectionId for IncomingConnection {
     }
 }
 
+const TLS_ACCEPT_TIMEOUT_ON_ERROR: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
@@ -496,141 +498,30 @@ pub async fn new_tls_mesh_network(
     let incoming_connections_task =
         tracking::spawn("incoming connection handler tls mesh network", async move {
             let mut tasks = AutoAbortTaskCollection::new();
-            while let Ok((tcp_stream, _)) = tcp_listener.accept().await {
-                let message_sender = message_sender.clone();
-                let participant_identities = participant_identities.clone();
-                let tls_acceptor = tls_acceptor.clone();
-                let connectivities = connectivities_clone.clone();
-                tasks.spawn_checked::<_, ()>(
-                    "new connection handler tls mesh network",
-                    async move {
-                        let tcp_stream = configure_tcp_stream(tcp_stream)?;
-                        let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
-
-                        let peer_id =
-                            verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
-                        tracking::set_progress(&format!("Authenticated as {}", peer_id));
-
-                        let peer = connectivities.get(peer_id)?;
-                        // If we have an existing connection, we require this connection attempt to
-                        // be newer than the existing connection (to avoid race conditions, c.f. github issue #1759).
-                        let min_expected_connection_id: u32 = match peer.sender_connection_id() {
-                            Some(existing_connection_id) => existing_connection_id.wrapping_add(1),
-                            None => MIN_EXPECTED_CONNECTION_ID,
-                        };
-
-                        let connection_info = timeout(
-                            OutgoingConnection::HANDSHAKE_TIMEOUT,
-                            p2p_handshake_listener(
-                                ListenerData {
-                                    min_expected_connection_id,
-                                },
-                                &mut tls_stream,
+            loop {
+                match tcp_listener.accept().await {
+                    Ok((tcp_stream, _)) => {
+                        let message_sender = message_sender.clone();
+                        let participant_identities = participant_identities.clone();
+                        let tls_acceptor = tls_acceptor.clone();
+                        let connectivities = connectivities_clone.clone();
+                        tasks.spawn_checked::<_, ()>(
+                            "new connection handler tls mesh network",
+                            incoming_connection_handler(
+                                message_sender,
+                                connectivities,
+                                tcp_stream,
+                                tls_acceptor,
+                                participant_identities,
+                                my_id,
                             ),
-                        )
-                        .await??;
-                        let sender_connection_id = match connection_info {
-                            HandshakeOutcome::Unsupported(peer_version) => {
-                                if let Err(err) = tls_stream.shutdown().await {
-                                    tracing::error!(err = %err, "TLS shutdown failed");
-                                }
-                                anyhow::bail!(
-                                    "peer runs unsupported protocol version theirs={}, ours={}",
-                                    peer_version,
-                                    CURRENT_PROTOCOL_VERSION
-                                );
-                            }
-                            HandshakeOutcome::Dec2025(accepted) => {
-                                if !accepted {
-                                    tracing::info!(
-                                        "Connection attempt {} <-- {} ignored",
-                                        my_id,
-                                        peer_id,
-                                    );
-                                    tls_stream.shutdown().await?;
-                                    return Ok(());
-                                }
-                                1
-                            }
-                            HandshakeOutcome::Jan2026(connection_info) => {
-                                if !connection_info.is_accepted() {
-                                    if let Err(err) = tls_stream.shutdown().await {
-                                        tracing::error!(err = %err, "TLS shutdown failed");
-                                    }
-                                    anyhow::bail!("Connection not accepted: {:?}", connection_info);
-                                } else {
-                                    connection_info.sender_connection_id
-                                }
-                            }
-                        };
-                        tracing::info!("Incoming {} <-- {} handshake succeeded", my_id, peer_id);
-                        let incoming_conn = Arc::new(IncomingConnection {
-                            sender_connection_id,
-                        });
-                        if let Err(err) = connectivities
-                            .get(peer_id)?
-                            .set_incoming_connection(&incoming_conn)
-                        {
-                            tracing::info!("can't accept incoming connection: {}", err);
-                            tls_stream.shutdown().await?;
-                            return Ok(());
-                        }
-
-                        let mut received_bytes: u64 = 0;
-                        let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
-
-                        let peer_id_string = peer_id.to_string();
-
-                        loop {
-                            let payload_bytes = framed_tls_stream_reader
-                                .next()
-                                .timeout(MESSAGE_READ_TIMEOUT_DURATION)
-                                .await?
-                                .ok_or(anyhow!("infallible, tls stream is unending"))??;
-
-                            let total_message_size_bytes =
-                                FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
-
-                            let packet = Packet::try_from_slice(&payload_bytes)
-                                .context("Failed to deserialize packet")?;
-
-                            let message_label = packet.message_type_label();
-
-                            match packet {
-                                Packet::Ping => {
-                                    // Do nothing. Pings are just for TCP keepalive.
-                                }
-                                Packet::MpcMessage(mpc_message) => {
-                                    message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
-                                        from: peer_id,
-                                        message: mpc_message,
-                                    }))?;
-                                }
-                                Packet::IndexerHeight(message) => {
-                                    message_sender.send(PeerMessage::IndexerHeight(
-                                        PeerIndexerHeightMessage {
-                                            from: peer_id,
-                                            message,
-                                        },
-                                    ))?;
-                                }
-                            }
-
-                            let metric_labels =
-                                [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
-
-                            MPC_P2P_TCP_WRITE_SIZE_BYTES
-                                .with_label_values(&metric_labels)
-                                .observe(total_message_size_bytes as f64);
-
-                            received_bytes += total_message_size_bytes;
-                            tracking::set_progress(&format!(
-                                "Received {} bytes from {}",
-                                received_bytes, peer_id
-                            ));
-                        }
-                    },
-                );
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!("error accepting tcp stream: {}", err);
+                        tokio::time::sleep(TLS_ACCEPT_TIMEOUT_ON_ERROR).await;
+                    }
+                }
             }
         });
 
@@ -652,6 +543,132 @@ pub async fn new_tls_mesh_network(
     };
 
     Ok((sender, receiver))
+}
+
+async fn incoming_connection_handler(
+    message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
+    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnection>>,
+    tcp_stream: TcpStream,
+    tls_acceptor: TlsAcceptor,
+    participant_identities: Arc<ParticipantIdentities>,
+    my_id: ParticipantId,
+) -> anyhow::Result<()> {
+    let tcp_stream = configure_tcp_stream(tcp_stream)?;
+    let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
+
+    let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
+    tracking::set_progress(&format!("Authenticated as {}", peer_id));
+
+    let peer = connectivities.get(peer_id)?;
+    // If we have an existing connection, we require this connection attempt to
+    // be newer than the existing connection (to avoid race conditions, c.f. github issue #1759).
+    let min_expected_connection_id: u32 = match peer.sender_connection_id() {
+        Some(existing_connection_id) => existing_connection_id.wrapping_add(1),
+        None => MIN_EXPECTED_CONNECTION_ID,
+    };
+
+    let connection_info = timeout(
+        OutgoingConnection::HANDSHAKE_TIMEOUT,
+        p2p_handshake_listener(
+            ListenerData {
+                min_expected_connection_id,
+            },
+            &mut tls_stream,
+        ),
+    )
+    .await??;
+    let sender_connection_id = match connection_info {
+        HandshakeOutcome::Unsupported(peer_version) => {
+            if let Err(err) = tls_stream.shutdown().await {
+                tracing::error!(err = %err, "TLS shutdown failed");
+            }
+            anyhow::bail!(
+                "peer runs unsupported protocol version theirs={}, ours={}",
+                peer_version,
+                CURRENT_PROTOCOL_VERSION
+            );
+        }
+        HandshakeOutcome::Dec2025(accepted) => {
+            if !accepted {
+                tracing::info!("Connection attempt {} <-- {} ignored", my_id, peer_id,);
+                tls_stream.shutdown().await?;
+                return Ok(());
+            }
+            1
+        }
+        HandshakeOutcome::Jan2026(connection_info) => {
+            if !connection_info.is_accepted() {
+                if let Err(err) = tls_stream.shutdown().await {
+                    tracing::error!(err = %err, "TLS shutdown failed");
+                }
+                anyhow::bail!("Connection not accepted: {:?}", connection_info);
+            } else {
+                connection_info.sender_connection_id
+            }
+        }
+    };
+    tracing::info!("Incoming {} <-- {} handshake succeeded", my_id, peer_id);
+    let incoming_conn = Arc::new(IncomingConnection {
+        sender_connection_id,
+    });
+    if let Err(err) = connectivities
+        .get(peer_id)?
+        .set_incoming_connection(&incoming_conn)
+    {
+        tracing::info!("can't accept incoming connection: {}", err);
+        tls_stream.shutdown().await?;
+        return Ok(());
+    }
+
+    let mut received_bytes: u64 = 0;
+    let mut framed_tls_stream_reader = configure_framed_stream(tls_stream);
+
+    let peer_id_string = peer_id.to_string();
+
+    loop {
+        let payload_bytes = framed_tls_stream_reader
+            .next()
+            .timeout(MESSAGE_READ_TIMEOUT_DURATION)
+            .await?
+            .ok_or(anyhow!("infallible, tls stream is unending"))??;
+
+        let total_message_size_bytes = FRAME_HEADER_SIZE_BYTES as u64 + payload_bytes.len() as u64;
+
+        let packet =
+            Packet::try_from_slice(&payload_bytes).context("Failed to deserialize packet")?;
+
+        let message_label = packet.message_type_label();
+
+        match packet {
+            Packet::Ping => {
+                // Do nothing. Pings are just for TCP keepalive.
+            }
+            Packet::MpcMessage(mpc_message) => {
+                message_sender.send(PeerMessage::Mpc(MpcPeerMessage {
+                    from: peer_id,
+                    message: mpc_message,
+                }))?;
+            }
+            Packet::IndexerHeight(message) => {
+                message_sender.send(PeerMessage::IndexerHeight(PeerIndexerHeightMessage {
+                    from: peer_id,
+                    message,
+                }))?;
+            }
+        }
+
+        let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
+
+        MPC_P2P_TCP_WRITE_SIZE_BYTES
+            .with_label_values(&metric_labels)
+            .observe(total_message_size_bytes as f64);
+
+        received_bytes += total_message_size_bytes;
+        tracking::set_progress(&format!(
+            "Received {} bytes from {}",
+            received_bytes, peer_id
+        ));
+    }
 }
 
 fn configure_tcp_stream(tcp_stream: TcpStream) -> anyhow::Result<TcpStream> {
