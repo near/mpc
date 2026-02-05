@@ -1,9 +1,10 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AuthConfig {
+    #[default]
     None,
     Header {
         name: String,
@@ -19,12 +20,6 @@ pub enum AuthConfig {
         name: String,
         token: TokenConfig,
     },
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
