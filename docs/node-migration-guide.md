@@ -164,7 +164,6 @@ Set up your new node on the new host with the following:
    ```bash
    export MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
    ```
-4. **Do not start the node yet** - it needs the keyshares first
 
 ### Collect New Node Information
 
