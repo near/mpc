@@ -152,7 +152,7 @@ backup-cli \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
-The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/keyshares.json`.
+The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH_ID>with<NUM_DOMAINS>_domains`.
 
 ## Step 5: Prepare the New Node
 
