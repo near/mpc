@@ -6,24 +6,29 @@ pub mod bitcoin;
 
 pub(crate) mod rpc_types;
 
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RpcError {
-    #[error("inner network client failed to fetch")]
-    ClientError,
-    #[error("got a bad response from the RPC provider")]
-    BadResponse,
+pub trait ForeignChainInspector {
+    type TransactionId;
+    type Finality;
+    type Extractor;
+    type ExtractedValue;
+    fn extract(
+        &self,
+        tx_id: Self::TransactionId,
+        finality: Self::Finality,
+        extractors: Vec<Self::Extractor>,
+    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
 }
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ForeignChainInspectionError {
-    #[error("rpc client failed to fetch transaction information")]
-    RpcClientError(#[from] RpcError),
-    #[error(
-        "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
-    )]
-    NotEnoughBlockConfirmations {
-        expected: BlockConfirmations,
-        got: BlockConfirmations,
-    },
+
+pub trait ForeignChainRpcClient {
+    type TransactionId;
+    type Finality;
+    type RpcResponse;
+
+    fn get(
+        &self,
+        transaction: Self::TransactionId,
+        finality: Self::Finality,
+    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
 }
 
 #[derive(Debug, Clone)]
@@ -48,27 +53,22 @@ pub enum Finality {
     Final,
 }
 
-pub trait ForeignChainInspector {
-    type TransactionId;
-    type Finality;
-    type Extractor;
-    type ExtractedValue;
-    fn extract(
-        &self,
-        tx_id: Self::TransactionId,
-        finality: Self::Finality,
-        extractors: Vec<Self::Extractor>,
-    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RpcError {
+    #[error("inner network client failed to fetch")]
+    ClientError,
+    #[error("got a bad response from the RPC provider")]
+    BadResponse,
 }
-
-pub trait ForeignChainRpcClient {
-    type TransactionId;
-    type Finality;
-    type RpcResponse;
-
-    fn get(
-        &self,
-        transaction: Self::TransactionId,
-        finality: Self::Finality,
-    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ForeignChainInspectionError {
+    #[error("rpc client failed to fetch transaction information")]
+    RpcClientError(#[from] RpcError),
+    #[error(
+        "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
+    )]
+    NotEnoughBlockConfirmations {
+        expected: BlockConfirmations,
+        got: BlockConfirmations,
+    },
 }
