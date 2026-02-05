@@ -88,7 +88,6 @@ Thus, it seems sensible to offer separate API's for:
 The indexer should offer a convenient method for viewing and subscribing to MPC contract state. While it would be sufficient to only expose a simple view function like the following:
 
 ```rust
-#[async_trait::async_trait]
 trait MpcContractStateView {
     async fn get<T: DeserializeOwned>(
         &self,
@@ -100,7 +99,6 @@ trait MpcContractStateView {
 we might need re-write a lot of the monitoring and subscription logic on the consumer side. Hence, it makes sense to additionally expose a subscriber logic:
 
 ```rust
-#[async_trait::async_trait]
 trait MpcContractStateSubscriber {
     async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
         &self,
@@ -113,7 +111,6 @@ trait MpcContractStateSubscriber {
 Alternatively, if we are concerned about having `tokio::watch` and `oneshot` channels in our API, we could return a struct with the following traits:
 
 ```rust
-#[async_trait::async_trait]
 trait ContractStateStream<T> {
     /// is synchronous, contains the last seen value
     fn latest(&self) -> (BlockHeight, &T);
@@ -122,7 +119,6 @@ trait ContractStateStream<T> {
     async fn next(&mut self) -> (BlockHeight, &T);
 }
 
-#[async_trait::async_trait]
 trait MpcContractStateSubscriber {
     async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
         &self,
@@ -176,7 +172,7 @@ For the next few months, the only expected user of block streams is the MPC node
 ```Rust
 // c.f. https://github.com/near/mpc/issues/236 for start_block_height
 trait MpcEventSubscriber {
-    async fn subscribe(interval: Duration, channel_size: usize, start_block_height) -> anyhow::Result<mpsc::Receiver<ChainBlockUpdate>>;
+    async fn subscribe(interval: Duration, channel_size: usize, start_block_height: BlockHeight) -> anyhow::Result<mpsc::Receiver<ChainBlockUpdate>>;
 }
 
 pub struct ChainBlockUpdate {
