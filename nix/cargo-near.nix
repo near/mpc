@@ -11,16 +11,16 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "cargo-near";
-  version = "0.18.0";
+  version = "0.19.1";
 
   src = fetchFromGitHub {
     owner = "near";
     repo = "cargo-near";
     rev = "cargo-near-v${version}";
-    hash = "sha256-rkqXOfItKO1MmdUFCih6b6g5057iWI6s1JWu/F6r0DY=";
+    hash = "sha256-D+z2zKE2Vbzj3A6KuR8FGwY2KqRZJJpIeD1GZEZGmeY=";
   };
 
-  cargoHash = "sha256-6GoSN+BrM0sw4rqW+6PIPwkTqZsJDyZAHOm78MtOm90=";
+  cargoHash = "sha256-m1EloFOJDDkK35V4tAmhtkVexO2J8dnYmah2DjOE4DQ=";
 
   nativeBuildInputs = [
     pkg-config
