@@ -142,7 +142,7 @@ near contract call-function as-read-only \
 This saves the contract state to `contract_state.json`, which the backup-cli uses to determine which keyshares to request.
 
 ### Run the Backup
-
+Port 8079 is the default port for the migration endpoint
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
