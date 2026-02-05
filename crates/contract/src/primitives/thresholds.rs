@@ -310,12 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn test_proposal_non_unique_ids() {
+    fn test_proposal_invalid_next_id() {
         let params = gen_threshold_params(10);
-
-        // With BTreeMap-based Participants, duplicate AccountIds are automatically deduplicated.
-        // We can still test that the validate_incoming_proposal catches proposals with
-        // incorrect participant counts.
 
         // Create a tampered Participants with an invalid next_id (lower than max participant id)
         let vec = participants_vec(&params.participants);
