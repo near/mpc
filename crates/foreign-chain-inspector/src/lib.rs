@@ -48,20 +48,27 @@ pub enum Finality {
     Final,
 }
 
-pub trait ForeignChainInspector<TransactionId, Finality, Extractor, ExtractedValue> {
+pub trait ForeignChainInspector {
+    type TransactionId;
+    type Finality;
+    type Extractor;
+    type ExtractedValue;
     fn extract(
         &self,
-        tx_id: TransactionId,
-        finality: Finality,
-        extractors: Vec<Extractor>,
-    ) -> impl Future<Output = Result<Vec<ExtractedValue>, ForeignChainInspectionError>>;
+        tx_id: Self::TransactionId,
+        finality: Self::Finality,
+        extractors: Vec<Self::Extractor>,
+    ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
 }
 
-#[mockall::automock]
-pub trait ForeignChainRpcClient<TransactionId, Finality, RpcResponse> {
+pub trait ForeignChainRpcClient {
+    type TransactionId;
+    type Finality;
+    type RpcResponse;
+
     fn get(
         &self,
-        transaction: TransactionId,
-        finality: Finality,
-    ) -> impl Future<Output = Result<RpcResponse, RpcError>>;
+        transaction: Self::TransactionId,
+        finality: Self::Finality,
+    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
 }
