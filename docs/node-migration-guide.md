@@ -123,7 +123,7 @@ Now backup the keyshares from your currently running node.
 ### Obtain Node Information
 
 You'll need:
-- **MPC node address**: The host:port where your node is running (e.g., `node.example.com:3000`)
+- **MPC node address**: The host where your node is running (e.g., `node.example.com`)
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
 
 ### Get Contract State
