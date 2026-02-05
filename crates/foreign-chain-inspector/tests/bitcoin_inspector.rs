@@ -1,13 +1,14 @@
-use assert_matches::assert_matches;
-use mockall::predicate::eq;
-use rpc_extractor::bitcoin::inspector::{
-    BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector,
-};
-use rpc_extractor::{
+use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
     MockForeignChainRpcClient, RpcError,
-    bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
+    bitcoin::{
+        BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash,
+        inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
+    },
 };
+
+use assert_matches::assert_matches;
+use mockall::predicate::eq;
 
 type MockBitcoinRpcClient =
     MockForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>;
