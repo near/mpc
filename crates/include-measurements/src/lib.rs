@@ -151,13 +151,8 @@ mod tests {
         let result = generate_measurements_tokens(invalid_json);
 
         // Then
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to parse TCB info JSON")
-        );
+        let err = result.expect_err("Invalid JSON should fail to parse");
+        assert!(err.to_string().contains("Failed to parse TCB info JSON"));
     }
 
     #[test]
@@ -180,11 +175,9 @@ mod tests {
         let result = generate_measurements_tokens(json_without_key_provider);
 
         // Then
-        assert!(result.is_err());
+        let err = result.expect_err("Missing key-provider event should fail");
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
+            err.to_string()
                 .contains("Expected exactly one key-provider event, found 0")
         );
     }
@@ -224,11 +217,9 @@ mod tests {
         let result = generate_measurements_tokens(json_with_multiple_key_providers);
 
         // Then
-        assert!(result.is_err());
+        let err = result.expect_err("Multiple key-provider events should fail");
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
+            err.to_string()
                 .contains("Expected exactly one key-provider event, found 2")
         );
     }

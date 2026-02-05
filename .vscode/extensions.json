@@ -2,6 +2,18 @@
     "recommendations": [
         // needed for rust-analyzer to run in nix environment
         "mkhl.direnv",
+        // rust
         "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml",
+        "JScearcy.rust-doc-viewer",
+        // github utilities
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        // python
+        "ms-python.python",
+        "charliermarsh.ruff",
+        // spell-checker
+        "streetsidesoftware.code-spell-checker",
     ]
 }

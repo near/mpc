@@ -117,3 +117,5 @@ impl Request for SignatureRequest {
         RequestType::Signature
     }
 }
+
+pub type VerifyForeignTxId = CryptoHash;

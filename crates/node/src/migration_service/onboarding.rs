@@ -411,8 +411,9 @@ mod tests {
             cancel_import,
         )
         .await;
-        assert!(res.is_err());
-        let err = res.unwrap_err().to_string();
+        let err = res
+            .expect_err("Dropping the sender should stop keyshare import")
+            .to_string();
         assert!(err.contains(KEYSHARE_SENDER_CLOSED_MSG));
     }
 
@@ -453,7 +454,10 @@ mod tests {
         assert_eq!(task.job, OnboardingJob::Done);
 
         monitoring_cancellation_token.cancel();
-        assert!(task_receiver.changed().await.is_err());
+        let _ = task_receiver
+            .changed()
+            .await
+            .expect_err("Task receiver should close after monitoring cancellation");
         assert!(contract_state_sender.is_closed());
     }
     struct OnboardingMonitoringTaskSetup {

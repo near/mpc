@@ -1084,12 +1084,20 @@ mod tests {
         assert_eq!(store.num_owned(), 0); // does not affect owned
 
         assert_eq!(store.take_unowned(id1).unwrap(), 123);
-        assert!(store.take_unowned(id1).is_err());
+        let _ = store
+            .take_unowned(id1)
+            .expect_err("Should not take an unowned item twice");
 
-        assert!(store.take_unowned(id3).is_err());
+        let _ = store
+            .take_unowned(id3)
+            .expect_err("Missing unowned item should return an error");
         assert_eq!(store.take_unowned(id2).unwrap(), 234);
-        assert!(store.take_unowned(id2).is_err());
-        assert!(store.take_unowned(id1).is_err());
+        let _ = store
+            .take_unowned(id2)
+            .expect_err("Should not take an unowned item twice");
+        let _ = store
+            .take_unowned(id1)
+            .expect_err("Missing unowned item should return an error");
     }
 
     #[test]
