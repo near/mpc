@@ -419,8 +419,6 @@ impl SenderConnectionId for IncomingConnection {
     }
 }
 
-const TLS_ACCEPT_TIMEOUT_ON_ERROR: std::time::Duration = std::time::Duration::from_secs(1);
-
 /// Creates a mesh network using TLS over TCP for communication.
 pub async fn new_tls_mesh_network(
     config: &MpcConfig,
