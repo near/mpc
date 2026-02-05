@@ -159,6 +159,51 @@ mod tests {
     }
 
     #[test]
+    fn rpc_response_prefers_error_when_both_result_and_error_present() {
+        // Given
+        let json = r#"{
+            "result": "Some value",
+            "error": {
+                "code": 123,
+                "message": "Error wins"
+            },
+            "id": 1
+        }"#;
+
+        // When
+        let response: JsonRpcResponse<String> = from_str(json).expect("Should deserialize");
+
+        // Then
+        assert_eq!(
+            response,
+            JsonRpcResponse(Err(JsonRpcError {
+                code: 123,
+                message: "Error wins".to_string(),
+            }))
+        );
+    }
+
+    #[test]
+    fn rpc_response_should_fail_when_result_and_error_are_null() {
+        // Given
+        let json = r#"{
+            "result": null,
+            "error": null,
+            "id": 1
+        }"#;
+
+        // When
+        let result: Result<JsonRpcResponse<String>, _> = from_str(json);
+
+        // Then
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Response must contain either 'result' or 'error'"
+        );
+    }
+
+    #[test]
     fn rpc_request_should_serialize_request_with_positional_params() {
         // Given
         let request = JsonRpcRequest {
