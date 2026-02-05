@@ -563,7 +563,6 @@ fn default_pprof_bind_address() -> SocketAddr {
 }
 
 #[cfg(test)]
-#[allow(non_snake_case)]
 pub mod tests {
     use assert_matches::assert_matches;
     use k256::ecdsa::signature::SignerMut;
