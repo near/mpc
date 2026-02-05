@@ -147,7 +147,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
-  --mpc-node-address node.example.com:3000 \
+  --mpc-node-address node.example.com:8079\
   --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..." \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
