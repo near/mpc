@@ -355,52 +355,52 @@ impl KeyshareStorage {
     }
 
     /*
-        fn verify_existing_keyshares_are_prefix_of_keyset(
-            existing_keyshares: &[Keyshare],
-            epoch_id: EpochId,
-            expected_keys: &[KeyForDomain],
-        ) -> anyhow::Result<()> {
-            if existing_keyshares.len() > expected_keys.len() {
-                anyhow::bail!(
-                    "Existing permanent keyshare for epoch {:?} has more domains {} than expected {}",
-                    epoch_id,
-                    existing_keyshares.len(),
-                    expected_keys.len()
-                );
-            }
-            for (i, existing_keyshare) in existing_keyshares.iter().enumerate() {
-                let domain = &expected_keys[i];
-                existing_keyshare
-                    .check_consistency(epoch_id, domain)
-                    .with_context(|| {
-                        format!(
-                            "Existing permanent keyshare epoch {:?} index {}",
-                            epoch_id, i
-                        )
-                    })?;
-            }
-            Ok(())
-        }
-  */
-        /// Loads a keyshare from temporary storage and verifies that it is consistent with the given
-        /// key's key ID and public key.
-        async fn load_keyshare_from_temporary(
-            &self,
-            epoch_id: EpochId,
-            key: &KeyForDomain,
-        ) -> anyhow::Result<Keyshare> {
-            let key_id = KeyEventId::new(epoch_id, key.domain_id, key.attempt);
-            let keyshare = self
-                .temporary
-                .load_keyshare(key_id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
-            keyshare
-                .check_consistency(epoch_id, key)
-                .with_context(|| format!("Keyshare loaded from temporary storage for {:?}", key_id))?;
-            Ok(keyshare)
-        }
-  
+          fn verify_existing_keyshares_are_prefix_of_keyset(
+              existing_keyshares: &[Keyshare],
+              epoch_id: EpochId,
+              expected_keys: &[KeyForDomain],
+          ) -> anyhow::Result<()> {
+              if existing_keyshares.len() > expected_keys.len() {
+                  anyhow::bail!(
+                      "Existing permanent keyshare for epoch {:?} has more domains {} than expected {}",
+                      epoch_id,
+                      existing_keyshares.len(),
+                      expected_keys.len()
+                  );
+              }
+              for (i, existing_keyshare) in existing_keyshares.iter().enumerate() {
+                  let domain = &expected_keys[i];
+                  existing_keyshare
+                      .check_consistency(epoch_id, domain)
+                      .with_context(|| {
+                          format!(
+                              "Existing permanent keyshare epoch {:?} index {}",
+                              epoch_id, i
+                          )
+                      })?;
+              }
+              Ok(())
+          }
+    */
+    /// Loads a keyshare from temporary storage and verifies that it is consistent with the given
+    /// key's key ID and public key.
+    async fn load_keyshare_from_temporary(
+        &self,
+        epoch_id: EpochId,
+        key: &KeyForDomain,
+    ) -> anyhow::Result<Keyshare> {
+        let key_id = KeyEventId::new(epoch_id, key.domain_id, key.attempt);
+        let keyshare = self
+            .temporary
+            .load_keyshare(key_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
+        keyshare
+            .check_consistency(epoch_id, key)
+            .with_context(|| format!("Keyshare loaded from temporary storage for {:?}", key_id))?;
+        Ok(keyshare)
+    }
+
     /// Imports keyshares from the provided backup into permanent storages.
     ///
     /// The following validation is performed:
