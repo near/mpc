@@ -1,5 +1,5 @@
 use alloc::string::String;
-use borsh::{BorshDeserialize, BorshSerialize, error};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::{marker::PhantomData, str::FromStr};
 use derive_more::{AsRef, Deref, Into};
 use hex::FromHexError;
@@ -127,6 +127,7 @@ mod tests {
     use alloc::format;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
+    #[derive(Debug)]
     struct TestMarker;
     type TestHash = Hash32<TestMarker>;
 
