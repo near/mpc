@@ -207,7 +207,17 @@ near contract call-function as-transaction \
 - `sign_pk`: The P2P public key (Ed25519) used for mutual TLS authentication between nodes
 
 **Why the nested naming?** The contract's `DestinationNodeInfo` type has a field named `destination_node_info` of type `ParticipantInfo`. While the naming may seem redundant, it matches the contract's structure and must be used exactly as shown.
+### Verify Migration Was Registered on the Contract
 
+After calling `start_node_migration`, verify that the destination node was registered correctly on-chain:
+
+```bash
+near contract call-function as-read-only \
+  <MPC_CONTRACT_ACCOUNT> \
+  migration_info \
+  json-args {} \
+  network-config <NETWORK> \
+  now
 ## Step 7: Restore Keyshares to New Node
 
 Start your new node (which should have `MPC_BACKUP_ENCRYPTION_KEY_HEX` set), then transfer the keyshares:
