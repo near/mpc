@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::{marker::PhantomData, str::FromStr};
 use derive_more::{AsRef, Deref, Into};
