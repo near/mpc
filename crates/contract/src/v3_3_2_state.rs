@@ -23,7 +23,7 @@ use crate::{
     state::ProtocolContractState,
     tee::tee_state::{NodeId, TeeState},
     update::ProposedUpdates,
-    Config,
+    Config, StorageKey,
 };
 
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
@@ -59,6 +59,9 @@ impl From<MpcContract> for crate::MpcContract {
             protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: value.proposed_updates,
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),

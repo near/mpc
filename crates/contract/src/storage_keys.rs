@@ -18,4 +18,5 @@ pub enum StorageKey {
     BackupServicesInfo,
     NodeMigrations,
     ForeignChainPolicyVotes,
+    PendingVerifyForeignTxRequests,
 }
