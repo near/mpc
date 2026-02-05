@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-## [3.4.1] - 2026-02-04
+## [3.4.1] - 2026-02-05
 
 ### 🚀 Features
 
@@ -21,6 +21,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1939](https://github.com/near/mpc/pull/1939)(@gilcu3): Ensure test_verify_tee_expired_attestation_triggers_resharing is not flaky (#1939)
 
 - [#1831](https://github.com/near/mpc/pull/1831)(@kevindeforth): Properly fix network race condition (#1831)
+
+- [#1983](https://github.com/near/mpc/pull/1983)(@kevindeforth): *(network)* TCP Listener task must not die (#1983)
 
 
 ### 📚 Documentation
@@ -46,6 +48,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1951](https://github.com/near/mpc/pull/1951)(@gilcu3): Enable test_embedded abi test (#1951)
 
+- [#1937](https://github.com/near/mpc/pull/1937)(@barakeinav1): Add localnet TEE automation scripts and templates (#1937)
+
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -66,6 +70,8 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 - [#1950](https://github.com/near/mpc/pull/1950)(@DSharifi): RPC requests to EVM chains should have separate struct per chain (#1950)
 
 - [#1973](https://github.com/near/mpc/pull/1973)(@gilcu3): Remove extra license file (#1973)
+
+- [#1982](https://github.com/near/mpc/pull/1982)(@DSharifi): Add `git-cliff` to nix dev environment (#1982)
 
 
 ## [3.4.0] - 2026-01-29
