@@ -5,6 +5,7 @@ use super::types::{
     ChainSendTransactionRequest, ChainSignatureRespondArgs, ConcludeNodeMigrationArgs,
 };
 use super::IndexerAPI;
+use super::ReadForeignChainPolicy;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
 use crate::indexer::types::{ChainCKDRespondArgs, ChainVerifyForeignTransactionRespondArgs};
@@ -47,7 +48,31 @@ pub struct FakeMpcContractState {
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes,
     pub migration_service: NodeMigrations,
+}
+
+#[derive(Clone)]
+pub struct FakeForeignChainPolicyReader {
+    contract: Arc<tokio::sync::Mutex<FakeMpcContractState>>,
+}
+
+impl ReadForeignChainPolicy for FakeForeignChainPolicyReader {
+    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
+        Ok(self.contract.lock().await.foreign_chain_policy().clone())
+    }
+
+    async fn get_foreign_chain_policy_proposals(
+        &self,
+    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+        Ok(self
+            .contract
+            .lock()
+            .await
+            .foreign_chain_policy_votes()
+            .clone())
+    }
 }
 
 impl FakeMpcContractState {
@@ -65,8 +90,18 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
+            foreign_chain_policy: dtos::ForeignChainPolicy::default(),
+            foreign_chain_policy_votes: dtos::ForeignChainPolicyVotes::default(),
             migration_service: NodeMigrations::default(),
         }
+    }
+
+    pub fn foreign_chain_policy(&self) -> &dtos::ForeignChainPolicy {
+        &self.foreign_chain_policy
+    }
+
+    pub fn foreign_chain_policy_votes(&self) -> &dtos::ForeignChainPolicyVotes {
+        &self.foreign_chain_policy_votes
     }
 
     pub fn initialize(&mut self, participants: ParticipantsConfig) {
@@ -238,6 +273,77 @@ impl FakeMpcContractState {
                 );
             }
         }
+    }
+
+    pub fn vote_foreign_chain_policy(
+        &mut self,
+        account_id: AccountId,
+        policy: dtos::ForeignChainPolicy,
+    ) {
+        let ProtocolContractState::Running(state) = &self.state else {
+            tracing::info!(
+                "vote_foreign_chain_policy transaction ignored because the contract is not in running state"
+            );
+            return;
+        };
+
+        if let Err(e) = Self::validate_foreign_chain_policy(&policy) {
+            tracing::info!("vote_foreign_chain_policy transaction failed: {}", e);
+            return;
+        }
+
+        let is_participant = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .any(|(participant_id, _, _)| participant_id == &account_id);
+
+        if !is_participant {
+            tracing::info!(
+                "vote_foreign_chain_policy transaction ignored because signer is not a participant"
+            );
+            return;
+        }
+
+        let voter = dtos::AccountId(account_id.to_string());
+        let _previous = self
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .insert(voter, policy.clone());
+
+        let total_votes = state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .filter(|(participant_id, _, _)| {
+                self.foreign_chain_policy_votes
+                    .proposal_by_account
+                    .get(&dtos::AccountId(participant_id.to_string()))
+                    .is_some_and(|prop| prop == &policy)
+            })
+            .count();
+
+        if total_votes == state.parameters.participants().len() {
+            self.foreign_chain_policy = policy;
+            self.foreign_chain_policy_votes.proposal_by_account.clear();
+        }
+    }
+
+    fn validate_foreign_chain_policy(
+        policy: &dtos::ForeignChainPolicy,
+    ) -> Result<(), &'static str> {
+        let mut seen_chains = BTreeSet::new();
+        for config in &policy.chains {
+            if config.providers.is_empty() {
+                return Err("foreign chain config must include at least one provider");
+            }
+            if !seen_chains.insert(config.chain.clone()) {
+                return Err("duplicate foreign chain entries in policy");
+            }
+        }
+        Ok(())
     }
 
     pub fn update_participant_info(
@@ -568,6 +674,10 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::VoteReshared(reshared) => {
                         let mut contract = contract.lock().await;
                         contract.vote_reshared(account_id, reshared.key_event_id);
+                    }
+                    ChainSendTransactionRequest::VoteForeignChainPolicy(vote) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_foreign_chain_policy(account_id, vote.policy);
                     }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
@@ -907,7 +1017,7 @@ impl FakeIndexerManager {
         account_id: AccountId,
         p2p_public_key: VerifyingKey,
     ) -> (
-        IndexerAPI<MockTransactionSender>,
+        IndexerAPI<MockTransactionSender, FakeForeignChainPolicyReader>,
         AutoAbortTask<()>,
         Arc<std::sync::Mutex<String>>,
     ) {
@@ -929,6 +1039,9 @@ impl FakeIndexerManager {
         let mock_transaction_sender = MockTransactionSender {
             transaction_sender: api_txn_sender,
         };
+        let foreign_chain_policy_reader = FakeForeignChainPolicyReader {
+            contract: self.contract.clone(),
+        };
         let indexer = IndexerAPI {
             contract_state_receiver: api_state_receiver,
             block_update_receiver: Arc::new(tokio::sync::Mutex::new(
@@ -939,6 +1052,7 @@ impl FakeIndexerManager {
             allowed_launcher_compose_receiver,
             attested_nodes_receiver: watch::channel(vec![]).1,
             my_migration_info_receiver,
+            foreign_chain_policy_reader,
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));
@@ -1052,5 +1166,65 @@ impl FakeIndexerManager {
 
     pub async fn contract_mut(&self) -> tokio::sync::MutexGuard<'_, FakeMpcContractState> {
         self.contract.lock().await
+    }
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::config::{ParticipantInfo as ConfigParticipantInfo, ParticipantsConfig};
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+
+    fn participants_config_with_signer(account_id: AccountId) -> ParticipantsConfig {
+        ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                ConfigParticipantInfo {
+                    id: crate::primitives::ParticipantId::from_raw(0),
+                    address: "127.0.0.1".to_string(),
+                    port: 3030,
+                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
+                    near_account_id: account_id,
+                },
+                ConfigParticipantInfo {
+                    id: crate::primitives::ParticipantId::from_raw(1),
+                    address: "127.0.0.1".to_string(),
+                    port: 3031,
+                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
+                    near_account_id: "test1.near".parse().unwrap(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_reject_empty_providers() {
+        // Given
+        let account_id: AccountId = "test0.near".parse().unwrap();
+        let participants = participants_config_with_signer(account_id.clone());
+        let mut contract = FakeMpcContractState::new();
+        contract.initialize(participants);
+
+        let malformed_policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::new(),
+            }]),
+        };
+
+        // When
+        contract.vote_foreign_chain_policy(account_id.clone(), malformed_policy);
+
+        // Then
+        assert_eq!(
+            contract.foreign_chain_policy(),
+            &dtos::ForeignChainPolicy::default()
+        );
+        assert!(!contract
+            .foreign_chain_policy_votes()
+            .proposal_by_account
+            .contains_key(&dtos::AccountId(account_id.to_string())));
     }
 }
