@@ -519,7 +519,6 @@ pub async fn new_tls_mesh_network(
                     }
                     Err(err) => {
                         tracing::error!("error accepting tcp stream: {}", err);
-                        tokio::time::sleep(TLS_ACCEPT_TIMEOUT_ON_ERROR).await;
                     }
                 }
             }
