@@ -14,7 +14,7 @@ pub enum Error {
     #[error("PUT keyshares request to MPC node failed: {0}")]
     PutRequest(anyhow::Error),
 
-    #[error("failed to connect to MPC node server: {0}")]
+    #[error("connection to MPC node failed: {0}")]
     ServerConnection(anyhow::Error),
 }
 
