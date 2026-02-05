@@ -1,6 +1,6 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
-    MockForeignChainRpcClient, RpcAuthentication, RpcError,
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ForeignChainRpcClient,
+    RpcAuthentication, RpcError,
     bitcoin::{
         BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
@@ -10,12 +10,25 @@ use foreign_chain_inspector::{
 
 use assert_matches::assert_matches;
 use httpmock::prelude::*;
-use mockall::predicate::eq;
+use mockall::{mock, predicate::eq};
 use rstest::rstest;
 use serde_json::json;
 
-type MockBitcoinRpcClient =
-    MockForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>;
+mock! {
+    pub BitcoinRpcClient {}
+
+    impl ForeignChainRpcClient for BitcoinRpcClient {
+        type TransactionId = BitcoinTransactionHash;
+        type Finality = BlockConfirmations;
+        type RpcResponse = BitcoinRpcResponse;
+
+        fn get(
+            &self,
+            transaction: <Self as ForeignChainRpcClient>::TransactionId,
+            finality: <Self as ForeignChainRpcClient>::Finality,
+        ) -> impl Future<Output = Result<<Self as foreign_chain_inspector::ForeignChainRpcClient>::RpcResponse, foreign_chain_inspector::RpcError>>;
+    }
+}
 
 #[rstest]
 #[tokio::test]

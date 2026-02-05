@@ -45,9 +45,10 @@ impl BitcoinCoreRpcClient {
     }
 }
 
-impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>
-    for BitcoinCoreRpcClient
-{
+impl ForeignChainRpcClient for BitcoinCoreRpcClient {
+    type TransactionId = BitcoinTransactionHash;
+    type Finality = BlockConfirmations;
+    type RpcResponse = BitcoinRpcResponse;
     async fn get(
         &self,
         transaction: BitcoinTransactionHash,

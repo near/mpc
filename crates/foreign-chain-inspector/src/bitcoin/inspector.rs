@@ -7,16 +7,19 @@ pub struct BitcoinInspector<Client> {
     client: Client,
 }
 
-impl<Client>
-    ForeignChainInspector<
-        BitcoinTransactionHash,
-        BlockConfirmations,
-        BitcoinExtractor,
-        BitcoinExtractedValue,
-    > for BitcoinInspector<Client>
+impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>,
+    Client: ForeignChainRpcClient<
+            TransactionId = BitcoinTransactionHash,
+            Finality = BlockConfirmations,
+            RpcResponse = BitcoinRpcResponse,
+        >,
 {
+    type TransactionId = BitcoinTransactionHash;
+    type Finality = BlockConfirmations;
+    type Extractor = BitcoinExtractor;
+    type ExtractedValue = BitcoinExtractedValue;
+
     async fn extract(
         &self,
         tx_id: BitcoinTransactionHash,
@@ -48,7 +51,11 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRpcResponse>,
+    Client: ForeignChainRpcClient<
+            TransactionId = BitcoinTransactionHash,
+            Finality = BlockConfirmations,
+            RpcResponse = BitcoinRpcResponse,
+        >,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
