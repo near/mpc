@@ -49,11 +49,11 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Add two prospective Participants
     // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
-    let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
+    let (env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids = non_participants.get_node_ids();
     submit_tee_attestations(
         &contract,
-        &mut env_non_participant_accounts,
+        &env_non_participant_accounts,
         &non_participant_uids,
     )
     .await?;

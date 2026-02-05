@@ -369,12 +369,19 @@ pub async fn vote_update_till_completion(
 
 pub async fn submit_tee_attestations(
     contract: &Contract,
-    env_accounts: &mut [Account],
+    env_accounts: &[Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
-    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+    // Build a lookup map from AccountId to NodeId
+    let node_id_map: std::collections::HashMap<_, _> = node_ids
+        .iter()
+        .map(|node_id| (&node_id.account_id, node_id))
+        .collect();
+
+    for account in env_accounts {
+        let node_id = node_id_map
+            .get(account.id())
+            .unwrap_or_else(|| panic!("Account {} not found in node_ids", account.id()));
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result = submit_participant_info(
             account,
@@ -394,15 +401,12 @@ pub async fn submit_attestations(
     accounts: &[Account],
     participants: &Participants,
 ) {
-    // Sort participants by ParticipantId to match the order of accounts
-    let mut sorted_participants: Vec<_> = participants.participants().collect();
-    sorted_participants.sort_by_key(|(_, participant_id, _)| participant_id.get());
-
-    let futures: Vec<_> = sorted_participants
-        .into_iter()
-        .zip(accounts)
-        .enumerate()
-        .map(|(i, ((_, _, participant), account))| async move {
+    let futures: Vec<_> = accounts
+        .iter()
+        .map(|account| async move {
+            let participant = participants
+                .info(account.id())
+                .unwrap_or_else(|| panic!("Account {} not found in participants", account.id()));
             let attestation = Attestation::Mock(MockAttestation::Valid);
             let tls_key = (&participant.sign_pk).into_interface_type();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
@@ -411,8 +415,8 @@ pub async fn submit_attestations(
                 .is_success();
             assert!(
                 success,
-                "submit_participant_info failed for participant {}",
-                i
+                "submit_participant_info failed for account {}",
+                account.id()
             );
         })
         .collect();
