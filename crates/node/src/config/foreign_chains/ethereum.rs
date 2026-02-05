@@ -16,6 +16,7 @@ impl EthereumChainConfig {
         foreign_chains::validate_chain_config(
             "ethereum",
             self.timeout_sec,
+            self.max_retries,
             &self.providers,
             |provider| provider.rpc_url.as_str(),
             |provider, provider_name| provider.validate("ethereum", provider_name),

@@ -16,6 +16,7 @@ impl BitcoinChainConfig {
         foreign_chains::validate_chain_config(
             "bitcoin",
             self.timeout_sec,
+            self.max_retries,
             &self.providers,
             |provider| provider.rpc_url.as_str(),
             |provider, provider_name| provider.validate("bitcoin", provider_name),

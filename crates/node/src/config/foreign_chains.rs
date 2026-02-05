@@ -45,6 +45,7 @@ impl ForeignChainsConfig {
 pub(crate) fn validate_chain_config<P>(
     chain_label: &str,
     timeout_sec: u64,
+    max_retries: u64,
     providers: &BTreeMap<String, P>,
     rpc_url: impl Fn(&P) -> &str,
     validate_provider: impl Fn(&P, &str) -> anyhow::Result<()>,
@@ -52,6 +53,10 @@ pub(crate) fn validate_chain_config<P>(
     anyhow::ensure!(
         timeout_sec > 0,
         "foreign_chains.{chain_label}.timeout_sec must be > 0"
+    );
+    anyhow::ensure!(
+        max_retries > 0,
+        "foreign_chains.{chain_label}.max_retries must be > 0"
     );
     anyhow::ensure!(
         !providers.is_empty(),
@@ -410,5 +415,174 @@ foreign_chains:
 
         // Then
         result.unwrap_err();
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_max_retries_is_zero_for_solana() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  solana:
+    timeout_sec: 30
+    max_retries: 0
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://rpc.public.example.com"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+        let result = config.validate();
+
+        // Then
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("max_retries must be > 0"));
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_max_retries_is_zero_for_bitcoin() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 0
+    providers:
+      public:
+        api_variant: esplora
+        rpc_url: "https://blockstream.info/api"
+        auth:
+          kind: none
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+        let result = config.validate();
+
+        // Then
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("max_retries must be > 0"));
+    }
+
+    #[test]
+    fn config_parsing__should_fail_when_max_retries_is_zero_for_ethereum() {
+        // Given
+        let yaml = r#"
+my_near_account_id: test.near
+near_responder_account_id: test.near
+number_of_responder_keys: 1
+web_ui:
+  host: localhost
+  port: 8080
+migration_web_ui:
+  host: localhost
+  port: 8081
+pprof_bind_address: 127.0.0.1:34001
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: optimistic
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 1
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 1
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+foreign_chains:
+  ethereum:
+    timeout_sec: 30
+    max_retries: 0
+    providers:
+      alchemy:
+        api_variant: alchemy
+        rpc_url: "https://eth-mainnet.g.alchemy.com/v2/"
+        auth:
+          kind: header
+          name: Authorization
+          scheme: Bearer
+          token:
+            env: ALCHEMY_API_KEY
+"#;
+
+        // When
+        let config: ConfigFile = serde_yaml::from_str(yaml).unwrap();
+        let result = config.validate();
+
+        // Then
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("max_retries must be > 0"));
     }
 }
