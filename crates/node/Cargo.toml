@@ -26,6 +26,7 @@ flume = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
+http = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
@@ -54,6 +55,7 @@ rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
