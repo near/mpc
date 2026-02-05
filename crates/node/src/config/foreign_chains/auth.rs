@@ -1,13 +1,16 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum AuthConfig {
     #[default]
     None,
     Header {
-        name: String,
+        #[serde_as(as = "DisplayFromStr")]
+        name: http::HeaderName,
         #[serde(default)]
         scheme: Option<String>,
         token: TokenConfig,
@@ -48,11 +51,7 @@ pub(crate) fn validate_auth_config(
 ) -> anyhow::Result<()> {
     match auth {
         AuthConfig::None => Ok(()),
-        AuthConfig::Header { name, scheme, .. } => {
-            anyhow::ensure!(
-                !name.trim().is_empty(),
-                "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
-            );
+        AuthConfig::Header { scheme, .. } => {
             if let Some(scheme) = scheme {
                 anyhow::ensure!(
                     !scheme.trim().is_empty(),
