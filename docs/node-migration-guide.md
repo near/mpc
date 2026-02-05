@@ -169,7 +169,7 @@ Set up your new node on the new host with the following:
 
 You'll need:
 - **New node's P2P public key**: The Ed25519 public key for the new node's P2P communication
-- **New node's address**: The URL where the new node will be accessible (e.g., `https://new-node.example.com:3000`)
+- **New node's address**: The URL where the new node will be accessible (e.g., `https://new-node.example.com`)
 - **New node's signer account public key**: The NEAR account public key the new node will use to sign contract transactions
 
 ## Step 6: Initiate Migration in Contract
