@@ -11,7 +11,6 @@ abi = ["borsh/unstable__schema", "schemars"]
 borsh = { workspace = true }
 bs58 = { workspace = true }
 derive_more = { workspace = true }
-near-account-id = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_with = { workspace = true }
 thiserror = { workspace = true }

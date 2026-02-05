@@ -1,5 +1,5 @@
+use crate::types::primitives::AccountId;
 use borsh::{BorshDeserialize, BorshSerialize};
-use near_account_id::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -114,7 +114,7 @@ mod tests {
             parsed.participants,
             ParticipantsField::Vec(vec![
                 (
-                    "alice.near".parse().unwrap(),
+                    AccountId("alice.near".to_string()),
                     ParticipantId(0),
                     ParticipantInfo {
                         url: "https://alice.com".to_string(),
@@ -122,7 +122,7 @@ mod tests {
                     },
                 ),
                 (
-                    "bob.near".parse().unwrap(),
+                    AccountId("bob.near".to_string()),
                     ParticipantId(1),
                     ParticipantInfo {
                         url: "https://bob.com".to_string(),
@@ -149,7 +149,7 @@ mod tests {
             parsed.participants,
             ParticipantsField::Map(BTreeMap::from([
                 (
-                    "alice.near".parse().unwrap(),
+                    AccountId("alice.near".to_string()),
                     ParticipantData {
                         id: ParticipantId(0),
                         info: ParticipantInfo {
@@ -159,7 +159,7 @@ mod tests {
                     },
                 ),
                 (
-                    "bob.near".parse().unwrap(),
+                    AccountId("bob.near".to_string()),
                     ParticipantData {
                         id: ParticipantId(1),
                         info: ParticipantInfo {
@@ -177,7 +177,7 @@ mod tests {
         let participants_json = ParticipantsJson {
             next_id: ParticipantId(1),
             participants: vec![(
-                "alice.near".parse().unwrap(),
+                AccountId("alice.near".to_string()),
                 ParticipantId(0),
                 ParticipantInfo {
                     url: "https://alice.com".to_string(),

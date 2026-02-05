@@ -1847,7 +1847,6 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "derive_more 2.1.1",
- "near-account-id 2.5.0",
  "near-sdk",
  "schemars 0.8.22",
  "serde",
