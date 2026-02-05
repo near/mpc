@@ -33,7 +33,7 @@ This design intentionally keeps responses small and on-chain-friendly by enforci
 
 Not all extractors can be satisfied by a single RPC method call.
 
-* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy (with fallbacks).
+* **Provider selection**: The request does **not** specify an RPC URL. Nodes deterministically select an allowed provider from the on-chain foreign-chain policy.
 * **Extractor-driven calls**: Each extractor implicitly defines which RPC method(s) it requires. Some extractors require more than one call. For the initial set:
 
   * **BlockHash (Ethereum)**: `eth_getTransactionReceipt` for `blockHash`.
@@ -297,8 +297,6 @@ hash = sha256(participant_id || request_id || provider_rpc_url)
 Providers are sorted by this hash to build a deterministic ordering:
 
 * **Primary provider** = first in the ordering.
-* **Fallback** = subsequent providers in order.
-* Each provider can include backup URLs for failover.
 
 This ensures different nodes query different providers for the same request while preserving determinism.
 
@@ -361,6 +359,7 @@ foreign_chains:
     max_retries: 3
     providers:
       alchemy:
+        api_variant: alchemy
         rpc_url: "https://solana-mainnet.g.alchemy.com/v2/"
         auth:
           kind: header
@@ -369,6 +368,7 @@ foreign_chains:
           token:
             env: ALCHEMY_API_KEY
       quicknode:
+        api_variant: quicknode
         rpc_url: "https://your-endpoint.solana-mainnet.quiknode.pro/"
         auth:
           kind: header
@@ -376,6 +376,7 @@ foreign_chains:
           token:
             val: "<your-api-key-here>"
       ankr:
+        api_variant: ankr
         rpc_url: "https://rpc.ankr.com/near/{api_key}"
         auth:
           kind: path
@@ -383,6 +384,7 @@ foreign_chains:
           token:
             env: ANKR_API_KEY
       public:
+        api_variant: standard
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
@@ -394,6 +396,9 @@ provider entries in config (including API keys) to satisfy the policy.
 Auth variants are explicitly modeled because providers differ in how they expect API keys
 to be supplied (e.g., bearer tokens, custom headers, query params, or URL path tokens), and some
 providers require no auth at all.
+
+`api_variant` is a node-only setting used to select chain-specific response parsing behavior for
+providers that diverge from the standard API shape. It must be set explicitly.
 
 ## Risks
 

@@ -7,10 +7,16 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
-
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::Path,
+};
+
+mod foreign_chains;
+pub use foreign_chains::{
+    AuthConfig, BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant,
+    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, SolanaApiVariant,
+    SolanaChainConfig, SolanaProviderConfig, TokenConfig,
 };
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
@@ -164,6 +170,8 @@ pub struct ConfigFile {
     pub ckd: CKDConfig,
     #[serde(default)]
     pub keygen: KeygenConfig,
+    #[serde(default)]
+    pub foreign_chains: ForeignChainsConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
@@ -173,7 +181,12 @@ impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
         let config: Self = serde_yaml::from_str(&file)?;
+        config.validate().context("Validate config.yaml")?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.foreign_chains.validate()
     }
 }
 
