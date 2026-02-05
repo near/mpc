@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.4.1] - 2026-02-05
+
+### 🚀 Features
+
+- [#1923](https://github.com/near/mpc/pull/1923)(@DSharifi): *(contract)* Define contract API for verification of foreign transactions (#1923)
+
+- [#1948](https://github.com/near/mpc/pull/1948)(@gilcu3): Added indexer types for verify foreign tx (#1948)
+
+- [#1961](https://github.com/near/mpc/pull/1961)(@netrome): Add foreign chain policy types and voting method (#1961)
+
+
+### 🐛 Bug Fixes
+
+- [#1939](https://github.com/near/mpc/pull/1939)(@gilcu3): Ensure test_verify_tee_expired_attestation_triggers_resharing is not flaky (#1939)
+
+- [#1831](https://github.com/near/mpc/pull/1831)(@kevindeforth): Properly fix network race condition (#1831)
+
+- [#1983](https://github.com/near/mpc/pull/1983)(@kevindeforth): *(network)* TCP Listener task must not die (#1983)
+
+
+### 📚 Documentation
+
+- [#1920](https://github.com/near/mpc/pull/1920)(@netrome): Foreign chain transaction design doc (#1920)
+
+- [#1928](https://github.com/near/mpc/pull/1928)(@barakeinav1): Update release guide (#1928)
+
+- [#1925](https://github.com/near/mpc/pull/1925)(@netrome): Post-discussion updates for foreign chain transaction design doc (#1925)
+
+- [#1931](https://github.com/near/mpc/pull/1931)(@netrome): Extractor-based foreign chain transaction validation design update (#1931)
+
+- [#1938](https://github.com/near/mpc/pull/1938)(@netrome): Derive separate tweak for foreign transaction validation (#1938)
+
+- [#1953](https://github.com/near/mpc/pull/1953)(@DSharifi): Include set of reommended extensions for VSCode (#1953)
+
+- [#1964](https://github.com/near/mpc/pull/1964)(@DSharifi): Add note on branch being pushed to github pre `git-cliff` instructions (#1964)
+
+
+### 🧪 Testing
+
+- [#1945](https://github.com/near/mpc/pull/1945)(@gilcu3): Add timeout/retry mechanism to try to fix flaky test creating many accounts (#1945)
+
+- [#1951](https://github.com/near/mpc/pull/1951)(@gilcu3): Enable test_embedded abi test (#1951)
+
+- [#1937](https://github.com/near/mpc/pull/1937)(@barakeinav1): Add localnet TEE automation scripts and templates (#1937)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1894](https://github.com/near/mpc/pull/1894)(@gilcu3): Bump near crates, remove AccountId conversions (#1894)
+
+- [#1916](https://github.com/near/mpc/pull/1916)(@netrome): Add CLAUDE.md and AGENTS.md to make coding agents more effective (#1916)
+
+- [#1914](https://github.com/near/mpc/pull/1914)(@gilcu3): Update 3.3.2 mainnet contract history, clean-up previous contract migrations (#1914)
+
+- [#1935](https://github.com/near/mpc/pull/1935)(@gilcu3): Remove the use of jemalloc (#1935)
+
+- [#1879](https://github.com/near/mpc/pull/1879)(@barakeinav1): TEE testnet automation scripts and launcher (#1879)
+
+- [#1933](https://github.com/near/mpc/pull/1933)(@DSharifi): *(clippy)* Enable warning on `assertions_on_result_states` clippy lint (#1933)
+
+- [#1947](https://github.com/near/mpc/pull/1947)(@gilcu3): Update nearcore to 2.10.6 (#1947)
+
+- [#1950](https://github.com/near/mpc/pull/1950)(@DSharifi): RPC requests to EVM chains should have separate struct per chain (#1950)
+
+- [#1973](https://github.com/near/mpc/pull/1973)(@gilcu3): Remove extra license file (#1973)
+
+- [#1982](https://github.com/near/mpc/pull/1982)(@DSharifi): Add `git-cliff` to nix dev environment (#1982)
+
+
 ## [3.4.0] - 2026-01-29
 
 ### 🚀 Features
@@ -91,7 +160,7 @@ This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conv
 
 - [#1881](https://github.com/near/mpc/pull/1881)(@DSharifi): Bump flume to version `0.12.0` (#1881)
 
-- : Bump crate versions to 3.4.0 and update changelog
+- [#1903](https://github.com/near/mpc/pull/1903)(@barakeinav1): Bump crate versions to 3.4.0 and update changelog (#1903)
 
 
 ## [3.3.2] - 2026-01-20
