@@ -6,15 +6,14 @@ pub mod bitcoin;
 
 pub(crate) mod rpc_types;
 
-#[derive(Debug, Clone, Error)]
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RpcError {
     #[error("inner network client failed to fetch")]
     ClientError,
     #[error("got a bad response from the RPC provider")]
     BadResponse,
 }
-
-#[derive(Debug, Clone, Error)]
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ForeignChainInspectionError {
     #[error("rpc client failed to fetch transaction information")]
     RpcClientError(#[from] RpcError),

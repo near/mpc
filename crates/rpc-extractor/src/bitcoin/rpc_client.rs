@@ -11,6 +11,7 @@ const JSON_RPC_VERSION: &str = "1.0";
 const JSON_RPC_CLIENT_ID: &str = "client";
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
+const VERBOSE_RESPONSE: bool = true;
 
 #[derive(Debug, Clone)]
 pub struct BitcoinCoreRpcClient {
@@ -52,11 +53,7 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
         transaction: BitcoinTransactionHash,
         _finality: BlockConfirmations,
     ) -> Result<BitcoinRpcResponse, RpcError> {
-        let rpc_parameters = json!([
-            transaction,
-            // enable verbose response
-            true
-        ]);
+        let rpc_parameters = json!([transaction, VERBOSE_RESPONSE]);
 
         let request = JsonRpcRequest {
             jsonrpc: JSON_RPC_VERSION,
@@ -73,6 +70,7 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
             .await
             .map_err(|_| RpcError::ClientError)?;
 
+        // TODO(#1978): add retry mechanism if the error code is transient
         if response.status() != StatusCode::OK {
             return Err(RpcError::BadResponse);
         }
@@ -91,7 +89,7 @@ impl ForeignChainRpcClient<BitcoinTransactionHash, BlockConfirmations, BitcoinRp
     }
 }
 
-/// The RPC response for `getrawtransaction`. See link below for full spec;
+/// Partial RPC response for `getrawtransaction`. See link below for full spec;
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
 #[derive(Serialize, Deserialize)]
 struct GetRawTransactionVerboseResponse {
