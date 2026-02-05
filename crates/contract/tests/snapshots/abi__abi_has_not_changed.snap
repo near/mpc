@@ -2561,12 +2561,18 @@ expression: abi
           "type": "object",
           "required": [
             "observed_at_block",
+            "payload_version",
             "signature",
             "values"
           ],
           "properties": {
             "observed_at_block": {
               "$ref": "#/definitions/ForeignBlockId"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
@@ -3399,12 +3405,18 @@ expression: abi
           "type": "object",
           "required": [
             "domain_id",
+            "payload_version",
             "request",
             "tweak"
           ],
           "properties": {
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
@@ -3419,6 +3431,7 @@ expression: abi
           "required": [
             "domain_id",
             "path",
+            "payload_version",
             "request"
           ],
           "properties": {
@@ -3427,6 +3440,11 @@ expression: abi
             },
             "path": {
               "type": "string"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
@@ -3437,12 +3455,18 @@ expression: abi
           "type": "object",
           "required": [
             "observed_at_block",
+            "payload_version",
             "signature",
             "values"
           ],
           "properties": {
             "observed_at_block": {
               "$ref": "#/definitions/ForeignBlockId"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"

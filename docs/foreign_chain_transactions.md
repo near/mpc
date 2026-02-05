@@ -92,12 +92,14 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
     pub path: String, // Key derivation path
     pub domain_id: DomainId,
+    pub payload_version: u8,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
+    pub payload_version: u8,
 }
 ```
 
@@ -145,6 +147,8 @@ pub struct VerifyForeignTransactionResponse {
 
     // Signature over canonical bytes of (request, observed_at_block, values)
     pub signature: SignatureResponse,
+
+    pub payload_version: u8,
 }
 
 pub struct ForeignBlockId([u8; 32]); // Block hash for the observed transaction
@@ -154,6 +158,32 @@ pub enum ExtractedValue {
     Hash256([u8; 32]),
 }
 ```
+
+### Sign Payload Serialization
+
+The MPC network signs a canonical hash derived from the request and its observed results.
+The payload is versioned to allow future format changes without breaking existing verifiers.
+
+```rust
+pub enum ForeignTxSignPayload {
+    V1(ForeignTxSignPayloadV1),
+}
+
+pub struct ForeignTxSignPayloadV1 {
+    pub request: ForeignChainRpcRequest,
+    pub observed_at_block: ForeignBlockId,
+    pub values: Vec<ExtractedValue>,
+}
+```
+
+The 32-byte `msg_hash` that nodes sign is computed as:
+
+```
+msg_hash = SHA-256(borsh(ForeignTxSignPayload))
+```
+
+Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.
+Borsh field ordering is stability-critical — fields and enum variants must never be reordered.
 
 ### Extractors
 
