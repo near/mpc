@@ -169,7 +169,9 @@ mod tests {
     use crate::{
         primitives::{
             participants::{ParticipantId, Participants},
-            test_utils::{gen_participant, gen_participants, gen_threshold_params},
+            test_utils::{
+                gen_participant, gen_participants, gen_threshold_params, participants_vec,
+            },
             thresholds::{Threshold, ThresholdParameters},
         },
         state::test_utils::gen_valid_params_proposal,
@@ -316,7 +318,7 @@ mod tests {
         // incorrect participant counts.
 
         // Create a tampered Participants with an invalid next_id (lower than max participant id)
-        let vec = params.participants.participants_vec();
+        let vec = participants_vec(&params.participants);
         let max_id = vec.iter().map(|e| e.id.get()).max().unwrap_or(0);
         let tampered_participants = Participants::init(
             ParticipantId(max_id), // next_id should be max_id + 1, so this is invalid
@@ -388,9 +390,7 @@ mod tests {
         for i in 0..=params.participants.next_id().0 + 2 {
             let new_participants = Participants::init(
                 ParticipantId(i),
-                params
-                    .participants
-                    .participants_vec()
+                participants_vec(&params.participants)
                     .into_iter()
                     .map(|e| (e.account_id, e.id, e.info))
                     .collect(),

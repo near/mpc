@@ -2,7 +2,7 @@ use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
-        participants::{ParticipantInfo, Participants},
+        participants::{ParticipantId, ParticipantInfo, Participants},
         thresholds::{Threshold, ThresholdParameters},
     },
     IntoInterfaceType,
@@ -11,6 +11,25 @@ use curve25519_dalek::edwards::CompressedEdwardsY;
 use near_account_id::AccountId;
 use rand::{distributions::Uniform, Rng};
 use std::collections::BTreeMap;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ParticipantEntry {
+    pub account_id: AccountId,
+    pub id: ParticipantId,
+    pub info: ParticipantInfo,
+}
+
+/// Converts a `Participants` collection to a `Vec` of `ParticipantEntry`.
+pub fn participants_vec(participants: &Participants) -> Vec<ParticipantEntry> {
+    participants
+        .participants()
+        .map(|(account_id, id, info)| ParticipantEntry {
+            account_id: account_id.clone(),
+            id: *id,
+            info: info.clone(),
+        })
+        .collect()
+}
 
 const ALL_PROTOCOLS: [SignatureScheme; 4] = [
     SignatureScheme::Secp256k1,

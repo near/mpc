@@ -38,15 +38,6 @@ impl Display for ParticipantId {
     }
 }
 
-/// A participant entry with all fields. Only available in tests.
-#[cfg(any(test, feature = "test-utils"))]
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ParticipantEntry {
-    pub account_id: AccountId,
-    pub id: ParticipantId,
-    pub info: ParticipantInfo,
-}
-
 /// The data stored for each participant.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -251,18 +242,6 @@ impl Participants {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Participants {
-    /// Returns entries as owned [`ParticipantEntry`] structs.
-    pub fn participants_vec(&self) -> Vec<ParticipantEntry> {
-        self.participants
-            .iter()
-            .map(|(account_id, data)| ParticipantEntry {
-                account_id: account_id.clone(),
-                id: data.id,
-                info: data.info.clone(),
-            })
-            .collect()
-    }
-
     /// O(log n) lookup - test only. Returns ParticipantId by AccountId.
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants

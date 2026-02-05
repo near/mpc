@@ -1804,7 +1804,7 @@ mod tests {
     use crate::primitives::participants::{ParticipantId, ParticipantInfo};
     use crate::primitives::test_utils::{
         bogus_ed25519_near_public_key, bogus_ed25519_public_key, gen_account_id, gen_participant,
-        NUM_PROTOCOLS,
+        participants_vec, NUM_PROTOCOLS,
     };
     use crate::primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
@@ -2193,7 +2193,7 @@ mod tests {
         threshold_value: u64,
     ) -> (MpcContract, Participants, AccountId) {
         let participants = primitives::test_utils::gen_participants(num_participants);
-        let first_participant_id = participants.participants_vec()[0].account_id.clone();
+        let first_participant_id = participants_vec(&participants)[0].account_id.clone();
 
         let context = VMContextBuilder::new()
             .signer_account_id(first_participant_id.clone())
@@ -2215,7 +2215,7 @@ mod tests {
         participant_index: usize,
         is_valid: bool,
     ) -> Result<(), Error> {
-        let participants_list = participants.participants_vec();
+        let participants_list = participants_vec(participants);
         let entry = &participants_list[participant_index];
         let (account_id, participant_info) = (&entry.account_id, &entry.info);
         let attestation = if is_valid {
@@ -3394,7 +3394,7 @@ mod tests {
         running_state.parameters =
             ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap();
 
-        let participants = running_state.parameters.participants().participants_vec();
+        let participants = participants_vec(running_state.parameters.participants());
         let participant_1 = participants[0].account_id.clone();
         let participant_2 = participants[1].account_id.clone();
 
@@ -3455,7 +3455,7 @@ mod tests {
             .collect();
 
         // Add votes from 2 current participants
-        let participants_vec = participants.participants_vec();
+        let participants_vec = participants_vec(&participants);
         let (p1, p2) = (
             participants_vec[0].account_id.clone(),
             participants_vec[1].account_id.clone(),
@@ -3581,7 +3581,7 @@ mod tests {
         ));
 
         // Get participant info for the target (last participant)
-        let participant_list = participants.participants_vec();
+        let participant_list = participants_vec(&participants);
         let target = &participant_list[2];
 
         // Replace the target's attestation with an expired one

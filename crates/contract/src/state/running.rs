@@ -187,7 +187,7 @@ pub mod running_tests {
     use rstest::rstest;
 
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::test_utils::{gen_threshold_params, participants_vec, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
@@ -202,7 +202,7 @@ pub mod running_tests {
             state.parameters.threshold().value()
         );
         let mut env = Environment::new(None, None, None);
-        let participants = state.parameters.participants().participants_vec();
+        let participants = participants_vec(state.parameters.participants());
         // Assert that random proposals get rejected.
         for entry in &participants {
             let account_id = &entry.account_id;

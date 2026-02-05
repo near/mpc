@@ -153,7 +153,7 @@ pub mod tests {
     use crate::primitives::domain::{AddDomainsVotes, DomainId};
     use crate::primitives::key_state::{AttemptId, KeyEventId};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key_extended, gen_account_id, NUM_PROTOCOLS,
+        bogus_ed25519_public_key_extended, gen_account_id, participants_vec, NUM_PROTOCOLS,
     };
     use crate::primitives::votes::ThresholdParametersVotes;
     use crate::state::key_event::tests::find_leader;
@@ -342,11 +342,8 @@ pub mod tests {
         state.start(first_key_event_id, 0).unwrap();
 
         let pk = bogus_ed25519_public_key_extended();
-        let participants = state
-            .generating_key
-            .proposed_parameters()
-            .participants()
-            .participants_vec();
+        let participants =
+            participants_vec(state.generating_key.proposed_parameters().participants());
         let threshold = state
             .generating_key
             .proposed_parameters()

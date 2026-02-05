@@ -4,8 +4,9 @@ use mpc_contract::{
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
-        participants::ParticipantEntry,
-        test_utils::{bogus_ed25519_near_public_key, gen_participants},
+        test_utils::{
+            bogus_ed25519_near_public_key, gen_participants, participants_vec, ParticipantEntry,
+        },
         thresholds::{Threshold, ThresholdParameters},
     },
     state::ProtocolContractState,
@@ -84,7 +85,7 @@ impl TestSetupBuilder {
 
         // 2. Data Generation
         let participants = gen_participants(participant_count);
-        let participants_list = participants.participants_vec();
+        let participants_list = participants_vec(&participants);
 
         let parameters = ThresholdParameters::new(participants, Threshold::new(threshold))
             .expect("Failed to create threshold parameters");

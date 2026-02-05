@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use crate::primitives::{
     key_state::{EpochId, KeyForDomain, Keyset},
     participants::{ParticipantId, Participants},
-    test_utils::{gen_participant, gen_threshold_params},
+    test_utils::{gen_participant, gen_threshold_params, participants_vec},
     thresholds::{Threshold, ThresholdParameters},
 };
 use rand::Rng;
@@ -127,7 +127,7 @@ pub fn gen_initializing_state(
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
-    for entry in running.parameters.participants().participants_vec() {
+    for entry in participants_vec(running.parameters.participants()) {
         env.set_signer(&entry.account_id);
         assert!(initializing_state.is_none());
         initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();

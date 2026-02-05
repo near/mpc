@@ -190,7 +190,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_PROTOCOLS;
+    use crate::primitives::test_utils::{participants_vec, NUM_PROTOCOLS};
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
@@ -373,11 +373,8 @@ pub mod tests {
             .participants()
             .clone();
         {
-            let new_participants = state
-                .resharing_key
-                .proposed_parameters()
-                .participants()
-                .participants_vec();
+            let new_participants =
+                participants_vec(state.resharing_key.proposed_parameters().participants());
             for entry in new_participants {
                 env.set_signer(&entry.account_id);
                 state.vote_reshared(first_key_event_id).unwrap();

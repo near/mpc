@@ -392,8 +392,9 @@ pub(crate) enum AttestationCheckError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::test_utils::bogus_ed25519_near_public_key;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::test_utils::{
+        bogus_ed25519_near_public_key, gen_participants, participants_vec,
+    };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
@@ -986,7 +987,7 @@ mod tests {
     fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list = participants.participants_vec();
+        let participant_list = participants_vec(&participants);
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for only first 2 participants
@@ -1021,7 +1022,7 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list = participants.participants_vec();
+        let participant_list = participants_vec(&participants);
 
         // Add valid attestations for first 2 participants
         for entry in participant_list.iter().take(2) {
@@ -1072,7 +1073,7 @@ mod tests {
         let participants = gen_participants(3);
 
         // Add attestations for all participants, third one with future expiry
-        let participant_list = participants.participants_vec();
+        let participant_list = participants_vec(&participants);
 
         for (i, entry) in participant_list.iter().enumerate() {
             let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
@@ -1107,7 +1108,7 @@ mod tests {
     fn add_participant_rejects_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list = participants.participants_vec();
+        let participant_list = participants_vec(&participants);
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for first 2 participants
