@@ -58,6 +58,13 @@ in
     cargoHash = "sha256-oO5Kp5A2v1w6EUwgcHhyagZDIK7a/2d9uTiCoXHuHhY=";
   })
 
+  (buildTool {
+    pname = "git-cliff";
+    version = "2.12.0";
+    hash = "sha256-V/dLd4yzMLOhMyoV5j/jKSGi0ZSYRFcZuUwlyz+Q3fk=";
+    cargoHash = "sha256-8OhCb2b22S7/UaUAeaRUg0+haRIQ9+1m8eEiItMVTR4=";
+  })
+
   # --- STANDARD NIXPKGS VERSIONS ---
   pkgs.cargo-binstall
   pkgs.cargo-insta
