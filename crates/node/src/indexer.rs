@@ -497,16 +497,3 @@ pub struct IndexerAPI<TransactionSender> {
     pub foreign_chain_policy_reader: Arc<dyn ForeignChainPolicyReader + Send + Sync>,
 }
 
-impl<TransactionSender> IndexerAPI<TransactionSender> {
-    pub async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
-        self.foreign_chain_policy_reader.get_foreign_chain_policy().await
-    }
-
-    pub async fn get_foreign_chain_policy_proposals(
-        &self,
-    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
-        self.foreign_chain_policy_reader
-            .get_foreign_chain_policy_proposals()
-            .await
-    }
-}

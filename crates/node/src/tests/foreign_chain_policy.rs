@@ -13,7 +13,6 @@ use std::time::Duration;
 async fn test_auto_votes_foreign_chain_policy_on_startup() {
     init_integration_logger();
 
-    const NUM_PARTICIPANTS: usize = 1;
     const THRESHOLD: usize = 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
 
