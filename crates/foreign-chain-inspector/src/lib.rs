@@ -2,6 +2,7 @@ use derive_more::{Deref, Display, From};
 use http::{HeaderName, HeaderValue};
 use thiserror::Error;
 
+pub mod abstract_chain;
 pub mod bitcoin;
 
 pub trait ForeignChainInspector {
