@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 derive_more = { workspace = true }
 http = { workspace = true }
+jsonrpsee = { workspace = true }
 mockall = { workspace = true }
 mpc-primitives = { workspace = true }
 reqwest = { workspace = true }
