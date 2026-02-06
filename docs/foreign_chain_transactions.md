@@ -138,17 +138,13 @@ pub enum Finality {
 
 ### Response DTOs
 
+The response embeds the sign payload directly, so callers can verify the signature
+by calling `response.payload.compute_msg_hash()` without reconstructing the payload.
+
 ```rust
 pub struct VerifyForeignTransactionResponse {
-    pub observed_at_block: ForeignBlockId,
-
-    // One value per extractor (same ordering as request's extractors)
-    pub values: Vec<ExtractedValue>,
-
-    // Signature over canonical bytes of (request, observed_at_block, values)
+    pub payload: ForeignTxSignPayload,
     pub signature: SignatureResponse,
-
-    pub payload_version: u8,
 }
 
 pub struct ForeignBlockId([u8; 32]); // Block hash for the observed transaction
@@ -163,6 +159,7 @@ pub enum ExtractedValue {
 
 The MPC network signs a canonical hash derived from the request and its observed results.
 The payload is versioned to allow future format changes without breaking existing verifiers.
+It is embedded in the response so there is no duplication between payload and response fields.
 
 ```rust
 pub enum ForeignTxSignPayload {

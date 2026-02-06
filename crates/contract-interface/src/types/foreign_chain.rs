@@ -48,10 +48,8 @@ pub struct VerifyForeignTransactionRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
-    pub observed_at_block: ForeignBlockId,
-    pub values: Vec<ExtractedValue>,
+    pub payload: ForeignTxSignPayload,
     pub signature: SignatureResponse,
-    pub payload_version: u8,
 }
 
 #[derive(
@@ -529,12 +527,26 @@ pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 ///
 /// IMPORTANT: Never reorder existing enum variants or struct fields, as this
 /// would change the Borsh encoding and break signature verification.
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum ForeignTxSignPayload {
     V1(ForeignTxSignPayloadV1),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
     pub observed_at_block: ForeignBlockId,
