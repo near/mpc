@@ -15,7 +15,7 @@ use jsonrpsee::core::{
     params::BatchRequestBuilder,
 };
 use rstest::rstest;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 #[rstest]
@@ -34,15 +34,15 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     let expected_block_hash = BitcoinBlockHash::from([4; 32]);
 
     // Mock the JSON-RPC response
-    let mock_response = json!({
-        "blockhash": expected_block_hash,
-        "confirmations": *confirmations
-    });
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash.clone(),
+        confirmations: *confirmations,
+    };
 
     let mut mock_client = MockJsonRpcClient::new();
     mock_client
         .expect_request()
-        .returning(move |_| Ok(mock_response.clone()));
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
     let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
@@ -68,15 +68,15 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     let confirmations = BlockConfirmations::from(2u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let mock_response = json!({
-        "blockhash": expected_block_hash,
-        "confirmations": *confirmations
-    });
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash,
+        confirmations: *confirmations,
+    };
 
     let mut mock_client = MockJsonRpcClient::new();
     mock_client
         .expect_request()
-        .returning(move |_| Ok(mock_response.clone()));
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
     let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
@@ -104,15 +104,15 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     let confirmations = BlockConfirmations::from(9u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let mock_response = json!({
-        "blockhash": expected_block_hash,
-        "confirmations": *confirmations
-    });
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash,
+        confirmations: *confirmations,
+    };
 
     let mut mock_client = MockJsonRpcClient::new();
     mock_client
         .expect_request()
-        .returning(move |_| Ok(mock_response.clone()));
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
     let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
@@ -169,16 +169,19 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
 
     server.mock(|when, then| {
         when.method(POST).path("/");
+
+        let response = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            result: BitcoinTransactionResponse {
+                blockhash: expected_block_hash.clone(),
+                confirmations,
+            },
+            id: 0,
+        };
+
         then.status(200)
             .header("content-type", "application/json")
-            .json_body(json!({
-                "jsonrpc": "2.0",
-                "result": {
-                    "blockhash": expected_block_hash.as_hex(),
-                    "confirmations": confirmations
-                },
-                "id": 0
-            }));
+            .json_body(serde_json::to_value(&response).unwrap());
     });
 
     let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
@@ -196,6 +199,18 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     assert_eq!(expected_extractions, extracted_values);
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BitcoinTransactionResponse {
+    blockhash: BitcoinBlockHash,
+    confirmations: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JsonRpcResponse<T> {
+    jsonrpc: String,
+    result: T,
+    id: u64,
+}
 // Note: Cannot use mockall::mock! for ClientT trait because mockall doesn't support
 // method-level lifetime parameters (like 'a in batch_request).
 // Using manual mock implementation that focuses on the `request` method.
