@@ -3,7 +3,7 @@ use crate::{
     bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
 };
 use jsonrpsee::{
-    core::{ClientError, JsonValue, client::ClientT},
+    core::{JsonValue, client::ClientT},
     http_client::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ impl BitcoinCoreRpcClient<HttpClient> {
 
         let client = builder
             .build(&base_url)
-            .map_err(|_| RpcError::ClientError)?;
+            .map_err(|error| RpcError::ClientError(error.into()))?;
 
         Ok(Self { client })
     }
@@ -62,27 +62,7 @@ where
         let rpc_response: GetRawTransactionVerboseResponse = self
             .client
             .request(GET_RAW_TRANSACTION_METHOD, params)
-            .await
-            .map_err(|e| {
-                // Distinguish between connection/transport errors and other errors
-                let err_str = e.to_string().to_lowercase();
-                match e {
-                    // Connection refused, timeout, DNS errors, network unreachable
-                    ClientError::Transport(_)
-                        if err_str.contains("connect")
-                            || err_str.contains("refused")
-                            || err_str.contains("timeout")
-                            || err_str.contains("unreachable")
-                            || err_str.contains("network")
-                            || err_str.contains("dns") =>
-                    {
-                        RpcError::ClientError
-                    }
-                    ClientError::RequestTimeout => RpcError::ClientError,
-                    // HTTP errors (500, 401, etc), RPC errors, deserialization errors
-                    _ => RpcError::BadResponse,
-                }
-            })?;
+            .await?;
 
         Ok(BitcoinRpcResponse {
             block_hash: rpc_response.blockhash,
@@ -129,7 +109,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(result, Err(RpcError::BadResponse));
+        assert_matches!(result, Err(_));
     }
 
     #[tokio::test]
@@ -238,7 +218,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(result, Err(RpcError::BadResponse));
+        assert_matches!(result, Err(_));
     }
 
     #[tokio::test]
@@ -262,11 +242,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(
-            result,
-            Err(RpcError::BadResponse),
-            "Should fail at json deserialization step"
-        );
+        assert_matches!(result, Err(_), "Should fail at json deserialization step");
     }
 
     #[tokio::test]
@@ -295,7 +271,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(result, Err(RpcError::BadResponse));
+        assert_matches!(result, Err(_));
     }
 
     #[tokio::test]
@@ -318,7 +294,7 @@ mod tests {
         // Then
         assert_matches!(
             result,
-            Err(RpcError::ClientError),
+            Err(_),
             "Reqwest fails to connect, mapping to RpcError::ClientError"
         );
     }

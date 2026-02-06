@@ -51,14 +51,13 @@ pub enum Finality {
     Final,
 }
 
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Error, Debug)]
 pub enum RpcError {
     #[error("inner network client failed to fetch")]
-    ClientError,
-    #[error("got a bad response from the RPC provider")]
-    BadResponse,
+    ClientError(#[from] jsonrpsee::core::client::error::Error),
 }
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+
+#[derive(Error, Debug)]
 pub enum ForeignChainInspectionError {
     #[error("rpc client failed to fetch transaction information")]
     RpcClientError(#[from] RpcError),

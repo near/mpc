@@ -1,6 +1,5 @@
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
-    RpcError,
     bitcoin::{
         BitcoinBlockHash, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
@@ -88,12 +87,12 @@ async fn extract_returns_error_when_confirmations_insufficient() {
         .await;
 
     // then
-    let expected_response = Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
-        expected: threshold,
-        got: confirmations,
+    assert_matches!(
+    response,
+    Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got }) => {
+        assert_eq!(expected,  threshold);
+        assert_eq!(got,  confirmations);
     });
-
-    assert_eq!(response, expected_response);
 }
 
 #[tokio::test]
@@ -154,9 +153,7 @@ async fn extract_propagates_rpc_client_errors() {
     // then
     assert_matches!(
         response,
-        Err(ForeignChainInspectionError::RpcClientError(
-            RpcError::ClientError
-        ))
+        Err(ForeignChainInspectionError::RpcClientError(_))
     );
 }
 
