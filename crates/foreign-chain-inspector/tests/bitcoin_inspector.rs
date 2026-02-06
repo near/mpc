@@ -44,7 +44,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
         .expect_request()
         .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let rpc_client = BitcoinCoreRpcClient::new(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
 
     // when
@@ -78,7 +78,7 @@ async fn extract_returns_error_when_confirmations_insufficient() {
         .expect_request()
         .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let rpc_client = BitcoinCoreRpcClient::new(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
 
     // when
@@ -114,7 +114,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
         .expect_request()
         .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let rpc_client = BitcoinCoreRpcClient::new(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
 
     // when
@@ -142,7 +142,7 @@ async fn extract_propagates_rpc_client_errors() {
         ))))
     });
 
-    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let rpc_client = BitcoinCoreRpcClient::new(mock_client);
     let inspector = BitcoinInspector::new(rpc_client);
 
     // when
@@ -184,8 +184,10 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
             .json_body(serde_json::to_value(&response).unwrap());
     });
 
-    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
-        .expect("Failed to create client");
+    let http_client =
+        foreign_chain_inspector::build_http_client(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create HTTP client");
+    let client = BitcoinCoreRpcClient::new(http_client);
     let inspector = BitcoinInspector::new(client);
 
     // when

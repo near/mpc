@@ -1,5 +1,6 @@
 use derive_more::{Deref, Display, From};
-use http::{HeaderName, HeaderValue};
+use http::{HeaderMap, HeaderName, HeaderValue};
+use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use thiserror::Error;
 
 pub mod abstract_chain;
@@ -69,4 +70,29 @@ pub enum ForeignChainInspectionError {
         expected: BlockConfirmations,
         got: BlockConfirmations,
     },
+}
+
+/// Builds an HTTP client with the specified authentication method.
+/// This is a shared utility to avoid code duplication across different blockchain RPC clients.
+pub fn build_http_client(
+    base_url: String,
+    rpc_authentication: RpcAuthentication,
+) -> Result<HttpClient, RpcError> {
+    let mut headers = HeaderMap::new();
+
+    match rpc_authentication {
+        RpcAuthentication::KeyInUrl => {}
+        RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } => {
+            headers.insert(header_name, header_value);
+        }
+    }
+
+    let client = HttpClientBuilder::default()
+        .set_headers(headers)
+        .build(&base_url)?;
+
+    Ok(client)
 }

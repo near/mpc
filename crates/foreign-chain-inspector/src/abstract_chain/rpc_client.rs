@@ -1,12 +1,8 @@
 use crate::{
-    BlockConfirmations, ForeignChainRpcClient, RpcAuthentication, RpcError,
+    BlockConfirmations, ForeignChainRpcClient, RpcError,
     abstract_chain::{AbstractBlockHash, AbstractRpcResponse, AbstractTransactionHash},
 };
-use http::HeaderMap;
-use jsonrpsee::{
-    core::{client::ClientT, params::ArrayParams},
-    http_client::{HttpClient, HttpClientBuilder},
-};
+use jsonrpsee::core::{client::ClientT, params::ArrayParams};
 use serde::{Deserialize, Serialize};
 
 /// Standard Ethereum JSON-RPC methods that Abstract supports
@@ -18,30 +14,8 @@ pub struct AbstractRpcClient<Client> {
     client: Client,
 }
 
-impl AbstractRpcClient<HttpClient> {
-    pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Result<Self, RpcError> {
-        let mut headers = HeaderMap::new();
-
-        match rpc_authentication {
-            RpcAuthentication::KeyInUrl => {}
-            RpcAuthentication::CustomHeader {
-                header_name,
-                header_value,
-            } => {
-                headers.insert(header_name, header_value);
-            }
-        }
-
-        let client = HttpClientBuilder::default()
-            .set_headers(headers)
-            .build(&base_url)?;
-
-        Ok(Self { client })
-    }
-}
-
 impl<Client> AbstractRpcClient<Client> {
-    pub fn with_client(client: Client) -> Self {
+    pub fn new(client: Client) -> Self {
         Self { client }
     }
 }
