@@ -3,9 +3,9 @@
 //! These types mirror the internal contract state types and are used for JSON serialization
 //! in the contract's public API (e.g., the `state()` view function).
 
+use crate::types::PublicKey;
 use crate::types::participants::ParticipantsJson;
 use crate::types::primitives::AccountId;
-use crate::types::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -15,6 +15,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// Epoch identifier for key generation/resharing cycles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct EpochId(pub u64);
 
 impl EpochId {
@@ -28,14 +32,26 @@ impl EpochId {
 
 /// Attempt identifier within a key event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct AttemptId(pub u64);
 
 /// Domain identifier for signature schemes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct DomainId(pub u64);
 
 /// Threshold value for distributed key operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct Threshold(pub u64);
 
 impl Threshold {
@@ -46,10 +62,18 @@ impl Threshold {
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct AuthenticatedParticipantId(pub crate::types::participants::ParticipantId);
 
 /// An account ID that has been authenticated (i.e., the caller is this account).
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct AuthenticatedAccountId(pub AccountId);
 
 // =============================================================================
@@ -58,6 +82,10 @@ pub struct AuthenticatedAccountId(pub AccountId);
 
 /// Supported signature schemes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum SignatureScheme {
     Secp256k1,
     Ed25519,
@@ -68,6 +96,10 @@ pub enum SignatureScheme {
 
 /// Configuration for a signature domain.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
@@ -75,6 +107,10 @@ pub struct DomainConfig {
 
 /// Registry of all signature domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct DomainRegistry {
     pub domains: Vec<DomainConfig>,
     pub next_domain_id: u64,
@@ -93,6 +129,10 @@ impl DomainRegistry {
 /// Extended public key representation for different signature schemes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum PublicKeyExtended {
     /// Secp256k1 public key (ECDSA).
     Secp256k1 {
@@ -119,6 +159,10 @@ pub enum PublicKeyExtended {
 
 /// A public key for a specific domain.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct KeyForDomain {
     pub domain_id: DomainId,
     pub key: PublicKeyExtended,
@@ -127,6 +171,10 @@ pub struct KeyForDomain {
 
 /// Set of keys for the current epoch.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct Keyset {
     pub epoch_id: EpochId,
     pub domains: Vec<KeyForDomain>,
@@ -134,6 +182,10 @@ pub struct Keyset {
 
 /// Identifier for a key event (generation or resharing attempt).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct KeyEventId {
     pub epoch_id: EpochId,
     pub domain_id: DomainId,
@@ -146,6 +198,10 @@ pub struct KeyEventId {
 
 /// Threshold parameters for distributed key operations.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct ThresholdParameters {
     pub participants: ParticipantsJson,
     pub threshold: Threshold,
@@ -157,12 +213,20 @@ pub struct ThresholdParameters {
 
 /// Votes for threshold parameter changes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct ThresholdParametersVotes {
     pub proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
 }
 
 /// Votes for adding new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct AddDomainsVotes {
     pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
@@ -173,6 +237,10 @@ pub struct AddDomainsVotes {
 
 /// State of a key generation/resharing instance.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct KeyEventInstance {
     pub attempt_id: AttemptId,
     pub started_in: u64,
@@ -183,6 +251,10 @@ pub struct KeyEventInstance {
 
 /// Key generation or resharing event state.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
@@ -197,6 +269,10 @@ pub struct KeyEvent {
 
 /// State when the contract is generating keys for new domains.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct InitializingContractState {
     pub domains: DomainRegistry,
     pub epoch_id: EpochId,
@@ -207,6 +283,10 @@ pub struct InitializingContractState {
 
 /// State when the contract is ready for signature operations.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct RunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
@@ -229,6 +309,10 @@ impl RunningContractState {
 
 /// State when the contract is resharing keys to new participants.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub struct ResharingContractState {
     pub previous_running_state: RunningContractState,
     pub reshared_keys: Vec<KeyForDomain>,
@@ -245,6 +329,10 @@ impl ResharingContractState {
 
 /// The main protocol contract state enum.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 pub enum ProtocolContractState {
     NotInitialized,
     Initializing(InitializingContractState),
@@ -283,9 +371,7 @@ impl ProtocolContractState {
     pub fn domain_registry(&self) -> Option<&DomainRegistry> {
         match self {
             ProtocolContractState::Running(state) => Some(&state.domains),
-            ProtocolContractState::Resharing(state) => {
-                Some(&state.previous_running_state.domains)
-            }
+            ProtocolContractState::Resharing(state) => Some(&state.previous_running_state.domains),
             _ => None,
         }
     }
@@ -298,11 +384,7 @@ impl ProtocolContractState {
             ProtocolContractState::Initializing(state) => &state.domains,
             _ => return None,
         };
-        registry
-            .domains
-            .iter()
-            .find(|d| d.id == domain_id)
-            .cloned()
+        registry.domains.iter().find(|d| d.id == domain_id).cloned()
     }
 
     /// Returns the threshold for any initialized state.
@@ -322,15 +404,21 @@ impl ProtocolContractState {
     /// Returns the number of participants in the active parameters.
     pub fn active_participants_count(&self) -> usize {
         match self {
-            ProtocolContractState::Initializing(state) => {
-                state.generating_key.parameters.participants.participants.len()
-            }
+            ProtocolContractState::Initializing(state) => state
+                .generating_key
+                .parameters
+                .participants
+                .participants
+                .len(),
             ProtocolContractState::Running(state) => {
                 state.parameters.participants.participants.len()
             }
-            ProtocolContractState::Resharing(state) => {
-                state.resharing_key.parameters.participants.participants.len()
-            }
+            ProtocolContractState::Resharing(state) => state
+                .resharing_key
+                .parameters
+                .participants
+                .participants
+                .len(),
             ProtocolContractState::NotInitialized => {
                 panic!("protocol state must be initialized")
             }
@@ -340,15 +428,16 @@ impl ProtocolContractState {
     /// Returns the participants vec from the active parameters.
     pub fn active_participants(
         &self,
-    ) -> &[(AccountId, crate::types::participants::ParticipantId, crate::types::participants::ParticipantInfo)]
-    {
+    ) -> &[(
+        AccountId,
+        crate::types::participants::ParticipantId,
+        crate::types::participants::ParticipantInfo,
+    )] {
         match self {
             ProtocolContractState::Initializing(state) => {
                 &state.generating_key.parameters.participants.participants
             }
-            ProtocolContractState::Running(state) => {
-                &state.parameters.participants.participants
-            }
+            ProtocolContractState::Running(state) => &state.parameters.participants.participants,
             ProtocolContractState::Resharing(state) => {
                 &state.resharing_key.parameters.participants.participants
             }

@@ -1,6 +1,4 @@
-use contract_interface::types::{
-    Attestation, InitConfig, MockAttestation, ProtocolContractState,
-};
+use contract_interface::types::{Attestation, InitConfig, MockAttestation, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -334,7 +332,11 @@ fn test_clean_tee_status_removes_non_participants() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    let final_participant_count = final_running_state.parameters.participants.participants.len();
+    let final_participant_count = final_running_state
+        .parameters
+        .participants
+        .participants
+        .len();
     assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 

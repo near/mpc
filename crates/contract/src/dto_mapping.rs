@@ -565,10 +565,11 @@ impl From<contract_interface::types::Config> for Config {
 // State DTO Conversions
 // =============================================================================
 
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::primitives::{
     domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
     key_state::{
-        AuthenticatedAccountId, AuthenticatedParticipantId, AttemptId, EpochId, KeyEventId,
+        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
         KeyForDomain, Keyset,
     },
     participants::Participants,
@@ -576,13 +577,12 @@ use crate::primitives::{
     votes::ThresholdParametersVotes,
 };
 use crate::state::{
-    key_event::{KeyEvent, KeyEventInstance},
     initializing::InitializingContractState,
+    key_event::{KeyEvent, KeyEventInstance},
     resharing::ResharingContractState,
     running::RunningContractState,
     ProtocolContractState,
 };
-use crate::crypto_shared::types::PublicKeyExtended;
 use k256::elliptic_curve::group::GroupEncoding as _;
 
 // --- Simple wrapper types ---
@@ -659,9 +659,11 @@ impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
 impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
     fn into_dto_type(self) -> dtos::PublicKeyExtended {
         match self {
-            PublicKeyExtended::Secp256k1 { near_public_key } => dtos::PublicKeyExtended::Secp256k1 {
-                near_public_key: String::from(near_public_key),
-            },
+            PublicKeyExtended::Secp256k1 { near_public_key } => {
+                dtos::PublicKeyExtended::Secp256k1 {
+                    near_public_key: String::from(near_public_key),
+                }
+            }
             PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 edwards_point,
@@ -804,9 +806,17 @@ impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContrac
         dtos::InitializingContractState {
             domains: (&self.domains).into_dto_type(),
             epoch_id: self.epoch_id.into_dto_type(),
-            generated_keys: self.generated_keys.iter().map(|k| k.into_dto_type()).collect(),
+            generated_keys: self
+                .generated_keys
+                .iter()
+                .map(|k| k.into_dto_type())
+                .collect(),
             generating_key: (&self.generating_key).into_dto_type(),
-            cancel_votes: self.cancel_votes.iter().map(|p| p.into_dto_type()).collect(),
+            cancel_votes: self
+                .cancel_votes
+                .iter()
+                .map(|p| p.into_dto_type())
+                .collect(),
         }
     }
 }
@@ -830,7 +840,11 @@ impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState
     fn into_dto_type(self) -> dtos::ResharingContractState {
         dtos::ResharingContractState {
             previous_running_state: (&self.previous_running_state).into_dto_type(),
-            reshared_keys: self.reshared_keys.iter().map(|k| k.into_dto_type()).collect(),
+            reshared_keys: self
+                .reshared_keys
+                .iter()
+                .map(|k| k.into_dto_type())
+                .collect(),
             resharing_key: (&self.resharing_key).into_dto_type(),
             cancellation_requests: self
                 .cancellation_requests

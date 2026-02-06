@@ -125,7 +125,9 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let state = get_state(&contract).await;
         assert_eq!(state.next_domain_id(), next_domain_id + 1);
         assert!(matches!(state, ProtocolContractState::Initializing(_)));
-        let found = state.get_domain_config(dtos::DomainId(next_domain_id)).unwrap();
+        let found = state
+            .get_domain_config(dtos::DomainId(next_domain_id))
+            .unwrap();
         assert_eq!(next_domain_id, found.id.0);
         assert_eq!((*scheme).into_interface_type(), found.scheme);
 
@@ -184,7 +186,10 @@ async fn test_resharing() -> anyhow::Result<()> {
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Running(state) => {
-            assert_eq!(state.parameters.participants.participants.len(), PARTICIPANT_LEN + 1);
+            assert_eq!(
+                state.parameters.participants.participants.len(),
+                PARTICIPANT_LEN + 1
+            );
             assert_eq!(state.keyset.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in running state"),
@@ -621,10 +626,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(resharing_state) => {
-            assert_eq!(
-                resharing_state.resharing_key.epoch_id,
-                prospective_epoch_id
-            );
+            assert_eq!(resharing_state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
     }
@@ -632,9 +634,13 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     // Step 3: Start reshare instance
     let mut all_participants = persistent_participants;
     all_participants.extend_from_slice(&new_participant_accounts);
-    conclude_resharing(&contract, &all_participants, mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.get()))
-        .await
-        .unwrap();
+    conclude_resharing(
+        &contract,
+        &all_participants,
+        mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.get()),
+    )
+    .await
+    .unwrap();
 
     // Step 5: Verify final state
     let state: ProtocolContractState = get_state(&contract).await;
@@ -675,7 +681,8 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
     };
     let threshold = running_state.parameters.threshold;
     let epoch_id = state.current_epoch();
-    let mut proposed_participants: mpc_contract::primitives::participants::Participants = (&running_state.parameters.participants).into_contract_type();
+    let mut proposed_participants: mpc_contract::primitives::participants::Participants =
+        (&running_state.parameters.participants).into_contract_type();
 
     let (new_account, new_account_id) = gen_account(&worker).await;
     let new_participant_info = gen_participant_info();

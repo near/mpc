@@ -88,8 +88,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
-    let new_threshold_parameters = ThresholdParameters::new(new_participants, mpc_contract::primitives::thresholds::Threshold::new(threshold.value()))
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.value()),
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
     let prospective_epoch_id = EpochId::new(6);
 
     // when: resharing completes with new participants that exclude participant 0

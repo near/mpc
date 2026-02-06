@@ -173,9 +173,7 @@ pub struct AddDomainsVotes {
 
 impl AddDomainsVotes {
     /// Returns a reference to the underlying map of votes.
-    pub fn proposal_by_account(
-        &self,
-    ) -> &BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>> {
+    pub fn proposal_by_account(&self) -> &BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>> {
         &self.proposal_by_account
     }
 

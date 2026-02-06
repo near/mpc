@@ -13,9 +13,7 @@ pub struct ThresholdParametersVotes {
 
 impl ThresholdParametersVotes {
     /// Returns a reference to the underlying map of votes.
-    pub fn proposal_by_account(
-        &self,
-    ) -> &BTreeMap<AuthenticatedAccountId, ThresholdParameters> {
+    pub fn proposal_by_account(&self) -> &BTreeMap<AuthenticatedAccountId, ThresholdParameters> {
         &self.proposal_by_account
     }
 
