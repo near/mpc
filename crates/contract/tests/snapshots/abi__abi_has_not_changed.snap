@@ -2886,77 +2886,83 @@ expression: abi
               "description": "Secp256k1 public key (ECDSA).",
               "type": "object",
               "required": [
-                "near_public_key",
-                "type"
+                "Secp256k1"
               ],
               "properties": {
-                "near_public_key": {
-                  "description": "The public key in NEAR SDK format (string representation).",
-                  "type": "string"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "Secp256k1"
-                  ]
+                "Secp256k1": {
+                  "type": "object",
+                  "required": [
+                    "near_public_key"
+                  ],
+                  "properties": {
+                    "near_public_key": {
+                      "description": "The public key in NEAR SDK format (string representation).",
+                      "type": "string"
+                    }
+                  }
                 }
-              }
+              },
+              "additionalProperties": false
             },
             {
               "description": "Ed25519 public key.",
               "type": "object",
               "required": [
-                "edwards_point",
-                "near_public_key_compressed",
-                "type"
+                "Ed25519"
               ],
               "properties": {
-                "edwards_point": {
-                  "description": "The Edwards point (32 bytes).",
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "format": "uint8",
-                    "minimum": 0.0
-                  },
-                  "maxItems": 32,
-                  "minItems": 32
-                },
-                "near_public_key_compressed": {
-                  "description": "The compressed public key in NEAR SDK format.",
-                  "type": "string"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "Ed25519"
-                  ]
+                "Ed25519": {
+                  "type": "object",
+                  "required": [
+                    "edwards_point",
+                    "near_public_key_compressed"
+                  ],
+                  "properties": {
+                    "edwards_point": {
+                      "description": "The Edwards point (32 bytes).",
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "uint8",
+                        "minimum": 0.0
+                      },
+                      "maxItems": 32,
+                      "minItems": 32
+                    },
+                    "near_public_key_compressed": {
+                      "description": "The compressed public key in NEAR SDK format.",
+                      "type": "string"
+                    }
+                  }
                 }
-              }
+              },
+              "additionalProperties": false
             },
             {
               "description": "BLS12-381 public key.",
               "type": "object",
               "required": [
-                "public_key",
-                "type"
+                "Bls12381"
               ],
               "properties": {
-                "public_key": {
-                  "description": "The public key.",
-                  "allOf": [
-                    {
-                      "$ref": "#/definitions/PublicKey"
+                "Bls12381": {
+                  "type": "object",
+                  "required": [
+                    "public_key"
+                  ],
+                  "properties": {
+                    "public_key": {
+                      "description": "The public key.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/PublicKey"
+                        }
+                      ]
                     }
-                  ]
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "Bls12381"
-                  ]
+                  }
                 }
-              }
+              },
+              "additionalProperties": false
             }
           ]
         },

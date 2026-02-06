@@ -124,7 +124,6 @@ impl DomainRegistry {
 
 /// Extended public key representation for different signature schemes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
