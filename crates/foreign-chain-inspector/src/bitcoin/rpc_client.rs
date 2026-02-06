@@ -14,11 +14,11 @@ const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
 #[derive(Debug, Clone)]
-pub struct BitcoinCoreRpcClient {
-    client: HttpClient,
+pub struct BitcoinCoreRpcClient<Client> {
+    client: Client,
 }
 
-impl BitcoinCoreRpcClient {
+impl BitcoinCoreRpcClient<HttpClient> {
     pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Result<Self, RpcError> {
         let mut builder = HttpClientBuilder::default();
 
@@ -42,7 +42,16 @@ impl BitcoinCoreRpcClient {
     }
 }
 
-impl ForeignChainRpcClient for BitcoinCoreRpcClient {
+impl<Client> BitcoinCoreRpcClient<Client> {
+    pub fn with_client(client: Client) -> Self {
+        Self { client }
+    }
+}
+
+impl<Client> ForeignChainRpcClient for BitcoinCoreRpcClient<Client>
+where
+    Client: ClientT + Send + Sync,
+{
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
     type RpcResponse = BitcoinRpcResponse;
