@@ -16,7 +16,19 @@ pub struct VerifyForeignTransactionRequestArgs {
     pub domain_id: DomainId,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -38,7 +50,19 @@ pub struct VerifyForeignTransactionResponse {
     pub signature: SignatureResponse,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -50,7 +74,19 @@ pub enum ForeignChainRpcRequest {
     Bitcoin(BitcoinRpcRequest),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -60,7 +96,19 @@ pub struct EthereumRpcRequest {
     pub extractors: Vec<EthereumExtractor>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -71,7 +119,19 @@ pub struct SolanaRpcRequest {
     pub extractors: Vec<SolanaExtractor>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -82,7 +142,19 @@ pub struct BitcoinRpcRequest {
     pub extractors: Vec<BitcoinExtractor>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -93,7 +165,19 @@ pub enum Finality {
     Final,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -103,7 +187,19 @@ pub enum EthereumExtractor {
     BlockHash,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -114,7 +210,19 @@ pub enum SolanaExtractor {
     SolanaDataHash { ix_index: u32 },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -259,6 +367,8 @@ pub struct ForeignChainPolicyVotes {
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
@@ -322,6 +432,8 @@ pub struct ForeignBlockId(#[serde_as(as = "Hex")] pub [u8; 32]);
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
@@ -343,6 +455,8 @@ pub struct EthereumTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
@@ -371,6 +485,8 @@ pub struct SolanaTxId(
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
