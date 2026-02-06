@@ -10,7 +10,6 @@ http = { workspace = true }
 jsonrpsee = { workspace = true }
 mockall = { workspace = true }
 mpc-primitives = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

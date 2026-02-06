@@ -1,47 +1,44 @@
 use crate::{
     BlockConfirmations, ForeignChainRpcClient, RpcAuthentication, RpcError,
     bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
-    rpc_types::{JsonRpcRequest, JsonRpcResponse},
 };
-use reqwest::{Method, StatusCode, header::HeaderMap};
+use jsonrpsee::{
+    core::{client::ClientT, ClientError, JsonValue},
+    http_client::{HttpClient, HttpClientBuilder},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-const JSON_RPC_VERSION: &str = "1.0";
-const JSON_RPC_CLIENT_ID: &str = "client";
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
 const VERBOSE_RESPONSE: bool = true;
 
 #[derive(Debug, Clone)]
 pub struct BitcoinCoreRpcClient {
-    request_client: reqwest::Client,
-    base_url: String,
+    client: HttpClient,
 }
 
 impl BitcoinCoreRpcClient {
-    pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Self {
-        let mut headers = HeaderMap::new();
+    pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Result<Self, RpcError> {
+        let mut builder = HttpClientBuilder::default();
 
-        match rpc_authentication {
-            RpcAuthentication::KeyInUrl => {}
-            RpcAuthentication::CustomHeader {
-                header_name,
-                header_value,
-            } => {
-                headers.insert(header_name, header_value);
-            }
+        if let RpcAuthentication::CustomHeader {
+            header_name,
+            header_value,
+        } = rpc_authentication
+        {
+            builder = builder.set_headers(
+                [(header_name, header_value)]
+                    .into_iter()
+                    .collect(),
+            );
         }
 
-        let request_client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .expect("Failed to build HTTP client");
+        let client = builder
+            .build(&base_url)
+            .map_err(|_| RpcError::ClientError)?;
 
-        Self {
-            base_url,
-            request_client,
-        }
+        Ok(Self { client })
     }
 }
 
@@ -54,34 +51,32 @@ impl ForeignChainRpcClient for BitcoinCoreRpcClient {
         transaction: BitcoinTransactionHash,
         _finality: BlockConfirmations,
     ) -> Result<BitcoinRpcResponse, RpcError> {
-        let rpc_parameters = json!([transaction, VERBOSE_RESPONSE]);
+        // Build params as JSON array for positional parameters
+        let params: Vec<JsonValue> = vec![
+            json!(transaction),
+            json!(VERBOSE_RESPONSE),
+        ];
 
-        let request = JsonRpcRequest {
-            jsonrpc: JSON_RPC_VERSION,
-            id: JSON_RPC_CLIENT_ID,
-            method: GET_RAW_TRANSACTION_METHOD,
-            params: rpc_parameters,
-        };
-
-        let response = self
-            .request_client
-            .request(Method::POST, &self.base_url)
-            .json(&request)
-            .send()
+        let rpc_response: GetRawTransactionVerboseResponse = self
+            .client
+            .request(GET_RAW_TRANSACTION_METHOD, params)
             .await
-            .map_err(|_| RpcError::ClientError)?;
-
-        // TODO(#1978): add retry mechanism if the error code is transient
-        if response.status() != StatusCode::OK {
-            return Err(RpcError::BadResponse);
-        }
-
-        let rpc_response = response
-            .json::<JsonRpcResponse<GetRawTransactionVerboseResponse>>()
-            .await
-            .map_err(|_| RpcError::BadResponse)?
-            .0
-            .map_err(|_| RpcError::BadResponse)?;
+            .map_err(|e| {
+                // Distinguish between connection/transport errors and other errors
+                let err_str = e.to_string().to_lowercase();
+                match e {
+                    // Connection refused, timeout, DNS errors, network unreachable
+                    ClientError::Transport(_) if err_str.contains("connect")
+                        || err_str.contains("refused")
+                        || err_str.contains("timeout")
+                        || err_str.contains("unreachable")
+                        || err_str.contains("network")
+                        || err_str.contains("dns") => RpcError::ClientError,
+                    ClientError::RequestTimeout => RpcError::ClientError,
+                    // HTTP errors (500, 401, etc), RPC errors, deserialization errors
+                    _ => RpcError::BadResponse,
+                }
+            })?;
 
         Ok(BitcoinRpcResponse {
             block_hash: rpc_response.blockhash,
@@ -111,7 +106,8 @@ mod tests {
     async fn http_error_status_code_returns_bad_response() {
         // Given
         let server = MockServer::start();
-        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create client");
 
         server.mock(|when, then| {
             when.method(POST);
@@ -134,30 +130,31 @@ mod tests {
     async fn success_transaction_response_is_parsed_correctly() {
         // Given
         let server = MockServer::start();
-        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create client");
 
         let transaction_hash = BitcoinTransactionHash::from([12; 32]);
 
         let expected_block_hash = BitcoinBlockHash::from([42; 32]);
         let expected_confirmations = 250;
 
-        let raw_response: GetRawTransactionVerboseResponse = GetRawTransactionVerboseResponse {
-            blockhash: expected_block_hash.clone(),
-            confirmations: expected_confirmations,
-        };
-
-        server.mock(|when, then| {
+        let _mock = server.mock(|when, then| {
             when.method(POST).path("/");
 
-            let json_rpc_response = json!({
-                    "result": raw_response,
-                    "error": null,
-                    "id": "client"
-            });
+            // Create response with proper JSON-RPC 2.0 format
+            // Serialize the blockhash as hex string
+            let blockhash_hex = expected_block_hash.as_hex();
 
             then.status(200)
                 .header("content-type", "application/json")
-                .json_body(json_rpc_response);
+                .json_body(json!({
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "blockhash": blockhash_hex,
+                        "confirmations": expected_confirmations
+                    },
+                    "id": 0
+                }));
         });
 
         // When
@@ -187,16 +184,19 @@ mod tests {
             header_value: header_value.parse().unwrap(),
         };
 
-        let client = BitcoinCoreRpcClient::new(server.url("/"), auth);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), auth)
+            .expect("Failed to create client");
 
         let mock = server.mock(|when, then| {
             // Assert header is present
             when.method(POST).header(header, header_value);
             then.status(200).json_body(json!({
+                "jsonrpc": "2.0",
                 "result": {
                     "blockhash": "valid_hash",
                     "confirmations": 1
-                }
+                },
+                "id": 1
             }));
         });
 
@@ -216,7 +216,8 @@ mod tests {
     async fn http_status_unauthorized_error_returns_bad_response() {
         // Given
         let server = MockServer::start();
-        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create client");
 
         server.mock(|when, then| {
             when.method(POST);
@@ -239,7 +240,8 @@ mod tests {
     async fn malformed_json_response() {
         // Given
         let server = MockServer::start();
-        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create client");
 
         server.mock(|when, then| {
             when.method(POST);
@@ -266,15 +268,16 @@ mod tests {
     async fn bad_response_is_returned_for_rpc_errors() {
         // Given
         let server = MockServer::start();
-        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+        let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+            .expect("Failed to create client");
 
         // Simulation of a Bitcoin node error (e.g., tx not found)
         server.mock(|when, then| {
             when.method(POST);
             then.status(200).json_body(json!({
-                "result": null,
+                "jsonrpc": "2.0",
                 "error": { "code": -1, "message": "Transaction not found" },
-                "id": "client"
+                "id": 1
             }));
         });
 
@@ -296,7 +299,8 @@ mod tests {
         // point to a closed socket address
         let invalid_url = "http://127.0.0.1:0";
         let client =
-            BitcoinCoreRpcClient::new(invalid_url.to_string(), RpcAuthentication::KeyInUrl);
+            BitcoinCoreRpcClient::new(invalid_url.to_string(), RpcAuthentication::KeyInUrl)
+                .expect("Failed to create client");
 
         // When
         let result = client

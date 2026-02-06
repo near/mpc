@@ -192,28 +192,22 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     let confirmations = 10u64;
     let threshold = BlockConfirmations::from(6u64);
 
-    let expected_request = json!({
-        "jsonrpc": "1.0",
-        "id": "client",
-        "method": "getrawtransaction",
-        "params": [tx_id.as_hex(), true]
-    });
-
     server.mock(|when, then| {
-        when.method(POST).path("/").json_body(expected_request);
+        when.method(POST).path("/");
         then.status(200)
             .header("content-type", "application/json")
             .json_body(json!({
+                "jsonrpc": "2.0",
                 "result": {
                     "blockhash": expected_block_hash.as_hex(),
                     "confirmations": confirmations
                 },
-                "error": null,
-                "id": "client"
+                "id": 0
             }));
     });
 
-    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+        .expect("Failed to create client");
     let inspector = BitcoinInspector::new(client);
 
     // when

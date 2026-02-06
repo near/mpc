@@ -4,8 +4,6 @@ use thiserror::Error;
 
 pub mod bitcoin;
 
-pub(crate) mod rpc_types;
-
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;

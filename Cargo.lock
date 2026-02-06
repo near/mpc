@@ -3215,7 +3215,6 @@ dependencies = [
  "jsonrpsee",
  "mockall",
  "mpc-primitives",
- "reqwest 0.12.24",
  "rstest",
  "serde",
  "serde_json",
