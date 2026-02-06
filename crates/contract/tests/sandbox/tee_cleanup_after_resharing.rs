@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::PARTICIPANT_LEN,
-        interface::IntoInterfaceType,
+        interface::{IntoContractType, IntoInterfaceType},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
             submit_participant_info,
@@ -41,7 +41,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
-    let expected_node_ids = initial_participants.get_node_ids();
+    let expected_node_ids = (&initial_participants).into_contract_type().get_node_ids();
 
     // Verify TEE info for initial participants was added
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
@@ -91,16 +91,22 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     {
         new_participants
             .insert_with_id(
-                account_id.clone(),
-                participant_info.clone(),
-                participant_id.clone(),
+                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                mpc_contract::primitives::participants::ParticipantInfo {
+                    url: participant_info.url.clone(),
+                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                },
+                mpc_contract::primitives::participants::ParticipantId(participant_id.0),
             )
             .expect("Failed to insert participant");
     }
 
     let expected_tee_post_resharing = new_participants.get_node_ids();
-    let new_threshold_parameters =
-        ThresholdParameters::new(new_participants, threshold.clone()).unwrap();
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.value()),
+    )
+    .unwrap();
 
     let prospective_epoch_id = EpochId::new(6);
 
@@ -118,7 +124,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         .expect("Expected contract to be in Running state after resharing.");
 
     // Get current participants to compare
-    let final_participants_node_ids = final_participants.get_node_ids();
+    let final_participants_node_ids = (&final_participants).into_contract_type().get_node_ids();
     // Verify only the new participants remain
     assert_eq!(final_participants_node_ids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up

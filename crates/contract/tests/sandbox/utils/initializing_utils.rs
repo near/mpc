@@ -33,10 +33,16 @@ pub async fn start_keygen_instance(
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
-    let participants = state.active_participants();
+    let active = state.active_participants();
     let leader = accounts
         .iter()
-        .min_by_key(|a| participants.id(a.id()).unwrap())
+        .min_by_key(|a| {
+            active
+                .iter()
+                .find(|(account_id, _, _)| account_id.0 == *a.id())
+                .map(|(_, pid, _)| *pid)
+                .unwrap()
+        })
         .unwrap();
     let result = leader
         .call(contract.id(), "start_keygen_instance")

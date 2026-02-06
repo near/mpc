@@ -9,6 +9,7 @@ use crate::sandbox::utils::{
 };
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use digest::Digest;
+use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -18,7 +19,6 @@ use mpc_contract::{
         test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
     tee::tee_state::NodeId,
     update::{ProposeUpdateArgs, UpdateId},
 };
@@ -430,7 +430,7 @@ pub async fn call_contract_key_generation<const N: usize>(
     let existing_domains = {
         let state: ProtocolContractState = get_state(contract).await;
         match state {
-            ProtocolContractState::Running(state) => state.domains.domains().len(),
+            ProtocolContractState::Running(state) => state.domains.domains.len(),
             _ => panic!("ProtocolContractState must be Running"),
         }
     };
@@ -443,7 +443,7 @@ pub async fn call_contract_key_generation<const N: usize>(
     match state {
         ProtocolContractState::Initializing(state) => {
             assert_eq!(
-                state.domains.domains().len(),
+                state.domains.domains.len(),
                 existing_domains + domains_to_add.len()
             );
         }

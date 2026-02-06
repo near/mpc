@@ -255,8 +255,14 @@ impl KeyEventInstance {
     pub fn attempt_id(&self) -> AttemptId {
         self.attempt_id
     }
+    pub fn started_in(&self) -> u64 {
+        self.started_in
+    }
     pub fn expires_on(&self) -> u64 {
         self.expires_on
+    }
+    pub fn public_key(&self) -> Option<&PublicKeyExtended> {
+        self.public_key.as_ref()
     }
 
     /// Commits the vote of `candidate` to `public_key`, returning either Voted with the number of
