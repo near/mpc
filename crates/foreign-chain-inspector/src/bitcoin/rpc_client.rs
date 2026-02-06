@@ -244,7 +244,7 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(result, Err(_), "Should fail at json deserialization step");
+        assert_matches!(result, Err(_));
     }
 
     #[tokio::test]
@@ -294,10 +294,6 @@ mod tests {
             .await;
 
         // Then
-        assert_matches!(
-            result,
-            Err(_),
-            "Reqwest fails to connect, mapping to RpcError::ClientError"
-        );
+        assert_matches!(result, Err(_));
     }
 }
