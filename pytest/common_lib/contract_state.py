@@ -101,15 +101,13 @@ class Participants:
         raw_participants = data.get("participants", [])
         participants = []
         for entry in raw_participants:
-            account_id = entry[0]
-            pid = entry[1]
-            info = entry[2]
+            account_id, pid, meta = entry
             participants.append(
                 Participant(
                     account_id=account_id,
                     id=pid,
-                    url=info.get("url", ""),
-                    sign_pk=info.get("sign_pk", ""),
+                    url=meta.get("url", ""),
+                    sign_pk=meta.get("sign_pk", ""),
                 )
             )
         return Participants(
