@@ -2,6 +2,10 @@
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
 use contract_interface::types::{self as dtos};
+use mpc_contract::primitives::{
+    domain::SignatureScheme,
+    participants::{ParticipantInfo, Participants},
+};
 use threshold_signatures::confidential_key_derivation::{self as ckd};
 
 pub trait IntoInterfaceType<InterfaceType> {
@@ -58,5 +62,65 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKey {
                 unreachable!()
             }
         }
+    }
+}
+
+impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKeyExtended {
+    fn into_contract_type(self) -> near_sdk::PublicKey {
+        match self {
+            dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
+                near_public_key.parse().unwrap()
+            }
+            dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                ..
+            } => near_public_key_compressed.parse().unwrap(),
+            dtos::PublicKeyExtended::Bls12381 { .. } => {
+                unreachable!("BLS12-381 cannot convert to near_sdk::PublicKey")
+            }
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
+    fn into_interface_type(self) -> dtos::SignatureScheme {
+        match self {
+            SignatureScheme::Secp256k1 => dtos::SignatureScheme::Secp256k1,
+            SignatureScheme::Ed25519 => dtos::SignatureScheme::Ed25519,
+            SignatureScheme::Bls12381 => dtos::SignatureScheme::Bls12381,
+            SignatureScheme::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+        }
+    }
+}
+
+impl IntoContractType<Participants> for &dtos::ParticipantsJson {
+    fn into_contract_type(self) -> Participants {
+        let mut participants = Participants::new();
+        for (account_id, participant_id, info) in &self.participants {
+            participants
+                .insert_with_id(
+                    account_id.0.parse().unwrap(),
+                    ParticipantInfo {
+                        url: info.url.clone(),
+                        sign_pk: info.sign_pk.parse().unwrap(),
+                    },
+                    mpc_contract::primitives::participants::ParticipantId(participant_id.0),
+                )
+                .unwrap();
+        }
+        participants
+    }
+}
+
+impl IntoContractType<mpc_contract::primitives::thresholds::ThresholdParameters>
+    for &dtos::ThresholdParameters
+{
+    fn into_contract_type(self) -> mpc_contract::primitives::thresholds::ThresholdParameters {
+        let participants: Participants = (&self.participants).into_contract_type();
+        mpc_contract::primitives::thresholds::ThresholdParameters::new(
+            participants,
+            mpc_contract::primitives::thresholds::Threshold::new(self.threshold.value()),
+        )
+        .unwrap()
     }
 }

@@ -3,14 +3,10 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
-use mpc_contract::{
-    primitives::{
-        key_state::{AttemptId, EpochId, KeyEventId},
-        thresholds::ThresholdParameters,
-    },
-    state::ProtocolContractState,
-};
+use contract_interface::types::ProtocolContractState;
+use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
 use near_workspaces::{Account, Contract};
+use serde::Serialize;
 use serde_json::json;
 
 pub async fn conclude_resharing(
@@ -21,14 +17,18 @@ pub async fn conclude_resharing(
     let ProtocolContractState::Resharing(resharing_state) = get_state(contract).await else {
         anyhow::bail!("expected resharing state");
     };
-    if resharing_state.prospective_epoch_id() != prospective_epoch_id {
+    if resharing_state.prospective_epoch_id().get() != prospective_epoch_id.get() {
         anyhow::bail!("epoch id mismatch");
     }
-    let domain_configs = resharing_state.previous_running_state.domains.domains();
-    for domain_config in domain_configs {
+    let domain_configs = resharing_state
+        .previous_running_state
+        .domains
+        .domains
+        .clone();
+    for domain_config in &domain_configs {
         let key_event_id = KeyEventId {
             epoch_id: prospective_epoch_id,
-            domain_id: domain_config.id,
+            domain_id: domain_config.id.0.into(),
             attempt_id: AttemptId::new(),
         };
         let state = get_state(contract).await;
@@ -56,7 +56,7 @@ pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> 
 pub async fn vote_new_parameters(
     contract: &Contract,
     prospective_epoch_id: u64,
-    proposal: &ThresholdParameters,
+    proposal: &impl Serialize,
     persistent_participants: &[Account],
     new_participants: &[Account],
 ) -> anyhow::Result<()> {
@@ -93,10 +93,16 @@ pub async fn start_reshare_instance(
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
-    let participants = state.active_participants();
+    let active = state.active_participants();
     let leader = accounts
         .iter()
-        .min_by_key(|a| participants.id(a.id()).unwrap())
+        .min_by_key(|a| {
+            active
+                .iter()
+                .find(|(account_id, _, _)| account_id.0 == *a.id())
+                .map(|(_, pid, _)| *pid)
+                .unwrap()
+        })
         .unwrap();
     let result = leader
         .call(contract.id(), "start_reshare_instance")
@@ -130,7 +136,7 @@ pub async fn vote_reshared(
 pub async fn do_resharing(
     remaining_accounts: &[Account],
     contract: &Contract,
-    new_threshold_parameters: ThresholdParameters,
+    new_threshold_parameters: impl Serialize,
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
     vote_new_parameters(

@@ -11,6 +11,7 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
+use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -20,7 +21,6 @@ use mpc_contract::{
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
 };
 use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
@@ -277,8 +277,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let participant_set: HashSet<AccountId> = initial_participants
         .participants()
         .iter()
-        .map(|(account_id, _, _)| account_id)
-        .cloned()
+        .map(|(account_id, _, _)| account_id.0.parse::<near_account_id::AccountId>().unwrap())
         .collect();
 
     assert_eq!(

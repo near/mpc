@@ -560,3 +560,300 @@ impl From<contract_interface::types::Config> for Config {
         }
     }
 }
+
+// =============================================================================
+// State DTO Conversions
+// =============================================================================
+
+use crate::primitives::{
+    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    key_state::{
+        AuthenticatedAccountId, AuthenticatedParticipantId, AttemptId, EpochId, KeyEventId,
+        KeyForDomain, Keyset,
+    },
+    participants::Participants,
+    thresholds::{Threshold, ThresholdParameters},
+    votes::ThresholdParametersVotes,
+};
+use crate::state::{
+    key_event::{KeyEvent, KeyEventInstance},
+    initializing::InitializingContractState,
+    resharing::ResharingContractState,
+    running::RunningContractState,
+    ProtocolContractState,
+};
+use crate::crypto_shared::types::PublicKeyExtended;
+use k256::elliptic_curve::group::GroupEncoding as _;
+
+// --- Simple wrapper types ---
+
+impl IntoInterfaceType<dtos::EpochId> for EpochId {
+    fn into_dto_type(self) -> dtos::EpochId {
+        dtos::EpochId(self.get())
+    }
+}
+
+impl IntoInterfaceType<dtos::AttemptId> for AttemptId {
+    fn into_dto_type(self) -> dtos::AttemptId {
+        dtos::AttemptId(self.get())
+    }
+}
+
+impl IntoInterfaceType<dtos::DomainId> for DomainId {
+    fn into_dto_type(self) -> dtos::DomainId {
+        dtos::DomainId(*self) // DomainId derives Deref
+    }
+}
+
+impl IntoInterfaceType<dtos::Threshold> for Threshold {
+    fn into_dto_type(self) -> dtos::Threshold {
+        dtos::Threshold(self.value())
+    }
+}
+
+impl IntoInterfaceType<dtos::AuthenticatedParticipantId> for &AuthenticatedParticipantId {
+    fn into_dto_type(self) -> dtos::AuthenticatedParticipantId {
+        dtos::AuthenticatedParticipantId(dtos::ParticipantId(self.get().get()))
+    }
+}
+
+impl IntoInterfaceType<dtos::AuthenticatedAccountId> for &AuthenticatedAccountId {
+    fn into_dto_type(self) -> dtos::AuthenticatedAccountId {
+        dtos::AuthenticatedAccountId(dtos::AccountId(self.get().to_string()))
+    }
+}
+
+// --- Domain types ---
+
+impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
+    fn into_dto_type(self) -> dtos::SignatureScheme {
+        match self {
+            SignatureScheme::Secp256k1 => dtos::SignatureScheme::Secp256k1,
+            SignatureScheme::Ed25519 => dtos::SignatureScheme::Ed25519,
+            SignatureScheme::Bls12381 => dtos::SignatureScheme::Bls12381,
+            SignatureScheme::V2Secp256k1 => dtos::SignatureScheme::V2Secp256k1,
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
+    fn into_dto_type(self) -> dtos::DomainConfig {
+        dtos::DomainConfig {
+            id: self.id.into_dto_type(),
+            scheme: self.scheme.into_dto_type(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::DomainRegistry> for &DomainRegistry {
+    fn into_dto_type(self) -> dtos::DomainRegistry {
+        dtos::DomainRegistry {
+            domains: self.domains().iter().map(|d| d.into_dto_type()).collect(),
+            next_domain_id: self.next_domain_id(),
+        }
+    }
+}
+
+// --- PublicKeyExtended ---
+
+impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
+    fn into_dto_type(self) -> dtos::PublicKeyExtended {
+        match self {
+            PublicKeyExtended::Secp256k1 { near_public_key } => dtos::PublicKeyExtended::Secp256k1 {
+                near_public_key: String::from(near_public_key),
+            },
+            PublicKeyExtended::Ed25519 {
+                near_public_key_compressed,
+                edwards_point,
+            } => dtos::PublicKeyExtended::Ed25519 {
+                near_public_key_compressed: String::from(near_public_key_compressed),
+                edwards_point: edwards_point.to_bytes(),
+            },
+            PublicKeyExtended::Bls12381 { public_key } => dtos::PublicKeyExtended::Bls12381 {
+                public_key: public_key.clone(),
+            },
+        }
+    }
+}
+
+// --- Key state types ---
+
+impl IntoInterfaceType<dtos::KeyForDomain> for &KeyForDomain {
+    fn into_dto_type(self) -> dtos::KeyForDomain {
+        dtos::KeyForDomain {
+            domain_id: self.domain_id.into_dto_type(),
+            key: (&self.key).into_dto_type(),
+            attempt: self.attempt.into_dto_type(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::Keyset> for &Keyset {
+    fn into_dto_type(self) -> dtos::Keyset {
+        dtos::Keyset {
+            epoch_id: self.epoch_id.into_dto_type(),
+            domains: self.domains.iter().map(|k| k.into_dto_type()).collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::KeyEventId> for &KeyEventId {
+    fn into_dto_type(self) -> dtos::KeyEventId {
+        dtos::KeyEventId {
+            epoch_id: self.epoch_id.into_dto_type(),
+            domain_id: self.domain_id.into_dto_type(),
+            attempt_id: self.attempt_id.into_dto_type(),
+        }
+    }
+}
+
+// --- Participants types ---
+
+impl IntoInterfaceType<dtos::ParticipantsJson> for &Participants {
+    fn into_dto_type(self) -> dtos::ParticipantsJson {
+        dtos::ParticipantsJson {
+            next_id: dtos::ParticipantId(self.next_id().get()),
+            participants: self
+                .participants()
+                .iter()
+                .map(|(account_id, participant_id, info)| {
+                    (
+                        dtos::AccountId(account_id.to_string()),
+                        dtos::ParticipantId(participant_id.get()),
+                        dtos::ParticipantInfo {
+                            url: info.url.clone(),
+                            sign_pk: String::from(&info.sign_pk),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ThresholdParameters> for &ThresholdParameters {
+    fn into_dto_type(self) -> dtos::ThresholdParameters {
+        dtos::ThresholdParameters {
+            participants: self.participants().into_dto_type(),
+            threshold: self.threshold().into_dto_type(),
+        }
+    }
+}
+
+// --- Voting types ---
+
+impl IntoInterfaceType<dtos::ThresholdParametersVotes> for &ThresholdParametersVotes {
+    fn into_dto_type(self) -> dtos::ThresholdParametersVotes {
+        dtos::ThresholdParametersVotes {
+            proposal_by_account: self
+                .proposal_by_account()
+                .iter()
+                .map(|(account, params)| (account.into_dto_type(), params.into_dto_type()))
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
+    fn into_dto_type(self) -> dtos::AddDomainsVotes {
+        dtos::AddDomainsVotes {
+            proposal_by_account: self
+                .proposal_by_account()
+                .iter()
+                .map(|(participant, domains)| {
+                    (
+                        participant.into_dto_type(),
+                        domains.iter().map(|d| d.into_dto_type()).collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+// --- Key event types ---
+
+impl IntoInterfaceType<dtos::KeyEventInstance> for &KeyEventInstance {
+    fn into_dto_type(self) -> dtos::KeyEventInstance {
+        dtos::KeyEventInstance {
+            attempt_id: self.attempt_id().into_dto_type(),
+            started_in: self.started_in(),
+            expires_on: self.expires_on(),
+            completed: self.completed().iter().map(|p| p.into_dto_type()).collect(),
+            public_key: self.public_key().map(|pk| pk.into_dto_type()),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
+    fn into_dto_type(self) -> dtos::KeyEvent {
+        dtos::KeyEvent {
+            epoch_id: self.epoch_id().into_dto_type(),
+            domain: (&self.domain()).into_dto_type(),
+            parameters: self.proposed_parameters().into_dto_type(),
+            instance: self.instance().as_ref().map(|i| i.into_dto_type()),
+            next_attempt_id: self.next_attempt_id().into_dto_type(),
+        }
+    }
+}
+
+// --- Contract state types ---
+
+impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContractState {
+    fn into_dto_type(self) -> dtos::InitializingContractState {
+        dtos::InitializingContractState {
+            domains: (&self.domains).into_dto_type(),
+            epoch_id: self.epoch_id.into_dto_type(),
+            generated_keys: self.generated_keys.iter().map(|k| k.into_dto_type()).collect(),
+            generating_key: (&self.generating_key).into_dto_type(),
+            cancel_votes: self.cancel_votes.iter().map(|p| p.into_dto_type()).collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
+    fn into_dto_type(self) -> dtos::RunningContractState {
+        dtos::RunningContractState {
+            domains: (&self.domains).into_dto_type(),
+            keyset: (&self.keyset).into_dto_type(),
+            parameters: (&self.parameters).into_dto_type(),
+            parameters_votes: (&self.parameters_votes).into_dto_type(),
+            add_domains_votes: (&self.add_domains_votes).into_dto_type(),
+            previously_cancelled_resharing_epoch_id: self
+                .previously_cancelled_resharing_epoch_id
+                .map(|e| e.into_dto_type()),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState {
+    fn into_dto_type(self) -> dtos::ResharingContractState {
+        dtos::ResharingContractState {
+            previous_running_state: (&self.previous_running_state).into_dto_type(),
+            reshared_keys: self.reshared_keys.iter().map(|k| k.into_dto_type()).collect(),
+            resharing_key: (&self.resharing_key).into_dto_type(),
+            cancellation_requests: self
+                .cancellation_requests
+                .iter()
+                .map(|a| a.into_dto_type())
+                .collect(),
+        }
+    }
+}
+
+impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
+    fn into_dto_type(self) -> dtos::ProtocolContractState {
+        match self {
+            ProtocolContractState::NotInitialized => dtos::ProtocolContractState::NotInitialized,
+            ProtocolContractState::Initializing(state) => {
+                dtos::ProtocolContractState::Initializing(state.into_dto_type())
+            }
+            ProtocolContractState::Running(state) => {
+                dtos::ProtocolContractState::Running(state.into_dto_type())
+            }
+            ProtocolContractState::Resharing(state) => {
+                dtos::ProtocolContractState::Resharing(state.into_dto_type())
+            }
+        }
+    }
+}

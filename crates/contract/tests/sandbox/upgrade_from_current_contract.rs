@@ -14,10 +14,8 @@ use crate::sandbox::{
         },
     },
 };
-use mpc_contract::{
-    state::ProtocolContractState,
-    update::{ProposeUpdateArgs, UpdateId},
-};
+use contract_interface::types::ProtocolContractState;
+use mpc_contract::update::{ProposeUpdateArgs, UpdateId};
 use near_workspaces::types::NearToken;
 use rand_core::OsRng;
 
@@ -516,9 +514,10 @@ async fn update_from_current_contract_to_migration_contract() {
         .await
         .expect("Contract must be in running state.");
 
+    use crate::sandbox::utils::interface::IntoContractType;
     execute_key_generation_and_add_random_state(
         &mpc_signer_accounts,
-        participants,
+        participants.into_contract_type(),
         &contract,
         &worker,
         &mut OsRng,

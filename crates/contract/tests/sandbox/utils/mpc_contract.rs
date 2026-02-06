@@ -1,12 +1,10 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
-use contract_interface::types::{Attestation, Ed25519PublicKey};
-use mpc_contract::{
-    primitives::{participants::Participants, thresholds::Threshold},
-    state::ProtocolContractState,
-    tee::tee_state::NodeId,
+use contract_interface::types::{
+    Attestation, Ed25519PublicKey, ParticipantsJson, ProtocolContractState, Threshold,
 };
+use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
@@ -14,13 +12,13 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract.view("state").await.unwrap().json().unwrap()
 }
 
-pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
+pub async fn get_participants(contract: &Contract) -> anyhow::Result<ParticipantsJson> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {
         panic!("Expected running state")
     };
 
-    Ok(running.parameters.participants().clone())
+    Ok(running.parameters.participants)
 }
 
 /// Helper function to get TEE participants from contract.
@@ -72,7 +70,7 @@ pub async fn get_participant_attestation(
 
 pub async fn assert_running_return_participants(
     contract: &Contract,
-) -> anyhow::Result<Participants> {
+) -> anyhow::Result<ParticipantsJson> {
     // Verify contract is back to running state with new threshold
     let final_state: ProtocolContractState = contract.view("state").await?.json()?;
     let ProtocolContractState::Running(running_state) = final_state else {
@@ -81,7 +79,7 @@ pub async fn assert_running_return_participants(
             final_state
         );
     };
-    Ok(running_state.parameters.participants().clone())
+    Ok(running_state.parameters.participants)
 }
 
 pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
@@ -92,7 +90,7 @@ pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
             final_state
         );
     };
-    running_state.parameters.threshold()
+    running_state.parameters.threshold
 }
 
 pub async fn vote_for_hash(

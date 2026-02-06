@@ -16,6 +16,13 @@ pub mod types {
     };
 
     pub use primitives::{AccountId, CkdAppId};
+    pub use state::{
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
+        DomainConfig, DomainId, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
+        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
+        PublicKeyExtended, ResharingContractState, RunningContractState, SignatureScheme,
+        Threshold, ThresholdParameters, ThresholdParametersVotes,
+    };
     pub use updates::{ProposedUpdates, UpdateHash};
 
     mod attestation;
@@ -24,5 +31,6 @@ pub mod types {
     mod foreign_chain;
     mod participants;
     mod primitives;
+    mod state;
     mod updates;
 }

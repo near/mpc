@@ -67,7 +67,7 @@ pub struct ParticipantData {
     pub info: ParticipantInfo,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -75,6 +75,26 @@ pub struct ParticipantData {
 pub struct ParticipantsJson {
     pub next_id: ParticipantId,
     pub participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+}
+
+impl ParticipantsJson {
+    pub fn len(&self) -> usize {
+        self.participants.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.participants.is_empty()
+    }
+
+    pub fn participants(&self) -> &[(AccountId, ParticipantId, ParticipantInfo)] {
+        &self.participants
+    }
+
+    /// Checks if the given account ID string is a participant.
+    pub fn is_participant(&self, account_id: &impl std::fmt::Display) -> bool {
+        let account_str = account_id.to_string();
+        self.participants.iter().any(|(a, _, _)| a.0 == account_str)
+    }
 }
 
 /// Helper enum for deserializing both legacy Vec and new Map formats.
