@@ -276,6 +276,34 @@ expression: abi
         }
       },
       {
+        "name": "get_pending_verify_foreign_tx_request",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "get_tee_accounts",
         "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
         "kind": "view",
@@ -772,7 +800,7 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
         "kind": "call",
         "modifiers": [
           "private"
@@ -833,6 +861,39 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PromiseOrValueSignatureResponse"
+          }
+        }
+      },
+      {
+        "name": "return_verify_foreign_tx_and_clean_state_on_success",
+        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
           }
         }
       },
@@ -2495,6 +2556,28 @@ expression: abi
               }
             }
           ]
+        },
+        "PromiseOrValueVerifyForeignTransactionResponse": {
+          "type": "object",
+          "required": [
+            "observed_at_block",
+            "signature",
+            "values"
+          ],
+          "properties": {
+            "observed_at_block": {
+              "$ref": "#/definitions/ForeignBlockId"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse2"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
+            }
+          }
         },
         "ProposedUpdates": {
           "type": "object",
