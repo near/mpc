@@ -136,7 +136,8 @@ impl ThresholdParameters {
     pub fn threshold(&self) -> Threshold {
         self.threshold.clone()
     }
-    /// Returns the map of Participants.
+
+    /// Returns the map of [`Participants`].
     pub fn participants(&self) -> &Participants {
         &self.participants
     }
@@ -157,7 +158,7 @@ impl ThresholdParameters {
         self.participants.update_info(account_id, new_info)
     }
 
-    /// Returns mutable reference to Participants for benchmarking.
+    /// Returns mutable reference to [`Participants`] for benchmarking.
     #[cfg(feature = "bench-contract-methods")]
     pub fn participants_mut(&mut self) -> &mut Participants {
         &mut self.participants

@@ -83,20 +83,16 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
     // Now, we do a resharing. We only retain `threshold` of the initial participants
-    // Sort by ParticipantId to ensure deterministic selection regardless of iteration order
-    let mut sorted_participants: Vec<_> = initial_participants.participants().collect();
-    sorted_participants.sort_by_key(|(_, participant_id, _)| participant_id.get());
-
+    // Build new_participants directly from the accounts slice - account index matches ParticipantId
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in sorted_participants
-        .into_iter()
-        .take(threshold.value() as usize)
-    {
+    for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+        let participant_id = initial_participants.id(account.id()).unwrap();
+        let participant_info = initial_participants.info(account.id()).unwrap();
         new_participants
             .insert_with_id(
-                account_id.clone(),
+                account.id().clone(),
                 participant_info.clone(),
-                *participant_id,
+                participant_id,
             )
             .expect("Failed to insert participant");
     }

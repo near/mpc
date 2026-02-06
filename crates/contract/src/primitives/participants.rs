@@ -220,7 +220,7 @@ impl Participants {
         }
     }
 
-    /// O(log n) lookup to get participant info by account ID.
+    /// O(log n) lookup to get [`ParticipantInfo`] by [`AccountId`].
     pub fn info(&self, account_id: &AccountId) -> Option<&ParticipantInfo> {
         self.participants.get(account_id).map(|data| &data.info)
     }
@@ -242,7 +242,7 @@ impl Participants {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Participants {
-    /// O(log n) lookup - test only. Returns ParticipantId by AccountId.
+    /// O(log n) lookup - test only. Returns [`ParticipantId`] by [`AccountId`].
     pub fn id(&self, account_id: &AccountId) -> Result<ParticipantId, Error> {
         self.participants
             .get(account_id)
@@ -250,7 +250,7 @@ impl Participants {
             .ok_or_else(|| crate::errors::InvalidState::NotParticipant.into())
     }
 
-    /// O(n) reverse lookup - test only. Returns AccountId by ParticipantId.
+    /// O(n) reverse lookup - test only. Returns [`AccountId`] by [`ParticipantId`].
     pub fn account_id(&self, id: &ParticipantId) -> Result<AccountId, Error> {
         self.participants
             .iter()
