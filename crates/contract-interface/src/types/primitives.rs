@@ -122,7 +122,7 @@ pub struct Ed25519Signature(
     derive(schemars::JsonSchema)
 )]
 pub struct K256Signature {
-    pub big_r: AffinePoint,
+    pub big_r: K256AffinePoint,
     pub s: K256Scalar,
     pub recovery_id: u8,
 }
@@ -134,7 +134,7 @@ pub struct K256Signature {
     derive(schemars::JsonSchema)
 )]
 /// AffinePoint on the Secp256k1 curve
-pub struct AffinePoint {
+pub struct K256AffinePoint {
     #[serde_as(as = "Hex")]
     pub affine_point: [u8; 33],
 }
@@ -147,5 +147,5 @@ pub struct AffinePoint {
 )]
 pub struct K256Scalar {
     #[serde_as(as = "Hex")]
-    scalar: [u8; 32],
+    pub scalar: [u8; 32],
 }
