@@ -1,6 +1,6 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
-    RpcAuthentication, RpcError,
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
+    RpcError,
     bitcoin::{
         BitcoinBlockHash, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
@@ -59,12 +59,11 @@ impl ClientT for MockJsonRpcClient {
                 return Err(err);
             }
 
-            let resp = response.lock().unwrap().take()
-                .ok_or_else(|| {
-                    RpcClientError::ParseError(
-                        serde_json::from_str::<serde_json::Value>("").unwrap_err()
-                    )
-                })?;
+            let resp = response.lock().unwrap().take().ok_or_else(|| {
+                RpcClientError::ParseError(
+                    serde_json::from_str::<serde_json::Value>("").unwrap_err(),
+                )
+            })?;
 
             serde_json::from_value(resp).map_err(RpcClientError::ParseError)
         }
@@ -75,7 +74,7 @@ impl ClientT for MockJsonRpcClient {
         _method: &str,
         _params: Params,
     ) -> impl std::future::Future<Output = Result<(), RpcClientError>> + Send {
-        async { Ok(()) }
+        async { unimplemented!() }
     }
 
     fn batch_request<'a, R>(
@@ -85,7 +84,7 @@ impl ClientT for MockJsonRpcClient {
     where
         R: jsonrpsee::core::DeserializeOwned + std::fmt::Debug + 'a,
     {
-        async { Ok(BatchResponse::new(0, vec![], 0)) }
+        async { unimplemented!() }
     }
 }
 
