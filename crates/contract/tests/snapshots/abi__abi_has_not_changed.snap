@@ -1729,11 +1729,6 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
-        "DomainId3": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
-        },
         "DomainRegistry": {
           "description": "Registry of all signature domains.",
           "type": "object",

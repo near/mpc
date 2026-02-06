@@ -9,6 +9,10 @@ use crate::types::primitives::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+// Re-export DomainId from primitives to avoid duplicate JsonSchema definitions
+// that cause non-deterministic ABI snapshots.
+pub use super::primitives::DomainId;
+
 // =============================================================================
 // Simple Wrapper Types (newtypes)
 // =============================================================================
@@ -37,14 +41,6 @@ impl EpochId {
     derive(schemars::JsonSchema)
 )]
 pub struct AttemptId(pub u64);
-
-/// Domain identifier for signature schemes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct DomainId(pub u64);
 
 /// Threshold value for distributed key operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
