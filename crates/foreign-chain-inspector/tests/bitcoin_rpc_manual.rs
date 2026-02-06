@@ -28,7 +28,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
 
     let client =
         BitcoinCoreRpcClient::new(PUBLIC_NODE_URL.to_string(), RpcAuthentication::KeyInUrl)
-            .expect("Failed to create client");
+            .unwrap();
     let inspector = BitcoinInspector::new(client);
 
     // when
