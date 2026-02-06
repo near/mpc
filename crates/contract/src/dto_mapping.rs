@@ -12,7 +12,11 @@ use mpc_attestation::{
 };
 
 use k256::{
-    elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
+    elliptic_curve::{
+        group::GroupEncoding as _,
+        sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
+        PrimeField as _,
+    },
     EncodedPoint,
 };
 
@@ -26,6 +30,7 @@ use threshold_signatures::confidential_key_derivation as ckd;
 use crate::{
     config::Config,
     crypto_shared::k256_types,
+    derive_foreign_tx_tweak,
     update::{ProposedUpdates, Update},
 };
 
@@ -38,7 +43,6 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
 
-#[allow(dead_code)]
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
@@ -558,5 +562,37 @@ impl From<contract_interface::types::Config> for Config {
             remove_non_participant_update_votes_tera_gas: value
                 .remove_non_participant_update_votes_tera_gas,
         }
+    }
+}
+
+impl TryIntoContractType<k256::AffinePoint> for dtos::K256AffinePoint {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<k256::AffinePoint, Self::Error> {
+        k256::AffinePoint::from_bytes(&self.affine_point.into())
+            .into_option()
+            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 affine point"))
+    }
+}
+
+impl TryIntoContractType<k256::Scalar> for dtos::K256Scalar {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<k256::Scalar, Self::Error> {
+        k256::Scalar::from_repr_vartime(self.scalar.into())
+            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 scalar"))
+    }
+}
+
+// Temporary location of this logic until we decide where it should live
+
+pub fn args_into_verify_foreign_tx_request(
+    args: dtos::VerifyForeignTransactionRequestArgs,
+    predecessor_id: &AccountId,
+) -> dtos::VerifyForeignTransactionRequest {
+    let tweak = derive_foreign_tx_tweak(predecessor_id, &args.derivation_path);
+    dtos::VerifyForeignTransactionRequest {
+        domain_id: args.domain_id,
+        tweak,
+        request: args.request,
+        payload_version: args.payload_version,
     }
 }

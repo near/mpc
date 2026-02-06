@@ -30,6 +30,16 @@ pub fn derive_app_id(predecessor_id: &AccountId, derivation_path: &str) -> dtos:
     hash.into()
 }
 
+// Constant prefix that ensures verify foreign tx derivation values are used specifically for
+// near-mpc with derivation protocol vX.Y.Z.
+const FOREIGN_TX_TWEAK_DERIVATION_PREFIX: &str =
+    "near-mpc-recovery v0.1.0 foreign-tx epsilon derivation:";
+
+pub fn derive_foreign_tx_tweak(predecessor_id: &AccountId, path: &str) -> dtos::Tweak {
+    let hash: [u8; 32] = derive_from_path(FOREIGN_TX_TWEAK_DERIVATION_PREFIX, predecessor_id, path);
+    dtos::Tweak::from(hash)
+}
+
 fn derive_from_path(derivation_prefix: &str, predecessor_id: &AccountId, path: &str) -> [u8; 32] {
     // TODO: Use a key derivation library instead of doing this manually.
     // https://crates.io/crates/hkdf might be a good option?
