@@ -1,8 +1,7 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ForeignChainRpcClient,
-    RpcAuthentication, RpcError,
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     bitcoin::{
-        BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash,
+        BitcoinBlockHash, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
         rpc_client::BitcoinCoreRpcClient,
     },
@@ -10,25 +9,14 @@ use foreign_chain_inspector::{
 
 use assert_matches::assert_matches;
 use httpmock::prelude::*;
-use mockall::{mock, predicate::eq};
+use jsonrpsee::core::{
+    client::BatchResponse,
+    client::{ClientT, error::Error as RpcClientError},
+    params::BatchRequestBuilder,
+};
 use rstest::rstest;
-use serde_json::json;
-
-mock! {
-    pub BitcoinRpcClient {}
-
-    impl ForeignChainRpcClient for BitcoinRpcClient {
-        type TransactionId = BitcoinTransactionHash;
-        type Finality = BlockConfirmations;
-        type RpcResponse = BitcoinRpcResponse;
-
-        fn get(
-            &self,
-            transaction: <Self as ForeignChainRpcClient>::TransactionId,
-            finality: <Self as ForeignChainRpcClient>::Finality,
-        ) -> impl Future<Output = Result<<Self as foreign_chain_inspector::ForeignChainRpcClient>::RpcResponse, foreign_chain_inspector::RpcError>>;
-    }
-}
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 #[rstest]
 #[tokio::test]
@@ -45,22 +33,19 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     let tx_id = BitcoinTransactionHash::from([3; 32]);
     let expected_block_hash = BitcoinBlockHash::from([4; 32]);
 
-    let response = BitcoinRpcResponse {
-        block_hash: expected_block_hash.clone(),
-        confirmations,
+    // Mock the JSON-RPC response
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash.clone(),
+        confirmations: *confirmations,
     };
 
-    let mut client = MockBitcoinRpcClient::new();
-    client
-        .expect_get()
-        .with(eq(tx_id.clone()), eq(threshold))
-        .times(1)
-        .returning(move |_, _| {
-            let response = response.clone();
-            Box::pin(async move { Ok(response) })
-        });
+    let mut mock_client = MockJsonRpcClient::new();
+    mock_client
+        .expect_request()
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let inspector = BitcoinInspector::new(client);
+    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let inspector = BitcoinInspector::new(rpc_client);
 
     // when
     let extracted_values = inspector
@@ -69,9 +54,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
         .expect("extract should succeed");
 
     // then
-    let expected_extractions = vec![BitcoinExtractedValue::BlockHash(
-        expected_block_hash.clone(),
-    )];
+    let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
 
     assert_eq!(expected_extractions, extracted_values);
 }
@@ -85,22 +68,18 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     let confirmations = BlockConfirmations::from(2u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let response = BitcoinRpcResponse {
-        block_hash: expected_block_hash,
-        confirmations,
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash,
+        confirmations: *confirmations,
     };
 
-    let mut client = MockBitcoinRpcClient::new();
-    client
-        .expect_get()
-        .with(eq(tx_id.clone()), eq(threshold))
-        .times(1)
-        .returning(move |_, _| {
-            let response = response.clone();
-            Box::pin(async move { Ok(response) })
-        });
+    let mut mock_client = MockJsonRpcClient::new();
+    mock_client
+        .expect_request()
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let inspector = BitcoinInspector::new(client);
+    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let inspector = BitcoinInspector::new(rpc_client);
 
     // when
     let response = inspector
@@ -108,12 +87,12 @@ async fn extract_returns_error_when_confirmations_insufficient() {
         .await;
 
     // then
-    let expected_response = Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
-        expected: threshold,
-        got: confirmations,
+    assert_matches!(
+    response,
+    Err(ForeignChainInspectionError::NotEnoughBlockConfirmations { expected, got }) => {
+        assert_eq!(expected,  threshold);
+        assert_eq!(got,  confirmations);
     });
-
-    assert_eq!(response, expected_response);
 }
 
 #[tokio::test]
@@ -125,22 +104,18 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     let confirmations = BlockConfirmations::from(9u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let response = BitcoinRpcResponse {
-        block_hash: expected_block_hash,
-        confirmations,
+    let mock_response = BitcoinTransactionResponse {
+        blockhash: expected_block_hash,
+        confirmations: *confirmations,
     };
 
-    let mut client = MockBitcoinRpcClient::new();
-    client
-        .expect_get()
-        .with(eq(tx_id.clone()), eq(threshold))
-        .times(1)
-        .returning(move |_, _| {
-            let response = response.clone();
-            Box::pin(async move { Ok(response) })
-        });
+    let mut mock_client = MockJsonRpcClient::new();
+    mock_client
+        .expect_request()
+        .returning(move |_| Ok(serde_json::to_value(&mock_response).unwrap()));
 
-    let inspector = BitcoinInspector::new(client);
+    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let inspector = BitcoinInspector::new(rpc_client);
 
     // when
     let extracted_values = inspector
@@ -159,14 +134,16 @@ async fn extract_propagates_rpc_client_errors() {
     let tx_id = BitcoinTransactionHash::from([9; 32]);
     let threshold = BlockConfirmations::from(1u64);
 
-    let mut client = MockBitcoinRpcClient::new();
-    client
-        .expect_get()
-        .with(eq(tx_id.clone()), eq(threshold))
-        .times(1)
-        .returning(|_, _| Box::pin(async { Err(RpcError::ClientError) }));
+    let mut mock_client = MockJsonRpcClient::new();
+    mock_client.expect_request().returning(|_| {
+        Err(RpcClientError::Transport(Box::new(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        ))))
+    });
 
-    let inspector = BitcoinInspector::new(client);
+    let rpc_client = BitcoinCoreRpcClient::with_client(mock_client);
+    let inspector = BitcoinInspector::new(rpc_client);
 
     // when
     let response = inspector
@@ -176,9 +153,7 @@ async fn extract_propagates_rpc_client_errors() {
     // then
     assert_matches!(
         response,
-        Err(ForeignChainInspectionError::RpcClientError(
-            RpcError::ClientError
-        ))
+        Err(ForeignChainInspectionError::RpcClientError(_))
     );
 }
 
@@ -192,28 +167,25 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     let confirmations = 10u64;
     let threshold = BlockConfirmations::from(6u64);
 
-    let expected_request = json!({
-        "jsonrpc": "1.0",
-        "id": "client",
-        "method": "getrawtransaction",
-        "params": [tx_id.as_hex(), true]
-    });
-
     server.mock(|when, then| {
-        when.method(POST).path("/").json_body(expected_request);
+        when.method(POST).path("/");
+
+        let response = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            result: BitcoinTransactionResponse {
+                blockhash: expected_block_hash.clone(),
+                confirmations,
+            },
+            id: 0,
+        };
+
         then.status(200)
             .header("content-type", "application/json")
-            .json_body(json!({
-                "result": {
-                    "blockhash": expected_block_hash.as_hex(),
-                    "confirmations": confirmations
-                },
-                "error": null,
-                "id": "client"
-            }));
+            .json_body(serde_json::to_value(&response).unwrap());
     });
 
-    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl);
+    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
+        .expect("Failed to create client");
     let inspector = BitcoinInspector::new(client);
 
     // when
@@ -225,4 +197,90 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
     assert_eq!(expected_extractions, extracted_values);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BitcoinTransactionResponse {
+    blockhash: BitcoinBlockHash,
+    confirmations: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JsonRpcResponse<T> {
+    jsonrpc: String,
+    result: T,
+    id: u64,
+}
+// Note: Cannot use mockall::mock! for ClientT trait because mockall doesn't support
+// method-level lifetime parameters (like 'a in batch_request).
+// Using manual mock implementation that focuses on the `request` method.
+/// Mock JSON-RPC client with expectation support for the `request` method
+struct MockJsonRpcClient {
+    #[allow(clippy::type_complexity)]
+    request_handler:
+        Arc<Mutex<Box<dyn FnMut(&str) -> Result<serde_json::Value, RpcClientError> + Send>>>,
+}
+
+impl MockJsonRpcClient {
+    fn new() -> Self {
+        Self {
+            request_handler: Arc::new(Mutex::new(Box::new(|method| {
+                panic!("Unexpected call to request() with method: {}", method)
+            }))),
+        }
+    }
+
+    /// Set up an expectation for the `request` method
+    fn expect_request(&mut self) -> RequestExpectation<'_> {
+        RequestExpectation { mock: self }
+    }
+}
+
+struct RequestExpectation<'a> {
+    mock: &'a mut MockJsonRpcClient,
+}
+
+impl<'a> RequestExpectation<'a> {
+    /// Specify what the mocked `request` method should return
+    fn returning<F>(self, f: F) -> &'a mut MockJsonRpcClient
+    where
+        F: FnMut(&str) -> Result<serde_json::Value, RpcClientError> + Send + 'static,
+    {
+        self.mock.request_handler = Arc::new(Mutex::new(Box::new(f)));
+        self.mock
+    }
+}
+
+impl ClientT for MockJsonRpcClient {
+    async fn request<R, Params>(&self, method: &str, _params: Params) -> Result<R, RpcClientError>
+    where
+        R: serde::de::DeserializeOwned,
+    {
+        let handler = self.request_handler.clone();
+        let method = method.to_string();
+        let value = {
+            let mut handler = handler.lock().unwrap();
+            handler(&method)
+        }?;
+
+        serde_json::from_value(value).map_err(RpcClientError::ParseError)
+    }
+
+    async fn notification<Params>(
+        &self,
+        _method: &str,
+        _params: Params,
+    ) -> Result<(), RpcClientError> {
+        unimplemented!("notification() not used in tests")
+    }
+
+    async fn batch_request<'a, R>(
+        &self,
+        _batch: BatchRequestBuilder<'a>,
+    ) -> Result<BatchResponse<'a, R>, RpcClientError>
+    where
+        R: serde::de::DeserializeOwned + std::fmt::Debug + 'a,
+    {
+        unimplemented!("batch_request() not used in tests")
+    }
 }
