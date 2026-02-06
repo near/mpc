@@ -528,7 +528,16 @@ pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 /// IMPORTANT: Never reorder existing enum variants or struct fields, as this
 /// would change the Borsh encoding and break signature verification.
 #[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, BorshSerialize,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
     BorshDeserialize,
 )]
 #[cfg_attr(
@@ -540,7 +549,16 @@ pub enum ForeignTxSignPayload {
 }
 
 #[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, BorshSerialize,
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
     BorshDeserialize,
 )]
 #[cfg_attr(
