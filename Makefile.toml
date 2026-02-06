@@ -8,7 +8,6 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
-  "cargo-deny",
   "zizmor",
   "check",
   "license-file",
@@ -26,13 +25,18 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
-  "cargo-deny",
   "zizmor",
   "check",
   "license-file",
   "clippy",
   "clippy-all-features",
   "nextest",
+]
+
+[tasks.check-extra]
+description = "Run extra checks"
+dependencies = [
+  "cargo-deny",
 ]
 
 [tasks.check]
