@@ -216,6 +216,7 @@ struct JsonRpcResponse<T> {
 // Using manual mock implementation that focuses on the `request` method.
 /// Mock JSON-RPC client with expectation support for the `request` method
 struct MockJsonRpcClient {
+    #[allow(clippy::type_complexity)]
     request_handler:
         Arc<Mutex<Box<dyn FnMut(&str) -> Result<serde_json::Value, RpcClientError> + Send>>>,
 }

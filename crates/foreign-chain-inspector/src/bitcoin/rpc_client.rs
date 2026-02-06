@@ -34,8 +34,7 @@ impl BitcoinCoreRpcClient<HttpClient> {
 
         let client = HttpClientBuilder::default()
             .set_headers(headers)
-            .build(&base_url)
-            .map_err(|error| RpcError::ClientError(error.into()))?;
+            .build(&base_url)?;
 
         Ok(Self { client })
     }
