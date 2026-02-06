@@ -36,7 +36,7 @@ async fn test_public_key() -> anyhow::Result<()> {
         .unwrap()
         .json()
         .unwrap();
-    println!("{:?}", key);
+    println!("{key:?}");
     let pk = PublicKey::from_str(&key)?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())

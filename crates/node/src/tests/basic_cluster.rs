@@ -22,7 +22,7 @@ async fn test_basic_cluster() {
         Clock::real(),
         temp_dir.path(),
         (0..NUM_PARTICIPANTS)
-            .map(|i| format!("test{}", i).parse().unwrap())
+            .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,

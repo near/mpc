@@ -417,9 +417,9 @@ fn parse_parallel_calls(s: &str) -> Result<BTreeMap<u64, u64>, String> {
     for pair in s.split(',') {
         let (k, v) = pair
             .split_once('=')
-            .ok_or_else(|| format!("invalid pair '{}'", pair))?;
-        let key = k.trim().parse().map_err(|_| format!("bad key '{}'", k))?;
-        let val = v.trim().parse().map_err(|_| format!("bad value '{}'", v))?;
+            .ok_or_else(|| format!("invalid pair '{pair}'"))?;
+        let key = k.trim().parse().map_err(|_| format!("bad key '{k}'"))?;
+        let val = v.trim().parse().map_err(|_| format!("bad value '{v}'"))?;
         map.insert(key, val);
     }
     Ok(map)

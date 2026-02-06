@@ -173,9 +173,7 @@ impl OutgoingConnection {
             .context("verify server identity")?;
         if peer_id != target_participant_id {
             anyhow::bail!(
-                "incorrect peer identity, expected {}, authenticated {}",
-                target_participant_id,
-                peer_id
+                "incorrect peer identity, expected {target_participant_id}, authenticated {peer_id}"
             );
         }
 
@@ -196,9 +194,7 @@ impl OutgoingConnection {
                     tracing::error!(err = %err, "TLS shutdown failed");
                 }
                 anyhow::bail!(
-                    "peer runs unsupported protocol version. Their version {}, our version {:?}",
-                    peer_version,
-                    CURRENT_PROTOCOL_VERSION
+                    "peer runs unsupported protocol version. Their version {peer_version}, our version {CURRENT_PROTOCOL_VERSION:?}"
                 );
             }
             HandshakeOutcome::Dec2025(_) => {
@@ -214,7 +210,7 @@ impl OutgoingConnection {
                     if let Err(err) = tls_stream.shutdown().await {
                         tracing::error!(err = %err, "TLS shutdown failed");
                     }
-                    anyhow::bail!("connection not accepted: {:?}", handshake_data);
+                    anyhow::bail!("connection not accepted: {handshake_data:?}");
                 }
             }
         }
@@ -225,7 +221,7 @@ impl OutgoingConnection {
         let closed = CancellationToken::new();
         let closed_clone = closed.clone();
         let sender_task = tracking::spawn_checked(
-            &format!("TLS connection to {}", target_participant_id),
+            &format!("TLS connection to {target_participant_id}"),
             async move {
                 let _drop_to_cancel = DropToCancel(closed_clone);
                 let mut sent_bytes: u64 = 0;
@@ -269,7 +265,7 @@ impl OutgoingConnection {
                                 .observe(total_message_size_bytes as f64);
 
                             sent_bytes += total_message_size_bytes;
-                            tracking::set_progress(&format!("sent {} bytes", sent_bytes));
+                            tracking::set_progress(&format!("sent {sent_bytes} bytes"));
                         }
                         _ = futures::StreamExt::next(&mut framed_tls_stream) => {
                             // We do not expect any data from the other side. However,
@@ -286,7 +282,7 @@ impl OutgoingConnection {
         );
         let sender_clone = sender.clone();
         let keepalive_task = tracking::spawn(
-            &format!("ping keepalive task for {}", target_participant_id),
+            &format!("ping keepalive task for {target_participant_id}"),
             async move {
                 loop {
                     tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
@@ -358,7 +354,7 @@ impl PersistentConnection {
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
         let task = tracking::spawn(
-            &format!("Persistent connection to {}", target_participant_id),
+            &format!("Persistent connection to {target_participant_id}"),
             async move {
                 let mut connection_attempt = Self::MIN_CONNECTION_ID;
                 loop {
@@ -554,7 +550,7 @@ async fn incoming_connection_handler(
     let mut tls_stream = tls_acceptor.accept(tcp_stream).await?;
 
     let peer_id = verify_peer_identity(tls_stream.get_ref().1, &participant_identities)?;
-    tracking::set_progress(&format!("Authenticated as {}", peer_id));
+    tracking::set_progress(&format!("Authenticated as {peer_id}"));
 
     let peer = connectivities.get(peer_id)?;
     // If we have an existing connection, we require this connection attempt to
@@ -580,9 +576,7 @@ async fn incoming_connection_handler(
                 tracing::error!(err = %err, "TLS shutdown failed");
             }
             anyhow::bail!(
-                "peer runs unsupported protocol version theirs={}, ours={}",
-                peer_version,
-                CURRENT_PROTOCOL_VERSION
+                "peer runs unsupported protocol version theirs={peer_version}, ours={CURRENT_PROTOCOL_VERSION}"
             );
         }
         HandshakeOutcome::Dec2025(accepted) => {
@@ -598,7 +592,7 @@ async fn incoming_connection_handler(
                 if let Err(err) = tls_stream.shutdown().await {
                     tracing::error!(err = %err, "TLS shutdown failed");
                 }
-                anyhow::bail!("Connection not accepted: {:?}", connection_info);
+                anyhow::bail!("Connection not accepted: {connection_info:?}");
             } else {
                 connection_info.sender_connection_id
             }
@@ -661,10 +655,7 @@ async fn incoming_connection_handler(
             .observe(total_message_size_bytes as f64);
 
         received_bytes += total_message_size_bytes;
-        tracking::set_progress(&format!(
-            "Received {} bytes from {}",
-            received_bytes, peer_id
-        ));
+        tracking::set_progress(&format!("Received {received_bytes} bytes from {peer_id}"));
     }
 }
 
@@ -745,7 +736,7 @@ impl MeshNetworkTransportSender for TlsMeshSender {
             .get(&recipient_id)
             .ok_or_else(|| anyhow!("Recipient not found"))?
             .send_mpc_message(connection_version, message)
-            .with_context(|| format!("Cannot send MPC message to recipient {}", recipient_id))?;
+            .with_context(|| format!("Cannot send MPC message to recipient {recipient_id}"))?;
         Ok(())
     }
 

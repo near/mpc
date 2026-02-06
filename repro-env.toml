@@ -1,5 +1,5 @@
 [container]
-image = "docker.io/rust:1.86-slim-bookworm"
+image = "docker.io/rust:1.88-slim-bookworm"
 
 [packages]
 system = "debian"

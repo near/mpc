@@ -1,26 +1,19 @@
 [container]
-image = "docker.io/rust@sha256:a044f7ab9a762f95be2ee7eb2c49e4d4a4ec60011210de9f7da01d552cae3a55"
+image = "docker.io/rust@sha256:a6cab604fa016ac022e78c24038497eb7617ab59150ca4c3dd2ede0fbd514d4b"
 
 [[package]]
 name = "base-files"
-version = "12.4+deb12u12"
+version = "12.4+deb12u13"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250831T203504Z/pool/main/b/base-files/base-files_12.4+deb12u12_amd64.deb"
-sha256 = "87fd12b84a32cd3308ca585bce3597a6b3e6ec1330f8506a7720b268a838a2b4"
+url = "https://snapshot.debian.org/archive/debian/20260105T023502Z/pool/main/b/base-files/base-files_12.4+deb12u13_amd64.deb"
+sha256 = "d0aee30a91b1283e0c724e9ad0ae7394d8e56f07d20cacfcb79b8f444daa94cd"
 
 [[package]]
 name = "bash"
-version = "5.2.15-2+b9"
+version = "5.2.15-2+b10"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250606T210041Z/pool/main/b/bash/bash_5.2.15-2+b9_amd64.deb"
-sha256 = "27d51129668a6edea862bb5bce56e4b48d6659093b65250eeaa7699dc460c5b5"
-
-[[package]]
-name = "ca-certificates"
-version = "20230311+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250613T144014Z/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb"
-sha256 = "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed"
+url = "https://snapshot.debian.org/archive/debian/20250907T203639Z/pool/main/b/bash/bash_5.2.15-2+b10_amd64.deb"
+sha256 = "be3ab2fd057cb9a29e733d0d8c2b867468731d99af2ce62a63ec6a6c7928572f"
 
 [[package]]
 name = "clang"
@@ -37,20 +30,6 @@ url = "https://snapshot.debian.org/archive/debian/20230218T090318Z/pool/main/l/l
 sha256 = "e66721b4fd2c47aa326a4100d9dfdbd8838e04c17479da560d88ac1aab5ea863"
 
 [[package]]
-name = "cpp-12"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/cpp-12_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "fedbb98e877adde83c983c6071537ea25ac52b277ac6e4637d85025949ca1454"
-
-[[package]]
-name = "debian-archive-keyring"
-version = "2023.3+deb12u2"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250416T024450Z/pool/main/d/debian-archive-keyring/debian-archive-keyring_2023.3+deb12u2_all.deb"
-sha256 = "f699e2f88dca05212f2a452b58475f2993cb6993dfbafb1d0205a3291eb8b4b8"
-
-[[package]]
 name = "e2fsprogs"
 version = "1.47.0-2+b2"
 system = "debian"
@@ -58,39 +37,25 @@ url = "https://snapshot.debian.org/archive/debian/20250606T210041Z/pool/main/e/e
 sha256 = "fedd424691c08ef0739729026be298e7be8236337bf8e031b3c7ec66794e6fc2"
 
 [[package]]
-name = "gcc-12"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/gcc-12_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "b46f33cc2ec245e435e043807038cecf4b201ef004800e9dfc1455240360e49d"
-
-[[package]]
-name = "gcc-12-base"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619"
-
-[[package]]
 name = "git"
-version = "1:2.39.5-0+deb12u2"
+version = "1:2.39.5-0+deb12u3"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian-security/20250126T153144Z/pool/updates/main/g/git/git_2.39.5-0+deb12u2_amd64.deb"
-sha256 = "5446b1f6c6f9f058e7b22413b650a45b527c979eb2276d33f46570265ee5eb35"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/g/git/git_2.39.5-0+deb12u3_amd64.deb"
+sha256 = "637a85ddd6247fab13bdd0592f2f39aff04ce4dbf0655d3ab553ac359a38ce6f"
 
 [[package]]
 name = "git-man"
-version = "1:2.39.5-0+deb12u2"
+version = "1:2.39.5-0+deb12u3"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian-security/20250126T153144Z/pool/updates/main/g/git/git-man_2.39.5-0+deb12u2_all.deb"
-sha256 = "e0355241d0207d3f1b056c1084375e87e804f24067d59b92f45b5e34782b9a43"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/g/git/git-man_2.39.5-0+deb12u3_all.deb"
+sha256 = "904dbd8dbc3db34c6780fb0abfe35816d4a90a490126ef0a055a77a0c5dcab82"
 
 [[package]]
 name = "gpgv"
-version = "2.2.40-1.1+deb12u1"
+version = "2.2.40-1.1+deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250621T215421Z/pool/main/g/gnupg2/gpgv_2.2.40-1.1+deb12u1_amd64.deb"
-sha256 = "967044736bc14c2520c441d3e9505fbcebd8c0941e83780b308d2eab2e62a91f"
+url = "https://snapshot.debian.org/archive/debian/20260103T023749Z/pool/main/g/gnupg2/gpgv_2.2.40-1.1+deb12u2_amd64.deb"
+sha256 = "2966dc0a0b89caa65c3b4a386fa4ed0b6ca2239cd51ec40e6920507aedcdb14a"
 
 [[package]]
 name = "init-system-helpers"
@@ -98,20 +63,6 @@ version = "1.65.2+deb12u1"
 system = "debian"
 url = "https://snapshot.debian.org/archive/debian/20250822T205752Z/pool/main/i/init-system-helpers/init-system-helpers_1.65.2+deb12u1_all.deb"
 sha256 = "afab482524c64e4e256eb5cab43c1a96dc493ec476d94f19f1a5ec3de5fa0fef"
-
-[[package]]
-name = "libasan8"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libasan8_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "e7ac5d797d7d438a130674a8e463530f06aa02ecf919ca054d75eaa2f7849ec7"
-
-[[package]]
-name = "libatomic1"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libatomic1_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "fbd4e154a6b444229ea002cc209df099209c0adc09102e5fd21239a3d2b55e2d"
 
 [[package]]
 name = "libbrotli1"
@@ -157,17 +108,10 @@ sha256 = "1c07eaab8aeb1c8d18c14ff16e2e5ccc8135d51e0d8926cc1c50db5b98e4aa33"
 
 [[package]]
 name = "libcap2"
-version = "1:2.66-4+deb12u2"
+version = "1:2.66-4+deb12u2+b2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250626T204007Z/pool/main/libc/libcap2/libcap2_2.66-4+deb12u2_amd64.deb"
-sha256 = "8b005538db1c85728bcc2199810da06de5e1e15fb02b83f1006537622a229875"
-
-[[package]]
-name = "libcc1-0"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libcc1-0_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "4ee6009633003f47de98333ea7f7d8835ec563ae2ac4f30251dbfee04d75d46b"
+url = "https://snapshot.debian.org/archive/debian/20250909T084623Z/pool/main/libc/libcap2/libcap2_2.66-4+deb12u2+b2_amd64.deb"
+sha256 = "b3bc4be75e2c90f544474c20766066d093c0ee55181f9a6807b1568e6266d119"
 
 [[package]]
 name = "libclang-common-14-dev"
@@ -240,20 +184,6 @@ url = "https://snapshot.debian.org/archive/debian/20220906T151602Z/pool/main/lib
 sha256 = "c7fecfc533d31980e93faeb9bc529dc2d393fc066100550c0e28a760a2eab72e"
 
 [[package]]
-name = "libgcc-12-dev"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libgcc-12-dev_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "d720259380a84f2ffc6fe516eff5cbe9c8a005138e8d6a5748747ba4b3404a82"
-
-[[package]]
-name = "libgcc-s1"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7"
-
-[[package]]
 name = "libgdbm-compat4"
 version = "1.23-3"
 system = "debian"
@@ -268,20 +198,6 @@ url = "https://snapshot.debian.org/archive/debian/20221009T210910Z/pool/main/g/g
 sha256 = "95fe4a1336532450e67bd067892f46eaa484139919ea8d067a9ffcbf5a4bf883"
 
 [[package]]
-name = "libgnutls30"
-version = "3.7.9-2+deb12u5"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian-security/20250716T154406Z/pool/updates/main/g/gnutls28/libgnutls30_3.7.9-2+deb12u5_amd64.deb"
-sha256 = "fca04ed22e0a38861ae45142a59ba5a09362d949677bab6a4992aa328464b13b"
-
-[[package]]
-name = "libgomp1"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libgomp1_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "48fec46bda7f5b1638b9e959889bfbc20491247d402d120bb152687eb48143d7"
-
-[[package]]
 name = "libgssapi-krb5-2"
 version = "1.20.1-2+deb12u4"
 system = "debian"
@@ -294,13 +210,6 @@ version = "72.1-3+deb12u1"
 system = "debian"
 url = "https://snapshot.debian.org/archive/debian-security/20250626T210538Z/pool/updates/main/i/icu/libicu72_72.1-3+deb12u1_amd64.deb"
 sha256 = "f7f6f99c6d7b025914df2447fc93e11d22c44c0c8bdd8b6f36691c9e7ddcef88"
-
-[[package]]
-name = "libitm1"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libitm1_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "0ed5b35dfd1346cccbf065408ec789db6c44c1d0a16ae84533411dea09632979"
 
 [[package]]
 name = "libk5crypto3"
@@ -338,13 +247,6 @@ url = "https://snapshot.debian.org/archive/debian/20230218T090318Z/pool/main/l/l
 sha256 = "cd986403cfe53f47c41b80667f6b344c40fe35de4c5081dad9358b4c77cf64a8"
 
 [[package]]
-name = "liblsan0"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/liblsan0_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "d234ab339c0ba31a4fb44e2334cf5a8d15b87f2c2f9e74fadfaa877f92dcf22a"
-
-[[package]]
 name = "libnghttp2-14"
 version = "1.52.0-1+deb12u2"
 system = "debian"
@@ -366,6 +268,34 @@ url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/g
 sha256 = "61ca709b87ea9eb16c76c5156af96a776f4c92c6668c844f0bd2b3c6bf2e61d7"
 
 [[package]]
+name = "libpam-modules"
+version = "1.5.2-6+deb12u2"
+system = "debian"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/p/pam/libpam-modules_1.5.2-6+deb12u2_amd64.deb"
+sha256 = "19fb4838168e68bc15a5606070f14b1162bb34a3899686913f5d661f1707f483"
+
+[[package]]
+name = "libpam-modules-bin"
+version = "1.5.2-6+deb12u2"
+system = "debian"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/p/pam/libpam-modules-bin_1.5.2-6+deb12u2_amd64.deb"
+sha256 = "e7b1f6c60a51398920c5da792016161a65bf1c7caaa64140dd2099176ed51280"
+
+[[package]]
+name = "libpam-runtime"
+version = "1.5.2-6+deb12u2"
+system = "debian"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/p/pam/libpam-runtime_1.5.2-6+deb12u2_all.deb"
+sha256 = "7a4f26d54c1e3ee8c68095f9d9013d13dd89a33ff78ef87330d21f21235fc278"
+
+[[package]]
+name = "libpam0g"
+version = "1.5.2-6+deb12u2"
+system = "debian"
+url = "https://snapshot.debian.org/archive/debian/20251019T203802Z/pool/main/p/pam/libpam0g_1.5.2-6+deb12u2_amd64.deb"
+sha256 = "a06f889caf9e97ccf04dedec0905573916bc6ec3366ade2c6ef8900047fd5cc1"
+
+[[package]]
 name = "libperl5.36"
 version = "5.36.0-7+deb12u3"
 system = "debian"
@@ -385,13 +315,6 @@ version = "0.21.2-1"
 system = "debian"
 url = "https://snapshot.debian.org/archive/debian/20230214T212225Z/pool/main/libp/libpsl/libpsl5_0.21.2-1_amd64.deb"
 sha256 = "4f0d35610204e4e754b057748719744114621f2f6f4202d846c314860a981afb"
-
-[[package]]
-name = "libquadmath0"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libquadmath0_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "3f0c9a4c730da2fdab001cae596625438598fd2996d29d888feeb4c1cdc9011f"
 
 [[package]]
 name = "librtmp1"
@@ -430,17 +353,17 @@ sha256 = "d20a3ee34fa84ad8bd381e8be6e9c2c2ea32347cff5e1169c10e978d43f54f24"
 
 [[package]]
 name = "libssl-dev"
-version = "3.0.17-1~deb12u2"
+version = "3.0.18-1~deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250807T203908Z/pool/main/o/openssl/libssl-dev_3.0.17-1~deb12u2_amd64.deb"
-sha256 = "b2d571b0bdb5c6055af59a3108c362de102c7cdbdda730465d624d5ce7272fdc"
+url = "https://snapshot.debian.org/archive/debian-security/20260127T194459Z/pool/updates/main/o/openssl/libssl-dev_3.0.18-1~deb12u2_amd64.deb"
+sha256 = "c81978f238e38d1f254332a5deccc5c8044b11d561e4c008b492292bea5cf9f6"
 
 [[package]]
 name = "libssl3"
-version = "3.0.17-1~deb12u2"
+version = "3.0.18-1~deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250807T203908Z/pool/main/o/openssl/libssl3_3.0.17-1~deb12u2_amd64.deb"
-sha256 = "d97c29db9d9d1d125580be5d7b2e1170adb47e5a8b4481841718be95fa652e68"
+url = "https://snapshot.debian.org/archive/debian-security/20260127T194459Z/pool/updates/main/o/openssl/libssl3_3.0.18-1~deb12u2_amd64.deb"
+sha256 = "ed44f11b74763cded2ad406f4de4d585ea27b0ce6377e7c8d98c2ddf2ed35cb3"
 
 [[package]]
 name = "libstdc++-12-dev"
@@ -450,32 +373,11 @@ url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/g
 sha256 = "d28def6c23630432b57cb38a4c2fd67a79d4e0484027386ca6e8d6005c3d7a73"
 
 [[package]]
-name = "libstdc++6"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libstdc++6_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "5cd3171216d4ab0fc911cfe9c35509bf2dd8f47761c43b7f6a4296701551a24d"
-
-[[package]]
 name = "libsystemd0"
 version = "252.39-1~deb12u1"
 system = "debian"
 url = "https://snapshot.debian.org/archive/debian/20250825T205037Z/pool/main/s/systemd/libsystemd0_252.39-1~deb12u1_amd64.deb"
 sha256 = "73e11ec58ce4e55c43cde8602f3c72169fb2a661f78279957133338cef9b414d"
-
-[[package]]
-name = "libtsan2"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libtsan2_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "06906663d644a75a1a836382ecd80b61461129c06f02935ce408b25809f6c958"
-
-[[package]]
-name = "libubsan1"
-version = "12.2.0-14+deb12u1"
-system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250415T084322Z/pool/main/g/gcc-12/libubsan1_12.2.0-14+deb12u1_amd64.deb"
-sha256 = "744f52adf00ffd45d44806b1c7e802a36bd27e479c9bc8457128fde357faa530"
 
 [[package]]
 name = "libudev1"
@@ -486,10 +388,10 @@ sha256 = "849127705aaf4408f569870843ab26cb531c1361d5f6d7851f5a5ecbed54a0c7"
 
 [[package]]
 name = "libxml2"
-version = "2.9.14+dfsg-1.3~deb12u4"
+version = "2.9.14+dfsg-1.3~deb12u5"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian-security/20250829T072401Z/pool/updates/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3~deb12u4_amd64.deb"
-sha256 = "f3bac32a5f7d32990af06713eef57664a66e98c13750fa8e007c9cbaf49b98c7"
+url = "https://snapshot.debian.org/archive/debian/20251207T204132Z/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3~deb12u5_amd64.deb"
+sha256 = "261ad120adf02d9bdef3f47c486e016bfd410cdb1ada9730a8f9a6add0857bd6"
 
 [[package]]
 name = "libz3-4"
@@ -500,10 +402,10 @@ sha256 = "6221ca25ad5abcfbe1965801029d85a88b4775320384b4b716de8fab7a4d2f7a"
 
 [[package]]
 name = "linux-libc-dev"
-version = "6.1.148-1"
+version = "6.1.159-1"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250827T144740Z/pool/main/l/linux/linux-libc-dev_6.1.148-1_amd64.deb"
-sha256 = "91eadd656d4d68934281fb648f3b2f308f0af4686d32b86160899083fb473ff1"
+url = "https://snapshot.debian.org/archive/debian/20260102T144354Z/pool/main/l/linux/linux-libc-dev_6.1.159-1_amd64.deb"
+sha256 = "117349f98e0d9c4522bf1b8f33c6239ab9c4c5904c56f6379be3eb790a97e7dc"
 
 [[package]]
 name = "llvm-14-linker-tools"
@@ -514,10 +416,10 @@ sha256 = "6aa497a334836a9bfa7e2cc6d24edea553467482b6f6493154f766bbb697e846"
 
 [[package]]
 name = "login"
-version = "1:4.13+dfsg1-1+deb12u1"
+version = "1:4.13+dfsg1-1+deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250510T204402Z/pool/main/s/shadow/login_4.13+dfsg1-1+deb12u1_amd64.deb"
-sha256 = "411ce6de8a354ad35f9f57ba73c56dbdb70e6a821f7f2d10296b262a6ec5be7d"
+url = "https://snapshot.debian.org/archive/debian/20251228T023750Z/pool/main/s/shadow/login_4.13+dfsg1-1+deb12u2_amd64.deb"
+sha256 = "f1cc45bf505a8457340dc3c36f3a01a1835aaf564d73d9d394afb8ccfb6595a0"
 
 [[package]]
 name = "logsave"
@@ -535,17 +437,17 @@ sha256 = "a1a83af8cbd854af887b72ad196b1f4af58387815e21ced1000253a116a46e2a"
 
 [[package]]
 name = "openssl"
-version = "3.0.17-1~deb12u2"
+version = "3.0.18-1~deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250807T203908Z/pool/main/o/openssl/openssl_3.0.17-1~deb12u2_amd64.deb"
-sha256 = "64c557f50e17118b1cebde87218dc8ce02cda70cf5c0d21156b214a97f2f3ae9"
+url = "https://snapshot.debian.org/archive/debian-security/20260127T194459Z/pool/updates/main/o/openssl/openssl_3.0.18-1~deb12u2_amd64.deb"
+sha256 = "9107c374e0f760d5d7c9c7372788d4e618e1433db4fdef9a3a25788dfd5588bb"
 
 [[package]]
 name = "passwd"
-version = "1:4.13+dfsg1-1+deb12u1"
+version = "1:4.13+dfsg1-1+deb12u2"
 system = "debian"
-url = "https://snapshot.debian.org/archive/debian/20250510T204402Z/pool/main/s/shadow/passwd_4.13+dfsg1-1+deb12u1_amd64.deb"
-sha256 = "bf6fc6e59a5452113d9d582d100d289654914d2b4bd8f2c177f8ef814a3947ed"
+url = "https://snapshot.debian.org/archive/debian/20251228T023750Z/pool/main/s/shadow/passwd_4.13+dfsg1-1+deb12u2_amd64.deb"
+sha256 = "fb787363372903e03627e53fd483e51dfb6861047a1e02c7d5a5f27d66546d08"
 
 [[package]]
 name = "perl"

@@ -433,13 +433,12 @@ async fn init_running_rejects_external_callers_pre_initialization() {
         .into_result()
         .expect_err("method is private and not callable from participant account.");
 
-    let error_message = format!("{:?}", execution_error);
+    let error_message = format!("{execution_error:?}");
 
     let expected_error_message = "Smart contract panicked: Method init_running is private";
 
     assert!(
         error_message.contains(expected_error_message),
-        "init_running call was accepted by external caller. expected method to be private. {:?}",
-        error_message
+        "init_running call was accepted by external caller. expected method to be private. {error_message:?}"
     )
 }

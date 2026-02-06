@@ -80,7 +80,7 @@ mod tests {
             )
             .await
             .unwrap();
-            println!("{:?}", results);
+            println!("{results:?}");
         })
         .await;
     }

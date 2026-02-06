@@ -113,7 +113,7 @@ impl EcdsaSignatureProvider {
                 let config_clone = config.clone();
                 let keygen_out = keygen_out.clone();
                 tasks.spawn_checked(
-                    &format!("ecdsa presign; task_id: {:?}", task_id),
+                    &format!("ecdsa presign; task_id: {task_id:?}"),
                     ECDSA_TASK_MONITORS
                         .presignature_generation_leader
                         .instrument(async move {

@@ -165,7 +165,7 @@ mod tests {
             let results = run_test_clients(new_participants, key_resharing_client_runner)
                 .await
                 .unwrap();
-            println!("{:?}", results);
+            println!("{results:?}");
         })
         .await;
     }

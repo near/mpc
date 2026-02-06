@@ -59,7 +59,7 @@ async fn export_terraform_infra_vars(name: &str, mpc_setup: &MpcNetworkSetup) ->
     let terraform_file = serde_json::to_string_pretty(&terraform_file).unwrap();
 
     let current_dir = std::env::current_dir().unwrap();
-    let path = current_dir.join(format!("mpc-{}.tfvars.json", name));
+    let path = current_dir.join(format!("mpc-{name}.tfvars.json"));
     std::fs::write(&path, terraform_file).unwrap();
     println!("Wrote terraform vars file at {}", path.display());
     path
@@ -88,7 +88,7 @@ async fn export_terraform_vars(
                 .clone();
             mpc_nodes.push(TerraformMpcNode {
                 account: account_id.clone(),
-                url: format!("http://mpc-node-{}.service.mpc.consul:3000", i),
+                url: format!("http://mpc-node-{i}.service.mpc.consul:3000"),
                 number_of_responder_keys: mpc_setup.num_responding_access_keys,
                 near_responder_account_id: responding_account_id,
             });
@@ -110,7 +110,7 @@ async fn export_terraform_vars(
     };
 
     let current_dir = std::env::current_dir().unwrap();
-    let path = current_dir.join(format!("mpc-{}.tfvars.json", name));
+    let path = current_dir.join(format!("mpc-{name}.tfvars.json"));
     std::fs::write(&path, terraform_file).unwrap();
     println!("Wrote terraform vars file at {}", path.display());
     path
@@ -144,15 +144,12 @@ struct TerraformMpcNode {
 
 impl MpcTerraformDeployInfraCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!(
-            "Going to deploy testing cluster infra with Terraform recipes located at {}",
-            name,
-        );
+        println!("Going to deploy testing cluster infra with Terraform recipes located at {name}",);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let terraform_vars_file = export_terraform_infra_vars(name, mpc_setup).await;
         let infra_ops_path = &config.infra_ops_path;
         let infra_dir = infra_ops_path.join("provisioning/terraform/infra/mpc/base-mpc-cluster");
@@ -183,10 +180,9 @@ impl MpcTerraformDeployInfraCmd {
                 .arg("-var-file")
                 .arg(&terraform_vars_file);
             for i in 0..mpc_setup.participants.len() {
-                command.arg("-replace").arg(format!(
-                    "google_secret_manager_secret.keyshare_secret[{}]",
-                    i
-                ));
+                command
+                    .arg("-replace")
+                    .arg(format!("google_secret_manager_secret.keyshare_secret[{i}]"));
             }
             command.current_dir(&infra_dir).print_and_run();
         }
@@ -215,14 +211,13 @@ impl MpcTerraformDeployInfraCmd {
 impl MpcTerraformDeployNomadCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         println!(
-            "Going to deploy testing cluster Nomad jobs with Terraform recipes located at {}",
-            name,
+            "Going to deploy testing cluster Nomad jobs with Terraform recipes located at {name}",
         );
         let setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let terraform_vars_file =
             export_terraform_vars(name, &setup.accounts, mpc_setup, self.docker_image.clone())
                 .await;
@@ -261,7 +256,7 @@ impl MpcTerraformDeployNomadCmd {
             .arg("-var")
             .arg(format!("shutdown_and_reset={}", self.shutdown_and_reset))
             .arg("-var")
-            .arg(format!("docker_image={}", docker_image))
+            .arg(format!("docker_image={docker_image}"))
             .current_dir(&infra_dir)
             .env("NOMAD_ADDR", &nomad_server_url)
             .print_and_run();
@@ -270,15 +265,12 @@ impl MpcTerraformDeployNomadCmd {
 
 impl MpcTerraformDestroyInfraCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!(
-            "Going to destroy testing cluster infra with Terraform recipes located at {}",
-            name,
-        );
+        println!("Going to destroy testing cluster infra with Terraform recipes located at {name}",);
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let terraform_vars_file = export_terraform_infra_vars(name, mpc_setup).await;
         // Invoke terraform
         let infra_ops_path = &config.infra_ops_path;
@@ -386,7 +378,7 @@ trait CommandExt {
 
 impl CommandExt for std::process::Command {
     fn print_and_run(&mut self) {
-        println!("Running command: {:?}", self);
+        println!("Running command: {self:?}");
         let status = self.status().expect("Failed to execute command");
         if !status.success() {
             panic!(

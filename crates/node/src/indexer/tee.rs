@@ -39,7 +39,7 @@ async fn monitor_allowed_hashes<Fetcher, T, FetcherResponseFuture>(
                         break allowed_hashes;
                     }
                     Err(e) => {
-                        let error_msg = format!("{:?}", e);
+                        let error_msg = format!("{e:?}");
                         if error_msg.contains(
                             "wasm execution failed with error: MethodResolveError(MethodNotFound)",
                         ) {

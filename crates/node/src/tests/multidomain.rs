@@ -22,7 +22,7 @@ async fn test_basic_multidomain() {
         Clock::real(),
         temp_dir.path(),
         (0..NUM_PARTICIPANTS)
-            .map(|i| format!("test{}", i).parse().unwrap())
+            .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
@@ -171,7 +171,7 @@ async fn test_basic_multidomain() {
         .wait_for_contract_state(
             {
                 |state| {
-                    println!("state: {:?}", state);
+                    println!("state: {state:?}");
                     match state {
                         ContractState::Running(running) => running.keyset.epoch_id.get() == 1,
                         _ => false,

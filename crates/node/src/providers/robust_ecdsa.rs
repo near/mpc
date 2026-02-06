@@ -95,7 +95,7 @@ impl RobustEcdsaSignatureProvider {
         self.per_domain_data
             .get(&domain_id)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+            .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {domain_id:?}"))
     }
 }
 

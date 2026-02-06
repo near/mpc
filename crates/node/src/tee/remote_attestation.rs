@@ -201,14 +201,14 @@ pub async fn monitor_attestation_removal<T: TransactionSender + Clone>(
             near_sdk::CurveType::ED25519,
             tls_public_key.as_bytes().to_vec(),
         )
-        .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {}", e))?,
+        .map_err(|e| anyhow::anyhow!("Failed to create PublicKey from TLS public key: {e}"))?,
         account_public_key: Some(
             near_sdk::PublicKey::from_parts(
                 near_sdk::CurveType::ED25519,
                 account_public_key.as_bytes().to_vec(),
             )
             .map_err(|e| {
-                anyhow::anyhow!("Failed to create PublicKey from account public key: {}", e)
+                anyhow::anyhow!("Failed to create PublicKey from account public key: {e}")
             })?,
         ),
     };

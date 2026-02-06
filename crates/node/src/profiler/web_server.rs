@@ -67,7 +67,7 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
             if let Err(error) = flamegraph_write {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Error generating flamegraph: {:#?}", error),
+                    format!("Error generating flamegraph: {error:#?}"),
                 )
                     .into_response();
             }
@@ -79,6 +79,6 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
             )
                 .into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {:?}", e)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error: {e:?}")).into_response(),
     }
 }

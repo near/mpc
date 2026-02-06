@@ -189,7 +189,7 @@ async fn resharing_computation_inner(
                 .find(|keyshare| keyshare.key_id.domain_id == key_id.domain_id)
                 .cloned()
                 .ok_or_else(|| {
-                    anyhow::anyhow!("Expected existing keyshare for {:?} not found", key_id)
+                    anyhow::anyhow!("Expected existing keyshare for {key_id:?} not found")
                 })?,
         ),
         None => None,
@@ -198,7 +198,7 @@ async fn resharing_computation_inner(
     let previous_public_key = &args
         .previous_keyset
         .public_key(key_id.domain_id)
-        .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {:?}", key_id))?;
+        .map_err(|_| anyhow::anyhow!("Previous keyset does not contain key for {key_id:?}"))?;
 
     let public_key = dtos::PublicKey::from(previous_public_key.clone());
 
@@ -288,9 +288,7 @@ async fn resharing_computation_inner(
         }
         (public_key, scheme) => {
             return Err(anyhow::anyhow!(
-                "Unexpected pair of ({:?}, {:?})",
-                public_key,
-                scheme
+                "Unexpected pair of ({public_key:?}, {scheme:?})"
             ));
         }
     };
@@ -511,7 +509,7 @@ pub async fn keygen_follower(
         };
 
         tasks.spawn_checked(
-            &format!("key generation follower for {:?}", key_event_id),
+            &format!("key generation follower for {key_event_id:?}"),
             keygen_computation(
                 key_event_receiver.clone(),
                 channel,
@@ -644,7 +642,7 @@ pub async fn resharing_follower(
         };
 
         tasks.spawn_checked(
-            &format!("key resharing follower for {:?}", key_event_id),
+            &format!("key resharing follower for {key_event_id:?}"),
             resharing_computation(
                 key_event_receiver.clone(),
                 channel,

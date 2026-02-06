@@ -611,7 +611,7 @@ pub mod tests {
             .take(12)
             .map(char::from)
             .collect();
-        let account_id: String = format!("dummy.account.{}", random_string);
+        let account_id: String = format!("dummy.account.{random_string}");
         account_id.parse().unwrap()
     }
 

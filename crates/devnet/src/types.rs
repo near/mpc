@@ -75,7 +75,7 @@ impl fmt::Display for MpcNetworkSetup {
         }
 
         if let Some(contract) = &self.contract {
-            writeln!(f, "  Contract: {}", contract)?;
+            writeln!(f, "  Contract: {contract}")?;
         } else {
             writeln!(f, "  Contract: None")?;
         }
@@ -98,7 +98,7 @@ impl fmt::Display for MpcNetworkSetup {
 
         match &self.nomad_server_url {
             Some(url) => {
-                writeln!(f, "  Nomad Server URL: {}", url)?;
+                writeln!(f, "  Nomad Server URL: {url}")?;
             }
             None => {
                 writeln!(f, "  Nomad Server URL: None")?;

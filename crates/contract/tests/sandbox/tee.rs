@@ -164,7 +164,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
         );
     };
     let expected = format!("{:?}", InvalidState::NotParticipant);
-    let err_str = format!("{:?}", err);
+    let err_str = format!("{err:?}");
     assert!(err_str.contains(&expected));
     Ok(())
 }
@@ -276,7 +276,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
     // Verify the error message indicates unauthorized access
     match result.into_result() {
         Err(failure) => {
-            let error_msg = format!("{:?}", failure);
+            let error_msg = format!("{failure:?}");
             assert!(error_msg.contains("Method clean_tee_status is private"));
         }
         Ok(_) => panic!("Call should have failed"),
@@ -645,10 +645,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // we already know
     assert!(
         current_timestamp > expiry_timestamp,
-        "Going forward {} was not enough: {} {}",
-        BLOCKS_TO_FAST_FORWARD,
-        current_timestamp,
-        expiry_timestamp
+        "Going forward {BLOCKS_TO_FAST_FORWARD} was not enough: {current_timestamp} {expiry_timestamp}"
     );
 
     // Call verify_tee() to trigger resharing
@@ -661,15 +658,14 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     dbg!(&verify_result);
     assert!(
         verify_result.is_success(),
-        "verify_tee call failed: {:?}",
-        verify_result
+        "verify_tee call failed: {verify_result:?}"
     );
 
     // Verify contract transitioned to Resharing state
     let state_after_verify = get_state(&contract).await;
     let prospective_epoch_id = match &state_after_verify {
         ProtocolContractState::Resharing(resharing_state) => resharing_state.prospective_epoch_id(),
-        _ => panic!("expected Resharing state, got {:?}", state_after_verify),
+        _ => panic!("expected Resharing state, got {state_after_verify:?}"),
     };
 
     // Complete resharing with the remaining participants (first 2)

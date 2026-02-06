@@ -542,13 +542,12 @@ async fn migration_function_rejects_external_callers() {
         .into_result()
         .expect_err("method is private and not callable from participant account.");
 
-    let error_message = format!("{:?}", execution_error);
+    let error_message = format!("{execution_error:?}");
 
     let expected_error_message = "Smart contract panicked: Method migrate is private";
 
     assert!(
         error_message.contains(expected_error_message),
-        "migrate call was accepted by external caller. expected method to be private. {:?}",
-        error_message
+        "migrate call was accepted by external caller. expected method to be private. {error_message:?}"
     )
 }

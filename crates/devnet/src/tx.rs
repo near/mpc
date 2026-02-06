@@ -17,15 +17,14 @@ impl<E: Debug> IntoReturnValueExt for Result<RpcTransactionResponse, E> {
                 match outcome.status {
                     near_primitives::views::FinalExecutionStatus::Failure(tx_execution_error) => {
                         Err(anyhow::anyhow!(
-                            "Transaction failed: {:?}",
-                            tx_execution_error
+                            "Transaction failed: {tx_execution_error:?}"
                         ))
                     }
                     near_primitives::views::FinalExecutionStatus::SuccessValue(value) => Ok(value),
                     _ => Err(anyhow::anyhow!("Transaction failed: {:?}", outcome.status)),
                 }
             }
-            Err(e) => Err(anyhow::anyhow!("Transaction failed: {:?}", e)),
+            Err(e) => Err(anyhow::anyhow!("Transaction failed: {e:?}")),
         }
     }
 }

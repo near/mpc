@@ -92,7 +92,7 @@ impl ToCompileError for anyhow::Result<proc_macro2::TokenStream> {
     fn unwrap_or_compile_error(self, span: proc_macro2::Span) -> Self::Output {
         match self {
             Ok(tokens) => TokenStream::from(tokens),
-            Err(e) => syn::Error::new(span, format!("{:#}", e))
+            Err(e) => syn::Error::new(span, format!("{e:#}"))
                 .to_compile_error()
                 .into(),
         }

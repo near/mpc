@@ -150,7 +150,7 @@ impl OneNodeTestConfig {
                 };
                 coordinator.run().await
             };
-            start_root_task(&format!("root for {}", my_account_id), root_future)
+            start_root_task(&format!("root for {my_account_id}"), root_future)
                 .0
                 .await?;
             Ok(())
@@ -247,7 +247,7 @@ impl IntegrationTestSetup {
             configs.push(OneNodeTestConfig {
                 clock: clock.clone(),
                 config,
-                home_dir: temp_dir.join(format!("{}", i)),
+                home_dir: temp_dir.join(format!("{i}")),
                 secrets,
                 indexer: indexer_api,
                 _indexer_task: task,
@@ -567,10 +567,9 @@ fn test_build_info_metric_values() {
     let gauge = metric.with_label_values(&[version, build_time, commit, rustc_version]);
     let value = gauge.get();
 
-    println!("Metric value: {}", value);
+    println!("Metric value: {value}");
     println!(
-        "Expected labels: version={}, build_time={}, commit={}, rustc_version={}",
-        version, build_time, commit, rustc_version
+        "Expected labels: version={version}, build_time={build_time}, commit={commit}, rustc_version={rustc_version}"
     );
 
     // The value should be 1

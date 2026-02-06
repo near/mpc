@@ -160,9 +160,9 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
         write!(&mut output, " elect:").unwrap();
         for participant in self.leader_selection_order.iter() {
             if Some(*participant) == current_leader {
-                write!(&mut output, " 🗸{}", participant).unwrap();
+                write!(&mut output, " 🗸{participant}").unwrap();
             } else {
-                write!(&mut output, " ✗{}", participant).unwrap();
+                write!(&mut output, " ✗{participant}").unwrap();
             }
         }
         output
@@ -185,7 +185,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
         }
 
         for completed in &self.recently_completed_requests.requests {
-            let debug_line = format!("{:?}", completed);
+            let debug_line = format!("{completed:?}");
             request_lines.push((
                 completed.indexed_block_height,
                 completed.request.get_id(),
@@ -216,11 +216,11 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs> Debug
             )?;
         }
 
-        writeln!(f, "Maximum block height known: {}", maximum_height)?;
+        writeln!(f, "Maximum block height known: {maximum_height}")?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {
-            writeln!(f, "{}", debug_line)?;
+            writeln!(f, "{debug_line}")?;
         }
 
         Ok(())

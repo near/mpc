@@ -227,7 +227,7 @@ impl KeyshareStorage {
                 .temporary
                 .load_keyshare(key_id)
                 .await?
-                .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {key_id:?}"))?;
             new_keyshares.push(keyshare);
         }
         Ok(LoadedKeyset::PermanentAndTemporary(new_keyshares))
@@ -293,10 +293,7 @@ impl KeyshareStorage {
             existing_keyshare
                 .check_consistency(epoch_id, domain)
                 .with_context(|| {
-                    format!(
-                        "Existing permanent keyshare epoch {:?} index {}",
-                        epoch_id, i
-                    )
+                    format!("Existing permanent keyshare epoch {epoch_id:?} index {i}")
                 })?;
         }
         Ok(())
@@ -314,10 +311,10 @@ impl KeyshareStorage {
             .temporary
             .load_keyshare(key_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {:?}", key_id))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing temporary keyshare {key_id:?}"))?;
         keyshare
             .check_consistency(epoch_id, key)
-            .with_context(|| format!("Keyshare loaded from temporary storage for {:?}", key_id))?;
+            .with_context(|| format!("Keyshare loaded from temporary storage for {key_id:?}"))?;
         Ok(keyshare)
     }
 
@@ -375,7 +372,7 @@ impl KeyshareStorage {
                 .load_keyshare(key_id)
                 .await?
                 .or_else(|| backup.iter().find(|share| share.key_id == key_id).cloned())
-                .ok_or_else(|| anyhow::anyhow!("missing keyshare {:?}", key_id))?;
+                .ok_or_else(|| anyhow::anyhow!("missing keyshare {key_id:?}"))?;
             new_keyshares.push(keyshare);
         }
 
@@ -396,7 +393,7 @@ impl KeyshareStorage {
                     }
                 })
                 .collect();
-            anyhow::bail!("corrupted backup or corrupted keystore: found a mismatch between secret shares for key_ids: {:?}.", inconsistent_shares);
+            anyhow::bail!("corrupted backup or corrupted keystore: found a mismatch between secret shares for key_ids: {inconsistent_shares:?}.");
         }
 
         self._store_new_permanent_keyset_data_delete_temporary(

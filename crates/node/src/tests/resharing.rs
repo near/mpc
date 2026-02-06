@@ -34,7 +34,7 @@ async fn test_key_resharing_simple(
         Clock::real(),
         temp_dir.path(),
         (0..num_participants)
-            .map(|i| format!("test{}", i).parse().unwrap())
+            .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
         threshold,
         TXN_DELAY_BLOCKS,
@@ -153,7 +153,7 @@ async fn test_key_resharing_multistage() {
         Clock::real(),
         temp_dir.path(),
         (0..NUM_PARTICIPANTS)
-            .map(|i| format!("test{}", i).parse().unwrap())
+            .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,
@@ -359,7 +359,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
         Clock::real(),
         temp_dir.path(),
         (0..NUM_PARTICIPANTS)
-            .map(|i| format!("test{}", i).parse().unwrap())
+            .map(|i| format!("test{i}").parse().unwrap())
             .collect(),
         THRESHOLD,
         TXN_DELAY_BLOCKS,

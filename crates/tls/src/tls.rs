@@ -197,10 +197,7 @@ pub fn extract_public_key(
     // The x509_parser library doesn't recognize ED25519 keys, but that's fine, we'll compare the raw
     // bytes directly.
     let x509_parser::public_key::PublicKey::Unknown(public_key_data) = public_key else {
-        anyhow::bail!(
-            "Connection with unexpected public key type: {:?}",
-            public_key
-        );
+        anyhow::bail!("Connection with unexpected public key type: {public_key:?}");
     };
 
     let public_key_bytes = public_key_data

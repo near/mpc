@@ -499,9 +499,7 @@ mod tests {
                 u32::from_be_bytes(other_handshake[1..].try_into().unwrap());
             if other_protocol_version < dec_2025_protocol_version {
                 anyhow::bail!(
-                    "Incompatible protocol version; we have {}, they have {}",
-                    dec_2025_protocol_version,
-                    other_protocol_version
+                    "Incompatible protocol version; we have {dec_2025_protocol_version}, they have {other_protocol_version}"
                 );
             }
             anyhow::Ok(())

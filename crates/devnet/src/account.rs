@@ -149,7 +149,7 @@ impl OperatingAccessKey {
                                 QueryResponseKind::AccessKey(access_key) => {
                                     anyhow::Ok(access_key.nonce)
                                 }
-                                _ => anyhow::bail!("Unexpected response: {:?}", result),
+                                _ => anyhow::bail!("Unexpected response: {result:?}"),
                             }
                         }
                         .boxed()
@@ -415,7 +415,7 @@ impl OperatingAccount {
         let result = self.client.submit(request).await?;
         match result.kind {
             QueryResponseKind::CallResult(result) => Ok(result),
-            _ => anyhow::bail!("Unexpected response: {:?}", result),
+            _ => anyhow::bail!("Unexpected response: {result:?}"),
         }
     }
 
@@ -536,10 +536,7 @@ impl OperatingAccounts {
                 .text()
                 .await
                 .unwrap_or_else(|_| "No error message".to_string());
-            println!(
-                "Faucet RPC request failed: status {}, {}",
-                status, error_text
-            );
+            println!("Faucet RPC request failed: status {status}, {error_text}");
             std::process::exit(1);
         }
         let new_account = NearAccount {

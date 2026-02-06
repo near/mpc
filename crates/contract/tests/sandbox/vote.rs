@@ -251,7 +251,7 @@ async fn setup_resharing_state(
 
     let state: ProtocolContractState = get_state(&contract).await;
     let ProtocolContractState::Running(initial_running_state) = state else {
-        panic!("State is not running: {:#?}", state)
+        panic!("State is not running: {state:#?}")
     };
 
     let threshold = initial_running_state.parameters.threshold();
@@ -454,10 +454,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
     let new_state = get_state(&contract).await;
 
     let ProtocolContractState::Running(mut new_running_state) = new_state else {
-        panic!(
-            "State must transition back to running after voting for cancellation {:#?}",
-            new_state
-        )
+        panic!("State must transition back to running after voting for cancellation {new_state:#?}")
     };
 
     let initial_epoch_id = initial_running_state.keyset.epoch_id;

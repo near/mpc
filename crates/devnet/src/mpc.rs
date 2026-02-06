@@ -47,7 +47,7 @@ impl ListMpcCmd {
         let setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setups = &setup.mpc_setups;
         for (name, setup) in mpc_setups {
-            println!("{}: {}", name, setup);
+            println!("{name}: {setup}");
         }
     }
 }
@@ -89,11 +89,11 @@ async fn update_mpc_network(
         } else {
             accounts_to_fund.push(AccountToFund::from_new(
                 mpc_setup.desired_balance_per_account,
-                format!("mpc-{}-{}-", i, name),
+                format!("mpc-{i}-{name}-"),
             ));
             accounts_to_fund.push(AccountToFund::from_new(
                 mpc_setup.desired_balance_per_responding_account,
-                format!("mpc-responder-{}-{}-", i, name),
+                format!("mpc-responder-{i}-{name}-"),
             ));
         }
     }
@@ -125,7 +125,7 @@ impl NewMpcNetworkCmd {
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.mpc_setups.contains_key(name) {
-            panic!("MPC network {} already exists", name);
+            panic!("MPC network {name} already exists");
         }
         let mpc_setup = setup
             .mpc_setups
@@ -152,13 +152,13 @@ impl NewMpcNetworkCmd {
 
 impl UpdateMpcNetworkCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to update MPC network {}", name);
+        println!("Going to update MPC network {name}");
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
 
         let num_participants = self
             .num_participants
@@ -191,12 +191,12 @@ impl UpdateMpcNetworkCmd {
 impl MpcAddKeysCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
         let urls = get_urls(name, &config);
-        println!("Adding Keys for network {}", name);
+        println!("Adding Keys for network {name}");
         let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} must exist", name));
+            .expect(&format!("MPC network {name} must exist"));
         for (i, account_id) in mpc_setup.participants.iter().enumerate() {
             let participant = setup
                 .accounts
@@ -249,8 +249,7 @@ impl MpcDeployContractCmd {
             Some(contract_path) => (std::fs::read(contract_path).unwrap(), contract_path.clone()),
             None => {
                 println!(
-                    "fetching and deploying contract from testnet account {}",
-                    TESTNET_CONTRACT_ACCOUNT_ID
+                    "fetching and deploying contract from testnet account {TESTNET_CONTRACT_ACCOUNT_ID}"
                 );
                 (
                     queries::get_contract_code(
@@ -268,7 +267,7 @@ impl MpcDeployContractCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         if let Some(old_contract) = &mpc_setup.contract {
             let old_contract = setup
                 .accounts
@@ -292,7 +291,7 @@ impl MpcDeployContractCmd {
         } else {
             AccountToFund::from_new(
                 self.deposit_near * ONE_NEAR,
-                format!("mpc-contract-{}-", name),
+                format!("mpc-contract-{name}-"),
             )
         };
         let contract_account = fund_accounts(
@@ -320,7 +319,7 @@ impl MpcInitContractCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} must exist", name));
+            .expect(&format!("MPC network {name} must exist"));
         let contract: AccountId = mpc_setup
             .contract
             .clone()
@@ -383,7 +382,7 @@ fn mpc_account_to_participant_info(account: &OperatingAccount, index: usize) -> 
 
     ParticipantInfo {
         sign_pk: near_sdk_public_key,
-        url: format!("http://mpc-node-{}.service.mpc.consul:3000", index),
+        url: format!("http://mpc-node-{index}.service.mpc.consul:3000"),
     }
 }
 
@@ -393,7 +392,7 @@ impl RemoveContractCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         if mpc_setup.contract.is_some() {
             mpc_setup.contract = None;
             println!("Contract removed (not deleted; just removed from local view)");
@@ -409,7 +408,7 @@ impl MpcViewContractCmd {
         let mpc_setup = setup
             .mpc_setups
             .get(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let Some(contract) = mpc_setup.contract.as_ref() else {
             println!("Contract is not deployed");
             return;
@@ -444,12 +443,12 @@ fn get_voter_account_ids<'a>(
 
 impl MpcProposeUpdateContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to propose update contract for MPC network {}", name);
+        println!("Going to propose update contract for MPC network {name}");
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let contract = mpc_setup
             .contract
             .clone()
@@ -493,17 +492,14 @@ impl MpcProposeUpdateContractCmd {
             "Failed to deserialize result: {}",
             String::from_utf8_lossy(&result)
         ));
-        println!("Proposed update with ID {}", update_id);
+        println!("Proposed update with ID {update_id}");
         println!("Run the following command to vote for the update:");
         let self_exe = std::env::current_exe()
             .expect("Failed to get current executable path")
             .to_str()
             .expect("Failed to convert path to string")
             .to_string();
-        println!(
-            "{} mpc {} vote-update --update-id={}",
-            self_exe, name, update_id
-        );
+        println!("{self_exe} mpc {name} vote-update --update-id={update_id}");
     }
 }
 
@@ -523,7 +519,7 @@ impl MpcVoteUpdateCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let contract = mpc_setup
             .contract
             .clone()
@@ -580,15 +576,15 @@ impl MpcVoteAddDomainsCmd {
             .schemes
             .iter()
             .map(|scheme| {
-                serde_json::from_str(&format!("\"{}\"", scheme))
-                    .expect(&format!("Failed to parse signature scheme {}", scheme))
+                serde_json::from_str(&format!("\"{scheme}\""))
+                    .expect(&format!("Failed to parse signature scheme {scheme}"))
             })
             .collect::<Vec<_>>();
         let mut setup = OperatingDevnetSetup::load(config.rpc.clone()).await;
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let contract = mpc_setup
             .contract
             .clone()
@@ -602,10 +598,7 @@ impl MpcVoteAddDomainsCmd {
                 running_contract_state.domains
             }
             _ => {
-                panic!(
-                    "Cannot add domains when not in the running state: {:?}",
-                    contract_state
-                );
+                panic!("Cannot add domains when not in the running state: {contract_state:?}");
             }
         };
         let mut proposal = Vec::new();
@@ -643,10 +636,10 @@ impl MpcVoteAddDomainsCmd {
         for (i, result) in results.into_iter().enumerate() {
             match result.into_return_value() {
                 Ok(_) => {
-                    println!("Participant {} vote_add_domains succeed", i);
+                    println!("Participant {i} vote_add_domains succeed");
                 }
                 Err(err) => {
-                    println!("Participant {} vote_add_domains failed: {:?}", i, err);
+                    println!("Participant {i} vote_add_domains failed: {err:?}");
                 }
             }
         }
@@ -668,7 +661,7 @@ impl MpcVoteNewParametersCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let contract = mpc_setup
             .contract
             .clone()
@@ -688,8 +681,7 @@ impl MpcVoteNewParametersCmd {
             ProtocolContractState::Resharing(state) => state.previous_running_state.parameters,
             _ => {
                 panic!(
-                    "Cannot vote for new parameters when not in the running or resharing state: {:?}",
-                    contract_state
+                    "Cannot vote for new parameters when not in the running or resharing state: {contract_state:?}"
                 );
             }
         };
@@ -699,8 +691,7 @@ impl MpcVoteNewParametersCmd {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
                 participants.is_participant(&account_id),
-                "Participant {} is not in the network",
-                account_id
+                "Participant {account_id} is not in the network"
             );
             participants.remove(&account_id);
         }
@@ -708,8 +699,7 @@ impl MpcVoteNewParametersCmd {
             let account_id = mpc_setup.participants[*participant_index].clone();
             assert!(
                 !participants.is_participant(&account_id),
-                "Participant {} is already in the network",
-                account_id
+                "Participant {account_id} is already in the network"
             );
             participants
                 .insert(
@@ -758,10 +748,10 @@ impl MpcVoteNewParametersCmd {
         for (i, result) in results.into_iter().enumerate() {
             match result.into_return_value() {
                 Ok(_) => {
-                    println!("Participant {} vote_new_parameters succeed", i);
+                    println!("Participant {i} vote_new_parameters succeed");
                 }
                 Err(err) => {
-                    println!("Participant {} vote_new_parameters failed: {:?}", i, err);
+                    println!("Participant {i} vote_new_parameters failed: {err:?}");
                 }
             }
         }
@@ -779,7 +769,7 @@ impl MpcVoteApprovedHashCmd {
         let mpc_setup = setup
             .mpc_setups
             .get_mut(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         let contract = mpc_setup
             .contract
             .clone()
@@ -789,10 +779,7 @@ impl MpcVoteApprovedHashCmd {
         let running_state = match contract_state {
             ProtocolContractState::Running(state) => state,
             state => {
-                panic!(
-                    "Cannot vote for new parameters when not in the running state: {:#?}",
-                    state
-                );
+                panic!("Cannot vote for new parameters when not in the running state: {state:#?}");
             }
         };
 
@@ -824,13 +811,10 @@ impl MpcVoteApprovedHashCmd {
         for (participant_index, voting_result) in voting_results.into_iter().enumerate() {
             match voting_result.into_return_value() {
                 Ok(_) => {
-                    println!("Participant {} vote_code_hash succeed", participant_index);
+                    println!("Participant {participant_index} vote_code_hash succeed");
                 }
                 Err(err) => {
-                    println!(
-                        "Participant {} vote_code_hash failed: {:?}",
-                        participant_index, err
-                    );
+                    println!("Participant {participant_index} vote_code_hash failed: {err:?}");
                 }
             }
         }
@@ -859,7 +843,7 @@ pub async fn read_contract_state(
                     String::from_utf8_lossy(&result.result)
                 ))
             }
-            _ => panic!("Unexpected response: {:?}", result),
+            _ => panic!("Unexpected response: {result:?}"),
         },
         Err(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
             RpcQueryError::ContractExecutionError { vm_error, .. },
@@ -867,7 +851,7 @@ pub async fn read_contract_state(
             ProtocolContractState::NotInitialized
         }
         Err(err) => {
-            panic!("Unexpected error: {:?}", err);
+            panic!("Unexpected error: {err:?}");
         }
     }
 }
@@ -889,9 +873,9 @@ impl MpcDescribeCmd {
         let mpc_setup = setup
             .mpc_setups
             .get(name)
-            .expect(&format!("MPC network {} does not exist", name));
+            .expect(&format!("MPC network {name} does not exist"));
         if let Some(contract) = &mpc_setup.contract {
-            println!("MPC contract deployed at: {}", contract);
+            println!("MPC contract deployed at: {contract}");
             let contract_state = read_contract_state(&config.rpc, contract).await;
             print!("{}", protocol_state_to_string(&contract_state));
         } else {

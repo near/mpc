@@ -163,7 +163,7 @@ async fn run_gas_regression<F>(
     let config = GasThresholdsConfig::load();
 
     for n in config.participant_counts() {
-        println!("\n  Testing with {} participants...", n);
+        println!("\n  Testing with {n} participants...");
         let env = if running_state {
             setup_test_env_running(n).await
         } else {
@@ -227,7 +227,7 @@ async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
             result.failures()
         );
         let gas_burnt = Gas::from_gas(result.total_gas_burnt.as_gas());
-        assert_gas_within_threshold(&format!("{}[{}]", method, label), gas_burnt, max_gas);
+        assert_gas_within_threshold(&format!("{method}[{label}]"), gas_burnt, max_gas);
     }
 }
 
@@ -242,10 +242,7 @@ fn assert_gas_within_threshold(operation: &str, gas_burnt: Gas, max_gas: Gas) {
         max_ggas,
         (gas_ggas / max_ggas - 1.0) * 100.0
     );
-    println!(
-        "  ✓ {}: {:.2} GGas (limit: {:.2} GGas)",
-        operation, gas_ggas, max_ggas
-    );
+    println!("  ✓ {operation}: {gas_ggas:.2} GGas (limit: {max_ggas:.2} GGas)");
 }
 
 async fn setup_test_env(n_participants: usize) -> TestEnv {

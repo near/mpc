@@ -8,7 +8,7 @@ expression: abi
     "name": "mpc-contract",
     "version": "3.4.1",
     "build": {
-      "compiler": "rustc 1.86.0",
+      "compiler": "rustc 1.88.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
     },
     "wasm_hash": "[WASM_HASH]"

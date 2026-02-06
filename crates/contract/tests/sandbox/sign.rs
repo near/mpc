@@ -55,7 +55,7 @@ async fn test_contract_request_all_schemes() -> anyhow::Result<()> {
                 let req = DomainResponseTest::new(&mut rng, key, predecessor_id);
                 req.run(&alice, &contract, attested_account)
                     .await
-                    .with_context(|| format!("{:?}", req))
+                    .with_context(|| format!("{req:?}"))
                     .unwrap();
             }
         }

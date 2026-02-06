@@ -23,7 +23,7 @@ impl NodeBackupServiceInfo {
         let p2p_key = match info.public_key.try_into_node_type() {
             Ok(res) => res,
             Err(err) => {
-                anyhow::bail!("can't convert key: {}", err);
+                anyhow::bail!("can't convert key: {err}");
             }
         };
         Ok(Self { p2p_key })

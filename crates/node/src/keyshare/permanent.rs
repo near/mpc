@@ -29,7 +29,7 @@ impl PermanentKeyshareData {
         });
         if !is_consistent {
             let key_ids: Vec<KeyEventId> = keyshares.iter().map(|share| share.key_id).collect();
-            anyhow::bail!("Inconsistent key ids: {:?}", key_ids);
+            anyhow::bail!("Inconsistent key ids: {key_ids:?}");
         }
         let Some(first) = keyshares.first() else {
             anyhow::bail!("Keyshares must not be empty");

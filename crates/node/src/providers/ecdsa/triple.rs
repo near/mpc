@@ -124,7 +124,7 @@ impl EcdsaSignatureProvider {
                 let triple_store = triple_store.clone();
                 let config_clone = config.clone();
                 tasks.spawn_checked(
-                    &format!("background triple generation; task_id: {:?}", task_id),
+                    &format!("background triple generation; task_id: {task_id:?}"),
                     ECDSA_TASK_MONITORS
                         .triple_generation_leader
                         .instrument(async move {
@@ -416,7 +416,7 @@ mod tests {
                     };
                     let channel = client.new_channel_for_task(task_id, participants).unwrap();
                     let result = tracking::spawn(
-                        &format!("task {:?}", task_id),
+                        &format!("task {task_id:?}"),
                         ManyTripleGenerationComputation::<TRIPLES_PER_BATCH> {
                             threshold: THRESHOLD,
                         }

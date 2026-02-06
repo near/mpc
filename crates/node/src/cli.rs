@@ -588,7 +588,7 @@ impl Cli {
             let migrating_node_account: AccountId = accounts
                 .get(*migrating_node_idx)
                 .ok_or_else(|| {
-                    anyhow::anyhow!("index {} out of bounds for accounts", migrating_node_idx)
+                    anyhow::anyhow!("index {migrating_node_idx} out of bounds for accounts")
                 })?
                 .clone();
 
@@ -632,7 +632,7 @@ impl Cli {
         )?;
         let participants_config = configs[0].0.participants.clone();
         for (i, (_config, _p2p_private_key)) in configs.into_iter().enumerate() {
-            let subdir = format!("{}/{}", output_dir, i);
+            let subdir = format!("{output_dir}/{i}");
             std::fs::create_dir_all(&subdir)?;
             let file_config = self.create_file_config(
                 &participants[i],
@@ -642,12 +642,12 @@ impl Cli {
                 desired_presignatures_to_buffer,
             )?;
             std::fs::write(
-                format!("{}/config.yaml", subdir),
+                format!("{subdir}/config.yaml"),
                 serde_yaml::to_string(&file_config)?,
             )?;
         }
         std::fs::write(
-            format!("{}/participants.json", output_dir),
+            format!("{output_dir}/participants.json"),
             serde_json::to_string(&participants_config)?,
         )?;
         Ok(())
@@ -718,7 +718,7 @@ impl ImportKeyshareCmd {
                 })?;
 
             let keyshare: PermanentKeyshareData = serde_json::from_str(&self.keyshare_json)
-                .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to parse keyshare JSON: {e}"))?;
 
             println!("Parsed keyshare for epoch {}", keyshare.epoch_id);
 
@@ -789,9 +789,9 @@ impl ExportKeyshareCmd {
 
             // Print the keyshare to console
             let json = serde_json::to_string_pretty(&keyshare)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize keyshare: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to serialize keyshare: {e}"))?;
 
-            println!("{}", json);
+            println!("{json}");
             println!(
                 "\nKeyshare for epoch {} successfully exported.",
                 keyshare.epoch

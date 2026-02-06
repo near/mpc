@@ -388,7 +388,7 @@ pub mod testing {
         tokio::spawn(async move {
             loop {
                 let report = handle_clone.report();
-                eprintln!("{:?}", report);
+                eprintln!("{report:?}");
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         });

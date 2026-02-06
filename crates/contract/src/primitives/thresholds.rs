@@ -56,17 +56,15 @@ impl ThresholdParameters {
     pub fn validate_threshold(n_shares: u64, k: Threshold) -> Result<(), Error> {
         if k.value() > n_shares {
             return Err(InvalidThreshold::MaxRequirementFailed
-                .message(format!("cannot exceed {}, found {:?}", n_shares, k)));
+                .message(format!("cannot exceed {n_shares}, found {k:?}")));
         }
         if k.value() < MIN_THRESHOLD_ABSOLUTE {
             return Err(InvalidThreshold::MinAbsRequirementFailed.into());
         }
         let percentage_bound = (3 * n_shares).div_ceil(5); // minimum 60%
         if k.value() < percentage_bound {
-            return Err(InvalidThreshold::MinRelRequirementFailed.message(format!(
-                "require at least {}, found {:?}",
-                percentage_bound, k
-            )));
+            return Err(InvalidThreshold::MinRelRequirementFailed
+                .message(format!("require at least {percentage_bound}, found {k:?}")));
         }
         Ok(())
     }

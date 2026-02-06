@@ -58,7 +58,7 @@ const BOGUS_URL: &str = "http://example";
 pub async fn make_hello_request(request_sender: &mut SendRequest<Body>) -> anyhow::Result<String> {
     let req = Request::builder()
         .method("GET")
-        .uri(format!("{}/hello", BOGUS_URL))
+        .uri(format!("{BOGUS_URL}/hello"))
         .body(hyper::Body::empty())?;
 
     let response = request_sender.send_request(req).await?;
@@ -77,7 +77,7 @@ pub async fn make_keyshare_get_request(
     let params = serde_json::json!(keyset);
     let req = Request::builder()
         .method("GET")
-        .uri(format!("{}/get_keyshares", BOGUS_URL))
+        .uri(format!("{BOGUS_URL}/get_keyshares"))
         .body(hyper::Body::from(params.to_string()))
         .inspect_err(|err| tracing::error!(?err, "building request failed"))?;
 
@@ -92,7 +92,7 @@ pub async fn make_keyshare_get_request(
             .await
             .context("failed to read error body")?;
         let body_str = String::from_utf8_lossy(&body_bytes);
-        anyhow::bail!("server returned {}: {}", status, body_str);
+        anyhow::bail!("server returned {status}: {body_str}");
     }
 
     // Collect the response body
@@ -117,7 +117,7 @@ pub async fn make_set_keyshares_request(
     let body = serialize_and_encrypt_keyshares(keyshares, backup_encryption_key)?;
     let req = Request::builder()
         .method("PUT")
-        .uri(format!("{}/set_keyshares", BOGUS_URL))
+        .uri(format!("{BOGUS_URL}/set_keyshares"))
         .header(hyper::header::CONTENT_TYPE, "application/json")
         .body(Body::from(body))?;
     let response = request_sender
@@ -132,7 +132,7 @@ pub async fn make_set_keyshares_request(
             .await
             .context("failed to read error body")?;
         let body_str = String::from_utf8_lossy(&body_bytes);
-        anyhow::bail!("server returned {}: {}", status, body_str);
+        anyhow::bail!("server returned {status}: {body_str}");
     }
 
     // Optionally read response body (the server sends "Keyshares received.")

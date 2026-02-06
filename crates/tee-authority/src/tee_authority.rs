@@ -196,7 +196,7 @@ where
                 }
                 None => {
                     let retry_msg = match max_retries {
-                        Some(retries) => format!("after {} retries", retries),
+                        Some(retries) => format!("after {retries} retries"),
                         None => "and backoff returned None with unlimited retries".to_string(),
                     };
                     error!(?err, "{description} failed {retry_msg}");

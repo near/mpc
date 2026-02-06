@@ -342,7 +342,7 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
         self.connectivities
             .get(&p)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No such participant {}", p))
+            .ok_or_else(|| anyhow::anyhow!("No such participant {p}"))
     }
 }
 

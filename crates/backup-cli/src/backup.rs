@@ -138,16 +138,15 @@ async fn print_register_command(
     println!("Run the following command to register your backup service:\n");
     println!(
         r#"near contract call-function as-transaction \
-  {} \
+  {mpc_contract_account_id} \
   register_backup_service \
-  json-args '{{"backup_service_info":{{"public_key":"{}"}}}}' \
+  json-args '{{"backup_service_info":{{"public_key":"{public_key_str}"}}}}' \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' \
-  sign-as {} \
-  network-config {} \
+  sign-as {signer_account_id} \
+  network-config {near_network} \
   sign-with-keychain \
-  send"#,
-        mpc_contract_account_id, public_key_str, signer_account_id, near_network
+  send"#
     );
 }
 

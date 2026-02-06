@@ -89,7 +89,7 @@ impl fmt::Debug for DstackAttestation {
         const MAX_BYTES: usize = 2048;
 
         fn truncate_debug<T: fmt::Debug>(value: &T, max_bytes: usize) -> String {
-            let debug_str = format!("{:?}", value);
+            let debug_str = format!("{value:?}");
             if debug_str.len() <= max_bytes {
                 debug_str
             } else {

@@ -91,7 +91,7 @@ struct BufferedBlockData {
 fn ellipsified_shortened_hash_list(hashes: &[CryptoHash]) -> String {
     let mut result = String::new();
     for (i, hash) in hashes.iter().take(3).enumerate() {
-        let hash = format!("{:?}", hash);
+        let hash = format!("{hash:?}");
         result.push_str(&hash[..6]);
         if i < hashes.len() - 1 {
             result.push_str(", ");
@@ -1304,7 +1304,7 @@ mod tests {
         pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
         clock.advance(near_time::Duration::seconds(1));
 
-        let debug = format!("{:?}", pending_requests);
+        let debug = format!("{pending_requests:?}");
         assert!(
             debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
             "{}",
@@ -1350,7 +1350,7 @@ mod tests {
         pending_requests.notify_new_block(vec![], vec![], &b4.to_block_view());
         clock.advance(near_time::Duration::seconds(1));
 
-        let debug = format!("{:?}", pending_requests);
+        let debug = format!("{pending_requests:?}");
         assert!(
             debug.contains("blk        100 ->        101 (+1, 2s432ms)"),
             "{}",

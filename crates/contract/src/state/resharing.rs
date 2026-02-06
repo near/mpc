@@ -207,7 +207,7 @@ pub mod tests {
     use std::collections::BTreeSet;
 
     fn test_resharing_contract_state_for(num_domains: usize) {
-        println!("Testing with {} domains", num_domains);
+        println!("Testing with {num_domains} domains");
         let (mut env, mut state) = gen_resharing_state(num_domains);
         let candidates: BTreeSet<AccountId> = state
             .resharing_key
@@ -220,7 +220,7 @@ pub mod tests {
 
         let mut resulting_running_state: Option<RunningContractState> = None;
         for i in 0..num_domains {
-            println!("Testing domain {}", i);
+            println!("Testing domain {i}");
             assert!(!state.resharing_key.is_active());
             let first_key_event_id = KeyEventId {
                 attempt_id: AttemptId::new(),

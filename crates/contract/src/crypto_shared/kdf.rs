@@ -39,7 +39,7 @@ fn derive_from_path(derivation_prefix: &str, predecessor_id: &AccountId, path: &
     // indicate the end of the account id in derivation path.
     // Do not reuse this hash function on anything that isn't an account
     // ID or it'll be vulnerable to Hash Malleability/extension attacks.
-    let derivation_path = format!("{derivation_prefix}{},{}", predecessor_id, path);
+    let derivation_path = format!("{derivation_prefix}{predecessor_id},{path}");
     let mut hasher = Sha3_256::new();
     hasher.update(derivation_path);
     let hash: [u8; 32] = hasher.finalize().into();

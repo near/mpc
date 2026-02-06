@@ -80,8 +80,7 @@ impl VerifiedAttestation {
 
                 if attestation_has_expired {
                     return Err(VerificationError::Custom(format!(
-                        "The attestation expired at t = {:?}, time_now = {:?}",
-                        expiration_timestamp_seconds, timestamp_seconds
+                        "The attestation expired at t = {expiration_timestamp_seconds:?}, time_now = {timestamp_seconds:?}"
                     )));
                 }
 
@@ -123,8 +122,7 @@ impl Attestation {
                     let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload)
                         .map_err(|err| {
                             VerificationError::Custom(format!(
-                                "provided mpc image is not hex encoded: {:?}",
-                                err
+                                "provided mpc image is not hex encoded: {err:?}"
                             ))
                         })?;
                     let mpc_image_hash_bytes: [u8; 32] =
@@ -204,8 +202,7 @@ fn verify_mpc_hash(
     let image_hash_is_allowed = allowed_hashes.contains(image_hash);
     if !image_hash_is_allowed {
         return Err(VerificationError::Custom(format!(
-            "MPC image hash {:?} is not in the allowed hashes list",
-            image_hash
+            "MPC image hash {image_hash:?} is not in the allowed hashes list"
         )));
     }
 
@@ -226,8 +223,7 @@ fn verify_launcher_compose_hash(
 
     if !launcher_compose_hash_is_allowed {
         return Err(VerificationError::Custom(format!(
-            "MPC launcher compose hash {:?} is not in the allowed hashes list",
-            launcher_compose_hash
+            "MPC launcher compose hash {launcher_compose_hash:?} is not in the allowed hashes list"
         )));
     }
 
@@ -336,8 +332,7 @@ mod tests {
             Err(VerificationError::Custom(msg)) => {
                 assert!(
                     msg.contains("MPC image hash"),
-                    "Expected error message regarding MPC image hash, got: {}",
-                    msg
+                    "Expected error message regarding MPC image hash, got: {msg}"
                 );
             }
             _ => panic!("Expected Custom VerificationError, got: {:?}", result),

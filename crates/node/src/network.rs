@@ -567,7 +567,7 @@ impl NetworkTaskChannelSender {
             if participant == self.my_participant_id {
                 continue;
             }
-            tracking::set_progress(&format!("Waiting for connection to {}", participant));
+            tracking::set_progress(&format!("Waiting for connection to {participant}"));
             self.transport_sender
                 .connectivity(participant)
                 .wait_for_connection(self.connection_versions[&participant])
@@ -710,7 +710,7 @@ impl NetworkTaskChannel {
                 if self.sender.is_leader() {
                     anyhow::bail!("Aborted by participant {}: {}", message.from, err);
                 } else {
-                    anyhow::bail!("Aborted by leader: {}", err);
+                    anyhow::bail!("Aborted by leader: {err}");
                 }
             }
             MpcMessageKind::Success => {
@@ -730,7 +730,7 @@ impl NetworkTaskChannel {
             MpcMessageKind::Start(mpc_start_message) => {
                 // `Self` was created upon receiving `MpcMessageKind::Start`, further we don't expect
                 // any `Start` messages.
-                anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
+                anyhow::bail!("Unexpected Start message: {mpc_start_message:?}");
             }
         }
         Ok(None)
@@ -925,7 +925,7 @@ pub mod testing {
                 let (client, new_channel_receiver, task) =
                     super::run_network_client(sender, receiver);
                 let client_runner_future = client_runner(client, new_channel_receiver);
-                tracking::spawn(&format!("client {}", i), async move {
+                tracking::spawn(&format!("client {i}"), async move {
                     let _task = task;
                     client_runner_future.await
                 })
@@ -1011,7 +1011,7 @@ mod tests {
                 client.all_participant_ids(),
             )?;
             handles.push(tracking::spawn(
-                &format!("task {}", seed),
+                &format!("task {seed}"),
                 TaskLeader { seed }.perform_leader_centric_computation(
                     channel,
                     std::time::Duration::from_secs(10),
@@ -1031,7 +1031,7 @@ mod tests {
         for handle in handles {
             results.push(handle.await??);
         }
-        println!("Results: {:?}", results);
+        println!("Results: {results:?}");
         assert_eq!(results, expected_results);
 
         Ok(())
@@ -1132,8 +1132,7 @@ mod tests {
         let err_msg = err.to_string();
         assert!(
             err_msg.starts_with("Not enough active participants"),
-            "unexpected error message: {}",
-            err_msg
+            "unexpected error message: {err_msg}"
         );
     }
 }
@@ -1249,7 +1248,7 @@ mod fault_handling_tests {
                 if participant_id == &client.my_participant_id() {
                 } else if me.raw() == 0 {
                     assert!(
-                        err_string.contains(&format!("Aborted by participant {}", participant_id)),
+                        err_string.contains(&format!("Aborted by participant {participant_id}")),
                         "{}",
                         err_string
                     );
@@ -1281,7 +1280,7 @@ mod fault_handling_tests {
                 if participant_id == &client.my_participant_id() {
                 } else if me.raw() == 0 {
                     assert!(
-                        err_string.contains(&format!("Aborted by participant {}", participant_id)),
+                        err_string.contains(&format!("Aborted by participant {participant_id}")),
                         "{}",
                         err_string
                     );

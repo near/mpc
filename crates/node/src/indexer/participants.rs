@@ -517,9 +517,9 @@ mod tests {
                 .insert(account_id.clone(), bad_data.clone())
                 .unwrap();
             let params = ThresholdParameters::new(new_infos.clone(), Threshold::new(3)).unwrap();
-            print!("\n\nmy params: \n{:?}\n", params);
+            print!("\n\nmy params: \n{params:?}\n");
             let converted = convert_participant_infos(params, None);
-            print!("\n\nmyconverted: \n{:?}\n", converted);
+            print!("\n\nmyconverted: \n{converted:?}\n");
             let _ = converted.expect_err("Invalid participant data should be rejected");
         }
     }

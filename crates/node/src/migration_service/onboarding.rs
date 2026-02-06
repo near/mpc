@@ -76,7 +76,7 @@ pub(crate) async fn onboard(
                 // the only unrecoverable error is if the keyshare sender drops.
                 if let Err(err) = res {
                     cancel_monitoring_task.cancel();
-                    anyhow::bail!("keyshare sender dropped, quitting onboarding: {}", err);
+                    anyhow::bail!("keyshare sender dropped, quitting onboarding: {err}");
                 }
                 // The monitoring function will cancel this task once the contract state changes.
                 cancellation_token.cancelled().await;

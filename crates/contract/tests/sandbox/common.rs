@@ -147,7 +147,7 @@ pub async fn init_contract(
         .transact()
         .await
         .unwrap();
-    assert!(result.is_success(), "init failed: {:?}", result);
+    assert!(result.is_success(), "init failed: {result:?}");
     result.into_result().unwrap()
 }
 
@@ -171,7 +171,7 @@ pub async fn init_contract_running(
         .transact()
         .await
         .unwrap();
-    assert!(result.is_success(), "init_running failed: {:?}", result);
+    assert!(result.is_success(), "init_running failed: {result:?}");
     result.into_result().unwrap()
 }
 
@@ -408,8 +408,7 @@ pub async fn submit_attestations(
                 .is_success();
             assert!(
                 success,
-                "submit_participant_info failed for participant {}",
-                i
+                "submit_participant_info failed for participant {i}"
             );
         })
         .collect();

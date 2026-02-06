@@ -176,7 +176,7 @@ pub mod tests {
 
         let mut resulting_running_state: Option<RunningContractState> = None;
         for i in num_already_generated..num_domains {
-            println!("Testing domain {}", i);
+            println!("Testing domain {i}");
             assert!(!state.generating_key.is_active());
             let first_key_event_id = KeyEventId {
                 attempt_id: AttemptId::new(),

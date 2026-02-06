@@ -188,7 +188,7 @@ impl TestContract {
         env::log_str(format!("{num_calls} parallel calls completed!").as_str());
         for i in 0..num_calls {
             let result = env::promise_result_checked(i, 500);
-            env::log_str(&format!("sign #{i}: {:?}", result));
+            env::log_str(&format!("sign #{i}: {result:?}"));
             assert_matches::assert_matches!(result, Ok(_));
         }
         num_calls

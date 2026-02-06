@@ -77,8 +77,7 @@ pub async fn assert_running_return_participants(
     let final_state: ProtocolContractState = contract.view("state").await?.json()?;
     let ProtocolContractState::Running(running_state) = final_state else {
         panic!(
-            "Expected contract to be in Running state after resharing, but got: {:?}",
-            final_state
+            "Expected contract to be in Running state after resharing, but got: {final_state:?}"
         );
     };
     Ok(running_state.parameters.participants().clone())
@@ -87,10 +86,7 @@ pub async fn assert_running_return_participants(
 pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
     let final_state: ProtocolContractState = get_state(contract).await;
     let ProtocolContractState::Running(running_state) = final_state else {
-        panic!(
-            "Expected contract to be in Running state: {:?}",
-            final_state
-        );
+        panic!("Expected contract to be in Running state: {final_state:?}");
     };
     running_state.parameters.threshold()
 }

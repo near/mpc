@@ -25,7 +25,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let mut account_ids: Vec<_> = (0..NUM_PARTICIPANTS)
-        .map(|i| format!("test{}", i).parse().unwrap())
+        .map(|i| format!("test{i}").parse().unwrap())
         .collect();
     account_ids.push(format!("test{}", 0).parse().unwrap());
     let mut setup = IntegrationTestSetup::new(

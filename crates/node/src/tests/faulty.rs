@@ -23,7 +23,7 @@ async fn test_faulty_cluster() {
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let accounts = (0..NUM_PARTICIPANTS)
-        .map(|i| format!("test{}", i).parse().unwrap())
+        .map(|i| format!("test{i}").parse().unwrap())
         .collect::<Vec<AccountId>>();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),
@@ -157,7 +157,7 @@ async fn test_indexer_stuck() {
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
     let accounts = (0..NUM_PARTICIPANTS)
-        .map(|i| format!("test{}", i).parse().unwrap())
+        .map(|i| format!("test{i}").parse().unwrap())
         .collect::<Vec<AccountId>>();
     let mut setup = IntegrationTestSetup::new(
         Clock::real(),

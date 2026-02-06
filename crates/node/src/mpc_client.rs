@@ -287,11 +287,11 @@ impl MpcClient {
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentSignatures => {
-                                let debug_output = format!("{:?}", pending_signatures);
+                                let debug_output = format!("{pending_signatures:?}");
                                 debug_request.respond(debug_output);
                             }
                             DebugRequestKind::RecentCKDs => {
-                                let debug_output = format!("{:?}", pending_ckds);
+                                let debug_output = format!("{pending_ckds:?}");
                                 debug_request.respond(debug_output);
                             }
                         }

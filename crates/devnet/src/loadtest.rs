@@ -31,7 +31,7 @@ impl ListLoadtestCmd {
         let setup = OperatingDevnetSetup::load(config.rpc).await;
         let loadtest_setups = &setup.loadtest_setups;
         for (name, setup) in loadtest_setups {
-            println!("{}: {}", name, setup);
+            println!("{name}: {setup}");
         }
     }
 }
@@ -55,7 +55,7 @@ async fn update_loadtest_setup(
         } else {
             accounts_to_fund.push(AccountToFund::from_new(
                 loadtest_setup.desired_balance_per_account,
-                format!("loadtest-{}-{}-", i, name),
+                format!("loadtest-{i}-{name}-"),
             ));
         }
     }
@@ -84,7 +84,7 @@ impl NewLoadtestCmd {
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         if setup.loadtest_setups.contains_key(name) {
-            println!("Loadtest setup with name {} already exists. Fetching the existing loadtest and updating.", name);
+            println!("Loadtest setup with name {name} already exists. Fetching the existing loadtest and updating.");
         }
         let loadtest_setup = setup
             .loadtest_setups
@@ -107,13 +107,13 @@ impl NewLoadtestCmd {
 
 impl UpdateLoadtestCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!("Going to update loadtest setup {}", name);
+        println!("Going to update loadtest setup {name}");
 
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let loadtest_setup = setup
             .loadtest_setups
             .get_mut(name)
-            .expect(&format!("Loadtest setup with name {} does not exist", name));
+            .expect(&format!("Loadtest setup with name {name} does not exist"));
 
         let desired_num_accounts = self
             .num_accounts
@@ -138,10 +138,7 @@ impl UpdateLoadtestCmd {
 
 impl DeployParallelSignContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
-        println!(
-            "Going to deploy parallel sign contract for loadtest setup {}",
-            name
-        );
+        println!("Going to deploy parallel sign contract for loadtest setup {name}");
         let contract_path = self
             .path
             .clone()
@@ -152,7 +149,7 @@ impl DeployParallelSignContractCmd {
         let loadtest_setup = setup
             .loadtest_setups
             .get_mut(name)
-            .expect(&format!("Loadtest setup with name {} does not exist", name));
+            .expect(&format!("Loadtest setup with name {name} does not exist"));
 
         if let Some(old_contract) = &loadtest_setup.parallel_signatures_contract {
             let old_contract = setup
@@ -176,7 +173,7 @@ impl DeployParallelSignContractCmd {
                     do_not_refill_above: 0,
                 }
             } else {
-                AccountToFund::from_new(self.deposit_near * ONE_NEAR, format!("par-sign-{}-", name))
+                AccountToFund::from_new(self.deposit_near * ONE_NEAR, format!("par-sign-{name}-"))
             };
         let contract_account = fund_accounts(
             &mut setup.accounts,
@@ -203,7 +200,7 @@ impl RunLoadtestCmd {
         let loadtest_setup = setup
             .loadtest_setups
             .get(name)
-            .expect(&format!("Loadtest setup with name {} does not exist", name));
+            .expect(&format!("Loadtest setup with name {name} does not exist"));
         let mpc_account = match (&self.mpc_contract, &self.mpc_network) {
             (Some(contract), None) => {
                 println!(
@@ -216,7 +213,7 @@ impl RunLoadtestCmd {
                 let mpc_setup = setup
                     .mpc_setups
                     .get(network)
-                    .expect(&format!("MPC network with name {} does not exist", network));
+                    .expect(&format!("MPC network with name {network} does not exist"));
                 let mpc_account = mpc_setup
                     .contract
                     .clone()
@@ -315,7 +312,7 @@ impl RunLoadtestCmd {
                             wait_until: near_primitives::views::TxExecutionStatus::Included,
                         })
                         .await
-                        .map_err(|e| anyhow!("error sending tx request: {}", e));
+                        .map_err(|e| anyhow!("error sending tx request: {e}"));
                     TxRpcResponse {
                         rpc_response,
                         signed_tx,
@@ -356,20 +353,18 @@ impl RunLoadtestCmd {
                     }
                 }
                 print!(
-                    "\rSubmitted {} {}signature requests. Received {} RPC errors",
-                    n_rpc_requests, parallel, n_rpc_errors
+                    "\rSubmitted {n_rpc_requests} {parallel}signature requests. Received {n_rpc_errors} RPC errors"
                 );
                 let _ = stdout().flush();
             }
             println!(
-                "\rSubmitted {} {}signature requests. Received {} RPC errors",
-                n_rpc_requests, parallel, n_rpc_errors
+                "\rSubmitted {n_rpc_requests} {parallel}signature requests. Received {n_rpc_errors} RPC errors"
             );
             // note: we will never enter here if loadtest runs indefinetly.
             if !rpc_errs.is_empty() {
                 println!("Rpc errors:");
                 for e in &rpc_errs {
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                 }
             }
             rpc_errs.clear();
@@ -423,13 +418,13 @@ impl RunLoadtestCmd {
             if !rpc_errs.is_empty() {
                 println!("Rpc errors:");
                 for e in &rpc_errs {
-                    eprintln!("{}", e);
+                    eprintln!("{e}");
                 }
             }
             if !failures.is_empty() {
                 println!("Signature failures:");
                 for e in &failures {
-                    eprintln!("{:?}", e);
+                    eprintln!("{e:?}");
                 }
             }
             println!("Success Rate: {}%", (succeeded * 100) / txs.len());

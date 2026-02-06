@@ -100,7 +100,7 @@ fn get_epoch_data(db: &Arc<SecretDB>) -> anyhow::Result<Option<EpochDataWrapper>
         let epoch_id = EpochId::new(epoch_id_number);
         return Ok(Some(EpochDataWrapper::Legacy(epoch_id)));
     };
-    anyhow::bail!("Can't deserialize EPOCH_ID entry: {:?}", db_res);
+    anyhow::bail!("Can't deserialize EPOCH_ID entry: {db_res:?}");
 }
 
 enum AssetCleanup {

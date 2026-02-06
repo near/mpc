@@ -87,7 +87,7 @@ impl TemporaryKeyStorage {
     fn get_epoch_id_from_filename(filename: &str) -> anyhow::Result<Option<EpochId>> {
         let parts: Vec<&str> = filename.split('_').collect();
         if parts.len() != 4 {
-            anyhow::bail!("Invalid keyshare filename: {:?}", filename);
+            anyhow::bail!("Invalid keyshare filename: {filename:?}");
         }
         let epoch_id: u64 = parts[1].parse()?;
         Ok(Some(EpochId::new(epoch_id)))

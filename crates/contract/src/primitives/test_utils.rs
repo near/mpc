@@ -91,7 +91,7 @@ pub fn gen_account_id() -> AccountId {
         .take(12)
         .map(char::from)
         .collect();
-    let account_id: String = format!("dummy.account.{}", random_string);
+    let account_id: String = format!("dummy.account.{random_string}");
     account_id.parse().unwrap()
 }
 
@@ -106,7 +106,7 @@ pub fn gen_participant(i: usize) -> (AccountId, ParticipantInfo) {
     (
         gen_account_id(),
         ParticipantInfo {
-            url: format!("https://www.near{}.com", i),
+            url: format!("https://www.near{i}.com"),
             sign_pk: bogus_ed25519_near_public_key(),
         },
     )

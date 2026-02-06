@@ -130,10 +130,7 @@ pub async fn fund_accounts(
                 ));
             } else {
                 let funding_account = make_random_account_name("", ".testnet");
-                println!(
-                    "Creating new funding account {} from faucet",
-                    funding_account
-                );
+                println!("Creating new funding account {funding_account} from faucet");
                 accounts
                     .create_funding_account_from_faucet(&funding_account)
                     .await;
@@ -151,10 +148,7 @@ pub async fn fund_accounts(
         if balance < MINIMUM_BALANCE_TO_REMAIN_IN_ACCOUNTS {
             // We may be creating a new account, and it's probably not good to start the new account
             // with a very low balance. So just throw it away if the funding account is too low.
-            println!(
-                "Funding account {} is exhausted; discarding",
-                funding_account
-            );
+            println!("Funding account {funding_account} is exhausted; discarding");
             funding_accounts_to_delete.push(funding_account);
             continue;
         }
@@ -183,8 +177,7 @@ pub async fn fund_accounts(
             AccountToFund::ExistingAccount { account_id, .. } => {
                 if balance_to_fund > 0 {
                     println!(
-                        "Refilling existing account {} with additional balance {}",
-                        account_id, balance_to_fund
+                        "Refilling existing account {account_id} with additional balance {balance_to_fund}"
                     );
                     accounts
                         .send_balance(&funding_account, account_id, balance_to_fund)

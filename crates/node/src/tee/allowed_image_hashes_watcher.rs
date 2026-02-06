@@ -205,7 +205,7 @@ mod tests {
     use assert_matches::assert_matches;
     use mockall::predicate;
     use rstest::rstest;
-    use std::{io::ErrorKind, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
     use tokio::sync::{mpsc::error::TryRecvError, Notify};
     use tokio_util::time::FutureExt;
 
@@ -289,9 +289,9 @@ mod tests {
     ) {
         let mut mock = MockAllowedImageHashesStorage::new();
 
-        mock.expect_set().once().returning(|_| {
-            Box::pin(async { Err(io::Error::new(ErrorKind::Other, "Expected test error.")) })
-        });
+        mock.expect_set()
+            .once()
+            .returning(|_| Box::pin(async { Err(io::Error::other("Expected test error.")) }));
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = watch::channel(allowed_images);

@@ -400,7 +400,7 @@ impl IndexerRpcHandler {
             // We're not a validator, so we should always be routing the transaction.
             near_client::ProcessTxResponse::RequestRouted => Ok(()),
             _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
+                anyhow::bail!("unexpected ProcessTxResponse: {response:?}");
             }
         }
     }

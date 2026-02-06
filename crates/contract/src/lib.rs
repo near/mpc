@@ -572,8 +572,7 @@ impl MpcContract {
             }
             (signature_response, public_key_requested) => {
                 return Err(RespondError::SignatureSchemeMismatch.message(format!(
-                    "Signature response from MPC: {:?}. Key requested by user {:?}",
-                    signature_response, public_key_requested
+                    "Signature response from MPC: {signature_response:?}. Key requested by user {public_key_requested:?}"
                 )));
             }
         };
@@ -775,8 +774,7 @@ impl MpcContract {
 
                 Err(
                     InvalidParameters::InvalidTeeRemoteAttestation.message(format!(
-                        "The following participants have invalid TEE status: {:?}",
-                        invalid_participants
+                        "The following participants have invalid TEE status: {invalid_participants:?}"
                     )),
                 )
             }
@@ -1546,7 +1544,7 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         match self.voter_account() {
             Ok(voter) => voter,
-            Err(err) => env::panic_str(&format!("not a voter, {:?}", err)),
+            Err(err) => env::panic_str(&format!("not a voter, {err:?}")),
         }
     }
     /// Ensures that the caller is an attested participant
@@ -1585,8 +1583,7 @@ impl MpcContract {
 
         assert_eq!(
             signer_id, predecessor_id,
-            "Caller must be the signer account (signer: {}, predecessor: {})",
-            signer_id, predecessor_id
+            "Caller must be the signer account (signer: {signer_id}, predecessor: {predecessor_id})"
         );
 
         signer_id
@@ -1625,7 +1622,7 @@ impl MpcContract {
             .protocol_state
             .is_existing_or_prospective_participant(&account_id)?
         {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account: {} is not in the set of curent or prospective participants and not eligible to store backup service information", account_id)));
+            return Err(errors::InvalidState::NotParticipant.message(format!("account: {account_id} is not in the set of curent or prospective participants and not eligible to store backup service information")));
         }
         self.node_migrations
             .set_backup_service_info(account_id, backup_service_info);
@@ -1666,7 +1663,7 @@ impl MpcContract {
         };
 
         if !running_state.is_participant(&account_id) {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus not eligible to initiate a node migration.", account_id)));
+            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {account_id} is not in the set of curent participants and thus not eligible to initiate a node migration.")));
         }
         self.node_migrations
             .set_destination_node_info(account_id, destination_node_info);
@@ -1705,14 +1702,13 @@ impl MpcContract {
         };
 
         if !running_state.is_participant(&account_id) {
-            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {} is not in the set of curent participants and thus eligible to initiate a node migration.", account_id)));
+            return Err(errors::InvalidState::NotParticipant.message(format!("account:  {account_id} is not in the set of curent participants and thus eligible to initiate a node migration.")));
         }
 
         let expected_keyset = &running_state.keyset;
         if expected_keyset != keyset {
             return Err(errors::NodeMigrationError::KeysetMismatch.message(format!(
-                "keyset={:?}, expected_keyset={:?}",
-                keyset, expected_keyset
+                "keyset={keyset:?}, expected_keyset={expected_keyset:?}"
             )));
         }
 
@@ -2252,8 +2248,7 @@ mod tests {
             let result = submit_attestation(contract, participants, participant_index, true);
             assert!(
                 result.is_ok(),
-                "submit_participant_info should succeed with valid attestation for participant {}",
-                participant_index
+                "submit_participant_info should succeed with valid attestation for participant {participant_index}"
             );
         }
     }
@@ -2350,8 +2345,7 @@ mod tests {
             let error_string = error.to_string();
             assert!(
                 error_string.contains("TeeQuoteStatus is invalid"),
-                "Error should mention invalid TEE status, got: {}",
-                error_string
+                "Error should mention invalid TEE status, got: {error_string}"
             );
         }
 
@@ -2539,14 +2533,12 @@ mod tests {
             if let Some(msg) = err.downcast_ref::<&str>() {
                 assert!(
                     msg.contains("Caller must be an attested participant"),
-                    "Unexpected panic message: {}",
-                    msg
+                    "Unexpected panic message: {msg}"
                 );
             } else if let Some(msg) = err.downcast_ref::<String>() {
                 assert!(
                     msg.contains("Caller must be an attested participant"),
-                    "Unexpected panic message: {}",
-                    msg
+                    "Unexpected panic message: {msg}"
                 );
             } else {
                 panic!("Unexpected panic payload type");

@@ -364,7 +364,7 @@ mod tests {
                 let serialized = borsh::to_vec(&input).unwrap();
                 let output: k256_types::SerializableScalar =
                     borsh::from_slice(&serialized).unwrap();
-                assert_eq!(input, output, "Failed on {:?}", scalar);
+                assert_eq!(input, output, "Failed on {scalar:?}");
             }
         }
     }

@@ -461,7 +461,7 @@ impl<T: Clone + Debug> Debug for RecentBlocksTracker<T> {
                 canonical_head,
                 &|hash, f| {
                     if let Some(content) = self.node_to_content.get(hash) {
-                        write!(f, "{:?}", content)
+                        write!(f, "{content:?}")
                     } else {
                         write!(f, "")
                     }

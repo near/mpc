@@ -179,7 +179,7 @@ impl ProposedUpdates {
         self.remove_vote(&voter);
 
         if !self.entries.contains_key(id) {
-            env::log_str(&format!("no update with id {:?} exists", id));
+            env::log_str(&format!("no update with id {id:?} exists"));
             return None;
         };
 

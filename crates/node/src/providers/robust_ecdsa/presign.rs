@@ -129,7 +129,7 @@ pub(super) async fn run_background_presignature_generation(
             let config_clone = config.clone();
             let keygen_out = keygen_out.clone();
             tasks.spawn_checked(
-                &format!("{:?}", task_id),
+                &format!("{task_id:?}"),
                 ROBUST_ECDSA_TASK_MONITORS
                     .presignature_generation_leader
                     .instrument(async move {

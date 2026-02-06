@@ -45,8 +45,8 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.repr {
-            ErrorRepr::Simple(kind) => write!(f, "{}", kind),
-            ErrorRepr::Message { kind, message } => write!(f, "{}: {}", kind, message),
+            ErrorRepr::Simple(kind) => write!(f, "{kind}"),
+            ErrorRepr::Message { kind, message } => write!(f, "{kind}: {message}"),
         }
     }
 }
