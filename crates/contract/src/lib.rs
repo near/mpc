@@ -100,6 +100,7 @@ pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
     foreign_chain_policy: dtos::ForeignChainPolicy,
     foreign_chain_policy_votes: ForeignChainPolicyVotes,
@@ -1316,6 +1317,9 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: ProposedUpdates::default(),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
@@ -1374,6 +1378,9 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: Default::default(),
             foreign_chain_policy: Default::default(),
             foreign_chain_policy_votes: Default::default(),
@@ -1442,6 +1449,15 @@ impl MpcContract {
         self.pending_ckd_requests.get(request).cloned()
     }
 
+    pub fn get_pending_verify_foreign_tx_request(
+        &self,
+        request: &VerifyForeignTransactionRequest,
+    ) -> Option<YieldIndex> {
+        self.pending_verify_foreign_tx_requests
+            .get(request)
+            .cloned()
+    }
+
     pub fn config(&self) -> dtos::Config {
         dtos::Config::from(&self.config)
     }
@@ -1484,7 +1500,7 @@ impl MpcContract {
         }
     }
 
-    /// Upon success, removes the confidential key from state and returns it.
+    /// Upon success, removes the confidential key request from state and returns it.
     /// If the ckd request times out, removes the ckd request from state and panics to fail the
     /// original transaction
     #[private]
@@ -1497,6 +1513,31 @@ impl MpcContract {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 self.pending_ckd_requests.remove(&request);
+                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    fail_on_timeout_gas,
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
+            }
+        }
+    }
+
+    /// Upon success, removes the verify foreign tx request from state and returns it.
+    /// If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the
+    /// original transaction
+    #[private]
+    pub fn return_verify_foreign_tx_and_clean_state_on_success(
+        &mut self,
+        request: VerifyForeignTransactionRequest,
+        #[callback_result] response: Result<VerifyForeignTransactionResponse, PromiseError>,
+    ) -> PromiseOrValue<VerifyForeignTransactionResponse> {
+        match response {
+            Ok(response) => PromiseOrValue::Value(response),
+            Err(_) => {
+                self.pending_verify_foreign_tx_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
@@ -2557,6 +2598,9 @@ mod tests {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                pending_verify_foreign_tx_requests: LookupMap::new(
+                    StorageKey::PendingVerifyForeignTxRequests,
+                ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
                 foreign_chain_policy: Default::default(),
