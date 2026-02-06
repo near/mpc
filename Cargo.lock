@@ -1903,11 +1903,14 @@ dependencies = [
  "borsh",
  "bs58 0.5.1",
  "derive_more 2.1.1",
+ "hex",
+ "insta",
  "near-sdk",
  "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "thiserror 2.0.17",
 ]
 
