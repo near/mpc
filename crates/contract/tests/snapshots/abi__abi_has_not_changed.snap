@@ -1969,6 +1969,45 @@ expression: abi
             }
           ]
         },
+        "ForeignTxSignPayload": {
+          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "V1"
+              ],
+              "properties": {
+                "V1": {
+                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ForeignTxSignPayloadV1": {
+          "type": "object",
+          "required": [
+            "observed_at_block",
+            "request",
+            "values"
+          ],
+          "properties": {
+            "observed_at_block": {
+              "$ref": "#/definitions/ForeignBlockId"
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
+            }
+          }
+        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -2579,22 +2618,15 @@ expression: abi
         "PromiseOrValueVerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "observed_at_block",
-            "signature",
-            "values"
+            "payload",
+            "signature"
           ],
           "properties": {
-            "observed_at_block": {
-              "$ref": "#/definitions/ForeignBlockId"
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
             }
           }
         },
@@ -3418,12 +3450,18 @@ expression: abi
           "type": "object",
           "required": [
             "domain_id",
+            "payload_version",
             "request",
             "tweak"
           ],
           "properties": {
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
@@ -3438,6 +3476,7 @@ expression: abi
           "required": [
             "domain_id",
             "path",
+            "payload_version",
             "request"
           ],
           "properties": {
@@ -3447,6 +3486,11 @@ expression: abi
             "path": {
               "type": "string"
             },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
             }
@@ -3455,22 +3499,15 @@ expression: abi
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "observed_at_block",
-            "signature",
-            "values"
+            "payload",
+            "signature"
           ],
           "properties": {
-            "observed_at_block": {
-              "$ref": "#/definitions/ForeignBlockId"
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
             }
           }
         },

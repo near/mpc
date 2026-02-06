@@ -107,8 +107,8 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         account_ids.push(account_id);
     }
     for transaction in account_creation_transactions {
-        // We had a flaky test here (#1913) before timeout, hopefully 10 seconds is enough
-        let result = wait_for_transaction(Duration::from_secs(10), transaction)
+        // We had a flaky test here (#1913) before timeout, hopefully 100 seconds is enough
+        let result = wait_for_transaction(Duration::from_secs(100), transaction)
             .await
             .unwrap();
         dbg!(&result);
