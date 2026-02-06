@@ -71,7 +71,11 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // Reshare with threshold participants, excluding participant 0 who voted
     // Build new_participants directly from accounts slice - skip index 0, take threshold
     let mut new_participants = Participants::new();
-    for account in mpc_signer_accounts.iter().skip(1).take(threshold.value() as usize) {
+    for account in mpc_signer_accounts
+        .iter()
+        .skip(1)
+        .take(threshold.value() as usize)
+    {
         let participant_id = initial_participants.id(account.id()).unwrap();
         let participant_info = initial_participants.info(account.id()).unwrap();
         new_participants
