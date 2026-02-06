@@ -251,45 +251,35 @@ impl<'a> RequestExpectation<'a> {
 }
 
 impl ClientT for MockJsonRpcClient {
-    fn request<R, Params>(
-        &self,
-        method: &str,
-        _params: Params,
-    ) -> impl std::future::Future<Output = Result<R, RpcClientError>> + Send
+    async fn request<R, Params>(&self, method: &str, _params: Params) -> Result<R, RpcClientError>
     where
         R: serde::de::DeserializeOwned,
     {
         let handler = self.request_handler.clone();
         let method = method.to_string();
+        let value = {
+            let mut handler = handler.lock().unwrap();
+            handler(&method)
+        }?;
 
-        async move {
-            let result = {
-                let mut handler = handler.lock().unwrap();
-                handler(&method)
-            };
-
-            match result {
-                Ok(value) => serde_json::from_value(value).map_err(RpcClientError::ParseError),
-                Err(e) => Err(e),
-            }
-        }
+        serde_json::from_value(value).map_err(RpcClientError::ParseError)
     }
 
-    fn notification<Params>(
+    async fn notification<Params>(
         &self,
         _method: &str,
         _params: Params,
-    ) -> impl std::future::Future<Output = Result<(), RpcClientError>> + Send {
-        async { unimplemented!("notification() not used in tests") }
+    ) -> Result<(), RpcClientError> {
+        unimplemented!("notification() not used in tests")
     }
 
-    fn batch_request<'a, R>(
+    async fn batch_request<'a, R>(
         &self,
         _batch: BatchRequestBuilder<'a>,
-    ) -> impl std::future::Future<Output = Result<BatchResponse<'a, R>, RpcClientError>> + Send
+    ) -> Result<BatchResponse<'a, R>, RpcClientError>
     where
         R: serde::de::DeserializeOwned + std::fmt::Debug + 'a,
     {
-        async { unimplemented!("batch_request() not used in tests") }
+        unimplemented!("batch_request() not used in tests")
     }
 }
