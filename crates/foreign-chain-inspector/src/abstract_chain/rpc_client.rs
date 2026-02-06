@@ -83,11 +83,23 @@ where
 
 /// Response from eth_getTransactionByHash
 /// See: https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_gettransactionbyhash
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TransactionResponse {
     /// Hash of the block where this transaction was in
+    #[serde(deserialize_with = "deserialize_block_hash_with_0x")]
     block_hash: AbstractBlockHash,
     /// Block number where this transaction was in (hex string)
     block_number: String,
+}
+
+/// Custom deserializer for block hash that handles the "0x" prefix
+fn deserialize_block_hash_with_0x<'de, D>(deserializer: D) -> Result<AbstractBlockHash, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let hex_string = String::deserialize(deserializer)?;
+    let hex_without_prefix = hex_string.trim_start_matches("0x");
+
+    hex_without_prefix.parse().map_err(serde::de::Error::custom)
 }

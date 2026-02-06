@@ -18,13 +18,13 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     let threshold = BlockConfirmations::from(1);
 
     // Example transaction from Abstract testnet
-    // https://explorer.mainnet.abs.xyz/tx/0x28a3cae05b6a489e104407e38b9e273f3989e21eaf68363c2f552d20204b8c99
+    // https://explorer.testnet.abs.xyz/tx/0x497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234
     let transaction_id: AbstractTransactionHash =
         "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234"
             .parse()
             .unwrap();
     let expected_block_hash: AbstractBlockHash =
-        "d327a3242a687dea34f119cca57045c29f31b7ac82059c021c6c86af75caa865"
+        "4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02"
             .parse()
             .unwrap();
 
