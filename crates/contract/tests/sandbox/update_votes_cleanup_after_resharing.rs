@@ -69,18 +69,20 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     // Reshare with threshold participants, excluding participant 0 who voted
+    // Build new_participants directly from accounts slice - skip index 0, take threshold
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
+    for account in mpc_signer_accounts
         .iter()
-        .skip(1) // Skip participant 0, so participant 1-6 are included
+        .skip(1)
         .take(threshold.value() as usize)
     {
+        let participant_id = initial_participants.id(account.id()).unwrap();
+        let participant_info = initial_participants.info(account.id()).unwrap();
         new_participants
             .insert_with_id(
-                account_id.clone(),
+                account.id().clone(),
                 participant_info.clone(),
-                participant_id.clone(),
+                participant_id,
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }

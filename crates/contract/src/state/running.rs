@@ -187,7 +187,7 @@ pub mod running_tests {
     use rstest::rstest;
 
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
+    use crate::primitives::test_utils::{gen_threshold_params, participants_vec, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
     use crate::{
@@ -202,9 +202,10 @@ pub mod running_tests {
             state.parameters.threshold().value()
         );
         let mut env = Environment::new(None, None, None);
-        let participants = state.parameters.participants().clone();
+        let participants = participants_vec(state.parameters.participants());
         // Assert that random proposals get rejected.
-        for (account_id, _, _) in participants.participants() {
+        for entry in &participants {
+            let account_id = &entry.account_id;
             let ksp = gen_threshold_params(30);
             env.set_signer(account_id);
             let _ = state
@@ -214,7 +215,7 @@ pub mod running_tests {
         // Assert that proposals of the wrong epoch ID get rejected.
         {
             let ksp = gen_valid_params_proposal(&state.parameters);
-            env.set_signer(&participants.participants()[0].0);
+            env.set_signer(&participants[0].account_id);
             let _ = state
                 .vote_new_parameters(state.keyset.epoch_id, &ksp)
                 .unwrap_err();
@@ -225,16 +226,16 @@ pub mod running_tests {
         // Assert that disagreeing proposals do not reach consensus.
         // Generate an extra proposal for the next step.
         let mut proposals = Vec::new();
-        for i in 0..participants.participants().len() + 1 {
+        for i in 0..participants.len() + 1 {
             loop {
                 let proposal = gen_valid_params_proposal(&state.parameters);
                 if proposals.contains(&proposal) {
                     continue;
                 }
-                if i < participants.participants().len()
+                if i < participants.len()
                     && !proposal
                         .participants()
-                        .is_participant(&participants.participants()[i].0)
+                        .is_participant(&participants[i].account_id)
                 {
                     continue;
                 }
@@ -242,8 +243,8 @@ pub mod running_tests {
                 break;
             }
         }
-        for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
-            env.set_signer(account_id);
+        for (i, entry) in participants.iter().enumerate() {
+            env.set_signer(&entry.account_id);
             assert!(state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposals[i])
                 .unwrap()
@@ -257,12 +258,12 @@ pub mod running_tests {
         let mut resharing = None;
         // existing participants vote
         let mut n_votes = 0;
-        for (account_id, _, _) in participants.participants().iter() {
-            if !proposal.participants().is_participant(account_id) {
+        for entry in &participants {
+            if !proposal.participants().is_participant(&entry.account_id) {
                 continue;
             }
             n_votes += 1;
-            env.set_signer(account_id);
+            env.set_signer(&entry.account_id);
             let res = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal)
                 .unwrap();
@@ -273,8 +274,8 @@ pub mod running_tests {
             }
         }
         // candidates vote
-        for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant(account_id) {
+        for (account_id, _, _) in proposal.participants().participants() {
+            if state.parameters.participants().is_participant(account_id) {
                 continue;
             }
             n_votes += 1;

@@ -100,8 +100,8 @@ class Participants:
     def from_json(data: dict):
         raw_participants = data.get("participants", [])
         participants = []
-        for p in raw_participants:
-            account_id, pid, meta = p
+        for entry in raw_participants:
+            account_id, pid, meta = entry
             participants.append(
                 Participant(
                     account_id=account_id,

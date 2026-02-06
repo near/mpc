@@ -49,11 +49,11 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // Add two prospective Participants
     // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
-    let (mut env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
+    let (env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids = non_participants.get_node_ids();
     submit_tee_attestations(
         &contract,
-        &mut env_non_participant_accounts,
+        &env_non_participant_accounts,
         &non_participant_uids,
     )
     .await?;
@@ -83,17 +83,16 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
     // Now, we do a resharing. We only retain `threshold` of the initial participants
+    // Build new_participants directly from the accounts slice - account index matches ParticipantId
     let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
-        .iter()
-        .take(threshold.value() as usize)
-    {
+    for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+        let participant_id = initial_participants.id(account.id()).unwrap();
+        let participant_info = initial_participants.info(account.id()).unwrap();
         new_participants
             .insert_with_id(
-                account_id.clone(),
+                account.id().clone(),
                 participant_info.clone(),
-                participant_id.clone(),
+                participant_id,
             )
             .expect("Failed to insert participant");
     }

@@ -86,8 +86,8 @@ impl ThresholdParameters {
         let mut old_by_id: BTreeMap<ParticipantId, AccountId> = BTreeMap::new();
         let mut old_by_acc: BTreeMap<AccountId, (ParticipantId, ParticipantInfo)> = BTreeMap::new();
         for (acc, id, info) in self.participants().participants() {
-            old_by_id.insert(id.clone(), acc.clone());
-            old_by_acc.insert(acc.clone(), (id.clone(), info.clone()));
+            old_by_id.insert(*id, acc.clone());
+            old_by_acc.insert(acc.clone(), (*id, info.clone()));
         }
         let new_participants = proposal.participants().participants();
         let mut new_min_id = u32::MAX;
@@ -136,7 +136,8 @@ impl ThresholdParameters {
     pub fn threshold(&self) -> Threshold {
         self.threshold.clone()
     }
-    /// Returns the map of Participants.
+
+    /// Returns the map of [`Participants`].
     pub fn participants(&self) -> &Participants {
         &self.participants
     }
@@ -157,7 +158,7 @@ impl ThresholdParameters {
         self.participants.update_info(account_id, new_info)
     }
 
-    /// Returns mutable reference to Participants for benchmarking.
+    /// Returns mutable reference to [`Participants`] for benchmarking.
     #[cfg(feature = "bench-contract-methods")]
     pub fn participants_mut(&mut self) -> &mut Participants {
         &mut self.participants
@@ -169,7 +170,9 @@ mod tests {
     use crate::{
         primitives::{
             participants::{ParticipantId, Participants},
-            test_utils::{gen_participant, gen_participants, gen_threshold_params},
+            test_utils::{
+                gen_participant, gen_participants, gen_threshold_params, participants_vec,
+            },
             thresholds::{Threshold, ThresholdParameters},
         },
         state::test_utils::gen_valid_params_proposal,
@@ -308,18 +311,16 @@ mod tests {
     }
 
     #[test]
-    fn test_proposal_non_unique_ids() {
+    fn test_proposal_invalid_next_id() {
         let params = gen_threshold_params(10);
 
-        // Add duplicate participants
+        // Create a tampered Participants with an invalid next_id (lower than max participant id)
+        let vec = participants_vec(&params.participants);
+        let max_id = vec.iter().map(|e| e.id.get()).max().unwrap_or(0);
         let tampered_participants = Participants::init(
-            params.participants.next_id(),
-            params
-                .participants
-                .participants()
-                .iter()
-                .chain(params.participants.participants().iter())
-                .cloned()
+            ParticipantId(max_id), // next_id should be max_id + 1, so this is invalid
+            vec.into_iter()
+                .map(|e| (e.account_id, e.id, e.info))
                 .collect(),
         );
         let _ = tampered_participants.validate().unwrap_err();
@@ -353,9 +354,21 @@ mod tests {
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
+        // Get the account IDs to remove (first 2 by iteration order)
+        let accounts_to_remove: Vec<_> = params
+            .participants
+            .participants()
+            .take(2)
+            .map(|(acc, _, _)| acc.clone())
+            .collect();
+
         let mut new_participants = params.participants.clone();
-        new_participants.add_random_participants_till_n(n + 2);
-        let new_participants = new_participants.subset(2..n + 2);
+        // Remove exactly 2 old participants
+        for acc in &accounts_to_remove {
+            new_participants.remove(acc);
+        }
+        // Add 2 new participants
+        new_participants.add_random_participants_till_n(n);
 
         let new_params =
             ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
@@ -372,8 +385,13 @@ mod tests {
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
         for i in 0..=params.participants.next_id().0 + 2 {
-            let new_participants =
-                Participants::init(ParticipantId(i), params.participants.participants().clone());
+            let new_participants = Participants::init(
+                ParticipantId(i),
+                participants_vec(&params.participants)
+                    .into_iter()
+                    .map(|e| (e.account_id, e.id, e.info))
+                    .collect(),
+            );
             let new_params =
                 ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
             let result = params.validate_incoming_proposal(&new_params);
