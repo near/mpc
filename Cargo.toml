@@ -95,7 +95,7 @@ humantime = "2.1.0"
 hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] } # due to axum
 insta = { version = "1.43.1", features = ["json", "redactions"] }
 itertools = "0.12.1"
-jsonrpsee = {version = "0.26.0", features = ["http-client"] }
+jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 lru = "0.16.3"
 mockall = "0.13.1"
