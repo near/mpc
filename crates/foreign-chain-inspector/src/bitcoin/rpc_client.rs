@@ -2,12 +2,12 @@ use crate::{
     BlockConfirmations, ForeignChainRpcClient, RpcAuthentication, RpcError,
     bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
 };
+use http::HeaderMap;
 use jsonrpsee::{
-    core::{JsonValue, client::ClientT},
+    core::client::ClientT,
     http_client::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
@@ -20,17 +20,20 @@ pub struct BitcoinCoreRpcClient<Client> {
 
 impl BitcoinCoreRpcClient<HttpClient> {
     pub fn new(base_url: String, rpc_authentication: RpcAuthentication) -> Result<Self, RpcError> {
-        let mut builder = HttpClientBuilder::default();
+        let mut headers = HeaderMap::new();
 
-        if let RpcAuthentication::CustomHeader {
-            header_name,
-            header_value,
-        } = rpc_authentication
-        {
-            builder = builder.set_headers([(header_name, header_value)].into_iter().collect());
+        match rpc_authentication {
+            RpcAuthentication::KeyInUrl => {}
+            RpcAuthentication::CustomHeader {
+                header_name,
+                header_value,
+            } => {
+                headers.insert(header_name, header_value);
+            }
         }
 
-        let client = builder
+        let client = HttpClientBuilder::default()
+            .set_headers(headers)
             .build(&base_url)
             .map_err(|error| RpcError::ClientError(error.into()))?;
 
@@ -56,12 +59,11 @@ where
         transaction: BitcoinTransactionHash,
         _finality: BlockConfirmations,
     ) -> Result<BitcoinRpcResponse, RpcError> {
-        // Build params as JSON array for positional parameters
-        let params: Vec<JsonValue> = vec![json!(transaction), json!(VERBOSE_RESPONSE)];
+        let parameters = (transaction, VERBOSE_RESPONSE);
 
         let rpc_response: GetRawTransactionVerboseResponse = self
             .client
-            .request(GET_RAW_TRANSACTION_METHOD, params)
+            .request(GET_RAW_TRANSACTION_METHOD, parameters)
             .await?;
 
         Ok(BitcoinRpcResponse {
