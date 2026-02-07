@@ -10,8 +10,10 @@ use crate::{
     migration_service::types::MigrationInfo,
 };
 
+use async_trait::async_trait;
 use self::stats::IndexerStats;
 use anyhow::Context;
+use contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
     primitives::signature::YieldIndex,
@@ -263,6 +265,26 @@ impl IndexerViewClient {
         }
     }
 
+    pub(crate) async fn get_foreign_chain_policy(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<dtos::ForeignChainPolicy> {
+        let (_height, policy) = self
+            .get_mpc_state(mpc_contract_id.clone(), FOREIGN_CHAIN_POLICY_ENDPOINT)
+            .await?;
+        Ok(policy)
+    }
+
+    pub(crate) async fn get_foreign_chain_policy_proposals(
+        &self,
+        mpc_contract_id: &AccountId,
+    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+        let (_height, proposals) = self
+            .get_mpc_state(mpc_contract_id.clone(), FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT)
+            .await?;
+        Ok(proposals)
+    }
+
     pub(crate) async fn latest_final_block(&self) -> anyhow::Result<BlockView> {
         let block_query = near_client::GetBlock(BlockReference::Finality(Finality::Final));
         self.view_client
@@ -343,6 +365,43 @@ impl IndexerViewClient {
     }
 }
 
+#[async_trait]
+pub(crate) trait ForeignChainPolicyReader: Send + Sync {
+    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy>;
+    async fn get_foreign_chain_policy_proposals(
+        &self,
+    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes>;
+}
+
+pub(crate) struct RealForeignChainPolicyReader {
+    indexer_state: Arc<IndexerState>,
+}
+
+impl RealForeignChainPolicyReader {
+    pub(crate) fn new(indexer_state: Arc<IndexerState>) -> Self {
+        Self { indexer_state }
+    }
+}
+
+#[async_trait]
+impl ForeignChainPolicyReader for RealForeignChainPolicyReader {
+    async fn get_foreign_chain_policy(&self) -> anyhow::Result<dtos::ForeignChainPolicy> {
+        self.indexer_state
+            .view_client
+            .get_foreign_chain_policy(&self.indexer_state.mpc_contract_id)
+            .await
+    }
+
+    async fn get_foreign_chain_policy_proposals(
+        &self,
+    ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
+        self.indexer_state
+            .view_client
+            .get_foreign_chain_policy_proposals(&self.indexer_state.mpc_contract_id)
+            .await
+    }
+}
+
 #[derive(Clone)]
 struct IndexerClient {
     client: TokioRuntimeHandle<ClientActorInner>,
@@ -355,6 +414,8 @@ const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
 pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
 const CONTRACT_STATE_ENDPOINT: &str = "state";
 const GET_TEE_ATTESTATION_ENDPOINT: &str = "get_attestation";
+const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = "get_foreign_chain_policy";
+const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str = "get_foreign_chain_policy_proposals";
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
@@ -432,4 +493,7 @@ pub struct IndexerAPI<TransactionSender> {
     pub attested_nodes_receiver: watch::Receiver<Vec<NodeId>>,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
+
+    pub foreign_chain_policy_reader: Arc<dyn ForeignChainPolicyReader + Send + Sync>,
 }
+
