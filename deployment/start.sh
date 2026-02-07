@@ -43,7 +43,7 @@ config['store']['load_mem_tries_for_tracked_shards'] = True
 if "$MPC_ENV" == "mpc-localnet":
     config['state_sync_enabled'] = False
 else:
-    config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
+    config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 1000
 
 # Track whichever shard the contract account is on.
 config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
