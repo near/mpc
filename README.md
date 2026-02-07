@@ -127,6 +127,68 @@ This repository uses `rust-toolchain.toml` files, as some code sections may requ
 
 For more information, refer to the [Rustup book on overrides](https://rust-lang.github.io/rustup/overrides.html).
 
+## Localnet (Docker Compose, experimental)
+
+We have a config-driven, containerized localnet flow that spins up `neard`, MPC nodes, and a one-shot bootstrap job that creates accounts, deploys and initializes the contract, and votes domains.
+
+Prereqs:
+- Docker with Compose v2
+- A built MPC contract wasm at `target/near/mpc_contract/mpc_contract.wasm`
+- A built MPC node image (`mpc-node:local`)
+
+### Build artifacts
+
+Build the contract:
+
+```bash
+cargo near build non-reproducible-wasm --features abi --profile=release-contract --manifest-path crates/contract/Cargo.toml --locked
+```
+
+Build the MPC node image (reproducible build path):
+
+```bash
+./deployment/build-images.sh --node
+```
+
+### Generate compose (from config)
+
+```bash
+scripts/localnet/generate-compose.py
+```
+
+This writes `deployment/localnet/compose/docker-compose.yaml` from `deployment/localnet/compose/localnet.config.json`.
+
+### Start localnet and bootstrap
+
+```bash
+docker compose -f deployment/localnet/compose/docker-compose.yaml up -d neard mpc-node-1 mpc-node-2
+docker compose -f deployment/localnet/compose/docker-compose.yaml run --rm bootstrap
+```
+
+The bootstrap image is built from `deployment/Dockerfile-localnet-bootstrap` by compose, uses a containerized `near` CLI, and writes keys into a Docker volume. You can re-run it safely; it will skip existing accounts and ignore duplicate key additions.
+
+### Request a signature
+
+Run the request using the bootstrap container (so it has the near CLI + credentials volume mounted):
+
+```bash
+docker compose -f deployment/localnet/compose/docker-compose.yaml run --rm bootstrap \\
+  near contract call-function as-transaction mpc-contract.test.near sign \\
+  file-args /work/docs/args/sign_ecdsa.json \\
+  prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' \\
+  sign-as mpc-node-1.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+### Clean up
+
+```bash
+docker compose -f deployment/localnet/compose/docker-compose.yaml down -v
+```
+
+Notes:
+- The compose file uses `nearprotocol/nearcore:2.10.5` and copies the checked-in localnet config from `deployment/localnet`.
+- If you change node count, ports, images, or hashes, update `deployment/localnet/compose/localnet.config.json` and re-run the generator.
+
 ## Reproducible Builds
 
 This project supports reproducible builds for both the node and launcher Docker images. Reproducible builds ensure that the same source code always produces identical binaries, which is important for security and verification purposes.

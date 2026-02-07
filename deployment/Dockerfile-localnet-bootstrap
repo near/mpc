@@ -1,0 +1,38 @@
+FROM debian:bookworm-slim@sha256:acd98e6cfc42813a4db9ca54ed79b6f702830bfc2fa43a2c2e87517371d82edb
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      jq \
+      bash && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install near-cli-rs via official installer script.
+ARG NEAR_CLI_VERSION=0.23.5
+SHELL ["/bin/bash", "-lc"]
+RUN set -euo pipefail; \
+    if [ "${NEAR_CLI_VERSION}" = "latest" ]; then \
+      url="https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-installer.sh"; \
+    else \
+      url="https://github.com/near/near-cli-rs/releases/download/v${NEAR_CLI_VERSION}/near-cli-rs-installer.sh"; \
+    fi; \
+    curl --proto '=https' --tlsv1.2 -LsSf "$url" | sh; \
+    if command -v near >/dev/null 2>&1; then \
+      exit 0; \
+    fi; \
+    for candidate in /root/.local/bin/near /root/.cargo/bin/near /root/.near-cli-rs/bin/near; do \
+      if [ -x "$candidate" ]; then \
+        ln -s "$candidate" /usr/local/bin/near; \
+        break; \
+      fi; \
+    done; \
+    command -v near >/dev/null 2>&1
+
+WORKDIR /work
+ENV PATH="/root/.local/bin:/root/.cargo/bin:/root/.near-cli-rs/bin:/usr/local/bin:${PATH}"
+CMD ["/bin/bash"]
