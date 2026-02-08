@@ -48,8 +48,9 @@ backup-cli \
 This creates a `secrets.json` file in your backup home directory containing:
 - `p2p_private_key`: Used for mutual TLS authentication with MPC nodes
 - `local_storage_aes_key`: Used to encrypt keyshares stored locally
+- `near_signer_key`: Used by the backup service to sign NEAR transactions on behalf of the service
 
-**Important:** Keep the `secrets.json` file secure. Anyone with access to this file and your encryption key can access your node's keyshares.
+**Important:** Keep the `secrets.json` file secure. Anyone with access to this file can authenticate as your backup service and decrypt any keyshares stored locally (because it contains `local_storage_aes_key`).
 
 ## Step 2: Register the Backup Service
 
@@ -89,6 +90,8 @@ near contract call-function as-transaction \
 
 Copy and run the generated command to register your backup service with the contract.
 
+**Note:** The "public key" in the registration corresponds to the public key derived from the `p2p_private_key` created in Step 1. After registration, you can verify it was registered by checking the contract's migration info (see Step 6 for details).
+
 ## Step 3: Generate and Set Encryption Key
 
 Generate a 256-bit (32-byte) AES encryption key for securing keyshares during backup and restore:
@@ -104,11 +107,20 @@ echo "Your encryption key: $BACKUP_ENCRYPTION_KEY"
 2. Your **new MPC node** (via the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable)
 3. The **backup-cli** commands (via the `--backup-encryption-key-hex` parameter)
 
-**Note:** If your node has been running without the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable set, the node automatically generates an encryption key and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME` directory. You can retrieve it with:
+**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the **same** on both old and new nodes for the migration to work. This key provides an additional layer of security beyond mTLS for encrypting keyshares during transport.
+
+**Note on key differences:** 
+- `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
+- `local_storage_aes_key` (from Step 1) is used to encrypt keyshares stored on disk in the backup home directory
+- These are two different keys serving different purposes
+
+**Note:** If your node has been running without the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable set, the node automatically generates an encryption key and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME_DIR` directory. You can retrieve it with:
 
 ```bash
-export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME/backup_encryption_key.hex)
+export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
+
+**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](./migration-service.md) for Hard Launch details.
 
 Set this environment variable on both your old and new MPC nodes before proceeding:
 
@@ -139,20 +151,20 @@ near contract call-function as-read-only \
   now > $BACKUP_HOME_DIR/contract_state.json
 ```
 
-This saves the contract state to `contract_state.json`, which the backup-cli uses to determine which keyshares to request.
+This saves the contract state to `contract_state.json`, which the backup-cli uses to determine the current epoch and which keyshares to request from the node (based on the domains in the current keyset).
 
 ### Run the Backup
-Port 8079 is the default port for the migration endpoint
+Port 8079 is the default port for the migration endpoint.
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   get-keyshares \
-  --mpc-node-address node.example.com:8079\
+  --mpc-node-address node.example.com:8079 \
   --mpc-node-p2p-key "ed25519:YourNodeP2PPublicKey..." \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
 
-The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH_ID>with<NUM_DOMAINS>_domains`.
+The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains` (with a `key` hard-link in that directory).
 
 ## Step 5: Prepare the New Node
 
@@ -207,17 +219,25 @@ near contract call-function as-transaction \
 - `sign_pk`: The P2P public key (Ed25519) used for mutual TLS authentication between nodes
 
 **Why the nested naming?** The contract's `DestinationNodeInfo` type has a field named `destination_node_info` of type `ParticipantInfo`. While the naming may seem redundant, it matches the contract's structure and must be used exactly as shown.
+
 ### Verify Migration Was Registered on the Contract
 
 After calling `start_node_migration`, verify that the destination node was registered correctly on-chain:
 
 ```bash
 near contract call-function as-read-only \
-  <MPC_CONTRACT_ACCOUNT> \
+  v1.signer-prod.testnet \
   migration_info \
   json-args {} \
-  network-config <NETWORK> \
+  network-config testnet \
   now
+```
+
+This will return migration information for all accounts, including your backup service info and destination node info. Look for your account in the output to confirm the migration was registered.
+```
+
+This will return migration information for all accounts, including your backup service info and destination node info. Look for your account in the output to confirm the migration was registered.
+
 ## Step 7: Restore Keyshares to New Node
 
 Start your new node (which should have `MPC_BACKUP_ENCRYPTION_KEY_HEX` set), then transfer the keyshares:
@@ -226,7 +246,7 @@ Start your new node (which should have `MPC_BACKUP_ENCRYPTION_KEY_HEX` set), the
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   put-keyshares \
-  --mpc-node-address new-node.example.com:3000 \
+  --mpc-node-address new-node.example.com:8079 \
   --mpc-node-p2p-key "ed25519:NewNodeP2PPublicKey..." \
   --backup-encryption-key-hex $BACKUP_ENCRYPTION_KEY
 ```
@@ -252,20 +272,20 @@ You can check the current migration state using the contract's view methods:
 ```bash
 near contract call-function as-read-only \
   v1.signer-prod.testnet \
-  get_node_migrations \
-  json-args '{"account_id": "your-account.testnet"}' \
+  migration_info \
+  json-args {} \
   network-config testnet \
   now
 ```
 
-Once the migration is complete, there should be no ongoing migration for your account.
+Look for your account in the output. Once the migration is complete, there should be no ongoing migration (destination_node_info should be null) for your account.
 
 ## Step 9: Decommission Old Node
 
 After verifying the migration was successful:
 
 1. **Stop the old node** on the old host
-2. **Keep the backup** of keyshares in `$BACKUP_HOME_DIR/keyshares.json` for a reasonable period (in case you need to migrate again)
+2. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again)
 3. **Securely delete** the old node's data once you're confident the new node is functioning correctly
 
 ## Troubleshooting
@@ -305,7 +325,7 @@ If backup-cli cannot connect to your node:
 
 2. **Backup Service Keys**: The `secrets.json` file in your backup home directory contains sensitive keys. Store it securely and restrict access.
 
-3. **Keyshares Storage**: The `keyshares.json` file contains your encrypted keyshares. Even though they're encrypted, treat this file as highly sensitive.
+3. **Keyshares Storage**: `backup-cli` stores your encrypted keyshares under `$BACKUP_HOME_DIR/key` and `$BACKUP_HOME_DIR/permanent_keys/...`, encrypted with `local_storage_aes_key`. Even though they're encrypted, treat these files and directories as highly sensitive.
 
 4. **Network Security**: Use secure, encrypted connections when running backup-cli commands. Consider running the backup service on a secure, isolated network.
 
