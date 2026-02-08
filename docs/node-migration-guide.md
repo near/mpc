@@ -181,7 +181,7 @@ Set up your new node on the new host with the following:
 
 You'll need:
 - **New node's P2P public key**: The Ed25519 public key for the new node's P2P communication
-- **New node's address**: The URL where the new node will be accessible (e.g., `https://new-node.example.com:3000`)
+- **New node's address**: The URL where the new node will be accessible (e.g., `new-node.example.com:3000`)
 - **New node's signer account public key**: The NEAR account public key the new node will use to sign contract transactions
 
 ## Step 6: Initiate Migration in Contract
@@ -196,7 +196,7 @@ near contract call-function as-transaction \
     "destination_node_info": {
       "signer_account_pk": "ed25519:NewNodeSignerPublicKey...",
       "destination_node_info": {
-        "url": "https://new-node.example.com:3000",
+        "url": "new-node.example.com:3000",
         "sign_pk": "ed25519:NewNodeP2PPublicKey..."
       }
     }
@@ -215,7 +215,7 @@ near contract call-function as-transaction \
 - `signer_account_pk`: The NEAR account public key (Ed25519) the new node will use to sign contract transactions
 - `destination_node_info` (outer): The complete destination node information struct required by the contract
 - `destination_node_info` (inner/nested): The participant information containing the node's URL and P2P signing key
-- `url`: The HTTP/HTTPS endpoint where the new node will be accessible
+- `url`: The DNS/IP endpoint where the new node will be accessible
 - `sign_pk`: The P2P public key (Ed25519) used for mutual TLS authentication between nodes
 
 **Why the nested naming?** The contract's `DestinationNodeInfo` type has a field named `destination_node_info` of type `ParticipantInfo`. While the naming may seem redundant, it matches the contract's structure and must be used exactly as shown.
