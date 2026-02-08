@@ -234,9 +234,6 @@ near contract call-function as-read-only \
 ```
 
 This will return migration information for all accounts, including your backup service info and destination node info. Look for your account in the output to confirm the migration was registered.
-```
-
-This will return migration information for all accounts, including your backup service info and destination node info. Look for your account in the output to confirm the migration was registered.
 
 ## Step 7: Restore Keyshares to New Node
 
