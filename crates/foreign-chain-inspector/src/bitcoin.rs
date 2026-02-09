@@ -19,3 +19,8 @@ pub struct BitcoinRpcResponse {
     pub block_hash: BitcoinBlockHash,
     pub confirmations: BlockConfirmations,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BitcoinExtractedValue {
+    BlockHash(BitcoinBlockHash),
+}

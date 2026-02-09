@@ -10,9 +10,3 @@ pub struct AbstractTransaction;
 
 pub type AbstractBlockHash = Hash32<AbstractBlock>;
 pub type AbstractTransactionHash = Hash32<AbstractTransaction>;
-
-/// Normalized response.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AbstractRpcResponse {
-    pub block_hash: AbstractBlockHash,
-}

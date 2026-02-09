@@ -47,17 +47,9 @@ pub enum EthereumFinality {
 }
 
 #[derive(Error, Debug)]
-pub enum RpcError {
+pub enum ForeignChainInspectionError {
     #[error("inner network client failed to fetch")]
     ClientError(#[from] jsonrpsee::core::client::error::Error),
-    #[error("The transaction is ")]
-    NotFinalized,
-}
-
-#[derive(Error, Debug)]
-pub enum ForeignChainInspectionError {
-    #[error("rpc client failed to fetch transaction information")]
-    RpcClientError(#[from] RpcError),
     #[error(
         "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
     )]
@@ -65,6 +57,10 @@ pub enum ForeignChainInspectionError {
         expected: BlockConfirmations,
         got: BlockConfirmations,
     },
+    #[error("transaction has not reach expected finality level")]
+    NotFinalized,
+    #[error("The transaction's status was not success")]
+    TransactionFailed,
 }
 
 /// Builds an HTTP client with the specified authentication method.
@@ -73,7 +69,7 @@ pub enum ForeignChainInspectionError {
 pub fn build_http_client(
     base_url: String,
     rpc_authentication: RpcAuthentication,
-) -> Result<HttpClient, RpcError> {
+) -> Result<HttpClient, jsonrpsee::core::client::error::Error> {
     let mut headers = HeaderMap::new();
 
     match rpc_authentication {
