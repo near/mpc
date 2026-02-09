@@ -15,7 +15,9 @@ pub mod types {
         ParticipantsJsonDeserialize,
     };
 
-    pub use primitives::{AccountId, CkdAppId};
+    pub use primitives::{
+        AccountId, CkdAppId, K256AffinePoint, K256Scalar, K256Signature, SignatureResponse, Tweak,
+    };
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
         DomainConfig, DomainId, DomainRegistry, EpochId, InitializingContractState, KeyEvent,

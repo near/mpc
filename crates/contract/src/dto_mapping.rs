@@ -5,19 +5,20 @@
 //! and [`Into`] due to the [*orphan rule*](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules).
 
 use contract_interface::types as dtos;
+use curve25519_dalek::edwards::CompressedEdwardsY;
+use k256::{
+    elliptic_curve::{
+        group::GroupEncoding as _,
+        sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
+        PrimeField as _,
+    },
+    EncodedPoint,
+};
 use mpc_attestation::{
     attestation::{Attestation, DstackAttestation, MockAttestation, VerifiedAttestation},
     collateral::{Collateral, QuoteCollateralV3},
     tcb_info::{EventLog, HexBytes, TcbInfo},
 };
-
-use k256::{
-    elliptic_curve::sec1::{FromEncodedPoint as _, ToEncodedPoint as _},
-    EncodedPoint,
-};
-
-use curve25519_dalek::edwards::CompressedEdwardsY;
-
 use near_account_id::AccountId;
 use near_sdk::env::sha256_array;
 #[cfg(any(test, feature = "test-utils", feature = "dev-utils"))]
@@ -25,11 +26,29 @@ use threshold_signatures::confidential_key_derivation as ckd;
 
 use crate::{
     config::Config,
-    crypto_shared::k256_types,
+    crypto_shared::{k256_types, types::PublicKeyExtended},
+    derive_foreign_tx_tweak,
+    errors::{ConversionError, Error},
+    primitives::{
+        domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+        key_state::{
+            AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
+            KeyForDomain, Keyset,
+        },
+        participants::Participants,
+        thresholds::{Threshold, ThresholdParameters},
+        votes::ThresholdParametersVotes,
+    },
+    state::{
+        initializing::InitializingContractState,
+        key_event::{KeyEvent, KeyEventInstance},
+        resharing::ResharingContractState,
+        running::RunningContractState,
+        ProtocolContractState,
+    },
     update::{ProposedUpdates, Update},
 };
 
-use crate::errors::{ConversionError, Error};
 pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
@@ -38,7 +57,6 @@ pub(crate) trait IntoInterfaceType<InterfaceType> {
     fn into_dto_type(self) -> InterfaceType;
 }
 
-#[allow(dead_code)]
 pub(crate) trait TryIntoContractType<ContractType> {
     type Error;
     fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
@@ -565,26 +583,6 @@ impl From<contract_interface::types::Config> for Config {
 // State DTO Conversions
 // =============================================================================
 
-use crate::crypto_shared::types::PublicKeyExtended;
-use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
-    key_state::{
-        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
-        KeyForDomain, Keyset,
-    },
-    participants::Participants,
-    thresholds::{Threshold, ThresholdParameters},
-    votes::ThresholdParametersVotes,
-};
-use crate::state::{
-    initializing::InitializingContractState,
-    key_event::{KeyEvent, KeyEventInstance},
-    resharing::ResharingContractState,
-    running::RunningContractState,
-    ProtocolContractState,
-};
-use k256::elliptic_curve::group::GroupEncoding as _;
-
 // --- Simple wrapper types ---
 
 impl IntoInterfaceType<dtos::EpochId> for EpochId {
@@ -869,5 +867,37 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
                 dtos::ProtocolContractState::Resharing(state.into_dto_type())
             }
         }
+    }
+}
+
+impl TryIntoContractType<k256::AffinePoint> for dtos::K256AffinePoint {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<k256::AffinePoint, Self::Error> {
+        k256::AffinePoint::from_bytes(&self.affine_point.into())
+            .into_option()
+            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 affine point"))
+    }
+}
+
+impl TryIntoContractType<k256::Scalar> for dtos::K256Scalar {
+    type Error = Error;
+    fn try_into_contract_type(self) -> Result<k256::Scalar, Self::Error> {
+        k256::Scalar::from_repr_vartime(self.scalar.into())
+            .ok_or(ConversionError::DataConversion.message("Failed to convert k256 scalar"))
+    }
+}
+
+// Temporary location of this logic until we decide where it should live
+
+pub fn args_into_verify_foreign_tx_request(
+    args: dtos::VerifyForeignTransactionRequestArgs,
+    predecessor_id: &AccountId,
+) -> dtos::VerifyForeignTransactionRequest {
+    let tweak = derive_foreign_tx_tweak(predecessor_id, &args.derivation_path);
+    dtos::VerifyForeignTransactionRequest {
+        domain_id: args.domain_id,
+        tweak,
+        request: args.request,
+        payload_version: args.payload_version,
     }
 }
