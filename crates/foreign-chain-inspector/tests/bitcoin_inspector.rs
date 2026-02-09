@@ -5,8 +5,8 @@ use crate::common::{FixedResponseRpcClient, JsonRpcResponse, mock_client_from_fi
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     bitcoin::{
-        BitcoinBlockHash, BitcoinTransactionHash,
-        inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
+        BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        inspector::{BitcoinExtractor, BitcoinInspector},
     },
     build_http_client,
 };
@@ -132,10 +132,7 @@ async fn extract_propagates_rpc_client_errors() {
         .await;
 
     // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::RpcClientError(_))
-    );
+    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
 }
 
 #[tokio::test]

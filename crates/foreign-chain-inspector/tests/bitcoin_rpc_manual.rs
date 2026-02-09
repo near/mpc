@@ -1,8 +1,8 @@
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspector, RpcAuthentication,
     bitcoin::{
-        BitcoinBlockHash, BitcoinTransactionHash,
-        inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
+        BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        inspector::{BitcoinExtractor, BitcoinInspector},
     },
 };
 

@@ -11,7 +11,6 @@ use crate::rpc_schema::ethereum::{
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
-// const GET_BLOCK_NUMBER_METHOD: &str = "eth_blockNumber";
 const GET_BLOCK_BY_FINALITY_METHOD: &str = "eth_getBlockByNumber";
 
 pub struct AbstractInspector<Client> {

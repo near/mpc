@@ -1,4 +1,3 @@
-use ethereum_types::U64;
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
