@@ -1,5 +1,5 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, EthereumFinality, ForeignChainInspector, RpcAuthentication,
+    EthereumFinality, ForeignChainInspector, RpcAuthentication,
     abstract_chain::{
         AbstractBlockHash, AbstractTransactionHash,
         inspector::{AbstractExtractedValue, AbstractExtractor, AbstractInspector},
