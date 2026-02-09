@@ -40,9 +40,6 @@ pub(crate) enum FinalityTag {
 #[derive(From, Serialize)]
 pub(crate) struct ReturnFullTransactionHash(bool);
 
-// #[derive(Deserialize)]
-// pub(crate) struct BlockNumberResponse(pub(crate) U64);
-
 impl Serialize for GetTransactionByHashArgs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
