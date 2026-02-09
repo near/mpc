@@ -21,18 +21,6 @@ pub trait ForeignChainInspector {
     ) -> impl Future<Output = Result<Vec<Self::ExtractedValue>, ForeignChainInspectionError>>;
 }
 
-pub trait ForeignChainRpcClient {
-    type TransactionId;
-    type Finality;
-    type RpcResponse;
-
-    fn get(
-        &self,
-        transaction: Self::TransactionId,
-        finality: Self::Finality,
-    ) -> impl Future<Output = Result<Self::RpcResponse, RpcError>>;
-}
-
 #[derive(Debug, Clone)]
 pub enum RpcAuthentication {
     /// The key is in the URL (e.g., Alchemy, QuickNode).
@@ -53,15 +41,17 @@ pub struct BlockConfirmations(u64);
 pub struct BlockHeight(u64);
 
 #[derive(Debug)]
-pub enum Finality {
-    Optimistic,
-    Final,
+pub enum EthereumFinality {
+    Finalized,
+    Safe,
 }
 
 #[derive(Error, Debug)]
 pub enum RpcError {
     #[error("inner network client failed to fetch")]
     ClientError(#[from] jsonrpsee::core::client::error::Error),
+    #[error("The transaction is ")]
+    NotFinalized,
 }
 
 #[derive(Error, Debug)]

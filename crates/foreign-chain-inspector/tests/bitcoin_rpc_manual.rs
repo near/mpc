@@ -3,7 +3,6 @@ use foreign_chain_inspector::{
     bitcoin::{
         BitcoinBlockHash, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
-        rpc_client::BitcoinCoreRpcClient,
     },
 };
 
@@ -31,8 +30,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
-    let client = BitcoinCoreRpcClient::from_client(http_client);
-    let inspector = BitcoinInspector::new(client);
+    let inspector = BitcoinInspector::new(http_client);
 
     // when
     let extracted_values = inspector

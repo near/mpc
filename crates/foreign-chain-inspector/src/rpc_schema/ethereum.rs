@@ -1,5 +1,6 @@
 use crate::rpc_schema::to_rpc_params_impl;
 
+use derive_more::{Constructor, From};
 use ethereum_types::{H256, U64};
 use jsonrpsee::core::traits::ToRpcParams;
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,26 @@ pub(crate) struct GetTransactionByHashArgs {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct BlockNumberResponse(pub(crate) U64);
+pub(crate) struct GetBlockByNumberResponse {
+    /// the block number
+    pub(crate) number: U64,
+}
+
+#[derive(Constructor, Serialize)]
+pub(crate) struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionHash);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum FinalityTag {
+    Safe,
+    Finalized,
+}
+
+#[derive(From, Serialize)]
+pub(crate) struct ReturnFullTransactionHash(bool);
+
+// #[derive(Deserialize)]
+// pub(crate) struct BlockNumberResponse(pub(crate) U64);
 
 impl Serialize for GetTransactionByHashArgs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -34,5 +54,9 @@ impl Serialize for GetTransactionByHashArgs {
 }
 
 impl ToRpcParams for &GetTransactionByHashArgs {
+    to_rpc_params_impl!();
+}
+
+impl ToRpcParams for &GetBlockByNumberArgs {
     to_rpc_params_impl!();
 }

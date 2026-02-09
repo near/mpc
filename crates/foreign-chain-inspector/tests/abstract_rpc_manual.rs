@@ -1,9 +1,8 @@
 use foreign_chain_inspector::{
-    BlockConfirmations, ForeignChainInspector, RpcAuthentication,
+    BlockConfirmations, EthereumFinality, ForeignChainInspector, RpcAuthentication,
     abstract_chain::{
         AbstractBlockHash, AbstractTransactionHash,
         inspector::{AbstractExtractedValue, AbstractExtractor, AbstractInspector},
-        rpc_client::AbstractRpcClient,
     },
 };
 
@@ -15,7 +14,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // Example: QuickNode Abstract endpoint
     const ABSTRACT_RPC_URL: &str = "https://api.testnet.abs.xyz";
 
-    let threshold = BlockConfirmations::from(1);
+    let threshold = EthereumFinality::Finalized;
 
     // Example transaction from Abstract testnet
     // https://explorer.testnet.abs.xyz/tx/0x497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234
@@ -33,8 +32,7 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
-    let client = AbstractRpcClient::new(http_client);
-    let inspector = AbstractInspector::new(client);
+    let inspector = AbstractInspector::new(http_client);
 
     // when
     let extracted_values = inspector

@@ -1,7 +1,19 @@
+use jsonrpsee::core::client::ClientT;
+
 use crate::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ForeignChainRpcClient,
+    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector,
     bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
 };
+use crate::{
+    RpcError,
+    rpc_schema::bitcoin::{
+        GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
+    },
+};
+
+/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
+const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
+const VERBOSE_RESPONSE: bool = true;
 
 pub struct BitcoinInspector<Client> {
     client: Client,
@@ -9,11 +21,7 @@ pub struct BitcoinInspector<Client> {
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<
-            TransactionId = BitcoinTransactionHash,
-            Finality = BlockConfirmations,
-            RpcResponse = BitcoinRpcResponse,
-        >,
+    Client: ClientT + Send,
 {
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
@@ -26,10 +34,7 @@ where
         block_confirmations_threshold: BlockConfirmations,
         extractors: Vec<BitcoinExtractor>,
     ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
-        let response = self
-            .client
-            .get(tx_id, block_confirmations_threshold)
-            .await?;
+        let response = self.get(tx_id, block_confirmations_threshold).await?;
 
         let enough_block_confirmations = block_confirmations_threshold <= response.confirmations;
 
@@ -51,14 +56,34 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<
-            TransactionId = BitcoinTransactionHash,
-            Finality = BlockConfirmations,
-            RpcResponse = BitcoinRpcResponse,
-        >,
+    Client: ClientT + Send,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
+    }
+
+    async fn get(
+        &self,
+        transaction: BitcoinTransactionHash,
+        _finality: BlockConfirmations,
+    ) -> Result<BitcoinRpcResponse, RpcError> {
+        let request_parameters = GetRawTransactionArgs {
+            transaction_hash: TransportBitcoinTransactionHash::from(*transaction),
+            verbose: VERBOSE_RESPONSE,
+        };
+
+        // TODO(#1978): add retry mechanism if the error from the request is transient
+        let rpc_response: GetRawTransactionVerboseResponse = self
+            .client
+            .request(GET_RAW_TRANSACTION_METHOD, request_parameters)
+            .await?;
+
+        let block_hash_bytes: [u8; 32] = rpc_response.blockhash.into();
+
+        Ok(BitcoinRpcResponse {
+            block_hash: block_hash_bytes.into(),
+            confirmations: rpc_response.confirmations.into(),
+        })
     }
 }
 

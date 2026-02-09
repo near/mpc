@@ -7,8 +7,8 @@ use foreign_chain_inspector::{
     bitcoin::{
         BitcoinBlockHash, BitcoinTransactionHash,
         inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
-        rpc_client::BitcoinCoreRpcClient,
     },
+    build_http_client,
 };
 
 use assert_matches::assert_matches;
@@ -39,9 +39,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
@@ -70,9 +68,7 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let response = inspector
@@ -103,9 +99,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
@@ -130,9 +124,7 @@ async fn extract_propagates_rpc_client_errors() {
             "connection refused",
         ))))
     });
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let response = inspector
@@ -173,8 +165,7 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
             .json_body(serde_json::to_value(&response).unwrap());
     });
 
-    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
-        .expect("Failed to create client");
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
     let inspector = BitcoinInspector::new(client);
 
     // when
