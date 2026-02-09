@@ -4,7 +4,7 @@ This guide provides step-by-step instructions for node operators to migrate thei
 
 ## Overview
 
-Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the backup service and the `backup-cli` tool to securely backup and restore your node's keyshares.
+Node migration allows you to move your MPC node from one host to another without requiring a full network resharing. This is accomplished using the  `backup-cli` tool to securely backup and restore your node's keyshares.
 
 **Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](./migration-service.md).
 
@@ -34,7 +34,7 @@ This installs the `backup-cli` binary to your cargo bin directory (typically `~/
 
 ### Generate Backup Service Keys
 
-Create a home directory for the backup service and generate its keys:
+Create a home directory for the backup-cli and generate its keys:
 
 ```bash
 export BACKUP_HOME_DIR=/path/to/backup/home
@@ -48,13 +48,12 @@ backup-cli \
 This creates a `secrets.json` file in your backup home directory containing:
 - `p2p_private_key`: Used for mutual TLS authentication with MPC nodes
 - `local_storage_aes_key`: Used to encrypt keyshares stored locally
-- `near_signer_key`: Used by the backup service to sign NEAR transactions on behalf of the service
 
-**Important:** Keep the `secrets.json` file secure. Anyone with access to this file can authenticate as your backup service and decrypt any keyshares stored locally (because it contains `local_storage_aes_key`).
+**Important:** Keep the `secrets.json` file secure. Anyone with access to this file can authenticate as your backup service and decrypt any keyshares stored locally.
 
-## Step 2: Register the Backup Service
+## Step 2: Register the backup-cli
 
-Before you can backup keyshares, you must register your backup service's public key with the MPC contract.
+Before you can backup keyshares, you must register your backup-cli's public key with the MPC contract.
 
 ### Get the Registration Command
 
@@ -88,9 +87,19 @@ near contract call-function as-transaction \
 
 ### Execute the Registration
 
-Copy and run the generated command to register your backup service with the contract.
+Copy and run the generated command to register your backup-cli with the contract.
 
-**Note:** The "public key" in the registration corresponds to the public key derived from the `p2p_private_key` created in Step 1. After registration, you can verify it was registered by checking the contract's migration info (see Step 6 for details).
+**Note:** The "public key" in the registration corresponds to  the `p2p_private_key` created in Step 1. 
+
+### Verify Registration
+```bash
+near contract call-function as-read-only \
+  v1.signer-prod.testnet \
+  migration_info \
+  json-args {} \
+  network-config testnet \
+  now
+```
 
 ## Step 3: Generate and Set Encryption Key
 
@@ -138,6 +147,8 @@ You'll need:
 - **MPC node address**: The host where your node is running (e.g., `node.example.com`)
 - **MPC node P2P public key**: The Ed25519 public key used for P2P communication (found in your node's startup logs or configuration)
 
+Both those values can be found on the contract. 
+
 ### Get Contract State
 
 Before backing up keyshares, you need to query the current contract state and save it:
@@ -166,25 +177,54 @@ backup-cli \
 
 The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains` (with a `key` hard-link in that directory).
 
+
 ## Step 5: Prepare the New Node
 
 Set up your new node on the new host with the following:
 
-1. **Install and configure the MPC node software** on the new host
-2. **Generate new keys for the new node** (P2P keys, signer keys, etc.)
-3. **Set the same encryption key**:
+1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
+2. **Set the same encryption key**: on the backup-cli and the new node.
    ```bash
    export MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
    ```
+3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)   
+4. **add the node's near_signer_public_key to your account as an restricted access key** 
+
+
+See more details on extracting key from the node and adding the keys to your account, in the [running an MPC node in TDX external guide](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#add-the-node-account-key-to-your-account)
+
+
+**Note:** The keys can be retrieved using the node's public data endpoint:
+
+```bash
+export near_signer_public_key=$(curl -s http://<IP>:8080/public_data | jq -r ".near_signer_public_key")
+export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_key")
+```
+
+### Check that the new node's attestation is registered on the contract
+
+```bash
+near contract call-function as-transaction \
+gas' attached-deposit '0 NEAR' \
+  sign-as your-account.testnet \
+  network-config testnet \
+  sign-with-keychain \
+  send
+```
+
+**note** - If the new node's attestation was submitted successfully, you should 2 attestations registered on the contract - one for the old node and one for the new node.
+
+
+## Step 6: Initiate Migration state in Contract
 
 ### Collect New Node Information
 
 You'll need:
-- **New node's P2P public key**: The Ed25519 public key for the new node's P2P communication
-- **New node's address**: The URL where the new node will be accessible (e.g., `new-node.example.com:3000`)
-- **New node's signer account public key**: The NEAR account public key the new node will use to sign contract transactions
+- **New node's P2P public key**: $P2P_KEY from step above.
+- **New node's signer account public key**: $near_signer_public_key from step above.
+- **New node's address**: The URL where the new node will be accessible (e.g., `new-node.example.com:80`)
 
-## Step 6: Initiate Migration in Contract
+### start_node_migration on contract
 
 Call the `start_node_migration` method on the MPC contract to register the new node as the migration target:
 
@@ -194,10 +234,10 @@ near contract call-function as-transaction \
   start_node_migration \
   json-args '{
     "destination_node_info": {
-      "signer_account_pk": "ed25519:NewNodeSignerPublicKey...",
+      "signer_account_pk": "$near_signer_public_key",
       "destination_node_info": {
-        "url": "new-node.example.com:3000",
-        "sign_pk": "ed25519:NewNodeP2PPublicKey..."
+        "url": "new-node.example.com:80",
+        "sign_pk": "$P2P_KEY"
       }
     }
   }' \
@@ -208,17 +248,6 @@ near contract call-function as-transaction \
   sign-with-keychain \
   send
 ```
-
-**Note:** Replace the public keys and URL with your actual new node's values.
-
-**Field Explanations:**
-- `signer_account_pk`: The NEAR account public key (Ed25519) the new node will use to sign contract transactions
-- `destination_node_info` (outer): The complete destination node information struct required by the contract
-- `destination_node_info` (inner/nested): The participant information containing the node's URL and P2P signing key
-- `url`: The DNS/IP endpoint where the new node will be accessible
-- `sign_pk`: The P2P public key (Ed25519) used for mutual TLS authentication between nodes
-
-**Why the nested naming?** The contract's `DestinationNodeInfo` type has a field named `destination_node_info` of type `ParticipantInfo`. While the naming may seem redundant, it matches the contract's structure and must be used exactly as shown.
 
 ### Verify Migration Was Registered on the Contract
 
@@ -235,9 +264,8 @@ near contract call-function as-read-only \
 
 This will return migration information for all accounts, including your backup service info and destination node info. Look for your account in the output to confirm the migration was registered.
 
-## Step 7: Restore Keyshares to New Node
+## Step 7: Transfer Keyshares to New Node
 
-Start your new node (which should have `MPC_BACKUP_ENCRYPTION_KEY_HEX` set), then transfer the keyshares:
 
 ```bash
 backup-cli \
@@ -287,59 +315,11 @@ After verifying the migration was successful:
 
 ## Troubleshooting
 
-### Migration Fails to Complete
-
-If the new node doesn't automatically call `conclude_node_migration`:
-
-- **Check logs**: Look for errors in the new node's logs
-- **Verify encryption key**: Ensure `MPC_BACKUP_ENCRYPTION_KEY_HEX` is set correctly on the new node
-- **Check keyshares**: Verify the keyshares were successfully transferred (check new node's logs)
-- **Verify contract state**: Ensure `start_node_migration` was called successfully
-
-### "NotParticipant" Error
-
-This error occurs if:
-- You're not currently a participant in the network
-- You're trying to call contract methods from the wrong account
-
-Verify you're using the correct account that's registered as a participant.
-
-### "ProtocolStateNotRunning" Error
-
-Node migrations can only occur when the protocol is in the `Running` state. If the network is in `Resharing` or `Initializing` state, wait for it to return to `Running` before attempting migration.
-
 ### Connection Errors with backup-cli
 
 If backup-cli cannot connect to your node:
 
 - **Verify firewall rules**: Ensure the backup service can reach the node's address
-- **Check P2P public key**: Ensure you're using the correct P2P public key for authentication
-- **Check node status**: Ensure the node is running and accessible
+port 8079  is open and accessible
 
-## Security Considerations
 
-1. **Encryption Key**: The `BACKUP_ENCRYPTION_KEY_HEX` provides an additional layer of security beyond mTLS. Never share this key or commit it to version control.
-
-2. **Backup Service Keys**: The `secrets.json` file in your backup home directory contains sensitive keys. Store it securely and restrict access.
-
-3. **Keyshares Storage**: `backup-cli` stores your encrypted keyshares under `$BACKUP_HOME_DIR/key` and `$BACKUP_HOME_DIR/permanent_keys/...`, encrypted with `local_storage_aes_key`. Even though they're encrypted, treat these files and directories as highly sensitive.
-
-4. **Network Security**: Use secure, encrypted connections when running backup-cli commands. Consider running the backup service on a secure, isolated network.
-
-## Migration Limitations
-
-- **Protocol State**: Migrations can only be performed when the protocol is in `Running` state
-- **One Migration at a Time**: You can only have one ongoing migration per account
-- **Automatic Cancellation**: If the protocol transitions to `Resharing` or `Initializing` state during migration, your migration will be automatically cancelled
-
-## Related Documentation
-
-- [migration-service.md](./migration-service.md) - Detailed architecture and design of the migration service
-- [migration-service-how-to.md](./migration-service-how-to.md) - Quick reference for node operator responsibilities
-- [running_an_mpc_node_in_tdx.md](./running_an_mpc_node_in_tdx.md) - Guide for running nodes in TEE environments
-
-## Additional Notes
-
-This guide covers the Soft Launch migration process where backup-cli is run manually by the operator. In the future Hard Launch, the backup service will run autonomously in a TEE and handle migrations automatically with minimal operator intervention.
-
-For questions or issues, please refer to the project's issue tracker or reach out to the MPC network support channels.
