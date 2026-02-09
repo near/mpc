@@ -16,7 +16,6 @@ use jsonrpsee::core::{
 };
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 
 #[rstest]
 #[tokio::test]
