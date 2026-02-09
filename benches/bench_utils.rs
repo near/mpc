@@ -398,7 +398,7 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     let message = message.to_vec();
 
     for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
-        let protocol = eddsa::sign::sign(
+        let protocol = eddsa::sign::sign_v1(
             &participants,
             threshold,
             *p,

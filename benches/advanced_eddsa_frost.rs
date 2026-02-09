@@ -8,7 +8,7 @@ use crate::bench_utils::{
     analyze_received_sizes, ed25519_prepare_sign, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
 };
 use threshold_signatures::{
-    frost::eddsa::{sign::sign, SignatureOption},
+    frost::eddsa::{sign::sign_v1, SignatureOption},
     participants::Participant,
     protocol::Protocol,
     test_utils::{
@@ -68,7 +68,7 @@ fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimula
 
     // choose the real_participant being the coordinator
     let (real_participant, keygen_out) = preps.key_packages[preps.index].clone();
-    let real_protocol = sign(
+    let real_protocol = sign_v1(
         &participants,
         threshold,
         real_participant,
