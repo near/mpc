@@ -41,7 +41,7 @@ impl BitcoinCoreRpcClient<HttpClient> {
 }
 
 impl<Client> BitcoinCoreRpcClient<Client> {
-    pub fn with_client(client: Client) -> Self {
+    pub fn from_client(client: Client) -> Self {
         Self { client }
     }
 }
