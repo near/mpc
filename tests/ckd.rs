@@ -1,7 +1,6 @@
 mod common;
 
 use rand_core::OsRng;
-use std::collections::HashMap;
 
 use common::{choose_coordinator_at_random, generate_participants, run_keygen, run_reshare};
 use threshold_signatures::{
@@ -35,7 +34,6 @@ fn test_ckd() {
     assert!(keys.len() == participants.len());
 
     let public_key = keys.get(&participants[0]).unwrap().public_key;
-    let keys: HashMap<_, _> = keys.into_iter().collect();
     let coordinator = choose_coordinator_at_random(&participants);
 
     let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());
