@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(dead_code, clippy::unwrap_used, clippy::indexing_slicing)]
 
 use std::collections::HashMap;
 
@@ -78,7 +78,7 @@ pub fn run_protocol<T>(
 pub fn run_keygen<C: Ciphersuite>(
     participants: &[Participant],
     threshold: ReconstructionLowerBound,
-) -> HashMap<Participant, KeygenOutput<C>>
+) -> Vec<(Participant, KeygenOutput<C>)>
 where
     Element<C>: std::marker::Send,
     Scalar<C>: std::marker::Send,
@@ -92,7 +92,7 @@ where
         })
         .collect();
 
-    run_protocol(protocols).unwrap().into_iter().collect()
+    run_protocol(protocols).unwrap()
 }
 
 #[allow(clippy::missing_panics_doc)]

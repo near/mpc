@@ -1292,7 +1292,6 @@ mod test {
                 // use all to evaluate the share
                 let eval = Polynomial::eval_interpolation(&ids, &shares, None).unwrap();
 
-                println!("{participants:?} {degree:?}");
                 assert_eq!(
                     exponent_eval.value(),
                     <C as frost_core::Ciphersuite>::Group::generator() * eval.0

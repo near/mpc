@@ -1,10 +1,9 @@
-use crate::crypto::hash::HashOutput;
-use crate::frost::eddsa::{sign::sign, KeygenOutput, SignatureOption};
-use crate::participants::{Participant, ParticipantList};
-use crate::test_utils::{
-    generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng,
+use crate::{
+    crypto::hash::HashOutput,
+    frost::eddsa::{sign::sign, KeygenOutput, SignatureOption},
+    test_utils::{generate_participants, run_protocol, GenOutput, GenProtocol, MockCryptoRng},
+    Participant, ReconstructionLowerBound,
 };
-use crate::ReconstructionLowerBound;
 
 use frost_core::Scalar;
 use frost_ed25519::{keys::SigningShare, Ed25519Sha512, SigningKey, VerifyingKey};
@@ -57,13 +56,14 @@ pub fn build_key_packages_with_dealer(
         .collect::<Vec<_>>()
 }
 
-pub fn test_run_signature_protocols(
+pub fn run_sign(
     participants: &[(Participant, KeygenOutput)],
     actual_signers: usize,
-    coordinators: &[Participant],
+    coordinator: Participant,
     threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
     msg_hash: HashOutput,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
+    let mut rng = MockCryptoRng::seed_from_u64(644_221);
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
 
     let participants_list = participants
@@ -71,15 +71,11 @@ pub fn test_run_signature_protocols(
         .take(actual_signers)
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
-    let coordinators = ParticipantList::new(coordinators).unwrap();
-    for (participant, key_pair) in participants.iter().take(actual_signers) {
-        let mut rng_p = MockCryptoRng::seed_from_u64(42);
-        let mut coordinator = *participant;
 
-        if !coordinators.contains(coordinator) {
-            // pick any coordinator
-            let index = rng_p.next_u32() as usize % coordinators.len();
-            coordinator = coordinators.get_participant(index).unwrap();
+    let mut is_valid_coordinator = false;
+    for (participant, key_pair) in participants.iter().take(actual_signers) {
+        if coordinator == *participant {
+            is_valid_coordinator = true;
         }
         // run the signing scheme
         let protocol = sign(
@@ -89,11 +85,14 @@ pub fn test_run_signature_protocols(
             coordinator,
             key_pair.clone(),
             msg_hash.as_ref().to_vec(),
-            rng_p,
+            rng.clone(),
         )?;
+        rng.next_u64();
         protocols.push((*participant, Box::new(protocol)));
     }
-
+    if !is_valid_coordinator {
+        return Err("Invalid Coordinator".into());
+    }
     Ok(run_protocol(protocols)?)
 }
 
