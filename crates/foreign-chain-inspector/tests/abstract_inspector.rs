@@ -267,7 +267,8 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     assert_eq!(expected_extractions, extracted_values);
 }
 
-/// Builds a mock client returning sequential responses for the two RPC calls
+// TODO: change FixedResponseRpcClient to support multiple expectations to avoid this hacky wrapper.
+///  Builds a mock client returning sequential responses for the two RPC calls
 /// the abstract inspector makes: first `eth_getBlockByNumber`, then `eth_getTransactionReceipt`.
 fn mock_abstract_client(
     block_response: BlockByNumberResponse,
