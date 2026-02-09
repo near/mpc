@@ -31,7 +31,10 @@ use std::{
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoContractType, TryIntoInterfaceType},
+    dto_mapping::{
+        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
+        TryIntoContractType, TryIntoInterfaceType,
+    },
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     state::ContractNotInitialized,
@@ -46,7 +49,7 @@ use contract_interface::types::{
     VerifyForeignTransactionResponse,
 };
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak,
+    derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
@@ -175,6 +178,17 @@ impl MpcContract {
     /// Returns true if the request was already pending
     fn add_ckd_request(&mut self, request: &CKDRequest, data_id: CryptoHash) -> bool {
         self.pending_ckd_requests
+            .insert(request.clone(), YieldIndex { data_id })
+            .is_some()
+    }
+
+    /// Returns true if the request was already pending
+    fn add_verify_foreign_tx_request(
+        &mut self,
+        request: &VerifyForeignTransactionRequest,
+        data_id: CryptoHash,
+    ) -> bool {
+        self.pending_verify_foreign_tx_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
@@ -450,9 +464,7 @@ impl MpcContract {
             }
         }
 
-        let mpc_contract = self;
-
-        if !mpc_contract.accept_requests {
+        if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
@@ -465,8 +477,7 @@ impl MpcContract {
         );
 
         let callback_gas = Gas::from_tgas(
-            mpc_contract
-                .config
+            self.config
                 .return_ck_and_clean_state_on_success_call_tera_gas,
         );
 
@@ -483,7 +494,7 @@ impl MpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        if mpc_contract.add_ckd_request(&request, return_ck_id) {
+        if self.add_ckd_request(&request, return_ck_id) {
             log!("request already present, overriding callback.")
         }
 
@@ -495,11 +506,104 @@ impl MpcContract {
     /// The signed payload is derived from the transaction ID (hash of tx_id).
     #[handle_result]
     #[payable]
-    pub fn verify_foreign_transaction(
-        &mut self,
-        #[allow(unused_variables)] request: VerifyForeignTransactionRequestArgs,
-    ) {
-        unimplemented!()
+    pub fn verify_foreign_transaction(&mut self, request: VerifyForeignTransactionRequestArgs) {
+        log!(
+            "verify_foreign_transaction: predecessor={:?}, request={:?}",
+            env::predecessor_account_id(),
+            request
+        );
+
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.0.into())
+        else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: request.domain_id.0.into(),
+                }
+                .to_string(),
+            );
+        };
+
+        if domain_config.scheme != SignatureScheme::Secp256k1 {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Provided domain ID key type is not Secp256k1")
+                    .to_string(),
+            );
+        }
+
+        let gas_required =
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
+
+        // Make sure call will not run out of gas doing yield/resume logic
+        if env::prepaid_gas() < gas_required {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas
+                    .message(format!(
+                        "Provided: {}, required: {}",
+                        env::prepaid_gas(),
+                        gas_required
+                    ))
+                    .to_string(),
+            );
+        }
+
+        // Check deposit and refund if required
+        let predecessor = env::predecessor_account_id();
+        let deposit = env::attached_deposit();
+
+        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
+            None => {
+                env::panic_str(
+                    &InvalidParameters::InsufficientDeposit
+                        .message(format!(
+                            "Require a deposit of {} yoctonear, found: {}",
+                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
+                            deposit.as_yoctonear(),
+                        ))
+                        .to_string(),
+                );
+            }
+            Some(diff) => {
+                if diff > NearToken::from_yoctonear(0) {
+                    log!("refund excess deposit {diff} to {predecessor}");
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
+                }
+            }
+        }
+
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        let callback_gas = Gas::from_tgas(
+            self.config
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+        );
+
+        let request = args_into_verify_foreign_tx_request(request, &predecessor);
+
+        let promise_index = env::promise_yield_create(
+            "return_verify_foreign_tx_and_clean_state_on_success",
+            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        // Store the request in the contract's local state
+        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if self.add_verify_foreign_tx_request(&request, return_sig_id) {
+            log!("signature request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
     }
 }
 
@@ -621,10 +725,80 @@ impl MpcContract {
     #[handle_result]
     pub fn respond_verify_foreign_tx(
         &mut self,
-        #[allow(unused_variables)] request: VerifyForeignTransactionRequest,
-        #[allow(unused_variables)] response: VerifyForeignTransactionResponse,
+        request: VerifyForeignTransactionRequest,
+        response: VerifyForeignTransactionResponse,
     ) -> Result<(), Error> {
-        unimplemented!()
+        let signer = Self::assert_caller_is_signer();
+
+        log!(
+            "respond_verify_foreign_tx: signer={}, request={:?}",
+            &signer,
+            &request
+        );
+
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
+        if !self.protocol_state.is_running_or_resharing() {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+
+        if !self.accept_requests {
+            return Err(TeeError::TeeValidationFailed.into());
+        }
+
+        let domain = request.domain_id.clone();
+        let public_key = self.public_key_extended(domain.0.into())?;
+
+        let signature_is_valid = match (&response.signature, public_key) {
+            (
+                dtos::SignatureResponse::Secp256k1(signature_response),
+                PublicKeyExtended::Secp256k1 { near_public_key },
+            ) => {
+                // generate the expected public key
+                let expected_public_key = derive_key_secp256k1(
+                    &near_public_key_to_affine_point(near_public_key),
+                    &crate::primitives::signature::Tweak::new(request.tweak.0),
+                )
+                .map_err(RespondError::from)?;
+
+                let payload_hash: [u8; 32] = response
+                    .payload
+                    .compute_msg_hash()
+                    .map_err(|_| RespondError::InvalidSignature)?
+                    .into();
+
+                // Check the signature is correct
+                check_ec_signature(
+                    &expected_public_key,
+                    &signature_response.big_r.clone().try_into_contract_type()?,
+                    &signature_response.s.clone().try_into_contract_type()?,
+                    &payload_hash,
+                    signature_response.recovery_id,
+                )
+                .is_ok()
+            }
+            (signature_response, public_key_requested) => {
+                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                    "Verify Foreign tx response from MPC: {:?}. Key requested by user {:?}",
+                    signature_response, public_key_requested
+                )));
+            }
+        };
+
+        if !signature_is_valid {
+            return Err(RespondError::InvalidSignature.into());
+        }
+
+        // First get the yield promise of the (potentially timed out) request.
+        if let Some(YieldIndex { data_id }) =
+            self.pending_verify_foreign_tx_requests.remove(&request)
+        {
+            // Finally, resolve the promise. This will have no effect if the request already timed.
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+            Ok(())
+        } else {
+            Err(InvalidParameters::RequestNotFound.into())
+        }
     }
 
     /// (Prospective) Participants can submit their tee participant information through this
@@ -1864,7 +2038,10 @@ mod tests {
     };
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
-    use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
+    use contract_interface::types::{
+        BitcoinExtractor, BitcoinRpcRequest, ExtractedValue, ForeignTxSignPayloadV1,
+    };
+    use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::elliptic_curve::sec1::ToEncodedPoint as _;
@@ -2122,13 +2299,13 @@ mod tests {
     }
 
     #[test]
-    fn test_signature_simple() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists() {
         test_signature_common(true, false);
         test_signature_common(false, false);
     }
 
     #[test]
-    fn test_signature_simple_legacy() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
         test_signature_common(true, true);
         test_signature_common(false, true);
     }
@@ -2163,7 +2340,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ckd_simple() {
+    fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
@@ -2231,6 +2408,118 @@ mod tests {
             PromiseOrValue::Promise(_)
         ));
         assert!(contract.get_pending_ckd_request(&ckd_request).is_none());
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let derivation_path = "what is it".to_string();
+        let request_args = VerifyForeignTransactionRequestArgs {
+            derivation_path: derivation_path.clone(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let predecessor = context.predecessor_account_id;
+
+        // When
+        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        contract.verify_foreign_transaction(request_args);
+        contract
+            .get_pending_verify_foreign_tx_request(&request)
+            .unwrap();
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            observed_at_block: [0u8; 32].into(),
+            request: request.request.clone(),
+            values: vec![ExtractedValue::U64(2)],
+        });
+        let payload_hash = payload.compute_msg_hash().unwrap().0;
+        // simulate signature and response to the request
+        let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
+        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
+        let (r, s) = signature.split_bytes();
+        let r = AffinePoint::decompact(&r).unwrap();
+        let mut r_bytes = [0u8; 33];
+        r_bytes.copy_from_slice(r.to_encoded_point(true).as_bytes());
+        let mut s_bytes = [0u8; 32];
+        s_bytes.copy_from_slice(s.as_ref());
+
+        let signature = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+            big_r: dtos::K256AffinePoint {
+                affine_point: r_bytes,
+            },
+            s: dtos::K256Scalar { scalar: s_bytes },
+            recovery_id: recovery_id.to_byte(),
+        });
+
+        let response = VerifyForeignTransactionResponse { payload, signature };
+
+        with_active_participant_and_attested_context(&contract);
+
+        // Then
+        match contract.respond_verify_foreign_tx(request.clone(), response.clone()) {
+            Ok(_) => {
+                contract
+                    .return_verify_foreign_tx_and_clean_state_on_success(
+                        request.clone(),
+                        Ok(response),
+                    )
+                    .detach();
+
+                assert!(contract
+                    .get_pending_verify_foreign_tx_request(&request)
+                    .is_none(),);
+            }
+            Err(_) => panic!("respond_verify_foreign_tx should not fail"),
+        }
+    }
+
+    #[test]
+    fn test_verify_foreign_tx_timeout() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let request_args = VerifyForeignTransactionRequestArgs {
+            derivation_path: "".to_string(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let predecessor = context.predecessor_account_id;
+        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+
+        // When
+        contract.verify_foreign_transaction(request_args);
+
+        // Then
+        assert!(matches!(
+            contract.return_verify_foreign_tx_and_clean_state_on_success(
+                request.clone(),
+                Err(PromiseError::Failed)
+            ),
+            PromiseOrValue::Promise(_)
+        ));
+        assert!(contract
+            .get_pending_verify_foreign_tx_request(&request)
+            .is_none());
     }
 
     fn setup_tee_test_contract(

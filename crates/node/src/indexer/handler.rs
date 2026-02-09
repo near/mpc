@@ -450,7 +450,7 @@ fn try_get_verify_foreign_tx_args(
         next_receipt_id,
         VerifyForeignTransactionRequestArgs {
             request: verify_foreign_tx_args.request.request,
-            path: verify_foreign_tx_args.request.path,
+            derivation_path: verify_foreign_tx_args.request.derivation_path,
             domain_id: verify_foreign_tx_args.request.domain_id,
             payload_version: verify_foreign_tx_args.request.payload_version,
         },

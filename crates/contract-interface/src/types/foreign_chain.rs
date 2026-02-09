@@ -13,7 +13,7 @@ use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 )]
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub path: String,
+    pub derivation_path: String,
     pub domain_id: DomainId,
     pub payload_version: u8,
 }
