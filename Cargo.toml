@@ -82,7 +82,7 @@ elliptic-curve = "0.13.8"
 flume = "0.12.0"
 fs2 = "0.4"
 futures = "0.3.31"
-gcloud-sdk = { version = "0.26.2", default-features = false, features = [
+gcloud-sdk = { version = "0.28.4", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }

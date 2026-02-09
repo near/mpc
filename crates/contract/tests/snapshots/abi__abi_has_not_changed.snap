@@ -1337,19 +1337,6 @@ expression: abi
             }
           }
         },
-        "AffinePoint": {
-          "description": "AffinePoint on the Secp256k1 curve",
-          "type": "object",
-          "required": [
-            "affine_point"
-          ],
-          "properties": {
-            "affine_point": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-            }
-          }
-        },
         "AttemptId": {
           "type": "integer",
           "format": "uint64",
@@ -2166,6 +2153,19 @@ expression: abi
                   "$ref": "#/definitions/KeyEvent"
                 }
               ]
+            }
+          }
+        },
+        "K256AffinePoint": {
+          "description": "AffinePoint on the Secp256k1 curve",
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -3081,7 +3081,7 @@ expression: abi
               ],
               "properties": {
                 "big_r": {
-                  "$ref": "#/definitions/AffinePoint"
+                  "$ref": "#/definitions/K256AffinePoint"
                 },
                 "recovery_id": {
                   "type": "integer",
@@ -3455,17 +3455,17 @@ expression: abi
         "VerifyForeignTransactionRequestArgs": {
           "type": "object",
           "required": [
+            "derivation_path",
             "domain_id",
-            "path",
             "payload_version",
             "request"
           ],
           "properties": {
+            "derivation_path": {
+              "type": "string"
+            },
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
-            },
-            "path": {
-              "type": "string"
             },
             "payload_version": {
               "type": "integer",

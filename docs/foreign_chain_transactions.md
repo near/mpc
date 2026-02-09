@@ -90,7 +90,7 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```rust
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub path: String, // Key derivation path
+    pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
     pub payload_version: u8,
 }
@@ -248,14 +248,14 @@ Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 ## Tweak Derivation (Sign vs ForeignTx)
 
 `verify_foreign_transaction()` uses a **different tweak derivation prefix** than `sign()` so the same
-`(predecessor_id, path)` can never yield the same derived key across the two purposes.
+`(predecessor_id, derivation_path)` can never yield the same derived key across the two purposes.
 
 Design:
 
 * Keep the existing sign tweak derivation prefix unchanged.
-* Introduce a foreign-tx-specific prefix and derive the tweak from the same `(predecessor_id, path)`
+* Introduce a foreign-tx-specific prefix and derive the tweak from the same `(predecessor_id, derivation_path)`
   input using the same hash construction.
-* The contract derives the tweak internally from `request.path` (callers do not submit raw tweaks).
+* The contract derives the tweak internally from `request.derivation_path` (callers do not submit raw tweaks).
 
 Example:
 
