@@ -9,7 +9,7 @@ use elliptic_curve::group::Group;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::Serialize;
 use near_sdk::state::ContractState;
-use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise, PromiseResult};
+use near_sdk::{env, near_bindgen, serde_json, AccountId, Gas, NearToken, Promise};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -187,9 +187,9 @@ impl TestContract {
         let num_calls = env::promise_results_count();
         env::log_str(format!("{num_calls} parallel calls completed!").as_str());
         for i in 0..num_calls {
-            let result = env::promise_result(i);
+            let result = env::promise_result_checked(i, 500);
             env::log_str(&format!("sign #{i}: {:?}", result));
-            assert!(matches!(result, PromiseResult::Successful(_)));
+            assert_matches::assert_matches!(result, Ok(_));
         }
         num_calls
     }

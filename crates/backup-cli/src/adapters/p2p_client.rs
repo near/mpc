@@ -8,13 +8,13 @@ use crate::ports;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("failed maket GET keyshares request: {0}")]
+    #[error("GET keyshares request to MPC node failed: {0}")]
     GetRequest(anyhow::Error),
 
-    #[error("failed maket PUT keyshares request: {0}")]
+    #[error("PUT keyshares request to MPC node failed: {0}")]
     PutRequest(anyhow::Error),
 
-    #[error("failed maket PUT keyshares request: {0}")]
+    #[error("connection to MPC node failed: {0}")]
     ServerConnection(anyhow::Error),
 }
 
@@ -77,7 +77,7 @@ impl ports::P2PClient for MpcP2PClient {
             &self.backup_encryption_key,
         )
         .await
-        .map_err(Error::GetRequest)?;
+        .map_err(Error::PutRequest)?;
         Ok(())
     }
 }

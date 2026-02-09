@@ -20,3 +20,6 @@ sha3 = { workspace = true }
 assert_matches = { workspace = true }
 dcap-qvl = { workspace = true }
 test-utils = { workspace = true }
+
+[lints]
+workspace = true

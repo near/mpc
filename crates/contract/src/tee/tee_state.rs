@@ -18,7 +18,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 use std::{collections::HashSet, time::Duration};
-use utilities::AccountIdExtV1;
 
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Ord, PartialOrd, Clone)]
@@ -360,7 +359,7 @@ impl TeeState {
         participants: &Participants,
     ) -> Result<(), AttestationCheckError> {
         let signer_pk = env::signer_account_pk();
-        let signer_id = env::signer_account_id().as_v2_account_id();
+        let signer_id = env::signer_account_id();
 
         let info = participants
             .info(&signer_id)
@@ -405,13 +404,12 @@ mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::time::Duration;
-    use utilities::AccountIdExtV2;
 
     /// Helper to set up the testing environment with a specific signer
     fn set_signer(account_id: &AccountId, public_key: &near_sdk::PublicKey) {
         let mut builder = VMContextBuilder::new();
         builder
-            .signer_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
             .signer_account_pk(public_key.clone());
         testing_env!(builder.build());
     }
@@ -806,8 +804,9 @@ mod tests {
             .expect("Attestation is valid on insertion");
 
         // 4. Verify check passes
-        let result = tee_state.is_caller_an_attested_participant(&participants);
-        assert!(result.is_ok());
+        tee_state
+            .is_caller_an_attested_participant(&participants)
+            .expect("Attested participant should be accepted");
     }
 
     #[test]

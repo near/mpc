@@ -1,8 +1,10 @@
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::marker::PhantomData;
+use core::{marker::PhantomData, str::FromStr};
 use derive_more::{AsRef, Deref, Into};
+use hex::FromHexError;
 use serde_with::serde_as;
+use thiserror::Error;
 
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -50,6 +52,27 @@ impl<T> Hash32<T> {
     /// Converts the hash to a hexadecimal string representation.
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum Hash32ParseError {
+    #[error("not a valid hex string")]
+    HexError(#[from] FromHexError),
+    #[error("hex string not 32 bytes, got {0}")]
+    InvalidLength(usize),
+}
+
+impl<T> FromStr for Hash32<T> {
+    type Err = Hash32ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let decoded_hex_bytes = hex::decode(s)?;
+        let hash_32_bytes: [u8; 32] = decoded_hex_bytes
+            .try_into()
+            .map_err(|v: Vec<u8>| Hash32ParseError::InvalidLength(v.len()))?;
+
+        Ok(hash_32_bytes.into())
     }
 }
 
@@ -104,6 +127,7 @@ mod tests {
     use alloc::format;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
+    #[derive(Debug)]
     struct TestMarker;
     type TestHash = Hash32<TestMarker>;
 
@@ -273,5 +297,44 @@ mod tests {
         // Then
         assert_eq!(format!("\"{}\"", hash.as_hex()), expected_hex);
         assert_eq!(serialized_hex, expected_hex);
+    }
+
+    #[test]
+    fn test_parse_from_hex_string() {
+        let expected_bytes = [0x11u8; 32];
+        let hex_string = "11".repeat(32);
+
+        let parsed: TestHash = hex_string.parse().unwrap();
+
+        assert_eq!(*parsed, expected_bytes);
+        assert_eq!(parsed.as_hex(), hex_string);
+    }
+
+    #[test]
+    fn test_parse_accepts_uppercase_hex() {
+        let expected_bytes = [0xABu8; 32];
+        let hex_string = "AB".repeat(32);
+
+        let parsed: TestHash = hex_string.parse().unwrap();
+
+        assert_eq!(*parsed, expected_bytes);
+        assert_eq!(parsed.as_hex(), "ab".repeat(32));
+    }
+
+    #[test]
+    fn test_parse_rejects_invalid_hex() {
+        let err = "0x00".parse::<TestHash>().unwrap_err();
+
+        assert!(matches!(err, Hash32ParseError::HexError(_)));
+    }
+
+    #[test]
+    fn test_parse_rejects_invalid_length() {
+        let err = "00".parse::<TestHash>().unwrap_err();
+
+        match err {
+            Hash32ParseError::InvalidLength(len) => assert_eq!(len, 1),
+            _ => panic!("unexpected error variant"),
+        }
     }
 }

@@ -58,6 +58,8 @@ Replace this with whatever release version you're making.
 We use `git-cliff` to maintain the changelog.
 Installation instructions can be found [here](https://git-cliff.org/docs/installation/).
 
+> ⚠️ Ensure your current branch is pushed to GitHub (e.g. `origin`). Otherwise `git-cliff` will not be able to resolve PR links in the generated notes.
+
 For typical releases, the following command should be sufficient.
 ```sh
 git-cliff -t 3.1.0 > CHANGELOG.md
@@ -75,10 +77,14 @@ cargo nextest run -p mpc-contract abi_has_not_changed
 cargo insta review
 ```
 
-At this point it's appropriate to open a PR with the changelog and crate version changes.
+### 3. Update license versions
+Follow the [how-to-regenerate](https://github.com/near/mpc/tree/main/third-party-licenses#how-to-regenerate) guide, to update the license versions.
+
+### 4. Open a PR with the changelog and version bumps
+At this point it's appropriate to open a PR with the changelog and crate and license version changes.
 See [the 3.0.6 PR](https://github.com/near/mpc/pull/1549) for reference.
 
-### 3. Create the release tag
+### 5. Create the release tag
 Once the changelog and crate versions have been bumped on latest `main`
 we're ready to create the release tag.
 You can do this directly in GitHub, but I prefer to do it locally:
@@ -88,7 +94,7 @@ git tag 3.1.0
 git push origin 3.1.0 # Assuming `origin` points at github.com:near/mpc.git
 ```
 
-### 4. Create the release artifacts
+### 6. Create the release artifacts
 Once the tag has been pushed the following release artifacts should be created:
 
 1. The launcher and MPC node docker images.
@@ -101,13 +107,20 @@ To create the launcher and MPC node docker images, use the following workflows:
 - **Launcher**: [Release Launcher Docker Image](https://github.com/near/mpc/actions/workflows/docker_launcher_release.yml)
 - **Node**: [Release Node Docker Image](https://github.com/near/mpc/actions/workflows/docker_node_release.yml)
 
+Note: the **Node** workflow should be run twice, for `nearone/mpc-node-gcp` and `nearone/mpc-node` images.
+
 Both of these work the same way. They take an existing image and re-tags it with the provided tag.
 
 Run these workflows with the source image tag `main-<short-commit-hash>` using the short commit hash
-at the release tag.
-It's easiest to find this exact tag at docker hub.
+as the release tag.
+To get the release tag run:
+````sh
+git rev-parse --short=7 3.1.0
+````
+Or, you can find this exact tag at docker hub.
 For example for the node image, visit the [nearone/mpc-node-gcp](https://hub.docker.com/r/nearone/mpc-node-gcp/tags)
 page and find the image associated with the commit at the release tag.
+
 
 We don't have a workflow to build and publish the contract yet, so this is easiest to build
 locally using the normal command:
@@ -127,7 +140,7 @@ mv mpc_contract_abi.json mpc-contract-v3.1.0-abi.json
 tar -czf mpc-contract-v3.1.0.tar.gz mpc-contract-v3.1.0.wasm mpc-contract-v3.1.0-abi.json
 ```
 
-### 5. Create the release on GitHub
+### 7. Create the release on GitHub
 Now we should be all set to create the actual release on Github.
 
 From the [release page](https://github.com/near/mpc/releases) click "Draft a new release",

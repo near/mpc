@@ -21,7 +21,6 @@ use mpc_contract::{
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
 use test_utils::attestation::{image_digest, p2p_tls_key};
-use utilities::AccountIdExtV1;
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
 /// Validates that votes below threshold don't allow hashes, reaching threshold allows them,
@@ -596,9 +595,9 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
 async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> {
     const PARTICIPANT_COUNT: usize = 3;
     const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-    // Add 10 seconds margin to account for block time variance and ensure attestation is
-    // reliably expired.
-    const BLOCKS_TO_FAST_FORWARD: u64 = ATTESTATION_EXPIRY_SECONDS + 10;
+    // Add 100 blocks margin to account for block time variance and ensure attestation is
+    // reliably expired. This assumed that 100 blocks takes always more than `ATTESTATION_EXPIRY_SECONDS` seconds
+    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
 
     let SandboxTestSetup {
         worker,
@@ -619,7 +618,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let target_node_id = initial_participants
         .get_node_ids()
         .into_iter()
-        .find(|node| node.account_id == target_account.id().as_v2_account_id())
+        .find(|node| &node.account_id == target_account.id())
         .expect("target participant not found");
 
     let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
@@ -640,6 +639,17 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Fast-forward past the attestation expiry
     worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
+    let block_info = worker.view_block().await?;
+    let current_timestamp = block_info.timestamp() / 1_000_000_000;
+    // Putting this assertion here such that if the test fails for this reason
+    // we already know
+    assert!(
+        current_timestamp > expiry_timestamp,
+        "Going forward {} was not enough: {} {}",
+        BLOCKS_TO_FAST_FORWARD,
+        current_timestamp,
+        expiry_timestamp
+    );
 
     // Call verify_tee() to trigger resharing
     let verify_result = mpc_signer_accounts[0]
@@ -648,6 +658,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         .max_gas()
         .transact()
         .await?;
+    dbg!(&verify_result);
     assert!(
         verify_result.is_success(),
         "verify_tee call failed: {:?}",
@@ -674,10 +685,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
         .iter()
         .map(|(account_id, _, _)| account_id.clone())
         .collect();
-    let expected_accounts: Vec<_> = remaining_accounts
-        .iter()
-        .map(|a| a.id().as_v2_account_id())
-        .collect();
+    let expected_accounts: Vec<_> = remaining_accounts.iter().map(|a| a.id().clone()).collect();
     assert_eq!(final_accounts, expected_accounts);
 
     Ok(())

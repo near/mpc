@@ -1,8 +1,9 @@
 use crate::{
     config::{
         generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
-        ConfigFile, IndexerConfig, KeygenConfig, PersistentSecrets, PresignatureConfig,
-        RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig, WebUIConfig,
+        ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PersistentSecrets,
+        PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
+        WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -698,6 +699,7 @@ impl Cli {
             signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
+            foreign_chains: ForeignChainsConfig::default(),
             cores: Some(4),
         })
     }
@@ -841,7 +843,7 @@ mod tests {
         };
 
         let result = futures::executor::block_on(import_cmd.run());
-        assert!(result.is_ok(), "Import command failed: {:?}", result.err());
+        result.expect("Import command should succeed for valid input");
 
         // Test export functionality
         let export_cmd = ExportKeyshareCmd {
@@ -850,7 +852,7 @@ mod tests {
         };
 
         let result = futures::executor::block_on(export_cmd.run());
-        assert!(result.is_ok(), "Export command failed: {:?}", result.err());
+        result.expect("Export command should succeed after import");
 
         // Verify the exported data matches what we imported
         // For a more thorough test, we could capture stdout and verify the JSON content

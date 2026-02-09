@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.3.2",
+    "version": "3.4.1",
     "build": {
       "compiler": "rustc 1.86.0",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -200,6 +200,26 @@ expression: abi
         }
       },
       {
+        "name": "get_foreign_chain_policy",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainPolicy"
+          }
+        }
+      },
+      {
+        "name": "get_foreign_chain_policy_proposals",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/ForeignChainPolicyVotes"
+          }
+        }
+      },
+      {
         "name": "get_pending_ckd_request",
         "kind": "view",
         "params": {
@@ -237,6 +257,34 @@ expression: abi
               "name": "request",
               "type_schema": {
                 "$ref": "#/definitions/SignatureRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_pending_verify_foreign_tx_request",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
               }
             }
           ]
@@ -431,11 +479,6 @@ expression: abi
             }
           }
         }
-      },
-      {
-        "name": "post_upgrade_cleanup",
-        "doc": " Removes stale data from the contract to be removed after a contract upgrade. Some\n containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,\n as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.",
-        "kind": "call"
       },
       {
         "name": "propose_update",
@@ -729,8 +772,35 @@ expression: abi
         }
       },
       {
+        "name": "respond_verify_foreign_tx",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            },
+            {
+              "name": "response",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
         "kind": "call",
         "modifiers": [
           "private"
@@ -791,6 +861,39 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PromiseOrValueSignatureResponse"
+          }
+        }
+      },
+      {
+        "name": "return_verify_foreign_tx_and_clean_state_on_success",
+        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
           }
         }
       },
@@ -939,6 +1042,25 @@ expression: abi
         }
       },
       {
+        "name": "verify_foreign_transaction",
+        "doc": " Submit a verification + signing request for a foreign chain transaction.\n MPC nodes will verify the transaction on the foreign chain before signing.\n The signed payload is derived from the transaction ID (hash of tx_id).",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequestArgs"
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "verify_tee",
         "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case less than `threshold` participants run in an accepted TEE State.",
         "kind": "call",
@@ -1058,6 +1180,28 @@ expression: abi
                 },
                 "maxItems": 32,
                 "minItems": 32
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_foreign_chain_policy",
+        "doc": " Propose a new foreign chain policy.\n If all current participants vote for the exact same policy, it is applied.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "policy",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignChainPolicy"
               }
             }
           ]
@@ -1248,6 +1392,43 @@ expression: abi
               "$ref": "#/definitions/Ed25519PublicKey"
             }
           }
+        },
+        "BitcoinExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "BitcoinRpcRequest": {
+          "type": "object",
+          "required": [
+            "confirmations",
+            "extractors",
+            "tx_id"
+          ],
+          "properties": {
+            "confirmations": {
+              "$ref": "#/definitions/BlockConfirmations"
+            },
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/BitcoinExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/BitcoinTxId"
+            }
+          }
+        },
+        "BitcoinTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "BlockConfirmations": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         },
         "Bls12381G1PublicKey": {
           "type": "string"
@@ -1500,6 +1681,11 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "DomainId2": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "DomainRegistry": {
           "description": "All the domains present in the contract, as well as the next domain ID which is kept to ensure that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to add domains but ultimately canceled that process.)",
           "type": "object",
@@ -1551,11 +1737,47 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
+        "Ed25519Signature": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
+        },
         "EpochId": {
           "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "EthereumExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "EthereumRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EthereumExtractor"
+              }
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EthereumTxId"
+            }
+          }
+        },
+        "EthereumTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "EventLog": {
           "description": "Represents an event log entry in the system",
@@ -1593,6 +1815,189 @@ expression: abi
               "minimum": 0.0
             }
           }
+        },
+        "ExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "U64"
+              ],
+              "properties": {
+                "U64": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Hash256"
+              ],
+              "properties": {
+                "Hash256": {
+                  "$ref": "#/definitions/Hash256"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "Finality": {
+          "type": "string",
+          "enum": [
+            "Optimistic",
+            "Final"
+          ]
+        },
+        "ForeignBlockId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "ForeignChain": {
+          "type": "string",
+          "enum": [
+            "Solana",
+            "Bitcoin",
+            "Ethereum",
+            "Base",
+            "Bnb",
+            "Arbitrum"
+          ]
+        },
+        "ForeignChainConfig": {
+          "type": "object",
+          "required": [
+            "chain",
+            "providers"
+          ],
+          "properties": {
+            "chain": {
+              "$ref": "#/definitions/ForeignChain"
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/RpcProvider"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "ForeignChainPolicy": {
+          "type": "object",
+          "required": [
+            "chains"
+          ],
+          "properties": {
+            "chains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ForeignChainConfig"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "ForeignChainPolicyVotes": {
+          "type": "object",
+          "required": [
+            "proposal_by_account"
+          ],
+          "properties": {
+            "proposal_by_account": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ForeignChainPolicy"
+              }
+            }
+          }
+        },
+        "ForeignChainRpcRequest": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Ethereum"
+              ],
+              "properties": {
+                "Ethereum": {
+                  "$ref": "#/definitions/EthereumRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Solana"
+              ],
+              "properties": {
+                "Solana": {
+                  "$ref": "#/definitions/SolanaRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Bitcoin"
+              ],
+              "properties": {
+                "Bitcoin": {
+                  "$ref": "#/definitions/BitcoinRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ForeignTxSignPayload": {
+          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "V1"
+              ],
+              "properties": {
+                "V1": {
+                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ForeignTxSignPayloadV1": {
+          "type": "object",
+          "required": [
+            "observed_at_block",
+            "request",
+            "values"
+          ],
+          "properties": {
+            "observed_at_block": {
+              "$ref": "#/definitions/ForeignBlockId"
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
+            }
+          }
+        },
+        "Hash256": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -1748,6 +2153,31 @@ expression: abi
                   "$ref": "#/definitions/KeyEvent"
                 }
               ]
+            }
+          }
+        },
+        "K256AffinePoint": {
+          "description": "AffinePoint on the Secp256k1 curve",
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "K256Scalar": {
+          "type": "object",
+          "required": [
+            "scalar"
+          ],
+          "properties": {
+            "scalar": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -2166,6 +2596,21 @@ expression: abi
             }
           ]
         },
+        "PromiseOrValueVerifyForeignTransactionResponse": {
+          "type": "object",
+          "required": [
+            "payload",
+            "signature"
+          ],
+          "properties": {
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse2"
+            }
+          }
+        },
         "ProposedUpdates": {
           "type": "object",
           "required": [
@@ -2377,6 +2822,17 @@ expression: abi
             },
             "resharing_key": {
               "$ref": "#/definitions/KeyEvent"
+            }
+          }
+        },
+        "RpcProvider": {
+          "type": "object",
+          "required": [
+            "rpc_url"
+          ],
+          "properties": {
+            "rpc_url": {
+              "type": "string"
             }
           }
         },
@@ -2613,6 +3069,56 @@ expression: abi
             }
           ]
         },
+        "SignatureResponse2": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "big_r",
+                "recovery_id",
+                "s",
+                "scheme"
+              ],
+              "properties": {
+                "big_r": {
+                  "$ref": "#/definitions/K256AffinePoint"
+                },
+                "recovery_id": {
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "s": {
+                  "$ref": "#/definitions/K256Scalar"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Secp256k1"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "scheme",
+                "signature"
+              ],
+              "properties": {
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "Ed25519"
+                  ]
+                },
+                "signature": {
+                  "$ref": "#/definitions/Ed25519Signature"
+                }
+              }
+            }
+          ]
+        },
         "SignatureScheme": {
           "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
           "type": "string",
@@ -2622,6 +3128,84 @@ expression: abi
             "Bls12381",
             "V2Secp256k1"
           ]
+        },
+        "SolanaExtractor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "SolanaProgramIdIndex"
+              ],
+              "properties": {
+                "SolanaProgramIdIndex": {
+                  "type": "object",
+                  "required": [
+                    "ix_index"
+                  ],
+                  "properties": {
+                    "ix_index": {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "SolanaDataHash"
+              ],
+              "properties": {
+                "SolanaDataHash": {
+                  "type": "object",
+                  "required": [
+                    "ix_index"
+                  ],
+                  "properties": {
+                    "ix_index": {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "SolanaRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SolanaExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/Finality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/SolanaTxId"
+            }
+          }
+        },
+        "SolanaTxId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
@@ -2731,6 +3315,16 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
+        "Tweak2": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 32,
+          "minItems": 32
+        },
         "UpdateHash": {
           "description": "An update hash",
           "oneOf": [
@@ -2830,6 +3424,71 @@ expression: abi
               "description": "The digest of the MPC image running.",
               "type": "string",
               "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            }
+          }
+        },
+        "VerifyForeignTransactionRequest": {
+          "type": "object",
+          "required": [
+            "domain_id",
+            "payload_version",
+            "request",
+            "tweak"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            },
+            "tweak": {
+              "$ref": "#/definitions/Tweak2"
+            }
+          }
+        },
+        "VerifyForeignTransactionRequestArgs": {
+          "type": "object",
+          "required": [
+            "derivation_path",
+            "domain_id",
+            "payload_version",
+            "request"
+          ],
+          "properties": {
+            "derivation_path": {
+              "type": "string"
+            },
+            "domain_id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            }
+          }
+        },
+        "VerifyForeignTransactionResponse": {
+          "type": "object",
+          "required": [
+            "payload",
+            "signature"
+          ],
+          "properties": {
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse2"
             }
           }
         },

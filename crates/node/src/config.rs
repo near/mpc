@@ -7,10 +7,16 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
-
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::Path,
+};
+
+mod foreign_chains;
+pub use foreign_chains::{
+    AuthConfig, BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant,
+    EthereumChainConfig, EthereumProviderConfig, ForeignChainsConfig, SolanaApiVariant,
+    SolanaChainConfig, SolanaProviderConfig, TokenConfig,
 };
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
@@ -164,6 +170,8 @@ pub struct ConfigFile {
     pub ckd: CKDConfig,
     #[serde(default)]
     pub keygen: KeygenConfig,
+    #[serde(default)]
+    pub foreign_chains: ForeignChainsConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,
@@ -173,7 +181,12 @@ impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
         let config: Self = serde_yaml::from_str(&file)?;
+        config.validate().context("Validate config.yaml")?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.foreign_chains.validate()
     }
 }
 
@@ -574,7 +587,8 @@ pub mod tests {
         let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 1)?;
 
         // check that the key will not be overwritten
-        assert!(PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242).is_ok());
+        let _ = PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242)
+            .expect("Existing secrets should be reusable");
 
         let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
 
@@ -673,7 +687,10 @@ pub mod tests {
 
         let msg = b"hello world";
         let signature = secrets.near_signer_key.try_sign(msg).unwrap();
-        assert!(secrets.near_signer_key.verify(msg, &signature).is_ok());
+        secrets
+            .near_signer_key
+            .verify(msg, &signature)
+            .expect("Signature should verify with matching key");
 
         let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
         assert_eq!(secrets_str, secrets_str_copy);

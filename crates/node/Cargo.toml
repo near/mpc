@@ -26,6 +26,7 @@ flume = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
+http = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
@@ -45,6 +46,7 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
+num_enum = { workspace = true }
 pprof = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
@@ -53,6 +55,7 @@ rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
@@ -61,7 +64,6 @@ tempfile = { workspace = true }
 test-utils = { workspace = true }
 thiserror = { workspace = true }
 threshold-signatures = { workspace = true }
-tikv-jemallocator = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-metrics = { workspace = true }
@@ -79,7 +81,7 @@ url = { workspace = true }
 pprof = { workspace = true, features = ["frame-pointer"] }
 
 [build-dependencies]
-built = { version = "0.8", features = ["git2", "chrono"] }
+built = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
@@ -91,3 +93,6 @@ rstest = { workspace = true }
 serial_test = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }
+
+[lints]
+workspace = true

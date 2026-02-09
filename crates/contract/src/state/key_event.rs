@@ -10,7 +10,6 @@ use crate::state::AuthenticatedParticipantId;
 use near_sdk::BlockHeight;
 use near_sdk::{env, log, near};
 use std::collections::BTreeSet;
-use utilities::AccountIdExtV1;
 
 /// Maintains the state for the current key generation or resharing.
 #[near(serializers=[borsh, json])]
@@ -64,7 +63,7 @@ impl KeyEvent {
     /// Ensures that the signer account matches the leader participant.
     /// The leader is the one with the lowest participant ID.
     pub fn verify_leader(&self) -> Result<(), Error> {
-        let signer_account_id = env::signer_account_id().as_v2_account_id();
+        let signer_account_id = env::signer_account_id();
         if self
             .parameters
             .participants()

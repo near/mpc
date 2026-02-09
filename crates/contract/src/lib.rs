@@ -18,18 +18,23 @@ pub mod tee;
 pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
-pub mod v3_0_2_state;
-pub mod v3_2_0_state;
+pub mod v3_3_2_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
 mod dto_mapping;
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
-    dto_mapping::{IntoContractType, IntoInterfaceType, TryIntoContractType, TryIntoInterfaceType},
+    dto_mapping::{
+        args_into_verify_foreign_tx_request, IntoContractType, IntoInterfaceType,
+        TryIntoContractType, TryIntoInterfaceType,
+    },
     errors::{Error, RequestError},
     primitives::ckd::{CKDRequest, CKDRequestArgs},
     state::ContractNotInitialized,
@@ -39,9 +44,12 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
-use contract_interface::types as dtos;
+use contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse,
+};
 use crypto_shared::{
-    derive_key_secp256k1, derive_tweak,
+    derive_foreign_tx_tweak, derive_key_secp256k1, derive_tweak,
     kdf::{check_ec_signature, derive_public_key_edwards_point_ed25519},
     types::{PublicKeyExtended, PublicKeyExtendedConversionError, SignatureResponse},
 };
@@ -50,20 +58,18 @@ use errors::{
 };
 use k256::elliptic_curve::PrimeField;
 
-use mpc_attestation::attestation::Attestation;
 use mpc_primitives::hash::LauncherDockerComposeHash;
-use near_account_id::AccountId;
 use near_sdk::{
     env::{self, ed25519_verify},
-    log, near_bindgen,
+    log, near, near_bindgen,
     state::ContractState,
     store::{IterableMap, LookupMap},
-    CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
+    AccountId, CryptoHash, Gas, GasWeight, NearToken, Promise, PromiseError, PromiseOrValue,
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
     domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
-    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
+    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
 };
@@ -73,7 +79,6 @@ use tee::{
     proposal::MpcDockerImageHash,
     tee_state::{NodeId, ParticipantInsertion, TeeValidationResult},
 };
-use utilities::{AccountIdExtV1, AccountIdExtV2};
 
 /// Register used to receive data id from `promise_await_data`.
 /// Note: This is an implementation constant, not a configurable policy value.
@@ -98,7 +103,10 @@ pub struct MpcContract {
     protocol_state: ProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -119,11 +127,33 @@ pub struct MpcContract {
 /// 3. "Lazy cleanup" methods (like `post_upgrade_cleanup`) are then called in subsequent,
 ///    separate transactions to gradually deallocate this storage.
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct StaleData {
-    /// Holds the TEE attestations from the previous contract version.
-    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
-    /// ensuring the `IterableMap` handle is properly dropped.
-    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
+struct StaleData {}
+
+#[near(serializers=[borsh])]
+#[derive(Debug)]
+struct ForeignChainPolicyVotes {
+    proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
+}
+
+impl Default for ForeignChainPolicyVotes {
+    fn default() -> Self {
+        Self {
+            proposal_by_account: IterableMap::new(StorageKey::ForeignChainPolicyVotes),
+        }
+    }
+}
+
+impl ForeignChainPolicyVotes {
+    fn to_dto(&self) -> dtos::ForeignChainPolicyVotes {
+        let mut proposal_by_account = BTreeMap::new();
+        for (account_id, policy) in self.proposal_by_account.iter() {
+            proposal_by_account.insert(account_id.clone(), policy.clone());
+        }
+
+        dtos::ForeignChainPolicyVotes {
+            proposal_by_account,
+        }
+    }
 }
 
 impl MpcContract {
@@ -150,6 +180,32 @@ impl MpcContract {
         self.pending_ckd_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
+    }
+
+    /// Returns true if the request was already pending
+    fn add_verify_foreign_tx_request(
+        &mut self,
+        request: &VerifyForeignTransactionRequest,
+        data_id: CryptoHash,
+    ) -> bool {
+        self.pending_verify_foreign_tx_requests
+            .insert(request.clone(), YieldIndex { data_id })
+            .is_some()
+    }
+
+    fn validate_foreign_chain_policy(policy: &dtos::ForeignChainPolicy) -> Result<(), Error> {
+        let mut seen_chains = BTreeSet::new();
+        for config in &policy.chains {
+            if config.providers.is_empty() {
+                return Err(InvalidParameters::MalformedPayload
+                    .message("foreign chain config must include at least one provider"));
+            }
+            if !seen_chains.insert(config.chain.clone()) {
+                return Err(InvalidParameters::MalformedPayload
+                    .message("duplicate foreign chain entries in policy"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -244,7 +300,7 @@ impl MpcContract {
         let request = SignatureRequest::new(
             request.domain_id,
             request.payload,
-            &predecessor.as_v2_account_id(),
+            &predecessor,
             &request.path,
         );
 
@@ -298,8 +354,7 @@ impl MpcContract {
         predecessor: Option<AccountId>,
         domain_id: Option<DomainId>,
     ) -> Result<dtos::PublicKey, Error> {
-        let predecessor: AccountId =
-            predecessor.unwrap_or_else(|| env::predecessor_account_id().as_v2_account_id());
+        let predecessor: AccountId = predecessor.unwrap_or_else(env::predecessor_account_id);
         let tweak = derive_tweak(&predecessor, &path);
 
         let domain = domain_id.unwrap_or_else(DomainId::legacy_ecdsa_id);
@@ -409,13 +464,11 @@ impl MpcContract {
             }
         }
 
-        let mpc_contract = self;
-
-        if !mpc_contract.accept_requests {
+        if !self.accept_requests {
             env::panic_str(&TeeError::TeeValidationFailed.to_string())
         }
 
-        let account_id = env::predecessor_account_id().as_v2_account_id();
+        let account_id = env::predecessor_account_id();
         let request = CKDRequest::new(
             request.app_public_key,
             request.domain_id,
@@ -424,8 +477,7 @@ impl MpcContract {
         );
 
         let callback_gas = Gas::from_tgas(
-            mpc_contract
-                .config
+            self.config
                 .return_ck_and_clean_state_on_success_call_tera_gas,
         );
 
@@ -442,8 +494,113 @@ impl MpcContract {
             .expect("read_register failed")
             .try_into()
             .expect("conversion to CryptoHash failed");
-        if mpc_contract.add_ckd_request(&request, return_ck_id) {
+        if self.add_ckd_request(&request, return_ck_id) {
             log!("request already present, overriding callback.")
+        }
+
+        env::promise_return(promise_index);
+    }
+
+    /// Submit a verification + signing request for a foreign chain transaction.
+    /// MPC nodes will verify the transaction on the foreign chain before signing.
+    /// The signed payload is derived from the transaction ID (hash of tx_id).
+    #[handle_result]
+    #[payable]
+    pub fn verify_foreign_transaction(&mut self, request: VerifyForeignTransactionRequestArgs) {
+        log!(
+            "verify_foreign_transaction: predecessor={:?}, request={:?}",
+            env::predecessor_account_id(),
+            request
+        );
+
+        let domains = match self.protocol_state.domain_registry() {
+            Ok(domains) => domains,
+            Err(err) => env::panic_str(&err.to_string()),
+        };
+        let Some(domain_config) = domains.get_domain_by_domain_id(request.domain_id.0.into())
+        else {
+            env::panic_str(
+                &InvalidParameters::DomainNotFound {
+                    provided: request.domain_id.0.into(),
+                }
+                .to_string(),
+            );
+        };
+
+        if domain_config.scheme != SignatureScheme::Secp256k1 {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Provided domain ID key type is not Secp256k1")
+                    .to_string(),
+            );
+        }
+
+        let gas_required =
+            Gas::from_tgas(self.config.sign_call_gas_attachment_requirement_tera_gas);
+
+        // Make sure call will not run out of gas doing yield/resume logic
+        if env::prepaid_gas() < gas_required {
+            env::panic_str(
+                &InvalidParameters::InsufficientGas
+                    .message(format!(
+                        "Provided: {}, required: {}",
+                        env::prepaid_gas(),
+                        gas_required
+                    ))
+                    .to_string(),
+            );
+        }
+
+        // Check deposit and refund if required
+        let predecessor = env::predecessor_account_id();
+        let deposit = env::attached_deposit();
+
+        match deposit.checked_sub(MINIMUM_SIGN_REQUEST_DEPOSIT) {
+            None => {
+                env::panic_str(
+                    &InvalidParameters::InsufficientDeposit
+                        .message(format!(
+                            "Require a deposit of {} yoctonear, found: {}",
+                            MINIMUM_SIGN_REQUEST_DEPOSIT.as_yoctonear(),
+                            deposit.as_yoctonear(),
+                        ))
+                        .to_string(),
+                );
+            }
+            Some(diff) => {
+                if diff > NearToken::from_yoctonear(0) {
+                    log!("refund excess deposit {diff} to {predecessor}");
+                    Promise::new(predecessor.clone()).transfer(diff).detach();
+                }
+            }
+        }
+
+        if !self.accept_requests {
+            env::panic_str(&TeeError::TeeValidationFailed.to_string())
+        }
+
+        let callback_gas = Gas::from_tgas(
+            self.config
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+        );
+
+        let request = args_into_verify_foreign_tx_request(request, &predecessor);
+
+        let promise_index = env::promise_yield_create(
+            "return_verify_foreign_tx_and_clean_state_on_success",
+            serde_json::to_vec(&(&request,)).unwrap(),
+            callback_gas,
+            GasWeight(0),
+            DATA_ID_REGISTER,
+        );
+
+        // Store the request in the contract's local state
+        let return_sig_id: CryptoHash = env::read_register(DATA_ID_REGISTER)
+            .expect("read_register failed")
+            .try_into()
+            .expect("conversion to CryptoHash failed");
+        if self.add_verify_foreign_tx_request(&request, return_sig_id) {
+            log!("signature request already present, overriding callback.")
         }
 
         env::promise_return(promise_index);
@@ -565,6 +722,85 @@ impl MpcContract {
         }
     }
 
+    #[handle_result]
+    pub fn respond_verify_foreign_tx(
+        &mut self,
+        request: VerifyForeignTransactionRequest,
+        response: VerifyForeignTransactionResponse,
+    ) -> Result<(), Error> {
+        let signer = Self::assert_caller_is_signer();
+
+        log!(
+            "respond_verify_foreign_tx: signer={}, request={:?}",
+            &signer,
+            &request
+        );
+
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
+        if !self.protocol_state.is_running_or_resharing() {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+
+        if !self.accept_requests {
+            return Err(TeeError::TeeValidationFailed.into());
+        }
+
+        let domain = request.domain_id.clone();
+        let public_key = self.public_key_extended(domain.0.into())?;
+
+        let signature_is_valid = match (&response.signature, public_key) {
+            (
+                dtos::SignatureResponse::Secp256k1(signature_response),
+                PublicKeyExtended::Secp256k1 { near_public_key },
+            ) => {
+                // generate the expected public key
+                let expected_public_key = derive_key_secp256k1(
+                    &near_public_key_to_affine_point(near_public_key),
+                    &crate::primitives::signature::Tweak::new(request.tweak.0),
+                )
+                .map_err(RespondError::from)?;
+
+                let payload_hash: [u8; 32] = response
+                    .payload
+                    .compute_msg_hash()
+                    .map_err(|_| RespondError::InvalidSignature)?
+                    .into();
+
+                // Check the signature is correct
+                check_ec_signature(
+                    &expected_public_key,
+                    &signature_response.big_r.clone().try_into_contract_type()?,
+                    &signature_response.s.clone().try_into_contract_type()?,
+                    &payload_hash,
+                    signature_response.recovery_id,
+                )
+                .is_ok()
+            }
+            (signature_response, public_key_requested) => {
+                return Err(RespondError::SignatureSchemeMismatch.message(format!(
+                    "Verify Foreign tx response from MPC: {:?}. Key requested by user {:?}",
+                    signature_response, public_key_requested
+                )));
+            }
+        };
+
+        if !signature_is_valid {
+            return Err(RespondError::InvalidSignature.into());
+        }
+
+        // First get the yield promise of the (potentially timed out) request.
+        if let Some(YieldIndex { data_id }) =
+            self.pending_verify_foreign_tx_requests.remove(&request)
+        {
+            // Finally, resolve the promise. This will have no effect if the request already timed.
+            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+            Ok(())
+        } else {
+            Err(InvalidParameters::RequestNotFound.into())
+        }
+    }
+
     /// (Prospective) Participants can submit their tee participant information through this
     /// endpoint.
     #[payable]
@@ -636,9 +872,7 @@ impl MpcContract {
             // Refund the difference if the proposer attached more than required
             if let Some(diff) = attached.checked_sub(cost) {
                 if diff > NearToken::from_yoctonear(0) {
-                    Promise::new(account_id.as_v1_account_id())
-                        .transfer(diff)
-                        .detach();
+                    Promise::new(account_id).transfer(diff).detach();
                 }
             }
         }
@@ -741,6 +975,52 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
             self.protocol_state = new_state;
         }
+        Ok(())
+    }
+
+    /// Propose a new foreign chain policy.
+    /// If all current participants vote for the exact same policy, it is applied.
+    #[handle_result]
+    pub fn vote_foreign_chain_policy(
+        &mut self,
+        policy: dtos::ForeignChainPolicy,
+    ) -> Result<(), Error> {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            env::panic_str("protocol must be in running state");
+        };
+
+        Self::validate_foreign_chain_policy(&policy)?;
+
+        let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
+        let voter = dtos::AccountId(voter.get().to_string());
+
+        if self
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .insert(voter, policy.clone())
+            .is_some()
+        {
+            log!("removed old vote for signer");
+        }
+
+        let total_votes = running_state
+            .parameters
+            .participants()
+            .participants()
+            .iter()
+            .filter(|(account_id, _, _)| {
+                self.foreign_chain_policy_votes
+                    .proposal_by_account
+                    .get(&dtos::AccountId(account_id.to_string()))
+                    .is_some_and(|prop| prop == &policy)
+            })
+            .count();
+
+        if total_votes == running_state.parameters.participants().len() {
+            self.foreign_chain_policy = policy;
+            self.foreign_chain_policy_votes.proposal_by_account.clear();
+        }
+
         Ok(())
     }
 
@@ -936,7 +1216,7 @@ impl MpcContract {
         #[serializer(borsh)] args: ProposeUpdateArgs,
     ) -> Result<UpdateId, Error> {
         // Only voters can propose updates:
-        let proposer = self.voter_or_panic().as_v1_account_id();
+        let proposer = self.voter_or_panic();
         let update: Update = args.try_into()?;
 
         let attached = env::attached_deposit();
@@ -1214,7 +1494,12 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: ProposedUpdates::default(),
+            foreign_chain_policy: Default::default(),
+            foreign_chain_policy_votes: Default::default(),
             config: init_config.map(Into::into).unwrap_or_default(),
             tee_state,
             accept_requests: true,
@@ -1270,7 +1555,12 @@ impl MpcContract {
             )),
             pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: Default::default(),
+            foreign_chain_policy: Default::default(),
+            foreign_chain_policy_votes: Default::default(),
             tee_state,
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
@@ -1290,19 +1580,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_0_2_state::MpcContract>() {
+        match try_state_read::<v3_3_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3_0_2 state: {:?}", err);
-            }
-        };
-
-        match try_state_read::<v3_2_0_state::MpcContract>() {
-            Ok(Some(state)) => return Ok(state.into()),
-            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
-            Err(err) => {
-                log!("failed to deserialize state into 3_2_0 state: {:?}", err);
+                log!("failed to deserialize state into 3_3_2 state: {:?}", err);
             }
         };
 
@@ -1311,19 +1593,6 @@ impl MpcContract {
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
-    }
-
-    /// Removes stale data from the contract to be removed after a contract upgrade. Some
-    /// containers are expensive to run destructors on, thus we don't include it in the contract upgrade itself,
-    /// as it can run out of gas. Thus we create methods to run these destructors manually post upgrade.
-    pub fn post_upgrade_cleanup(&mut self) {
-        let Some(mut attestations) = self.stale_data.participant_attestations.take() else {
-            panic!("stale participant_attestations data has already been cleared");
-        };
-
-        attestations.clear();
-
-        log!("Successfully cleared stale TEE attestations.");
     }
 
     pub fn state(&self) -> &ProtocolContractState {
@@ -1357,8 +1626,25 @@ impl MpcContract {
         self.pending_ckd_requests.get(request).cloned()
     }
 
+    pub fn get_pending_verify_foreign_tx_request(
+        &self,
+        request: &VerifyForeignTransactionRequest,
+    ) -> Option<YieldIndex> {
+        self.pending_verify_foreign_tx_requests
+            .get(request)
+            .cloned()
+    }
+
     pub fn config(&self) -> dtos::Config {
         dtos::Config::from(&self.config)
+    }
+
+    pub fn get_foreign_chain_policy(&self) -> dtos::ForeignChainPolicy {
+        self.foreign_chain_policy.clone()
+    }
+
+    pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
+        self.foreign_chain_policy_votes.to_dto()
     }
 
     // contract version
@@ -1391,7 +1677,7 @@ impl MpcContract {
         }
     }
 
-    /// Upon success, removes the confidential key from state and returns it.
+    /// Upon success, removes the confidential key request from state and returns it.
     /// If the ckd request times out, removes the ckd request from state and panics to fail the
     /// original transaction
     #[private]
@@ -1404,6 +1690,31 @@ impl MpcContract {
             Ok(ck) => PromiseOrValue::Value(ck),
             Err(_) => {
                 self.pending_ckd_requests.remove(&request);
+                let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
+                let promise = Promise::new(env::current_account_id()).function_call(
+                    "fail_on_timeout".to_string(),
+                    vec![],
+                    NearToken::from_near(0),
+                    fail_on_timeout_gas,
+                );
+                near_sdk::PromiseOrValue::Promise(promise.as_return())
+            }
+        }
+    }
+
+    /// Upon success, removes the verify foreign tx request from state and returns it.
+    /// If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the
+    /// original transaction
+    #[private]
+    pub fn return_verify_foreign_tx_and_clean_state_on_success(
+        &mut self,
+        request: VerifyForeignTransactionRequest,
+        #[callback_result] response: Result<VerifyForeignTransactionResponse, PromiseError>,
+    ) -> PromiseOrValue<VerifyForeignTransactionResponse> {
+        match response {
+            Ok(response) => PromiseOrValue::Value(response),
+            Err(_) => {
+                self.pending_verify_foreign_tx_requests.remove(&request);
                 let fail_on_timeout_gas = Gas::from_tgas(self.config.fail_on_timeout_tera_gas);
                 let promise = Promise::new(env::current_account_id()).function_call(
                     "fail_on_timeout".to_string(),
@@ -1432,7 +1743,7 @@ impl MpcContract {
         if !Self::caller_is_signer() {
             return Err(InvalidParameters::CallerNotSigner.into());
         }
-        let voter = env::signer_account_id().as_v2_account_id();
+        let voter = env::signer_account_id();
         self.protocol_state.authenticate_update_vote()?;
         Ok(voter)
     }
@@ -1493,7 +1804,7 @@ impl MpcContract {
             signer_id, predecessor_id
         );
 
-        signer_id.as_v2_account_id()
+        signer_id
     }
 }
 
@@ -1698,8 +2009,12 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
-    use std::{collections::HashSet, str::FromStr};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        str::FromStr,
+    };
 
     use super::*;
     use crate::crypto_shared::k256_types;
@@ -1722,7 +2037,11 @@ mod tests {
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
     use crate::tee::tee_state::NodeId;
-    use dtos::{Attestation, Ed25519PublicKey, MockAttestation};
+    use assert_matches::assert_matches;
+    use contract_interface::types::{
+        BitcoinExtractor, BitcoinRpcRequest, ExtractedValue, ForeignTxSignPayloadV1,
+    };
+    use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
     use elliptic_curve::Group;
     use k256::elliptic_curve::sec1::ToEncodedPoint as _;
@@ -1744,6 +2063,7 @@ mod tests {
     use rand_core::CryptoRngCore;
     use rstest::rstest;
     use sha2::{Digest, Sha256};
+
     use test_utils::attestation::{
         image_digest, mock_dto_dstack_attestation, near_account_key, p2p_tls_key,
         VALID_ATTESTATION_TIMESTAMP,
@@ -1840,9 +2160,7 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        let contract_account_id = AccountId::from_str("contract_account.near")
-            .unwrap()
-            .as_v1_account_id();
+        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
             .predecessor_account_id(contract_account_id.clone())
@@ -1892,8 +2210,8 @@ mod tests {
         // Build a new simulated environment with this node as caller
         let mut ctx_builder = VMContextBuilder::new();
         ctx_builder
-            .signer_account_id(node_id.account_id.clone().as_v1_account_id())
-            .predecessor_account_id(node_id.account_id.clone().as_v1_account_id())
+            .signer_account_id(node_id.account_id.clone())
+            .predecessor_account_id(node_id.account_id.clone())
             .attached_deposit(NearToken::from_yoctonear(1));
 
         testing_env!(ctx_builder.build());
@@ -1929,17 +2247,14 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload.clone(),
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
         contract.get_pending_request(&signature_request).unwrap();
 
         // simulate signature and response to the signing request
-        let derivation_path = derive_tweak(
-            &context.predecessor_account_id.as_v2_account_id(),
-            &key_path,
-        );
+        let derivation_path = derive_tweak(&context.predecessor_account_id, &key_path);
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
             elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
         let derived_secret_key = derive_secret_key(&secret_key_ec, &derivation_path);
@@ -1984,13 +2299,13 @@ mod tests {
     }
 
     #[test]
-    fn test_signature_simple() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists() {
         test_signature_common(true, false);
         test_signature_common(false, false);
     }
 
     #[test]
-    fn test_signature_simple_legacy() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
         test_signature_common(true, true);
         test_signature_common(false, true);
     }
@@ -2010,7 +2325,7 @@ mod tests {
         let signature_request = SignatureRequest::new(
             DomainId::default(),
             payload,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.path,
         );
         contract.sign(request);
@@ -2025,7 +2340,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ckd_simple() {
+    fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
@@ -2040,7 +2355,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2081,7 +2396,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key,
             request.domain_id,
-            &context.predecessor_account_id.as_v2_account_id(),
+            &context.predecessor_account_id,
             &request.derivation_path,
         );
         contract.request_app_private_key(request);
@@ -2095,6 +2410,118 @@ mod tests {
         assert!(contract.get_pending_ckd_request(&ckd_request).is_none());
     }
 
+    #[test]
+    fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
+            unreachable!();
+        };
+        let derivation_path = "what is it".to_string();
+        let request_args = VerifyForeignTransactionRequestArgs {
+            derivation_path: derivation_path.clone(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let predecessor = context.predecessor_account_id;
+
+        // When
+        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+        contract.verify_foreign_transaction(request_args);
+        contract
+            .get_pending_verify_foreign_tx_request(&request)
+            .unwrap();
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            observed_at_block: [0u8; 32].into(),
+            request: request.request.clone(),
+            values: vec![ExtractedValue::U64(2)],
+        });
+        let payload_hash = payload.compute_msg_hash().unwrap().0;
+        // simulate signature and response to the request
+        let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
+        let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
+            elliptic_curve::SecretKey::from_bytes(&secret_key.to_bytes()).unwrap();
+        let derived_secret_key = derive_secret_key(&secret_key_ec, &Tweak::new(tweak.0));
+        let secret_key = SigningKey::from_bytes(&derived_secret_key.to_bytes()).unwrap();
+        let (signature, recovery_id) = secret_key.sign_prehash_recoverable(&payload_hash).unwrap();
+        let (r, s) = signature.split_bytes();
+        let r = AffinePoint::decompact(&r).unwrap();
+        let mut r_bytes = [0u8; 33];
+        r_bytes.copy_from_slice(r.to_encoded_point(true).as_bytes());
+        let mut s_bytes = [0u8; 32];
+        s_bytes.copy_from_slice(s.as_ref());
+
+        let signature = dtos::SignatureResponse::Secp256k1(dtos::K256Signature {
+            big_r: dtos::K256AffinePoint {
+                affine_point: r_bytes,
+            },
+            s: dtos::K256Scalar { scalar: s_bytes },
+            recovery_id: recovery_id.to_byte(),
+        });
+
+        let response = VerifyForeignTransactionResponse { payload, signature };
+
+        with_active_participant_and_attested_context(&contract);
+
+        // Then
+        match contract.respond_verify_foreign_tx(request.clone(), response.clone()) {
+            Ok(_) => {
+                contract
+                    .return_verify_foreign_tx_and_clean_state_on_success(
+                        request.clone(),
+                        Ok(response),
+                    )
+                    .detach();
+
+                assert!(contract
+                    .get_pending_verify_foreign_tx_request(&request)
+                    .is_none(),);
+            }
+            Err(_) => panic!("respond_verify_foreign_tx should not fail"),
+        }
+    }
+
+    #[test]
+    fn test_verify_foreign_tx_timeout() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (context, mut contract, _secret_key) =
+            basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let request_args = VerifyForeignTransactionRequestArgs {
+            derivation_path: "".to_string(),
+            domain_id: DomainId::default().0.into(),
+            payload_version: 1,
+            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: [7u8; 32].into(),
+                confirmations: 2.into(),
+                extractors: vec![BitcoinExtractor::BlockHash],
+            }),
+        };
+        let predecessor = context.predecessor_account_id;
+        let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+
+        // When
+        contract.verify_foreign_transaction(request_args);
+
+        // Then
+        assert!(matches!(
+            contract.return_verify_foreign_tx_and_clean_state_on_success(
+                request.clone(),
+                Err(PromiseError::Failed)
+            ),
+            PromiseOrValue::Promise(_)
+        ));
+        assert!(contract
+            .get_pending_verify_foreign_tx_request(&request)
+            .is_none());
+    }
+
     fn setup_tee_test_contract(
         num_participants: usize,
         threshold_value: u64,
@@ -2103,8 +2530,8 @@ mod tests {
         let first_participant_id = participants.participants()[0].0.clone();
 
         let context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(context);
@@ -2137,8 +2564,8 @@ mod tests {
             .unwrap();
 
         let participant_context = VMContextBuilder::new()
-            .signer_account_id(account_id.clone().as_v1_account_id())
-            .predecessor_account_id(account_id.clone().as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(participant_context);
@@ -2170,8 +2597,8 @@ mod tests {
         threshold: Threshold,
     ) -> Result<(), Error> {
         let voting_context = VMContextBuilder::new()
-            .signer_account_id(first_participant_id.clone().as_v1_account_id())
-            .predecessor_account_id(first_participant_id.clone().as_v1_account_id())
+            .signer_account_id(first_participant_id.clone())
+            .predecessor_account_id(first_participant_id.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build();
         testing_env!(voting_context);
@@ -2294,7 +2721,7 @@ mod tests {
 
         // ❌ Case: signer != predecessor — should panic
         let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone().as_v1_account_id())
+            .signer_account_id(participant_id.clone())
             .predecessor_account_id("outsider.near".parse().unwrap())
             .attached_deposit(NearToken::from_near(1))
             .build();
@@ -2331,8 +2758,8 @@ mod tests {
 
         // use outsider account to call submit_participant_info
         let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build();
         testing_env!(ctx);
@@ -2375,7 +2802,7 @@ mod tests {
         let ckd_request = CKDRequest::new(
             app_public_key.clone(),
             request.domain_id,
-            &context.predecessor_account_id.clone().as_v2_account_id(),
+            &context.predecessor_account_id.clone(),
             &request.derivation_path,
         );
 
@@ -2394,8 +2821,8 @@ mod tests {
         let dto_public_key = tls_key.clone().try_into_dto_type().unwrap();
 
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -2418,8 +2845,8 @@ mod tests {
 
         // --- Step 5: Now switch to attested outsider and verify it panics ---
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone().as_v1_account_id())
-            .predecessor_account_id(outsider_id.clone().as_v1_account_id())
+            .signer_account_id(outsider_id.clone())
+            .predecessor_account_id(outsider_id.clone())
             .attached_deposit(NearToken::from_near(1))
             .build());
 
@@ -2463,8 +2890,13 @@ mod tests {
                 protocol_state,
                 pending_signature_requests: LookupMap::new(StorageKey::PendingSignatureRequestsV2),
                 pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequests),
+                pending_verify_foreign_tx_requests: LookupMap::new(
+                    StorageKey::PendingVerifyForeignTxRequests,
+                ),
                 accept_requests: true,
                 proposed_updates: Default::default(),
+                foreign_chain_policy: Default::default(),
+                foreign_chain_policy_votes: Default::default(),
                 config: Default::default(),
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
@@ -2488,7 +2920,7 @@ mod tests {
         Environment::new(None, Some(non_participant), None);
 
         let res = contract.start_node_migration(destination_node_info);
-        assert!(res.is_err());
+        let _ = res.expect_err("Non-participants should not start node migrations");
         assert!(contract.migration_info().is_empty());
     }
 
@@ -2517,7 +2949,7 @@ mod tests {
             );
             let destination_node_info = gen_random_destination_info();
             let res = contract.start_node_migration(destination_node_info.clone());
-            assert!(res.is_ok(), "res: {:?}", res);
+            res.expect("Participant should be able to start node migration");
             let expected_res = (account_id.clone(), None, Some(destination_node_info));
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2618,7 +3050,7 @@ mod tests {
                 public_key: bogus_ed25519_public_key(),
             };
             let res = contract.register_backup_service(backup_service_info.clone());
-            assert!(res.is_ok(), "res: {:?}", res);
+            res.expect("Participant should be able to register backup service");
             let expected_res = (account_id.clone(), Some(backup_service_info), None);
             assert_eq!(migration_info(&contract, account_id), expected_res);
             expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
@@ -2928,7 +3360,7 @@ mod tests {
             if let Some(expected_error_kind) = &self.expected_error_kind {
                 assert_eq!(res.unwrap_err().kind(), expected_error_kind);
             } else {
-                assert!(res.is_ok());
+                res.expect("Concluding a valid migration should succeed");
             }
             if let Some((expected_participant_id, expected_participant_info)) =
                 &self.expected_post_call_info
@@ -2994,7 +3426,9 @@ mod tests {
             .node_migrations
             .set_backup_service_info(non_participant_account_id.clone(), backup_service_info);
 
-        assert!(contract.cleanup_orphaned_node_migrations().is_ok());
+        contract
+            .cleanup_orphaned_node_migrations()
+            .expect("Cleanup should succeed for valid migrations");
         let result = contract.migration_info();
         assert_eq!(result, expected_vals);
     }
@@ -3206,8 +3640,8 @@ mod tests {
 
             // Remove the vote
             testing_env!(VMContextBuilder::new()
-                .signer_account_id(account_id.as_v1_account_id())
-                .predecessor_account_id(account_id.as_v1_account_id())
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
                 .build());
 
             contract.remove_update_vote();
@@ -3244,8 +3678,8 @@ mod tests {
         let account_id = test_update.votes.choose(&mut rng).unwrap();
         let account_id: AccountId = account_id.0.parse().unwrap();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
 
         contract.remove_update_vote();
@@ -3259,8 +3693,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3274,8 +3708,8 @@ mod tests {
         let mut contract = MpcContract::new_from_protocol_state(protocol_contract_state);
         let account_id = gen_account_id();
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(account_id.as_v1_account_id())
-            .predecessor_account_id(account_id.as_v1_account_id())
+            .signer_account_id(account_id.clone())
+            .predecessor_account_id(account_id)
             .build());
         contract.remove_update_vote();
     }
@@ -3316,8 +3750,8 @@ mod tests {
 
         // when: first participant calls vote_update (only 1 valid participant vote out of 3 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_1.as_v1_account_id())
-            .predecessor_account_id(participant_1.as_v1_account_id())
+            .signer_account_id(participant_1.clone())
+            .predecessor_account_id(participant_1)
             .build());
         // then: threshold not met (need 2 valid votes, have only 1)
         assert!(!contract.vote_update(update_id).unwrap());
@@ -3329,8 +3763,8 @@ mod tests {
 
         // when: second participant calls vote_update (2 valid participant votes out of 4 total)
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(participant_2.as_v1_account_id())
-            .predecessor_account_id(participant_2.as_v1_account_id())
+            .signer_account_id(participant_2.clone())
+            .predecessor_account_id(participant_2)
             .build());
         // then: threshold met (have 2 valid votes, need 2)
         assert!(contract.vote_update(update_id).unwrap());
@@ -3411,13 +3845,13 @@ mod tests {
             .participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         for participant_account_id in participant_account_ids {
             testing_env!(VMContextBuilder::new()
                 .signer_account_id(participant_account_id.clone())
-                .predecessor_account_id(participant_account_id)
+                .predecessor_account_id(participant_account_id.clone())
                 .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
                 .build());
 
@@ -3509,17 +3943,17 @@ mod tests {
         // Set time to exact expiry boundary
         let (first_account_id, _, _) = &participant_list[0];
         testing_env!(VMContextBuilder::new()
-            .signer_account_id(first_account_id.as_v1_account_id())
-            .predecessor_account_id(first_account_id.as_v1_account_id())
+            .signer_account_id(first_account_id.clone())
+            .predecessor_account_id(first_account_id.clone())
             .block_timestamp(ATTESTATION_EXPIRY_SECONDS * 1_000_000_000) // nanoseconds
             .build());
 
         // Call verify_tee - should trigger resharing
         let result = contract.verify_tee();
-        assert!(result.is_ok());
-        assert!(
-            result.unwrap(),
-            "verify_tee should return true when threshold is met"
+        assert_matches!(
+            result,
+            Ok(true),
+            "verify_tee should return Ok(true) when threshold is met"
         );
 
         // Verify contract transitioned to Resharing state
@@ -3555,55 +3989,6 @@ mod tests {
         assert_eq!(*resharing_state, expected_resharing_state);
     }
 
-    #[test]
-    fn test_post_upgrade_cleanup_success() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        let mut mock_stale_map = IterableMap::new(StorageKey::_DeprecatedTeeParticipantAttestation);
-        let node_pk = bogus_ed25519_near_public_key();
-        let node_id = NodeId {
-            account_id: gen_account_id(),
-            tls_public_key: bogus_ed25519_near_public_key(),
-            account_public_key: Some(bogus_ed25519_near_public_key()),
-        };
-        let attestation = mpc_attestation::attestation::Attestation::Mock(
-            mpc_attestation::attestation::MockAttestation::Valid,
-        );
-
-        mock_stale_map.insert(node_pk.clone(), (node_id, attestation));
-
-        contract.stale_data.participant_attestations = Some(mock_stale_map);
-
-        // when
-        contract.post_upgrade_cleanup();
-
-        // then
-        assert_matches::assert_matches!(contract.stale_data.participant_attestations, None);
-    }
-
-    #[test]
-    #[should_panic(expected = "stale participant_attestations data has already been cleared")]
-    fn test_post_upgrade_cleanup_panics_if_already_cleared() {
-        // given
-        let mut contract = MpcContract::init(
-            ThresholdParameters::new(gen_participants(3), Threshold::new(2)).unwrap(),
-            None,
-        )
-        .unwrap();
-
-        contract.stale_data.participant_attestations = None;
-
-        // when
-        contract.post_upgrade_cleanup();
-
-        // then panic
-    }
-
     /// Sets up a complete TEE test environment with contract, accounts, mock dstack attestation, TLS key and the node's near public key.
     /// This is a helper function that provides all the common components needed for TEE-related tests.
     fn setup_tee_test() -> (
@@ -3623,7 +4008,7 @@ mod tests {
             .participants()
             .participants()
             .iter()
-            .map(|(account_id, _, _)| account_id.as_v1_account_id())
+            .map(|(account_id, _, _)| account_id.clone())
             .collect();
 
         let attestation = mock_dto_dstack_attestation();
@@ -3780,5 +4165,188 @@ mod tests {
         let error_string = result.unwrap_err().to_string();
         assert!(error_string
         .contains("Invalid TEE Remote Attestation.: TeeQuoteStatus is invalid: the submitted attestation failed verification, reason: WrongHash { name: \"report_data\""), "Got error: {}", &error_string);
+    }
+
+    #[test]
+    fn validate_foreign_chain_policy__should_reject_empty_providers() {
+        // Given
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::new(),
+            }]),
+        };
+
+        // When
+        let result = MpcContract::validate_foreign_chain_policy(&policy);
+
+        // Then
+        let err = result.expect_err("expected validation to fail");
+        let kind = err.kind().clone();
+        assert_matches!(
+            kind,
+            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
+        );
+    }
+
+    #[test]
+    fn validate_foreign_chain_policy__should_reject_duplicate_chains() {
+        // Given
+        let providers_a = BTreeSet::from([dtos::RpcProvider {
+            rpc_url: "https://example-a".to_string(),
+        }]);
+        let providers_b = BTreeSet::from([dtos::RpcProvider {
+            rpc_url: "https://example-b".to_string(),
+        }]);
+
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([
+                dtos::ForeignChainConfig {
+                    chain: dtos::ForeignChain::Solana,
+                    providers: providers_a,
+                },
+                dtos::ForeignChainConfig {
+                    chain: dtos::ForeignChain::Solana,
+                    providers: providers_b,
+                },
+            ]),
+        };
+
+        // When
+        let result = MpcContract::validate_foreign_chain_policy(&policy);
+
+        // Then
+        let err = result.expect_err("expected validation to fail");
+        let kind = err.kind().clone();
+        assert_matches!(
+            kind,
+            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
+        );
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_store_vote_for_participant() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::from([dtos::RpcProvider {
+                    rpc_url: "https://example.com".to_string(),
+                }]),
+            }]),
+        };
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When
+        contract
+            .vote_foreign_chain_policy(policy.clone())
+            .expect("vote should succeed");
+
+        // Then
+        let votes = contract.get_foreign_chain_policy_proposals();
+        assert_eq!(votes.proposal_by_account.len(), 1);
+        assert_eq!(
+            votes
+                .proposal_by_account
+                .get(&dtos::AccountId(first_account.to_string())),
+            Some(&policy)
+        );
+        assert_eq!(
+            contract.get_foreign_chain_policy(),
+            dtos::ForeignChainPolicy::default()
+        );
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_apply_policy_after_unanimous_votes() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::from([dtos::RpcProvider {
+                    rpc_url: "https://example.com".to_string(),
+                }]),
+            }]),
+        };
+        let mut env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When
+        for (account_id, _, _) in participants {
+            env.set_signer(&account_id);
+            contract
+                .vote_foreign_chain_policy(policy.clone())
+                .expect("vote should succeed");
+        }
+
+        // Then
+        assert_eq!(contract.get_foreign_chain_policy(), policy);
+        assert!(contract
+            .get_foreign_chain_policy_proposals()
+            .proposal_by_account
+            .is_empty());
+    }
+
+    #[test]
+    fn vote_foreign_chain_policy__should_ignore_votes_from_non_participants() {
+        // Given
+        let running_state = gen_running_state(1);
+        let participants = running_state
+            .parameters
+            .participants()
+            .participants()
+            .clone();
+        let first_account = participants[0].0.clone();
+        let mut contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
+        let policy = dtos::ForeignChainPolicy {
+            chains: BTreeSet::from([dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Solana,
+                providers: BTreeSet::from([dtos::RpcProvider {
+                    rpc_url: "https://example.com".to_string(),
+                }]),
+            }]),
+        };
+        let non_participant = gen_account_id();
+        contract
+            .foreign_chain_policy_votes
+            .proposal_by_account
+            .insert(dtos::AccountId(non_participant.to_string()), policy.clone());
+        let _env = Environment::new(None, Some(first_account.clone()), None);
+
+        // When
+        contract
+            .vote_foreign_chain_policy(policy.clone())
+            .expect("vote should succeed");
+
+        // Then
+        assert_eq!(
+            contract.get_foreign_chain_policy(),
+            dtos::ForeignChainPolicy::default()
+        );
+        let votes = contract.get_foreign_chain_policy_proposals();
+        assert!(votes
+            .proposal_by_account
+            .contains_key(&dtos::AccountId(non_participant.to_string())));
+        assert!(votes
+            .proposal_by_account
+            .contains_key(&dtos::AccountId(first_account.to_string())));
     }
 }

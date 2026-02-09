@@ -19,7 +19,6 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
 };
-use utilities::AccountIdExtV1;
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -63,7 +62,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
 
     // add a new TEE quote for an existing participant, but with a different signer key
     let new_uid = NodeId {
-        account_id: mpc_signer_accounts[0].id().as_v2_account_id(),
+        account_id: mpc_signer_accounts[0].id().clone(),
         tls_public_key: bogus_ed25519_near_public_key(),
         account_public_key: Some(bogus_ed25519_near_public_key()),
     };

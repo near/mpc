@@ -229,7 +229,7 @@ mod tests {
         let result: Result<TcbInfo, _> = serde_json::from_str(json);
 
         // Then
-        assert!(result.is_err());
+        let _ = result.expect_err("Invalid hex length should fail deserialization");
     }
 
     #[test]
@@ -260,7 +260,7 @@ mod tests {
         let result: Result<TcbInfo, _> = dstack_tcb_info.try_into();
 
         // Then
-        assert!(result.is_err());
+        let _ = result.expect_err("Invalid TCB info should fail conversion");
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
         let result: Result<EventLog, _> = dstack_event_log.try_into();
 
         // Then
-        assert!(result.is_err());
+        let _ = result.expect_err("Invalid event log should fail conversion");
     }
 
     #[test]

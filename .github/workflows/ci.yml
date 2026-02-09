@@ -119,7 +119,7 @@ jobs:
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -196,7 +196,7 @@ jobs:
       - name: Install cargo-near
         run: |
           sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.17.0 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
+          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -306,6 +306,26 @@ jobs:
           cargo binstall --force --no-confirm --locked cargo-about@0.8.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-make
+        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
+        with:
+          tool: cargo-make@0.37.24
+
+      - name: Run cargo-make fast checks
+        run: cargo make check-all-fast
+
+  ci-extra:
+    name: "Extra CI checks"
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
@@ -316,5 +336,5 @@ jobs:
         with:
           tool: cargo-make@0.37.24
 
-      - name: Run cargo-make fast checks
-        run: cargo make check-all-fast
+      - name: Run cargo-make extra checks
+        run: cargo make check-extra

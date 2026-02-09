@@ -5,11 +5,174 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.4.1] - 2026-02-05
+
+### 🚀 Features
+
+- [#1923](https://github.com/near/mpc/pull/1923)(@DSharifi): *(contract)* Define contract API for verification of foreign transactions (#1923)
+
+- [#1948](https://github.com/near/mpc/pull/1948)(@gilcu3): Added indexer types for verify foreign tx (#1948)
+
+- [#1961](https://github.com/near/mpc/pull/1961)(@netrome): Add foreign chain policy types and voting method (#1961)
+
+
+### 🐛 Bug Fixes
+
+- [#1939](https://github.com/near/mpc/pull/1939)(@gilcu3): Ensure test_verify_tee_expired_attestation_triggers_resharing is not flaky (#1939)
+
+- [#1831](https://github.com/near/mpc/pull/1831)(@kevindeforth): Properly fix network race condition (#1831)
+
+- [#1983](https://github.com/near/mpc/pull/1983)(@kevindeforth): *(network)* TCP Listener task must not die (#1983)
+
+
+### 📚 Documentation
+
+- [#1920](https://github.com/near/mpc/pull/1920)(@netrome): Foreign chain transaction design doc (#1920)
+
+- [#1928](https://github.com/near/mpc/pull/1928)(@barakeinav1): Update release guide (#1928)
+
+- [#1925](https://github.com/near/mpc/pull/1925)(@netrome): Post-discussion updates for foreign chain transaction design doc (#1925)
+
+- [#1931](https://github.com/near/mpc/pull/1931)(@netrome): Extractor-based foreign chain transaction validation design update (#1931)
+
+- [#1938](https://github.com/near/mpc/pull/1938)(@netrome): Derive separate tweak for foreign transaction validation (#1938)
+
+- [#1953](https://github.com/near/mpc/pull/1953)(@DSharifi): Include set of reommended extensions for VSCode (#1953)
+
+- [#1964](https://github.com/near/mpc/pull/1964)(@DSharifi): Add note on branch being pushed to github pre `git-cliff` instructions (#1964)
+
+
+### 🧪 Testing
+
+- [#1945](https://github.com/near/mpc/pull/1945)(@gilcu3): Add timeout/retry mechanism to try to fix flaky test creating many accounts (#1945)
+
+- [#1951](https://github.com/near/mpc/pull/1951)(@gilcu3): Enable test_embedded abi test (#1951)
+
+- [#1937](https://github.com/near/mpc/pull/1937)(@barakeinav1): Add localnet TEE automation scripts and templates (#1937)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1894](https://github.com/near/mpc/pull/1894)(@gilcu3): Bump near crates, remove AccountId conversions (#1894)
+
+- [#1916](https://github.com/near/mpc/pull/1916)(@netrome): Add CLAUDE.md and AGENTS.md to make coding agents more effective (#1916)
+
+- [#1914](https://github.com/near/mpc/pull/1914)(@gilcu3): Update 3.3.2 mainnet contract history, clean-up previous contract migrations (#1914)
+
+- [#1935](https://github.com/near/mpc/pull/1935)(@gilcu3): Remove the use of jemalloc (#1935)
+
+- [#1879](https://github.com/near/mpc/pull/1879)(@barakeinav1): TEE testnet automation scripts and launcher (#1879)
+
+- [#1933](https://github.com/near/mpc/pull/1933)(@DSharifi): *(clippy)* Enable warning on `assertions_on_result_states` clippy lint (#1933)
+
+- [#1947](https://github.com/near/mpc/pull/1947)(@gilcu3): Update nearcore to 2.10.6 (#1947)
+
+- [#1950](https://github.com/near/mpc/pull/1950)(@DSharifi): RPC requests to EVM chains should have separate struct per chain (#1950)
+
+- [#1973](https://github.com/near/mpc/pull/1973)(@gilcu3): Remove extra license file (#1973)
+
+- [#1982](https://github.com/near/mpc/pull/1982)(@DSharifi): Add `git-cliff` to nix dev environment (#1982)
+
+
+## [3.4.0] - 2026-01-29
+
+### 🚀 Features
+
+- [#1887](https://github.com/near/mpc/pull/1887)(@netrome): Remove storage deposit requirement from contract (#1887)
+
+
+### 🐛 Bug Fixes
+
+- [#1801](https://github.com/near/mpc/pull/1801)(@andrei-near): TCP user keepalive (#1801)
+
+- [#1830](https://github.com/near/mpc/pull/1830)(@gilcu3): Cargo-make check-all using wrong profile parameter (#1830)
+
+- [#1854](https://github.com/near/mpc/pull/1854)(@gilcu3): Update deps dcap-qvl and oneshot to avoid known vulnerabilities (#1854)
+
+- [#1865](https://github.com/near/mpc/pull/1865)(@gilcu3): Hot loop bug in running state when no keyshares are found (#1865)
+
+- [#1876](https://github.com/near/mpc/pull/1876)(@gilcu3): Bump wasmtime version due to RUSTSEC-2026-0006 (#1876)
+
+
+### 💼 Other
+
+- [#1808](https://github.com/near/mpc/pull/1808)(@DSharifi): *(nix)* Include `apple-sdk_14` package to build `neard` on MacOs (#1808)
+
+- [#1812](https://github.com/near/mpc/pull/1812)(@DSharifi): *(nix)* Include `neard` as a nix flake (#1812)
+
+- [#1845](https://github.com/near/mpc/pull/1845)(@DSharifi): *(nix)* Remove neard as a tool in dev shell (#1845)
+
+
+### 📚 Documentation
+
+- [#1850](https://github.com/near/mpc/pull/1850)(@barakeinav1): Add port 80 configuration support (#1850)
+
+
+### ⚡ Performance
+
+- [#1859](https://github.com/near/mpc/pull/1859)(@DSharifi): Avoid fragmented header writes on TCP connections (#1859)
+
+
+### 🧪 Testing
+
+- [#1804](https://github.com/near/mpc/pull/1804)(@gilcu3): Added automated localnet setup (#1804)
+
+- [#1813](https://github.com/near/mpc/pull/1813)(@pbeza): Add benchmark regression tests for `Participants` struct (#1813)
+
+- [#1886](https://github.com/near/mpc/pull/1886)(@gilcu3): Make account creation much faster using async transactions (#1886)
+
+- [#1885](https://github.com/near/mpc/pull/1885)(@gilcu3): Add CI test for mpc-node through non-tee launcher (#1885)
+
+- [#1896](https://github.com/near/mpc/pull/1896)(@gilcu3): Add 3.3.2 contract to contract-history (#1896)
+
+- [#1899](https://github.com/near/mpc/pull/1899)(@gilcu3): Add fixture tests for key derivation path (#1899)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1816](https://github.com/near/mpc/pull/1816)(@DSharifi): Make pprof web server endpoint queriable (#1816)
+
+- [#1818](https://github.com/near/mpc/pull/1818)(@netrome): Bump nearcore to 2.10.5 (#1818)
+
+- [#1819](https://github.com/near/mpc/pull/1819)(@gilcu3): Update ts repo ref (#1819)
+
+- [#1823](https://github.com/near/mpc/pull/1823)(@gilcu3): Fix cargo-deny warnings, adapt to changes in dcap-qvl (#1823)
+
+- [#1838](https://github.com/near/mpc/pull/1838)(@gilcu3): Make launcher-script more user friendly (#1838)
+
+- [#1837](https://github.com/near/mpc/pull/1837)(@DSharifi): *(metrics)* Track tokio runtime and task metrics and export it to prometheus (#1837)
+
+- [#1840](https://github.com/near/mpc/pull/1840)(@gilcu3): Remove outdated research file (#1840)
+
+- [#1843](https://github.com/near/mpc/pull/1843)(@gilcu3): [**breaking**] Use hex for attestation dto types (#1843)
+
+- [#1849](https://github.com/near/mpc/pull/1849)(@DSharifi): Check licenses is up to date on CI (#1849)
+
+- [#1862](https://github.com/near/mpc/pull/1862)(@DSharifi): Use `--force` flag for cargo-binstall installations (#1862)
+
+- [#1855](https://github.com/near/mpc/pull/1855)(@DSharifi): Create histogram for bytes written on p2p TCP streams (#1855)
+
+- [#1871](https://github.com/near/mpc/pull/1871)(@gilcu3): Optimize rust cache in CI (#1871)
+
+- [#1873](https://github.com/near/mpc/pull/1873)(@DSharifi): Bump `axum` to 0.8.8 (#1873)
+
+- [#1878](https://github.com/near/mpc/pull/1878)(@gilcu3): Enable ignored tests (#1878)
+
+- [#1881](https://github.com/near/mpc/pull/1881)(@DSharifi): Bump flume to version `0.12.0` (#1881)
+
+- [#1903](https://github.com/near/mpc/pull/1903)(@barakeinav1): Bump crate versions to 3.4.0 and update changelog (#1903)
+
+
 ## [3.3.2] - 2026-01-20
 
 ### 🐛 Bug Fixes
 
 - [#1802](https://github.com/near/mpc/pull/1802)(@DSharifi): Include default value for pprof address (#1802)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#1806](https://github.com/near/mpc/pull/1806)(@kevindeforth): Bump crate versions to 3.3.2 and update changelog (#1806)
 
 
 ## [3.3.1] - 2026-01-19

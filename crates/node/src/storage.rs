@@ -170,7 +170,10 @@ mod tests {
         };
         assert!(storage.add(&req1));
         assert!(!storage.add(&req1));
-        assert!(storage.get(req1.id).await.is_ok());
+        let _ = storage
+            .get(req1.id)
+            .await
+            .expect("Stored signature request should be retrievable");
         let req2 = SignatureRequest {
             id: CryptoHash(rand::random()),
             // All other fields are irrelevant for the test.
@@ -182,8 +185,14 @@ mod tests {
             domain: DomainId::legacy_ecdsa_id(),
         };
         storage.add(&req2);
-        assert!(storage.get(req1.id).await.is_ok());
-        assert!(storage.get(req2.id).await.is_ok());
+        let _ = storage
+            .get(req1.id)
+            .await
+            .expect("Stored signature request should be retrievable");
+        let _ = storage
+            .get(req2.id)
+            .await
+            .expect("Stored signature request should be retrievable");
     }
 
     #[tokio::test]
@@ -207,7 +216,10 @@ mod tests {
         };
         assert!(storage.add(&req1));
         assert!(!storage.add(&req1));
-        assert!(storage.get(req1.id).await.is_ok());
+        let _ = storage
+            .get(req1.id)
+            .await
+            .expect("Stored CKD request should be retrievable");
         let req2 = CKDRequest {
             id: CryptoHash(rand::random()),
             // All other fields are irrelevant for the test.
@@ -222,7 +234,13 @@ mod tests {
             domain_id: DomainId::legacy_ecdsa_id(),
         };
         storage.add(&req2);
-        assert!(storage.get(req1.id).await.is_ok());
-        assert!(storage.get(req2.id).await.is_ok());
+        let _ = storage
+            .get(req1.id)
+            .await
+            .expect("Stored CKD request should be retrievable");
+        let _ = storage
+            .get(req2.id)
+            .await
+            .expect("Stored CKD request should be retrievable");
     }
 }

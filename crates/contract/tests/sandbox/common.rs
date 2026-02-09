@@ -26,24 +26,23 @@ use near_account_id::AccountId;
 use near_sdk::NearToken;
 use near_workspaces::{
     network::Sandbox,
-    result::{ExecutionFailure, ExecutionSuccess},
+    operations::TransactionStatus,
+    result::{ExecutionFinalResult, ExecutionSuccess},
     types::AccessKeyPermission,
     AccessKey, Contract,
 };
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::collections::BTreeSet;
-use utilities::{AccountIdExtV1, AccountIdExtV2};
+use std::{collections::BTreeSet, task::Poll, time::Duration};
+use tokio::time::timeout;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
     account_id: AccountId,
 ) -> Result<Execution<Account>, near_workspaces::error::Error> {
     let (_, sk) = worker.generate_dev_account_credentials();
-    worker
-        .create_root_account_subaccount(account_id.as_v1_account_id(), sk)
-        .await
+    worker.create_root_account_subaccount(account_id, sk).await
 }
 
 pub fn gen_participant_info() -> ParticipantInfo {
@@ -71,7 +70,7 @@ pub fn candidates(names: Option<Vec<AccountId>>) -> Participants {
 
 pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
     let account = worker.dev_create_account().await.unwrap();
-    let id = account.id().as_v2_account_id();
+    let id = account.id().into();
     (account, id)
 }
 
@@ -105,10 +104,13 @@ pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Accou
         account_creation_transactions.push(transaction);
         let account = Account::from_secret_key(account_id.clone(), sk, worker);
         accounts.push(account);
-        account_ids.push(account_id.as_v2_account_id());
+        account_ids.push(account_id);
     }
     for transaction in account_creation_transactions {
-        let result = transaction.await.unwrap();
+        // We had a flaky test here (#1913) before timeout, hopefully 100 seconds is enough
+        let result = wait_for_transaction(Duration::from_secs(100), transaction)
+            .await
+            .unwrap();
         dbg!(&result);
         assert!(result.is_success());
     }
@@ -372,11 +374,7 @@ pub async fn submit_tee_attestations(
 ) -> anyhow::Result<()> {
     env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
     for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(
-            *account.id().as_v2_account_id(),
-            node_id.account_id,
-            "AccountId mismatch"
-        );
+        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result = submit_participant_info(
             account,
@@ -580,15 +578,36 @@ pub async fn generate_participant_and_submit_attestation(
     (new_account, account_id, new_participant)
 }
 
-pub async fn cleanup_post_migrate(
-    contract: &Contract,
-    account: &Account,
-) -> Result<ExecutionSuccess, ExecutionFailure> {
-    account
-        .call(contract.id(), "post_upgrade_cleanup")
-        .max_gas()
-        .transact()
-        .await
-        .unwrap()
-        .into_result()
+// This function is needed because in case of timeouts the wait function
+// for transactions fails instead of retrying.
+// See near_workspaces::operations::TransactionStatus in
+// https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
+pub async fn wait_for_transaction(
+    timeout_s: Duration,
+    transaction: TransactionStatus,
+) -> anyhow::Result<ExecutionFinalResult> {
+    let mut result = None;
+    let loop_future = async {
+        loop {
+            match transaction.status().await {
+                Ok(Poll::Ready(val)) => {
+                    result = Some(Ok(val));
+                    break;
+                }
+                Ok(Poll::Pending) => {}
+                Err(err) => {
+                    result = Some(Err(err));
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    };
+
+    match timeout(timeout_s, loop_future).await {
+        Ok(_) => match result {
+            Some(result) => Ok(result?),
+            None => anyhow::bail!("Transaction timed out without returning an error"),
+        },
+        Err(_) => anyhow::bail!("Loop timed out"),
+    }
 }
