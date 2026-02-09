@@ -60,6 +60,7 @@ where
     ) -> Result<BitcoinRpcResponse, RpcError> {
         let parameters = (transaction, VERBOSE_RESPONSE);
 
+        // TODO(#1978): add retry mechanism if the error from the request is transient
         let rpc_response: GetRawTransactionVerboseResponse = self
             .client
             .request(GET_RAW_TRANSACTION_METHOD, parameters)
