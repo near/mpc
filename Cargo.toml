@@ -92,7 +92,12 @@ harness = false
 required-features = ["test-utils"]
 
 [[bench]]
-name = "advanced_eddsa_frost"
+name = "advanced_eddsa_frost_sign_v1"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "advanced_eddsa_frost_sign_v2"
 harness = false
 required-features = ["test-utils"]
 

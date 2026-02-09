@@ -5,7 +5,7 @@ use rand_core::SeedableRng;
 
 mod bench_utils;
 use crate::bench_utils::{
-    analyze_received_sizes, ed25519_prepare_sign, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
+    analyze_received_sizes, ed25519_prepare_sign_v1, PreparedOutputs, MAX_MALICIOUS, SAMPLE_SIZE,
 };
 use threshold_signatures::{
     frost::eddsa::{sign::sign_v1, SignatureOption},
@@ -32,7 +32,7 @@ fn bench_sign(c: &mut Criterion) {
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
     group.bench_function(
-        format!("frost_ed25519_sign_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
+        format!("frost_ed25519_sign_v1_advanced_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
                 || {
@@ -56,7 +56,7 @@ criterion_main!(benches);
 /// Used to simulate robust ecdsa signatures for benchmarking
 fn prepare_simulated_sign(threshold: ReconstructionLowerBound) -> PreparedSimulatedSig {
     let mut rng = MockCryptoRng::seed_from_u64(41);
-    let preps = ed25519_prepare_sign(threshold, &mut rng);
+    let preps = ed25519_prepare_sign_v1(threshold, &mut rng);
     let (_, protocolsnapshot) = run_protocol_and_take_snapshots(preps.protocols)
         .expect("Running protocol with snapshot should not have issues");
 

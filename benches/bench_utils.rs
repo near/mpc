@@ -48,9 +48,9 @@ pub struct PreparedOutputs<T> {
     pub protocol: Box<dyn Protocol<Output = T>>,
     pub simulator: Simulator,
 }
-pub struct PreparedPresig<PresignOutput> {
+pub struct PreparedPresig<PresignOutput, KeygenOutput> {
     pub protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)>,
-    pub key_packages: Vec<(Participant, ecdsa::KeygenOutput)>,
+    pub key_packages: Vec<(Participant, KeygenOutput)>,
     pub participants: Vec<Participant>,
 }
 
@@ -269,7 +269,7 @@ pub struct OTECDSAPreparedTriples {
     pub participants: Vec<Participant>,
 }
 
-pub type OTECDSAPreparedPresig = PreparedPresig<ot_based_ecdsa::PresignOutput>;
+pub type OTECDSAPreparedPresig = PreparedPresig<ot_based_ecdsa::PresignOutput, ecdsa::KeygenOutput>;
 pub type OTECDSAPreparedSig = PreparedSig<ot_based_ecdsa::RerandomizedPresignOutput>;
 
 /********************* Robust ECDSA *********************/
@@ -369,15 +369,50 @@ pub fn robust_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng>(
     }
 }
 
-pub type RobustECDSAPreparedPresig = PreparedPresig<robust_ecdsa::PresignOutput>;
+pub type RobustECDSAPreparedPresig =
+    PreparedPresig<robust_ecdsa::PresignOutput, ecdsa::KeygenOutput>;
 pub type RobustECDSASig = PreparedSig<robust_ecdsa::RerandomizedPresignOutput>;
 
 /********************* Frost EdDSA *********************/
+/// Used to prepare ed25519 presignatures for benchmarking
+pub fn ed25519_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    num_participants: usize,
+    rng: &mut R,
+) -> FrostEd25519PreparedPresig {
+    let rngs = create_rngs(num_participants, rng);
+    let participants = generate_participants_with_random_ids(num_participants, rng);
+    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = eddsa::PresignOutput>>,
+    )> = Vec::with_capacity(participants.len());
+
+    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+        let protocol = eddsa::presign(
+            &participants,
+            *p,
+            &eddsa::PresignArguments {
+                keygen_out: keygen_out.clone(),
+                threshold: (*MAX_MALICIOUS + 1).into(),
+            },
+            rngs[i].clone(),
+        )
+        .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = eddsa::PresignOutput>>)
+        .expect("Presignature should succeed");
+        protocols.push((*p, protocol));
+    }
+    FrostEd25519PreparedPresig {
+        protocols,
+        key_packages,
+        participants,
+    }
+}
+
 /// Used to prepare ed25519 signatures for benchmarking
-pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+pub fn ed25519_prepare_sign_v1<R: CryptoRngCore + SeedableRng + Send + 'static>(
     threshold: ReconstructionLowerBound,
     rng: &mut R,
-) -> FrostEd25519Sig {
+) -> FrostEd25519SigV1 {
     let num_participants = threshold.value();
     // collect all participants
     let rngs = create_rngs(num_participants, rng);
@@ -412,7 +447,7 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
         protocols.push((*p, protocol));
     }
 
-    FrostEd25519Sig {
+    FrostEd25519SigV1 {
         protocols,
         index: coordinator_index,
         key_packages,
@@ -420,12 +455,72 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     }
 }
 
-pub struct FrostEd25519Sig {
+pub fn ed25519_prepare_sign_v2<R: CryptoRngCore + SeedableRng + Send + 'static>(
+    result: &[(Participant, eddsa::PresignOutput)],
+    threshold: ReconstructionLowerBound,
+    rng: &mut R,
+) -> FrostEd25519SigV2 {
+    let num_participants = threshold.value();
+    // collect all participants
+    let participants: Vec<Participant> =
+        result.iter().map(|(participant, _)| *participant).collect();
+    let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
+
+    // choose a coordinator at random
+    let coordinator_index = rng.gen_range(0..num_participants);
+    let coordinator = participants[coordinator_index];
+
+    let mut protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = eddsa::SignatureOption>>,
+    )> = Vec::with_capacity(participants.len());
+
+    let mut message: [u8; 32] = [0u8; 32];
+    rng.fill_bytes(&mut message);
+    let message = message.to_vec();
+
+    for ((p, keygen_out), (p_redundancy, presign)) in key_packages.iter().zip(result) {
+        assert_eq!(p, p_redundancy);
+        let protocol = eddsa::sign::sign_v2(
+            &participants,
+            threshold,
+            *p,
+            coordinator,
+            keygen_out.clone(),
+            presign.clone(),
+            message.clone(),
+        )
+        .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = eddsa::SignatureOption>>)
+        .expect("Signing should succeed");
+        protocols.push((*p, protocol));
+    }
+    FrostEd25519SigV2 {
+        protocols,
+        index: coordinator_index,
+        presig: result[coordinator_index].1.clone(),
+        key_packages,
+        message,
+    }
+}
+
+pub struct FrostEd25519SigV1 {
     pub protocols: Vec<(
         Participant,
         Box<dyn Protocol<Output = eddsa::SignatureOption>>,
     )>,
     pub index: usize,
+    pub key_packages: Vec<(Participant, eddsa::KeygenOutput)>,
+    pub message: Vec<u8>,
+}
+
+pub type FrostEd25519PreparedPresig = PreparedPresig<eddsa::PresignOutput, eddsa::KeygenOutput>;
+pub struct FrostEd25519SigV2 {
+    pub protocols: Vec<(
+        Participant,
+        Box<dyn Protocol<Output = eddsa::SignatureOption>>,
+    )>,
+    pub index: usize,
+    pub presig: eddsa::PresignOutput,
     pub key_packages: Vec<(Participant, eddsa::KeygenOutput)>,
     pub message: Vec<u8>,
 }
