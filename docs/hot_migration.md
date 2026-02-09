@@ -15,11 +15,14 @@ There are three challenges associated with this endeavor:
 
 ## Proposal
 
-The authentication mechanism supported by HOT poses a challenge for our smart contract. For one, we currently don't need to worry about authentication at all, since the derived public key is tied to the account that sgned the signature request. For HOT wallets, this is different due to the above described authentication mechanism.
 
-We must keep a strict separation between the domains used by HOT and the domains used by the rest of the MPC network, as, if we mix them, we might accidentally allow to spend another users balance.
+### Contract Changes
 
-As such, it might make sense to add the following endpoints to the contract:
+The authentication mechanism supported by HOT poses a challenge for our smart contract. For one, we currently don't need to worry about authentication at all, since the derived public key is tied to the account that signed the signature request. Currently, authentication is implicit. For HOT wallets, authentication is explicit due to the above described authentication mechanism.
+
+Hence, it is imperative that we keep a strict separation between the domains used by HOT and the domains used by the rest of the MPC network. If we mix them, we might accidentally enable the spending of another users balance.
+
+Therefore, we must add a new domain purpose to the contract:
 
 From the foregin chain transaction doc:
 ```rust
@@ -39,25 +42,107 @@ pub enum DomainPurpose {
 }
 ```
 
-In the sign function, we need to check if we require a different key derivation function.
-If so, then we also expect to require changes as well.
+The authentication mechanism can be abstracted and handled by a separate contract. In that case, we could enforce that signature requests submitted for a `Hot` domain _must_ be sent by a specific, authentication contract (whose address, for the first iteration, can be hard-coded in the MPC contract).
 
-We add this endpoint:
 ```rust
-// must be called by all nodes to add `pk` to the HOT domain
-pub fn add_hot_domain(pk: public_key);
+
+#[near_bindgen]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct MpcContract {
+    protocol_state: ProtocolContractState,
+    pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
+    pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
+    pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, YieldIndex>,
+    proposed_updates: ProposedUpdates,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
+    config: Config,
+    tee_state: TeeState,
+    accept_requests: bool,
+    node_migrations: NodeMigrations,
+    stale_data: StaleData,
+    // below is new
+    hot_domain: HotDomainsInfo,
+}
+
+pub struct HotDomainInfo {
+    // the keys to import
+    pub keys: [2](KeyEventId, PublicKeyExtended),
+    // set of node that report to have concluded the keyshare migration
+    pub import_confirmations: BTreeSet<NodeId>,
+}
+
+impl HotDomainInfo {
+    // clears `import_confirmations`
+    pub fn reset(&mut self) {
+        self.import_confirmations.clear();
+        let new_keys = increment_attempt_id(self.keys); // imaginary function. We increment the attempt id and store it as a new key.
+        self.keys = new_keys;
+    }
+
+    /// node calls this endpoints after they imported HOT's keyshare and stored it to the temporary keystore
+    // counts vote by `node_id` in case `node_id` has not yet voted and returns the vote set.
+    // returns error in case `node_id` has already voted.
+    pub fn vote_imported(&mut self, node_id: NodeId, pks: &[](KeyEventId, PublicKeyExtended)) -> anyhow::Result<&BTreeSet<NodeId>> {
+        if self.import_confirmations.contains(node_id) {
+            return Err("participant already submitted a vote");
+        }
+        if self.keys != pks {
+            return Err("mismatch public keys");
+        }
+        self.import_confirmations.insert(node_id);
+        Ok(&self.import_confirmations)
+    }
+}
+
+impl MpcContract {
+    /// during migration, we need to reserve the DomainIds
+    fn migrate() {
+        // reserve Hot DomainId and add to registry
+    }
+
+    fn confirm_hot_pk_imported(&mut self, pks: [2](KeyEventId, PublicKeyExtended)>) -> Result<> {
+        let signer = env::signer_id();
+        // verify that the signer is a participant
+        let node_id = self.verify_participant(signer)?;
+        let res = self.hot_domain.vote_imported(node_id, pks)?;
+        if res == participants.node_ids() {
+            // Option 1: here, we want to add a new contract state "KeyMigrationCheck", during which the nodes compute a challenge and check if they can use the imported keyshares. In case it succeeds, the contract adds the new keyset to the keyset and resumes running state. In case it fails, it calls `reset` and rsumes running state without adding keys to domain.
+            self.enter_verify_domain_state(pks)
+
+
+            // Option 2:
+            // The challenge is resolved here, embedded in the running state. In this ase, we must change the coordinator stop_fn such that we restart in case the keyset changes between running states.
+        
+            // Option 3:
+            // We immediately entere a resharing state and do a key refresh
+        }
+    }
+
+    /// custom sign endpoint for Hot domains. Depending on how kdf works, we might be able to use the existing `sign`
+    fn sign_hot_domain(&mut self, domain_id: DomainId, HotDomainArgs) -> Result<()> {
+        // potentially custom kdf
+    }
+}
+
 ```
-which will add `pk` to the next available domain_id once all nodes voted on that endpoint. It will do so only in case the contract is in running state.
-
-## Importing secret key
-
-We can add the following functionlity to the MPC node:
-
-- an encrypted web-endpoint: `import_hot_sk`, which can be curld by the node operator and encrypts the imported secret key with `MPC_BACKUP_KEY_HEX`. This should be on a separate port than what we currently have for backup service and web-endpoint.
-- import via CLI. Once imported, vote `add_hot_domain` on the contract
-
-Alternative: include at startup once, pass as command-line argument.
 
 
+### Node behavior
+The node monitors the `HotDomainsInfo` contract state. In case it hasn't voted `confirm_hot_pk_imported` yet, it scans the current filesystem for keyshares belonging to the HOT Wallet.
+In case it finds a share, it stores it to the temporary keystore and submits a vote to the contract for concluding the import.
 
-How to test?
+
+Option 1:
+In the coordinator, we add a new contract state `ConfirmKeyMigration`, during which the nodes resolve a simple challenge to check whether they can compute a result.
+
+Option 2:
+Node continues to monitor the `HotDomainsInfo` in a separate thread. Once it sees that all partiicpants voted, they resolve a challenge individually.
+
+Option 3:
+We immediately entere a resharing state and do a key refresh
+
+## Testing
+
+we need a testing strategy
+
