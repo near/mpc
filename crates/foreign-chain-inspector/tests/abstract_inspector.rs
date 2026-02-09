@@ -17,40 +17,8 @@ use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-/// Mirrors `GetBlockByNumberResponse` for test serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct BlockByNumberResponse {
-    number: U64,
-}
-
-/// Mirrors `GetTransactionByHashResponse` for test serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TransactionReceiptResponse {
-    block_hash: H256,
-    block_number: U64,
-    status: U64,
-}
-
-/// Builds a mock client returning sequential responses for the two RPC calls
-/// the abstract inspector makes: first `eth_getBlockByNumber`, then `eth_getTransactionReceipt`.
-fn mock_abstract_client(
-    block_response: BlockByNumberResponse,
-    tx_response: TransactionReceiptResponse,
-) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
-    let call_count = AtomicUsize::new(0);
-    FixedResponseRpcClient::new(move || {
-        let count = call_count.fetch_add(1, Ordering::SeqCst);
-        match count {
-            0 => Ok(serde_json::to_value(&block_response).unwrap()),
-            1 => Ok(serde_json::to_value(&tx_response).unwrap()),
-            _ => panic!("unexpected third RPC call"),
-        }
-    })
-}
 
 #[rstest]
 #[tokio::test]
@@ -297,4 +265,32 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     // then
     let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
     assert_eq!(expected_extractions, extracted_values);
+}
+
+/// Builds a mock client returning sequential responses for the two RPC calls
+/// the abstract inspector makes: first `eth_getBlockByNumber`, then `eth_getTransactionReceipt`.
+fn mock_abstract_client(
+    block_response: BlockByNumberResponse,
+    tx_response: TransactionReceiptResponse,
+) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
+    let call_count = AtomicUsize::new(0);
+    FixedResponseRpcClient::new(move || {
+        let count = call_count.fetch_add(1, Ordering::SeqCst);
+        match count {
+            0 => Ok(serde_json::to_value(&block_response).unwrap()),
+            1 => Ok(serde_json::to_value(&tx_response).unwrap()),
+            _ => panic!("unexpected third RPC call"),
+        }
+    })
+}
+#[derive(Debug, Clone, Serialize)]
+struct BlockByNumberResponse {
+    number: U64,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransactionReceiptResponse {
+    block_hash: H256,
+    block_number: U64,
+    status: U64,
 }
