@@ -26,8 +26,12 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
             .parse()
             .unwrap();
 
-    let client =
-        BitcoinCoreRpcClient::new(PUBLIC_NODE_URL.to_string(), RpcAuthentication::KeyInUrl);
+    let http_client = foreign_chain_inspector::build_http_client(
+        PUBLIC_NODE_URL.to_string(),
+        RpcAuthentication::KeyInUrl,
+    )
+    .unwrap();
+    let client = BitcoinCoreRpcClient::from_client(http_client);
     let inspector = BitcoinInspector::new(client);
 
     // when
