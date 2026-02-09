@@ -386,11 +386,14 @@ fn check_presignatures_terms_with_less_active_participants() {
 
     let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
     // add the presignatures here
-    let mut presignatures = run_presign(&key_packages, threshold as usize, actual_signers).unwrap();
-    while let Some((p1, presig1)) = presignatures.pop() {
-        for (p2, presig2) in &presignatures {
-            assert!(p1 != *p2);
-            assert!(presig1.nonces != presig2.nonces);
+    let presignatures = run_presign(&key_packages, threshold as usize, actual_signers).unwrap();
+    for i in 0..presignatures.len() {
+        for j in (i + 1)..presignatures.len() {
+            let (p1, presig1) = &presignatures[i];
+            let (p2, presig2) = &presignatures[j];
+
+            assert_ne!(p1, p2);
+            assert_ne!(presig1.nonces, presig2.nonces);
             assert_eq!(presig1.commitments_map, presig2.commitments_map);
         }
     }
