@@ -34,7 +34,7 @@ fn test_ckd() {
 
     assert!(keys.len() == participants.len());
 
-    let public_key = keys[0].1.public_key;
+    let public_key = keys.get(&participants[0]).unwrap().public_key;
     let keys: HashMap<_, _> = keys.into_iter().collect();
     let coordinator = choose_coordinator_at_random(&participants);
 
