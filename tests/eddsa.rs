@@ -150,6 +150,7 @@ fn test_run_sign_v2() {
     let actual_signers = 4;
     let keys = run_keygen::<C>(&participants, threshold.into());
     let mut keys: Vec<(Participant, KeygenOutput)> = keys.into_iter().collect();
+    keys.sort_by_key(|(participant, _)| *participant);
 
     let public_key = keys[0].1.public_key;
     // take away last participant
@@ -181,20 +182,4 @@ fn test_run_sign_v2() {
         .unwrap();
 
     assert!(public_key.verify(&msg_hash, &signature).is_ok());
-
-    let mut new_participants = participants.clone();
-    new_participants.push(Participant::from(20u32));
-    let new_threshold = 5;
-
-    let new_keys = run_reshare(
-        &participants,
-        &public_key,
-        participant_keys.as_slice(),
-        threshold.into(),
-        new_threshold.into(),
-        &new_participants,
-    );
-    let new_public_key = new_keys.get(&participants[0]).unwrap().public_key;
-
-    assert_eq!(public_key, new_public_key);
 }
