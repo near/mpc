@@ -2,22 +2,20 @@
 //!
 //! Check <https://zips.z.cash/zip-0312> or <https://zips.z.cash/protocol/protocol.pdf#concretespendauthsig>
 
-pub mod presign;
 pub mod sign;
 #[cfg(test)]
 mod test;
 
 use crate::{
-    crypto::ciphersuite::{BytesOrder, Ciphersuite, ScalarSerializationFormat},
-    ReconstructionLowerBound,
+    crypto::ciphersuite::{BytesOrder, ScalarSerializationFormat},
+    errors::InitializationError,
+    participants::Participant,
+    protocol::Protocol,
+    Ciphersuite,
 };
 
-use reddsa::frost::redjubjub::{
-    round1::{SigningCommitments, SigningNonces},
-    Identifier, Signature,
-};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use rand_core::CryptoRngCore;
+use reddsa::frost::redjubjub::Signature;
 
 // JubJub + Blake2b512 Ciphersuite
 pub use reddsa::frost::redjubjub::JubjubBlake2b512;
@@ -29,26 +27,19 @@ impl ScalarSerializationFormat for JubjubBlake2b512 {
 }
 impl Ciphersuite for JubjubBlake2b512 {}
 
-pub type KeygenOutput = crate::KeygenOutput<JubjubBlake2b512>;
-
-/// The necessary inputs for the creation of a presignature.
-pub struct PresignArguments {
-    /// The output of key generation, i.e. our share of the secret key, and the public key package.
-    pub keygen_out: KeygenOutput,
-    /// The threshold for the scheme
-    pub threshold: ReconstructionLowerBound,
-}
-
-/// The output of the presigning protocol.
-///
-/// This output is basically all the parts of the signature that we can perform
-/// without knowing the message.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct PresignOutput {
-    /// The public nonce commitment.
-    pub nonces: SigningNonces,
-    pub commitments_map: BTreeMap<Identifier, SigningCommitments>,
-}
+pub type KeygenOutput = super::KeygenOutput<JubjubBlake2b512>;
+pub type PresignArguments = super::PresignArguments<JubjubBlake2b512>;
+pub type PresignOutput = super::PresignOutput<JubjubBlake2b512>;
 
 /// Signature would be Some for coordinator and None for other participants
 pub type SignatureOption = Option<Signature>;
+
+/// `RedJubJub` presigning function
+pub fn presign(
+    participants: &[Participant],
+    me: Participant,
+    args: &PresignArguments,
+    rng: impl CryptoRngCore + Send + 'static,
+) -> Result<impl Protocol<Output = PresignOutput>, InitializationError> {
+    super::presign(participants, me, args, rng)
+}
