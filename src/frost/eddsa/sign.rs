@@ -298,7 +298,6 @@ mod test {
         let msg = "hello_near";
         let msg_hash = hash(&msg).unwrap();
 
-        let mut signature = None;
         for min_signers in 2..max_signers {
             for actual_signers in min_signers..=max_signers {
                 let key_packages =
@@ -313,11 +312,9 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                signature = Some(one_coordinator_output(data, coordinator).unwrap());
+                one_coordinator_output(data, coordinator).unwrap();
             }
         }
-        // only the last signature
-        insta::assert_json_snapshot!(signature);
     }
 
     #[test]

@@ -264,10 +264,21 @@ fn construct_key_package(
 mod test {
     use crate::{
         crypto::hash::hash,
-        frost::redjubjub::test::{build_key_packages_with_dealer, run_sign_with_presign},
+        frost::redjubjub::{
+            sign::sign,
+            test::{build_key_packages_with_dealer, run_sign_with_presign},
+            PresignOutput, SignatureOption,
+        },
         test_utils::{one_coordinator_output, MockCryptoRng},
+        Protocol,
     };
-    use rand::SeedableRng;
+    use frost_core::Field;
+    use rand::{Rng, SeedableRng};
+    use rand_core::RngCore;
+    use reddsa::frost::redjubjub::{
+        round1::commit, JubjubBlake2b512, JubjubScalarField, Randomizer,
+    };
+    use std::collections::BTreeMap;
 
     #[test]
     fn stress() {
@@ -277,7 +288,6 @@ mod test {
         let msg = "hello_near";
         let msg_hash = hash(&msg).unwrap();
 
-        let mut signature = None;
         for threshold in 2..max_signers {
             for actual_signers in threshold..=max_signers {
                 let key_packages = build_key_packages_with_dealer(max_signers, threshold, &mut rng);
@@ -291,10 +301,74 @@ mod test {
                     msg_hash,
                 )
                 .unwrap();
-                signature = Some(one_coordinator_output(data, coordinator).unwrap());
+                one_coordinator_output(data, coordinator).unwrap();
             }
         }
-        // check last signature
+    }
+
+    #[test]
+    fn test_signature_correctness() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let threshold = 6;
+        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let public_key = keys[0].1.public_key.to_element();
+
+        let msg = b"hello world".to_vec();
+        let index = rng.gen_range(0..keys.len());
+        let coordinator = keys[index as usize].0;
+        let mut participants_sign_builder = keys
+            .iter()
+            .map(|(p, keygen_output)| {
+                let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+                (*p, (keygen_output.clone(), rng_p))
+            })
+            .collect::<Vec<_>>();
+
+        let mut commitments_map = BTreeMap::new();
+        let mut nonces_map = BTreeMap::new();
+        for (p, (keygen, rng_p)) in &mut participants_sign_builder {
+            // Creating two commitments and corresponding nonces
+            let (nonces, commitments) = commit(&keygen.private_share, rng_p);
+            commitments_map.insert(p.to_identifier().unwrap(), commitments);
+            nonces_map.insert(*p, nonces);
+        }
+
+        let mut rng = MockCryptoRng::seed_from_u64(644_221);
+        let randomizer_scalar = JubjubScalarField::random(&mut rng);
+        // Only for testing
+        let randomizer = Randomizer::from_scalar(randomizer_scalar);
+        // This checks the output signature validity internally
+        let result = crate::test_utils::run_sign::<JubjubBlake2b512, _, _, _>(
+            participants_sign_builder,
+            coordinator,
+            public_key,
+            JubjubScalarField::zero(), // not important
+            |participants, coordinator, me, _, (keygen_output, _), _| {
+                let nonces = nonces_map.get(&me).unwrap().clone();
+                let presignature = PresignOutput {
+                    nonces,
+                    commitments_map: commitments_map.clone(),
+                };
+                let randomize = if me == coordinator {
+                    Some(randomizer)
+                } else {
+                    None
+                };
+                sign(
+                    participants,
+                    threshold as usize,
+                    me,
+                    coordinator,
+                    keygen_output,
+                    presignature,
+                    msg.clone(),
+                    randomize,
+                )
+                .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
+            },
+        )
+        .unwrap();
+        let signature = one_coordinator_output(result, coordinator).unwrap();
         insta::assert_json_snapshot!(signature);
     }
 }
