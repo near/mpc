@@ -45,7 +45,7 @@ async fn extract_returns_block_hash_when_finalized(#[case] finality: EthereumFin
     let extracted_values = inspector
         .extract(tx_id, finality, vec![AbstractExtractor::BlockHash])
         .await
-        .expect("extract should succeed");
+        .unwrap();
 
     // then
     let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
@@ -79,7 +79,7 @@ async fn extract_returns_block_hash_when_finality_block_equals_tx_block() {
             vec![AbstractExtractor::BlockHash],
         )
         .await
-        .expect("extract should succeed");
+        .unwrap();
 
     // then
     let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
@@ -170,7 +170,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     let extracted_values = inspector
         .extract(tx_id, EthereumFinality::Finalized, Vec::new())
         .await
-        .expect("extract should succeed");
+        .unwrap();
 
     // then
     let expected_extractions: Vec<AbstractExtractedValue> = vec![];
@@ -260,7 +260,7 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
             vec![AbstractExtractor::BlockHash],
         )
         .await
-        .expect("extract should succeed");
+        .unwrap();
 
     // then
     let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
