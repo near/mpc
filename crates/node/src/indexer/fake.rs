@@ -1177,28 +1177,6 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
 
-    fn participants_config_with_signer(account_id: AccountId) -> ParticipantsConfig {
-        ParticipantsConfig {
-            threshold: 2,
-            participants: vec![
-                ConfigParticipantInfo {
-                    id: crate::primitives::ParticipantId::from_raw(0),
-                    address: "127.0.0.1".to_string(),
-                    port: 3030,
-                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
-                    near_account_id: account_id,
-                },
-                ConfigParticipantInfo {
-                    id: crate::primitives::ParticipantId::from_raw(1),
-                    address: "127.0.0.1".to_string(),
-                    port: 3031,
-                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
-                    near_account_id: "test1.near".parse().unwrap(),
-                },
-            ],
-        }
-    }
-
     #[test]
     fn vote_foreign_chain_policy__should_reject_empty_providers() {
         // Given
@@ -1226,5 +1204,27 @@ mod tests {
             .foreign_chain_policy_votes()
             .proposal_by_account
             .contains_key(&dtos::AccountId(account_id.to_string())));
+    }
+
+    fn participants_config_with_signer(account_id: AccountId) -> ParticipantsConfig {
+        ParticipantsConfig {
+            threshold: 2,
+            participants: vec![
+                ConfigParticipantInfo {
+                    id: crate::primitives::ParticipantId::from_raw(0),
+                    address: "127.0.0.1".to_string(),
+                    port: 3030,
+                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
+                    near_account_id: account_id,
+                },
+                ConfigParticipantInfo {
+                    id: crate::primitives::ParticipantId::from_raw(1),
+                    address: "127.0.0.1".to_string(),
+                    port: 3031,
+                    p2p_public_key: SigningKey::generate(&mut OsRng).verifying_key(),
+                    near_account_id: "test1.near".parse().unwrap(),
+                },
+            ],
+        }
     }
 }
