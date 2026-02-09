@@ -53,7 +53,7 @@ fn test_run_sign() {
     assert_eq!(keys.len(), participants.len());
     let public_key = keys[0].1.public_key;
 
-    let msg_hash = *b"hello worldhello worldhello worlregerghwhrth";
+    let msg_hash = *b"hello world";
     let coordinator = choose_coordinator_at_random(&participants);
     let participant_keys = keys.into_iter().collect::<Vec<_>>();
     let all_sigs = run_sign(
