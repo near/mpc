@@ -277,18 +277,23 @@ async fn fut_wrapper(
 
 #[cfg(test)]
 mod test {
-    use crate::frost::eddsa::test::{build_key_packages_with_dealer, run_sign};
     use crate::test_utils::{
         assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
         one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
     };
     use crate::{
+        Protocol,
         crypto::hash::hash,
         participants::{Participant, ParticipantList},
+        frost::eddsa::{
+            sign::sign,
+            test::{build_key_packages_with_dealer, run_sign},
+            SignatureOption,
+        }
     };
     use frost_core::{Field, Group, Scalar};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
-    use rand::SeedableRng;
+    use rand::{Rng, RngCore, SeedableRng};
 
     #[test]
     fn stress() {
@@ -316,6 +321,51 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test_signature_correctness() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let threshold = 6;
+        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let public_key = keys[0].1.public_key.to_element();
+
+        let msg = b"hello world with near".to_vec();
+        let index = rng.gen_range(0..keys.len());
+        let coordinator = keys[index as usize].0;
+
+        let participants_sign_builder = keys
+            .iter()
+            .map(|(p, keygen_output)| {
+                let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+                (*p, (keygen_output.clone(), rng_p))
+            })
+            .collect();
+
+        // This checks the output signature validity internally
+        let result =
+            crate::test_utils::run_sign::<Ed25519Sha512, _, _, _>(
+                participants_sign_builder,
+                coordinator,
+                public_key,
+                Ed25519ScalarField::zero(),
+                |participants, coordinator, me, _, (keygen_output, p_rng), _| {
+                    sign(
+                        participants,
+                        threshold as usize,
+                        me,
+                        coordinator,
+                        keygen_output,
+                        msg.clone(),
+                        p_rng,
+                    )
+                    .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
+                },
+            )
+            .unwrap();
+        let signature = one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_json_snapshot!(signature);
+    }
+
 
     #[test]
     fn dkg_refresh_sign_test() {
