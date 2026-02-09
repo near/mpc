@@ -2299,13 +2299,13 @@ mod tests {
     }
 
     #[test]
-    fn test_signature_simple() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists() {
         test_signature_common(true, false);
         test_signature_common(false, false);
     }
 
     #[test]
-    fn test_signature_simple_legacy() {
+    fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
         test_signature_common(true, true);
         test_signature_common(false, true);
     }
@@ -2340,7 +2340,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ckd_simple() {
+    fn respond_ckd__should_succeed_when_response_is_valid_and_request_exists() {
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Bls12381, &mut OsRng);
         let app_public_key: dtos::Bls12381G1PublicKey =
@@ -2411,7 +2411,8 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_foreign_tx_simple() {
+    fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
@@ -2429,6 +2430,8 @@ mod tests {
             }),
         };
         let predecessor = context.predecessor_account_id;
+
+        // When
         let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
         contract.verify_foreign_transaction(request_args);
         contract
@@ -2440,7 +2443,6 @@ mod tests {
             values: vec![ExtractedValue::U64(2)],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
-
         // simulate signature and response to the request
         let tweak = derive_foreign_tx_tweak(&predecessor, &derivation_path);
         let secret_key_ec: elliptic_curve::SecretKey<Secp256k1> =
@@ -2467,6 +2469,7 @@ mod tests {
 
         with_active_participant_and_attested_context(&contract);
 
+        // Then
         match contract.respond_verify_foreign_tx(request.clone(), response.clone()) {
             Ok(_) => {
                 contract
@@ -2486,6 +2489,7 @@ mod tests {
 
     #[test]
     fn test_verify_foreign_tx_timeout() {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _secret_key) =
             basic_setup(SignatureScheme::Secp256k1, &mut rng);
@@ -2501,7 +2505,11 @@ mod tests {
         };
         let predecessor = context.predecessor_account_id;
         let request = args_into_verify_foreign_tx_request(request_args.clone(), &predecessor);
+
+        // When
         contract.verify_foreign_transaction(request_args);
+
+        // Then
         assert!(matches!(
             contract.return_verify_foreign_tx_and_clean_state_on_success(
                 request.clone(),
