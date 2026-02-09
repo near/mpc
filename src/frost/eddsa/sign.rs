@@ -1,6 +1,6 @@
 //! This module wraps a signature generation functionality from `Frost` library
 //!  into `cait-sith::Protocol` representation.
-use super::{KeygenOutput, SignatureOption};
+use super::{KeygenOutput, PresignOutput, SignatureOption};
 use crate::{
     errors::{InitializationError, ProtocolError},
     frost::assert_sign_inputs,
@@ -15,7 +15,7 @@ use crate::{
 use frost_ed25519::{
     aggregate,
     keys::{KeyPackage, PublicKeyPackage, SigningShare},
-    rand_core, round1, round2, VerifyingKey,
+    rand_core, round1, round2, SigningPackage, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
@@ -54,6 +54,32 @@ pub fn sign(
         keygen_output,
         message,
         rng,
+    );
+    Ok(make_protocol(comms, fut))
+}
+
+pub fn sign_v2(
+    participants: &[Participant],
+    threshold: impl Into<ReconstructionLowerBound> + Copy,
+    me: Participant,
+    coordinator: Participant,
+    keygen_output: KeygenOutput,
+    presignature: PresignOutput,
+    message: Vec<u8>,
+) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+    let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
+
+    let comms = Comms::new();
+    let chan = comms.shared_channel();
+    let fut = fut_wrapper_v2(
+        chan,
+        participants,
+        threshold.into(),
+        me,
+        coordinator,
+        keygen_output,
+        presignature,
+        message,
     );
     Ok(make_protocol(comms, fut))
 }
@@ -128,6 +154,61 @@ async fn do_sign_coordinator(
     // * Signature is verified internally during `aggregate()` call.
 
     // Step 2.6 and 2.7
+    // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
+    // Feature "cheater-detection" only points to a malicious participant, if there's such.
+    // It doesn't bring any additional guarantees.
+    let public_key_package = PublicKeyPackage::new(BTreeMap::new(), vk_package);
+    let signature = aggregate(&signing_package, &signature_shares, &public_key_package)
+        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+
+    Ok(Some(signature))
+}
+
+/// Returns a future that executes signature protocol for *the Coordinator*.
+///
+/// WARNING: Extracted from FROST documentation:
+/// In all of the main FROST ciphersuites, the entire message must be sent
+/// to participants. In some cases, where the message is too big, it may be
+/// necessary to send a hash of the message instead. We strongly suggest
+/// creating a specific ciphersuite for this, and not just sending the hash
+/// as if it were the message.
+/// For reference, see how RFC 8032 handles "pre-hashing".
+async fn do_sign_coordinator_v2(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    threshold: ReconstructionLowerBound,
+    me: Participant,
+    keygen_output: KeygenOutput,
+    presignature: PresignOutput,
+    message: Vec<u8>,
+) -> Result<SignatureOption, ProtocolError> {
+    // --- Round 1
+    let signing_package =
+        frost_ed25519::SigningPackage::new(presignature.commitments_map, message.as_slice());
+
+    let mut signature_shares: BTreeMap<frost_ed25519::Identifier, round2::SignatureShare> =
+        BTreeMap::new();
+
+    let vk_package = keygen_output.public_key;
+
+    let key_package =
+        construct_key_package(threshold, me, keygen_output.private_share, &vk_package)?;
+
+    let key_package = Zeroizing::new(key_package);
+    let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
+        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+    signature_shares.insert(me.to_identifier()?, signature_share);
+
+    let sign_waitpoint = chan.next_waitpoint();
+    for (from, signature_share) in
+        recv_from_others(&chan, sign_waitpoint, &participants, me).await?
+    {
+        signature_shares.insert(from.to_identifier()?, signature_share);
+    }
+
+    // --- Signature aggregation.
+    // * Converted collected signature shares into the signature.
+    // * Signature is verified internally during `aggregate()` call.
     // We supply empty map as `verifying_shares` because we have disabled "cheater-detection" feature flag.
     // Feature "cheater-detection" only points to a malicious participant, if there's such.
     // It doesn't bring any additional guarantees.
@@ -217,6 +298,51 @@ async fn do_sign_participant(
     Ok(None)
 }
 
+/// Returns a future that executes signature protocol for *a Participant*.
+///
+/// WARNING: Extracted from FROST documentation:
+/// In all of the main FROST ciphersuites, the entire message must be sent
+/// to participants. In some cases, where the message is too big, it may be
+/// necessary to send a hash of the message instead. We strongly suggest
+/// creating a specific ciphersuite for this, and not just sending the hash
+/// as if it were the message.
+/// For reference, see how RFC 8032 handles "pre-hashing".
+fn do_sign_participant_v2(
+    mut chan: SharedChannel,
+    threshold: ReconstructionLowerBound,
+    me: Participant,
+    coordinator: Participant,
+    keygen_output: &KeygenOutput,
+    presignature: PresignOutput,
+    message: &[u8],
+) -> Result<SignatureOption, ProtocolError> {
+    // --- Round 1.
+    // * Send our signature share.
+    if coordinator == me {
+        return Err(ProtocolError::AssertionFailed(
+            "the do_sign_participant function cannot be called
+            for a coordinator"
+                .to_string(),
+        ));
+    }
+
+    let vk_package = keygen_output.public_key;
+
+    let key_package =
+        construct_key_package(threshold, me, keygen_output.private_share, &vk_package)?;
+    // Ensures the values are zeroized on drop
+    let key_package = Zeroizing::new(key_package);
+
+    let signing_package = SigningPackage::new(presignature.commitments_map, message);
+    let signature_share = round2::sign(&signing_package, &presignature.nonces, &key_package)
+        .map_err(|e| ProtocolError::AssertionFailed(e.to_string()))?;
+
+    let sign_waitpoint = chan.next_waitpoint();
+    chan.send_private(sign_waitpoint, coordinator, &signature_share)?;
+
+    Ok(None)
+}
+
 /// A function that takes a signing share and a keygenOutput
 /// and construct a public key package used for frost signing
 fn construct_key_package(
@@ -272,6 +398,41 @@ async fn fut_wrapper(
             &mut rng,
         )
         .await
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn fut_wrapper_v2(
+    chan: SharedChannel,
+    participants: ParticipantList,
+    threshold: ReconstructionLowerBound,
+    me: Participant,
+    coordinator: Participant,
+    keygen_output: KeygenOutput,
+    presignature: PresignOutput,
+    message: Vec<u8>,
+) -> Result<SignatureOption, ProtocolError> {
+    if me == coordinator {
+        do_sign_coordinator_v2(
+            chan,
+            participants,
+            threshold,
+            me,
+            keygen_output,
+            presignature,
+            message,
+        )
+        .await
+    } else {
+        do_sign_participant_v2(
+            chan,
+            threshold,
+            me,
+            coordinator,
+            &keygen_output,
+            presignature,
+            &message,
+        )
     }
 }
 
