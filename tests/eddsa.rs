@@ -51,7 +51,7 @@ fn test_run_sign() {
     let threshold = 4;
     let keys = run_keygen::<C>(&participants, threshold.into());
     assert_eq!(keys.len(), participants.len());
-    let public_key = keys[0].1.public_key;
+    let public_key = keys.get(&participants[0]).unwrap().public_key;
 
     let msg_hash = *b"hello world";
     let coordinator = choose_coordinator_at_random(&participants);

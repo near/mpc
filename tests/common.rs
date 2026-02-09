@@ -78,7 +78,7 @@ pub fn run_protocol<T>(
 pub fn run_keygen<C: Ciphersuite>(
     participants: &[Participant],
     threshold: ReconstructionLowerBound,
-) -> Vec<(Participant, KeygenOutput<C>)>
+) -> HashMap<Participant, KeygenOutput<C>>
 where
     Element<C>: std::marker::Send,
     Scalar<C>: std::marker::Send,
@@ -92,7 +92,7 @@ where
         })
         .collect();
 
-    run_protocol(protocols).unwrap()
+    run_protocol(protocols).unwrap().into_iter().collect()
 }
 
 #[allow(clippy::missing_panics_doc)]
