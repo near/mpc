@@ -57,7 +57,7 @@ pub enum ForeignChainInspectionError {
         expected: BlockConfirmations,
         got: BlockConfirmations,
     },
-    #[error("transaction has not reach expected finality level")]
+    #[error("transaction has not reached expected finality level")]
     NotFinalized,
     #[error("The transaction's status was not success")]
     TransactionFailed,
