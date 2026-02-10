@@ -11,10 +11,7 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::{
-        gen_accounts, init_contract, init_contract_running, make_threshold_params,
-        submit_attestations,
-    },
+    common::{candidates, init_contract, init_contract_running, make_threshold_params},
     utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
 use mpc_contract::{
@@ -24,6 +21,7 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
     },
 };
+use near_account_id::AccountId;
 use near_sdk::Gas;
 use near_workspaces::{Account, Contract};
 use rstest::rstest;
@@ -99,22 +97,27 @@ impl GasThresholdsConfig {
 
 /// Test environment for a specific participant count.
 struct TestEnv {
+    /// The deployed MPC signer contract instance.
     contract: Contract,
-    accounts: Vec<Account>,
+    /// Single real account used to make all benchmark calls.
+    caller: Account,
+    /// Fake participant account IDs for lookup benchmarks (first/middle/last).
+    account_ids: Vec<AccountId>,
+    /// Total number of participants registered in the contract.
     n_participants: usize,
 }
 
 impl TestEnv {
-    fn first_account(&self) -> String {
-        self.accounts[0].id().to_string()
+    fn first_account(&self) -> &AccountId {
+        &self.account_ids[0]
     }
 
-    fn middle_account(&self) -> String {
-        self.accounts[self.n_participants / 2].id().to_string()
+    fn middle_account(&self) -> &AccountId {
+        &self.account_ids[self.n_participants / 2]
     }
 
-    fn last_account(&self) -> String {
-        self.accounts[self.n_participants - 1].id().to_string()
+    fn last_account(&self) -> &AccountId {
+        &self.account_ids[self.n_participants - 1]
     }
 }
 
@@ -180,7 +183,7 @@ async fn run_gas_regression<F>(
 
 /// Run a benchmark contract method and assert gas is within threshold.
 async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>, max_gas: Gas) {
-    let mut call = env.accounts[0].call(env.contract.id(), method);
+    let mut call = env.caller.call(env.contract.id(), method);
     if let Some(a) = args {
         call = call.args_json(a);
     }
@@ -199,18 +202,16 @@ async fn run_bench(env: &TestEnv, method: &str, args: Option<serde_json::Value>,
 
 /// Run a benchmark for account lookups (first, middle, last, missing).
 async fn run_bench_lookups(env: &TestEnv, method: &str, max_gas: Gas) {
-    let first = env.first_account();
-    let middle = env.middle_account();
-    let last = env.last_account();
-    let missing = "missing.account.near".to_string();
+    let missing: AccountId = "missing.account.near".parse().unwrap();
 
     for (label, account_id) in [
-        ("first", first),
-        ("middle", middle),
-        ("last", last),
-        ("missing", missing),
+        ("first", env.first_account()),
+        ("middle", env.middle_account()),
+        ("last", env.last_account()),
+        ("missing", &missing),
     ] {
-        let result = env.accounts[0]
+        let result = env
+            .caller
             .call(env.contract.id(), method)
             .args_json(json!({ "account_id": account_id }))
             .max_gas()
@@ -252,7 +253,7 @@ async fn setup_test_env(n_participants: usize) -> TestEnv {
     setup_test_env_with_state(n_participants, false).await
 }
 
-/// Setup for tests that need Running state (mutation operations).
+/// Setup for tests that need [`Running`](mpc_contract::state::ProtocolContractState::Running) state (mutation operations).
 async fn setup_test_env_running(n_participants: usize) -> TestEnv {
     setup_test_env_with_state(n_participants, true).await
 }
@@ -261,7 +262,10 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
     let worker = near_workspaces::sandbox().await.unwrap();
     let wasm = current_contract_with_bench_methods();
     let contract = worker.dev_deploy(wasm).await.unwrap();
-    let (accounts, participants) = gen_accounts(&worker, n_participants).await;
+    let account_ids: Vec<AccountId> = (0..n_participants)
+        .map(|i| format!("node-{i}.test.near").parse().unwrap())
+        .collect();
+    let participants = candidates(Some(account_ids.clone()));
 
     let threshold_params = make_threshold_params(&participants);
     if running_state {
@@ -285,11 +289,13 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
     } else {
         init_contract(&contract, threshold_params, None).await;
     }
-    submit_attestations(&contract, &accounts, &participants).await;
+
+    let caller = worker.root_account().unwrap();
 
     TestEnv {
         contract,
-        accounts,
+        caller,
+        account_ids,
         n_participants,
     }
 }

@@ -47,9 +47,10 @@ In practice when making a release, you need to do the following things:
 
 1. Update the changelog.
 2. Bump the crate versions.
-3. Create the release tag.
-4. Create release artifacts.
-5. Create the release on GitHub.
+3. Update license versions
+4. Create the release tag.
+5. Create release artifacts.
+6. Create the release on GitHub.
 
 The following sections will walk you through the steps of doing this for the `3.1.0` release.
 Replace this with whatever release version you're making.
