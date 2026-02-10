@@ -93,7 +93,18 @@ pub async fn start_reshare_instance(
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
-    let active = state.active_participants();
+    let active = match &state {
+        ProtocolContractState::Initializing(s) => {
+            &s.generating_key.parameters.participants.participants
+        }
+        ProtocolContractState::Running(s) => &s.parameters.participants.participants,
+        ProtocolContractState::Resharing(s) => {
+            &s.resharing_key.parameters.participants.participants
+        }
+        ProtocolContractState::NotInitialized => {
+            panic!("protocol state must be initialized")
+        }
+    };
     let leader = accounts
         .iter()
         .min_by_key(|a| {

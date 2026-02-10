@@ -36,8 +36,11 @@ async fn test_keygen() -> anyhow::Result<()> {
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
-    let epoch_id = init_state.current_epoch();
-    let domain_id = init_state.next_domain_id();
+    let ProtocolContractState::Running(ref init_running) = init_state else {
+        panic!("expected running state");
+    };
+    let epoch_id = init_running.keyset.epoch_id;
+    let domain_id = init_running.domains.next_domain_id;
     let scheme = SignatureScheme::Ed25519;
 
     // vote to add the domain and verify we enter initializing state
@@ -52,9 +55,16 @@ async fn test_keygen() -> anyhow::Result<()> {
     .await
     .unwrap();
     let state = get_state(&contract).await;
-    assert_eq!(state.next_domain_id(), domain_id + 1);
-    assert!(matches!(state, ProtocolContractState::Initializing(_)));
-    let found = state.get_domain_config(dtos::DomainId(domain_id)).unwrap();
+    let ProtocolContractState::Initializing(ref init) = state else {
+        panic!("expected initializing state");
+    };
+    assert_eq!(init.domains.next_domain_id, domain_id + 1);
+    let found = init
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.id.0 == domain_id)
+        .unwrap();
     assert_eq!(scheme.into_interface_type(), found.scheme);
     assert_eq!(domain_id, found.id.0);
 
@@ -81,18 +91,24 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     // ensure the protocol resumed running state and the public key was added
     let state = get_state(&contract).await;
-    assert!(matches!(state, ProtocolContractState::Running(_)));
-    let found_key: near_sdk::PublicKey = state
-        .public_key(dtos::DomainId(domain_id))
+    let ProtocolContractState::Running(ref running) = state else {
+        panic!("expected running state");
+    };
+    let found_key: near_sdk::PublicKey = running
+        .keyset
+        .domains
+        .iter()
+        .find(|k| k.domain_id.0 == domain_id)
+        .map(|k| &k.key)
         .unwrap()
         .into_contract_type();
     assert_eq!(found_key, public_key.into_contract_type());
     assert_eq!(
-        state.domain_registry().unwrap().domains().len(),
+        running.domains.domains.len(),
         ALL_SIGNATURE_SCHEMES.len() + 1
     );
     // assert that the epoch id did not change
-    assert_eq!(state.current_epoch(), epoch_id);
+    assert_eq!(running.keyset.epoch_id, epoch_id);
 
     Ok(())
 }
@@ -105,10 +121,13 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
-    let epoch_id: u64 = init_state.current_epoch().get();
-    let mut next_domain_id: u64 = init_state.next_domain_id();
+    let ProtocolContractState::Running(ref init_running) = init_state else {
+        panic!("expected running state");
+    };
+    let epoch_id: u64 = init_running.keyset.epoch_id.get();
+    let mut next_domain_id: u64 = init_running.domains.next_domain_id;
     for scheme in ALL_SIGNATURE_SCHEMES {
-        let threshold = init_state.threshold().unwrap().value() as usize;
+        let threshold = init_running.parameters.threshold.value() as usize;
 
         // vote to start key generation
         vote_add_domains(
@@ -123,10 +142,15 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         .unwrap();
 
         let state = get_state(&contract).await;
-        assert_eq!(state.next_domain_id(), next_domain_id + 1);
-        assert!(matches!(state, ProtocolContractState::Initializing(_)));
-        let found = state
-            .get_domain_config(dtos::DomainId(next_domain_id))
+        let ProtocolContractState::Initializing(ref init) = state else {
+            panic!("expected initializing state");
+        };
+        assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
+        let found = init
+            .domains
+            .domains
+            .iter()
+            .find(|d| d.id.0 == next_domain_id)
             .unwrap();
         assert_eq!(next_domain_id, found.id.0);
         assert_eq!((*scheme).into_interface_type(), found.scheme);
@@ -144,19 +168,22 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // ensure we return to running state and that no key was registered
         let state = get_state(&contract).await;
-        assert_matches!(state, ProtocolContractState::Running(_));
+        let ProtocolContractState::Running(ref running) = state else {
+            panic!("expected running state");
+        };
         assert!(
-            state.public_key(dtos::DomainId(next_domain_id)).is_none(),
+            running
+                .keyset
+                .domains
+                .iter()
+                .all(|k| k.domain_id.0 != next_domain_id),
             "No key should be registered for the cancelled domain"
         );
-        assert_eq!(
-            state.domain_registry().unwrap().domains().len(),
-            ALL_SIGNATURE_SCHEMES.len()
-        );
+        assert_eq!(running.domains.domains.len(), ALL_SIGNATURE_SCHEMES.len());
 
         // assert that the epoch id did not change
-        assert_eq!(state.current_epoch().get(), epoch_id);
-        assert_eq!(state.next_domain_id(), next_domain_id + 1);
+        assert_eq!(running.keyset.epoch_id.get(), epoch_id);
+        assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
         next_domain_id += 1;
     }
     Ok(())
@@ -680,7 +707,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         panic!("expected running state");
     };
     let threshold = running_state.parameters.threshold;
-    let epoch_id = state.current_epoch();
+    let epoch_id = running_state.keyset.epoch_id;
     let mut proposed_participants: mpc_contract::primitives::participants::Participants =
         (&running_state.parameters.participants).into_contract_type();
 
