@@ -7,7 +7,6 @@ import pathlib
 import re
 import sys
 import time
-import json
 from typing import Any
 
 from cluster import atexit
