@@ -796,7 +796,7 @@ pub mod testing {
         // The base port number used, hoping the OS is not using ports in this range
         pub const BASE_PORT: u16 = 10000;
         // This constant must be equal to the total number of ports defined below
-        pub const TOTAL_DEFINED_PORTS: u16 = 19;
+        pub const TOTAL_DEFINED_PORTS: u16 = 20;
         // Maximum number of nodes that can be handled without port collisions
         pub const MAX_NODES: u16 = 10;
         // Maximum number of cases that can be handled without port collisions
@@ -868,6 +868,7 @@ pub mod testing {
         pub const BACKUP_CLI_WEBSERVER_GET_KEYSHARES: Self = Self::new(17);
         pub const BACKUP_CLI_WEBSERVER_PUT_KEYSHARES: Self = Self::new(18);
         pub const RECONNECTION_TEST: Self = Self::new(19);
+        pub const FOREIGN_CHAIN_POLICY_TEST: Self = Self::new(20);
     }
 
     pub fn generate_test_p2p_configs(
