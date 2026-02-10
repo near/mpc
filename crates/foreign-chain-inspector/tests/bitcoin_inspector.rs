@@ -1,19 +1,19 @@
+pub mod common;
+
+use crate::common::{FixedResponseRpcClient, JsonRpcResponse, mock_client_from_fixed_response};
+
 use foreign_chain_inspector::{
     BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     bitcoin::{
-        BitcoinBlockHash, BitcoinTransactionHash,
-        inspector::{BitcoinExtractedValue, BitcoinExtractor, BitcoinInspector},
-        rpc_client::BitcoinCoreRpcClient,
+        BitcoinBlockHash, BitcoinExtractedValue, BitcoinTransactionHash,
+        inspector::{BitcoinExtractor, BitcoinInspector},
     },
+    build_http_client,
 };
 
 use assert_matches::assert_matches;
 use httpmock::prelude::*;
-use jsonrpsee::core::{
-    client::BatchResponse,
-    client::{ClientT, error::Error as RpcClientError},
-    params::BatchRequestBuilder,
-};
+use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 
@@ -39,9 +39,7 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
@@ -70,9 +68,7 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let response = inspector
@@ -103,9 +99,7 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     };
 
     let mock_client = mock_client_from_fixed_response(mock_response);
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
@@ -130,9 +124,7 @@ async fn extract_propagates_rpc_client_errors() {
             "connection refused",
         ))))
     });
-
-    let rpc_client = BitcoinCoreRpcClient::from_client(mock_client);
-    let inspector = BitcoinInspector::new(rpc_client);
+    let inspector = BitcoinInspector::new(mock_client);
 
     // when
     let response = inspector
@@ -140,10 +132,7 @@ async fn extract_propagates_rpc_client_errors() {
         .await;
 
     // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::RpcClientError(_))
-    );
+    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
 }
 
 #[tokio::test]
@@ -173,8 +162,7 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
             .json_body(serde_json::to_value(&response).unwrap());
     });
 
-    let client = BitcoinCoreRpcClient::new(server.url("/"), RpcAuthentication::KeyInUrl)
-        .expect("Failed to create client");
+    let client = build_http_client(server.url("/"), RpcAuthentication::KeyInUrl).unwrap();
     let inspector = BitcoinInspector::new(client);
 
     // when
@@ -192,63 +180,4 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
 struct BitcoinTransactionResponse {
     blockhash: BitcoinBlockHash,
     confirmations: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct JsonRpcResponse<T> {
-    jsonrpc: String,
-    result: T,
-    id: u64,
-}
-
-/// A client that always returns a hard-coded response.
-/// Useful for tests.
-/// Note: We have to hold a closure and not just the response
-/// because `RpcClientError` does not implement `Clone`.
-struct FixedResponseRpcClient<RespFn> {
-    response_fn: RespFn,
-}
-
-impl<RespFn> FixedResponseRpcClient<RespFn> {
-    fn new(response_fn: RespFn) -> Self {
-        Self { response_fn }
-    }
-}
-
-fn mock_client_from_fixed_response(
-    response: impl serde::Serialize + Clone,
-) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
-    FixedResponseRpcClient {
-        response_fn: move || Ok(serde_json::to_value(response.clone()).unwrap()),
-    }
-}
-
-impl<RespFn> ClientT for FixedResponseRpcClient<RespFn>
-where
-    RespFn: Fn() -> Result<serde_json::Value, RpcClientError> + Sync,
-{
-    async fn request<R, Params>(&self, _method: &str, _params: Params) -> Result<R, RpcClientError>
-    where
-        R: serde::de::DeserializeOwned,
-    {
-        serde_json::from_value((self.response_fn)()?).map_err(RpcClientError::ParseError)
-    }
-
-    async fn notification<Params>(
-        &self,
-        _method: &str,
-        _params: Params,
-    ) -> Result<(), RpcClientError> {
-        unimplemented!("notification() not used in tests")
-    }
-
-    async fn batch_request<'a, R>(
-        &self,
-        _batch: BatchRequestBuilder<'a>,
-    ) -> Result<BatchResponse<'a, R>, RpcClientError>
-    where
-        R: serde::de::DeserializeOwned + std::fmt::Debug + 'a,
-    {
-        unimplemented!("batch_request() not used in tests")
-    }
 }
