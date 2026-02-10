@@ -746,10 +746,176 @@ cores: 4
 
     #[test]
     fn config_from_file_re_serializes_with_updated_fields() {
-        // given
+        // given: config with old WebUIConfig format (host + port as separate fields)
+        let old_format_config = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui:
+  host: 127.0.0.1
+  port: 8082
+migration_web_ui:
+  host: 127.0.0.1
+  port: 8078
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
+        // when: deserialize and re-serialize
+        let config: ConfigFile = serde_yaml::from_str(old_format_config).unwrap();
+        let re_serialized = serde_yaml::to_string(&config).unwrap();
+
+        // then: re-serialized config uses the new SocketAddr format (not host+port)
+        let re_deserialized: ConfigFile = serde_yaml::from_str(&re_serialized).unwrap();
+        assert_eq!(config, re_deserialized);
+        // The re-serialized YAML should contain the flat socket address format
+        assert!(
+            re_serialized.contains("web_ui: 127.0.0.1:8082"),
+            "Expected flat SocketAddr format, got:\n{re_serialized}"
+        );
+        assert!(
+            re_serialized.contains("migration_web_ui: 127.0.0.1:8078"),
+            "Expected flat SocketAddr format, got:\n{re_serialized}"
+        );
+    }
+
+    #[test]
+    fn old_web_ui_config_format_deserializes_to_socket_addr() {
+        // given: config with old WebUIConfig format
+        let old_format_config = OLD_CONFIG_EXAMPLE.replace(
+            "web_ui: 127.0.0.1:8082",
+            "web_ui:\n  host: 127.0.0.1\n  port: 8082",
+        );
 
         // when
+        let config: ConfigFile = serde_yaml::from_str(&old_format_config).unwrap();
 
         // then
+        assert_eq!(
+            config.web_ui,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
+        );
+    }
+
+    #[test]
+    fn new_socket_addr_format_round_trips() {
+        // given
+        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+
+        // when: serialize and deserialize again
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let round_tripped: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+
+        // then
+        assert_eq!(config, round_tripped);
+    }
+
+    #[test]
+    fn socket_addr_fields_parse_correctly() {
+        // given
+        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+
+        // then
+        assert_eq!(
+            config.web_ui,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
+        );
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8078))
+        );
+        assert_eq!(
+            config.pprof_bind_address,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 34002))
+        );
+    }
+
+    #[test]
+    fn socket_addr_with_ipv4_unspecified() {
+        // given: config using 0.0.0.0 addresses
+        let config_str = OLD_CONFIG_EXAMPLE
+            .replace("127.0.0.1:8082", "0.0.0.0:3000")
+            .replace("127.0.0.1:8078", "0.0.0.0:3001")
+            .replace("127.0.0.1:34002", "0.0.0.0:34002");
+
+        // when
+        let config: ConfigFile = serde_yaml::from_str(&config_str).unwrap();
+
+        // then
+        assert_eq!(
+            config.web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3000))
+        );
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3001))
+        );
+    }
+
+    #[test]
+    fn mixed_old_and_new_format_deserializes() {
+        // given: web_ui in new format, migration_web_ui in old format
+        let mixed_config = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui: 127.0.0.1:8082
+migration_web_ui:
+  host: 0.0.0.0
+  port: 9090
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
+        // when
+        let config: ConfigFile = serde_yaml::from_str(mixed_config).unwrap();
+
+        // then
+        assert_eq!(
+            config.web_ui,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
+        );
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 9090))
+        );
     }
 }
