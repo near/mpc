@@ -205,7 +205,7 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 Set up your new node on the new host with the following:
 
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
-2. **Set the encryption key**: on the backup-cli and the new node (note: this can be a different key to the one used in the previous steps, but it's safe to re-use the same key).
+2. **Set the encryption key**: on the backup-cli and the new node (note: this can be a different key from the one used in the previous steps, but it's safe to re-use the same key).
 
 For the new node, add this to the .env file.
    ```env
