@@ -123,6 +123,7 @@ impl TestEnv {
 /// Each case tests a specific [`Participants`](mpc_contract::primitives::participants::Participants)
 /// operation across all participant counts defined in [`GAS_THRESHOLDS_FILE`],
 /// asserting gas consumption stays within thresholds.
+// TODO(#2031): fix CI-failing test
 #[rstest]
 #[case::len("bench_participants_len", |t: &GasThresholds| t.len, false, false)]
 #[case::is_participant("bench_is_participant", |t: &GasThresholds| t.is_participant, true, false)]
