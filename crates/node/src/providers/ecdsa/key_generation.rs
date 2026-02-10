@@ -73,7 +73,7 @@ mod tests {
     async fn test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3)),
+                into_participant_ids(&TestGenerators::new(4, 3.into())),
                 run_keygen_client,
             )
             .await

@@ -5,7 +5,7 @@ use crate::primitives::ParticipantId;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use rand::rngs::OsRng;
-use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
 use threshold_signatures::participants::Participant;
@@ -115,7 +115,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
-        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
+        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into());
         let old_participants = into_participant_ids(&gen);
         let keygens = gen.make_eddsa_keygens(&mut rng);
         let mut new_participants = into_participant_ids(&gen);

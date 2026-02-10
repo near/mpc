@@ -137,9 +137,9 @@ signature = "2.2.0"
 socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
-thiserror = "2.0.12"
-# Last commit on main branch as of 21-01-2026
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "db609be5021eb9d794f577601f422818fbdfe246" }
+thiserror = "2.0.18"
+# Last commit on main branch as of 10-02-2026
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-metrics = { version = "0.4.7" }

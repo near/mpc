@@ -71,7 +71,7 @@ pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
         big_b: affine_point,
         big_c: affine_point,
         participants: cait_sith_participants,
-        threshold: 3,
+        threshold: 3.into(),
     };
     let triple_share = TripleShare {
         a: scalar,
