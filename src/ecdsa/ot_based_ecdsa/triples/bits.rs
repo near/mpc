@@ -323,8 +323,7 @@ impl SquareBitMatrix {
             for u in row.0 {
                 hasher_row.update(&u.to_le_bytes());
             }
-            let hasher = hasher.clone();
-            let mut reader = hasher.finalize_xof();
+            let mut reader = hasher_row.finalize_xof();
             // Expand the row
             let mut expanded = vec![0u8; row8];
             reader.read(&mut expanded);
