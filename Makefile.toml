@@ -33,9 +33,7 @@ dependencies = [
 
 [tasks.check-extra]
 description = "Run extra checks"
-dependencies = [
-  "cargo-deny",
-]
+dependencies = ["cargo-deny"]
 
 [tasks.check]
 command = "cargo"
@@ -105,6 +103,10 @@ args = ["scripts/check-todo-format.sh"]
 description = "Run cargo deny"
 command = "cargo"
 args = ["deny", "--all-features", "check"]
+
+[tasks.license-file]
+command = "bash"
+args = ["scripts/check-third-party-licenses.sh"]
 
 [config]
 default_to_workspace = false
