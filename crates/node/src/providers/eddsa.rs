@@ -15,7 +15,7 @@ use mpc_contract::primitives::domain::DomainId;
 use mpc_contract::primitives::key_state::KeyEventId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
 
@@ -188,7 +188,7 @@ mod tests {
     fn check_pubkey_conversion_to_sdk() -> anyhow::Result<()> {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         use threshold_signatures::test_utils::TestGenerators;
-        let x = TestGenerators::new(4, 3)
+        let x = TestGenerators::new(4, 3.into())
             .make_eddsa_keygens(&mut rng)
             .values()
             .next()
