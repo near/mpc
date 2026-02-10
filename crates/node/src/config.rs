@@ -7,9 +7,8 @@ use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "network-hardship-simulation")]
-use std::fs;
 use std::{
+    fs,
     io::{Seek, Write},
     net::{Ipv4Addr, SocketAddr},
     path::Path,
@@ -577,7 +576,8 @@ fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::
 where
     D: serde::Deserializer<'de>,
 {
-    let either: Either<SocketAddr, WebUIConfig> = Either::deserialize(deserializer)?;
+    let either: Either<SocketAddr, WebUIConfig> =
+        either::serde_untagged::deserialize(deserializer)?;
     match either {
         Either::Left(addr) => Ok(addr),
         Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
@@ -697,6 +697,150 @@ pub mod tests {
         let secrets_copy = serde_json::from_str(&secrets_str).unwrap();
 
         assert_eq!(secrets, secrets_copy);
+    }
+
+    /// Helper to build a minimal valid ConfigFile YAML string.
+    /// `web_ui` and `migration_web_ui` are inserted verbatim as YAML values.
+    fn make_config_yaml(web_ui: &str, migration_web_ui: &str) -> String {
+        format!(
+            r#"
+my_near_account_id: "test.near"
+near_responder_account_id: "responder.near"
+number_of_responder_keys: 1
+web_ui: {web_ui}
+migration_web_ui: {migration_web_ui}
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  finality: final
+  concurrency: 1
+  mpc_contract_id: "v1.signer"
+triple:
+  concurrency: 1
+  desired_triples_to_buffer: 10
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 1
+  desired_presignatures_to_buffer: 10
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+ckd:
+  timeout_sec: 60
+"#
+        )
+    }
+
+    #[test]
+    fn test_config_file_deserialize_socket_addr_new_format() {
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"0.0.0.0:3001\"");
+        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            config.migration_web_ui,
+            "0.0.0.0:3001".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_config_file_deserialize_socket_addr_old_format() {
+        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
+        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
+        let yaml = make_config_yaml(old_web_ui, old_migration);
+        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            config.migration_web_ui,
+            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_config_file_roundtrip_new_format() {
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
+        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+
+        // Serialize back (this is what from_file writes to disk)
+        let serialized = serde_yaml::to_string(&config).unwrap();
+
+        // Deserialize again — the round-trip
+        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(config.web_ui, config2.web_ui);
+        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
+    }
+
+    #[test]
+    fn test_config_file_migration_roundtrip_old_to_new() {
+        // Start with old format (host/port objects)
+        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
+        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
+        let yaml = make_config_yaml(old_web_ui, old_migration);
+        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+
+        // Serialize to new format (what from_file writes back to disk)
+        let serialized = serde_yaml::to_string(&config).unwrap();
+
+        // The serialized form should now use SocketAddr format, not the old object format.
+        // Verify it doesn't contain the old "host:" / "port:" structure for web_ui.
+        assert!(
+            !serialized.contains("host:"),
+            "Re-serialized config should not contain old 'host:' field, got:\n{serialized}"
+        );
+
+        // Deserialize the new format again — full migration round-trip
+        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(config.web_ui, config2.web_ui);
+        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+    }
+
+    #[test]
+    fn test_config_file_from_file_rewrites_old_format() {
+        use tempfile::NamedTempFile;
+
+        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
+        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
+        let yaml = make_config_yaml(old_web_ui, old_migration);
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
+
+        let config = ConfigFile::from_file(tmp.path()).unwrap();
+        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            config.migration_web_ui,
+            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
+        );
+
+        // Read the file back — it should now be in the new format
+        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
+        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
+        assert_eq!(config.web_ui, config2.web_ui);
+        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+
+        // And the rewritten file should not contain the old host/port keys
+        assert!(
+            !rewritten.contains("host:"),
+            "Rewritten file should not contain old 'host:' field, got:\n{rewritten}"
+        );
+    }
+
+    #[test]
+    fn test_config_file_pprof_default_roundtrip() {
+        // pprof_bind_address uses a default; make sure it survives round-trip
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"0.0.0.0:3001\"");
+        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(
+            config.pprof_bind_address,
+            format!("0.0.0.0:{DEFAULT_PPROF_PORT}")
+                .parse::<SocketAddr>()
+                .unwrap()
+        );
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
     }
 
     #[test]
