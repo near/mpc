@@ -1,6 +1,8 @@
 use crate::primitives::ParticipantId;
+
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use either::Either;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use rand::RngCore;
@@ -151,13 +153,10 @@ pub struct ConfigFile {
     pub near_responder_account_id: AccountId,
     /// Number of keys that will be used to sign the signature responses.
     pub number_of_responder_keys: usize,
-<<<<<<< HEAD
-    pub web_ui: WebUIConfig,
-    pub migration_web_ui: WebUIConfig,
-=======
-    pub web_ui: SocketAddr,
-    pub migration_web_ui: SocketAddr,
->>>>>>> parent of 73241549 (fix: Revert #1707 (use SocketAddr instead of custom struct) (#1795))
+    #[serde(with = "either::serde_untagged")]
+    pub web_ui: Either<WebUIConfig, SocketAddr>,
+    #[serde(with = "either::serde_untagged")]
+    pub migration_web_ui: Either<WebUIConfig, SocketAddr>,
     #[serde(default = "default_pprof_bind_address")]
     pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,

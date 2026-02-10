@@ -5125,6 +5125,7 @@ dependencies = [
  "contract-interface",
  "derive_more 2.1.1",
  "ed25519-dalek",
+ "either",
  "flume",
  "futures",
  "gcloud-sdk",
