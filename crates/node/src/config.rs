@@ -732,6 +732,42 @@ ckd:
         )
     }
 
+    /// Helper to build a minimal valid ConfigFile YAML string.
+    /// `web_ui` and `migration_web_ui` are inserted verbatim as YAML values.
+    const OLD_CONFIG_EXAMPLE: &str = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui: 127.0.0.1:8082
+migration_web_ui: 127.0.0.1:8078
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
+    #[test]
+    fn old_config_example_is_deserializable() {
+        let config: ConfigFile = serde_yaml::from_str(&OLD_CONFIG_EXAMPLE).unwrap();
+    }
+
     #[test]
     fn test_config_file_deserialize_socket_addr_new_format() {
         let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"0.0.0.0:3001\"");
