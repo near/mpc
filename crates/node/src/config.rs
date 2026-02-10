@@ -160,8 +160,10 @@ pub struct ConfigFile {
     pub near_responder_account_id: AccountId,
     /// Number of keys that will be used to sign the signature responses.
     pub number_of_responder_keys: usize,
+    // TODO(#2038): remove custom deserializer
     #[serde(deserialize_with = "deserialize_to_socket_addr")]
     pub web_ui: SocketAddr,
+    // TODO(#2038): remove custom deserializer
     #[serde(deserialize_with = "deserialize_to_socket_addr")]
     pub migration_web_ui: SocketAddr,
     #[serde(default = "default_pprof_bind_address")]
@@ -187,6 +189,7 @@ impl ConfigFile {
         let config: Self = serde_yaml::from_reader(&file)?;
         config.validate().context("Validate config.yaml")?;
 
+        // write the file back to disk so it's serialized with the new format
         file.rewind()?;
         file.set_len(0)?;
         serde_yaml::to_writer(&mut file, &config)?;
@@ -810,10 +813,7 @@ cores: 4
         let config: ConfigFile = serde_yaml::from_str(&old_format_config).unwrap();
 
         // then
-        assert_eq!(
-            config.web_ui,
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
-        );
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
     }
 
     #[test]
@@ -835,10 +835,7 @@ cores: 4
         let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
 
         // then
-        assert_eq!(
-            config.web_ui,
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
-        );
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
         assert_eq!(
             config.migration_web_ui,
             SocketAddr::from((Ipv4Addr::LOCALHOST, 8078))
@@ -909,10 +906,7 @@ cores: 4
         let config: ConfigFile = serde_yaml::from_str(mixed_config).unwrap();
 
         // then
-        assert_eq!(
-            config.web_ui,
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 8082))
-        );
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
         assert_eq!(
             config.migration_web_ui,
             SocketAddr::from((Ipv4Addr::UNSPECIFIED, 9090))
