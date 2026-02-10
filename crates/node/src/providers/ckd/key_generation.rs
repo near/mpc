@@ -77,7 +77,7 @@ mod tests {
     #[tokio::test]
     async fn ckd_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
-            let participants_ids = into_participant_ids(&TestGenerators::new(4, 3));
+            let participants_ids = into_participant_ids(&TestGenerators::new(4, 3.into()));
             let results = run_test_clients(
                 participants_ids.clone(),
                 run_keygen_client,
