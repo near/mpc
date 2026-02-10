@@ -18,6 +18,23 @@ Before starting a migration, ensure you have:
 4. **NEAR CLI** installed for contract interactions
 5. **Access to both nodes** (old and new) during the migration process
 
+## Environment Variables Setup
+
+Set up the following environment variables at the beginning of your migration process. These will be used throughout the guide:
+
+```bash
+# Your NEAR account ID that operates the MPC node
+export SIGNER_ACCOUNT_ID=your-account.testnet
+
+# The MPC contract account ID
+export MPC_CONTRACT_ACCOUNT_ID=v1.signer-prod.testnet
+
+# NEAR network configuration (testnet or mainnet)
+export NEAR_NETWORK=testnet
+```
+
+**Note:** Adjust these values based on your specific setup. For mainnet deployments, use `mainnet` for `NEAR_NETWORK` and the appropriate mainnet contract account ID.
+
 ## Step 1: Setup the Backup CLI
 
 First, you'll need to set up the backup CLI tool and generate keys for the backup service.
@@ -63,9 +80,9 @@ Run the following command to generate the NEAR CLI command for registration:
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
   register \
-  --mpc-contract-account-id v1.signer-prod.testnet \
-  --near-network testnet \
-  --signer-account-id your-account.testnet
+  --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
+  --near-network $NEAR_NETWORK \
+  --signer-account-id $SIGNER_ACCOUNT_ID
 ```
 
 This will output a complete `near` CLI command. Example output:
@@ -74,13 +91,13 @@ This will output a complete `near` CLI command. Example output:
 Run the following command to register your backup service:
 
 near contract call-function as-transaction \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   register_backup_service \
   json-args '{"backup_service_info":{"public_key":"ed25519:AbC123..."}}' \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' \
-  sign-as your-account.testnet \
-  network-config testnet \
+  sign-as $SIGNER_ACCOUNT_ID \
+  network-config $NEAR_NETWORK \
   sign-with-keychain \
   send
 ```
@@ -94,11 +111,23 @@ Copy and run the generated command to register your backup-cli with the contract
 ### Verify Registration
 ```bash
 near contract call-function as-read-only \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   migration_info \
   json-args {} \
-  network-config testnet \
+  network-config $NEAR_NETWORK \
   now
+```
+
+You should see your account and registered backup_cli  public key listed, something like this:
+
+
+```bash
+{
+  "your-account.testnet": [
+    {
+      "public_key": "ed25519:AbC123"
+    },
+} 
 ```
 
 ## Step 3: Generate and Set Encryption Key
@@ -116,7 +145,7 @@ echo "Your encryption key: $BACKUP_ENCRYPTION_KEY"
 2. Your **new MPC node** (via the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable)
 3. The **backup-cli** commands (via the `--backup-encryption-key-hex` parameter)
 
-**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the **same** on both old and new nodes for the migration to work. This key provides an additional layer of security beyond mTLS for encrypting keyshares during transport.
+**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). This key provides an additional layer of security beyond mTLS for encrypting keyshares during transport.
 
 **Note on key differences:** 
 - `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
@@ -155,10 +184,10 @@ Before backing up keyshares, you need to query the current contract state and sa
 
 ```bash
 near contract call-function as-read-only \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   state \
   json-args {} \
-  network-config testnet \
+  network-config $NEAR_NETWORK \
   now > $BACKUP_HOME_DIR/contract_state.json
 ```
 
@@ -187,6 +216,8 @@ Set up your new node on the new host with the following:
    ```bash
    export MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
    ```
+Note: this key doesn't need to be the key used for getting the old node's keyshares.
+
 3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)   
 4. **add the node's near_signer_public_key to your account as an restricted access key** 
 
@@ -205,15 +236,35 @@ export P2P_KEY=$(curl -s http://<IP>:8080/public_data | jq -r ".near_p2p_public_
 
 ```bash
 near contract call-function as-transaction \
-gas' attached-deposit '0 NEAR' \
-  sign-as your-account.testnet \
-  network-config testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
+  get_tee_accounts \
+  json-args {} \
+  prepaid-gas '300.0 Tgas' \
+  attached-deposit '0 NEAR' \
+  sign-as $SIGNER_ACCOUNT_ID \
+  network-config $NEAR_NETWORK \
   sign-with-keychain \
   send
 ```
 
 **note** - If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract - one for the old node and one for the new node.
 
+Output should look like this:
+
+```bash
+[
+  {
+    "account_id": "your-account.testnet",
+    "account_public_key": "ed25519:OldNodeAccountPublicKey...",
+    "tls_public_key": "ed25519:OldNodeTlsPublicKey..."
+  },
+  {
+    "account_id": "your-account.testnet",
+    "account_public_key": "ed25519:NewNodeAccountPublicKey...",
+    "tls_public_key": "ed25519:NewNodeTlsPublicKey..."
+  }
+]
+```
 
 ## Step 6: Initiate Migration state in Contract
 
@@ -230,7 +281,7 @@ Call the `start_node_migration` method on the MPC contract to register the new n
 
 ```bash
 near contract call-function as-transaction \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   start_node_migration \
   json-args '{
     "destination_node_info": {
@@ -243,8 +294,8 @@ near contract call-function as-transaction \
   }' \
   prepaid-gas '300.0 Tgas' \
   attached-deposit '0 NEAR' \
-  sign-as your-account.testnet \
-  network-config testnet \
+  sign-as $SIGNER_ACCOUNT_ID \
+  network-config $NEAR_NETWORK \
   sign-with-keychain \
   send
 ```
@@ -255,10 +306,10 @@ After calling `start_node_migration`, verify that the destination node was regis
 
 ```bash
 near contract call-function as-read-only \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   migration_info \
   json-args {} \
-  network-config testnet \
+  network-config $NEAR_NETWORK \
   now
 ```
 
@@ -296,10 +347,10 @@ You can check the current migration state using the contract's view methods:
 
 ```bash
 near contract call-function as-read-only \
-  v1.signer-prod.testnet \
+  $MPC_CONTRACT_ACCOUNT_ID \
   migration_info \
   json-args {} \
-  network-config testnet \
+  network-config $NEAR_NETWORK \
   now
 ```
 
