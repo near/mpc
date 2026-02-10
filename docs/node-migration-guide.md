@@ -136,7 +136,6 @@ For additional security, the backup and restore process encrypts keyshares durin
 
 **Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). 
 
-But, it does not need to be the same between the old and new node. You can use different encryption keys for the old and new node if you prefer, as long as the backup-cli uses the correct key when communicating with each node.
 
 ### Retrieve a key from an existing node.
 
