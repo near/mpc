@@ -29,7 +29,7 @@ _- Lets schedule an audit to assess the safety of this and ensure we don't accid
 
 ### Key derivation
 
-At this point, it is unclear what exact key derivation mechanism HOT uses. We need to accound for the possibility that it might be different to ours and that signature payloads might be different.
+At this point, it is unclear what exact key derivation mechanism HOT uses. We need to account for the possibility that it might be different to ours and that signature payloads might be different.
 
 ### Keyshare Import
 
@@ -48,21 +48,17 @@ We will need to import keyshares. We will assume that HOT can provide one valid 
     - Once the last node confirmed successful validation of the keyshares, the contract enters a resharing state and operations resume normally.
     This step ensures that the keyshares are loaded to permanent keyshare storage.
 
-Note:
-- Keyshare validation will be the most annoying part to implement. It is unclear how to do this correctly at this point. We have two options:
-    - re-use the established p2p mesh network and forward transactions related to the validation logic to the task spawning it
-    - create a new p2p mesh network in parallel
-    
-    The latter might be our option of choice, as it would have us re-visit certain design decisions on the p2p layer that we intend to optimize either way. The former would be annoying, as any forwarding logic we implement now would have to be reverted afterwards?
-
-    There is the option of trowing a hail-mary and _not_ validating keyshares before the final resharing, but that is borderline suicidal. We could also add a `ConfirmKeyMigration` Protocol state, but that is awfully specific and will also need to be reverted later.
-
 ## Implementation Outline
 
-### Contract Changes
+We don't expect to be migrating any other keyshares. We aim for a design that can be easily removed after having concluded the keyshare migration.
+
+### Contract Implementation
+
+#### State
+
+The contract will need extra state.
 
 ```rust
-
 #[near_bindgen]
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -79,92 +75,55 @@ pub struct MpcContract {
     node_migrations: NodeMigrations,
     stale_data: StaleData,
     // below is new
-    hot_domain: HotDomainMigrationState,
+    hot_domain_migration_state: HotDomainMigrationState,
 }
 
 pub enum HotDomainMigrationState {
     PrepareImport(HotDomainPrepareImportState),
     Validation(HotDomainValidationState),
-    Imported,
+    Imported([(KeyEventId, PublicKeyExtended); 2]),
 }
 
+/* Prepare import state and logic */
 pub struct HotDomainPrepareImportState {
     // the keys to import
-    pub keys: [2](KeyEventId, PublicKeyExtended),
-    // set of node that report to have prepared the keyshare migration
+    // Note: same epoch as the one we are currently in. Attempt Id set to 0.
+    pub keys_to_import: [(KeyEventId, PublicKeyExtended); 2],
+    // set of nodes that report to have prepared the keyshare migration
     pub import_prepared: BTreeSet<NodeId>,
 }
 
-impl HotDomainPrepareImportState {
-    // clears `import_prepared`
-    pub fn reset(&mut self) {
-        self.import_confirmations.clear();
-        let new_keys = increment_attempt_id(self.keys); // imaginary function. We increment the attempt id and store it as a new key.
-        self.keys = new_keys;
-    }
 
-    /// node calls this endpoints after they stored HOT's keyshare in the temporary keystore.
-    /// returns the set of nodes that have confirmed to have concluded this step.
-    /// returns error in case `node_id` has already voted or in case the public key or key event id does not match.
-    pub fn import_prepared(&mut self, node_id: NodeId, pks: &[](KeyEventId, PublicKeyExtended)) -> anyhow::Result<&BTreeSet<NodeId>> {
-        if self.import_confirmations.contains(node_id) {
-            return Err("participant already submitted a vote");
-        }
-        if self.keys != pks {
-            return Err("mismatch keys or key event");
-        }
-        self.import_confirmations.insert(node_id);
-        Ok(&self.import_confirmations)
-    }
-}
-
-// todo
+/* Validation state and logic */
 pub struct HotDomainValidationState {
-
+    // the keys to validate (of attempt_id 0)
+    pub keys_to_validate: [(KeyEventId, PublicKeyExtended); 2],
+    // set of node that report to have prepared the keyshare migration
+    pub task: HotDomainVaidationTask,
 }
 
-impl HotDomainValidatoinState {
-    pub fn start_sign_validatation(..);
-    pub fn confirm_sign_validation(..);
-    pub fn start_key_refresh(KeyEventId);
-    pub fn conclude_key_refresh(KeyEventId);
+pub struct HotDomainValidationTask {
+    Sign(SignTask),
+    KeyReshare(ResharingTask),
 }
 
-
-impl MpcContract {
-    /// custom sign endpoint for Hot domains. Depending on how kdf works, we might be able to use the existing `sign`
-    fn sign_hot_domain(&mut self, domain_id: DomainId, HotDomainArgs) -> Result<()> {
-        // potentially custom kdf
-    }
-
-    /// during migration, we need to reserve the DomainIds
-    fn migrate() {
-        // reserve Hot DomainId and add to registry
-    }
-
-    // below is for migrating and validating the keyshares
-    fn confirm_hot_migration_prepared(&mut self, pks: [2](KeyEventId, PublicKeyExtended)>) -> Result<&BTreeSet<NodeId>> {
-        let signer = env::signer_id();
-        // verify that the signer is a participant
-        let node_id = self.verify_participant(signer)?;
-        let res = self.hot_domain.import_prepared(node_id, pks)?;
-        if res == participants.node_ids() {
-            // enter HotMigrationValidationState
-        }
-        Ok(res)
-    }
-
-
-    // todo
-    pub fn start_sign_validatation(..);
-    pub fn confirm_sign_validation(..);
-    pub fn start_key_refresh(KeyEventId);
-    pub fn conclude_key_refresh(KeyEventId);
-    pub fn abort_validation(..);
+struct SignTask {
+    // make this same as what is used in the `sign_hot_domain` method 
+    pub pending_sign_request: HotSignRequest;
 }
 
+impl SignTask {
+    /// validates the response and returns Ok(()) in case of success
+    pub fn validate_sign_response(resp: HotSignResponse) -> Result<()> {
+        // call the validation logic that would be used in the main response method
+    }
+}
+
+struct ResharingTask {
+    reshared_keys: Vec<KeyForDomain>,
+    resharing_key: KeyEvent, 
+}
 ```
-
 
 Note about Domains: from the foregin chain transaction doc, we have the following
 ```rust
@@ -184,10 +143,154 @@ pub enum DomainPurpose {
 }
 ```
 
-The authentication mechanism can be abstracted and handled by a separate contract. In that case, we could enforce that signature requests submitted for a `Hot` domain _must_ be sent by a specific, authentication contract (whose address, for the first iteration, can be hard-coded in the MPC contract).
+#### Methods
+
+WIP - note that we keep the epoch_id the same for the key refresh. This is an excption. We will use the attempt_id to distinguish the different keys.
+```rust
+
+/// new sign / respond endpoints for the HOT key domain
+impl MpcContract {
+    /// custom sign endpoint for Hot domains. Depending on how kdf works, we might be able to use the existing `sign`
+    pub fn sign_hot_domain(&mut self, args: HotDomainArgs) -> Result<()> {
+        // potentially custom kdf
+    }
+
+    /// custom respond endpoint (if requried)
+    pub fn respond_hot_domain(&mut self, response: HotDomainResponse) -> Result<()>;
+}
+
+/// existing method requiring modifications
+impl MpcContract {
+    /// during migration, we need to reserve the DomainIds
+    pub fn migrate() {
+        // reserve Hot DomainId and add to registry
+    }
+
+    pub fn vote_new_parameters() {
+        // we should probably dis-allow resharings until the hot-domain is imported.
+        // it's not great, but seems simplest.
+        // alternatively, we can reset and increment the epoch id in the hot key migration, but we need to make sure we test this.
+        // The issue here is that we have some implicit assumptions about the order of keys in Keyset and we need to ensure we can have a Keyset that does not contain all keys of the current DomainRegistry.
+    }
+}
+
+/// Methods for keyshare migration. For all of these, we need to ensue that we are in a running state
+impl MpcContract {
+    /// node calls this endpoint to confirm they stored the keyshares to the temporary keyshare storage
+    pub fn hot_migration_confirm_prepared(&mut self, pks: [(KeyEventId, PublicKeyExtended); 2] -> Result<()>;
+    // concludes the sign_valiation step
+    pub fn hot_migration_conclude_sign_validation(&mut self, response: HotDomainResponse) -> Result<()>;
+    // starts the key refresh validation
+    pub fn hot_migration_start_key_refresh(&mut self, key_event_id: KeyEventId) -> Result<()>;
+    // votes to conclude the key refresh validation. Upon receiving the last vote, the contract enters a resharing state.
+    pub fn hot_migration_conclude_key_refresh(&mut self, key_event_id: KeyEventId) -> Result<()>;
+    // to reset hot migration
+    pub fn hot_migration_reset(&mut self);
+}
+```
+
+Some helper functions on the lower level. Note that we could probably implement a lot of this on the higher level. This is WIP.
+```rust
 
 
+impl HotDomainPrepareImportState {
+    // clears `import_prepared`
+    pub fn reset(&mut self) {
+        self.import_confirmations.clear();
+        let new_keys = increment_attempt_id(self.keys_to_import); // We increment the attempt id and store it as a new key.
+        self.keys_to_import = new_keys;
+    }
+
+    /// node calls this endpoints after they stored HOT's keyshare in the temporary keystore.
+    /// returns the set of nodes that have confirmed to have concluded this step.
+    /// returns error in case `node_id` has already voted or in case the public key or key event id does not match.
+    pub fn import_prepared(&mut self, node_id: NodeId, pks: &[](KeyEventId, PublicKeyExtended)) -> anyhow::Result<&BTreeSet<NodeId>> {
+        if self.import_confirmations.contains(node_id) {
+            return Err("participant already submitted a vote");
+        }
+        if self.keys_to_import != pks {
+            return Err("mismatch keys or key event");
+        }
+        self.import_confirmations.insert(node_id);
+        Ok(&self.import_confirmations)
+    }
+}
+
+impl HotDomainValidationState {
+    pub fn validate_sign_response(&mut self, response: HotSignResponse, params: &ThresholdParameters) -> anyhow::Result<()> {
+        let HotDomainValidationTask::Sign(sign_task) = self.task else {
+            anyhow::bail!("Expected sign task");
+        };
+        sign_task.validate_sign_response(response)
+        match sign_task.validate_sign_response(response) {
+            Err(err) => // report error and fail,
+            Ok(_) => {
+                self.task = HotDomainVaidationTask::KeyReshare(ReshareValidationTask::new(self.keys_to_validate, params));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn start_key_resharing(&mut self, key_event_id: KeyEventId) -> anyhow::Result<()> {
+        let HotDomainValidationTask::Resharing(resharing_task) = self.task else {
+            anyhow::bail!("expected sign task");
+        };
+        resharing_task.key_event.start(key_event_id, KEY_EVENT_TIMEOUT_BLOCKS)
+    }
+
+    // returns the reshared keys in case of success
+    pub fn validate_key_resharing(
+        &mut self,
+        key_event_id: KeyEventId,
+    ) -> Result<Option<[(KeyEventId, PublicKeyExtended); 2]>> {
+        let HotDomainValidationTask::Resharing(resharing_task) = self.task else {
+            anyhow::bail!("expected sign task");
+        };
+        let previous_key = self.keys_to_validate[resharing_task.reshared_keys.len()].1.clone();
+
+        if resharing_task
+            .resharing_key
+            .vote_success(&key_event_id, previous_key.key.clone())?
+        {
+            let new_key = KeyForDomain {
+                domain_id: key_event_id.domain_id,
+                attempt: key_event_id.attempt_id,
+                key: previous_key.key,
+            };
+            resharing_task.reshared_keys.push(new_key);
+            
+            // if there is another resharing to do, then update `resharing_task.resharing_key`
+            if resharing_task.reshared_keys.len() < 2 {
+                // note: EpochId Handling is tricky
+                resharing_task.resharing_key = KeyEvent{...};
+                Ok(None)
+            } else {
+                // else, update self:
+                to_return = resharing_task.reshared_keys.into();
+                Ok(to_return)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self = HotDomainMigrationState::PrepareImport(...)
+    }
+}
+
+```
+
+
+### Node Implementation
+
+We can add a `MigratingHotState` in the `ContractRunningState` of the nodes [indexer](https://github.com/near/mpc/blob/f1b0d197ea29767acc6ed4631f35e2cc4901b61e/crates/node/src/indexer/participants.rs#L106C12-L106C32). We spawn a separate task for monitoring the filesysem, importing keyshares and engaging with the system.
+Similar to how we multiplex for the resharing state, we can multiplex for the HOT migration and ue the same p2p mesh network that is used by the running state (fine, since it's just a key refres).
+    
 ## Testing
 
 we need a testing strategy
 
+## Open Qustions
+
+- can we have a mismatch between Keyset and DomainRegistry?
