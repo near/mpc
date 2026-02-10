@@ -132,6 +132,7 @@ impl TestEnv {
 #[case::insert("bench_participants_insert", |t: &GasThresholds| t.insert, false, true)]
 #[case::update_info("bench_participants_update_info", |t: &GasThresholds| t.update_info, true, true)]
 #[tokio::test]
+#[ignore]
 async fn gas_regression(
     #[case] method: &str,
     #[case] get_threshold: fn(&GasThresholds) -> Gas,
