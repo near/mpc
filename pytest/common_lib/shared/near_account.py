@@ -42,27 +42,16 @@ class NearAccount:
     """
 
     def init_nonces(self, running_node: LocalNode):
-        deadline = time.monotonic() + 30
-        last_error = None
-
-        while time.monotonic() < deadline:
-            try:
-                nonces = []
-                for key in self._pytest_signer_keys:
-                    nonce = running_node.get_nonce_for_pk(
-                        acc=key.account_id,
-                        pk=key.pk,
-                    )
-                    if nonce is None:
-                        nonce = 0
-                    nonces.append(Nonce(nonce))
-                self._pytest_signer_nonces = nonces
-                return
-            except Exception as err:
-                last_error = err
-                time.sleep(0.5)
-
-        raise AssertionError("failed to initialize account nonces after retries") from last_error
+        nonces = []
+        for key in self._pytest_signer_keys:
+            nonce = running_node.get_nonce_for_pk(
+                acc=key.account_id,
+                pk=key.pk,
+            )
+            if nonce is None:
+                nonce = 0
+            nonces.append(Nonce(nonce))
+        self._pytest_signer_nonces = nonces
 
     def account_id(self) -> str:
         return self._signer_key.account_id

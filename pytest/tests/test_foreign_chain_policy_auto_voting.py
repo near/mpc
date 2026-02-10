@@ -90,23 +90,6 @@ def _wait_until(
     raise AssertionError(f"timed out waiting for {description}") from last_error
 
 
-def _wait_for_nodes_rpc_ready(nodes, timeout_sec: float = 30) -> None:
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        all_ready = True
-        for node in nodes:
-            try:
-                node.near_node.get_status()
-            except Exception:
-                all_ready = False
-                break
-        if all_ready:
-            return
-        time.sleep(0.2)
-
-    raise AssertionError("timed out waiting for node RPC endpoints to become ready")
-
-
 def test_foreign_chain_policy_auto_voting_requires_unanimity():
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         3, 1, load_mpc_contract(), start_mpc_nodes=False
@@ -146,8 +129,6 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity():
 
     for node in mpc_nodes:
         node.run()
-
-    _wait_for_nodes_rpc_ready(mpc_nodes)
 
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
