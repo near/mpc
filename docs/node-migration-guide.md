@@ -132,25 +132,13 @@ You should see your account and registered backup_cli  public key listed, someth
 
 ## Step 3: Generate and Set Encryption Key
 
-Generate a 256-bit (32-byte) AES encryption key for securing keyshares during backup and restore:
+For additional security, the backup and restore process encrypts keyshares during transport using AES encryption. You need to generate a shared encryption key and set it as an environment variable for both your old and new nodes, as well as for the backup-cli commands.
 
-```bash
-# Generate a random 32-byte hex key
-export BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-echo "Your encryption key: $BACKUP_ENCRYPTION_KEY"
-```
+**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). 
 
-**Critical:** Save this encryption key securely. You'll need to provide it to:
-1. Your **old MPC node** (via the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable)
-2. Your **new MPC node** (via the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable)
-3. The **backup-cli** commands (via the `--backup-encryption-key-hex` parameter)
+But, it does not need to be the same between the old and new node. You can use different encryption keys for the old and new node if you prefer, as long as the backup-cli uses the correct key when communicating with each node.
 
-**Important:** The `MPC_BACKUP_ENCRYPTION_KEY_HEX` must be the same between the backup-cli and the node it is currently communicating with (e.g., the old node when running `get-keyshares`, and the new node when running `put-keyshares`). This key provides an additional layer of security beyond mTLS for encrypting keyshares during transport.
-
-**Note on key differences:** 
-- `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
-- `local_storage_aes_key` (from Step 1) is used to encrypt keyshares stored on disk in the backup home directory
-- These are two different keys serving different purposes
+### Retrieve a key from an existing node.
 
 **Note:** If your node has been running without the `MPC_BACKUP_ENCRYPTION_KEY_HEX` environment variable set, the node automatically generates an encryption key and stores it in a file called `backup_encryption_key.hex` in your `$MPC_HOME_DIR` directory. You can retrieve it with:
 
@@ -158,13 +146,18 @@ echo "Your encryption key: $BACKUP_ENCRYPTION_KEY"
 export BACKUP_ENCRYPTION_KEY=$(cat $MPC_HOME_DIR/backup_encryption_key.hex)
 ```
 
+Copy this key and set it as the `BACKUP_ENCRYPTION_KEY` environment variable for  the backup-cli when running `get-keyshares`.
+
+
+
+**Note on key differences:** 
+- `BACKUP_ENCRYPTION_KEY` (this key) is used to encrypt keyshares during transport between nodes and the backup-cli
+- `local_storage_aes_key` (from Step 1) is used to encrypt keyshares stored on disk in the backup home directory
+- These are two different keys serving different purposes
+
+
 **TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](./migration-service.md) for Hard Launch details.
 
-Set this environment variable on both your old and new MPC nodes before proceeding:
-
-```bash
-export MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
-```
 
 ## Step 4: Backup Keyshares from Old Node
 
@@ -195,6 +188,7 @@ This saves the contract state to `contract_state.json`, which the backup-cli use
 
 ### Run the Backup
 Port 8079 is the default port for the migration endpoint.
+
 ```bash
 backup-cli \
   --home-dir $BACKUP_HOME_DIR \
@@ -213,10 +207,12 @@ Set up your new node on the new host with the following:
 
 1. **Install and configure the MPC node software** on the new host (the new node should use the same NEAR account as the old node)
 2. **Set the same encryption key**: on the backup-cli and the new node.
-   ```bash
-   export MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
+
+For the new node, add this to the .env file.
+   ```env
+   MPC_BACKUP_ENCRYPTION_KEY_HEX=$BACKUP_ENCRYPTION_KEY
    ```
-Note: this key doesn't need to be the key used for getting the old node's keyshares.
+
 
 3. **Start the node and retrieve the new keys from the new node**: (P2P (TLS) key, NEAR account key)   
 4. **add the node's near_signer_public_key to your account as an restricted access key** 
