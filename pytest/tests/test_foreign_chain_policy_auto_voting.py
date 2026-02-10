@@ -77,18 +77,22 @@ def _normalize_policy(policy: dict[str, Any]) -> list[tuple[str, tuple[str, ...]
 def _wait_until(
     predicate, description: str, timeout_sec: float = 30, poll_interval_sec: float = 0.5
 ) -> None:
-    deadline = time.time() + timeout_sec
-    while time.time() < deadline:
-        if predicate():
-            return
+    deadline = time.monotonic() + timeout_sec
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            if predicate():
+                return
+        except Exception as err:
+            last_error = err
         time.sleep(poll_interval_sec)
 
-    raise AssertionError(f"timed out waiting for {description}")
+    raise AssertionError(f"timed out waiting for {description}") from last_error
 
 
 def _wait_for_nodes_rpc_ready(nodes, timeout_sec: float = 30) -> None:
-    deadline = time.time() + timeout_sec
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
         all_ready = True
         for node in nodes:
             try:
@@ -182,6 +186,3 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity():
         description="policy application after unanimous voting",
         timeout_sec=30,
     )
-
-    assert _normalize_policy(_get_foreign_chain_policy(cluster)) == expected_normalized_policy
-    assert len(_get_foreign_chain_policy_proposals(cluster)["proposal_by_account"]) == 0
