@@ -37,9 +37,6 @@ pub enum RpcAuthentication {
 #[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockConfirmations(u64);
 
-#[derive(From, Debug, Display, Clone, Copy, Deref, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BlockHeight(u64);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EthereumFinality {
     Finalized,
