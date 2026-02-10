@@ -33,7 +33,7 @@ export MPC_CONTRACT_ACCOUNT_ID=v1.signer-prod.testnet
 export NEAR_NETWORK=testnet
 ```
 
-**Note:** Adjust these values based on your specific setup. For mainnet deployments, use `mainnet` for `NEAR_NETWORK` and the appropriate mainnet contract account ID.
+**Note:** Adjust these values based on your specific setup. For mainnet deployments, use `mainnet` for `NEAR_NETWORK` and `v1.signer` for `MPC_CONTRACT_ACCOUNT_ID`.
 
 ## Step 1: Setup the Backup CLI
 
