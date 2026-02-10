@@ -26,7 +26,7 @@ const DEFAULT_PPROF_PORT: u16 = 34001;
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TripleConfig {
     pub concurrency: usize,
     pub desired_triples_to_buffer: usize,
@@ -36,24 +36,24 @@ pub struct TripleConfig {
     pub parallel_triple_generation_stagger_time_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresignatureConfig {
     pub concurrency: usize,
     pub desired_presignatures_to_buffer: usize,
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CKDConfig {
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeygenConfig {
     pub timeout_sec: u64,
 }
@@ -105,14 +105,14 @@ impl MpcConfig {
 }
 
 /// Config for the web UI, which is mostly for debugging and metrics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WebUIConfig {
     pub host: String,
     pub port: u16,
 }
 
 /// Configures behavior of the near indexer.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerConfig {
     /// Tells whether to validate the genesis file before starting
     pub validate_genesis: bool,
@@ -128,7 +128,7 @@ pub struct IndexerConfig {
     pub port_override: Option<u16>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncMode {
     /// continue from the block Indexer was interrupted
     Interruption,
@@ -138,14 +138,14 @@ pub enum SyncMode {
     Block(BlockArgs),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BlockArgs {
     /// block height for block sync mode
     pub height: u64,
 }
 
 /// The contents of the on-disk config.yaml file. Contains no secrets.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.
     /// If an on-chain contract is used, this account is used to invoke
@@ -824,6 +824,97 @@ ckd:
             !rewritten.contains("host:"),
             "Rewritten file should not contain old 'host:' field, got:\n{rewritten}"
         );
+    }
+
+    #[test]
+    fn test_config_file_from_file_new_format_roundtrip() {
+        use tempfile::NamedTempFile;
+
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
+
+        let config = ConfigFile::from_file(tmp.path()).unwrap();
+        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            config.migration_web_ui,
+            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
+        );
+
+        // Read file back and verify it's valid YAML that round-trips
+        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
+        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
+        assert_eq!(config.web_ui, config2.web_ui);
+        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
+        assert_eq!(config.my_near_account_id, config2.my_near_account_id);
+        assert_eq!(
+            config.indexer.mpc_contract_id,
+            config2.indexer.mpc_contract_id
+        );
+    }
+
+    #[test]
+    fn test_config_file_from_file_idempotent() {
+        // Calling from_file twice should produce the same file contents and config.
+        use tempfile::NamedTempFile;
+
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
+
+        let config1 = ConfigFile::from_file(tmp.path()).unwrap();
+        let contents_after_first = std::fs::read_to_string(tmp.path()).unwrap();
+
+        let config2 = ConfigFile::from_file(tmp.path()).unwrap();
+        let contents_after_second = std::fs::read_to_string(tmp.path()).unwrap();
+
+        assert_eq!(contents_after_first, contents_after_second);
+        assert_eq!(config1.web_ui, config2.web_ui);
+        assert_eq!(config1.migration_web_ui, config2.migration_web_ui);
+    }
+
+    #[test]
+    fn test_config_file_from_file_truncates_properly() {
+        // Verify the rewrite doesn't leave leftover bytes from the previous
+        // content (i.e. rewind + set_len(0) works before writing).
+        use tempfile::NamedTempFile;
+
+        // Write a config and then pad the file with extra garbage after it.
+        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
+        let garbage = "\n# GARBAGE THAT SHOULD BE REMOVED\ninvalid_field: oops\n";
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
+
+        // First call normalizes the file
+        ConfigFile::from_file(tmp.path()).unwrap();
+
+        // Now append garbage to simulate a longer previous file
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(tmp.path())
+            .unwrap();
+        std::io::Write::write_all(&mut f, garbage.as_bytes()).unwrap();
+        drop(f);
+
+        let corrupted = std::fs::read_to_string(tmp.path()).unwrap();
+        assert!(corrupted.contains("GARBAGE"));
+
+        // from_file should truncate and rewrite cleanly
+        let config = ConfigFile::from_file(tmp.path()).unwrap();
+        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
+
+        assert!(
+            !rewritten.contains("GARBAGE"),
+            "Rewritten file should not contain leftover bytes, got:\n{rewritten}"
+        );
+        // Must be valid YAML that parses to the same config
+        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
+        assert_eq!(config.web_ui, config2.web_ui);
+        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
     }
 
     #[test]

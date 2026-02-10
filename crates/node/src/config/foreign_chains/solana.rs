@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use crate::config::foreign_chains::auth;
 use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SolanaChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
@@ -22,7 +22,7 @@ impl SolanaChainConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SolanaProviderConfig {
     pub rpc_url: String,
     pub api_variant: SolanaApiVariant,
