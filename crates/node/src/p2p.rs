@@ -796,7 +796,7 @@ pub mod testing {
         // The base port number used, hoping the OS is not using ports in this range
         pub const BASE_PORT: u16 = 10000;
         // This constant must be equal to the total number of ports defined below
-        pub const TOTAL_DEFINED_PORTS: u16 = 20;
+        pub const TOTAL_DEFINED_PORTS: u16 = 21;
         // Maximum number of nodes that can be handled without port collisions
         pub const MAX_NODES: u16 = 10;
         // Maximum number of cases that can be handled without port collisions
