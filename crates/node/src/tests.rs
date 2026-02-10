@@ -455,7 +455,8 @@ pub async fn request_verify_foreign_tx_and_await_response(
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
             domain_id: domain.id.0.into(),
-            path: "m/44'/60'/0'/0/0".to_string(),
+            derivation_path: "m/44'/60'/0'/0/0".to_string(),
+            payload_version: 1,
         },
     };
     tracing::info!(

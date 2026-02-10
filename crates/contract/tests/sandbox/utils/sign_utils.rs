@@ -7,8 +7,10 @@ use super::shared_key_utils::{
 use contract_interface::types::{self as dtos};
 use digest::{Digest, FixedOutput};
 use ecdsa::signature::Verifier as _;
-use elliptic_curve::{Field as _, Group as _};
-use k256::{elliptic_curve::point::DecompressPoint as _, AffinePoint, FieldBytes, Secp256k1};
+use k256::{
+    elliptic_curve::{point::DecompressPoint as _, Field as _, Group as _},
+    AffinePoint, FieldBytes, Secp256k1,
+};
 use mpc_contract::{
     crypto_shared::{
         derive_key_secp256k1, derive_tweak, ed25519_types, k256_types,
@@ -34,7 +36,8 @@ use signature::DigestSigner;
 use std::time::Duration;
 use threshold_signatures::{
     confidential_key_derivation::{self as ckd, hash_app_id_with_pk, BLS12381SHA256},
-    ecdsa as ts_ecdsa, eddsa,
+    ecdsa as ts_ecdsa,
+    frost::eddsa,
     frost_ed25519::{self},
     KeygenOutput,
 };

@@ -8,11 +8,8 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_attestation::attestation::Attestation;
-use near_sdk::{
-    env,
-    store::{IterableMap, LookupMap},
-};
+use contract_interface::types as dtos;
+use near_sdk::{env, store::LookupMap};
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -21,18 +18,10 @@ use crate::{
         signature::{SignatureRequest, YieldIndex},
     },
     state::ProtocolContractState,
-    tee::tee_state::{NodeId, TeeState},
+    tee::tee_state::TeeState,
     update::ProposedUpdates,
-    Config,
+    Config, ForeignChainPolicyVotes, StaleData, StorageKey,
 };
-
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct StaleData {
-    /// Holds the TEE attestations from the previous contract version.
-    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
-    /// ensuring the `IterableMap` handle is properly dropped.
-    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
-}
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
@@ -40,6 +29,8 @@ pub struct MpcContract {
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -59,9 +50,12 @@ impl From<MpcContract> for crate::MpcContract {
             protocol_state,
             pending_signature_requests: value.pending_signature_requests,
             pending_ckd_requests: value.pending_ckd_requests,
+            pending_verify_foreign_tx_requests: LookupMap::new(
+                StorageKey::PendingVerifyForeignTxRequests,
+            ),
             proposed_updates: value.proposed_updates,
-            foreign_chain_policy: Default::default(),
-            foreign_chain_policy_votes: Default::default(),
+            foreign_chain_policy: value.foreign_chain_policy,
+            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config,
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,

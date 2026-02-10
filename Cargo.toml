@@ -82,7 +82,7 @@ elliptic-curve = "0.13.8"
 flume = "0.12.0"
 fs2 = "0.4"
 futures = "0.3.31"
-gcloud-sdk = { version = "0.26.2", default-features = false, features = [
+gcloud-sdk = { version = "0.28.4", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
@@ -95,6 +95,7 @@ humantime = "2.1.0"
 hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] } # due to axum
 insta = { version = "1.43.1", features = ["json", "redactions"] }
 itertools = "0.12.1"
+jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 lru = "0.16.3"
 mockall = "0.13.1"
@@ -136,9 +137,9 @@ signature = "2.2.0"
 socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
-thiserror = "2.0.12"
-# Last commit on main branch as of 21-01-2026
-threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "db609be5021eb9d794f577601f422818fbdfe246" }
+thiserror = "2.0.18"
+# Last commit on main branch as of 10-02-2026
+threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
 time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-metrics = { version = "0.4.7" }

@@ -90,14 +90,16 @@ respond_verify_foreign_tx({ request, response }) // Respond method for signers
 ```rust
 pub struct VerifyForeignTransactionRequestArgs {
     pub request: ForeignChainRpcRequest,
-    pub path: String, // Key derivation path
+    pub derivation_path: String, // Key derivation path
     pub domain_id: DomainId,
+    pub payload_version: u8,
 }
 
 pub struct VerifyForeignTransactionRequest {
     pub request: ForeignChainRpcRequest,
     pub tweak: Tweak,
     pub domain_id: DomainId,
+    pub payload_version: u8,
 }
 ```
 
@@ -136,14 +138,12 @@ pub enum Finality {
 
 ### Response DTOs
 
+The response embeds the sign payload directly, so callers can verify the signature
+by calling `response.payload.compute_msg_hash()` without reconstructing the payload.
+
 ```rust
 pub struct VerifyForeignTransactionResponse {
-    pub observed_at_block: ForeignBlockId,
-
-    // One value per extractor (same ordering as request's extractors)
-    pub values: Vec<ExtractedValue>,
-
-    // Signature over canonical bytes of (request, observed_at_block, values)
+    pub payload: ForeignTxSignPayload,
     pub signature: SignatureResponse,
 }
 
@@ -154,6 +154,33 @@ pub enum ExtractedValue {
     Hash256([u8; 32]),
 }
 ```
+
+### Sign Payload Serialization
+
+The MPC network signs a canonical hash derived from the request and its observed results.
+The payload is versioned to allow future format changes without breaking existing verifiers.
+It is embedded in the response so there is no duplication between payload and response fields.
+
+```rust
+pub enum ForeignTxSignPayload {
+    V1(ForeignTxSignPayloadV1),
+}
+
+pub struct ForeignTxSignPayloadV1 {
+    pub request: ForeignChainRpcRequest,
+    pub observed_at_block: ForeignBlockId,
+    pub values: Vec<ExtractedValue>,
+}
+```
+
+The 32-byte `msg_hash` that nodes sign is computed as:
+
+```
+msg_hash = SHA-256(borsh(ForeignTxSignPayload))
+```
+
+Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.
+Borsh field ordering is stability-critical — fields and enum variants must never be reordered.
 
 ### Extractors
 
@@ -221,14 +248,14 @@ Bls12381 domains as `CKD`) until a migration writes explicit purposes.
 ## Tweak Derivation (Sign vs ForeignTx)
 
 `verify_foreign_transaction()` uses a **different tweak derivation prefix** than `sign()` so the same
-`(predecessor_id, path)` can never yield the same derived key across the two purposes.
+`(predecessor_id, derivation_path)` can never yield the same derived key across the two purposes.
 
 Design:
 
 * Keep the existing sign tweak derivation prefix unchanged.
-* Introduce a foreign-tx-specific prefix and derive the tweak from the same `(predecessor_id, path)`
+* Introduce a foreign-tx-specific prefix and derive the tweak from the same `(predecessor_id, derivation_path)`
   input using the same hash construction.
-* The contract derives the tweak internally from `request.path` (callers do not submit raw tweaks).
+* The contract derives the tweak internally from `request.derivation_path` (callers do not submit raw tweaks).
 
 Example:
 

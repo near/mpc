@@ -11,7 +11,9 @@ pub mod types {
     };
     pub use foreign_chain::*;
 
-    pub use primitives::{AccountId, CkdAppId};
+    pub use primitives::{
+        AccountId, CkdAppId, K256AffinePoint, K256Scalar, K256Signature, SignatureResponse, Tweak,
+    };
     pub use updates::{ProposedUpdates, UpdateHash};
 
     mod attestation;

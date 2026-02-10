@@ -276,6 +276,34 @@ expression: abi
         }
       },
       {
+        "name": "get_pending_verify_foreign_tx_request",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "get_tee_accounts",
         "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
         "kind": "view",
@@ -772,7 +800,7 @@ expression: abi
       },
       {
         "name": "return_ck_and_clean_state_on_success",
-        "doc": " Upon success, removes the confidential key from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
+        "doc": " Upon success, removes the confidential key request from state and returns it.\n If the ckd request times out, removes the ckd request from state and panics to fail the\n original transaction",
         "kind": "call",
         "modifiers": [
           "private"
@@ -833,6 +861,39 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PromiseOrValueSignatureResponse"
+          }
+        }
+      },
+      {
+        "name": "return_verify_foreign_tx_and_clean_state_on_success",
+        "doc": " Upon success, removes the verify foreign tx request from state and returns it.\n If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the\n original transaction",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
           }
         }
       },
@@ -1273,19 +1334,6 @@ expression: abi
                   "$ref": "#/definitions/DomainConfig"
                 }
               }
-            }
-          }
-        },
-        "AffinePoint": {
-          "description": "AffinePoint on the Secp256k1 curve",
-          "type": "object",
-          "required": [
-            "affine_point"
-          ],
-          "properties": {
-            "affine_point": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -1908,6 +1956,45 @@ expression: abi
             }
           ]
         },
+        "ForeignTxSignPayload": {
+          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "V1"
+              ],
+              "properties": {
+                "V1": {
+                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "ForeignTxSignPayloadV1": {
+          "type": "object",
+          "required": [
+            "observed_at_block",
+            "request",
+            "values"
+          ],
+          "properties": {
+            "observed_at_block": {
+              "$ref": "#/definitions/ForeignBlockId"
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
+            }
+          }
+        },
         "Hash256": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
@@ -2066,6 +2153,19 @@ expression: abi
                   "$ref": "#/definitions/KeyEvent"
                 }
               ]
+            }
+          }
+        },
+        "K256AffinePoint": {
+          "description": "AffinePoint on the Secp256k1 curve",
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -2495,6 +2595,21 @@ expression: abi
               }
             }
           ]
+        },
+        "PromiseOrValueVerifyForeignTransactionResponse": {
+          "type": "object",
+          "required": [
+            "payload",
+            "signature"
+          ],
+          "properties": {
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse2"
+            }
+          }
         },
         "ProposedUpdates": {
           "type": "object",
@@ -2966,7 +3081,7 @@ expression: abi
               ],
               "properties": {
                 "big_r": {
-                  "$ref": "#/definitions/AffinePoint"
+                  "$ref": "#/definitions/K256AffinePoint"
                 },
                 "recovery_id": {
                   "type": "integer",
@@ -3316,12 +3431,18 @@ expression: abi
           "type": "object",
           "required": [
             "domain_id",
+            "payload_version",
             "request",
             "tweak"
           ],
           "properties": {
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
+            },
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
@@ -3334,16 +3455,22 @@ expression: abi
         "VerifyForeignTransactionRequestArgs": {
           "type": "object",
           "required": [
+            "derivation_path",
             "domain_id",
-            "path",
+            "payload_version",
             "request"
           ],
           "properties": {
+            "derivation_path": {
+              "type": "string"
+            },
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
             },
-            "path": {
-              "type": "string"
+            "payload_version": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
@@ -3353,22 +3480,15 @@ expression: abi
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "observed_at_block",
-            "signature",
-            "values"
+            "payload",
+            "signature"
           ],
           "properties": {
-            "observed_at_block": {
-              "$ref": "#/definitions/ForeignBlockId"
+            "payload": {
+              "$ref": "#/definitions/ForeignTxSignPayload"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
             }
           }
         },

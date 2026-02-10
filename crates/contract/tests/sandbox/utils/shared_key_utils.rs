@@ -1,6 +1,5 @@
 use contract_interface::types::{self as dtos, Bls12381G1PublicKey};
-use elliptic_curve::{Field as _, Group as _};
-use k256::elliptic_curve::{sec1::ToEncodedPoint as _, PrimeField as _};
+use k256::elliptic_curve::{sec1::ToEncodedPoint as _, Field as _, Group as _, PrimeField as _};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -13,7 +12,8 @@ use rand_core::CryptoRngCore;
 use threshold_signatures::{
     blstrs,
     confidential_key_derivation::{self as ckd},
-    ecdsa as ts_ecdsa, eddsa,
+    ecdsa as ts_ecdsa,
+    frost::eddsa,
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
