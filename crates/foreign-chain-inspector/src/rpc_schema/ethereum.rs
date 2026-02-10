@@ -21,14 +21,18 @@ pub(crate) struct GetTransactionReceiptARgs {
     pub(crate) transaction_hash: H256,
 }
 
+/// Partial RPC response for `eth_getTransactionReceipt`.
+/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
 #[derive(Deserialize)]
 pub(crate) struct GetBlockByNumberResponse {
     /// the block number
     pub(crate) number: U64,
 }
 
+/// Partial RPC arguments for `eth_getTransactionReceipt`.
+/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
 #[derive(Constructor, Serialize)]
-pub(crate) struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionHash);
+pub(crate) struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionObjects);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +42,7 @@ pub(crate) enum FinalityTag {
 }
 
 #[derive(From, Serialize)]
-pub(crate) struct ReturnFullTransactionHash(bool);
+pub(crate) struct ReturnFullTransactionObjects(bool);
 
 impl Serialize for GetTransactionReceiptARgs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

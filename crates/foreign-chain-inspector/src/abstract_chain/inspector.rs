@@ -7,7 +7,7 @@ use crate::{
 
 use crate::rpc_schema::ethereum::{
     FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionReceiptARgs,
-    GetTransactionReceiptResponse, ReturnFullTransactionHash,
+    GetTransactionReceiptResponse, ReturnFullTransactionObjects,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
@@ -37,32 +37,37 @@ where
             EthereumFinality::Finalized => FinalityTag::Finalized,
             EthereumFinality::Safe => FinalityTag::Safe,
         };
-        let return_full_transaction_hash = ReturnFullTransactionHash::from(false);
-        let tx_args = GetBlockByNumberArgs::new(finality_tag, return_full_transaction_hash);
+        let get_latest_block_by_finality_args =
+            GetBlockByNumberArgs::new(finality_tag, ReturnFullTransactionObjects::from(false));
 
         let latest_block_with_finality_level: GetBlockByNumberResponse = self
             .client
-            .request(GET_BLOCK_BY_FINALITY_METHOD, &tx_args)
+            .request(
+                GET_BLOCK_BY_FINALITY_METHOD,
+                &get_latest_block_by_finality_args,
+            )
             .await?;
 
-        // Get the transaction to retrieve blockHash and blockNumber
-        let get_transaction_args = GetTransactionReceiptARgs {
+        let get_transaction_receipt_args = GetTransactionReceiptARgs {
             transaction_hash: ethereum_types::H256(transaction.into()),
         };
 
-        let transaction_metadata: GetTransactionReceiptResponse = self
+        let transaction_receipt: GetTransactionReceiptResponse = self
             .client
-            .request(GET_TRANSACTION_RECEIPT_METHOD, &get_transaction_args)
+            .request(
+                GET_TRANSACTION_RECEIPT_METHOD,
+                &get_transaction_receipt_args,
+            )
             .await?;
 
         let finality_is_ok =
-            latest_block_with_finality_level.number >= transaction_metadata.block_number;
+            latest_block_with_finality_level.number >= transaction_receipt.block_number;
 
         if !finality_is_ok {
             return Err(ForeignChainInspectionError::NotFinalized);
         }
 
-        let transaction_success = ethereum_types::U64::one() == transaction_metadata.status;
+        let transaction_success = ethereum_types::U64::one() == transaction_receipt.status;
 
         if !transaction_success {
             return Err(ForeignChainInspectionError::TransactionFailed);
@@ -70,7 +75,7 @@ where
 
         let extracted_values = extractors
             .iter()
-            .map(|extractor| extractor.extract_value(&transaction_metadata))
+            .map(|extractor| extractor.extract_value(&transaction_receipt))
             .collect();
 
         Ok(extracted_values)
