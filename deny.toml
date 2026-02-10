@@ -32,7 +32,6 @@ ignore = [
 
 [bans]
 multiple-versions = "deny"
-skip = [{ name = "prost-types" }]
 skip-tree = [
   { name = "axum" },
   { name = "near-jsonrpc-client" },
