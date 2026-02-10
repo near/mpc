@@ -79,6 +79,7 @@ dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 elliptic-curve = "0.13.8"
+ethereum-types = "0.16.0"
 flume = "0.12.0"
 fs2 = "0.4"
 futures = "0.3.31"

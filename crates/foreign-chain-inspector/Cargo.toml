@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 derive_more = { workspace = true }
+ethereum-types = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
