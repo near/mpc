@@ -13,7 +13,7 @@ from nacl.signing import SigningKey
 
 from common_lib.constants import NEAR_BASE, MPC_BINARY_PATH
 from common_lib.shared.mpc_cluster import MpcCluster
-from common_lib.shared.mpc_node import MpcNode, SocketAddress
+from common_lib.shared.mpc_node import MpcNode
 from common_lib.shared.near_account import NearAccount
 from common_lib.shared.transaction_status import assert_txn_success
 from common_lib.shared.yaml_safeloader import SafeLoaderIgnoreUnknown
@@ -224,8 +224,8 @@ class ConfigValues:
     responder_keys: list[Key]
     p2p_public_key: str
     p2p_url: str
-    web_address: SocketAddress
-    migration_address: SocketAddress
+    web_address: str
+    migration_address: str
     pprof_address: str
     backup_key: bytes
 
@@ -309,8 +309,8 @@ def generate_mpc_configs(
         with open(config_file_path, "r") as f:
             config = yaml.load(f, Loader=SafeLoaderIgnoreUnknown)
 
-        web_address = SocketAddress.from_config(config.get("web_ui"))
-        migration_address = SocketAddress.from_config(config.get("migration_web_ui"))
+        web_address = config.get("web_ui")
+        migration_address = config.get("migration_web_ui")
         pprof_address = config.get("pprof_bind_address")
 
         secrets_file_path = os.path.join(dot_near, str(idx), SECRETS_JSON)

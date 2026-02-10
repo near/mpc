@@ -294,8 +294,8 @@ impl StartCmd {
             .block_on(start_web_server(
                 root_task_handle.clone(),
                 debug_request_sender.clone(),
-                config.web_ui.clone(),
-                static_web_data(&secrets, Some(attestation.clone())),
+                config.web_ui,
+                static_web_data(&secrets, Some(attestation)),
                 protocol_state_receiver,
                 migration_state_receiver,
             ))
@@ -492,7 +492,7 @@ impl StartCmd {
             RwLock::new(key_storage_config.create().await?).into();
 
         spawn_recovery_server_and_run_onboarding(
-            config.migration_web_ui.clone(),
+            config.migration_web_ui,
             (&secrets).into(),
             config.my_near_account_id.clone(),
             keyshare_storage.clone(),
@@ -665,14 +665,14 @@ impl Cli {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),
             number_of_responder_keys: 1,
-            web_ui: WebUIConfig {
-                host: "127.0.0.1".to_owned(),
-                port: PortSeed::CLI_FOR_PYTEST.web_port(index),
-            },
-            migration_web_ui: WebUIConfig {
-                host: "127.0.0.1".to_owned(),
-                port: PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
-            },
+            web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.web_port(index),
+            ),
+            migration_web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            ),
             pprof_bind_address: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
                 PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),

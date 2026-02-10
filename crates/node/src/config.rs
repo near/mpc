@@ -102,13 +102,6 @@ impl MpcConfig {
     }
 }
 
-/// Config for the web UI, which is mostly for debugging and metrics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebUIConfig {
-    pub host: String,
-    pub port: u16,
-}
-
 /// Configures behavior of the near indexer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
@@ -158,9 +151,13 @@ pub struct ConfigFile {
     pub near_responder_account_id: AccountId,
     /// Number of keys that will be used to sign the signature responses.
     pub number_of_responder_keys: usize,
-
+<<<<<<< HEAD
     pub web_ui: WebUIConfig,
     pub migration_web_ui: WebUIConfig,
+=======
+    pub web_ui: SocketAddr,
+    pub migration_web_ui: SocketAddr,
+>>>>>>> parent of 73241549 (fix: Revert #1707 (use SocketAddr instead of custom struct) (#1795))
     #[serde(default = "default_pprof_bind_address")]
     pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
@@ -236,7 +233,7 @@ impl ParticipantsConfig {
     ///
     /// If the account_id exists in the participant list, returns
     /// [`ParticipantStatus::Active`] with either [`NodeStatus::Active`] if the
-    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.
+    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.  
     /// Returns [`ParticipantStatus::Inactive`] if the account is not found.
     pub fn participant_status(
         &self,
