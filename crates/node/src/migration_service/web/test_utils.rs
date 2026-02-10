@@ -62,12 +62,8 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
         &server_key,
     )
     .await
-<<<<<<< HEAD
     .expect("Web server should start successfully for test setup");
-    let target_address = format!("{LOCALHOST_IP}:{port}");
-=======
-    .is_ok());
->>>>>>> parent of 73241549 (fix: Revert #1707 (use SocketAddr instead of custom struct) (#1795))
+
     TestSetup {
         backup_encryption_key: backup_encryption_key.into(),
         client_key,

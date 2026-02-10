@@ -3,7 +3,6 @@ use crate::{
         generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
         ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PersistentSecrets,
         PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-        WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,

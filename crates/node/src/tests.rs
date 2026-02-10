@@ -14,7 +14,6 @@ use tokio::sync::{watch, RwLock};
 use crate::config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, ParticipantsConfig,
     PersistentSecrets, PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-    WebUIConfig,
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;

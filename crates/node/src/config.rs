@@ -104,6 +104,28 @@ impl MpcConfig {
     }
 }
 
+/// Config for the web UI, which is mostly for debugging and metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebUIConfig {
+    pub host: String,
+    pub port: u16,
+}
+
+/// Deserializes a `SocketAddr` from either a string (e.g. `"0.0.0.0:3000"`)
+/// or a `WebUIConfig` struct (e.g. `{ host: "0.0.0.0", port: 3000 }`).
+fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let either: Either<SocketAddr, WebUIConfig> = Either::deserialize(deserializer)?;
+    match either {
+        Either::Left(addr) => Ok(addr),
+        Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
+            .parse()
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 /// Configures behavior of the near indexer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
@@ -153,10 +175,10 @@ pub struct ConfigFile {
     pub near_responder_account_id: AccountId,
     /// Number of keys that will be used to sign the signature responses.
     pub number_of_responder_keys: usize,
-    #[serde(with = "either::serde_untagged")]
-    pub web_ui: Either<WebUIConfig, SocketAddr>,
-    #[serde(with = "either::serde_untagged")]
-    pub migration_web_ui: Either<WebUIConfig, SocketAddr>,
+    #[serde(deserialize_with = "deserialize_to_socket_addr")]
+    pub web_ui: SocketAddr,
+    #[serde(deserialize_with = "deserialize_to_socket_addr")]
+    pub migration_web_ui: SocketAddr,
     #[serde(default = "default_pprof_bind_address")]
     pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
