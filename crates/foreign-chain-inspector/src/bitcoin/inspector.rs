@@ -37,7 +37,7 @@ where
         // TODO(#1978): add retry mechanism if the error from the request is transient
         let rpc_response: GetRawTransactionVerboseResponse = self
             .client
-            .request(GET_RAW_TRANSACTION_METHOD, request_parameters)
+            .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
             .await?;
 
         let transaction_block_confirmation = rpc_response.confirmations.into();

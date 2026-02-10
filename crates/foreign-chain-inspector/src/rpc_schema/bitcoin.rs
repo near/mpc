@@ -43,6 +43,6 @@ impl Serialize for GetRawTransactionArgs {
     }
 }
 
-impl ToRpcParams for GetRawTransactionArgs {
+impl ToRpcParams for &GetRawTransactionArgs {
     to_rpc_params_impl!();
 }
