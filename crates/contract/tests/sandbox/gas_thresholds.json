@@ -1,5 +1,6 @@
 {
   "_comment": "Gas thresholds in GGas keyed by participant count. Fields correspond to Participants struct operations. buffer_percent is added to account for fluctuations.",
+  "_comment2": "During the fix of flaky tests in #2036 this was tested locally with 4000 participants, and seemed to work just fine after batching account creations",
   "buffer_percent": 25.0,
   "thresholds": {
     "10": {
@@ -37,6 +38,15 @@
       "serialization": 5060,
       "insert": 7386,
       "update_info": 7448
+    },
+    "400": {
+      "len": 10898,
+      "is_participant": 11078,
+      "info": 11078,
+      "validate": 13701,
+      "serialization": 11676,
+      "insert": 20449,
+      "update_info": 20612
     }
   }
 }

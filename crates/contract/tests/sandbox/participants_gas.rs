@@ -11,10 +11,7 @@
 //! [`Participants`]: mpc_contract::primitives::participants::Participants
 
 use crate::sandbox::{
-    common::{
-        gen_accounts, init_contract, init_contract_running, make_threshold_params,
-        submit_attestations,
-    },
+    common::{gen_accounts, init_contract, init_contract_running, make_threshold_params},
     utils::{contract_build::current_contract_with_bench_methods, shared_key_utils::new_secp256k1},
 };
 use mpc_contract::{
@@ -285,7 +282,8 @@ async fn setup_test_env_with_state(n_participants: usize, running_state: bool) -
     } else {
         init_contract(&contract, threshold_params, None).await;
     }
-    submit_attestations(&contract, &accounts, &participants).await;
+    // Enable if needed
+    // submit_attestations(&contract, &accounts, &participants).await;
 
     TestEnv {
         contract,

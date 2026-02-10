@@ -34,7 +34,8 @@ use near_workspaces::{
 use near_workspaces::{result::Execution, Account, Worker};
 use rand_core::CryptoRngCore;
 use serde_json::json;
-use std::{collections::BTreeSet, task::Poll};
+use std::{collections::BTreeSet, task::Poll, time::Duration};
+use tokio::time::timeout;
 
 pub async fn create_account_given_id(
     worker: &Worker<Sandbox>,
@@ -73,45 +74,75 @@ pub async fn gen_account(worker: &Worker<Sandbox>) -> (Account, AccountId) {
     (account, id)
 }
 
+async fn create_account_helper(
+    worker: &Worker<Sandbox>,
+    root_account: &Account,
+) -> (Account, TransactionStatus) {
+    let (account_id, sk) = worker.generate_dev_account_credentials();
+    let account_id = format!("{}.{}", account_id, root_account.id())
+        .parse()
+        .unwrap();
+    let transaction = root_account
+        .batch(&account_id)
+        .create_account()
+        .add_key(
+            sk.public_key(),
+            AccessKey {
+                nonce: 0,
+                permission: AccessKeyPermission::FullAccess,
+            },
+        )
+        .transfer(NearToken::from_near(100))
+        .transact_async()
+        .await
+        .unwrap();
+    let account = Account::from_secret_key(account_id.clone(), sk, worker);
+    (account, transaction)
+}
+
 /// Create `amount` accounts and return them along with the candidate info.
 /// This creates accounts async, but as this is not supported by
 /// near_workspaces, hence the way to do so is very low level
 pub async fn gen_accounts(worker: &Worker<Sandbox>, amount: usize) -> (Vec<Account>, Participants) {
     let root_account = worker.root_account().unwrap();
+
     let mut accounts = Vec::with_capacity(amount);
-    let mut account_ids = Vec::with_capacity(amount);
-    let mut account_creation_transactions = Vec::with_capacity(amount);
-    for _ in 0..amount {
-        let (account_id, sk) = worker.generate_dev_account_credentials();
-        let account_id = format!("{}.{}", account_id, root_account.id())
-            .parse()
-            .unwrap();
-        let transaction = root_account
-            .batch(&account_id)
-            .create_account()
-            .add_key(
-                sk.public_key(),
-                AccessKey {
-                    nonce: 0,
-                    permission: AccessKeyPermission::FullAccess,
-                },
-            )
-            .transfer(NearToken::from_near(100))
-            .transact_async()
-            .await
-            .unwrap();
-        account_creation_transactions.push(transaction);
-        let account = Account::from_secret_key(account_id.clone(), sk, worker);
-        accounts.push(account);
-        account_ids.push(account_id);
+    // Generating too many accounts at the same time causes the blockchain to block
+    // potentially due to some bug in near-workspaces
+    // I tested batch_size = 100 while creating 4000 accounts, and it never failed
+    let batch_size = 100;
+    while accounts.len() < amount {
+        let mut account_creation_transactions = Vec::with_capacity(batch_size);
+        for _ in 0..batch_size {
+            let (account, transaction) = create_account_helper(worker, &root_account).await;
+            account_creation_transactions.push((account, transaction));
+        }
+
+        for (account, transaction) in account_creation_transactions.into_iter() {
+            let result = wait_for_transaction(Duration::from_secs(5), transaction).await;
+            match result {
+                Ok(result) => {
+                    assert!(result.is_success());
+                    accounts.push(account);
+                    if accounts.len() == amount {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    dbg!(err);
+                }
+            }
+        }
     }
-    for transaction in account_creation_transactions {
-        // We had a flaky test here (#1913) before timeout, hopefully 10 retries is enough
-        let result = retry_wait_transaction(10, transaction).await.unwrap();
-        dbg!(&result);
-        assert!(result.is_success());
-    }
-    let candidates = candidates(Some(account_ids));
+
+    assert!(accounts.len() == amount);
+
+    let candidates = candidates(Some(
+        accounts
+            .iter()
+            .map(|account| account.id().clone())
+            .collect(),
+    ));
     (accounts, candidates)
 }
 
@@ -386,6 +417,7 @@ pub async fn submit_tee_attestations(
 }
 
 /// Submit mock attestations for all participants in parallel.
+// This function should be updated to use async transactions instead
 pub async fn submit_attestations(
     contract: &Contract,
     accounts: &[Account],
@@ -579,26 +611,32 @@ pub async fn generate_participant_and_submit_attestation(
 // for transactions fails instead of retrying.
 // See near_workspaces::operations::TransactionStatus in
 // https://github.com/near/near-workspaces-rs/blob/dc729222070b508381b8dc81c027b0c0e6720567/workspaces/src/operations.rs#L494
-pub async fn retry_wait_transaction(
-    max_retries: usize,
+pub async fn wait_for_transaction(
+    timeout_s: Duration,
     transaction: TransactionStatus,
 ) -> anyhow::Result<ExecutionFinalResult> {
-    let mut last_err = None;
-    let mut retries = 0;
-    while retries < max_retries {
-        match transaction.status().await {
-            Ok(Poll::Ready(val)) => return Ok(val),
-            Ok(Poll::Pending) => {}
-            Err(err) => {
-                last_err = Some(err);
-                retries += 1;
+    let mut result = None;
+    let loop_future = async {
+        loop {
+            match transaction.status().await {
+                Ok(Poll::Ready(val)) => {
+                    result = Some(Ok(val));
+                    break;
+                }
+                Ok(Poll::Pending) => {}
+                Err(err) => {
+                    result = Some(Err(err));
+                }
             }
+            tokio::time::sleep(Duration::from_millis(300)).await;
         }
+    };
 
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    }
-    match last_err {
-        Some(err) => Err(anyhow::anyhow!(err).context("Transaction failed after max retries")),
-        None => anyhow::bail!("Transaction timed out without returning an error"),
+    match timeout(timeout_s, loop_future).await {
+        Ok(_) => match result {
+            Some(result) => Ok(result?),
+            None => anyhow::bail!("Transaction timed out without returning an error"),
+        },
+        Err(_) => anyhow::bail!("Loop timed out"),
     }
 }
