@@ -6,8 +6,8 @@ use crate::{
 };
 
 use crate::rpc_schema::ethereum::{
-    FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionByHashArgs,
-    GetTransactionByHashResponse, ReturnFullTransactionHash,
+    FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionReceiptARgs,
+    GetTransactionReceiptResponse, ReturnFullTransactionHash,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
@@ -46,11 +46,11 @@ where
             .await?;
 
         // Get the transaction to retrieve blockHash and blockNumber
-        let get_transaction_args = GetTransactionByHashArgs {
+        let get_transaction_args = GetTransactionReceiptARgs {
             transaction_hash: ethereum_types::H256(transaction.into()),
         };
 
-        let transaction_metadata: GetTransactionByHashResponse = self
+        let transaction_metadata: GetTransactionReceiptResponse = self
             .client
             .request(GET_TRANSACTION_RECEIPT_METHOD, &get_transaction_args)
             .await?;
@@ -97,7 +97,10 @@ pub enum AbstractExtractor {
 }
 
 impl AbstractExtractor {
-    fn extract_value(&self, rpc_response: &GetTransactionByHashResponse) -> AbstractExtractedValue {
+    fn extract_value(
+        &self,
+        rpc_response: &GetTransactionReceiptResponse,
+    ) -> AbstractExtractedValue {
         match self {
             AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),

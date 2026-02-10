@@ -9,15 +9,15 @@ use serde::{Deserialize, Serialize};
 /// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct GetTransactionByHashResponse {
+pub(crate) struct GetTransactionReceiptResponse {
     pub(crate) block_hash: H256,
     pub(crate) block_number: U64,
     pub(crate) status: U64,
 }
 
-/// Partial RPC response for `getrawtransaction`. See link below for full spec;
-/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-pub(crate) struct GetTransactionByHashArgs {
+/// Request args for `eth_getTransactionReceipt`.
+/// https://ethereum.org/developers/docs/apis/json-rpc/#eth_getBlockByNumber
+pub(crate) struct GetTransactionReceiptARgs {
     pub(crate) transaction_hash: H256,
 }
 
@@ -40,7 +40,7 @@ pub(crate) enum FinalityTag {
 #[derive(From, Serialize)]
 pub(crate) struct ReturnFullTransactionHash(bool);
 
-impl Serialize for GetTransactionByHashArgs {
+impl Serialize for GetTransactionReceiptARgs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -50,7 +50,7 @@ impl Serialize for GetTransactionByHashArgs {
     }
 }
 
-impl ToRpcParams for &GetTransactionByHashArgs {
+impl ToRpcParams for &GetTransactionReceiptARgs {
     to_rpc_params_impl!();
 }
 
