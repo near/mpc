@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "network-hardship-simulation")]
 use std::fs;
 use std::{
+    io::{Seek, Write},
     net::{Ipv4Addr, SocketAddr},
     path::Path,
 };
@@ -182,20 +183,15 @@ pub struct ConfigFile {
 
 impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let mut file = fs::OpenOptions::new()
-            .truncate(false)
-            .create(false)
-            .write(true)
-            .open(&path)?;
+        let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
 
-        let config: Self = serde_yaml::from_str(&file)?;
+        let config: Self = serde_yaml::from_reader(&file)?;
         config.validate().context("Validate config.yaml")?;
 
-        let serialized_config =
-            serde_yaml::to_string(&config).context("failed to re-serialize the config");
-
-        // TODO: The file needs to be cleared before writing?
-        serde_yaml::to_writer(&mut file, &config);
+        file.rewind()?;
+        file.set_len(0)?;
+        serde_yaml::to_writer(&mut file, &config)?;
+        file.flush()?;
 
         Ok(config)
     }
