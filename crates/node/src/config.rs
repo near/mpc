@@ -594,7 +594,6 @@ where
 #[cfg(test)]
 pub mod tests {
     use assert_matches::assert_matches;
-    use k256::ecdsa::signature::SignerMut;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
         distributions::{Alphanumeric, Uniform},
