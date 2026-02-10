@@ -766,9 +766,7 @@ ckd:
 
         // Deserialize again — the round-trip
         let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config.web_ui, config2.web_ui);
-        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
-        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
+        assert_eq!(config, config2);
     }
 
     #[test]
@@ -783,7 +781,6 @@ ckd:
         let serialized = serde_yaml::to_string(&config).unwrap();
 
         // The serialized form should now use SocketAddr format, not the old object format.
-        // Verify it doesn't contain the old "host:" / "port:" structure for web_ui.
         assert!(
             !serialized.contains("host:"),
             "Re-serialized config should not contain old 'host:' field, got:\n{serialized}"
@@ -791,8 +788,7 @@ ckd:
 
         // Deserialize the new format again — full migration round-trip
         let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config.web_ui, config2.web_ui);
-        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config, config2);
     }
 
     #[test]
@@ -816,8 +812,7 @@ ckd:
         // Read the file back — it should now be in the new format
         let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
         let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config.web_ui, config2.web_ui);
-        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config, config2);
 
         // And the rewritten file should not contain the old host/port keys
         assert!(
@@ -845,14 +840,7 @@ ckd:
         // Read file back and verify it's valid YAML that round-trips
         let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
         let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config.web_ui, config2.web_ui);
-        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
-        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
-        assert_eq!(config.my_near_account_id, config2.my_near_account_id);
-        assert_eq!(
-            config.indexer.mpc_contract_id,
-            config2.indexer.mpc_contract_id
-        );
+        assert_eq!(config, config2);
     }
 
     #[test]
@@ -872,8 +860,7 @@ ckd:
         let contents_after_second = std::fs::read_to_string(tmp.path()).unwrap();
 
         assert_eq!(contents_after_first, contents_after_second);
-        assert_eq!(config1.web_ui, config2.web_ui);
-        assert_eq!(config1.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config1, config2);
     }
 
     #[test]
@@ -913,8 +900,7 @@ ckd:
         );
         // Must be valid YAML that parses to the same config
         let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config.web_ui, config2.web_ui);
-        assert_eq!(config.migration_web_ui, config2.migration_web_ui);
+        assert_eq!(config, config2);
     }
 
     #[test]
