@@ -100,13 +100,14 @@ pub(crate) fn validate_auth_config(
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     #[test]
     fn strip_placeholder__borrows_for_none_auth() {
         let auth = AuthConfig::None;
         let url = "https://rpc.example.com";
         let result = auth.strip_placeholder(url);
-        assert!(matches!(result, Cow::Borrowed(_)));
+        assert_matches!(result, Cow::Borrowed(_));
         assert_eq!(result, url);
     }
 
@@ -121,7 +122,7 @@ mod tests {
         };
         let url = "https://rpc.example.com/v2/";
         let result = auth.strip_placeholder(url);
-        assert!(matches!(result, Cow::Borrowed(_)));
+        assert_matches!(result, Cow::Borrowed(_));
         assert_eq!(result, url);
     }
 
@@ -135,7 +136,7 @@ mod tests {
         };
         let url = "https://rpc.example.com";
         let result = auth.strip_placeholder(url);
-        assert!(matches!(result, Cow::Borrowed(_)));
+        assert_matches!(result, Cow::Borrowed(_));
         assert_eq!(result, url);
     }
 
@@ -149,7 +150,7 @@ mod tests {
         };
         let url = "https://rpc.ankr.com/near/{api_key}";
         let result = auth.strip_placeholder(url);
-        assert!(matches!(result, Cow::Owned(_)));
+        assert_matches!(result, Cow::Owned(_));
         assert_eq!(result, "https://rpc.ankr.com/near/");
     }
 }
