@@ -182,9 +182,21 @@ pub struct ConfigFile {
 
 impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let file = std::fs::read_to_string(path)?;
+        let mut file = fs::OpenOptions::new()
+            .truncate(false)
+            .create(false)
+            .write(true)
+            .open(&path)?;
+
         let config: Self = serde_yaml::from_str(&file)?;
         config.validate().context("Validate config.yaml")?;
+
+        let serialized_config =
+            serde_yaml::to_string(&config).context("failed to re-serialize the config");
+
+        // TODO: The file needs to be cleared before writing?
+        serde_yaml::to_writer(&mut file, &config);
+
         Ok(config)
     }
 
