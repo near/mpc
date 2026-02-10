@@ -220,7 +220,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
                 triple0: self.triple0,
                 triple1: self.triple1,
                 keygen_out: self.keygen_out,
-                threshold: self.threshold,
+                threshold: self.threshold.into(),
             },
         )?;
         let _timer = metrics::MPC_PRE_SIGNATURE_TIME_ELAPSED.start_timer();

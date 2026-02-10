@@ -20,7 +20,7 @@ pub fn generate_dummy_keyshares<R: CryptoRng + RngCore + SeedableRng + Send + 's
     attempt_id: u64,
     rng: &mut R,
 ) -> (Keyshare, Keyshare) {
-    let keyshares = TestGenerators::new(2, 2).make_ecdsa_keygens(rng);
+    let keyshares = TestGenerators::new(2, 2.into()).make_ecdsa_keygens(rng);
     let mut iter = keyshares.into_iter().map(|share| {
         let key = share.1;
 
@@ -55,7 +55,7 @@ pub fn generate_dummy_keyshare<R: CryptoRng + RngCore + SeedableRng + Send + 'st
     attempt_id: u64,
     rng: &mut R,
 ) -> Keyshare {
-    let key = TestGenerators::new(2, 2)
+    let key = TestGenerators::new(2, 2.into())
         .make_ecdsa_keygens(rng)
         .into_iter()
         .next()
