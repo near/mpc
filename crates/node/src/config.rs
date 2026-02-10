@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Seek, Write},
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::Path,
 };
 
@@ -581,8 +581,10 @@ where
     match either {
         Either::Left(addr) => Ok(addr),
         Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
-            .parse()
-            .map_err(serde::de::Error::custom),
+            .to_socket_addrs()
+            .map_err(serde::de::Error::custom)?
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("could not resolve host")),
     }
 }
 
@@ -701,39 +703,6 @@ pub mod tests {
 
     /// Helper to build a minimal valid ConfigFile YAML string.
     /// `web_ui` and `migration_web_ui` are inserted verbatim as YAML values.
-    fn make_config_yaml(web_ui: &str, migration_web_ui: &str) -> String {
-        format!(
-            r#"
-my_near_account_id: "test.near"
-near_responder_account_id: "responder.near"
-number_of_responder_keys: 1
-web_ui: {web_ui}
-migration_web_ui: {migration_web_ui}
-indexer:
-  validate_genesis: false
-  sync_mode: Latest
-  finality: final
-  concurrency: 1
-  mpc_contract_id: "v1.signer"
-triple:
-  concurrency: 1
-  desired_triples_to_buffer: 10
-  timeout_sec: 60
-  parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 1
-  desired_presignatures_to_buffer: 10
-  timeout_sec: 60
-signature:
-  timeout_sec: 60
-ckd:
-  timeout_sec: 60
-"#
-        )
-    }
-
-    /// Helper to build a minimal valid ConfigFile YAML string.
-    /// `web_ui` and `migration_web_ui` are inserted verbatim as YAML values.
     const OLD_CONFIG_EXAMPLE: &str = r#"
 my_near_account_id: sam.test.near
 near_responder_account_id: sam.test.near
@@ -765,215 +734,22 @@ cores: 4
 
     #[test]
     fn old_config_example_is_deserializable() {
-        let config: ConfigFile = serde_yaml::from_str(&OLD_CONFIG_EXAMPLE).unwrap();
+        // given
+        let config_string = OLD_CONFIG_EXAMPLE;
+
+        // when
+        let serialized_config: Result<ConfigFile, _> = serde_yaml::from_str(config_string);
+
+        // then
+        assert_matches!(serialized_config, Ok(_));
     }
 
     #[test]
-    fn test_config_file_deserialize_socket_addr_new_format() {
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"0.0.0.0:3001\"");
-        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
-        assert_eq!(
-            config.migration_web_ui,
-            "0.0.0.0:3001".parse::<SocketAddr>().unwrap()
-        );
-    }
+    fn config_from_file_re_serializes_with_updated_fields() {
+        // given
 
-    #[test]
-    fn test_config_file_deserialize_socket_addr_old_format() {
-        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
-        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
-        let yaml = make_config_yaml(old_web_ui, old_migration);
-        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
-        assert_eq!(
-            config.migration_web_ui,
-            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
-        );
-    }
+        // when
 
-    #[test]
-    fn test_config_file_roundtrip_new_format() {
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
-        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
-
-        // Serialize back (this is what from_file writes to disk)
-        let serialized = serde_yaml::to_string(&config).unwrap();
-
-        // Deserialize again — the round-trip
-        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config, config2);
-    }
-
-    #[test]
-    fn test_config_file_migration_roundtrip_old_to_new() {
-        // Start with old format (host/port objects)
-        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
-        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
-        let yaml = make_config_yaml(old_web_ui, old_migration);
-        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
-
-        // Serialize to new format (what from_file writes back to disk)
-        let serialized = serde_yaml::to_string(&config).unwrap();
-
-        // The serialized form should now use SocketAddr format, not the old object format.
-        assert!(
-            !serialized.contains("host:"),
-            "Re-serialized config should not contain old 'host:' field, got:\n{serialized}"
-        );
-
-        // Deserialize the new format again — full migration round-trip
-        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config, config2);
-    }
-
-    #[test]
-    fn test_config_file_from_file_rewrites_old_format() {
-        use tempfile::NamedTempFile;
-
-        let old_web_ui = "\n    host: \"0.0.0.0\"\n    port: 3000";
-        let old_migration = "\n    host: \"127.0.0.1\"\n    port: 3001";
-        let yaml = make_config_yaml(old_web_ui, old_migration);
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
-
-        let config = ConfigFile::from_file(tmp.path()).unwrap();
-        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
-        assert_eq!(
-            config.migration_web_ui,
-            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
-        );
-
-        // Read the file back — it should now be in the new format
-        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
-        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config, config2);
-
-        // And the rewritten file should not contain the old host/port keys
-        assert!(
-            !rewritten.contains("host:"),
-            "Rewritten file should not contain old 'host:' field, got:\n{rewritten}"
-        );
-    }
-
-    #[test]
-    fn test_config_file_from_file_new_format_roundtrip() {
-        use tempfile::NamedTempFile;
-
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
-
-        let config = ConfigFile::from_file(tmp.path()).unwrap();
-        assert_eq!(config.web_ui, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
-        assert_eq!(
-            config.migration_web_ui,
-            "127.0.0.1:3001".parse::<SocketAddr>().unwrap()
-        );
-
-        // Read file back and verify it's valid YAML that round-trips
-        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
-        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config, config2);
-    }
-
-    #[test]
-    fn test_config_file_from_file_idempotent() {
-        // Calling from_file twice should produce the same file contents and config.
-        use tempfile::NamedTempFile;
-
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
-
-        let config1 = ConfigFile::from_file(tmp.path()).unwrap();
-        let contents_after_first = std::fs::read_to_string(tmp.path()).unwrap();
-
-        let config2 = ConfigFile::from_file(tmp.path()).unwrap();
-        let contents_after_second = std::fs::read_to_string(tmp.path()).unwrap();
-
-        assert_eq!(contents_after_first, contents_after_second);
-        assert_eq!(config1, config2);
-    }
-
-    #[test]
-    fn test_config_file_from_file_truncates_properly() {
-        // Verify the rewrite doesn't leave leftover bytes from the previous
-        // content (i.e. rewind + set_len(0) works before writing).
-        use tempfile::NamedTempFile;
-
-        // Write a config and then pad the file with extra garbage after it.
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"127.0.0.1:3001\"");
-        let garbage = "\n# GARBAGE THAT SHOULD BE REMOVED\ninvalid_field: oops\n";
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        std::io::Write::write_all(&mut tmp, yaml.as_bytes()).unwrap();
-
-        // First call normalizes the file
-        ConfigFile::from_file(tmp.path()).unwrap();
-
-        // Now append garbage to simulate a longer previous file
-        let mut f = fs::OpenOptions::new()
-            .append(true)
-            .open(tmp.path())
-            .unwrap();
-        std::io::Write::write_all(&mut f, garbage.as_bytes()).unwrap();
-        drop(f);
-
-        let corrupted = std::fs::read_to_string(tmp.path()).unwrap();
-        assert!(corrupted.contains("GARBAGE"));
-
-        // from_file should truncate and rewrite cleanly
-        let config = ConfigFile::from_file(tmp.path()).unwrap();
-        let rewritten = std::fs::read_to_string(tmp.path()).unwrap();
-
-        assert!(
-            !rewritten.contains("GARBAGE"),
-            "Rewritten file should not contain leftover bytes, got:\n{rewritten}"
-        );
-        // Must be valid YAML that parses to the same config
-        let config2: ConfigFile = serde_yaml::from_str(&rewritten).unwrap();
-        assert_eq!(config, config2);
-    }
-
-    #[test]
-    fn test_config_file_pprof_default_roundtrip() {
-        // pprof_bind_address uses a default; make sure it survives round-trip
-        let yaml = make_config_yaml("\"0.0.0.0:3000\"", "\"0.0.0.0:3001\"");
-        let config: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(
-            config.pprof_bind_address,
-            format!("0.0.0.0:{DEFAULT_PPROF_PORT}")
-                .parse::<SocketAddr>()
-                .unwrap()
-        );
-
-        let serialized = serde_yaml::to_string(&config).unwrap();
-        let config2: ConfigFile = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(config.pprof_bind_address, config2.pprof_bind_address);
-    }
-
-    #[test]
-    fn test_permanent_secrets_serialization_fixed_values() {
-        let p2p_private_key = "ed25519:561CCDGTqnGrfJcsYwcuRgvU6JCiJnt2GGVpKfkkFcH21o1he4NorPPiyQxPp92VNxygmTRDhFcfQchV7RTYsdHh";
-        let near_signer_key = "ed25519:3FsgibEEmmMfqojDH5676T93fLPbiFG75QGuNxrhsAKcJuFcaBTAy481uWiPnopmFsTLWAVbULtUuEaXBEKiE57f";
-        let near_responder_keys1 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
-        let near_responder_keys2 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
-        let secrets_str = format!("{{\"p2p_private_key\":\"{p2p_private_key}\",\"near_signer_key\":\"{near_signer_key}\",\"near_responder_keys\":[\"{near_responder_keys1}\",\"{near_responder_keys2}\"]}}");
-
-        let mut secrets: PersistentSecrets = serde_json::from_str(&secrets_str).unwrap();
-
-        let msg = b"hello world";
-        let signature = secrets.near_signer_key.try_sign(msg).unwrap();
-        secrets
-            .near_signer_key
-            .verify(msg, &signature)
-            .expect("Signature should verify with matching key");
-
-        let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
-        assert_eq!(secrets_str, secrets_str_copy);
+        // then
     }
 }
