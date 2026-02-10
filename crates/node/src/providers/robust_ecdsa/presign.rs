@@ -136,7 +136,7 @@ pub(super) async fn run_background_presignature_generation(
                         let _in_flight = in_flight;
                         let _semaphore_guard = parallelism_limiter.acquire().await?;
                         let presignature = PresignComputation {
-                            threshold: robust_ecdsa_threshold,
+                            max_malicious: robust_ecdsa_threshold,
                             keygen_out,
                         }
                         .perform_leader_centric_computation(
@@ -181,7 +181,7 @@ impl RobustEcdsaSignatureProvider {
         let robust_ecdsa_threshold = translate_threshold(threshold, number_of_participants)?;
 
         FollowerPresignComputation {
-            threshold: robust_ecdsa_threshold,
+            max_malicious: robust_ecdsa_threshold,
             keygen_out: domain_data.keyshare,
             out_presignature_store: domain_data.presignature_store,
             out_presignature_id: id,
@@ -213,7 +213,7 @@ impl HasParticipants for PresignOutputWithParticipants {
 /// Performs an MPC presignature operation. This is shared for the initiator
 /// and for passive participants.
 pub struct PresignComputation {
-    threshold: usize,
+    max_malicious: usize,
     keygen_out: KeygenOutput,
 }
 
@@ -232,7 +232,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
             me.into(),
             PresignArguments {
                 keygen_out: self.keygen_out,
-                threshold: self.threshold,
+                max_malicious: self.max_malicious.into(),
             },
             OsRng,
         )?;
@@ -250,7 +250,7 @@ impl MpcLeaderCentricComputation<PresignOutput> for PresignComputation {
 /// The difference is: we need to read the triples from the triple store (which may fail),
 /// and we need to write the presignature to the presignature store before completing.
 pub struct FollowerPresignComputation {
-    pub threshold: usize,
+    pub max_malicious: usize,
     pub keygen_out: KeygenOutput,
 
     pub out_presignature_store: Arc<PresignatureStorage>,
@@ -261,7 +261,7 @@ pub struct FollowerPresignComputation {
 impl MpcLeaderCentricComputation<()> for FollowerPresignComputation {
     async fn compute(self, channel: &mut NetworkTaskChannel) -> anyhow::Result<()> {
         let presignature = PresignComputation {
-            threshold: self.threshold,
+            max_malicious: self.max_malicious,
             keygen_out: self.keygen_out,
         }
         .compute(channel)

@@ -668,7 +668,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -767,7 +767,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -867,7 +867,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -905,7 +905,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -944,7 +944,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1024,7 +1024,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1105,7 +1105,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1188,7 +1188,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1272,7 +1272,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
@@ -1317,7 +1317,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         let clock = FakeClock::default();
         let participants =
-            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3));
+            into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3.into()));
         let my_participant_id = participants[1];
         let network_api = Arc::new(TestNetworkAPI::new(&participants));
 

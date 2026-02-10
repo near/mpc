@@ -148,7 +148,7 @@ mod tests {
     use curve25519_dalek::Scalar;
     use rand::rngs::OsRng;
     use rand::{Rng, SeedableRng};
-    use threshold_signatures::eddsa::KeygenOutput;
+    use threshold_signatures::frost::eddsa::KeygenOutput;
     use threshold_signatures::frost_core::keys::SigningShare;
     use threshold_signatures::frost_core::VerifyingKey;
     use threshold_signatures::frost_ed25519::{Ed25519Group, Ed25519Sha512, Group, SigningKey};
