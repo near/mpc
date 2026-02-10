@@ -19,7 +19,7 @@ pub struct AbstractInspector<Client> {
 
 impl<Client> ForeignChainInspector for AbstractInspector<Client>
 where
-    Client: ClientT + Send + Sync,
+    Client: ClientT + Send,
 {
     type TransactionId = AbstractTransactionHash;
     type Finality = EthereumFinality;
@@ -79,7 +79,7 @@ where
 
 impl<Client> AbstractInspector<Client>
 where
-    Client: ClientT + Send + Sync,
+    Client: ClientT + Send,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
