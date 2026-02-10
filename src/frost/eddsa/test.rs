@@ -63,6 +63,7 @@ pub fn test_run_signature_protocols(
     coordinators: &[Participant],
     threshold: impl Into<ReconstructionLowerBound> + Copy + 'static,
     msg_hash: HashOutput,
+    rng: &mut impl CryptoRngCore,
 ) -> Result<Vec<(Participant, SignatureOption)>, Box<dyn Error>> {
     let mut protocols: GenProtocol<SignatureOption> = Vec::with_capacity(participants.len());
 
@@ -73,7 +74,7 @@ pub fn test_run_signature_protocols(
         .collect::<Vec<_>>();
     let coordinators = ParticipantList::new(coordinators).unwrap();
     for (participant, key_pair) in participants.iter().take(actual_signers) {
-        let mut rng_p = MockCryptoRng::seed_from_u64(42);
+        let mut rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let mut coordinator = *participant;
 
         if !coordinators.contains(coordinator) {

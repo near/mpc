@@ -337,6 +337,7 @@ mod test {
                     &coordinators,
                     min_signers,
                     msg_hash,
+                    &mut rng,
                 )
                 .unwrap();
                 one_coordinator_output(data, coordinators[0]).unwrap();
@@ -363,6 +364,7 @@ mod test {
                 &coordinators,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinators[0]).unwrap();
@@ -413,6 +415,7 @@ mod test {
                 &coordinators,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinators[0]).unwrap();
@@ -474,6 +477,7 @@ mod test {
                 &coordinators,
                 threshold,
                 msg_hash,
+                &mut rng,
             )
             .unwrap();
             let signature = one_coordinator_output(data, coordinators[0]).unwrap();
