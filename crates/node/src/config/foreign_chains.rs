@@ -641,7 +641,7 @@ foreign_chains:
     }
 
     #[test]
-    fn to_policy__strips_path_auth_placeholder_from_rpc_url() -> anyhow::Result<()> {
+    fn to_policy__strips_path_auth_placeholder_from_rpc_url() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -689,8 +689,9 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
-        config.validate()?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+        config.validate().expect("config should be valid");
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
@@ -701,11 +702,10 @@ foreign_chains:
             .unwrap();
         let provider = solana_chain.providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
-        Ok(())
     }
 
     #[test]
-    fn to_policy__preserves_url_for_non_path_auth() -> anyhow::Result<()> {
+    fn to_policy__preserves_url_for_non_path_auth() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -754,8 +754,9 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
-        config.validate()?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
+        config.validate().expect("config should be valid");
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
@@ -766,6 +767,5 @@ foreign_chains:
             .unwrap();
         let provider = eth_chain.providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
-        Ok(())
     }
 }
