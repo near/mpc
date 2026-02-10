@@ -40,7 +40,7 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
             //  return error if me is part of the old participants set
             if !old_participants.contains(me) {
                 return Err(ProtocolError::AssertionFailed(
-                    format!("{me:?} is running Resharing with a zero share but does belong to the old participant set")));
+                    format!("{me:?} is running Resharing with a non-zero share but does not belong to the old participant set")));
             }
         }
         Ok((Some(old_key), Some(old_participants)))
