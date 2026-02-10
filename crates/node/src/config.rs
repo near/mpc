@@ -111,21 +111,6 @@ pub struct WebUIConfig {
     pub port: u16,
 }
 
-/// Deserializes a `SocketAddr` from either a string (e.g. `"0.0.0.0:3000"`)
-/// or a `WebUIConfig` struct (e.g. `{ host: "0.0.0.0", port: 3000 }`).
-fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let either: Either<SocketAddr, WebUIConfig> = Either::deserialize(deserializer)?;
-    match either {
-        Either::Left(addr) => Ok(addr),
-        Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
-            .parse()
-            .map_err(serde::de::Error::custom),
-    }
-}
-
 /// Configures behavior of the near indexer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexerConfig {
@@ -578,6 +563,19 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 
 fn default_pprof_bind_address() -> SocketAddr {
     (Ipv4Addr::UNSPECIFIED, DEFAULT_PPROF_PORT).into()
+}
+
+fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let either: Either<SocketAddr, WebUIConfig> = Either::deserialize(deserializer)?;
+    match either {
+        Either::Left(addr) => Ok(addr),
+        Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
+            .parse()
+            .map_err(serde::de::Error::custom),
+    }
 }
 
 #[cfg(test)]
