@@ -1185,8 +1185,6 @@ mod fault_handling_tests {
             })
             .await;
         }
-
-        panic!();
     }
 
     #[derive(Debug)]
