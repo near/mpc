@@ -212,7 +212,7 @@ gas' attached-deposit '0 NEAR' \
   send
 ```
 
-**note** - If the new node's attestation was submitted successfully, you should 2 attestations registered on the contract - one for the old node and one for the new node.
+**note** - If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract - one for the old node and one for the new node.
 
 
 ## Step 6: Initiate Migration state in Contract
