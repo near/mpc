@@ -359,7 +359,9 @@ class MpcCluster:
     ) -> Any:
         if args is None:
             args = {}
-        encoded_args = base64.b64encode(json.dumps(args).encode("utf-8")).decode("utf-8")
+        encoded_args = base64.b64encode(json.dumps(args).encode("utf-8")).decode(
+            "utf-8"
+        )
         res = self.contract_node.near_node.call_function(
             self.mpc_contract_account(),
             function_name,

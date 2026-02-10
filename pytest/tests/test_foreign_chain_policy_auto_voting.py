@@ -31,7 +31,9 @@ def _set_foreign_chains_config(node, foreign_chains: dict[str, Any] | None) -> N
 
     config_text = config_path.read_text(encoding="utf-8")
     # Keep generated YAML tags intact by editing only the trailing `foreign_chains` section.
-    config_text = re.sub(r"\nforeign_chains:\n[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
+    config_text = (
+        re.sub(r"\nforeign_chains:\n[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
+    )
 
     if foreign_chains is not None:
         foreign_chains_text = yaml.safe_dump(
@@ -125,7 +127,9 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     def partial_votes_visible() -> bool:
-        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")["proposal_by_account"]
+        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
+            "proposal_by_account"
+        ]
         policy = cluster.view_contract_function("get_foreign_chain_policy")
         return len(votes) == 2 and _normalize_policy(policy) == []
 
@@ -134,11 +138,14 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
         description="two policy votes without policy application",
     )
 
-    votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")["proposal_by_account"]
+    votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
+        "proposal_by_account"
+    ]
     assert len(votes) == 2, "expected exactly two votes before unanimity"
-    assert _normalize_policy(cluster.view_contract_function("get_foreign_chain_policy")) == [], (
-        "policy should not be applied before unanimous voting"
-    )
+    assert (
+        _normalize_policy(cluster.view_contract_function("get_foreign_chain_policy"))
+        == []
+    ), "policy should not be applied before unanimous voting"
 
     cluster.call_contract_function_with_account_assert_success(
         mpc_nodes[2],
@@ -149,9 +156,13 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
     expected_normalized_policy = _normalize_policy(expected_policy)
 
     def policy_applied() -> bool:
-        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")["proposal_by_account"]
+        votes = cluster.view_contract_function("get_foreign_chain_policy_proposals")[
+            "proposal_by_account"
+        ]
         policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return len(votes) == 0 and _normalize_policy(policy) == expected_normalized_policy
+        return (
+            len(votes) == 0 and _normalize_policy(policy) == expected_normalized_policy
+        )
 
     _wait_until(
         policy_applied,
