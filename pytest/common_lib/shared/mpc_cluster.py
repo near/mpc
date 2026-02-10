@@ -354,6 +354,22 @@ class MpcCluster:
             )
             self.update_participant_status()
 
+    def view_contract_function(
+        self, function_name: str, args: dict[str, Any] | None = None
+    ) -> Any:
+        if args is None:
+            args = {}
+        encoded_args = base64.b64encode(json.dumps(args).encode("utf-8")).decode("utf-8")
+        res = self.contract_node.near_node.call_function(
+            self.mpc_contract_account(),
+            function_name,
+            encoded_args,
+            timeout=10,
+        )
+        assert "error" not in res, res
+        result = bytes(res["result"]["result"]).decode("utf-8")
+        return json.loads(result)
+
     def call_contract_function_with_account_assert_success(
         self, account: NearAccount, function_name: str, args: dict = {}
     ) -> Any:
