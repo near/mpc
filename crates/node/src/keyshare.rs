@@ -19,7 +19,7 @@ use contract_interface::types as dtos;
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum KeyshareData {
     Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
-    Ed25519(threshold_signatures::eddsa::KeygenOutput),
+    Ed25519(threshold_signatures::frost::eddsa::KeygenOutput),
     Bls12381(threshold_signatures::confidential_key_derivation::KeygenOutput),
     V2Secp256k1(threshold_signatures::ecdsa::KeygenOutput),
 }

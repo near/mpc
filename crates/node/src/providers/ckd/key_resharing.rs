@@ -118,7 +118,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         const THRESHOLD: usize = 3;
         const NUM_PARTICIPANTS: usize = 4;
-        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD);
+        let gen = TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into());
         let keygens = gen.make_ckd_keygens(&mut rng);
         let old_participants = into_participant_ids(&gen);
         let mut new_participants = into_participant_ids(&gen);

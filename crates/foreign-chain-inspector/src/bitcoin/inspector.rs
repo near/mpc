@@ -1,7 +1,14 @@
-use crate::{
-    BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector, ForeignChainRpcClient,
-    bitcoin::{BitcoinBlockHash, BitcoinRpcResponse, BitcoinTransactionHash},
+use jsonrpsee::core::client::ClientT;
+
+use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
+use crate::rpc_schema::bitcoin::{
+    GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
 };
+use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+
+/// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
+const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";
+const VERBOSE_RESPONSE: bool = true;
 
 pub struct BitcoinInspector<Client> {
     client: Client,
@@ -9,11 +16,7 @@ pub struct BitcoinInspector<Client> {
 
 impl<Client> ForeignChainInspector for BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<
-            TransactionId = BitcoinTransactionHash,
-            Finality = BlockConfirmations,
-            RpcResponse = BitcoinRpcResponse,
-        >,
+    Client: ClientT + Send,
 {
     type TransactionId = BitcoinTransactionHash;
     type Finality = BlockConfirmations;
@@ -22,27 +25,35 @@ where
 
     async fn extract(
         &self,
-        tx_id: BitcoinTransactionHash,
+        transaction: BitcoinTransactionHash,
         block_confirmations_threshold: BlockConfirmations,
         extractors: Vec<BitcoinExtractor>,
     ) -> Result<Vec<BitcoinExtractedValue>, ForeignChainInspectionError> {
-        let response = self
+        let request_parameters = GetRawTransactionArgs {
+            transaction_hash: TransportBitcoinTransactionHash::from(*transaction),
+            verbose: VERBOSE_RESPONSE,
+        };
+
+        // TODO(#1978): add retry mechanism if the error from the request is transient
+        let rpc_response: GetRawTransactionVerboseResponse = self
             .client
-            .get(tx_id, block_confirmations_threshold)
+            .request(GET_RAW_TRANSACTION_METHOD, &request_parameters)
             .await?;
 
-        let enough_block_confirmations = block_confirmations_threshold <= response.confirmations;
+        let transaction_block_confirmation = rpc_response.confirmations.into();
+        let enough_block_confirmations =
+            block_confirmations_threshold <= transaction_block_confirmation;
 
         if !enough_block_confirmations {
             return Err(ForeignChainInspectionError::NotEnoughBlockConfirmations {
                 expected: block_confirmations_threshold,
-                got: response.confirmations,
+                got: transaction_block_confirmation,
             });
         }
 
         let extracted_values = extractors
             .iter()
-            .map(|extractor| extractor.extract_value(&response))
+            .map(|extractor| extractor.extract_value(&rpc_response))
             .collect();
 
         Ok(extracted_values)
@@ -51,20 +62,11 @@ where
 
 impl<Client> BitcoinInspector<Client>
 where
-    Client: ForeignChainRpcClient<
-            TransactionId = BitcoinTransactionHash,
-            Finality = BlockConfirmations,
-            RpcResponse = BitcoinRpcResponse,
-        >,
+    Client: ClientT + Send,
 {
     pub fn new(client: Client) -> Self {
         Self { client }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BitcoinExtractedValue {
-    BlockHash(BitcoinBlockHash),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -73,10 +75,13 @@ pub enum BitcoinExtractor {
 }
 
 impl BitcoinExtractor {
-    fn extract_value(&self, rpc_response: &BitcoinRpcResponse) -> BitcoinExtractedValue {
+    fn extract_value(
+        &self,
+        rpc_response: &GetRawTransactionVerboseResponse,
+    ) -> BitcoinExtractedValue {
         match self {
             BitcoinExtractor::BlockHash => {
-                BitcoinExtractedValue::BlockHash(rpc_response.block_hash.clone())
+                BitcoinExtractedValue::BlockHash(From::from(*rpc_response.blockhash))
             }
         }
     }

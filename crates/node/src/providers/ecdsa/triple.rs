@@ -327,7 +327,7 @@ mod tests {
         init_logging(LogFormat::Plain);
         tracking::testing::start_root_task_with_periodic_dump(async {
             let all_triples = run_test_clients(
-                into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD)),
+                into_participant_ids(&TestGenerators::new(NUM_PARTICIPANTS, THRESHOLD.into())),
                 run_triple_gen_client,
             )
             .await

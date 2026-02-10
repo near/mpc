@@ -3,7 +3,7 @@ use crate::network::NetworkTaskChannel;
 use crate::protocol::run_protocol;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use rand::rngs::OsRng;
-use threshold_signatures::eddsa::KeygenOutput;
+use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::Ed25519Sha512;
 use threshold_signatures::participants::Participant;
 
@@ -67,7 +67,7 @@ mod tests {
     use mpc_contract::primitives::domain::DomainId;
     use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use std::sync::Arc;
-    use threshold_signatures::eddsa::KeygenOutput;
+    use threshold_signatures::frost::eddsa::KeygenOutput;
     use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
 
@@ -75,7 +75,7 @@ mod tests {
     async fn eddsa_test_key_generation() {
         start_root_task_with_periodic_dump(async move {
             let results = run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3)),
+                into_participant_ids(&TestGenerators::new(4, 3.into())),
                 run_keygen_client,
             )
             .await

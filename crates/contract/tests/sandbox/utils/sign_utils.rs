@@ -36,7 +36,8 @@ use signature::DigestSigner;
 use std::time::Duration;
 use threshold_signatures::{
     confidential_key_derivation::{self as ckd, hash_app_id_with_pk, BLS12381SHA256},
-    ecdsa as ts_ecdsa, eddsa,
+    ecdsa as ts_ecdsa,
+    frost::eddsa,
     frost_ed25519::{self},
     KeygenOutput,
 };

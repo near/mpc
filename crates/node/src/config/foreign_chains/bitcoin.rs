@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
 use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
@@ -31,8 +33,8 @@ pub struct BitcoinProviderConfig {
 }
 
 impl ForeignChainProviderConfig for BitcoinProviderConfig {
-    fn rpc_url(&self) -> &str {
-        self.rpc_url.as_str()
+    fn rpc_url(&self) -> Cow<'_, str> {
+        self.auth.strip_placeholder(&self.rpc_url)
     }
 
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {

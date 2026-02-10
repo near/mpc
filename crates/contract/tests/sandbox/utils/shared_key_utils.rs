@@ -12,7 +12,8 @@ use rand_core::CryptoRngCore;
 use threshold_signatures::{
     blstrs,
     confidential_key_derivation::{self as ckd},
-    ecdsa as ts_ecdsa, eddsa,
+    ecdsa as ts_ecdsa,
+    frost::eddsa,
     frost_ed25519::{keys::SigningShare, Ed25519Group, Group as _, VerifyingKey},
     frost_secp256k1::{self, Secp256K1Group},
 };
