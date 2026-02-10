@@ -260,6 +260,7 @@ impl FakeMpcContractState {
                     parameters: new_parameters,
                     parameters_votes: state.parameters_votes.clone(),
                     add_domains_votes: state.add_domains_votes.clone(),
+                    import_domain_votes: state.import_domain_votes.clone(),
                     previously_cancelled_resharing_epoch_id: state
                         .previously_cancelled_resharing_epoch_id,
                 };
@@ -268,6 +269,38 @@ impl FakeMpcContractState {
             _ => {
                 panic!(
                     "update_participant_info  ignored because the contract is not in running state"
+                );
+            }
+        }
+    }
+
+    pub fn vote_import_domain(
+        &mut self,
+        account_id: AccountId,
+        public_key: dtos::PublicKey,
+    ) {
+        match &mut self.state {
+            ProtocolContractState::Running(state) => {
+                self.env.set_signer(&account_id);
+                let extended_key = public_key.try_into().unwrap();
+                match state.vote_import_domain(extended_key) {
+                    Ok(Some(domain_id)) => {
+                        tracing::info!(
+                            "vote_import_domain: domain {} created by consensus",
+                            domain_id.0
+                        );
+                    }
+                    Ok(None) => {
+                        tracing::info!("vote_import_domain: vote recorded, waiting for consensus");
+                    }
+                    Err(e) => {
+                        tracing::info!("vote_import_domain transaction failed: {}", e);
+                    }
+                }
+            }
+            _ => {
+                tracing::info!(
+                    "vote_import_domain ignored because the contract is not in running state"
                 );
             }
         }
@@ -589,6 +622,10 @@ impl FakeIndexerCore {
                     ChainSendTransactionRequest::ConcludeNodeMigration(conclude_migration_args) => {
                         let mut contract = contract.lock().await;
                         contract.conclude_node_migration(account_id, conclude_migration_args);
+                    }
+                    ChainSendTransactionRequest::VoteImportDomain(args) => {
+                        let mut contract = contract.lock().await;
+                        contract.vote_import_domain(account_id, args.public_key);
                     }
                 }
             }

@@ -1,10 +1,17 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
-    key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
+    domain::{
+        AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, ImportDomainVotes,
+        SignatureScheme,
+    },
+    key_state::{
+        AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
+        Keyset,
+    },
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
 };
@@ -34,6 +41,8 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     /// Votes for proposals to add new domains.
     pub add_domains_votes: AddDomainsVotes,
+    /// Votes for importing a domain with a pre-existing key from an external MPC instance.
+    pub import_domain_votes: ImportDomainVotes,
     /// The previous epoch id for a resharing state that was cancelled.
     /// This epoch id is tracked, as the next time the state transitions to resharing,
     /// we can't reuse a previously cancelled epoch id.
@@ -48,6 +57,7 @@ impl RunningContractState {
             parameters,
             parameters_votes: ThresholdParametersVotes::default(),
             add_domains_votes: AddDomainsVotes::default(),
+            import_domain_votes: ImportDomainVotes::default(),
             previously_cancelled_resharing_epoch_id: None,
         }
     }
@@ -172,6 +182,35 @@ impl RunningContractState {
                 ),
                 cancel_votes: BTreeSet::new(),
             }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Casts a vote to import a domain with a pre-existing Secp256k1 key.
+    /// When all participants vote for the same key, the domain is added directly
+    /// in the Running state without going through key generation.
+    pub fn vote_import_domain(
+        &mut self,
+        public_key: PublicKeyExtended,
+    ) -> Result<Option<DomainId>, Error> {
+        if !matches!(public_key, PublicKeyExtended::Secp256k1 { .. }) {
+            return Err(DomainError::ImportDomainUnsupportedScheme.into());
+        }
+        if self.keyset.domains.iter().any(|kfd| kfd.key == public_key) {
+            return Err(DomainError::ImportDomainKeyAlreadyExists.into());
+        }
+        let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
+        let n_votes = self.import_domain_votes.vote(public_key.clone(), &participant);
+        if self.parameters.participants().len() as u64 == n_votes {
+            let domain_id = self.domains.add_domain(SignatureScheme::Secp256k1);
+            self.keyset.domains.push(KeyForDomain {
+                domain_id,
+                key: public_key,
+                attempt: AttemptId::new(),
+            });
+            self.import_domain_votes = ImportDomainVotes::default();
+            Ok(Some(domain_id))
         } else {
             Ok(None)
         }
@@ -317,5 +356,145 @@ pub mod running_tests {
     #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
+    }
+
+    mod import_domain_tests {
+        use crate::crypto_shared::types::PublicKeyExtended;
+        use crate::primitives::test_utils::bogus_ed25519_public_key_extended;
+        use crate::state::key_event::tests::Environment;
+        use crate::state::test_utils::gen_running_state;
+        use k256::elliptic_curve::sec1::ToEncodedPoint;
+        use k256::SecretKey;
+
+        fn gen_secp256k1_public_key_extended() -> PublicKeyExtended {
+            let secret_key = SecretKey::random(&mut rand::thread_rng());
+            let public_key = secret_key.public_key();
+            let encoded = public_key.to_encoded_point(false);
+            // NEAR SDK Secp256k1 public key: 65 bytes = 0x04 prefix + 64 bytes
+            // But near_sdk::PublicKey stores them with a 0 prefix byte for SECP256K1.
+            let bytes: Vec<u8> = encoded.as_bytes()[1..].to_vec(); // drop 0x04 prefix, keep 64 bytes
+            let near_public_key =
+                near_sdk::PublicKey::from_parts(near_sdk::CurveType::SECP256K1, bytes).unwrap();
+            PublicKeyExtended::Secp256k1 { near_public_key }
+        }
+
+        #[test]
+        fn test_vote_import_domain_happy_path() {
+            let mut state = gen_running_state(1);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+            let public_key = gen_secp256k1_public_key_extended();
+
+            let initial_domain_count = state.domains.domains().len();
+            let initial_keyset_count = state.keyset.domains.len();
+
+            // All participants vote with the same key.
+            for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
+                env.set_signer(account_id);
+                let result = state.vote_import_domain(public_key.clone()).unwrap();
+                if i < participants.len() - 1 {
+                    // Not yet consensus.
+                    assert!(result.is_none());
+                } else {
+                    // Last vote triggers domain creation.
+                    let domain_id = result.expect("Should have created domain");
+                    assert_eq!(state.domains.domains().len(), initial_domain_count + 1);
+                    assert_eq!(state.keyset.domains.len(), initial_keyset_count + 1);
+                    // Check the new domain is in the keyset with the correct key.
+                    let last_kfd = state.keyset.domains.last().unwrap();
+                    assert_eq!(last_kfd.domain_id, domain_id);
+                    let kfd_pk: contract_interface::types::PublicKey = last_kfd.key.clone().into();
+                    let expected_pk: contract_interface::types::PublicKey = public_key.clone().into();
+                    assert_eq!(kfd_pk, expected_pk);
+                }
+            }
+        }
+
+        #[test]
+        fn test_vote_import_domain_partial_votes() {
+            let mut state = gen_running_state(1);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+            let public_key = gen_secp256k1_public_key_extended();
+
+            let initial_domain_count = state.domains.domains().len();
+
+            // Only first participant votes.
+            let (account_id, _, _) = &participants.participants()[0];
+            env.set_signer(account_id);
+            let result = state.vote_import_domain(public_key.clone()).unwrap();
+            assert!(result.is_none());
+
+            // No domain created.
+            assert_eq!(state.domains.domains().len(), initial_domain_count);
+        }
+
+        #[test]
+        fn test_vote_import_domain_disagreeing_votes() {
+            let mut state = gen_running_state(1);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+
+            let initial_domain_count = state.domains.domains().len();
+
+            // Each participant votes for a different key.
+            for (account_id, _, _) in participants.participants().iter() {
+                let public_key = gen_secp256k1_public_key_extended();
+                env.set_signer(account_id);
+                let result = state.vote_import_domain(public_key).unwrap();
+                assert!(result.is_none());
+            }
+
+            // No domain created because votes disagree.
+            assert_eq!(state.domains.domains().len(), initial_domain_count);
+        }
+
+        #[test]
+        fn test_vote_import_domain_non_participant() {
+            let mut state = gen_running_state(1);
+            let _env = Environment::new(None, None, None);
+            let public_key = gen_secp256k1_public_key_extended();
+
+            // The environment's default signer is not a participant.
+            let result = state.vote_import_domain(public_key);
+            result.unwrap_err();
+        }
+
+        #[test]
+        fn test_vote_import_domain_rejects_duplicate_key() {
+            let mut state = gen_running_state(1);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+            let public_key = gen_secp256k1_public_key_extended();
+
+            // First import: all participants vote for the same key.
+            for (account_id, _, _) in participants.participants().iter() {
+                env.set_signer(account_id);
+                state.vote_import_domain(public_key.clone()).unwrap();
+            }
+
+            // Verify domain was created.
+            let domain_count = state.keyset.domains.len();
+            assert!(domain_count >= 2);
+
+            // Second import attempt with the same key should fail.
+            let (account_id, _, _) = &participants.participants()[0];
+            env.set_signer(account_id);
+            let result = state.vote_import_domain(public_key);
+            result.unwrap_err();
+        }
+
+        #[test]
+        fn test_vote_import_domain_rejects_ed25519() {
+            let mut state = gen_running_state(1);
+            let mut env = Environment::new(None, None, None);
+            let participants = state.parameters.participants().clone();
+
+            let ed25519_key = bogus_ed25519_public_key_extended();
+            let (account_id, _, _) = &participants.participants()[0];
+            env.set_signer(account_id);
+            let result = state.vote_import_domain(ed25519_key);
+            result.unwrap_err();
+        }
     }
 }

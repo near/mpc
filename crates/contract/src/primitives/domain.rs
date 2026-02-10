@@ -1,4 +1,5 @@
 use super::key_state::AuthenticatedParticipantId;
+use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error};
 use derive_more::{Deref, From};
 use near_sdk::{log, near};
@@ -80,7 +81,7 @@ impl DomainRegistry {
 
     /// Add a single domain with the given protocol, returning the DomainId of the added
     /// domain.
-    fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
+    pub(crate) fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             scheme,
@@ -193,6 +194,41 @@ impl AddDomainsVotes {
             .filter(|&prop| prop == &proposal)
             .count() as u64;
         log!("total votes for proposal: {}", total);
+        total
+    }
+}
+
+/// Tracks votes to import a domain with a pre-existing key. Each participant votes with
+/// the public key they want to import. When all participants agree on the same key, the
+/// domain is added directly in the Running state (no keygen).
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportDomainVotes {
+    proposal_by_account: BTreeMap<AuthenticatedParticipantId, PublicKeyExtended>,
+}
+
+impl ImportDomainVotes {
+    /// Votes for the proposal, returning the total number of voters so far who
+    /// have proposed the exact same public key to import.
+    /// If the participant had voted already, this replaces the existing vote.
+    pub fn vote(
+        &mut self,
+        proposal: PublicKeyExtended,
+        participant: &AuthenticatedParticipantId,
+    ) -> u64 {
+        if self
+            .proposal_by_account
+            .insert(participant.clone(), proposal.clone())
+            .is_some()
+        {
+            log!("removed old import domain vote for signer");
+        }
+        let total = self
+            .proposal_by_account
+            .values()
+            .filter(|&prop| prop == &proposal)
+            .count() as u64;
+        log!("total import domain votes for proposal: {}", total);
         total
     }
 }

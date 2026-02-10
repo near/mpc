@@ -190,6 +190,10 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
+    #[error("vote_import_domain only supports Secp256k1 keys")]
+    ImportDomainUnsupportedScheme,
+    #[error("The public key has already been imported into the keyset")]
+    ImportDomainKeyAlreadyExists,
 }
 
 /// A list specifying general categories of MPC Contract errors.

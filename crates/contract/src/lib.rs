@@ -19,6 +19,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 pub mod v3_3_2_state;
+pub mod v_pre_import_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -128,7 +129,7 @@ struct StaleData {}
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
-struct ForeignChainPolicyVotes {
+pub(crate) struct ForeignChainPolicyVotes {
     proposal_by_account: IterableMap<dtos::AccountId, dtos::ForeignChainPolicy>,
 }
 
@@ -804,6 +805,30 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Casts a vote to import a domain with a pre-existing Secp256k1 key from an external
+    /// MPC instance. When all participants vote for the same key, the domain is added directly
+    /// in the Running state without key generation.
+    #[handle_result]
+    pub fn vote_import_domain(&mut self, public_key: dtos::PublicKey) -> Result<(), Error> {
+        self.assert_caller_is_attested_participant_and_protocol_active();
+
+        log!(
+            "vote_import_domain: signer={}, public_key={:?}",
+            env::signer_account_id(),
+            public_key,
+        );
+
+        let extended_key: PublicKeyExtended =
+            public_key
+                .try_into()
+                .map_err(|_: PublicKeyExtendedConversionError| {
+                    InvalidParameters::MalformedPayload
+                        .message("Failed to convert public key for import")
+                })?;
+        self.protocol_state.vote_import_domain(extended_key)?;
+        Ok(())
+    }
+
     /// Propose a new foreign chain policy.
     /// If all current participants vote for the exact same policy, it is applied.
     #[handle_result]
@@ -1405,6 +1430,17 @@ impl MpcContract {
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
+
+        match try_state_read::<v_pre_import_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!(
+                    "failed to deserialize state into pre_import state: {:?}",
+                    err
+                );
+            }
+        };
 
         match try_state_read::<v3_3_2_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),

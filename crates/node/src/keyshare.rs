@@ -1,5 +1,6 @@
 pub mod compat;
 mod gcp;
+pub mod import;
 pub mod local;
 pub mod permanent;
 mod temporary;
@@ -259,6 +260,55 @@ impl KeyshareStorage {
                 Ok(keyshares)
             }
         }
+    }
+
+    /// Saves an imported keyshare to temporary storage. Idempotent: if the same keyshare
+    /// already exists, returns Ok. If a mismatched keyshare exists, returns an error.
+    /// Handles recovery from crashes that left orphaned `started_*` marker files.
+    pub async fn save_imported_keyshare_to_temporary(
+        &mut self,
+        keyshare: Keyshare,
+    ) -> anyhow::Result<()> {
+        // Check if a committed keyshare already exists for this key_id.
+        if let Some(existing) = self.temporary.load_keyshare(keyshare.key_id).await? {
+            // Verify the existing share matches the imported one.
+            if existing.public_key()? != keyshare.public_key()? {
+                anyhow::bail!(
+                    "Imported keyshare public key does not match existing temporary keyshare \
+                     for key_id {:?}",
+                    keyshare.key_id
+                );
+            }
+            tracing::info!("Imported keyshare already in temporary storage, verified matching");
+            return Ok(());
+        }
+        // No committed keyshare exists. Try to create the started marker.
+        match self
+            .temporary
+            .start_generating_keyshare(keyshare.key_id)
+            .await
+        {
+            Ok(handle) => {
+                handle.commit_keyshare(keyshare).await?;
+            }
+            Err(_) => {
+                // start_generating_keyshare failed, likely because a started_* marker
+                // exists from a previous crash (before commit). Clean up and retry.
+                tracing::warn!(
+                    "Cleaning up orphaned started marker for key_id {:?}",
+                    keyshare.key_id
+                );
+                self.temporary
+                    .remove_started_marker(keyshare.key_id)
+                    .await?;
+                let handle = self
+                    .temporary
+                    .start_generating_keyshare(keyshare.key_id)
+                    .await?;
+                handle.commit_keyshare(keyshare).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Given a keyset, get the corresponding Keyshares

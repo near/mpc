@@ -20,9 +20,10 @@ use crate::{
         ckd::CKDRequest,
         signature::{SignatureRequest, YieldIndex},
     },
-    state::ProtocolContractState,
     tee::tee_state::{NodeId, TeeState},
     update::ProposedUpdates,
+    // Use the old ProtocolContractState that doesn't have import_domain_votes.
+    v_pre_import_state::OldProtocolContractState,
     Config, StorageKey,
 };
 
@@ -36,7 +37,7 @@ struct StaleData {
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
-    protocol_state: ProtocolContractState,
+    protocol_state: OldProtocolContractState,
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
@@ -49,9 +50,9 @@ pub struct MpcContract {
 
 impl From<MpcContract> for crate::MpcContract {
     fn from(value: MpcContract) -> Self {
-        let protocol_state = value.protocol_state;
+        let protocol_state: crate::state::ProtocolContractState = value.protocol_state.into();
 
-        let crate::ProtocolContractState::Running(_running_state) = &protocol_state else {
+        let crate::state::ProtocolContractState::Running(_running_state) = &protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
         };
 

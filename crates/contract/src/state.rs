@@ -149,6 +149,16 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Initializing))
     }
 
+    pub fn vote_import_domain(
+        &mut self,
+        public_key: PublicKeyExtended,
+    ) -> Result<Option<DomainId>, Error> {
+        match self {
+            ProtocolContractState::Running(state) => state.vote_import_domain(public_key),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+    }
+
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {
         match self {
             ProtocolContractState::Resharing(state) => state.vote_abort(key_event_id),

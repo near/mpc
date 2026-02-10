@@ -505,6 +505,7 @@ impl StartCmd {
         let coordinator = Coordinator {
             clock: Clock::real(),
             config_file: config,
+            home_dir: home_dir.clone(),
             secrets,
             secret_db,
             keyshare_storage,

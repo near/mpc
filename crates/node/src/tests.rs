@@ -50,6 +50,7 @@ pub mod common;
 mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
+mod import_keyshare;
 mod multidomain;
 mod onboarding;
 mod resharing;
@@ -94,6 +95,7 @@ impl OneNodeTestConfig {
     pub async fn run(self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.home_dir)?;
         let my_account_id = self.config.my_near_account_id.clone();
+        let coordinator_home_dir = self.home_dir.clone();
         async move {
             let root_future = async move {
                 let root_task_handle = tracking::current_task();
@@ -147,6 +149,7 @@ impl OneNodeTestConfig {
                     indexer: self.indexer,
                     currently_running_job_name: self.currently_running_job_name,
                     debug_request_sender,
+                    home_dir: coordinator_home_dir,
                 };
                 coordinator.run().await
             };

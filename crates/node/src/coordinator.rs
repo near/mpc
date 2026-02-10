@@ -5,12 +5,17 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
+use crate::indexer::types::{ChainSendTransactionRequest, ChainVoteImportDomainArgs};
 use crate::indexer::{tx_sender, IndexerAPI};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
-use crate::keyshare::{KeyshareData, KeyshareStorage};
+use crate::keyshare::import::{
+    read_import_keyshare, validate_import_keyshare, IMPORT_KEYSHARE_FILENAME,
+};
+use crate::keyshare::{Keyshare, KeyshareData, KeyshareStorage};
 use crate::metrics;
+use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::metrics::tokio_runtime_metrics::run_monitor_loop;
 use crate::mpc_client::MpcClient;
 use crate::network::{
@@ -32,8 +37,10 @@ use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use mpc_contract::primitives::key_state::EpochId;
 use near_time::Clock;
+use mpc_contract::primitives::key_state::KeyEventId;
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa};
 use tokio::select;
@@ -53,6 +60,8 @@ pub struct Coordinator<TransactionSender> {
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
 
+    /// The node's home directory, used for reading import keyshare files.
+    pub home_dir: PathBuf,
     /// Storage for triples, presignatures, signing requests.
     pub secret_db: Arc<SecretDB>,
     /// Storage for keyshares.
@@ -145,6 +154,7 @@ where
                                 let stop_fn = make_running_stop_fn(
                                     running_state.keyset.epoch_id,
                                     running_state.participants.clone(),
+                                    running_state.keyset.domains.len(),
                                 );
                                 ("Running", None, stop_fn)
                             }
@@ -170,6 +180,7 @@ where
                                     .await,
                                 self.debug_request_sender.subscribe(),
                                 key_event_receiver,
+                                self.home_dir.clone(),
                             ),
                         )?,
                         stop_fn,
@@ -324,6 +335,7 @@ where
         >,
         debug_request_receiver: broadcast::Receiver<DebugRequest>,
         resharing_state_receiver: Option<watch::Receiver<ContractKeyEventInstance>>,
+        home_dir: PathBuf,
     ) -> anyhow::Result<MpcJobResult> {
         tracing::info!("Entering running state.");
 
@@ -425,6 +437,7 @@ where
         };
 
         // This handle must be alive, otherwise the AutoAbortTask will get cancelled on drop.
+        let is_resharing = resharing_state_receiver.is_some();
         let resharing_handle = resharing_state_receiver.map(|resharing_state_receiver| {
             let config_file = config_file.clone();
             let running_state = running_state.clone();
@@ -461,6 +474,98 @@ where
                     return Ok(MpcJobResult::HaltUntilInterrupted);
                 };
 
+                // --- Import keyshare handling ---
+                // Skip import during resharing: votes would be rejected by the contract
+                // since it transitions away from Running during resharing, and it avoids
+                // noisy failed transactions.
+                if is_resharing {
+                    if read_import_keyshare(&home_dir).ok().flatten().is_some() {
+                        tracing::info!(
+                            "Import keyshare file found but resharing is active, deferring import"
+                        );
+                    }
+                } else {
+                match read_import_keyshare(&home_dir) {
+                    Ok(Some(import_file)) => {
+                        if let Err(e) = validate_import_keyshare(
+                            &import_file,
+                            running_mpc_config.my_participant_id,
+                            running_mpc_config.participants.threshold,
+                        ) {
+                            tracing::warn!(
+                                "Import keyshare file is invalid, skipping: {}. \
+                                 Fix or remove the file at {:?} to stop this warning.",
+                                e,
+                                home_dir.join(IMPORT_KEYSHARE_FILENAME),
+                            );
+                        } else {
+                            let import_pk = import_file
+                                .keygen_output
+                                .public_key
+                                .into_contract_interface_type();
+
+                            let matching_domain =
+                                running_state.keyset.domains.iter().find(|kfd| {
+                                    let kfd_pk: contract_interface::types::PublicKey =
+                                        kfd.key.clone().into();
+                                    kfd_pk == import_pk
+                                });
+
+                            match matching_domain {
+                                None => {
+                                    // Key not in keyset yet - send vote, then return to
+                                    // force a coordinator restart cycle that naturally retries
+                                    // if the transaction was dropped.
+                                    tracing::info!(
+                                        "Import keyshare found, sending vote_import_domain"
+                                    );
+                                    let _ = chain_txn_sender
+                                        .send(ChainSendTransactionRequest::VoteImportDomain(
+                                            ChainVoteImportDomainArgs {
+                                                public_key: import_pk,
+                                            },
+                                        ))
+                                        .await;
+                                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                    return Ok(MpcJobResult::Done);
+                                }
+                                Some(domain) => {
+                                    // Key IS in keyset - write keyshare to temporary storage.
+                                    let key_id = KeyEventId::new(
+                                        running_state.keyset.epoch_id,
+                                        domain.domain_id,
+                                        domain.attempt,
+                                    );
+                                    let keyshare = Keyshare {
+                                        key_id,
+                                        data: KeyshareData::Secp256k1(
+                                            import_file.keygen_output,
+                                        ),
+                                    };
+                                    keyshare_storage
+                                        .write()
+                                        .await
+                                        .save_imported_keyshare_to_temporary(keyshare)
+                                        .await?;
+                                    // DO NOT delete file yet - wait until after
+                                    // update_permanent_keyshares.
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to read import keyshare file, skipping: {}. \
+                             Fix or remove the file at {:?} to stop this warning.",
+                            e,
+                            home_dir.join(IMPORT_KEYSHARE_FILENAME),
+                        );
+                    }
+                }
+                } // end if is_resharing else
+                // --- End import handling ---
+
                 let keyshares = match keyshare_storage
                     .write()
                     .await
@@ -476,6 +581,40 @@ where
                         return Ok(MpcJobResult::HaltUntilInterrupted);
                     }
                 };
+
+                // Delete import file only after keyshare is safely in permanent storage
+                // AND the file validates for this node (correct participant_id and threshold).
+                let import_path = home_dir.join(IMPORT_KEYSHARE_FILENAME);
+                if let Ok(Some(import_file)) = read_import_keyshare(&home_dir) {
+                    let validates = validate_import_keyshare(
+                        &import_file,
+                        running_mpc_config.my_participant_id,
+                        running_mpc_config.participants.threshold,
+                    )
+                    .is_ok();
+                    if validates {
+                        let import_pk = import_file
+                            .keygen_output
+                            .public_key
+                            .into_contract_interface_type();
+                        let key_in_keyshares = keyshares
+                            .iter()
+                            .any(|ks| {
+                                ks.public_key().map(|pk| pk == import_pk).unwrap_or(false)
+                            });
+                        if key_in_keyshares {
+                            if let Err(e) = std::fs::remove_file(&import_path) {
+                                tracing::warn!(
+                                    "Failed to delete import keyshare file: {}", e
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Import keyshare successfully integrated, file deleted"
+                                );
+                            }
+                        }
+                    }
+                }
 
                 if keyshares.is_empty() {
                     tracing::info!("We have no keyshares. Waiting for Initialization.");
@@ -725,6 +864,7 @@ fn stop_running(
     new_state: &ContractState,
     current_running_epoch_id: EpochId,
     current_participant_set: ParticipantsConfig,
+    current_domain_count: usize,
 ) -> bool {
     match new_state {
         ContractState::Running(new_state) => {
@@ -740,6 +880,10 @@ fn stop_running(
                 tracing::info!("Participant details changed.");
                 return true;
             }
+            if new_state.keyset.domains.len() != current_domain_count {
+                tracing::info!("Keyset domain count changed.");
+                return true;
+            }
             false
         }
         _ => {
@@ -752,12 +896,14 @@ fn stop_running(
 fn make_running_stop_fn(
     current_running_epoch_id: EpochId,
     current_participant_set: ParticipantsConfig,
+    current_domain_count: usize,
 ) -> StopFn {
     Box::new(move |new_state| {
         stop_running(
             new_state,
             current_running_epoch_id,
             current_participant_set.clone(),
+            current_domain_count,
         )
     })
 }

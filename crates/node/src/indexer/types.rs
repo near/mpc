@@ -195,6 +195,12 @@ pub struct SubmitParticipantInfoArgs {
 pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
 }
+
+#[derive(Serialize, Debug)]
+pub struct ChainVoteImportDomainArgs {
+    pub public_key: dtos::PublicKey,
+}
+
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
@@ -217,6 +223,7 @@ pub enum ChainSendTransactionRequest {
 
     ConcludeNodeMigration(ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(ChainVerifyForeignTransactionRespondArgs),
+    VoteImportDomain(ChainVoteImportDomainArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -237,6 +244,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 "respond_verify_foreign_tx"
             }
+            ChainSendTransactionRequest::VoteImportDomain(_) => "vote_import_domain",
         }
     }
 
@@ -253,7 +261,8 @@ impl ChainSendTransactionRequest {
             | Self::VerifyTee()
             | Self::SubmitParticipantInfo(_)
             | Self::ConcludeNodeMigration(_)
-            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+            | Self::VerifyForeignTransactionRespond(_)
+            | Self::VoteImportDomain(_) => MAX_GAS,
         }
     }
 }

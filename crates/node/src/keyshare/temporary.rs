@@ -93,6 +93,18 @@ impl TemporaryKeyStorage {
         Ok(Some(EpochId::new(epoch_id)))
     }
 
+    /// Removes an orphaned `started_*` marker file for the given key ID.
+    /// This should only be called when `load_keyshare` returns None (no committed keyshare)
+    /// but `start_generating_keyshare` fails (marker exists from a crashed attempt).
+    pub async fn remove_started_marker(&self, key_id: KeyEventId) -> anyhow::Result<()> {
+        let path = self.keyshare_started_path(key_id);
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Deletes all keyshares and started markers stored in temporary storage that have an epoch ID
     /// less than the given.
     ///
