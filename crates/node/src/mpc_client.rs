@@ -45,7 +45,7 @@ const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
-pub struct MpcClient<ForeignChainPolicyReader> {
+pub struct MpcClient<ForeignChainPolicyReader, HttpClient> {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
@@ -55,11 +55,13 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
-    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient>>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
-impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPolicyReader> {
+impl<ForeignChainPolicyReader: Send + Sync + 'static, HttpClient: Send + Sync + 'static>
+    MpcClient<ForeignChainPolicyReader, HttpClient>
+{
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
@@ -71,7 +73,7 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
-        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
+        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient>>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
@@ -558,7 +560,7 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
 
     async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        mpc_client: Arc<MpcClient<ForeignChainPolicyReader>>,
+        mpc_client: Arc<MpcClient<ForeignChainPolicyReader, HttpClient>>,
     ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Some(channel) = channel_receiver.recv().await {

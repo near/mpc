@@ -597,6 +597,7 @@ where
                 let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
                     config_file.clone().into(),
                     foreign_chain_policy_reader.clone(),
+                    (), // TODO: replace with actual HTTP client once execute_foreign_chain_request is implemented
                     running_mpc_config.into(),
                     verify_foreign_tx_request_store.clone(),
                     // We are re-using the ecdsa signature provider here

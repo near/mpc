@@ -12,10 +12,12 @@ use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
+pub struct VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient> {
     config: Arc<ConfigFile>,
     #[allow(dead_code)]
     foreign_chain_policy_reader: ForeignChainPolicyReader,
+    #[allow(dead_code)]
+    http_client: HttpClient,
     // This field might become useful when domain separation is implemented
     #[allow(dead_code)]
     mpc_config: Arc<MpcConfig>,
@@ -23,10 +25,13 @@ pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
 
-impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
+impl<ForeignChainPolicyReader, HttpClient>
+    VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient>
+{
     pub fn new(
         config: Arc<ConfigFile>,
         foreign_chain_policy_reader: ForeignChainPolicyReader,
+        http_client: HttpClient,
         mpc_config: Arc<MpcConfig>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
@@ -34,6 +39,7 @@ impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader>
         Self {
             config,
             foreign_chain_policy_reader,
+            http_client,
             mpc_config,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
@@ -55,8 +61,8 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
-    for VerifyForeignTxProvider<ForeignChainPolicyReader>
+impl<ForeignChainPolicyReader: Send + Sync, HttpClient: Send + Sync> SignatureProvider
+    for VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient>
 {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
