@@ -25,9 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Fetch PR Comments Context
         id: fetch-comments
@@ -96,7 +97,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@23ed4cb53d6eacddbc22ec16652c98bcc54e0476 #v1.0.48
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           prompt: |
