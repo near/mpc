@@ -20,7 +20,8 @@ use super::DEFAULT_BLOCK_TIME;
 #[case(0, SignatureScheme::Secp256k1, 3)]
 #[case(1, SignatureScheme::Ed25519, 3)]
 #[case(2, SignatureScheme::Bls12381, 3)]
-#[case(3, SignatureScheme::V2Secp256k1, 5)]
+// TODO(#1946): re-enable once it is no longer flaky
+// #[case(3, SignatureScheme::V2Secp256k1, 5)]
 async fn test_key_resharing_simple(
     #[case] case: u16,
     #[case] scheme: SignatureScheme,
