@@ -1,5 +1,6 @@
 use contract_interface::types::{self as dtos};
-use mpc_contract::primitives::{domain::DomainConfig, key_state::KeyEventId};
+use dtos::KeyEventId;
+use mpc_contract::primitives::domain::DomainConfig;
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 

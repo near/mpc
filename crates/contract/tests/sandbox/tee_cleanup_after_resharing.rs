@@ -14,7 +14,7 @@ use anyhow::Result;
 use contract_interface::types::{Attestation, MockAttestation};
 use mpc_contract::{
     primitives::{
-        domain::SignatureScheme, key_state::EpochId, participants::Participants,
+        domain::SignatureScheme, participants::Participants,
         test_utils::bogus_ed25519_near_public_key, thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
@@ -108,7 +108,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     )
     .unwrap();
 
-    let prospective_epoch_id = EpochId::new(6);
+    let prospective_epoch_id = contract_interface::types::EpochId(6);
 
     do_resharing(
         &mpc_signer_accounts[..threshold.0 as usize],

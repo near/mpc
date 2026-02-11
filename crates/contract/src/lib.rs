@@ -746,7 +746,7 @@ impl MpcContract {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
-        let domain = request.domain_id.clone();
+        let domain = request.domain_id;
         let public_key = self.public_key_extended(domain.0.into())?;
 
         let signature_is_valid = match (&response.signature, public_key) {

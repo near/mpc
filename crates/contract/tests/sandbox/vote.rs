@@ -15,12 +15,11 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
-use dtos::{ProtocolContractState, RunningContractState};
+use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
         domain::{DomainConfig, SignatureScheme},
-        key_state::{AttemptId, KeyEventId},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -70,9 +69,9 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     // start the keygen instance and vote for a new public key
     let key_event_id = KeyEventId {
-        epoch_id: mpc_contract::primitives::key_state::EpochId::new(epoch_id.0),
-        domain_id: domain_id.into(),
-        attempt_id: AttemptId::new(),
+        epoch_id,
+        domain_id: dtos::DomainId(domain_id),
+        attempt_id: AttemptId(0),
     };
     start_keygen_instance(&contract, &mpc_signer_accounts, key_event_id)
         .await
@@ -208,13 +207,9 @@ async fn test_resharing() -> anyhow::Result<()> {
             .0
             + 1,
     );
-    conclude_resharing(
-        &contract,
-        &all_accounts,
-        mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.0),
-    )
-    .await
-    .unwrap();
+    conclude_resharing(&contract, &all_accounts, prospective_epoch_id)
+        .await
+        .unwrap();
 
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
@@ -685,13 +680,9 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     // Step 3: Start reshare instance
     let mut all_participants = persistent_participants;
     all_participants.extend_from_slice(&new_participant_accounts);
-    conclude_resharing(
-        &contract,
-        &all_participants,
-        mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.0),
-    )
-    .await
-    .unwrap();
+    conclude_resharing(&contract, &all_participants, prospective_epoch_id)
+        .await
+        .unwrap();
 
     // Step 5: Verify final state
     let state: ProtocolContractState = get_state(&contract).await;

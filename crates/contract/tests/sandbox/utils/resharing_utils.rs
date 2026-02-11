@@ -3,8 +3,8 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
-use contract_interface::types::ProtocolContractState;
-use mpc_contract::primitives::key_state::{AttemptId, EpochId, KeyEventId};
+use contract_interface::types::{self as dtos, ProtocolContractState};
+use dtos::{AttemptId, EpochId, KeyEventId};
 use near_workspaces::{Account, Contract};
 use serde::Serialize;
 use serde_json::json;
@@ -17,7 +17,7 @@ pub async fn conclude_resharing(
     let ProtocolContractState::Resharing(resharing_state) = get_state(contract).await else {
         anyhow::bail!("expected resharing state");
     };
-    if resharing_state.resharing_key.epoch_id.0 != prospective_epoch_id.get() {
+    if resharing_state.resharing_key.epoch_id != prospective_epoch_id {
         anyhow::bail!("epoch id mismatch");
     }
     let domain_configs = resharing_state
@@ -28,8 +28,8 @@ pub async fn conclude_resharing(
     for domain_config in &domain_configs {
         let key_event_id = KeyEventId {
             epoch_id: prospective_epoch_id,
-            domain_id: domain_config.id.0.into(),
-            attempt_id: AttemptId::new(),
+            domain_id: domain_config.id,
+            attempt_id: AttemptId(0),
         };
         let state = get_state(contract).await;
         if !matches!(state, ProtocolContractState::Resharing(_)) {
@@ -152,7 +152,7 @@ pub async fn do_resharing(
 ) -> anyhow::Result<()> {
     vote_new_parameters(
         contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &new_threshold_parameters,
         remaining_accounts,
         &[],

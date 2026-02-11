@@ -434,7 +434,7 @@ fn try_get_verify_foreign_tx_args(
         request: verify_foreign_tx_args.request.request.clone(),
         // TODO(#1965): implement this correctly once the tweak derivation is implemented in the contract
         tweak: [0u8; 32].into(),
-        domain_id: verify_foreign_tx_args.request.domain_id.clone(),
+        domain_id: verify_foreign_tx_args.request.domain_id,
         payload_version: verify_foreign_tx_args.request.payload_version,
     };
 

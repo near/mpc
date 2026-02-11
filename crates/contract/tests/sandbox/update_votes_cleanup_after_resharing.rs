@@ -11,8 +11,7 @@ use anyhow::Result;
 use contract_interface::types as dtos;
 use mpc_contract::{
     primitives::{
-        domain::SignatureScheme, key_state::EpochId, participants::Participants,
-        thresholds::ThresholdParameters,
+        domain::SignatureScheme, participants::Participants, thresholds::ThresholdParameters,
     },
     update::{ProposeUpdateArgs, UpdateId},
 };
@@ -93,7 +92,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let prospective_epoch_id = EpochId::new(6);
+    let prospective_epoch_id = dtos::EpochId(6);
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(

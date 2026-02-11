@@ -14,7 +14,7 @@ use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         domain::{DomainConfig, DomainId, SignatureScheme},
-        key_state::{AttemptId, EpochId, KeyEventId, KeyForDomain, Keyset},
+        key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::bogus_ed25519_near_public_key,
         thresholds::{Threshold, ThresholdParameters},
@@ -451,11 +451,10 @@ pub async fn call_contract_key_generation<const N: usize>(
     };
 
     for domain in domains_to_add.iter() {
-        let attempt_id = AttemptId::new();
-        let key_event_id = KeyEventId {
-            epoch_id: EpochId::new(expected_epoch_id),
-            domain_id: domain.id,
-            attempt_id,
+        let key_event_id = dtos::KeyEventId {
+            epoch_id: dtos::EpochId(expected_epoch_id),
+            domain_id: dtos::DomainId(*domain.id),
+            attempt_id: dtos::AttemptId(0),
         };
         start_keygen_instance(contract, accounts, key_event_id)
             .await
