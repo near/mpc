@@ -366,7 +366,7 @@ class MpcCluster:
             self.mpc_contract_account(),
             function_name,
             encoded_args,
-            timeout=10,
+            timeout=constants.SHORT_TIMEOUT,
         )
         assert "error" not in res, res
         result = bytes(res["result"]["result"]).decode("utf-8")
