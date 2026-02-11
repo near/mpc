@@ -8,7 +8,7 @@ a readable markdown structure for consumption by Claude AI code reviewer.
 
 import json
 import sys
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 
 
 def get_author(node: Dict[str, Any]) -> str:
