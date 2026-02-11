@@ -329,7 +329,7 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
             ),
-            // Not adding special metrics for this yet, but might be good in the future
+            // TODO: Adding special metrics here might make sense, although underneath we use ecdsa signatures as well
             types::RequestType::VerifyForeignTx => (
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,

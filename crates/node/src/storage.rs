@@ -189,8 +189,7 @@ impl VerifyForeignTransactionRequestStorage {
                 Err(e) => {
                     match e {
                         broadcast::error::RecvError::Closed => {
-                            // TODO: add this metric
-                            metrics::CKD_REQUEST_CHANNEL_FAILED.inc();
+                            metrics::VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED.inc();
                             return Err(anyhow::anyhow!(
                                 "Error in verify_foreign_tx_request channel recv, {e}"
                             ));

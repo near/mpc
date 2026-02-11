@@ -1,3 +1,8 @@
+use anyhow::bail;
+use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
+use foreign_chain_inspector::bitcoin::BitcoinExtractedValue;
+use foreign_chain_inspector::ForeignChainInspector;
+use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 
 use crate::metrics;
@@ -8,9 +13,9 @@ use crate::{
 };
 use contract_interface::types as dtos;
 use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
+use rand::seq::IteratorRandom;
 use tokio::time::{timeout, Duration};
 
-#[allow(unused)]
 use foreign_chain_inspector;
 
 fn build_signature_request(
@@ -31,9 +36,7 @@ fn build_signature_request(
     })
 }
 
-impl<ForeignChainPolicyReader: Send + Sync, HttpClient: Send + Sync>
-    VerifyForeignTxProvider<ForeignChainPolicyReader, HttpClient>
-{
+impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChainPolicyReader> {
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
@@ -78,8 +81,68 @@ impl<ForeignChainPolicyReader: Send + Sync, HttpClient: Send + Sync>
 
     async fn execute_foreign_chain_request(
         &self,
-        _request: &dtos::ForeignChainRpcRequest,
+        request: &dtos::ForeignChainRpcRequest,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        unimplemented!()
+        let extracted_values = match request {
+            dtos::ForeignChainRpcRequest::Ethereum(_request) => {
+                bail!("ForeignChainRpcRequest::Ethereum is unsupported")
+            }
+            dtos::ForeignChainRpcRequest::Solana(_request) => {
+                bail!("ForeignChainRpcRequest::Solana is unsupported")
+            }
+            dtos::ForeignChainRpcRequest::Bitcoin(request) => {
+                let Some(bitcoin_config) = &self.config.foreign_chains.bitcoin else {
+                    anyhow::bail!("bitcoin provider config is missing")
+                };
+
+                // TODO: implement a better algorithm here that guarantees that different nodes get different providers
+                let bitcoin_provider_config = bitcoin_config.providers.values().choose(&mut OsRng);
+
+                let Some(bitcoin_provider_config) = bitcoin_provider_config else {
+                    anyhow::bail!("found empty list of providers for bitcoin")
+                };
+
+                let public_node_url = bitcoin_provider_config.rpc_url.clone();
+
+                let http_client = foreign_chain_inspector::build_http_client(
+                    public_node_url,
+                    bitcoin_provider_config.auth.clone().try_into()?,
+                )?;
+                let inspector = BitcoinInspector::new(http_client);
+
+                let transaction_id = request.tx_id.0.into();
+                let block_confirmations = request.confirmations.0.into();
+                let extractors = request
+                    .extractors
+                    .iter()
+                    .map(|extractor| match extractor {
+                        dtos::BitcoinExtractor::BlockHash => Ok(BitcoinExtractor::BlockHash),
+                        _ => bail!("unknown extractor found"),
+                    })
+                    .collect::<anyhow::Result<_>>()?;
+
+                inspector
+                    .extract(transaction_id, block_confirmations, extractors)
+                    .await?
+            }
+            _ => bail!("unknown extractor found"),
+        };
+        let values = extracted_values
+            .iter()
+            .map(|extracted_value| match extracted_value {
+                BitcoinExtractedValue::BlockHash(value) => {
+                    let value: [u8; 32] = **value;
+                    Ok(dtos::ExtractedValue::Hash256(value.into()))
+                }
+            })
+            .collect::<anyhow::Result<_>>()?;
+        // TODO: remove observed_at_block from the ForeignTxSignPayloadV1 type
+        Ok(dtos::ForeignTxSignPayload::V1(
+            dtos::ForeignTxSignPayloadV1 {
+                request: request.clone(),
+                observed_at_block: [0u8; 32].into(),
+                values,
+            },
+        ))
     }
 }
