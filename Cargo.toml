@@ -100,7 +100,12 @@ hkdf = "0.12.4"
 http = "1.4.0"
 humantime = "2.3.0"
 # TODO(#1299): updating this brings considerable breaking changes
-hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
+hyper = { version = "0.14.32", features = [
+    "server",
+    "http1",
+    "tcp",
+    "stream",
+] } 
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
@@ -124,7 +129,6 @@ pprof = { version = "0.15.0", features = [
     "flamegraph",
 ], default-features = false }
 proc-macro2 = "1.0"
-prometheus = { version = "0.14.0", default-features = false }
 quote = "1.0"
 # TODO(#2051): updating this brings considerable breaking changes
 rcgen = "0.13.2"
@@ -181,6 +185,9 @@ httpmock = "0.8.2"
 
 # This can be removed once the workspace `utilities` crate is removed
 near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
+
+# This cannot be upgraded because it conflicts the prometheus version required by nearcore
+prometheus = { version = "0.13.4", default-features = false }
 
 # TODO(#690): This cannot be upgraded until nearcore does
 rocksdb = "0.21.0"
