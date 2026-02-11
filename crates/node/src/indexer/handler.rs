@@ -90,9 +90,7 @@ pub struct ChainBlockUpdate {
     pub completed_signatures: Vec<SignatureId>,
     pub ckd_requests: Vec<CKDRequestFromChain>,
     pub completed_ckds: Vec<CKDId>,
-    #[allow(dead_code)] // TODO(#1960): remove when integrating with node
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
-    #[allow(dead_code)] // TODO(#1960): remove when integrating with node
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
 }
 

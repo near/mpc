@@ -22,10 +22,11 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
-use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use anyhow::Context;
@@ -521,6 +522,9 @@ where
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
                 let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
+                let verify_foreign_tx_request_store = Arc::new(
+                    VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
+                );
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
@@ -584,10 +588,20 @@ where
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
-                    running_mpc_config.into(),
+                    running_mpc_config.clone().into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
+                ));
+
+                let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
+                    config_file.clone().into(),
+                    running_mpc_config.into(),
+                    verify_foreign_tx_request_store.clone(),
+                    // We are re-using the ecdsa signature provider here
+                    // Once domain separation is implemented we might create a separate
+                    // ecdsa signature provider and insert it here
+                    ecdsa_signature_provider.clone(),
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
@@ -595,10 +609,12 @@ where
                     network_client,
                     sign_request_store,
                     ckd_request_store,
+                    verify_foreign_tx_request_store,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
                     ckd_provider,
+                    verify_foreign_tx_provider,
                     domain_to_scheme,
                 ));
 

@@ -270,6 +270,15 @@ pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLo
     .unwrap()
 });
 
+pub static VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "verify_foreign_tx_request_channel_failed",
+            "failed to send on channel in verify_foreign_tx_request_channel",
+        )
+        .unwrap()
+    });
+
 pub static VERIFY_TEE_REQUESTS_SENT: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "verify_tee_requests_sent",

@@ -1,8 +1,12 @@
 use crate::config::ConfigFile;
-use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
+use crate::indexer::handler::{
+    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
+    VerifyForeignTxRequestFromChain,
+};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
+    ChainVerifyForeignTransactionRespondArgs,
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -10,17 +14,19 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
-use crate::storage::CKDRequestStorage;
-use crate::storage::SignRequestStorage;
+use crate::storage::{
+    CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
+};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
-use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
+use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 
-use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
+use mpc_contract::crypto_shared::{derive_foreign_tx_tweak, derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -44,10 +50,12 @@ pub struct MpcClient {
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
+    verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
+    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
@@ -58,10 +66,12 @@ impl MpcClient {
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
+        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
+        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
@@ -69,10 +79,12 @@ impl MpcClient {
             client,
             sign_request_store,
             ckd_request_store,
+            verify_foreign_tx_request_store,
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
             ckd_provider,
+            verify_foreign_tx_provider,
             domain_to_scheme,
         }
     }
@@ -195,6 +207,15 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let mut pending_verify_foreign_txs = PendingRequests::<
+            VerifyForeignTxRequest,
+            ChainVerifyForeignTransactionRespondArgs,
+        >::new(
+            Clock::real(),
+            self.client.all_participant_ids(),
+            self.client.my_participant_id(),
+            self.client.clone(),
+        );
 
         let start_time = Clock::real().now();
         loop {
@@ -276,6 +297,34 @@ impl MpcClient {
                         &block_update.block,
                     );
 
+                    let verify_foreign_tx_requests = block_update
+                        .verify_foreign_tx_requests
+                        .into_iter()
+                        .map(|verify_foreign_tx_request_from_chain| {
+                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, predecessor_id, entropy, timestamp_nanosec } = verify_foreign_tx_request_from_chain;
+                            let verify_foreign_tx_request = VerifyForeignTxRequest {
+                                id: verify_foreign_tx_id,
+                                receipt_id,
+                                domain_id: request.domain_id.0.into(),
+                                entropy,
+                                payload_version: request.payload_version,
+                                request: request.request,
+                                timestamp_nanosec,
+                                tweak: derive_foreign_tx_tweak(&predecessor_id, &request.derivation_path),
+                            };
+                            // Index the ckd requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
+                            verify_foreign_tx_request
+                        })
+                        .collect::<Vec<_>>();
+
+                    pending_verify_foreign_txs.notify_new_block(
+                        verify_foreign_tx_requests,
+                        block_update.completed_verify_foreign_txs,
+                        &block_update.block,
+                    );
+
 
 
                 }
@@ -292,6 +341,10 @@ impl MpcClient {
                             }
                             DebugRequestKind::RecentCKDs => {
                                 let debug_output = format!("{:?}", pending_ckds);
+                                debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentVerifyForeignTxs => {
+                                let debug_output = format!("{:?}", pending_verify_foreign_txs);
                                 debug_request.respond(debug_output);
                             }
                         }
@@ -543,6 +596,12 @@ impl MpcClient {
             MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
             MpcTaskId::RobustEcdsaTaskId(_) => {
                 self.robust_ecdsa_signature_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
+            }
+            MpcTaskId::VerifyForeignTxTaskId(_) => {
+                self.verify_foreign_tx_provider
                     .clone()
                     .process_channel(channel)
                     .await?

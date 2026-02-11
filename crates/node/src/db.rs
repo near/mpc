@@ -21,6 +21,7 @@ pub enum DBCol {
     Presignature,
     SignRequest,
     CKDRequest,
+    VerifyForeignTxRequest,
     EpochData,
 }
 
@@ -31,6 +32,7 @@ impl DBCol {
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
+            DBCol::VerifyForeignTxRequest => "verify_foreign_tx_request",
             DBCol::EpochData => "epoch_id",
         }
     }
