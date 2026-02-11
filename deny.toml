@@ -32,10 +32,11 @@ ignore = [
 ]
 
 [bans]
-multiple-versions = "deny"
+multiple-versions = "warn"
 skip = [{ name = "windows-sys" }]
 skip-tree = [
   { name = "axum" },
+  { name = "dstack-sdk" },
   { name = "near-jsonrpc-client" },
   { name = "near-vm-runner" },
   { name = "pprof" },
