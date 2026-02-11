@@ -133,7 +133,6 @@ jobs:
                - Resource leaks (memory, file handles, connections)
 
             3. Database & Data Handling
-               - SQL injection risks or unsafe query construction
                - N+1 query problems (queries in loops)
                - Missing indexes causing slow queries (check query patterns)
                - Missing or improper transaction boundaries
