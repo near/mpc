@@ -462,6 +462,46 @@ INFO Function execution return value (printed to stdout):
 Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
+### Foreign transaction validation request
+```shell
+near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
+```log
+Function execution return value (printed to stdout):
+{
+  "payload": {
+    "V1": {
+      "observed_at_block": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request": {
+        "Bitcoin": {
+          "confirmations": 1,
+          "extractors": [
+            "BlockHash"
+          ],
+          "tx_id": "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c"
+        }
+      },
+      "values": [
+        {
+          "Hash256": "00000000000000000001fadaf3f8591e071c202762193cf78e389ea691f2ecab"
+        }
+      ]
+    }
+  },
+  "signature": {
+    "big_r": {
+      "affine_point": "03c412f5f99dde160ac10db0cced4e89789e10ce2bde863ad272d7261e509aa8fa"
+    },
+    "recovery_id": 0,
+    "s": {
+      "scalar": "07fde0f9fdb55c1bfc3029e11ef617283deb3c394b9068003f4e9785e1a4b434"
+    },
+    "scheme": "Secp256k1"
+  }
+}
+```
+
 ## 7. Clean Up
 Once you're done testing your local MPC network, you may want to clean up the environment to avoid stale data or conflicts during the next run.
 
