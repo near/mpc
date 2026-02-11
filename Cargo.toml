@@ -115,7 +115,7 @@ near-workspaces = { version = "0.22.1" }
 num_enum = { version = "0.7", features = ["complex-expressions"] }
 pprof = { version = "0.15.0", features = ["cpp", "flamegraph"], default-features = false }
 proc-macro2 = "1.0"
-prometheus = { version = "0.13.4", default-features = false }
+prometheus = { version = "0.14.0", default-features = false }
 quote = "1.0"
 rand = "0.8.5"
 rand_chacha = "0.3"
