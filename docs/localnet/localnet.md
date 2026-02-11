@@ -225,6 +225,16 @@ indexer:
 ckd:
   timeout_sec: 60
 cores: 4
+foreign_chains:
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: esplora
+        rpc_url: "https://bitcoin-rpc.publicnode.com"
+        auth:
+          kind: none
 EOF
 ```
 
@@ -280,6 +290,16 @@ indexer:
 ckd:
   timeout_sec: 60
 cores: 4
+foreign_chains:
+  bitcoin:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: esplora
+        rpc_url: "https://bitcoin-rpc.publicnode.com"
+        auth:
+          kind: none
 EOF
 ```
 
