@@ -312,7 +312,7 @@ impl MpcClient {
                                 timestamp_nanosec,
                                 tweak: derive_foreign_tx_tweak(&predecessor_id, &request.derivation_path),
                             };
-                            // Index the ckd requests as soon as we see them. We'll decide
+                            // Index the foreign tx requests as soon as we see them. We'll decide
                             // whether to *process* them after.
                             self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
                             verify_foreign_tx_request

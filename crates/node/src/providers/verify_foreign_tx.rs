@@ -14,7 +14,7 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 pub struct VerifyForeignTxProvider {
     config: Arc<ConfigFile>,
-    // This field might becode useful when domain separation is implemented
+    // This field might become useful when domain separation is implemented
     #[allow(dead_code)]
     mpc_config: Arc<MpcConfig>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,

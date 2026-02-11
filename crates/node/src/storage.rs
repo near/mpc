@@ -180,7 +180,7 @@ impl VerifyForeignTransactionRequestStorage {
     ) -> Result<VerifyForeignTxRequest, anyhow::Error> {
         let key = borsh::to_vec(&id)?;
         let mut rx = self.add_sender.subscribe();
-        if let Some(request_ser) = self.db.get(DBCol::CKDRequest, &key)? {
+        if let Some(request_ser) = self.db.get(DBCol::VerifyForeignTxRequest, &key)? {
             return Ok(serde_json::from_slice(&request_ser)?);
         }
         loop {
