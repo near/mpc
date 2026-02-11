@@ -21,8 +21,8 @@ def get_author(node: Dict[str, Any]) -> str:
     Returns:
         Author login string or 'ghost' for deleted accounts
     """
-    author = node.get('author')
-    return author.get('login', 'ghost') if author else 'ghost'
+    author = node.get("author")
+    return author.get("login", "ghost") if author else "ghost"
 
 
 def truncate_diff_hunk(diff_hunk: str, max_length: int = 500) -> str:
@@ -39,7 +39,7 @@ def truncate_diff_hunk(diff_hunk: str, max_length: int = 500) -> str:
     if len(diff_hunk) <= max_length:
         return diff_hunk
 
-    lines = diff_hunk.split('\n')
+    lines = diff_hunk.split("\n")
     truncated_lines = []
     char_count = 0
 
@@ -50,14 +50,14 @@ def truncate_diff_hunk(diff_hunk: str, max_length: int = 500) -> str:
         truncated_lines.append(line)
         char_count += line_length
 
-    return '\n'.join(truncated_lines) + "\n... (truncated)"
+    return "\n".join(truncated_lines) + "\n... (truncated)"
 
 
 def format_general_comments(pr: Dict[str, Any], output: List[str]) -> None:
     """Format general PR comments section."""
-    comments_data = pr.get('comments', {})
-    issue_comments = comments_data.get('nodes', [])
-    total_comments = comments_data.get('totalCount', 0)
+    comments_data = pr.get("comments", {})
+    issue_comments = comments_data.get("nodes", [])
+    total_comments = comments_data.get("totalCount", 0)
 
     output.append("## General PR Comments")
     output.append("")
@@ -65,8 +65,8 @@ def format_general_comments(pr: Dict[str, Any], output: List[str]) -> None:
     if issue_comments:
         for comment in issue_comments:
             author = get_author(comment)
-            created = comment.get('createdAt', '')[:10]
-            body = comment.get('body', '').strip()
+            created = comment.get("createdAt", "")[:10]
+            body = comment.get("body", "").strip()
 
             output.append(f"### Comment by @{author} on {created}")
             output.append(body)
@@ -75,7 +75,9 @@ def format_general_comments(pr: Dict[str, Any], output: List[str]) -> None:
             output.append("")
 
         if total_comments > 100:
-            output.append(f"*Note: This PR has {total_comments} comments. Showing first 100.*")
+            output.append(
+                f"*Note: This PR has {total_comments} comments. Showing first 100.*"
+            )
             output.append("")
     else:
         output.append("No general comments found.")
@@ -84,8 +86,8 @@ def format_general_comments(pr: Dict[str, Any], output: List[str]) -> None:
 
 def format_review_summaries(pr: Dict[str, Any], output: List[str]) -> None:
     """Format review summaries section."""
-    reviews_data = pr.get('reviews', {})
-    reviews = reviews_data.get('nodes', [])
+    reviews_data = pr.get("reviews", {})
+    reviews = reviews_data.get("nodes", [])
 
     if not reviews:
         return
@@ -94,11 +96,11 @@ def format_review_summaries(pr: Dict[str, Any], output: List[str]) -> None:
     output.append("")
 
     for review in reviews:
-        if review.get('body'):
+        if review.get("body"):
             author = get_author(review)
-            state = review.get('state', 'COMMENTED')
-            created = review.get('createdAt', '')[:10]
-            body = review.get('body', '').strip()
+            state = review.get("state", "COMMENTED")
+            created = review.get("createdAt", "")[:10]
+            body = review.get("body", "").strip()
 
             output.append(f"### {state} Review by @{author} on {created}")
             output.append(body)
@@ -107,7 +109,9 @@ def format_review_summaries(pr: Dict[str, Any], output: List[str]) -> None:
             output.append("")
 
 
-def format_review_thread(thread: Dict[str, Any], output: List[str], show_resolved: bool = False) -> None:
+def format_review_thread(
+    thread: Dict[str, Any], output: List[str], show_resolved: bool = False
+) -> None:
     """
     Format a single review thread with its comments.
 
@@ -116,11 +120,11 @@ def format_review_thread(thread: Dict[str, Any], output: List[str], show_resolve
         output: Output list to append formatted lines to
         show_resolved: Whether this is a resolved thread (affects formatting)
     """
-    path = thread.get('path', 'unknown')
-    line = thread.get('line')
+    path = thread.get("path", "unknown")
+    line = thread.get("line")
     line_str = f"L{line}" if line else "file-level"
-    is_outdated = thread.get('isOutdated', False)
-    is_resolved = thread.get('isResolved', False)
+    is_outdated = thread.get("isOutdated", False)
+    is_resolved = thread.get("isResolved", False)
 
     # Build header with status indicators
     outdated_marker = " [OUTDATED]" if is_outdated else ""
@@ -131,15 +135,15 @@ def format_review_thread(thread: Dict[str, Any], output: List[str], show_resolve
     output.append("")
 
     # Format comments in thread
-    comments = thread.get('comments', {}).get('nodes', [])
+    comments = thread.get("comments", {}).get("nodes", [])
     for i, comment in enumerate(comments):
         author = get_author(comment)
-        body = comment.get('body', '').strip()
-        created = comment.get('createdAt', '')[:10]
+        body = comment.get("body", "").strip()
+        created = comment.get("createdAt", "")[:10]
 
         # Show diff hunk for first comment (provides code context)
-        if i == 0 and comment.get('diffHunk'):
-            diff_hunk = truncate_diff_hunk(comment['diffHunk'])
+        if i == 0 and comment.get("diffHunk"):
+            diff_hunk = truncate_diff_hunk(comment["diffHunk"])
             output.append("**Code context:**")
             output.append("```")
             output.append(diff_hunk)
@@ -157,13 +161,13 @@ def format_review_thread(thread: Dict[str, Any], output: List[str], show_resolve
 
 def format_review_threads(pr: Dict[str, Any], output: List[str]) -> None:
     """Format all review threads (unresolved and resolved)."""
-    threads_data = pr.get('reviewThreads', {})
-    review_threads = threads_data.get('nodes', [])
-    total_threads = threads_data.get('totalCount', 0)
+    threads_data = pr.get("reviewThreads", {})
+    review_threads = threads_data.get("nodes", [])
+    total_threads = threads_data.get("totalCount", 0)
 
     # Separate unresolved and resolved threads
-    unresolved = [t for t in review_threads if not t.get('isResolved', False)]
-    resolved = [t for t in review_threads if t.get('isResolved', False)]
+    unresolved = [t for t in review_threads if not t.get("isResolved", False)]
+    resolved = [t for t in review_threads if t.get("isResolved", False)]
 
     # Unresolved threads (higher priority)
     output.append("## Unresolved Code Review Discussions")
@@ -189,7 +193,9 @@ def format_review_threads(pr: Dict[str, Any], output: List[str]) -> None:
 
     # Pagination warning
     if total_threads > 100:
-        output.append(f"*Note: This PR has {total_threads} review threads. Showing first 100.*")
+        output.append(
+            f"*Note: This PR has {total_threads} review threads. Showing first 100.*"
+        )
         output.append("")
 
 
@@ -211,12 +217,12 @@ def format_pr_comments(comments_json: str) -> str:
         data = json.loads(comments_json)
 
         # Check for GraphQL errors
-        if 'errors' in data:
-            error_msg = data['errors'][0].get('message', 'Unknown error')
+        if "errors" in data:
+            error_msg = data["errors"][0].get("message", "Unknown error")
             return f"⚠️ GitHub API error: {error_msg}"
 
         # Extract PR data
-        pr = data.get('data', {}).get('repository', {}).get('pullRequest')
+        pr = data.get("data", {}).get("repository", {}).get("pullRequest")
         if not pr:
             return "⚠️ No PR data found in API response."
 
@@ -253,7 +259,7 @@ def main() -> int:
     """
     import os
 
-    comments_json = os.environ.get('COMMENTS_JSON')
+    comments_json = os.environ.get("COMMENTS_JSON")
     if not comments_json:
         print("⚠️ COMMENTS_JSON environment variable not set.", file=sys.stderr)
         return 1
@@ -267,5 +273,5 @@ def main() -> int:
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
