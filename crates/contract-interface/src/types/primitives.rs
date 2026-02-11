@@ -70,6 +70,7 @@ pub struct Tweak(pub [u8; 32]);
 #[derive(
     Debug,
     Clone,
+    Copy,
     Eq,
     PartialEq,
     Ord,
@@ -82,7 +83,6 @@ pub struct Tweak(pub [u8; 32]);
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
-    Copy,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
