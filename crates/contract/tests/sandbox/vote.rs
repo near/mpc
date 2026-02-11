@@ -127,7 +127,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
     let epoch_id: u64 = init_running.keyset.epoch_id.get();
     let mut next_domain_id: u64 = init_running.domains.next_domain_id;
     for scheme in ALL_SIGNATURE_SCHEMES {
-        let threshold = init_running.parameters.threshold.value() as usize;
+        let threshold = init_running.parameters.threshold.0 as usize;
 
         // vote to start key generation
         vote_add_domains(
@@ -296,7 +296,7 @@ async fn setup_resharing_state(
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
     let proposal =
-        ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
+        ThresholdParameters::new(new_participants, Threshold::new(threshold.0 + 1)).unwrap();
 
     let prospective_epoch_id = initial_running_state.prospective_epoch_id();
     vote_new_parameters(
@@ -344,7 +344,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
     assert_ne!(
         initial_threshold,
         1,
@@ -403,7 +403,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
 
     // Vote with less than threshold (threshold - 1)
     vote_cancel_reshaing(
@@ -477,7 +477,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold.value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
 
     // Vote for cancellation with threshold of previous running participants
     vote_cancel_reshaing(&contract, &persistent_participants[0..initial_threshold])
@@ -536,7 +536,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     // Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.value() as usize],
+        &persistent_participants[0..initial_threshold.0 as usize],
     )
     .await
     .unwrap();
@@ -620,7 +620,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     // Step 1: Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.value() as usize],
+        &persistent_participants[0..initial_threshold.0 as usize],
     )
     .await
     .unwrap();
@@ -720,7 +720,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .unwrap();
 
     let threshold_parameters =
-        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.value() + 1))
+        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.0 + 1))
             .unwrap();
 
     mpc_signer_accounts.push(new_account.clone());

@@ -50,12 +50,6 @@ pub struct AttemptId(pub u64);
 )]
 pub struct Threshold(pub u64);
 
-impl Threshold {
-    pub fn value(&self) -> u64 {
-        self.0
-    }
-}
-
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(

@@ -509,7 +509,7 @@ pub async fn execute_key_generation_and_add_random_state(
 
     // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
-        ThresholdParameters::new(participants, Threshold::new(threshold.value() + 1)).unwrap();
+        ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": dummy_threshold_parameters,

@@ -119,7 +119,7 @@ impl IntoContractType<mpc_contract::primitives::thresholds::ThresholdParameters>
         let participants: Participants = (&self.participants).into_contract_type();
         mpc_contract::primitives::thresholds::ThresholdParameters::new(
             participants,
-            mpc_contract::primitives::thresholds::Threshold::new(self.threshold.value()),
+            mpc_contract::primitives::thresholds::Threshold::new(self.threshold.0),
         )
         .unwrap()
     }
