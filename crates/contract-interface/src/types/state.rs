@@ -106,12 +106,6 @@ pub struct DomainRegistry {
     pub next_domain_id: u64,
 }
 
-impl DomainRegistry {
-    pub fn domains(&self) -> &[DomainConfig] {
-        &self.domains
-    }
-}
-
 // =============================================================================
 // Public Key Extended (DTO version)
 // =============================================================================

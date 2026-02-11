@@ -478,7 +478,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         ProtocolContractState::Running(state) => {
             assert_eq!(state.keyset.epoch_id.get(), expected_epoch_id);
             assert_eq!(
-                state.domains.domains().len(),
+                state.domains.domains.len(),
                 domains_to_add.len() + existing_domains
             );
         }
