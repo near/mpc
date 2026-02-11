@@ -25,15 +25,6 @@ pub use super::primitives::DomainId;
 )]
 pub struct EpochId(pub u64);
 
-impl EpochId {
-    pub fn get(&self) -> u64 {
-        self.0
-    }
-    pub fn next(&self) -> Self {
-        EpochId(self.0 + 1)
-    }
-}
-
 /// Attempt identifier within a key event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
@@ -279,17 +270,6 @@ pub struct RunningContractState {
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
-impl RunningContractState {
-    /// The epoch ID that the next resharing would transition into.
-    pub fn prospective_epoch_id(&self) -> EpochId {
-        match self.previously_cancelled_resharing_epoch_id {
-            Some(cancelled_epoch_id) => cancelled_epoch_id,
-            None => self.keyset.epoch_id,
-        }
-        .next()
-    }
-}
-
 /// State when the contract is resharing keys to new participants.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
@@ -301,13 +281,6 @@ pub struct ResharingContractState {
     pub reshared_keys: Vec<KeyForDomain>,
     pub resharing_key: KeyEvent,
     pub cancellation_requests: HashSet<AuthenticatedAccountId>,
-}
-
-impl ResharingContractState {
-    /// The epoch ID that we would transition into if resharing completes.
-    pub fn prospective_epoch_id(&self) -> EpochId {
-        self.resharing_key.epoch_id
-    }
 }
 
 /// The main protocol contract state enum.

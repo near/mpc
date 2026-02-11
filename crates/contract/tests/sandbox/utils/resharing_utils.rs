@@ -17,7 +17,7 @@ pub async fn conclude_resharing(
     let ProtocolContractState::Resharing(resharing_state) = get_state(contract).await else {
         anyhow::bail!("expected resharing state");
     };
-    if resharing_state.prospective_epoch_id().get() != prospective_epoch_id.get() {
+    if resharing_state.resharing_key.epoch_id.0 != prospective_epoch_id.get() {
         anyhow::bail!("epoch id mismatch");
     }
     let domain_configs = resharing_state

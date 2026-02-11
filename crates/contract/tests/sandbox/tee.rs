@@ -670,7 +670,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let state_after_verify = get_state(&contract).await;
     let prospective_epoch_id = match &state_after_verify {
         dtos::ProtocolContractState::Resharing(resharing_state) => {
-            resharing_state.prospective_epoch_id()
+            resharing_state.resharing_key.epoch_id
         }
         _ => panic!("expected Resharing state, got {:?}", state_after_verify),
     };
@@ -680,7 +680,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     conclude_resharing(
         &contract,
         remaining_accounts,
-        mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.get()),
+        mpc_contract::primitives::key_state::EpochId::new(prospective_epoch_id.0),
     )
     .await?;
 
