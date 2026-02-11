@@ -13,12 +13,6 @@ use tokio::time::{timeout, Duration};
 #[allow(unused)]
 use foreign_chain_inspector;
 
-async fn execute_foreign_chain_request(
-    _request: &dtos::ForeignChainRpcRequest,
-) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-    unimplemented!()
-}
-
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
     foreign_tx_payload: &dtos::ForeignTxSignPayload,
@@ -44,7 +38,9 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
-        let response_payload = execute_foreign_chain_request(&foreign_tx_request.request).await?;
+        let response_payload = self
+            .execute_foreign_chain_request(&foreign_tx_request.request)
+            .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
@@ -67,12 +63,21 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
         .await??;
         metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
 
-        let response_payload = execute_foreign_chain_request(&foreign_tx_request.request).await?;
+        let response_payload = self
+            .execute_foreign_chain_request(&foreign_tx_request.request)
+            .await?;
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
         self.ecdsa_signature_provider
             .make_signature_follower_given_request(channel, presignature_id, sign_request)
             .await
+    }
+
+    async fn execute_foreign_chain_request(
+        &self,
+        _request: &dtos::ForeignChainRpcRequest,
+    ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
+        unimplemented!()
     }
 }
