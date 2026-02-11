@@ -37,7 +37,7 @@ fn build_signature_request(
     })
 }
 
-impl VerifyForeignTxProvider {
+impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChainPolicyReader> {
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,

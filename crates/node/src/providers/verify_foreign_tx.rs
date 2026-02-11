@@ -12,8 +12,10 @@ use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 
-pub struct VerifyForeignTxProvider {
+pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
+    #[allow(dead_code)]
+    foreign_chain_policy_reader: ForeignChainPolicyReader,
     // This field might become useful when domain separation is implemented
     #[allow(dead_code)]
     mpc_config: Arc<MpcConfig>,
@@ -21,15 +23,17 @@ pub struct VerifyForeignTxProvider {
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
 }
 
-impl VerifyForeignTxProvider {
+impl<ForeignChainPolicyReader> VerifyForeignTxProvider<ForeignChainPolicyReader> {
     pub fn new(
         config: Arc<ConfigFile>,
+        foreign_chain_policy_reader: ForeignChainPolicyReader,
         mpc_config: Arc<MpcConfig>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     ) -> Self {
         Self {
             config,
+            foreign_chain_policy_reader,
             mpc_config,
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
@@ -51,7 +55,9 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl SignatureProvider for VerifyForeignTxProvider {
+impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
+    for VerifyForeignTxProvider<ForeignChainPolicyReader>
+{
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
