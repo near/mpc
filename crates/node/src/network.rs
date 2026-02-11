@@ -1149,15 +1149,14 @@ mod fault_handling_tests {
     use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;
     use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
+    #[test_log::test]
     async fn test_network_fault_handling() {
-        init_integration_logger();
         let test_cases = vec![
             FaultTestCase::NoFault,
             FaultTestCase::Crash(ParticipantId::from_raw(0)),

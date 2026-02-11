@@ -4,17 +4,15 @@ use crate::config::{
 use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[tokio::test]
+#[test_log::test]
 #[allow(non_snake_case)]
 async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() {
     // Given
-    init_integration_logger();
-
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;
 

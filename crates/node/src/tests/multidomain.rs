@@ -6,14 +6,13 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 
 // Make a cluster of four nodes, test that we can generate keyshares
 // and then produce signatures.
 #[tokio::test]
+#[test_log::test]
 async fn test_basic_multidomain() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
