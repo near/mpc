@@ -37,12 +37,13 @@ impl DBCol {
         }
     }
 
-    fn all() -> [DBCol; 5] {
+    fn all() -> [DBCol; 6] {
         [
             DBCol::Triple,
             DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
+            DBCol::VerifyForeignTxRequest,
             DBCol::EpochData,
         ]
     }

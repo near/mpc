@@ -6,6 +6,7 @@ use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 
 use crate::metrics;
+use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -40,7 +41,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
     pub(super) async fn make_verify_foreign_tx_leader(
         &self,
         id: SignatureId,
-    ) -> anyhow::Result<(Signature, VerifyingKey)> {
+    ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
 
         let response_payload = self
@@ -49,9 +50,24 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
 
         let sign_request = build_signature_request(&foreign_tx_request, &response_payload)?;
 
-        self.ecdsa_signature_provider
-            .make_signature_leader_given_request(id, sign_request)
-            .await
+        let domain_data = self
+            .ecdsa_signature_provider
+            .domain_data(sign_request.domain)?;
+        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let participants = presignature.participants.clone();
+        let channel = self.ecdsa_signature_provider.new_channel_for_task(
+            VerifyForeignTxTaskId::VerifyForeignTx {
+                id,
+                presignature_id,
+            },
+            participants,
+        )?;
+
+        let response = self
+            .ecdsa_signature_provider
+            .make_signature_leader_given_parameters(sign_request, presignature, channel)
+            .await?;
+        Ok(((response_payload, response.0), response.1))
     }
 
     pub(super) async fn make_verify_foreign_tx_follower(

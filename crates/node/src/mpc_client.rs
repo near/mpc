@@ -553,6 +553,99 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                     },
                 );
             }
+
+            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+
+            for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
+                let this = self.clone();
+                let chain_txn_sender_ckd = chain_txn_sender.clone();
+                tasks.spawn_checked(
+                    &format!(
+                        "leader for verify_foreign_tx request {:?}",
+                        verify_foreign_tx_attempt.request.id
+                    ),
+                    async move {
+                        // Only issue an MPC ckd computation if we haven't computed it
+                        // in a previous attempt.
+                        let existing_response = verify_foreign_tx_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .computed_response
+                            .clone();
+                        let response = match existing_response {
+                            None => {
+                                // TODO: Add this metric
+                                // metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                //     .with_label_values(&["total"])
+                                //     .inc();
+
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&verify_foreign_tx_attempt.request.domain_id)
+                                {
+                                    Some(SignatureScheme::Secp256k1) => {
+                                        let response = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.verify_foreign_tx_provider.clone().make_signature(
+                                                verify_foreign_tx_attempt.request.id,
+                                            ),
+                                        )
+                                        .await??;
+
+                                        let response =
+                                            ChainVerifyForeignTransactionRespondArgs::new(
+                                                verify_foreign_tx_attempt.request.clone(),
+                                                response.0 .0,
+                                                response.0 .1,
+                                                response.1,
+                                            )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::Bls12381)
+                                    | Some(SignatureScheme::V2Secp256k1)
+                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                    )),
+                                }?;
+
+                                // TODO: add this metric
+                                // metrics::MPC_NUM_CKD_COMPUTATIONS_LED
+                                //     .with_label_values(&["succeeded"])
+                                //     .inc();
+
+                                verify_foreign_tx_attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .computed_response = Some(response.clone());
+                                response
+                            }
+                            Some(response) => response,
+                        };
+                        let _ = chain_txn_sender_ckd
+                            .send(
+                                ChainSendTransactionRequest::VerifyForeignTransactionRespond(
+                                    response,
+                                ),
+                            )
+                            .await;
+                        verify_foreign_tx_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .last_response_submission = Some(Clock::real().now());
+
+                        anyhow::Ok(())
+                    },
+                );
+            }
         }
     }
 

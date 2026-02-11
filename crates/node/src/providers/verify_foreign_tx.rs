@@ -7,6 +7,7 @@ use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::storage::VerifyForeignTransactionRequestStorage;
 use crate::types::VerifyForeignTxId;
 use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::types as dtos;
 use std::sync::Arc;
 use threshold_signatures::ecdsa::{KeygenOutput, Signature};
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
@@ -61,7 +62,7 @@ impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
     type KeygenOutput = KeygenOutput;
-    type Signature = Signature;
+    type Signature = (dtos::ForeignTxSignPayload, Signature);
     type TaskId = VerifyForeignTxTaskId;
 
     async fn make_signature(

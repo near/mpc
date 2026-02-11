@@ -3,6 +3,7 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
+use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
@@ -21,21 +22,14 @@ use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
-    pub(crate) async fn make_signature_leader_given_request(
+    pub(crate) async fn make_signature_leader_given_parameters(
         &self,
-        id: SignatureId,
         sign_request: SignatureRequest,
+        presignature: PresignOutputWithParticipants,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let domain_data = self.domain_data(sign_request.domain)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
-        let channel = self.client.new_channel_for_task(
-            EcdsaTaskId::Signature {
-                id,
-                presignature_id,
-            },
-            presignature.participants,
-        )?;
         let threshold = self.mpc_config.participants.threshold.try_into()?;
 
         let (signature, public_key) = SignComputation {
@@ -73,7 +67,17 @@ impl EcdsaSignatureProvider {
         id: SignatureId,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
         let sign_request = self.sign_request_store.get(id).await?;
-        self.make_signature_leader_given_request(id, sign_request)
+        let domain_data = self.domain_data(sign_request.domain)?;
+        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let participants = presignature.participants.clone();
+        let channel = self.new_channel_for_task(
+            EcdsaTaskId::Signature {
+                id,
+                presignature_id,
+            },
+            participants,
+        )?;
+        self.make_signature_leader_given_parameters(sign_request, presignature, channel)
             .await
     }
 

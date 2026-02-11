@@ -1,0 +1,16 @@
+{
+    "request": {
+        "request": {
+            "Bitcoin": {
+                "tx_id": "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
+                "confirmations": 1,
+                "extractors": [
+                    "BlockHash"
+                ]
+            }
+        },
+        "derivation_path": "some_example_path",
+        "domain_id": 0,
+        "payload_version": 1
+    }
+}
