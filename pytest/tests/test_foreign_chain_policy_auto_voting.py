@@ -48,7 +48,7 @@ def _normalize_policy(policy: dict[str, Any]) -> list[tuple[str, tuple[str, ...]
     normalized = []
     for chain_cfg in chains:
         chain_name = chain_cfg["chain"]
-        providers = tuple(sorted(p["rpc_url"] for p in chain_cfg.get("providers", [])))
+        providers = tuple(sorted(p["rpc_url"] for p in chain_cfg["providers"]))
         normalized.append((chain_name, providers))
     return sorted(normalized)
 
