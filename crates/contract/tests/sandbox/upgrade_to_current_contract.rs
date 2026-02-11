@@ -254,7 +254,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
 
     let initial_participants = get_participants(&contract).await?;
-    let participant_set_is_not_empty = !initial_participants.participants().is_empty();
+    let participant_set_is_not_empty = !initial_participants.participants.is_empty();
     assert!(
         participant_set_is_not_empty,
         "Test must contain a contract with at least one participant"
@@ -275,7 +275,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants
-        .participants()
+        .participants
         .iter()
         .map(|(account_id, _, _)| account_id.0.parse::<near_account_id::AccountId>().unwrap())
         .collect();

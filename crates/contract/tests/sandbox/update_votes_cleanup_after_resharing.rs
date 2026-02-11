@@ -71,7 +71,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // Reshare with threshold participants, excluding participant 0 who voted
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
+        .participants
         .iter()
         .skip(1) // Skip participant 0, so participant 1-6 are included
         .take(threshold.value() as usize)
@@ -124,7 +124,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .collect();
     assert_eq!(votes_for_update.len(), 1);
     let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
-    assert!(final_participants.is_participant(&voter_id));
+    assert!(final_participants
+        .participants
+        .iter()
+        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
 
     Ok(())
 }

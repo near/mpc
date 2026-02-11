@@ -85,7 +85,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Now, we do a resharing. We only retain `threshold` of the initial participants
     let mut new_participants = Participants::new();
     for (account_id, participant_id, participant_info) in initial_participants
-        .participants()
+        .participants
         .iter()
         .take(threshold.value() as usize)
     {

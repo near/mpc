@@ -54,26 +54,6 @@ pub struct ParticipantsJson {
     pub participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
 
-impl ParticipantsJson {
-    pub fn len(&self) -> usize {
-        self.participants.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.participants.is_empty()
-    }
-
-    pub fn participants(&self) -> &[(AccountId, ParticipantId, ParticipantInfo)] {
-        &self.participants
-    }
-
-    /// Checks if the given account ID string is a participant.
-    pub fn is_participant(&self, account_id: &impl std::fmt::Display) -> bool {
-        let account_str = account_id.to_string();
-        self.participants.iter().any(|(a, _, _)| a.0 == account_str)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

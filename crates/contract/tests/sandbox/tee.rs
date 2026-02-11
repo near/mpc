@@ -226,7 +226,7 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
     let dtos::ProtocolContractState::Running(running) = value else {
         panic!("Expected running state")
     };
-    Ok(running.parameters.participants.len())
+    Ok(running.parameters.participants.participants.len())
 }
 
 // / **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
@@ -610,7 +610,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(initial_participants.len(), PARTICIPANT_COUNT);
+    assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
 
     // Calculate expiry timestamp from current block time
     let block_info = worker.view_block().await?;
@@ -689,10 +689,10 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Verify final state: 2 participants, target removed
     let final_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(final_participants.len(), PARTICIPANT_COUNT - 1);
+    assert_eq!(final_participants.participants.len(), PARTICIPANT_COUNT - 1);
 
     let final_accounts: Vec<String> = final_participants
-        .participants()
+        .participants
         .iter()
         .map(|(account_id, _, _)| account_id.0.clone())
         .collect();
