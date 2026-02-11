@@ -29,7 +29,24 @@ _- Lets schedule an audit to assess the safety of this and ensure we don't accid
 
 ### Key derivation
 
-At this point, it is unclear what exact key derivation mechanism HOT uses. We need to account for the possibility that it might be different to ours and that signature payloads might be different.
+HOT seems to be using the same key derivation method as NEAR, so we don't expect any difficulties on that end (with the exception that their `tweak` corresponds to a uid relatedto the `walled_id` discussed above).
+
+HOT:
+```rust
+/// Derives a public key from a tweak and a master public key by computing PK + [tweak] G
+pub fn derive_public_key(public_key: AffinePoint, tweak: Scalar) -> AffinePoint {
+    (AffinePoint::GENERATOR * tweak + public_key).to_affine()
+}
+```
+
+us:
+```rust
+/// Derives the verifying key as X + tweak . G
+pub fn derive_verifying_key(&self, public_key: &VerifyingKey<C>) -> VerifyingKey<C> {
+    let derived_share = public_key.to_element() + C::Group::generator() * self.value();
+    VerifyingKey::new(derived_share)
+}
+```
 
 ### Keyshare Import
 
@@ -54,7 +71,7 @@ We don't expect to be migrating any other keyshares. We aim for a design that ca
 
 ### Contract Implementation
 
-#### State
+#### MpcContract changes
 
 The contract will need extra state.
 
@@ -77,17 +94,101 @@ pub struct MpcContract {
     // below is new
     hot_domain_migration_state: HotDomainMigrationState,
 }
+```
 
+It will also require a dedicated sign and respond endpoint:
+
+```rust
+
+/// new sign / respond endpoints for the HOT key domain
+impl MpcContract {
+    /// custom sign endpoint for Hot domains. Depending on how kdf works, we might be able to use the existing `sign`
+    pub fn sign_hot_domain(&mut self, args: HotDomainArgs) -> Result<()> {
+        // potentially custom kdf
+    }
+
+    /// custom respond endpoint (if requried)
+    pub fn respond_hot_domain(&mut self, response: HotDomainResponse) -> Result<()>;
+}
+```
+
+and the migration and `vote_new_parameters` methods need to be altered:
+```rust
+/// existing method requiring modifications
+impl MpcContract {
+    /// during migration, we need to reserve the DomainIds
+    pub fn migrate() {
+        // reserve Hot DomainId and add to DomainRegistry
+        // intialize HotDomainMigrationState
+    }
+    
+    pub fn vote_pk() {
+        // in case we entered an initializing state, we should ensure to reset the HotDomainMigration state and reserve a new domain id before resuming running state. That is due to some impliciti assumptions in our low-level, c.f. [#1234](https://github.com/near/mpc/issues/1234).
+    }
+
+    pub fn vote_reshared() {
+        // in case we entered a resharing state, we should ensure to reset the HotDomainMigration state and increment the epoch id. Otherwise we will have an epoch_id mismatch in the KeyshareStorage.
+    }
+}
+```
+
+Additionally, it will need some endpoints to coordinate the keyshare import logic:
+```rust
+/// Methods for keyshare migration. For all of these, we need to ensure:
+///     - that we are in a running state
+///     - ensure the KeyEventId is compatible with the current contract state:
+///          - EpochId must match
+///          - DomainId must be the last added domain and correspond to a HOT domain
+///     - the signer is authorized to vote
+///     we refer to these as `can_import_hot_checks`
+impl MpcContract {
+    /// node calls this endpoint to confirm they stored the keyshares to the temporary keyshare storage
+    pub fn hot_migration_confirm_prepared(&mut self, pks: [(KeyEventId, PublicKeyExtended); 2] -> Result<()> {
+        // passes the vote down to the `HotDomainMigrationState` struct after passing `can_import_hot_checks`
+    };
+    // concludes the sign_valiation step
+    pub fn hot_migration_conclude_sign_validation(&mut self, response: HotDomainResponse) -> Result<()> {
+        // passes the vote down to the `HotDomainMigrationState` struct after verifying the signer is authorized to respond.
+    }
+    // starts the key refresh validation
+    pub fn hot_migration_start_key_refresh(&mut self, key_event_id: KeyEventId) -> Result<()> {
+        // passes the vote down to the `HotDomainMigrationState` struct after passing `can_import_hot_checks`
+    }
+    // votes to conclude the key refresh validation. Upon receiving the last vote, the contract enters a resharing state.
+    pub fn hot_migration_conclude_key_refresh(&mut self, key_event_id: KeyEventId) -> Result<()> {
+        // passes the vote down to the `HotDomainMigrationState` struct after passing `can_import_hot_checks`
+        // if this concludes the migration, then the contract adds the refreshed key to the Keyset of the current running state.
+    }
+    /// resets the HotDomainMigrationState, such that a new import attempt can be started
+    pub fn hot_migration_new_attempt() {
+        // authenticates the signer
+        // allows to re-attempt import with a new attempt id (e.g., if the previous attempt was unsuccessful due to invalid keyshares)
+    }
+}
+```
+
+#### HotDomainMigrationState struct
+
+The `HotDomainMigrationState` is used to coordinate the keyshare import between the nodes
+
+```rust
 pub enum HotDomainMigrationState {
     PrepareImport(HotDomainPrepareImportState),
     Validation(HotDomainValidationState),
+    // the imported keyshares
     Imported([(KeyEventId, PublicKeyExtended); 2]),
+}
+
+impl HotDomainMigrationState {
+    fn reset(&mut self, current_epoch: EpochId, publicKeys: [(DomainId, PublicKeyExtended); 2]) {
+        // if self is not Imported, then we reset to PrepareImport with the given epoch and domain id (set attempt to 0)
+    }
 }
 
 /* Prepare import state and logic */
 pub struct HotDomainPrepareImportState {
     // the keys to import
-    // Note: same epoch as the one we are currently in. Attempt Id set to 0.
+    // Note: same epoch as the one we are currently in. Attempt Id set to 0 initially.
     pub keys_to_import: [(KeyEventId, PublicKeyExtended); 2],
     // set of nodes that report to have prepared the keyshare migration
     pub import_prepared: BTreeSet<NodeId>,
