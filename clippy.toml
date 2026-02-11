@@ -8,4 +8,6 @@ disallowed-types = [
 disallowed-methods = [
     { path = "near_crypto::ED25519PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
     { path = "near_crypto::Secp256K1PublicKey", reason = "Use `near_sdk::PublicKey` instead for types that directly interact with the MPC contract. For more context see https://github.com/near/mpc/issues/880" },
+    { path = "near_o11y::testonly::init_integration_logger", reason = "we are in the process of removing nearcore dependencies. Use the `#[test_log::test]` macro instead" },
+    { path = "near_o11y::metrics::try_create_histogram", reason = "we are in the process of removing nearcore dependencies. Use the prometheus crate directly instead with `prometheus::register_histogram!` macro" },
 ]

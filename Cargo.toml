@@ -138,6 +138,7 @@ signature = "2.2.0"
 socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
+test-log = "0.2.19"
 thiserror = "2.0.18"
 # Last commit on main branch as of 10-02-2026
 threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }

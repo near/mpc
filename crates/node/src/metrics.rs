@@ -16,7 +16,7 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
 
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
-        near_o11y::metrics::try_create_histogram(
+        prometheus::register_histogram!(
             "near_mpc_triples_generation_time_elapsed",
             "Time taken to generate a batch of triples",
         )
@@ -24,7 +24,7 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
     });
 
 pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_pre_signature_time_elapsed",
         "Time taken to generate a pre signature",
     )
@@ -32,7 +32,7 @@ pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = Laz
 });
 
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_signature_time_elapsed",
         "Time taken to generate a signature",
     )
@@ -40,7 +40,7 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
 });
 
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_ckd_time_elapsed",
         "Time taken to generate a confidential key",
     )
