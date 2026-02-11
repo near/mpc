@@ -7,7 +7,6 @@ use crate::tests::{
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use near_account_id::AccountId;
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use rand::Rng;
 
@@ -16,8 +15,8 @@ use rand::Rng;
 // 2. Stop another node and assert that no signatures can be generated.
 // 3. Restart the node that was later shutdown and assert that signatures can be generated again
 #[tokio::test]
+#[test_log::test]
 async fn test_faulty_cluster() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
@@ -150,8 +149,8 @@ async fn test_faulty_cluster() {
 }
 
 #[tokio::test]
+#[test_log::test]
 async fn test_indexer_stuck() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 4;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;

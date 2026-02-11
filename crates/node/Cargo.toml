@@ -92,6 +92,7 @@ mpc-contract = { workspace = true, features = ["test-utils"] }
 near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }
 

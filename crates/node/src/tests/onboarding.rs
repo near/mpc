@@ -19,7 +19,6 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use mpc_contract::state::ProtocolContractState;
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use rand::rngs::OsRng;
 
@@ -65,8 +64,8 @@ impl MigrationTestNodeInfo {
 /// After the conclusion of the key initialization and passing of a sanity check, the participant
 /// set will be forcefully changed.
 #[tokio::test]
+#[test_log::test]
 async fn test_onboarding() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 2;
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;

@@ -32,7 +32,6 @@ use near_indexer_primitives::{
     types::{BlockReference, Finality},
     views::{BlockView, QueryRequest, QueryResponseKind},
 };
-use near_o11y::span_wrapped_msg::SpanWrappedMessageExt;
 use participants::ContractState;
 use serde::Deserialize;
 use std::{future::Future, sync::Arc, time::Duration};
@@ -429,8 +428,12 @@ impl IndexerClient {
                 is_health_check: false,
                 detailed: false,
             };
-
-            let status_response = self.client.send_async(status_request.span_wrap()).await;
+            let status_response = self
+                .client
+                .send_async(
+                    near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
+                )
+                .await;
 
             let Ok(Ok(status)) = status_response else {
                 continue;

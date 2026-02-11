@@ -7,7 +7,6 @@ use crate::tests::{
 };
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
@@ -16,6 +15,7 @@ use super::DEFAULT_BLOCK_TIME;
 
 // Test a simple resharing of one node joining a cluster of 4 nodes.
 #[tokio::test]
+#[test_log::test]
 #[rstest]
 #[case(0, SignatureScheme::Secp256k1, 3)]
 #[case(1, SignatureScheme::Ed25519, 3)]
@@ -26,7 +26,6 @@ async fn test_key_resharing_simple(
     #[case] scheme: SignatureScheme,
     #[case] threshold: usize,
 ) {
-    init_integration_logger();
     let num_participants: usize = threshold + 1;
     const TXN_DELAY_BLOCKS: u64 = 1;
     let temp_dir = tempfile::tempdir().unwrap();
@@ -143,8 +142,8 @@ async fn test_key_resharing_simple(
 
 // Test two nodes joining and two old nodes leaving.
 #[tokio::test]
+#[test_log::test]
 async fn test_key_resharing_multistage() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 6;
     const THRESHOLD: usize = 4;
     const TXN_DELAY_BLOCKS: u64 = 1;
@@ -349,8 +348,8 @@ async fn test_key_resharing_multistage() {
 /// are also processed.
 #[serial] // this test relies on metrics for timing
 #[tokio::test]
+#[test_log::test]
 async fn test_signature_requests_in_resharing_are_processed() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 5;
     const THRESHOLD: usize = 3;
     const TXN_DELAY_BLOCKS: u64 = 1;
