@@ -10,7 +10,6 @@ dependencies = [
   "cargo-shear",
   "zizmor",
   "check",
-  "license-file",
   "clippy",
   "clippy-all-features",
 ]
@@ -27,7 +26,6 @@ dependencies = [
   "cargo-shear",
   "zizmor",
   "check",
-  "license-file",
   "clippy",
   "clippy-all-features",
   "nextest",
@@ -35,9 +33,7 @@ dependencies = [
 
 [tasks.check-extra]
 description = "Run extra checks"
-dependencies = [
-  "cargo-deny",
-]
+dependencies = ["cargo-deny"]
 
 [tasks.check]
 command = "cargo"

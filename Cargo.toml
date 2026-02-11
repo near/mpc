@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 exclude = ["libs/nearcore"]
 members = [
     "crates/attestation",
@@ -79,6 +79,7 @@ dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
 ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
 elliptic-curve = "0.13.8"
+ethereum-types = "0.16.0"
 flume = "0.12.0"
 fs2 = "0.4"
 futures = "0.3.31"
@@ -137,6 +138,7 @@ signature = "2.2.0"
 socket2 = "0.6.1"
 syn = "2.0"
 tempfile = "3.22.0"
+test-log = "0.2.19"
 thiserror = "2.0.18"
 # Last commit on main branch as of 10-02-2026
 threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
