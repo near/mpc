@@ -35,9 +35,7 @@ contract-history = { path = "crates/contract-history" }
 contract-interface = { path = "crates/contract-interface" }
 include-measurements = { path = "crates/include-measurements" }
 mpc-attestation = { path = "crates/mpc-attestation" }
-mpc-contract = { path = "crates/contract", features = [
-    "dev-utils",
-] }
+mpc-contract = { path = "crates/contract", features = ["dev-utils"] }
 mpc-node = { path = "crates/node" }
 mpc-primitives = { path = "crates/primitives", features = ["abi"] }
 mpc-tls = { path = "crates/tls" }
@@ -47,25 +45,30 @@ test-utils = { path = "crates/test-utils" }
 utilities = { path = "crates/utilities" }
 
 aes-gcm = "0.10.3"
-anyhow = "1.0.92"
+anyhow = "1.0.101"
 assert_matches = "1.5.0"
-async-trait = "0.1.83"
+async-trait = "0.1.89"
 axum = "0.8.8"
-backon = { version = "1.5.1", features = ["tokio-sleep"] }
-base64 = "0.22"
+backon = { version = "1.6.0", features = ["tokio-sleep"] }
+base64 = "0.22.1"
 blstrs = "0.7.1"
 borsh = { version = "1.6.0", features = ["derive"] }
 bs58 = { version = "0.5.1" }
 built = { version = "0.8", features = ["git2", "chrono"] }
-bytes = { version = "1.11.0" }
+bytes = { version = "1.11.1" }
 cargo-near-build = "0.11.1"
-clap = { version = "4.5.20", features = ["derive", "env"] }
+clap = { version = "4.5.57", features = ["derive", "env"] }
 curve25519-dalek = { version = "4.1.3", features = [
     "group",
     "serde",
 ], default-features = false }
-dcap-qvl = { version = "0.3.11", default-features = false, features = ["contract", "borsh", "std", "ring"] }
-derive_more = { version = "2.1.0", features = [
+dcap-qvl = { version = "0.3.12", default-features = false, features = [
+    "contract",
+    "borsh",
+    "std",
+    "ring",
+] }
+derive_more = { version = "2.1.1", features = [
     "as_ref",
     "constructor",
     "deref",
@@ -74,91 +77,96 @@ derive_more = { version = "2.1.0", features = [
     "into",
 ] }
 digest = "0.10.7"
-dstack-sdk = { version = "0.1.1" }
-dstack-sdk-types = { version = "0.1.0", features = ["borsh"] }
+dstack-sdk = { version = "0.1.2" }
+dstack-sdk-types = { version = "0.1.2", features = ["borsh"] }
 ecdsa = { version = "0.16.9", features = ["digest", "hazmat"] }
-ed25519-dalek = { version = "2.2.0", features = ["serde", "digest", "pkcs8", "rand_core"] }
+ed25519-dalek = { version = "2.2.0", features = [
+    "serde",
+    "digest",
+    "pkcs8",
+    "rand_core",
+] }
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
-fs2 = "0.4"
+fs2 = "0.4.3"
 futures = "0.3.31"
-gcloud-sdk = { version = "0.28.4", default-features = false, features = [
+gcloud-sdk = { version = "0.28.5", default-features = false, features = [
     "google-cloud-secretmanager-v1",
     "tls-webpki-roots",
 ] }
-getrandom = "0.2.12"
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
-http = "1.3.1"
-httpmock = "=0.8.2" # Version 0.8.3 requires rustc 1.88
-humantime = "2.1.0"
-hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] } # due to axum
-insta = { version = "1.43.1", features = ["json", "redactions"] }
-itertools = "0.12.1"
+http = "1.4.0"
+humantime = "2.3.0"
+# TODO(#1299): updating this brings considerable breaking changes
+hyper = { version = "0.14.32", features = [
+    "server",
+    "http1",
+    "tcp",
+    "stream",
+] } 
+insta = { version = "1.46.3", features = ["json", "redactions"] }
+itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
 k256 = "0.13.4"
 lru = "0.16.3"
-mockall = "0.13.1"
-near-abi = "0.4.3"
+mockall = "0.14.0"
+near-abi = "0.4.4"
 near-account-id = "2.5.0"
-near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
 near-jsonrpc-client = "0.20.0"
-near-jsonrpc-primitives = "0.34.5"
-near-primitives = "0.34.5"
-near-sdk = { version = "5.24.0", features = [
+near-jsonrpc-primitives = "0.34.6"
+near-primitives = "0.34.6"
+near-sdk = { version = "5.24.1", features = [
     "legacy",
     "unit-testing",
     "unstable",
 ] }
 near-workspaces = { version = "0.22.1" }
-num_enum = { version = "0.7", features = ["complex-expressions"] }
-pprof = { version = "0.15.0", features = ["cpp", "flamegraph"], default-features = false }
+num_enum = { version = "0.7.5", features = ["complex-expressions"] }
+pprof = { version = "0.15.0", features = [
+    "cpp",
+    "flamegraph",
+], default-features = false }
 proc-macro2 = "1.0"
-prometheus = { version = "0.13.4", default-features = false }
 quote = "1.0"
-rand = "0.8.5"
-rand_chacha = "0.3"
-rand_core = "0.6.4"
-rcgen = "0.13.1"
-regex = "1.12.2"
-reqwest = { version = "0.12.9", features = ["multipart", "json"] }
-rocksdb = "0.21.0"
+# TODO(#2051): updating this brings considerable breaking changes
+rcgen = "0.13.2"
+regex = "1.12.3"
+# TODO(#2053): upgrading this leads to errors
+reqwest = { version = "0.12.28", features = ["multipart", "json"] }
 rstest = { version = "0.26.1" }
-rustls = { version = "0.23.31", default-features = false, features = ["std"] }
-schemars = "0.8.22" # This version needs to be exactly the same as in `near_sdk::schemars`
-serde = { version = "1.0.225", features = ["derive"] }
-serde_json = "1.0.132"
-serde_with = { version = "3.14.0", features = ["hex"] }
-serde_yaml = "0.9.34"
-serial_test = "3.2.0"
+rustls = { version = "0.23.36", default-features = false, features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = { version = "3.16.1", features = ["hex"] }
+serial_test = "3.3.1"
 sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
-socket2 = "0.6.1"
+socket2 = "0.6.2"
 syn = "2.0"
-tempfile = "3.22.0"
+tempfile = "3.25.0"
 test-log = "0.2.19"
 thiserror = "2.0.18"
 # Last commit on main branch as of 10-02-2026
 threshold-signatures = { git = "https://github.com/near/threshold-signatures", rev = "c2efb61b559f73cbba77b58b5eab491b997b1c76" }
-time = "0.3.41"
 tokio = { version = "1.41.0", features = ["full"] }
 tokio-metrics = { version = "0.4.7" }
-tokio-rustls = { version = "0.26.1", default-features = false }
+tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7.12", features = ["time"] }
-tower = "0.5.2"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.20", features = [
+tower = "0.5.3"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = [
     "env-filter",
     "fmt",
     "std",
     "json",
 ] }
-tracing-test = "0.2.5"
+tracing-test = "0.2.6"
 url = "2"
-x509-parser = "0.16.0"
+x509-parser = "0.18.1"
 zstd = "0.13.3"
 
 # NEAR CORE DEPENDENCIES:
@@ -170,6 +178,34 @@ near-indexer = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
 near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
 near-o11y = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
 near-time = { git = "https://github.com/near/nearcore", tag = "2.10.6" }
+
+## Outdated dependencies we cannot upgrade ##
+# Version 0.8.3 requires rustc 1.88
+httpmock = "0.8.2"
+
+# This can be removed once the workspace `utilities` crate is removed
+near-account-id-v1 = { version = "1.1.4", package = "near-account-id" }
+
+# This cannot be upgraded because it conflicts the prometheus version required by nearcore
+prometheus = { version = "0.13.4", default-features = false }
+
+# TODO(#690): This cannot be upgraded until nearcore does
+rocksdb = "0.21.0"
+
+# This version needs to be exactly the same as in `near_sdk::schemars`
+schemars = "0.8.22"
+
+# This is deprecated, we should find an alterantive
+serde_yaml = "0.9.34"
+
+# TODO(#1907): These dependencies need to be upgraded in tandem
+getrandom = "0.2.12"
+rand = "0.8.5"
+rand_chacha = "0.3"
+rand_core = "0.6.4"
+
+# Cannot be upgraded until we get MSVR 1.88
+time = "0.3.41"
 
 [workspace.lints.clippy]
 assertions_on_result_states = "warn"
