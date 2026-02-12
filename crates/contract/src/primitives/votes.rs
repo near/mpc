@@ -8,15 +8,10 @@ use std::collections::BTreeMap;
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThresholdParametersVotes {
-    proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
 }
 
 impl ThresholdParametersVotes {
-    /// Returns a reference to the underlying map of votes.
-    pub fn proposal_by_account(&self) -> &BTreeMap<AuthenticatedAccountId, ThresholdParameters> {
-        &self.proposal_by_account
-    }
-
     /// return the number of votes for `proposal` casted by members of `participants`
     pub fn n_votes(&self, proposal: &ThresholdParameters, participants: &Participants) -> u64 {
         self.proposal_by_account

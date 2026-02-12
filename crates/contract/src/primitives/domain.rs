@@ -168,15 +168,10 @@ impl DomainRegistry {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
-    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
 
 impl AddDomainsVotes {
-    /// Returns a reference to the underlying map of votes.
-    pub fn proposal_by_account(&self) -> &BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>> {
-        &self.proposal_by_account
-    }
-
     /// Votes for the proposal, returning the total number of voters so far who
     /// have proposed the exact same domains to add.
     /// If the participant had voted already, this replaces the existing vote.
