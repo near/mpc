@@ -19,6 +19,7 @@ use mpc_contract::{
     },
     tee::tee_state::NodeId,
 };
+use near_workspaces::Account;
 
 /// Integration test that validates the complete E2E flow of TEE cleanup after resharing.
 ///
@@ -47,7 +48,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
     assert_eq!(nodes_with_tees, expected_node_ids);
 
-    // Add two prospective Participants
+    // Add one prospective Participant
     // Note: this test fails if `vote_reshared` needs to clean up more than 3 attestations
     let (env_non_participant_accounts, non_participants) = gen_accounts(&worker, 1).await;
     let non_participant_uids = non_participants.get_node_ids();
@@ -83,24 +84,21 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     assert_eq!(initial_and_non_participants, expected_node_ids);
 
     // Now, we do a resharing. We only retain `threshold` of the initial participants
-    // Build new_participants directly from the accounts slice - account index matches ParticipantId
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
+    let subset_dto = dtos::Participants {
+        next_id: initial_participants.next_id,
+        participants: initial_participants
+            .participants
+            .iter()
+            .take(threshold.0 as usize)
+            .cloned()
+            .collect(),
+    };
+    let selected_account_ids: std::collections::HashSet<String> = subset_dto
         .participants
         .iter()
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
-                mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
-                },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .expect("Failed to insert participant");
-    }
+        .map(|(a, _, _)| a.0.clone())
+        .collect();
+    let new_participants: Participants = (&subset_dto).into_contract_type();
 
     let expected_tee_post_resharing = new_participants.get_node_ids();
     let new_threshold_parameters = ThresholdParameters::new(
@@ -109,10 +107,17 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     )
     .unwrap();
 
+    // Filter accounts to only include those in the new participant set
+    let remaining_accounts: Vec<Account> = mpc_signer_accounts
+        .iter()
+        .filter(|a| selected_account_ids.contains(&a.id().to_string()))
+        .cloned()
+        .collect();
+
     let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[..threshold.0 as usize],
+        &remaining_accounts,
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
