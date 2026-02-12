@@ -59,7 +59,10 @@ class _BitcoinRpcHandler(BaseHTTPRequestHandler):
         else:
             response = {
                 "jsonrpc": "2.0",
-                "error": {"code": JSONRPC_METHOD_NOT_FOUND, "message": f"Method not found: {method}"},
+                "error": {
+                    "code": JSONRPC_METHOD_NOT_FOUND,
+                    "message": f"Method not found: {method}",
+                },
                 "id": request_id,
             }
 
