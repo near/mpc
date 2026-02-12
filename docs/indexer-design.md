@@ -306,6 +306,12 @@ class CHAIN chain;
 ```
 
 
+
+### Crate Dependencies
+
+todo: make a mermaid graph depicting how the different crates (backup-service, HOT migration), will depend on the ChainAPI
+
+
 ### API Proposal
 
 #### Chain Indexer
@@ -548,13 +554,13 @@ let block_event_id : BlockEventId = BlockEventSubscriber.new().match_on_receiver
 
 ##### State View
 
-To do 
+todo 
 The MPC indexer should offer a convenient method for viewing and subscribing to MPC contract state.
 
 
 ##### BlockStream
 
-To do 
+todo 
 
 Q: do we really need this? This is more MPC Indexer API. We could just forward the handle:
 ```rust
@@ -581,7 +587,7 @@ pub struct ChainBlockUpdate {
 
 ##### Transaction Sender
 
-To do 
+todo 
 It's probably fine for the first iteration to keep the existing `TransactionSender` trait and have the indexer return a Transaction Processor Handle that implements those traits:
 
 ```rust
