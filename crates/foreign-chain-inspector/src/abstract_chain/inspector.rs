@@ -3,6 +3,7 @@ use jsonrpsee::core::client::ClientT;
 use crate::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
     abstract_chain::{AbstractBlockHash, AbstractTransactionHash},
+    rpc_schema::ethereum::Log,
 };
 
 use crate::rpc_schema::ethereum::{
@@ -73,12 +74,10 @@ where
             return Err(ForeignChainInspectionError::TransactionFailed);
         }
 
-        let extracted_values = extractors
+        extractors
             .iter()
             .map(|extractor| extractor.extract_value(&transaction_receipt))
-            .collect();
-
-        Ok(extracted_values)
+            .collect()
     }
 }
 
@@ -94,6 +93,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractedValue {
     BlockHash(AbstractBlockHash),
+    Log(Log),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -106,14 +106,17 @@ impl AbstractExtractor {
     fn extract_value(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
-    ) -> AbstractExtractedValue {
+    ) -> Result<AbstractExtractedValue, ForeignChainInspectionError> {
         match self {
-            AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
+            AbstractExtractor::BlockHash => Ok(AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
-            )),
-            AbstractExtractor::LogIndex(index) => {
-                todo!()
-            }
+            ))),
+            AbstractExtractor::LogIndex(index) => rpc_response
+                .logs
+                .get(*index)
+                .cloned()
+                .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)
+                .map(AbstractExtractedValue::Log),
         }
     }
 }

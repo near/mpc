@@ -1,19 +1,9 @@
 use crate::rpc_schema::to_rpc_params_impl;
 
 use derive_more::{Constructor, From};
-use ethereum_types::{H256, U64};
+use ethereum_types::{H160, H256, U64};
 use jsonrpsee::core::traits::ToRpcParams;
-use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
-
-// fn debug_logs<'de, D>(deserializer: D) -> Result<Vec<H256>, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     let raw = serde_json::Value::deserialize(deserializer)?;
-//     eprintln!("DEBUG logs field: {raw}");
-//     serde_json::from_value(raw).map_err(serde::de::Error::custom)
-// }
 
 /// Partial RPC response for `eth_getTransactionReceipt`.
 /// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
@@ -23,8 +13,7 @@ pub(crate) struct GetTransactionReceiptResponse {
     pub(crate) block_hash: H256,
     pub(crate) block_number: U64,
     pub(crate) status: U64,
-    // #[serde(deserialize_with = "debug_logs")]
-    pub(crate) logs: Vec<Logs>,
+    pub(crate) logs: Vec<Log>,
 }
 
 /// Request args for `eth_getTransactionReceipt`.
@@ -66,9 +55,21 @@ impl Serialize for GetTransactionReceiptARgs {
     }
 }
 
-#[derive(Deserialize)]
+/// An Ethereum log entry as defined in return
+/// section of https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Logs {}
+pub(crate) struct Log {
+    pub(crate) removed: bool,
+    pub(crate) log_index: U64,
+    pub(crate) transaction_index: U64,
+    pub(crate) transaction_hash: H256,
+    pub(crate) block_hash: H256,
+    pub(crate) block_number: U64,
+    pub(crate) address: H160,
+    pub(crate) data: String,
+    pub(crate) topics: Vec<H256>,
+}
 
 impl ToRpcParams for &GetTransactionReceiptARgs {
     to_rpc_params_impl!();

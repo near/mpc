@@ -58,6 +58,8 @@ pub enum ForeignChainInspectionError {
     NotFinalized,
     #[error("The transaction's status was not success")]
     TransactionFailed,
+    #[error("provided log index is out of bounds")]
+    LogIndexOutOfBounds,
 }
 
 /// Builds an HTTP client with the specified authentication method.
