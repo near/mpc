@@ -377,7 +377,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                         let response = match existing_response {
                             None => {
                                 metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
                                     .inc();
 
                                 let response = match this
@@ -445,7 +447,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                                 }?;
 
                                 metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
                                     .inc();
 
                                 signature_attempt
@@ -489,7 +493,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                         let response = match existing_response {
                             None => {
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
                                     .inc();
 
                                 let response = match this
@@ -528,7 +534,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                                 }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
                                     .inc();
 
                                 ckd_attempt
@@ -565,7 +573,7 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                         verify_foreign_tx_attempt.request.id
                     ),
                     async move {
-                        // Only issue an MPC ckd computation if we haven't computed it
+                        // Only issue an MPC verify_foreign_tx computation if we haven't computed it
                         // in a previous attempt.
                         let existing_response = verify_foreign_tx_attempt
                             .computation_progress
@@ -576,7 +584,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                         let response = match existing_response {
                             None => {
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
                                     .inc();
 
                                 let response = match this
@@ -615,7 +625,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                                 }?;
 
                                 metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
                                     .inc();
 
                                 verify_foreign_tx_attempt

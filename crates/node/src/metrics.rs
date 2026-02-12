@@ -349,3 +349,6 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         )
         .unwrap()
 });
+
+pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
+pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";

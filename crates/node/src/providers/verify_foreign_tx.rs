@@ -76,8 +76,9 @@ impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
         _threshold: usize,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // this method is never called, as we are re-using the ecdsa signature provider
-        unimplemented!()
+        anyhow::bail!(
+            "this method is never called, as we are re-using the ecdsa signature provider"
+        )
     }
 
     async fn run_key_resharing_client(
@@ -87,8 +88,9 @@ impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
         _old_participants: &ParticipantsConfig,
         _channel: NetworkTaskChannel,
     ) -> anyhow::Result<Self::KeygenOutput> {
-        // this method is never called, as we are re-using the ecdsa signature provider
-        unimplemented!()
+        anyhow::bail!(
+            "this method is never called, as we are re-using the ecdsa signature provider"
+        )
     }
 
     async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
