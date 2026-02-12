@@ -10,16 +10,12 @@ returned to caller.
 import base64
 import json
 import pathlib
-import re
 import sys
-import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any
 
 from cluster import atexit
 import pytest
-import yaml
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -28,6 +24,8 @@ from common_lib.constants import TGAS
 from common_lib.contract_state import ProtocolState
 from common_lib.contracts import load_mpc_contract
 from common_lib.shared import MpcCluster
+from common_lib.shared import foreign_chains
+from common_lib.shared import utils
 
 MOCK_BLOCK_HASH = "aa" * 32  # 64 hex chars, 32 bytes
 MOCK_TX_ID = "bb" * 32  # 64 hex chars, 32 bytes
@@ -83,54 +81,6 @@ def _start_mock_bitcoin_rpc() -> tuple[HTTPServer, int]:
 
 
 
-def _node_config_path(node) -> pathlib.Path:
-    return pathlib.Path(node.home_dir) / "config.yaml"
-
-
-def _set_foreign_chains_config(node, foreign_chains: dict[str, Any] | None) -> None:
-    config_path = _node_config_path(node)
-
-    config_text = config_path.read_text(encoding="utf-8")
-    config_text = (
-        re.sub(r"\nforeign_chains:\n[\s\S]*\Z", "\n", config_text).rstrip() + "\n"
-    )
-
-    if foreign_chains is not None:
-        foreign_chains_text = yaml.safe_dump(
-            {"foreign_chains": foreign_chains}, sort_keys=False
-        )
-        config_text += "\n" + foreign_chains_text
-
-    config_path.write_text(config_text, encoding="utf-8")
-
-
-def _normalize_policy(policy: dict[str, Any]) -> list[tuple[str, tuple[str, ...]]]:
-    chains = policy.get("chains", [])
-    normalized = []
-    for chain_cfg in chains:
-        chain_name = chain_cfg["chain"]
-        providers = tuple(sorted(p["rpc_url"] for p in chain_cfg["providers"]))
-        normalized.append((chain_name, providers))
-    return sorted(normalized)
-
-
-def _wait_until(
-    predicate, description: str, timeout_sec: float = 60, poll_interval_sec: float = 1.0
-) -> None:
-    deadline = time.monotonic() + timeout_sec
-    last_error = None
-    while time.monotonic() < deadline:
-        try:
-            if predicate():
-                return
-        except Exception as err:
-            last_error = err
-        time.sleep(poll_interval_sec)
-
-    raise AssertionError(f"timed out waiting for {description}") from last_error
-
-
-
 @pytest.fixture(scope="module")
 def foreign_tx_validation_cluster():
     """
@@ -162,7 +112,7 @@ def foreign_tx_validation_cluster():
     }
 
     for node in mpc_nodes:
-        _set_foreign_chains_config(node, bitcoin_config)
+        foreign_chains.set_foreign_chains_config(node, bitcoin_config)
 
     for node in mpc_nodes:
         node.run()
@@ -171,7 +121,7 @@ def foreign_tx_validation_cluster():
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
-    expected_policy = _normalize_policy(
+    expected_policy = foreign_chains.normalize_policy(
         {
             "chains": [
                 {
@@ -184,9 +134,9 @@ def foreign_tx_validation_cluster():
 
     def policy_applied() -> bool:
         policy = cluster.view_contract_function("get_foreign_chain_policy")
-        return _normalize_policy(policy) == expected_policy
+        return foreign_chains.normalize_policy(policy) == expected_policy
 
-    _wait_until(
+    utils.wait_until(
         policy_applied,
         description="foreign chain policy applied after unanimous voting",
         timeout_sec=60,
