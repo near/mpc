@@ -6,10 +6,10 @@ license.workspace = true
 
 [dependencies]
 derive_more = { workspace = true }
+ethereum-types = { workspace = true }
 http = { workspace = true }
-mockall = { workspace = true }
+jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

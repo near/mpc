@@ -16,7 +16,7 @@ pub static MPC_NUM_TRIPLES_GENERATED: LazyLock<prometheus::IntCounter> = LazyLoc
 
 pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> =
     LazyLock::new(|| {
-        near_o11y::metrics::try_create_histogram(
+        prometheus::register_histogram!(
             "near_mpc_triples_generation_time_elapsed",
             "Time taken to generate a batch of triples",
         )
@@ -24,7 +24,7 @@ pub static MPC_TRIPLES_GENERATION_TIME_ELAPSED: LazyLock<prometheus::Histogram> 
     });
 
 pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_pre_signature_time_elapsed",
         "Time taken to generate a pre signature",
     )
@@ -32,7 +32,7 @@ pub static MPC_PRE_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = Laz
 });
 
 pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_signature_time_elapsed",
         "Time taken to generate a signature",
     )
@@ -40,7 +40,7 @@ pub static MPC_SIGNATURE_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLoc
 });
 
 pub static MPC_CKD_TIME_ELAPSED: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    near_o11y::metrics::try_create_histogram(
+    prometheus::register_histogram!(
         "near_mpc_ckd_time_elapsed",
         "Time taken to generate a confidential key",
     )
@@ -182,6 +182,16 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_verify_foreign_tx_computations_led",
+            "Number of verify foreign tx computations that this node led",
+            &["result"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -270,6 +280,15 @@ pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLo
     .unwrap()
 });
 
+pub static VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "verify_foreign_tx_request_channel_failed",
+            "failed to send on channel in verify_foreign_tx_request_channel",
+        )
+        .unwrap()
+    });
+
 pub static VERIFY_TEE_REQUESTS_SENT: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "verify_tee_requests_sent",
@@ -330,3 +349,6 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         )
         .unwrap()
 });
+
+pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
+pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";

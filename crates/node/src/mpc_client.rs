@@ -1,8 +1,12 @@
 use crate::config::ConfigFile;
-use crate::indexer::handler::{CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain};
+use crate::indexer::handler::{
+    CKDRequestFromChain, ChainBlockUpdate, SignatureRequestFromChain,
+    VerifyForeignTxRequestFromChain,
+};
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
+    ChainVerifyForeignTransactionRespondArgs,
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -10,17 +14,19 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::EddsaSignatureProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{PendingRequests, CHECK_EACH_REQUEST_INTERVAL};
-use crate::storage::CKDRequestStorage;
-use crate::storage::SignRequestStorage;
+use crate::storage::{
+    CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
+};
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
-use crate::types::CKDRequest;
 use crate::types::SignatureRequest;
+use crate::types::{CKDRequest, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 
-use mpc_contract::crypto_shared::{derive_tweak, CKDResponse};
+use mpc_contract::crypto_shared::{derive_foreign_tx_tweak, derive_tweak, CKDResponse};
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
 use near_time::Clock;
 use std::collections::HashMap;
@@ -39,29 +45,33 @@ const TEE_CONTRACT_VERIFICATION_INVOCATION_INTERVAL_DURATION: Duration =
     Duration::from_secs(60 * 60 * 24 * 2);
 
 #[derive(Clone)]
-pub struct MpcClient {
+pub struct MpcClient<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
     client: Arc<MeshNetworkClient>,
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
+    verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
+    verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
-impl MpcClient {
+impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPolicyReader> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
         client: Arc<MeshNetworkClient>,
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
+        verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
+        verify_foreign_tx_provider: Arc<VerifyForeignTxProvider<ForeignChainPolicyReader>>,
         domain_to_scheme: HashMap<DomainId, SignatureScheme>,
     ) -> Self {
         Self {
@@ -69,10 +79,12 @@ impl MpcClient {
             client,
             sign_request_store,
             ckd_request_store,
+            verify_foreign_tx_request_store,
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
             ckd_provider,
+            verify_foreign_tx_provider,
             domain_to_scheme,
         }
     }
@@ -195,6 +207,15 @@ impl MpcClient {
             self.client.my_participant_id(),
             self.client.clone(),
         );
+        let mut pending_verify_foreign_txs = PendingRequests::<
+            VerifyForeignTxRequest,
+            ChainVerifyForeignTransactionRespondArgs,
+        >::new(
+            Clock::real(),
+            self.client.all_participant_ids(),
+            self.client.my_participant_id(),
+            self.client.clone(),
+        );
 
         let start_time = Clock::real().now();
         loop {
@@ -276,6 +297,34 @@ impl MpcClient {
                         &block_update.block,
                     );
 
+                    let verify_foreign_tx_requests = block_update
+                        .verify_foreign_tx_requests
+                        .into_iter()
+                        .map(|verify_foreign_tx_request_from_chain| {
+                            let VerifyForeignTxRequestFromChain { verify_foreign_tx_id, receipt_id, request, predecessor_id, entropy, timestamp_nanosec } = verify_foreign_tx_request_from_chain;
+                            let verify_foreign_tx_request = VerifyForeignTxRequest {
+                                id: verify_foreign_tx_id,
+                                receipt_id,
+                                domain_id: request.domain_id.0.into(),
+                                entropy,
+                                payload_version: request.payload_version,
+                                request: request.request,
+                                timestamp_nanosec,
+                                tweak: derive_foreign_tx_tweak(&predecessor_id, &request.derivation_path),
+                            };
+                            // Index the foreign tx requests as soon as we see them. We'll decide
+                            // whether to *process* them after.
+                            self.verify_foreign_tx_request_store.add(&verify_foreign_tx_request);
+                            verify_foreign_tx_request
+                        })
+                        .collect::<Vec<_>>();
+
+                    pending_verify_foreign_txs.notify_new_block(
+                        verify_foreign_tx_requests,
+                        block_update.completed_verify_foreign_txs,
+                        &block_update.block,
+                    );
+
 
 
                 }
@@ -292,6 +341,10 @@ impl MpcClient {
                             }
                             DebugRequestKind::RecentCKDs => {
                                 let debug_output = format!("{:?}", pending_ckds);
+                                debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentVerifyForeignTxs => {
+                                let debug_output = format!("{:?}", pending_verify_foreign_txs);
                                 debug_request.respond(debug_output);
                             }
                         }
@@ -324,7 +377,9 @@ impl MpcClient {
                         let response = match existing_response {
                             None => {
                                 metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
                                     .inc();
 
                                 let response = match this
@@ -392,7 +447,9 @@ impl MpcClient {
                                 }?;
 
                                 metrics::MPC_NUM_SIGNATURE_COMPUTATIONS_LED
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
                                     .inc();
 
                                 signature_attempt
@@ -436,7 +493,9 @@ impl MpcClient {
                         let response = match existing_response {
                             None => {
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&["total"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
                                     .inc();
 
                                 let response = match this
@@ -475,7 +534,9 @@ impl MpcClient {
                                 }?;
 
                                 metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                    .with_label_values(&["succeeded"])
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
                                     .inc();
 
                                 ckd_attempt
@@ -500,12 +561,107 @@ impl MpcClient {
                     },
                 );
             }
+
+            let verify_foreign_tx_attempts = pending_verify_foreign_txs.get_requests_to_attempt();
+
+            for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
+                let this = self.clone();
+                let chain_txn_sender_ckd = chain_txn_sender.clone();
+                tasks.spawn_checked(
+                    &format!(
+                        "leader for verify_foreign_tx request {:?}",
+                        verify_foreign_tx_attempt.request.id
+                    ),
+                    async move {
+                        // Only issue an MPC verify_foreign_tx computation if we haven't computed it
+                        // in a previous attempt.
+                        let existing_response = verify_foreign_tx_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .computed_response
+                            .clone();
+                        let response = match existing_response {
+                            None => {
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL,
+                                    ])
+                                    .inc();
+
+                                let response = match this
+                                    .domain_to_scheme
+                                    .get(&verify_foreign_tx_attempt.request.domain_id)
+                                {
+                                    Some(SignatureScheme::Secp256k1) => {
+                                        let response = timeout(
+                                            Duration::from_secs(this.config.signature.timeout_sec),
+                                            this.verify_foreign_tx_provider.clone().make_signature(
+                                                verify_foreign_tx_attempt.request.id,
+                                            ),
+                                        )
+                                        .await??;
+
+                                        let response =
+                                            ChainVerifyForeignTransactionRespondArgs::new(
+                                                verify_foreign_tx_attempt.request.clone(),
+                                                response.0 .0,
+                                                response.0 .1,
+                                                response.1,
+                                            )?;
+
+                                        Ok(response)
+                                    }
+                                    Some(SignatureScheme::Bls12381)
+                                    | Some(SignatureScheme::V2Secp256k1)
+                                    | Some(SignatureScheme::Ed25519) => Err(anyhow::anyhow!(
+                                        "Signature scheme is not allowed for domain: {:?}",
+                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                    )),
+                                    None => Err(anyhow::anyhow!(
+                                        "Signature scheme is not found for domain: {:?}",
+                                        verify_foreign_tx_attempt.request.domain_id.clone()
+                                    )),
+                                }?;
+
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&[
+                                        metrics::MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL,
+                                    ])
+                                    .inc();
+
+                                verify_foreign_tx_attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .computed_response = Some(response.clone());
+                                response
+                            }
+                            Some(response) => response,
+                        };
+                        let _ = chain_txn_sender_ckd
+                            .send(
+                                ChainSendTransactionRequest::VerifyForeignTransactionRespond(
+                                    response,
+                                ),
+                            )
+                            .await;
+                        verify_foreign_tx_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .last_response_submission = Some(Clock::real().now());
+
+                        anyhow::Ok(())
+                    },
+                );
+            }
         }
     }
 
     async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
-        mpc_client: Arc<MpcClient>,
+        mpc_client: Arc<MpcClient<ForeignChainPolicyReader>>,
     ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         while let Some(channel) = channel_receiver.recv().await {
@@ -543,6 +699,12 @@ impl MpcClient {
             MpcTaskId::CKDTaskId(_) => self.ckd_provider.clone().process_channel(channel).await?,
             MpcTaskId::RobustEcdsaTaskId(_) => {
                 self.robust_ecdsa_signature_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
+            }
+            MpcTaskId::VerifyForeignTxTaskId(_) => {
+                self.verify_foreign_tx_provider
                     .clone()
                     .process_channel(channel)
                     .await?

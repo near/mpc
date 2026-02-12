@@ -9,7 +9,6 @@ use crate::tests::{make_key_storage_config, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
 use mpc_contract::state::ProtocolContractState;
-use near_o11y::testonly::init_integration_logger;
 use near_time::Clock;
 
 /// Runs a cluster of 3 nodes, but with only 2 participants.
@@ -18,8 +17,8 @@ use near_time::Clock;
 /// After the conclusion of the key initialization and passing of a sanity check, the participant
 /// set will be forcefully changed.
 #[tokio::test]
+#[test_log::test]
 async fn test_changing_participant_set_test_keyshare_import() {
-    init_integration_logger();
     const NUM_PARTICIPANTS: usize = 2;
     const THRESHOLD: usize = 2;
     const TXN_DELAY_BLOCKS: u64 = 1;

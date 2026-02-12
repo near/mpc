@@ -1319,8 +1319,12 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
+        "AccountId": {
+          "description": "A Near AccountId",
+          "type": "string"
+        },
         "AddDomainsVotes": {
-          "description": "Tracks votes to add domains. Each participant can at any given time vote for a list of domains to add.",
+          "description": "Votes for adding new domains.",
           "type": "object",
           "required": [
             "proposal_by_account"
@@ -1331,26 +1335,19 @@ expression: abi
               "additionalProperties": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/DomainConfig"
+                  "$ref": "#/definitions/DomainConfig2"
                 }
               }
             }
           }
         },
-        "AffinePoint": {
-          "description": "AffinePoint on the Secp256k1 curve",
-          "type": "object",
-          "required": [
-            "affine_point"
-          ],
-          "properties": {
-            "affine_point": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-            }
-          }
-        },
         "AttemptId": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "AttemptId2": {
+          "description": "Attempt identifier within a key event.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -1384,14 +1381,18 @@ expression: abi
           ]
         },
         "AuthenticatedAccountId": {
-          "description": "This struct contains the account `env::signer_account_id()`, but is only constructible given a set of participants that include the signer, thus acting as a typesystem-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
-          "type": "string"
-        },
-        "AuthenticatedParticipantId": {
-          "description": "This struct is supposed to contain the participant id associated to the account `env::signer_account_id()`, but is only constructible given a set of participants that includes the signer, thus acting as a type system-based enforcement mechanism (albeit a best-effort one) for authenticating the signer.",
+          "description": "An account ID that has been authenticated (i.e., the caller is this account).",
           "allOf": [
             {
-              "$ref": "#/definitions/ParticipantId"
+              "$ref": "#/definitions/AccountId"
+            }
+          ]
+        },
+        "AuthenticatedParticipantId": {
+          "description": "A participant ID that has been authenticated (i.e., the caller is this participant).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParticipantId2"
             }
           ]
         },
@@ -1688,6 +1689,22 @@ expression: abi
             }
           }
         },
+        "DomainConfig2": {
+          "description": "Configuration for a signature domain.",
+          "type": "object",
+          "required": [
+            "id",
+            "scheme"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "scheme": {
+              "$ref": "#/definitions/SignatureScheme2"
+            }
+          }
+        },
         "DomainId": {
           "description": "Each domain corresponds to a specific root key in a specific signature scheme. There may be multiple domains per signature scheme. The domain ID uniquely identifies a domain.",
           "type": "integer",
@@ -1700,7 +1717,7 @@ expression: abi
           "minimum": 0.0
         },
         "DomainRegistry": {
-          "description": "All the domains present in the contract, as well as the next domain ID which is kept to ensure that we never reuse domain IDs. (Domains may be deleted in only one case: when we decided to add domains but ultimately canceled that process.)",
+          "description": "Registry of all signature domains.",
           "type": "object",
           "required": [
             "domains",
@@ -1710,7 +1727,7 @@ expression: abi
             "domains": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/DomainConfig"
+                "$ref": "#/definitions/DomainConfig2"
               }
             },
             "next_domain_id": {
@@ -1760,6 +1777,12 @@ expression: abi
         },
         "EpochId": {
           "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "EpochId2": {
+          "description": "Epoch identifier for key generation/resharing cycles.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -2118,7 +2141,7 @@ expression: abi
           }
         },
         "InitializingContractState": {
-          "description": "In this state, we generate a new key for each new domain. At any given point of time, we are generating the key of a single domain. After that, we move on to the next domain, or if there are no more domains, transition into the Running state.\n\nThis state is reached by calling vote_add_domains from the Running state by a threshold number of participants.\n\nWhile generating the key for a domain, the `generating_key` field internally handles multiple attempts as needed, only finishing when an attempt has succeeded.\n\nAdditionally, a threshold number of participants can vote to cancel this state; doing so will revert back to the Running state but deleting the domains for which we have not yet successfully generated a key. This can be useful if the current set of participants are no longer all online and we wish to perform a resharing before adding domains again.",
+          "description": "State when the contract is generating keys for new domains.",
           "type": "object",
           "required": [
             "cancel_votes",
@@ -2129,7 +2152,6 @@ expression: abi
           ],
           "properties": {
             "cancel_votes": {
-              "description": "Votes that have been cast to cancel the key generation.",
               "type": "array",
               "items": {
                 "$ref": "#/definitions/AuthenticatedParticipantId"
@@ -2137,35 +2159,32 @@ expression: abi
               "uniqueItems": true
             },
             "domains": {
-              "description": "All domains, including the already existing ones and the ones we're generating a new key for",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/DomainRegistry"
-                }
-              ]
+              "$ref": "#/definitions/DomainRegistry"
             },
             "epoch_id": {
-              "description": "The epoch ID; this is the same as the Epoch ID of the Running state we transitioned from.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/EpochId"
-                }
-              ]
+              "$ref": "#/definitions/EpochId2"
             },
             "generated_keys": {
-              "description": "The key for each domain we have already generated a key for; this is in the same order as the domains in the DomainRegistry, except that it only has a prefix of the domains.",
               "type": "array",
               "items": {
-                "$ref": "#/definitions/KeyForDomain"
+                "$ref": "#/definitions/KeyForDomain2"
               }
             },
             "generating_key": {
-              "description": "The key generation state for the currently generating domain (the next domain after `generated_keys`).",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/KeyEvent"
-                }
-              ]
+              "$ref": "#/definitions/KeyEvent"
+            }
+          }
+        },
+        "K256AffinePoint": {
+          "description": "AffinePoint on the Secp256k1 curve",
+          "type": "object",
+          "required": [
+            "affine_point"
+          ],
+          "properties": {
+            "affine_point": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -2182,7 +2201,7 @@ expression: abi
           }
         },
         "KeyEvent": {
-          "description": "Maintains the state for the current key generation or resharing.",
+          "description": "Key generation or resharing event state.",
           "type": "object",
           "required": [
             "domain",
@@ -2192,23 +2211,12 @@ expression: abi
           ],
           "properties": {
             "domain": {
-              "description": "The domain that we're generating or resharing the key for.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              ]
+              "$ref": "#/definitions/DomainConfig2"
             },
             "epoch_id": {
-              "description": "The epoch ID that we're generating or resharing keys for.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/EpochId"
-                }
-              ]
+              "$ref": "#/definitions/EpochId2"
             },
             "instance": {
-              "description": "If exists, the current attempt to generate or reshare the key.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/KeyEventInstance"
@@ -2219,20 +2227,10 @@ expression: abi
               ]
             },
             "next_attempt_id": {
-              "description": "The ID of the next attempt to generate or reshare the key.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/AttemptId"
-                }
-              ]
+              "$ref": "#/definitions/AttemptId2"
             },
             "parameters": {
-              "description": "The participants and threshold that shall participate in the key event.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThresholdParameters"
-                }
-              ]
+              "$ref": "#/definitions/ThresholdParameters2"
             }
           }
         },
@@ -2257,7 +2255,7 @@ expression: abi
           }
         },
         "KeyEventInstance": {
-          "description": "State for a single attempt at generating or resharing a key.",
+          "description": "State of a key generation/resharing instance.",
           "type": "object",
           "required": [
             "attempt_id",
@@ -2267,10 +2265,9 @@ expression: abi
           ],
           "properties": {
             "attempt_id": {
-              "$ref": "#/definitions/AttemptId"
+              "$ref": "#/definitions/AttemptId2"
             },
             "completed": {
-              "description": "The participants that voted that they successfully completed the keygen or resharing.",
               "type": "array",
               "items": {
                 "$ref": "#/definitions/AuthenticatedParticipantId"
@@ -2278,16 +2275,14 @@ expression: abi
               "uniqueItems": true
             },
             "expires_on": {
-              "description": "The block that this attempt expires on. To clarify off-by-one behavior: if the contract were called *on* or after this height, the attempt is considered no longer existent.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },
             "public_key": {
-              "description": "The public key currently voted for. This is None iff no one has voted.",
               "anyOf": [
                 {
-                  "$ref": "#/definitions/PublicKeyExtended"
+                  "$ref": "#/definitions/PublicKeyExtended2"
                 },
                 {
                   "type": "null"
@@ -2295,7 +2290,6 @@ expression: abi
               ]
             },
             "started_in": {
-              "description": "The block in which KeyEvent::start() was called.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -2337,6 +2331,26 @@ expression: abi
             }
           }
         },
+        "KeyForDomain2": {
+          "description": "A public key for a specific domain.",
+          "type": "object",
+          "required": [
+            "attempt",
+            "domain_id",
+            "key"
+          ],
+          "properties": {
+            "attempt": {
+              "$ref": "#/definitions/AttemptId2"
+            },
+            "domain_id": {
+              "$ref": "#/definitions/DomainId2"
+            },
+            "key": {
+              "$ref": "#/definitions/PublicKeyExtended2"
+            }
+          }
+        },
         "Keyset": {
           "description": "Represents a key for every domain in a specific epoch.",
           "type": "object",
@@ -2353,6 +2367,25 @@ expression: abi
             },
             "epoch_id": {
               "$ref": "#/definitions/EpochId"
+            }
+          }
+        },
+        "Keyset2": {
+          "description": "Set of keys for the current epoch.",
+          "type": "object",
+          "required": [
+            "domains",
+            "epoch_id"
+          ],
+          "properties": {
+            "domains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/KeyForDomain2"
+              }
+            },
+            "epoch_id": {
+              "$ref": "#/definitions/EpochId2"
             }
           }
         },
@@ -2468,6 +2501,11 @@ expression: abi
           "format": "uint32",
           "minimum": 0.0
         },
+        "ParticipantId2": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
         "ParticipantInfo": {
           "type": "object",
           "required": [
@@ -2477,6 +2515,21 @@ expression: abi
           "properties": {
             "sign_pk": {
               "description": "The public key used for verifying messages.",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "ParticipantInfo2": {
+          "type": "object",
+          "required": [
+            "sign_pk",
+            "url"
+          ],
+          "properties": {
+            "sign_pk": {
               "type": "string"
             },
             "url": {
@@ -2505,6 +2558,38 @@ expression: abi
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/definitions/ParticipantData"
+              }
+            }
+          }
+        },
+        "Participants2": {
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "type": "object",
+          "required": [
+            "next_id",
+            "participants"
+          ],
+          "properties": {
+            "next_id": {
+              "$ref": "#/definitions/ParticipantId2"
+            },
+            "participants": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": [
+                  {
+                    "$ref": "#/definitions/AccountId"
+                  },
+                  {
+                    "$ref": "#/definitions/ParticipantId2"
+                  },
+                  {
+                    "$ref": "#/definitions/ParticipantInfo2"
+                  }
+                ],
+                "maxItems": 3,
+                "minItems": 3
               }
             }
           }
@@ -2654,6 +2739,7 @@ expression: abi
           }
         },
         "ProtocolContractState": {
+          "description": "The main protocol contract state enum.",
           "oneOf": [
             {
               "type": "string",
@@ -2813,8 +2899,95 @@ expression: abi
             }
           ]
         },
+        "PublicKeyExtended2": {
+          "description": "Extended public key representation for different signature schemes.",
+          "oneOf": [
+            {
+              "description": "Secp256k1 public key (ECDSA).",
+              "type": "object",
+              "required": [
+                "Secp256k1"
+              ],
+              "properties": {
+                "Secp256k1": {
+                  "type": "object",
+                  "required": [
+                    "near_public_key"
+                  ],
+                  "properties": {
+                    "near_public_key": {
+                      "description": "The public key in NEAR SDK format (string representation).",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "description": "Ed25519 public key.",
+              "type": "object",
+              "required": [
+                "Ed25519"
+              ],
+              "properties": {
+                "Ed25519": {
+                  "type": "object",
+                  "required": [
+                    "edwards_point",
+                    "near_public_key_compressed"
+                  ],
+                  "properties": {
+                    "edwards_point": {
+                      "description": "The Edwards point (32 bytes).",
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "uint8",
+                        "minimum": 0.0
+                      },
+                      "maxItems": 32,
+                      "minItems": 32
+                    },
+                    "near_public_key_compressed": {
+                      "description": "The compressed public key in NEAR SDK format.",
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "description": "BLS12-381 public key.",
+              "type": "object",
+              "required": [
+                "Bls12381"
+              ],
+              "properties": {
+                "Bls12381": {
+                  "type": "object",
+                  "required": [
+                    "public_key"
+                  ],
+                  "properties": {
+                    "public_key": {
+                      "description": "The public key.",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/PublicKey"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "ResharingContractState": {
-          "description": "In this state, we reshare the key of every domain onto a new set of participants and threshold. Similar to key generation, we reshare the key of one domain at a time; when we finish resharing for one domain, we move on to the next or transition to the Running state.\n\nThis state is reached by calling vote_new_parameters from the Running state.\n\nThis state keeps the previous running state because: - The previous running state's ThresholdParameters are needed in order to facilitate the possible re-proposal of a new ThresholdParameters, in case the currently proposed set of participants are no longer all online. For tracking the votes we also use the same tracking structure in the running state. - The previous running state's keys are needed to copy the public keys. - We use the previous running state's DomainRegistry.",
+          "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
           "required": [
             "cancellation_requests",
@@ -2836,7 +3009,7 @@ expression: abi
             "reshared_keys": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/KeyForDomain"
+                "$ref": "#/definitions/KeyForDomain2"
               }
             },
             "resharing_key": {
@@ -2856,7 +3029,7 @@ expression: abi
           }
         },
         "RunningContractState": {
-          "description": "In this state, the contract is ready to process signature requests.\n\nProposals can be submitted to modify the state: - vote_add_domains, upon threshold agreement, transitions into the Initializing state to generate keys for new domains. - vote_new_parameters, upon threshold agreement, transitions into the Resharing state to reshare keys for new participants and also change the threshold if desired.",
+          "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
             "add_domains_votes",
@@ -2867,50 +3040,24 @@ expression: abi
           ],
           "properties": {
             "add_domains_votes": {
-              "description": "Votes for proposals to add new domains.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/AddDomainsVotes"
-                }
-              ]
+              "$ref": "#/definitions/AddDomainsVotes"
             },
             "domains": {
-              "description": "The domains for which we have a key ready for signature processing.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/DomainRegistry"
-                }
-              ]
+              "$ref": "#/definitions/DomainRegistry"
             },
             "keyset": {
-              "description": "The keys that are currently in use; for each domain provides an unique identifier for a distributed key, so that the nodes can identify which local keyshare to use.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Keyset"
-                }
-              ]
+              "$ref": "#/definitions/Keyset2"
             },
             "parameters": {
-              "description": "The current participants and threshold.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThresholdParameters"
-                }
-              ]
+              "$ref": "#/definitions/ThresholdParameters2"
             },
             "parameters_votes": {
-              "description": "Votes for proposals for a new set of participants and threshold.",
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ThresholdParametersVotes"
-                }
-              ]
+              "$ref": "#/definitions/ThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
-              "description": "The previous epoch id for a resharing state that was cancelled. This epoch id is tracked, as the next time the state transitions to resharing, we can't reuse a previously cancelled epoch id.",
               "anyOf": [
                 {
-                  "$ref": "#/definitions/EpochId"
+                  "$ref": "#/definitions/EpochId2"
                 },
                 {
                   "type": "null"
@@ -3100,7 +3247,7 @@ expression: abi
               ],
               "properties": {
                 "big_r": {
-                  "$ref": "#/definitions/AffinePoint"
+                  "$ref": "#/definitions/K256AffinePoint"
                 },
                 "recovery_id": {
                   "type": "integer",
@@ -3146,6 +3293,26 @@ expression: abi
             "Ed25519",
             "Bls12381",
             "V2Secp256k1"
+          ]
+        },
+        "SignatureScheme2": {
+          "description": "Supported signature schemes.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "Secp256k1",
+                "Ed25519",
+                "Bls12381"
+              ]
+            },
+            {
+              "description": "Robust ECDSA variant.",
+              "type": "string",
+              "enum": [
+                "V2Secp256k1"
+              ]
+            }
           ]
         },
         "SolanaExtractor": {
@@ -3293,6 +3460,12 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "Threshold2": {
+          "description": "Threshold value for distributed key operations.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "ThresholdParameters": {
           "description": "Stores information about the threshold key parameters: - owners of key shares - cryptographic threshold",
           "type": "object",
@@ -3309,8 +3482,24 @@ expression: abi
             }
           }
         },
+        "ThresholdParameters2": {
+          "description": "Threshold parameters for distributed key operations.",
+          "type": "object",
+          "required": [
+            "participants",
+            "threshold"
+          ],
+          "properties": {
+            "participants": {
+              "$ref": "#/definitions/Participants2"
+            },
+            "threshold": {
+              "$ref": "#/definitions/Threshold2"
+            }
+          }
+        },
         "ThresholdParametersVotes": {
-          "description": "Tracks votes for ThresholdParameters (new participants and threshold). Each current participant can maintain one vote.",
+          "description": "Votes for threshold parameter changes.",
           "type": "object",
           "required": [
             "proposal_by_account"
@@ -3319,7 +3508,7 @@ expression: abi
             "proposal_by_account": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/definitions/ThresholdParameters"
+                "$ref": "#/definitions/ThresholdParameters2"
               }
             }
           }
@@ -3474,17 +3663,17 @@ expression: abi
         "VerifyForeignTransactionRequestArgs": {
           "type": "object",
           "required": [
+            "derivation_path",
             "domain_id",
-            "path",
             "payload_version",
             "request"
           ],
           "properties": {
+            "derivation_path": {
+              "type": "string"
+            },
             "domain_id": {
               "$ref": "#/definitions/DomainId2"
-            },
-            "path": {
-              "type": "string"
             },
             "payload_version": {
               "type": "integer",

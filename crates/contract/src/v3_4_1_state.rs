@@ -14,6 +14,7 @@
 //! - `StaleData` was cleaned up (participant_attestations field removed).
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::types as dtos;
 use mpc_attestation::attestation::Attestation;
 use near_account_id::AccountId;
 use near_sdk::{
@@ -39,7 +40,7 @@ use crate::{
     state::key_event::KeyEventInstance,
     tee::tee_state::{NodeId, TeeState},
     update::ProposedUpdates,
-    Config, StorageKey,
+    Config, ForeignChainPolicyVotes, StorageKey,
 };
 
 /// Old Participants format that serialized as Vec.
@@ -205,6 +206,8 @@ pub struct MpcContract {
     pending_signature_requests: LookupMap<SignatureRequest, YieldIndex>,
     pending_ckd_requests: LookupMap<CKDRequest, YieldIndex>,
     proposed_updates: ProposedUpdates,
+    foreign_chain_policy: dtos::ForeignChainPolicy,
+    foreign_chain_policy_votes: ForeignChainPolicyVotes,
     config: Config,
     tee_state: TeeState,
     accept_requests: bool,
@@ -228,8 +231,8 @@ impl From<MpcContract> for crate::MpcContract {
                 StorageKey::PendingVerifyForeignTxRequests,
             ),
             proposed_updates: value.proposed_updates,
-            foreign_chain_policy: Default::default(),
-            foreign_chain_policy_votes: Default::default(),
+            foreign_chain_policy: value.foreign_chain_policy,
+            foreign_chain_policy_votes: value.foreign_chain_policy_votes,
             config: value.config,
             tee_state: value.tee_state,
             accept_requests: value.accept_requests,

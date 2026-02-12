@@ -70,6 +70,7 @@ pub struct Tweak(pub [u8; 32]);
 #[derive(
     Debug,
     Clone,
+    Copy,
     Eq,
     PartialEq,
     Ord,
@@ -122,30 +123,56 @@ pub struct Ed25519Signature(
     derive(schemars::JsonSchema)
 )]
 pub struct K256Signature {
-    pub big_r: AffinePoint,
+    pub big_r: K256AffinePoint,
     pub s: K256Scalar,
     pub recovery_id: u8,
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::AsRef,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
 /// AffinePoint on the Secp256k1 curve
-pub struct AffinePoint {
+pub struct K256AffinePoint {
     #[serde_as(as = "Hex")]
     pub affine_point: [u8; 33],
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::AsRef,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
 pub struct K256Scalar {
     #[serde_as(as = "Hex")]
-    scalar: [u8; 32],
+    pub scalar: [u8; 32],
 }

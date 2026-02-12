@@ -3,10 +3,11 @@ use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::UniqueId;
 use crate::protocol::run_protocol;
+use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::{
     EcdsaSignatureProvider, EcdsaTaskId, KeygenOutput, PresignatureStorage,
 };
-use crate::types::SignatureId;
+use crate::types::{SignatureId, SignatureRequest};
 use anyhow::Context;
 use k256::elliptic_curve::PrimeField;
 use k256::Scalar;
@@ -21,21 +22,14 @@ use threshold_signatures::ParticipantList;
 use tokio::time::timeout;
 
 impl EcdsaSignatureProvider {
-    pub(super) async fn make_signature_leader(
+    pub(crate) async fn make_signature_leader_given_parameters(
         &self,
-        id: SignatureId,
+        sign_request: SignatureRequest,
+        presignature: PresignOutputWithParticipants,
+        channel: NetworkTaskChannel,
     ) -> anyhow::Result<(Signature, VerifyingKey)> {
-        let sign_request = self.sign_request_store.get(id).await?;
         let domain_data = self.domain_data(sign_request.domain)?;
-        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
         let participants = presignature.participants.clone();
-        let channel = self.client.new_channel_for_task(
-            EcdsaTaskId::Signature {
-                id,
-                presignature_id,
-            },
-            presignature.participants,
-        )?;
         let threshold = self.mpc_config.participants.threshold.try_into()?;
 
         let (signature, public_key) = SignComputation {
@@ -68,20 +62,31 @@ impl EcdsaSignatureProvider {
         ))
     }
 
-    pub(super) async fn make_signature_follower(
+    pub(super) async fn make_signature_leader(
+        &self,
+        id: SignatureId,
+    ) -> anyhow::Result<(Signature, VerifyingKey)> {
+        let sign_request = self.sign_request_store.get(id).await?;
+        let domain_data = self.domain_data(sign_request.domain)?;
+        let (presignature_id, presignature) = domain_data.presignature_store.take_owned().await;
+        let participants = presignature.participants.clone();
+        let channel = self.new_channel_for_task(
+            EcdsaTaskId::Signature {
+                id,
+                presignature_id,
+            },
+            participants,
+        )?;
+        self.make_signature_leader_given_parameters(sign_request, presignature, channel)
+            .await
+    }
+
+    pub(crate) async fn make_signature_follower_given_request(
         &self,
         channel: NetworkTaskChannel,
-        id: SignatureId,
         presignature_id: UniqueId,
+        sign_request: SignatureRequest,
     ) -> anyhow::Result<()> {
-        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
-        let sign_request = timeout(
-            Duration::from_secs(self.config.signature.timeout_sec),
-            self.sign_request_store.get(id),
-        )
-        .await??;
-        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
-
         let domain_data = self.domain_data(sign_request.domain)?;
         let threshold = self.mpc_config.participants.threshold.try_into()?;
 
@@ -112,6 +117,24 @@ impl EcdsaSignatureProvider {
         })?;
 
         Ok(())
+    }
+
+    pub(crate) async fn make_signature_follower(
+        &self,
+        channel: NetworkTaskChannel,
+        id: SignatureId,
+        presignature_id: UniqueId,
+    ) -> anyhow::Result<()> {
+        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED.inc();
+        let sign_request = timeout(
+            Duration::from_secs(self.config.signature.timeout_sec),
+            self.sign_request_store.get(id),
+        )
+        .await??;
+        metrics::MPC_NUM_PASSIVE_SIGN_REQUESTS_LOOKUP_SUCCEEDED.inc();
+
+        self.make_signature_follower_given_request(channel, presignature_id, sign_request)
+            .await
     }
 }
 

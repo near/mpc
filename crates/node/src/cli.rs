@@ -3,11 +3,12 @@ use crate::{
         generate_and_write_backup_encryption_key_to_disk, load_config_file, BlockArgs, CKDConfig,
         ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PersistentSecrets,
         PresignatureConfig, RespondConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-        WebUIConfig,
     },
     coordinator::Coordinator,
     db::SecretDB,
-    indexer::{real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI},
+    indexer::{
+        real::spawn_real_indexer, tx_sender::TransactionSender, IndexerAPI, ReadForeignChainPolicy,
+    },
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -294,8 +295,8 @@ impl StartCmd {
             .block_on(start_web_server(
                 root_task_handle.clone(),
                 debug_request_sender.clone(),
-                config.web_ui.clone(),
-                static_web_data(&secrets, Some(attestation.clone())),
+                config.web_ui,
+                static_web_data(&secrets, Some(attestation)),
                 protocol_state_receiver,
                 migration_state_receiver,
             ))
@@ -383,18 +384,22 @@ impl StartCmd {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn create_root_future(
+    async fn create_root_future<TransactionSenderImpl, ForeignChainPolicyReader>(
         self,
         home_dir: PathBuf,
         config: ConfigFile,
         secrets: SecretsConfig,
-        indexer_api: IndexerAPI<impl TransactionSender + 'static>,
+        indexer_api: IndexerAPI<TransactionSenderImpl, ForeignChainPolicyReader>,
         debug_request_sender: broadcast::Sender<DebugRequest>,
         // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
         // Otherwise we would not write to the same cell/lock.
         root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
         tee_authority: TeeAuthority,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()>
+    where
+        TransactionSenderImpl: TransactionSender + 'static,
+        ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
+    {
         let root_task_handle = tracking::current_task();
 
         root_task_handle_once_lock
@@ -492,7 +497,7 @@ impl StartCmd {
             RwLock::new(key_storage_config.create().await?).into();
 
         spawn_recovery_server_and_run_onboarding(
-            config.migration_web_ui.clone(),
+            config.migration_web_ui,
             (&secrets).into(),
             config.my_near_account_id.clone(),
             keyshare_storage.clone(),
@@ -665,14 +670,14 @@ impl Cli {
             my_near_account_id: participant.clone(),
             near_responder_account_id: responder.clone(),
             number_of_responder_keys: 1,
-            web_ui: WebUIConfig {
-                host: "127.0.0.1".to_owned(),
-                port: PortSeed::CLI_FOR_PYTEST.web_port(index),
-            },
-            migration_web_ui: WebUIConfig {
-                host: "127.0.0.1".to_owned(),
-                port: PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
-            },
+            web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.web_port(index),
+            ),
+            migration_web_ui: SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                PortSeed::CLI_FOR_PYTEST.migration_web_port(index),
+            ),
             pprof_bind_address: SocketAddr::new(
                 Ipv4Addr::LOCALHOST.into(),
                 PortSeed::CLI_FOR_PYTEST.pprof_web_port(index),

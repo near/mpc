@@ -1,6 +1,9 @@
-use crate::{types::CKDRequest, types::SignatureRequest};
+use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
-use contract_interface::types as dtos;
+use contract_interface::types::{
+    self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
+};
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{
     ecdsa::RecoveryId,
     elliptic_curve::{ops::Reduce, point::AffineCoordinates, Curve, CurveArithmetic},
@@ -171,6 +174,11 @@ pub struct ChainVoteResharedArgs {
 }
 
 #[derive(Serialize, Debug)]
+pub struct ChainVoteForeignChainPolicyArgs {
+    pub policy: dtos::ForeignChainPolicy,
+}
+
+#[derive(Serialize, Debug)]
 pub struct ChainStartReshareArgs {
     pub key_event_id: KeyEventId,
 }
@@ -204,6 +212,7 @@ pub enum ChainSendTransactionRequest {
     VotePk(ChainVotePkArgs),
     StartKeygen(ChainStartKeygenArgs),
     VoteReshared(ChainVoteResharedArgs),
+    VoteForeignChainPolicy(ChainVoteForeignChainPolicyArgs),
     StartReshare(ChainStartReshareArgs),
     VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
     VerifyTee(),
@@ -226,6 +235,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
             ChainSendTransactionRequest::VotePk(_) => "vote_pk",
             ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
+            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => "vote_foreign_chain_policy",
             ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
             ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
             ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
@@ -246,6 +256,7 @@ impl ChainSendTransactionRequest {
             | Self::CKDRespond(_)
             | Self::VotePk(_)
             | Self::VoteReshared(_)
+            | Self::VoteForeignChainPolicy(_)
             | Self::StartReshare(_)
             | Self::StartKeygen(_)
             | Self::VoteAbortKeyEventInstance(_)
@@ -334,6 +345,45 @@ impl ChainCKDRespondArgs {
                 request.domain_id,
             ),
             response: response.clone(),
+        })
+    }
+}
+
+impl ChainVerifyForeignTransactionRespondArgs {
+    pub fn new(
+        request: VerifyForeignTxRequest,
+        response_payload: dtos::ForeignTxSignPayload,
+        signature: Signature,
+        public_key: VerifyingKey,
+    ) -> anyhow::Result<Self> {
+        let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
+            &public_key.to_element().to_affine(),
+            &signature,
+            &response_payload.compute_msg_hash()?.0,
+        )?;
+
+        // TODO: this code should be elsewhere
+        let mut r_bytes = [0u8; 33];
+        r_bytes.copy_from_slice(signature.big_r.to_encoded_point(true).as_bytes());
+        let mut s_bytes = [0u8; 32];
+        s_bytes.copy_from_slice(signature.s.to_bytes().as_ref());
+
+        let dto_signature = dtos::K256Signature {
+            big_r: r_bytes.into(),
+            s: s_bytes.into(),
+            recovery_id,
+        };
+        Ok(ChainVerifyForeignTransactionRespondArgs {
+            request: VerifyForeignTransactionRequest {
+                request: request.request,
+                tweak: request.tweak,
+                domain_id: request.domain_id.0.into(),
+                payload_version: request.payload_version,
+            },
+            response: VerifyForeignTransactionResponse {
+                payload: response_payload,
+                signature: dtos::SignatureResponse::Secp256k1(dto_signature),
+            },
         })
     }
 }

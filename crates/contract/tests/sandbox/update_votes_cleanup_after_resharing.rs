@@ -11,8 +11,7 @@ use anyhow::Result;
 use contract_interface::types as dtos;
 use mpc_contract::{
     primitives::{
-        domain::SignatureScheme, key_state::EpochId, participants::Participants,
-        thresholds::ThresholdParameters,
+        domain::SignatureScheme, participants::Participants, thresholds::ThresholdParameters,
     },
     update::{ProposeUpdateArgs, UpdateId},
 };
@@ -71,29 +70,34 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // Reshare with threshold participants, excluding participant 0 who voted
     // Build new_participants directly from accounts slice - skip index 0, take threshold
     let mut new_participants = Participants::new();
-    for account in mpc_signer_accounts
+    for (account_id, participant_id, participant_info) in initial_participants
+        .participants
         .iter()
-        .skip(1)
-        .take(threshold.value() as usize)
+        .skip(1) // Skip participant 0, so participant 1-6 are included
+        .take(threshold.0 as usize)
     {
-        let participant_id = initial_participants.id(account.id()).unwrap();
-        let participant_info = initial_participants.info(account.id()).unwrap();
         new_participants
             .insert_with_id(
-                account.id().clone(),
-                participant_info.clone(),
-                participant_id,
+                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                mpc_contract::primitives::participants::ParticipantInfo {
+                    url: participant_info.url.clone(),
+                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                },
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }
 
-    let new_threshold_parameters = ThresholdParameters::new(new_participants, threshold.clone())
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let prospective_epoch_id = EpochId::new(6);
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let prospective_epoch_id = dtos::EpochId(6);
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &mpc_signer_accounts[1..threshold.value() as usize + 1],
+        &mpc_signer_accounts[1..threshold.0 as usize + 1],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -120,7 +124,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         .collect();
     assert_eq!(votes_for_update.len(), 1);
     let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
-    assert!(final_participants.is_participant(&voter_id));
+    assert!(final_participants
+        .participants
+        .iter()
+        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
 
     Ok(())
 }

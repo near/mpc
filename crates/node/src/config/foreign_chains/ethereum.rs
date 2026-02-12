@@ -1,10 +1,12 @@
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
 use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
@@ -22,7 +24,7 @@ impl EthereumChainConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumProviderConfig {
     pub rpc_url: String,
     pub api_variant: EthereumApiVariant,
@@ -31,8 +33,8 @@ pub struct EthereumProviderConfig {
 }
 
 impl ForeignChainProviderConfig for EthereumProviderConfig {
-    fn rpc_url(&self) -> &str {
-        self.rpc_url.as_str()
+    fn rpc_url(&self) -> Cow<'_, str> {
+        self.auth.strip_placeholder(&self.rpc_url)
     }
 
     fn validate(&self, chain_label: &str, provider_name: &str) -> anyhow::Result<()> {

@@ -1,6 +1,7 @@
 use aes_gcm::aead::Aead;
 use aes_gcm::{AeadCore, Aes128Gcm, AesGcm, KeyInit};
 use rocksdb::IteratorMode;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
@@ -14,6 +15,12 @@ pub struct SecretDB {
     cipher: Aes128Gcm,
 }
 
+impl std::fmt::Debug for SecretDB {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretDB").finish_non_exhaustive()
+    }
+}
+
 /// Each DBCol corresponds to a column family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DBCol {
@@ -21,6 +28,7 @@ pub enum DBCol {
     Presignature,
     SignRequest,
     CKDRequest,
+    VerifyForeignTxRequest,
     EpochData,
 }
 
@@ -31,16 +39,18 @@ impl DBCol {
             DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
+            DBCol::VerifyForeignTxRequest => "verify_foreign_tx_request",
             DBCol::EpochData => "epoch_id",
         }
     }
 
-    fn all() -> [DBCol; 5] {
+    fn all() -> [DBCol; 6] {
         [
             DBCol::Triple,
             DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
+            DBCol::VerifyForeignTxRequest,
             DBCol::EpochData,
         ]
     }
@@ -79,7 +89,18 @@ impl SecretDB {
         let mut options = rocksdb::Options::default();
         options.create_if_missing(true);
         options.create_missing_column_families(true);
-        let db = rocksdb::DB::open_cf(&options, path, DBCol::all().iter().map(|col| col.as_str()))?;
+        // Open with the union of known and on-disk column families so that
+        // downgrading to an older binary (which knows fewer CFs) doesn't fail.
+        let known_cfs: BTreeSet<String> = DBCol::all()
+            .iter()
+            .map(|col| col.as_str().to_string())
+            .collect();
+        let on_disk_cfs: BTreeSet<String> = rocksdb::DB::list_cf(&options, path)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        let all_cfs: Vec<&String> = known_cfs.union(&on_disk_cfs).collect();
+        let db = rocksdb::DB::open_cf(&options, path, &all_cfs)?;
         Ok(Self { db, cipher }.into())
     }
 
@@ -188,6 +209,7 @@ impl SecretDBUpdate {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
 
@@ -261,5 +283,25 @@ mod tests {
             .is_ascii());
 
         Ok(())
+    }
+
+    #[test]
+    fn secret_db__should_be_able_to_open_db_with_unknown_column_families() {
+        // Given
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let key = [1; 16];
+        {
+            let mut options = rocksdb::Options::default();
+            options.create_if_missing(true);
+            options.create_missing_column_families(true);
+            let cfs = ["triple", "presignature", "sign_request", "future_cf"];
+            let _db = rocksdb::DB::open_cf(&options, dir.path(), cfs).expect("db should open");
+        }
+
+        // When
+        let result = SecretDB::new(dir.path(), key);
+
+        // Then
+        assert_matches::assert_matches!(result, Ok(_));
     }
 }

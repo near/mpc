@@ -11,6 +11,7 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
+use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -20,7 +21,6 @@ use mpc_contract::{
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
 };
 use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};

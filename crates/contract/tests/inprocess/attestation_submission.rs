@@ -1,4 +1,4 @@
-use contract_interface::types::{Attestation, InitConfig, MockAttestation};
+use contract_interface::types::{Attestation, InitConfig, MockAttestation, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
@@ -9,7 +9,6 @@ use mpc_contract::{
         },
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
     tee::tee_state::NodeId,
     MpcContract,
 };
@@ -319,7 +318,7 @@ fn test_clean_tee_status_removes_non_participants() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should be in Running state"),
     };
-    let participant_count = running_state.parameters.participants().len();
+    let participant_count = running_state.parameters.participants.participants.len();
     assert_eq!(participant_count, PARTICIPANT_COUNT);
 
     // Test cleanup: should remove TEE account for non-participant
@@ -334,7 +333,11 @@ fn test_clean_tee_status_removes_non_participants() {
         ProtocolContractState::Running(r) => r,
         _ => panic!("Should still be Running after cleanup"),
     };
-    let final_participant_count = final_running_state.parameters.participants().len();
+    let final_participant_count = final_running_state
+        .parameters
+        .participants
+        .participants
+        .len();
     assert_eq!(final_participant_count, PARTICIPANT_COUNT);
 }
 

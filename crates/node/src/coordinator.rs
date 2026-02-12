@@ -5,7 +5,8 @@ use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::participants::{
     ContractKeyEventInstance, ContractResharingState, ContractRunningState, ContractState,
 };
-use crate::indexer::{tx_sender, IndexerAPI};
+use crate::indexer::types::{ChainSendTransactionRequest, ChainVoteForeignChainPolicyArgs};
+use crate::indexer::{tx_sender, IndexerAPI, ReadForeignChainPolicy};
 use crate::key_events::{
     keygen_follower, keygen_leader, resharing_follower, resharing_leader, ResharingArgs,
 };
@@ -21,12 +22,15 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::AsyncDroppableRuntime;
-use crate::storage::CKDRequestStorage;
 use crate::storage::SignRequestStorage;
+use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
+use anyhow::Context;
+use contract_interface::types as dtos;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use mpc_contract::primitives::domain::{DomainId, SignatureScheme};
@@ -35,7 +39,7 @@ use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use threshold_signatures::{confidential_key_derivation, ecdsa, eddsa};
+use threshold_signatures::{confidential_key_derivation, ecdsa, frost::eddsa};
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
@@ -48,7 +52,7 @@ use tracing::{error, info};
 /// accordingly: if the contract says we need to generate keys, we generate
 /// keys; if the contract says we're running, we run the MPC protocol; if the
 /// contract says we need to perform key resharing, we perform key resharing.
-pub struct Coordinator<TransactionSender> {
+pub struct Coordinator<TransactionSender, ForeignChainPolicyReader> {
     pub clock: Clock,
     pub secrets: SecretsConfig,
     pub config_file: ConfigFile,
@@ -58,7 +62,7 @@ pub struct Coordinator<TransactionSender> {
     /// Storage for keyshares.
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     /// For interaction with the indexer.
-    pub indexer: IndexerAPI<TransactionSender>,
+    pub indexer: IndexerAPI<TransactionSender, ForeignChainPolicyReader>,
 
     /// For testing, to know what the current state is.
     pub currently_running_job_name: Arc<Mutex<String>>,
@@ -94,9 +98,11 @@ enum MpcJobResult {
     HaltUntilInterrupted,
 }
 
-impl<TransactionSender> Coordinator<TransactionSender>
+impl<TransactionSender, ForeignChainPolicyReader>
+    Coordinator<TransactionSender, ForeignChainPolicyReader>
 where
     TransactionSender: tx_sender::TransactionSender + 'static,
+    ForeignChainPolicyReader: ReadForeignChainPolicy + Clone + Send + Sync + 'static,
 {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
@@ -163,6 +169,7 @@ where
                                 self.keyshare_storage.clone(),
                                 running_state.clone(),
                                 self.indexer.txn_sender.clone(),
+                                self.indexer.foreign_chain_policy_reader.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -319,6 +326,7 @@ where
         keyshare_storage: Arc<RwLock<KeyshareStorage>>,
         running_state: ContractRunningState,
         chain_txn_sender: TransactionSender,
+        foreign_chain_policy_reader: ForeignChainPolicyReader,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -366,6 +374,16 @@ where
             tracing::info!("We are not a participant in the current epoch; doing nothing until contract state change");
             return Ok(MpcJobResult::HaltUntilInterrupted);
         };
+
+        if let Err(err) = Self::maybe_vote_foreign_chain_policy(
+            &config_file,
+            &foreign_chain_policy_reader,
+            &chain_txn_sender,
+        )
+        .await
+        {
+            tracing::warn!(error = ?err, "failed to auto-vote foreign chain policy");
+        }
 
         tracing::info!("Creating tls mesh");
         let (sender, receiver) = new_tls_mesh_network(&mpc_config, p2p_key).await?;
@@ -504,6 +522,9 @@ where
 
                 let sign_request_store = Arc::new(SignRequestStorage::new(secret_db.clone())?);
                 let ckd_request_store = Arc::new(CKDRequestStorage::new(secret_db.clone())?);
+                let verify_foreign_tx_request_store = Arc::new(
+                    VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
+                );
 
                 let mut ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> = HashMap::new();
                 let mut robust_ecdsa_keyshares: HashMap<DomainId, ecdsa::KeygenOutput> =
@@ -567,10 +588,21 @@ where
 
                 let ckd_provider = Arc::new(CKDProvider::new(
                     config_file.clone().into(),
-                    running_mpc_config.into(),
+                    running_mpc_config.clone().into(),
                     network_client.clone(),
                     ckd_request_store.clone(),
                     ckd_keyshares,
+                ));
+
+                let verify_foreign_tx_provider = Arc::new(VerifyForeignTxProvider::new(
+                    config_file.clone().into(),
+                    foreign_chain_policy_reader.clone(),
+                    running_mpc_config.into(),
+                    verify_foreign_tx_request_store.clone(),
+                    // We are re-using the ecdsa signature provider here
+                    // Once domain separation is implemented we might create a separate
+                    // ecdsa signature provider and insert it here
+                    ecdsa_signature_provider.clone(),
                 ));
 
                 let mpc_client = Arc::new(MpcClient::new(
@@ -578,10 +610,12 @@ where
                     network_client,
                     sign_request_store,
                     ckd_request_store,
+                    verify_foreign_tx_request_store,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
                     ckd_provider,
+                    verify_foreign_tx_provider,
                     domain_to_scheme,
                 ));
 
@@ -684,6 +718,77 @@ where
             .await?;
         }
         Ok(MpcJobResult::Done)
+    }
+
+    async fn maybe_vote_foreign_chain_policy(
+        config_file: &ConfigFile,
+        foreign_chain_policy_reader: &ForeignChainPolicyReader,
+        chain_txn_sender: &TransactionSender,
+    ) -> anyhow::Result<()> {
+        let Some(local_policy) = config_file.foreign_chains.to_policy() else {
+            tracing::info!(
+                "foreign_chains config is empty; skipping foreign chain policy auto-vote"
+            );
+            return Ok(());
+        };
+
+        let on_chain_policy = foreign_chain_policy_reader
+            .get_foreign_chain_policy()
+            .await
+            .context("failed to fetch foreign chain policy")?;
+
+        if on_chain_policy == local_policy {
+            tracing::info!("foreign chain policy matches local config; skipping auto-vote");
+            return Ok(());
+        }
+
+        let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
+            .chains
+            .iter()
+            .filter(|chain_config| !Self::is_supported_foreign_chain(&chain_config.chain))
+            .map(|chain_config| chain_config.chain.clone())
+            .collect();
+
+        if !unsupported_chains.is_empty() {
+            tracing::warn!(
+                ?unsupported_chains,
+                "on-chain foreign chain policy contains unsupported chains; skipping auto-vote"
+            );
+            return Ok(());
+        }
+
+        let proposals = foreign_chain_policy_reader
+            .get_foreign_chain_policy_proposals()
+            .await
+            .context("failed to fetch foreign chain policy proposals")?;
+
+        let my_account_id = dtos::AccountId(config_file.my_near_account_id.to_string());
+        if proposals
+            .proposal_by_account
+            .get(&my_account_id)
+            .is_some_and(|proposal| proposal == &local_policy)
+        {
+            tracing::info!("foreign chain policy already proposed by this node; skipping");
+            return Ok(());
+        }
+
+        chain_txn_sender
+            .send(ChainSendTransactionRequest::VoteForeignChainPolicy(
+                ChainVoteForeignChainPolicyArgs {
+                    policy: local_policy,
+                },
+            ))
+            .await
+            .context("failed to send foreign chain policy vote")?;
+
+        Ok(())
+    }
+
+    fn is_supported_foreign_chain(chain: &dtos::ForeignChain) -> bool {
+        matches!(
+            chain,
+            dtos::ForeignChain::Solana | dtos::ForeignChain::Bitcoin | dtos::ForeignChain::Ethereum
+        )
     }
 }
 

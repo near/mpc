@@ -28,3 +28,6 @@ venv
 
 # TODO(#1768): potentially remove
 .envrc
+
+# Agents
+.claude

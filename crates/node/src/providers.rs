@@ -10,6 +10,7 @@ pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
 pub mod robust_ecdsa;
+pub mod verify_foreign_tx;
 
 use crate::config::ParticipantsConfig;
 use crate::network::NetworkTaskChannel;

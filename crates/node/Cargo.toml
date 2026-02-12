@@ -22,7 +22,9 @@ clap = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
+either = { workspace = true }
 flume = { workspace = true }
+foreign-chain-inspector = { workspace = true }
 futures = { workspace = true }
 gcloud-sdk = { workspace = true }
 hex = { workspace = true }
@@ -91,6 +93,7 @@ mpc-contract = { workspace = true, features = ["test-utils"] }
 near-sdk = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+test-log = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tracing-test = { workspace = true }
 

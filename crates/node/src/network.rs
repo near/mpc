@@ -964,7 +964,7 @@ mod tests {
     async fn test_network_basic() {
         start_root_task_with_periodic_dump(async move {
             run_test_clients(
-                into_participant_ids(&TestGenerators::new(4, 3)),
+                into_participant_ids(&TestGenerators::new(4, 3.into())),
                 run_test_client,
             )
             .await
@@ -1108,8 +1108,10 @@ mod tests {
     fn select_random_active_participants_including_me_should_return_not_enough_active_participants_when_peers_to_consider_is_empty(
     ) {
         let num_participants = 4;
-        let participant_ids =
-            into_participant_ids(&TestGenerators::new(num_participants, num_participants));
+        let participant_ids = into_participant_ids(&TestGenerators::new(
+            num_participants,
+            num_participants.into(),
+        ));
         let transports = new_test_transports(participant_ids.clone());
         let indexer_heights = {
             let heights = participant_ids
@@ -1147,15 +1149,14 @@ mod fault_handling_tests {
     use crate::providers::EcdsaTaskId;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
-    use near_o11y::testonly::init_integration_logger;
     use std::sync::Arc;
     use threshold_signatures::test_utils::TestGenerators;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
     #[tokio::test]
+    #[test_log::test]
     async fn test_network_fault_handling() {
-        init_integration_logger();
         let test_cases = vec![
             FaultTestCase::NoFault,
             FaultTestCase::Crash(ParticipantId::from_raw(0)),
@@ -1172,7 +1173,10 @@ mod fault_handling_tests {
             let test_case = Arc::new(test_case);
             start_root_task_with_periodic_dump(async move {
                 run_test_clients(
-                    into_participant_ids(&TestGenerators::new_contiguous_participant_ids(4, 3)),
+                    into_participant_ids(&TestGenerators::new_contiguous_participant_ids(
+                        4,
+                        3.into(),
+                    )),
                     move |client, channel_receiver| {
                         let test_case = test_case.clone();
                         async move {

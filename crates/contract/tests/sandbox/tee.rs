@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN},
-        interface::IntoInterfaceType,
+        interface::{IntoContractType, IntoInterfaceType},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold,
             get_participant_attestation, get_state, get_tee_accounts, submit_participant_info,
@@ -12,11 +12,12 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{Attestation, MockAttestation};
+use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
-    primitives::{domain::SignatureScheme, test_utils::bogus_ed25519_public_key},
-    state::ProtocolContractState,
+    primitives::{
+        domain::SignatureScheme, participants::Participants, test_utils::bogus_ed25519_public_key,
+    },
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
@@ -40,17 +41,14 @@ async fn test_vote_code_hash_basic_threshold_and_stability() -> Result<()> {
     assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // First votes - should not be enough
-    for account in mpc_signer_accounts
-        .iter()
-        .take((threshold.value() - 1) as usize)
-    {
+    for account in mpc_signer_accounts.iter().take((threshold.0 - 1) as usize) {
         vote_for_hash(account, &contract, &allowed_mpc_image_digest).await?;
         assert_eq!(get_allowed_hashes(&contract).await, vec![]);
     }
 
     // `threshold`-th vote - should reach threshold
     vote_for_hash(
-        &mpc_signer_accounts[(threshold.value() - 1) as usize],
+        &mpc_signer_accounts[(threshold.0 - 1) as usize],
         &contract,
         &allowed_mpc_image_digest,
     )
@@ -86,7 +84,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let threshold = assert_running_return_threshold(&contract).await;
     // This is necessary for some parts of the test below
-    assert!((threshold.value() as usize) < mpc_signer_accounts.len());
+    assert!((threshold.0 as usize) < mpc_signer_accounts.len());
     let first_hash = image_digest();
 
     let arbitrary_bytes = [2; 32];
@@ -97,7 +95,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     assert_eq!(get_allowed_hashes(&contract).await, vec![]);
 
     // Initial votes for first hash - reach threshold
-    for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+    for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
         vote_for_hash(account, &contract, &first_hash).await?;
     }
 
@@ -117,7 +115,7 @@ async fn test_vote_code_hash_approved_hashes_persist_after_vote_changes() -> Res
     for account in mpc_signer_accounts
         .iter()
         .skip(2)
-        .take(threshold.value() as usize - 1)
+        .take(threshold.0 as usize - 1)
     {
         vote_for_hash(account, &contract, &second_hash).await?;
     }
@@ -221,11 +219,11 @@ pub async fn get_participants(contract: &Contract) -> Result<usize> {
         .max_gas()
         .transact()
         .await?;
-    let value: ProtocolContractState = state.json()?;
-    let ProtocolContractState::Running(running) = value else {
+    let value: dtos::ProtocolContractState = state.json()?;
+    let dtos::ProtocolContractState::Running(running) = value else {
         panic!("Expected running state")
     };
-    Ok(running.parameters.participants().len())
+    Ok(running.parameters.participants.participants.len())
 }
 
 // / **Mock attestation bypass** - Tests that participant info submission succeeds with mock attestation.
@@ -297,9 +295,11 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
-    let participant_uids = assert_running_return_participants(&contract)
-        .await?
-        .get_node_ids();
+    let participant_uids = {
+        let p: Participants =
+            (&assert_running_return_participants(&contract).await?).into_contract_type();
+        p.get_node_ids()
+    };
     submit_tee_attestations(&contract, &mpc_signer_accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
@@ -359,7 +359,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
 
     for (i, current_hash) in hashes.iter().enumerate() {
         let hash = MpcDockerImageHash::from(*current_hash);
-        for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
+        for account in mpc_signer_accounts.iter().take(threshold.0 as usize) {
             vote_for_hash(account, &contract, &hash).await?;
         }
 
@@ -607,7 +607,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     } = init_env(&[SignatureScheme::Secp256k1], PARTICIPANT_COUNT).await;
 
     let initial_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(initial_participants.len(), PARTICIPANT_COUNT);
+    assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
 
     // Calculate expiry timestamp from current block time
     let block_info = worker.view_block().await?;
@@ -615,7 +615,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Submit an expiring attestation for the last participant
     let target_account = &mpc_signer_accounts[2];
-    let target_node_id = initial_participants
+    let internal_participants: Participants = (&initial_participants).into_contract_type();
+    let target_node_id = internal_participants
         .get_node_ids()
         .into_iter()
         .find(|node| &node.account_id == target_account.id())
@@ -668,7 +669,9 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     // Verify contract transitioned to Resharing state
     let state_after_verify = get_state(&contract).await;
     let prospective_epoch_id = match &state_after_verify {
-        ProtocolContractState::Resharing(resharing_state) => resharing_state.prospective_epoch_id(),
+        dtos::ProtocolContractState::Resharing(resharing_state) => {
+            resharing_state.resharing_key.epoch_id
+        }
         _ => panic!("expected Resharing state, got {:?}", state_after_verify),
     };
 
@@ -678,14 +681,17 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Verify final state: 2 participants, target removed
     let final_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(final_participants.len(), PARTICIPANT_COUNT - 1);
+    assert_eq!(final_participants.participants.len(), PARTICIPANT_COUNT - 1);
 
-    let final_accounts: std::collections::BTreeSet<_> = final_participants
-        .participants()
-        .map(|(account_id, _, _)| account_id.clone())
+    let final_accounts: Vec<String> = final_participants
+        .participants
+        .iter()
+        .map(|(account_id, _, _)| account_id.0.clone())
         .collect();
-    let expected_accounts: std::collections::BTreeSet<_> =
-        remaining_accounts.iter().map(|a| a.id().clone()).collect();
+    let expected_accounts: Vec<String> = remaining_accounts
+        .iter()
+        .map(|a| a.id().to_string())
+        .collect();
     assert_eq!(final_accounts, expected_accounts);
 
     Ok(())

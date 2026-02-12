@@ -295,18 +295,6 @@ jobs:
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:
           tool: zizmor@1.16.2
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-about
-        run: |
-          cargo binstall --force --no-confirm --locked cargo-about@0.8.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install cargo-make
         uses: taiki-e/install-action@81ee1d48d9194cdcab880cbdc7d36e87d39874cb # v2.62.45
         with:

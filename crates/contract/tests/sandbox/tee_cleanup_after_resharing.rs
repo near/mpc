@@ -2,7 +2,7 @@ use crate::sandbox::{
     common::{gen_accounts, init_env, submit_tee_attestations, SandboxTestSetup},
     utils::{
         consts::PARTICIPANT_LEN,
-        interface::IntoInterfaceType,
+        interface::{IntoContractType, IntoInterfaceType},
         mpc_contract::{
             assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
             submit_participant_info,
@@ -11,10 +11,10 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{Attestation, MockAttestation};
+use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     primitives::{
-        domain::SignatureScheme, key_state::EpochId, participants::Participants,
+        domain::SignatureScheme, participants::Participants,
         test_utils::bogus_ed25519_near_public_key, thresholds::ThresholdParameters,
     },
     tee::tee_state::NodeId,
@@ -41,7 +41,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // extract initial participants:
     let initial_participants = assert_running_return_participants(&contract).await?;
     let threshold = assert_running_return_threshold(&contract).await;
-    let expected_node_ids = initial_participants.get_node_ids();
+    let expected_node_ids = (&initial_participants).into_contract_type().get_node_ids();
 
     // Verify TEE info for initial participants was added
     let nodes_with_tees = get_tee_accounts(&contract).await.unwrap();
@@ -85,26 +85,34 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     // Now, we do a resharing. We only retain `threshold` of the initial participants
     // Build new_participants directly from the accounts slice - account index matches ParticipantId
     let mut new_participants = Participants::new();
-    for account in mpc_signer_accounts.iter().take(threshold.value() as usize) {
-        let participant_id = initial_participants.id(account.id()).unwrap();
-        let participant_info = initial_participants.info(account.id()).unwrap();
+    for (account_id, participant_id, participant_info) in initial_participants
+        .participants
+        .iter()
+        .take(threshold.0 as usize)
+    {
         new_participants
             .insert_with_id(
-                account.id().clone(),
-                participant_info.clone(),
-                participant_id,
+                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
+                mpc_contract::primitives::participants::ParticipantInfo {
+                    url: participant_info.url.clone(),
+                    sign_pk: participant_info.sign_pk.parse().unwrap(),
+                },
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .expect("Failed to insert participant");
     }
 
     let expected_tee_post_resharing = new_participants.get_node_ids();
-    let new_threshold_parameters =
-        ThresholdParameters::new(new_participants, threshold.clone()).unwrap();
+    let new_threshold_parameters = ThresholdParameters::new(
+        new_participants,
+        mpc_contract::primitives::thresholds::Threshold::new(threshold.0),
+    )
+    .unwrap();
 
-    let prospective_epoch_id = EpochId::new(6);
+    let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
-        &mpc_signer_accounts[..threshold.value() as usize],
+        &mpc_signer_accounts[..threshold.0 as usize],
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -117,7 +125,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
         .expect("Expected contract to be in Running state after resharing.");
 
     // Get current participants to compare
-    let final_participants_node_ids = final_participants.get_node_ids();
+    let final_participants_node_ids = (&final_participants).into_contract_type().get_node_ids();
     // Verify only the new participants remain
     assert_eq!(final_participants_node_ids, expected_tee_post_resharing);
     // Verify TEE participants are properly cleaned up
