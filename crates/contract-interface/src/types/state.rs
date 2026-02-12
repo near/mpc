@@ -6,6 +6,7 @@
 use crate::types::PublicKey;
 use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -27,6 +28,8 @@ use super::primitives::DomainId;
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
@@ -49,6 +52,8 @@ pub struct EpochId(pub u64);
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
@@ -71,6 +76,8 @@ pub struct AttemptId(pub u64);
     Hash,
     Serialize,
     Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
@@ -82,7 +89,20 @@ pub struct AttemptId(pub u64);
 pub struct Threshold(pub u64);
 
 /// A participant ID that has been authenticated (i.e., the caller is this participant).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -90,7 +110,19 @@ pub struct Threshold(pub u64);
 pub struct AuthenticatedParticipantId(pub crate::types::participants::ParticipantId);
 
 /// An account ID that has been authenticated (i.e., the caller is this account).
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -102,7 +134,20 @@ pub struct AuthenticatedAccountId(pub AccountId);
 // =============================================================================
 
 /// Supported signature schemes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -116,7 +161,9 @@ pub enum SignatureScheme {
 }
 
 /// Configuration for a signature domain.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -127,7 +174,7 @@ pub struct DomainConfig {
 }
 
 /// Registry of all signature domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -142,7 +189,7 @@ pub struct DomainRegistry {
 // =============================================================================
 
 /// Extended public key representation for different signature schemes.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -172,7 +219,7 @@ pub enum PublicKeyExtended {
 // =============================================================================
 
 /// A public key for a specific domain.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -184,7 +231,7 @@ pub struct KeyForDomain {
 }
 
 /// Set of keys for the current epoch.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -195,7 +242,9 @@ pub struct Keyset {
 }
 
 /// Identifier for a key event (generation or resharing attempt).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -211,7 +260,7 @@ pub struct KeyEventId {
 // =============================================================================
 
 /// Threshold parameters for distributed key operations.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -226,7 +275,7 @@ pub struct ThresholdParameters {
 // =============================================================================
 
 /// Votes for threshold parameter changes.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -236,7 +285,7 @@ pub struct ThresholdParametersVotes {
 }
 
 /// Votes for adding new domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -250,7 +299,7 @@ pub struct AddDomainsVotes {
 // =============================================================================
 
 /// State of a key generation/resharing instance.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -264,7 +313,7 @@ pub struct KeyEventInstance {
 }
 
 /// Key generation or resharing event state.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -282,7 +331,7 @@ pub struct KeyEvent {
 // =============================================================================
 
 /// State when the contract is generating keys for new domains.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -296,7 +345,7 @@ pub struct InitializingContractState {
 }
 
 /// State when the contract is ready for signature operations.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -311,7 +360,7 @@ pub struct RunningContractState {
 }
 
 /// State when the contract is resharing keys to new participants.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -324,7 +373,7 @@ pub struct ResharingContractState {
 }
 
 /// The main protocol contract state enum.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
