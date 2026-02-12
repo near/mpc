@@ -82,7 +82,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
                     url: participant_info.url.clone(),
                     sign_pk: participant_info.sign_pk.parse().unwrap(),
                 },
-                mpc_contract::primitives::participants::ParticipantId(participant_id.0),
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
     }

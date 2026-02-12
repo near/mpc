@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
     derive_more::From,
     derive_more::Into,
 )]

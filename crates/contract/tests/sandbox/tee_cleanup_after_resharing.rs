@@ -96,7 +96,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
                     url: participant_info.url.clone(),
                     sign_pk: participant_info.sign_pk.parse().unwrap(),
                 },
-                mpc_contract::primitives::participants::ParticipantId(participant_id.0),
+                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
             )
             .expect("Failed to insert participant");
     }

@@ -104,7 +104,7 @@ impl IntoContractType<Participants> for &dtos::ParticipantsJson {
                         url: info.url.clone(),
                         sign_pk: info.sign_pk.parse().unwrap(),
                     },
-                    mpc_contract::primitives::participants::ParticipantId(participant_id.0),
+                    mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
                 )
                 .unwrap();
         }
