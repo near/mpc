@@ -6,8 +6,6 @@ use thiserror::Error;
 pub mod abstract_chain;
 pub mod bitcoin;
 
-pub(crate) mod rpc_schema;
-
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;

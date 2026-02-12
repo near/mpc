@@ -6,7 +6,7 @@ use crate::{
     abstract_chain::{AbstractBlockHash, AbstractTransactionHash, LogHash},
 };
 
-use crate::rpc_schema::ethereum::{
+use foreign_chain_rpc_interfaces::evm::{
     FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionReceiptARgs,
     GetTransactionReceiptResponse, ReturnFullTransactionObjects,
 };

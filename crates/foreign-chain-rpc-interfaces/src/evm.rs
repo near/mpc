@@ -1,6 +1,6 @@
 use crate::to_rpc_params_impl;
 
-// use borsh::BorshSerialize;
+use borsh::BorshSerialize;
 use derive_more::{Constructor, From};
 use ethereum_types::{H160, H256, U64};
 use jsonrpsee::core::traits::ToRpcParams;
@@ -70,6 +70,27 @@ pub struct Log {
     pub address: H160,
     pub data: String,
     pub topics: Vec<H256>,
+}
+
+impl BorshSerialize for Log {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        BorshSerialize::serialize(&self.removed, writer)?;
+        BorshSerialize::serialize(&self.log_index.as_u64(), writer)?;
+        BorshSerialize::serialize(&self.transaction_index.as_u64(), writer)?;
+        BorshSerialize::serialize(&self.transaction_hash.0, writer)?;
+        BorshSerialize::serialize(&self.block_hash.0, writer)?;
+        BorshSerialize::serialize(&self.block_number.as_u64(), writer)?;
+        BorshSerialize::serialize(&self.address.0, writer)?;
+        BorshSerialize::serialize(&self.data, writer)?;
+        let topics_len = self.topics.len() as u32;
+        BorshSerialize::serialize(&topics_len, writer)?;
+
+        for topic in &self.topics {
+            BorshSerialize::serialize(&topic.0, writer)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl ToRpcParams for &GetTransactionReceiptARgs {
