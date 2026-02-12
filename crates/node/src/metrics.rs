@@ -182,6 +182,16 @@ pub static MPC_NUM_CKD_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_verify_foreign_tx_computations_led",
+            "Number of verify foreign tx computations that this node led",
+            &["result"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(
@@ -270,6 +280,15 @@ pub static CKD_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> = LazyLo
     .unwrap()
 });
 
+pub static VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "verify_foreign_tx_request_channel_failed",
+            "failed to send on channel in verify_foreign_tx_request_channel",
+        )
+        .unwrap()
+    });
+
 pub static VERIFY_TEE_REQUESTS_SENT: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "verify_tee_requests_sent",
@@ -330,3 +349,6 @@ pub static PARTICIPANT_TOTAL_TIMES_SEEN_IN_FAILED_SIGNATURE_COMPUTATION_FOLLOWER
         )
         .unwrap()
 });
+
+pub const MPC_NUM_COMPUTATIONS_LED_TOTAL_LABEL: &str = "total";
+pub const MPC_NUM_COMPUTATIONS_LED_SUCCEEDED_LABEL: &str = "succeeded";

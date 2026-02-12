@@ -1,7 +1,7 @@
-use crate::providers::ckd::CKDTaskId;
 use crate::providers::eddsa::EddsaTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
 use crate::providers::EcdsaTaskId;
+use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -211,6 +211,7 @@ pub enum MpcTaskId {
     EddsaTaskId(EddsaTaskId),
     CKDTaskId(CKDTaskId),
     RobustEcdsaTaskId(RobustEcdsaTaskId),
+    VerifyForeignTxTaskId(VerifyForeignTxTaskId),
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

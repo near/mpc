@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
 use aes_gcm::{Aes256Gcm, KeyInit};
 use ed25519_dalek::SigningKey;
@@ -8,7 +11,7 @@ use tempfile::TempDir;
 use tokio::sync::{watch, RwLock};
 
 use crate::{
-    config::{AesKey256, WebUIConfig},
+    config::AesKey256,
     keyshare::{generate_key_storage, Keyshare, KeyshareStorage},
     migration_service::{
         types::MigrationInfo,
@@ -17,13 +20,11 @@ use crate::{
     p2p::testing::PortSeed,
 };
 
-const LOCALHOST_IP: &str = "127.0.0.1";
-
 pub struct TestSetup {
     pub backup_encryption_key: AesKey256,
     pub client_key: SigningKey,
     pub server_key: SigningKey,
-    pub target_address: String,
+    pub target_address: SocketAddr,
     pub migration_state_sender: watch::Sender<MigrationInfo>,
     pub import_keyshares_receiver: watch::Receiver<Vec<Keyshare>>,
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
@@ -36,10 +37,8 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
     let server_key = SigningKey::generate(&mut OsRng);
 
     let port: u16 = port_seed.migration_web_port(0);
-    let config = WebUIConfig {
-        host: LOCALHOST_IP.to_string(),
-        port,
-    };
+    let target_address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
+
     let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
         backup_service_info: Some(BackupServiceInfo {
             public_key: client_key.verifying_key().to_bytes().into(),
@@ -58,13 +57,13 @@ pub async fn setup(port_seed: PortSeed) -> TestSetup {
     });
     start_web_server(
         web_server_state.clone(),
-        config,
+        target_address,
         migration_state_receiver,
         &server_key,
     )
     .await
     .expect("Web server should start successfully for test setup");
-    let target_address = format!("{LOCALHOST_IP}:{port}");
+
     TestSetup {
         backup_encryption_key: backup_encryption_key.into(),
         client_key,

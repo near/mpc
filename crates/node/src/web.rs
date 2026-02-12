@@ -1,4 +1,4 @@
-use crate::config::{SecretsConfig, WebUIConfig};
+use crate::config::SecretsConfig;
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
@@ -13,6 +13,7 @@ use mpc_contract::state::ProtocolContractState;
 use mpc_contract::utils::protocol_state_to_string;
 use node_types::http_server::StaticWebData;
 use prometheus::{default_registry, Encoder, TextEncoder};
+use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -83,6 +84,7 @@ pub enum DebugRequestKind {
     RecentBlocks,
     RecentSignatures,
     RecentCKDs,
+    RecentVerifyForeignTxs,
 }
 
 async fn debug_request_from_node(
@@ -189,18 +191,14 @@ async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
 pub async fn start_web_server(
     root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
-    config: WebUIConfig,
+    bind_address: SocketAddr,
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
 ) -> anyhow::Result<BoxFuture<'static, anyhow::Result<()>>> {
     use futures::FutureExt;
 
-    tracing::info!(
-        host = %config.host,
-        port = %config.port,
-        "Attempting to bind web server to host",
-    );
+    tracing::info!(?bind_address, "attempting to bind web server to address");
 
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
@@ -220,10 +218,6 @@ pub async fn start_web_server(
             migration_state_receiver,
             static_web_data,
         });
-
-    let bind_address = format!("{}:{}", config.host, config.port);
-
-    tracing::info!(address = %bind_address,"Binding to address");
 
     let tcp_listener = TcpListener::bind(&bind_address).await?;
 

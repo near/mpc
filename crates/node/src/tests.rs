@@ -14,7 +14,6 @@ use tokio::sync::{watch, RwLock};
 use crate::config::{
     CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, ParticipantsConfig,
     PersistentSecrets, PresignatureConfig, SecretsConfig, SignatureConfig, SyncMode, TripleConfig,
-    WebUIConfig,
 };
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
@@ -108,7 +107,7 @@ impl OneNodeTestConfig {
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
-                    self.config.web_ui.clone(),
+                    self.config.web_ui,
                     static_web_data(&self.secrets, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
@@ -127,7 +126,7 @@ impl OneNodeTestConfig {
                 ));
 
                 spawn_recovery_server_and_run_onboarding(
-                    self.config.migration_web_ui.clone(),
+                    self.config.migration_web_ui,
                     (&self.secrets).into(),
                     self.config.my_near_account_id.clone(),
                     keystore.clone(),
@@ -217,15 +216,12 @@ impl IntegrationTestSetup {
                     parallel_triple_generation_stagger_time_sec: 1,
                     timeout_sec: 60,
                 },
-                web_ui: WebUIConfig {
-                    host: "0.0.0.0".to_string(),
-                    port: port_seed.web_port(i),
-                },
                 number_of_responder_keys: 0,
-                migration_web_ui: WebUIConfig {
-                    host: "0.0.0.0".to_string(),
-                    port: port_seed.migration_web_port(i),
-                },
+                web_ui: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port_seed.web_port(i)),
+                migration_web_ui: SocketAddr::new(
+                    Ipv4Addr::UNSPECIFIED.into(),
+                    port_seed.migration_web_port(i),
+                ),
                 pprof_bind_address: SocketAddr::new(
                     Ipv4Addr::UNSPECIFIED.into(),
                     port_seed.pprof_web_port(i),
@@ -431,7 +427,8 @@ pub async fn request_ckd_and_await_response(
 
 /// Request a verify foreign tx from the indexer and wait for the response.
 /// Returns the time taken to receive the response, or None if timed out.
-#[allow(dead_code)] // TODO(#1960): remove when integrating with node
+// TODO: remove this when tests are added for this functionality
+#[allow(unused)]
 pub async fn request_verify_foreign_tx_and_await_response(
     indexer: &mut FakeIndexerManager,
     user: &str,
