@@ -99,7 +99,7 @@ pub enum AbstractExtractedValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractor {
     BlockHash,
-    LogIndex(usize),
+    LogHash { log_index: usize },
 }
 
 impl AbstractExtractor {
@@ -111,10 +111,10 @@ impl AbstractExtractor {
             AbstractExtractor::BlockHash => Ok(AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
             ))),
-            AbstractExtractor::LogIndex(index) => {
+            AbstractExtractor::LogHash { log_index } => {
                 let log = rpc_response
                     .logs
-                    .get(*index)
+                    .get(*log_index)
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
                 let borsh_encoding = borsh::to_vec(log)
