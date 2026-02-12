@@ -24,13 +24,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[rstest]
 #[tokio::test]
-#[case::block_hash_finalized(EthereumFinality::Finalized, AbstractExtractor::BlockHash)]
-#[case::block_hash_safe(EthereumFinality::Safe, AbstractExtractor::BlockHash)]
-#[case::log_hash_finalized(EthereumFinality::Finalized, AbstractExtractor::LogHash { log_index: 0 })]
-#[case::log_hash_safe(EthereumFinality::Safe, AbstractExtractor::LogHash { log_index: 0 })]
 async fn extract_returns_correct_value_when_finalized(
-    #[case] finality: EthereumFinality,
-    #[case] extractor: AbstractExtractor,
+    #[values(EthereumFinality::Finalized, EthereumFinality::Safe)] finality: EthereumFinality,
+    #[values(AbstractExtractor::LogHash { log_index: 0 }, AbstractExtractor::BlockHash)]
+    extractor: AbstractExtractor,
 ) {
     // given
     let tx_id = AbstractTransactionHash::from([3; 32]);
@@ -382,9 +379,9 @@ fn expected_extracted_value(
     tx_response: &GetTransactionReceiptResponse,
 ) -> AbstractExtractedValue {
     match extractor {
-        AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
-            *tx_response.block_hash.as_fixed_bytes(),
-        )),
+        AbstractExtractor::BlockHash => {
+            AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
+        }
         AbstractExtractor::LogHash { log_index } => {
             AbstractExtractedValue::LogHash(compute_log_hash(&tx_response.logs[*log_index]))
         }
