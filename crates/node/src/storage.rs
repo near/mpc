@@ -38,7 +38,7 @@ impl SignRequestStorage {
         true
     }
 
-    /// Blocks until a signature request with given id is present, then returns it.
+    /// Returns when a signature request with given id is present, then returns it.
     /// This behavior is necessary because a peer might initiate computation for a signature
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
@@ -104,7 +104,7 @@ impl CKDRequestStorage {
         true
     }
 
-    /// Blocks until a ckd request with given id is present, then returns it.
+    /// Returns when a ckd request with given id is present, then returns it.
     /// This behavior is necessary because a peer might initiate computation for a ckd
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
@@ -170,7 +170,7 @@ impl VerifyForeignTransactionRequestStorage {
         true
     }
 
-    /// Blocks until a verify foreign tx request with given id is present, then returns it.
+    /// Returns when a verify foreign tx request with given id is present, then returns it.
     /// This behavior is necessary because a peer might initiate computation for a verify foreign tx
     /// request before our indexer has caught up to the request. We need proof of the request
     /// from on-chain in order to participate in the computation.
