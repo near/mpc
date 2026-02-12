@@ -69,7 +69,7 @@ in
     pname = "zizmor";
     version = "1.22.0";
     hash = "sha256-VRw3+MCqG6Kmob7gM9Shv8E61muyuOijIMsg72xQ6cU=";
-    cargoHash = "sha256-VRw3+MCqG6Kmob7gM9Shv8E61muyuOijIMsg72xQ6cU=";
+    cargoHash = "sha256-GGOLUMhbXmgN8MspiiddA9+irjv9CQCZgWbcrbE7cY8=";
   })
 
   # --- STANDARD NIXPKGS VERSIONS ---
