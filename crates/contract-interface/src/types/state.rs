@@ -4,7 +4,7 @@
 //! in the contract's public API (e.g., the `state()` view function).
 
 use crate::types::PublicKey;
-use crate::types::participants::ParticipantsJson;
+use crate::types::participants::Participants;
 use crate::types::primitives::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -217,7 +217,7 @@ pub struct KeyEventId {
     derive(schemars::JsonSchema)
 )]
 pub struct ThresholdParameters {
-    pub participants: ParticipantsJson,
+    pub participants: Participants,
     pub threshold: Threshold,
 }
 

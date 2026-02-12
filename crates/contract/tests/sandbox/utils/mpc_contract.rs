@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
 use contract_interface::types::{
-    Attestation, Ed25519PublicKey, ParticipantsJson, ProtocolContractState, Threshold,
+    Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
 use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::MpcDockerImageHash;
@@ -12,7 +12,7 @@ pub async fn get_state(contract: &Contract) -> ProtocolContractState {
     contract.view("state").await.unwrap().json().unwrap()
 }
 
-pub async fn get_participants(contract: &Contract) -> anyhow::Result<ParticipantsJson> {
+pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participants> {
     let state = get_state(contract).await;
     let ProtocolContractState::Running(running) = state else {
         panic!("Expected running state")
@@ -70,7 +70,7 @@ pub async fn get_participant_attestation(
 
 pub async fn assert_running_return_participants(
     contract: &Contract,
-) -> anyhow::Result<ParticipantsJson> {
+) -> anyhow::Result<Participants> {
     // Verify contract is back to running state with new threshold
     let final_state: ProtocolContractState = contract.view("state").await?.json()?;
     let ProtocolContractState::Running(running_state) = final_state else {

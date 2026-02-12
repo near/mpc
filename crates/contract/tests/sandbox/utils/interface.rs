@@ -101,7 +101,7 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
     }
 }
 
-impl IntoContractType<Participants> for &dtos::ParticipantsJson {
+impl IntoContractType<Participants> for &dtos::Participants {
     fn into_contract_type(self) -> Participants {
         let mut participants = Participants::new();
         for (account_id, participant_id, info) in &self.participants {

@@ -59,7 +59,7 @@ pub struct ParticipantInfo {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ParticipantsJson {
+pub struct Participants {
     pub next_id: ParticipantId,
     pub participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
 }
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_serialize_outputs_vec_format() {
-        let participants_json = ParticipantsJson {
+        let participants_json = Participants {
             next_id: ParticipantId(1),
             participants: vec![(
                 AccountId("alice.near".to_string()),
@@ -92,10 +92,10 @@ mod tests {
     #[test]
     fn test_deserialize_vec_format() {
         let json = r#"{"next_id":1,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}]]}"#;
-        let deserialized: ParticipantsJson = serde_json::from_str(json).unwrap();
+        let deserialized: Participants = serde_json::from_str(json).unwrap();
         assert_eq!(
             deserialized,
-            ParticipantsJson {
+            Participants {
                 next_id: ParticipantId(1),
                 participants: vec![(
                     AccountId("alice.near".to_string()),

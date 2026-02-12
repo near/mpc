@@ -709,9 +709,9 @@ impl IntoInterfaceType<dtos::KeyEventId> for &KeyEventId {
 
 // --- Participants types ---
 
-impl IntoInterfaceType<dtos::ParticipantsJson> for &Participants {
-    fn into_dto_type(self) -> dtos::ParticipantsJson {
-        dtos::ParticipantsJson {
+impl IntoInterfaceType<dtos::Participants> for &Participants {
+    fn into_dto_type(self) -> dtos::Participants {
+        dtos::Participants {
             next_id: dtos::ParticipantId(self.next_id().get()),
             participants: self
                 .participants()
@@ -936,7 +936,7 @@ mod tests {
     }
 
     /// Ensures that the JSON produced by serializing the internal [`Participants`]
-    /// type can be deserialized into the DTO [`dtos::ParticipantsJson`] type and
+    /// type can be deserialized into the DTO [`dtos::Participants`] type and
     /// vice versa, producing identical JSON in both directions.
     #[test]
     fn participants_serde_is_compatible_with_dto() {
@@ -944,7 +944,7 @@ mod tests {
         let json = serde_json::to_value(&internal).unwrap();
 
         // Internal JSON → DTO type.
-        let dto: dtos::ParticipantsJson = serde_json::from_value(json.clone()).unwrap();
+        let dto: dtos::Participants = serde_json::from_value(json.clone()).unwrap();
 
         // DTO → JSON must match the original.
         let dto_json = serde_json::to_value(&dto).unwrap();
