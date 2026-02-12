@@ -329,15 +329,14 @@ impl<RequestType: Request + Clone, ChainRespondArgsType: ChainRespondArgs>
                 &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
                 &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
             ),
-            // TODO: Adding special metrics here might make sense, although underneath we use ecdsa signatures as well
             types::RequestType::VerifyForeignTx => (
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_FINALIZED_BLOCKS_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_RESPONSES_INDEXED,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_MATCHING_RESPONSES_INDEXED,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_BLOCKS,
-                &metrics::SIGNATURE_REQUEST_RESPONSE_LATENCY_SECONDS,
-                &metrics::MPC_PENDING_SIGNATURES_QUEUE_REQUESTS_INDEXED,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_BLOCKS_INDEXED,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_RESPONSES_INDEXED,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED,
+                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED,
             ),
         };
 

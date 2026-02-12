@@ -575,10 +575,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                             .clone();
                         let response = match existing_response {
                             None => {
-                                // TODO: Add this metric
-                                // metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                //     .with_label_values(&["total"])
-                                //     .inc();
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&["total"])
+                                    .inc();
 
                                 let response = match this
                                     .domain_to_scheme
@@ -615,10 +614,9 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                                     )),
                                 }?;
 
-                                // TODO: add this metric
-                                // metrics::MPC_NUM_CKD_COMPUTATIONS_LED
-                                //     .with_label_values(&["succeeded"])
-                                //     .inc();
+                                metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+                                    .with_label_values(&["succeeded"])
+                                    .inc();
 
                                 verify_foreign_tx_attempt
                                     .computation_progress
