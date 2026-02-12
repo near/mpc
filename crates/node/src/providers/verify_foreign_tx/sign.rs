@@ -156,11 +156,9 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                 }
             })
             .collect::<anyhow::Result<_>>()?;
-        // TODO: remove observed_at_block from the ForeignTxSignPayloadV1 type
         Ok(dtos::ForeignTxSignPayload::V1(
             dtos::ForeignTxSignPayloadV1 {
                 request: request.clone(),
-                observed_at_block: [0u8; 32].into(),
                 values,
             },
         ))

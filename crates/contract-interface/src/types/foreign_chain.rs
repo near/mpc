@@ -441,29 +441,6 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
-pub struct ForeignBlockId(#[serde_as(as = "Hex")] pub [u8; 32]);
-
-#[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    derive_more::Into,
-    derive_more::From,
-    derive_more::AsRef,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
 pub struct EthereumTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
 #[serde_as]
@@ -567,7 +544,6 @@ pub enum ForeignTxSignPayload {
 )]
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
-    pub observed_at_block: ForeignBlockId,
     pub values: Vec<ExtractedValue>,
 }
 
@@ -592,7 +568,6 @@ mod tests {
                 tx_id: EthereumTxId([0xab; 32]),
                 extractors: vec![EthereumExtractor::BlockHash],
             }),
-            observed_at_block: ForeignBlockId([0xcd; 32]),
             values: vec![ExtractedValue::Hash256(Hash256([0xef; 32]))],
         });
 
@@ -615,7 +590,6 @@ mod tests {
                     SolanaExtractor::SolanaDataHash { ix_index: 1 },
                 ],
             }),
-            observed_at_block: ForeignBlockId([0x22; 32]),
             values: vec![
                 ExtractedValue::Hash256(Hash256([0x33; 32])),
                 ExtractedValue::Hash256(Hash256([0x44; 32])),
@@ -638,7 +612,6 @@ mod tests {
                 confirmations: BlockConfirmations(6),
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
-            observed_at_block: ForeignBlockId([0x66; 32]),
             values: vec![ExtractedValue::U64(42)],
         });
 
@@ -657,7 +630,6 @@ mod tests {
                 tx_id: EthereumTxId([0x01; 32]),
                 extractors: vec![EthereumExtractor::BlockHash],
             }),
-            observed_at_block: ForeignBlockId([0xaa; 32]),
             values: vec![ExtractedValue::Hash256(Hash256([0xbb; 32]))],
         });
         let payload_b = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
@@ -665,7 +637,6 @@ mod tests {
                 tx_id: EthereumTxId([0x02; 32]),
                 extractors: vec![EthereumExtractor::BlockHash],
             }),
-            observed_at_block: ForeignBlockId([0xaa; 32]),
             values: vec![ExtractedValue::Hash256(Hash256([0xbb; 32]))],
         });
 

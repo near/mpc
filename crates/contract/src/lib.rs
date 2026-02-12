@@ -2434,7 +2434,6 @@ mod tests {
             .get_pending_verify_foreign_tx_request(&request)
             .unwrap();
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            observed_at_block: [0u8; 32].into(),
             request: request.request.clone(),
             values: vec![ExtractedValue::U64(2)],
         });
