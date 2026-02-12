@@ -5,8 +5,8 @@ use crate::sandbox::utils::{
 };
 use contract_interface::types::{self as dtos, ProtocolContractState};
 use dtos::{AttemptId, EpochId, KeyEventId};
+use mpc_contract::primitives::thresholds::ThresholdParameters;
 use near_workspaces::{Account, Contract};
-use serde::Serialize;
 use serde_json::json;
 
 pub async fn conclude_resharing(
@@ -56,7 +56,7 @@ pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> 
 pub async fn vote_new_parameters(
     contract: &Contract,
     prospective_epoch_id: u64,
-    proposal: &impl Serialize,
+    proposal: &ThresholdParameters,
     persistent_participants: &[Account],
     new_participants: &[Account],
 ) -> anyhow::Result<()> {
@@ -147,7 +147,7 @@ pub async fn vote_reshared(
 pub async fn do_resharing(
     remaining_accounts: &[Account],
     contract: &Contract,
-    new_threshold_parameters: impl Serialize,
+    new_threshold_parameters: ThresholdParameters,
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
     vote_new_parameters(

@@ -270,7 +270,7 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
             + 1,
     );
     let prospective_epoch_id = dtos::EpochId(prospective_epoch_id.0 + 1);
-    let proposal = initial_running_state.parameters.clone();
+    let proposal: ThresholdParameters = (&initial_running_state.parameters).into_contract_type();
     vote_new_parameters(
         &contract,
         prospective_epoch_id.0,
@@ -284,7 +284,9 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(state) => {
-            assert_eq!(state.resharing_key.parameters, proposal);
+            let state_params: ThresholdParameters =
+                (&state.resharing_key.parameters).into_contract_type();
+            assert_eq!(state_params, proposal);
             assert_eq!(state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
