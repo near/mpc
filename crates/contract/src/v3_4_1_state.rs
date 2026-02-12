@@ -15,13 +15,9 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types as dtos;
-use mpc_attestation::attestation::Attestation;
 use near_account_id::AccountId;
-use near_sdk::{
-    env,
-    store::{IterableMap, LookupMap},
-};
-use std::collections::{BTreeSet, HashSet};
+use near_sdk::{env, store::LookupMap};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
     node_migrations::NodeMigrations,
@@ -38,7 +34,7 @@ use crate::{
         votes::ThresholdParametersVotes,
     },
     state::key_event::KeyEventInstance,
-    tee::tee_state::{NodeId, TeeState},
+    tee::tee_state::TeeState,
     update::ProposedUpdates,
     Config, ForeignChainPolicyVotes, StorageKey,
 };
@@ -72,6 +68,27 @@ impl From<OldThresholdParameters> for crate::primitives::thresholds::ThresholdPa
     }
 }
 
+/// Old ThresholdParametersVotes using OldThresholdParameters.
+/// Needed because ThresholdParameters contains Participants, whose Borsh
+/// layout changed from Vec to BTreeMap.
+#[derive(Debug, BorshDeserialize)]
+pub struct OldThresholdParametersVotes {
+    proposal_by_account: BTreeMap<AuthenticatedAccountId, OldThresholdParameters>,
+}
+
+impl From<OldThresholdParametersVotes> for ThresholdParametersVotes {
+    fn from(old: OldThresholdParametersVotes) -> Self {
+        let converted = old
+            .proposal_by_account
+            .into_iter()
+            .map(|(k, v)| (k, v.into()))
+            .collect();
+        ThresholdParametersVotes {
+            proposal_by_account: converted,
+        }
+    }
+}
+
 /// Old KeyEvent using OldThresholdParameters.
 #[derive(Debug, BorshDeserialize)]
 pub struct OldKeyEvent {
@@ -100,7 +117,7 @@ pub struct OldRunningContractState {
     pub domains: DomainRegistry,
     pub keyset: Keyset,
     pub parameters: OldThresholdParameters,
-    pub parameters_votes: ThresholdParametersVotes,
+    pub parameters_votes: OldThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
@@ -111,7 +128,7 @@ impl From<OldRunningContractState> for crate::state::running::RunningContractSta
             domains: old.domains,
             keyset: old.keyset,
             parameters: old.parameters.into(),
-            parameters_votes: old.parameters_votes,
+            parameters_votes: old.parameters_votes.into(),
             add_domains_votes: old.add_domains_votes,
             previously_cancelled_resharing_epoch_id: old.previously_cancelled_resharing_epoch_id,
         }
@@ -188,17 +205,11 @@ impl From<OldProtocolContractState> for crate::state::ProtocolContractState {
     }
 }
 
-/// Old StaleData that contained participant_attestations.
-/// The new StaleData is empty after cleanup.
+/// StaleData in v3.4.1 is empty (participant_attestations was cleaned up in 3.3.2 → 3.4.0).
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
-struct StaleData {
-    /// Holds the TEE attestations from the previous contract version.
-    /// This is stored as an `Option` so it can be `.take()`n during the cleanup process,
-    /// ensuring the `IterableMap` handle is properly dropped.
-    participant_attestations: Option<IterableMap<near_sdk::PublicKey, (NodeId, Attestation)>>,
-}
+struct StaleData {}
 
-/// Old MpcContract with OldProtocolContractState and StaleData.
+/// Old MpcContract with OldProtocolContractState.
 #[derive(Debug, BorshDeserialize)]
 #[allow(dead_code)] // stale_data field is needed for deserialization but dropped during migration
 pub struct MpcContract {
