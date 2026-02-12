@@ -306,6 +306,9 @@ class CHAIN chain;
 ```
 
 
+todo: Transaction Sender shouldn't point to WriteMethods in the contract, rather, we should point to the specific dependencies of the NEAR Indexer to accurately depict what is happening (view client, streamer, rpc client etc.)
+Also, there is a typo with Parses Monitors non-finalized NEAR blocks
+
 
 ### Crate Dependencies
 
