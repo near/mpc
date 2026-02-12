@@ -7,7 +7,7 @@ use crate::sandbox::{
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-        interface::{IntoContractType, IntoInterfaceType},
+        interface::{IntoContractType, IntoInterfaceType, TryIntoContractType},
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
         transactions::execute_async_transactions,
@@ -103,7 +103,8 @@ async fn test_keygen() -> anyhow::Result<()> {
         .find(|k| k.domain_id.0 == domain_id)
         .map(|k| &k.key)
         .unwrap()
-        .into_contract_type();
+        .try_into_contract_type()
+        .unwrap();
     assert_eq!(found_key, public_key.into_contract_type());
     assert_eq!(
         running.domains.domains.len(),

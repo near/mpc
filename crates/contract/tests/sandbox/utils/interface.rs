@@ -16,6 +16,11 @@ pub(crate) trait IntoContractType<ContractType> {
     fn into_contract_type(self) -> ContractType;
 }
 
+pub(crate) trait TryIntoContractType<ContractType> {
+    type Error;
+    fn try_into_contract_type(self) -> Result<ContractType, Self::Error>;
+}
+
 impl IntoInterfaceType<dtos::Ed25519PublicKey> for &near_sdk::PublicKey {
     fn into_interface_type(self) -> dtos::Ed25519PublicKey {
         // This function should not be called with any other type
@@ -65,18 +70,21 @@ impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKey {
     }
 }
 
-impl IntoContractType<near_sdk::PublicKey> for &dtos::PublicKeyExtended {
-    fn into_contract_type(self) -> near_sdk::PublicKey {
+impl TryIntoContractType<near_sdk::PublicKey> for &dtos::PublicKeyExtended {
+    type Error = String;
+    fn try_into_contract_type(self) -> Result<near_sdk::PublicKey, Self::Error> {
         match self {
             dtos::PublicKeyExtended::Secp256k1 { near_public_key } => {
-                near_public_key.parse().unwrap()
+                near_public_key.parse().map_err(|e| format!("{e}"))
             }
             dtos::PublicKeyExtended::Ed25519 {
                 near_public_key_compressed,
                 ..
-            } => near_public_key_compressed.parse().unwrap(),
+            } => near_public_key_compressed
+                .parse()
+                .map_err(|e| format!("{e}")),
             dtos::PublicKeyExtended::Bls12381 { .. } => {
-                unreachable!("BLS12-381 cannot convert to near_sdk::PublicKey")
+                Err("BLS12-381 cannot convert to near_sdk::PublicKey".into())
             }
         }
     }
