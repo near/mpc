@@ -24,12 +24,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[rstest]
 #[tokio::test]
-#[case::finalized(EthereumFinality::Finalized)]
-#[case::safe(EthereumFinality::Safe)]
-async fn extract_returns_block_hash_when_finalized(#[case] finality: EthereumFinality) {
+#[case::block_hash_finalized(EthereumFinality::Finalized, AbstractExtractor::BlockHash)]
+#[case::block_hash_safe(EthereumFinality::Safe, AbstractExtractor::BlockHash)]
+#[case::log_hash_finalized(EthereumFinality::Finalized, AbstractExtractor::LogHash { log_index: 0 })]
+#[case::log_hash_safe(EthereumFinality::Safe, AbstractExtractor::LogHash { log_index: 0 })]
+async fn extract_returns_correct_value_when_finalized(
+    #[case] finality: EthereumFinality,
+    #[case] extractor: AbstractExtractor,
+) {
     // given
     let tx_id = AbstractTransactionHash::from([3; 32]);
-    let expected_block_hash = AbstractBlockHash::from([4; 32]);
 
     let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
@@ -41,22 +45,22 @@ async fn extract_returns_block_hash_when_finalized(#[case] finality: EthereumFin
         logs: vec![test_log()],
     };
 
+    let expected = expected_extracted_value(&extractor, &tx_response);
     let mock_client = mock_abstract_client(block_response, tx_response);
     let inspector = AbstractInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
-        .extract(tx_id, finality, vec![AbstractExtractor::BlockHash])
+        .extract(tx_id, finality, vec![extractor])
         .await
         .unwrap();
 
     // then
-    let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
-    assert_eq!(expected_extractions, extracted_values);
+    assert_eq!(vec![expected], extracted_values);
 }
 
 #[tokio::test]
-async fn extract_returns_block_hash_when_finality_block_equals_tx_block() {
+async fn extract_succeeds_when_finality_block_equals_tx_block() {
     // given
     let tx_id = AbstractTransactionHash::from([3; 32]);
     let expected_block_hash = AbstractBlockHash::from([4; 32]);
@@ -276,44 +280,6 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     assert_eq!(expected_extractions, extracted_values);
 }
 
-#[rstest]
-#[tokio::test]
-#[case::finalized(EthereumFinality::Finalized)]
-#[case::safe(EthereumFinality::Safe)]
-async fn extract_returns_log_hash_when_finalized(#[case] finality: EthereumFinality) {
-    // given
-    let tx_id = AbstractTransactionHash::from([3; 32]);
-    let log = test_log();
-    let expected_log_hash = compute_log_hash(&log);
-
-    let block_response = GetBlockByNumberResponse {
-        number: U64::from(100),
-    };
-    let tx_response = GetTransactionReceiptResponse {
-        block_hash: H256::from([4; 32]),
-        block_number: U64::from(90),
-        status: U64::one(),
-        logs: vec![log],
-    };
-
-    let mock_client = mock_abstract_client(block_response, tx_response);
-    let inspector = AbstractInspector::new(mock_client);
-
-    // when
-    let extracted_values = inspector
-        .extract(
-            tx_id,
-            finality,
-            vec![AbstractExtractor::LogHash { log_index: 0 }],
-        )
-        .await
-        .unwrap();
-
-    // then
-    let expected_extractions = vec![AbstractExtractedValue::LogHash(expected_log_hash)];
-    assert_eq!(expected_extractions, extracted_values);
-}
-
 #[tokio::test]
 async fn extract_returns_error_when_log_index_out_of_bounds() {
     // given
@@ -346,48 +312,6 @@ async fn extract_returns_error_when_log_index_out_of_bounds() {
         response,
         Err(ForeignChainInspectionError::LogIndexOutOfBounds)
     );
-}
-
-#[tokio::test]
-async fn extract_returns_multiple_values_for_block_hash_and_log_hash() {
-    // given
-    let tx_id = AbstractTransactionHash::from([3; 32]);
-    let log = test_log();
-    let expected_block_hash = AbstractBlockHash::from([4; 32]);
-    let expected_log_hash = compute_log_hash(&log);
-
-    let block_response = GetBlockByNumberResponse {
-        number: U64::from(100),
-    };
-    let tx_response = GetTransactionReceiptResponse {
-        block_hash: H256::from([4; 32]),
-        block_number: U64::from(90),
-        status: U64::one(),
-        logs: vec![log],
-    };
-
-    let mock_client = mock_abstract_client(block_response, tx_response);
-    let inspector = AbstractInspector::new(mock_client);
-
-    // when
-    let extracted_values = inspector
-        .extract(
-            tx_id,
-            EthereumFinality::Finalized,
-            vec![
-                AbstractExtractor::BlockHash,
-                AbstractExtractor::LogHash { log_index: 0 },
-            ],
-        )
-        .await
-        .unwrap();
-
-    // then
-    let expected_extractions = vec![
-        AbstractExtractedValue::BlockHash(expected_block_hash),
-        AbstractExtractedValue::LogHash(expected_log_hash),
-    ];
-    assert_eq!(expected_extractions, extracted_values);
 }
 
 #[tokio::test]
@@ -451,6 +375,20 @@ fn mock_abstract_client(
             _ => panic!("unexpected third RPC call"),
         }
     })
+}
+
+fn expected_extracted_value(
+    extractor: &AbstractExtractor,
+    tx_response: &GetTransactionReceiptResponse,
+) -> AbstractExtractedValue {
+    match extractor {
+        AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
+            *tx_response.block_hash.as_fixed_bytes(),
+        )),
+        AbstractExtractor::LogHash { log_index } => {
+            AbstractExtractedValue::LogHash(compute_log_hash(&tx_response.logs[*log_index]))
+        }
+    }
 }
 
 fn compute_log_hash(log: &Log) -> LogHash {
