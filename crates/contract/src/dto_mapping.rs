@@ -901,3 +901,90 @@ pub fn args_into_verify_foreign_tx_request(
         payload_version: args.payload_version,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_THRESHOLD: u64 = 2;
+
+    fn test_participants() -> Participants {
+        let mut participants = Participants::new();
+        participants
+            .insert(
+                "alice.near".parse().unwrap(),
+                crate::primitives::participants::ParticipantInfo {
+                    url: "https://alice.near.org".to_string(),
+                    sign_pk: "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp"
+                        .parse()
+                        .unwrap(),
+                },
+            )
+            .unwrap();
+        participants
+            .insert(
+                "bob.near".parse().unwrap(),
+                crate::primitives::participants::ParticipantInfo {
+                    url: "https://bob.near.org".to_string(),
+                    sign_pk: "ed25519:HghFShDXwniWaV3CbMmPJsUjeLZBJ2jjCq6rM3AQYbx7"
+                        .parse()
+                        .unwrap(),
+                },
+            )
+            .unwrap();
+        participants
+    }
+
+    /// Ensures that the JSON produced by serializing the internal [`Participants`]
+    /// type can be deserialized into the DTO [`dtos::ParticipantsJson`] type and
+    /// vice versa, producing identical JSON in both directions.
+    #[test]
+    fn participants_serde_is_compatible_with_dto() {
+        let internal = test_participants();
+        let json = serde_json::to_value(&internal).unwrap();
+
+        // Internal JSON → DTO type.
+        let dto: dtos::ParticipantsJson = serde_json::from_value(json.clone()).unwrap();
+
+        // DTO → JSON must match the original.
+        let dto_json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
+
+        // Full round-trip back to the internal type.
+        let roundtrip: Participants = serde_json::from_value(dto_json).unwrap();
+        assert_eq!(internal, roundtrip);
+    }
+
+    /// Ensures that the JSON produced by serializing the internal
+    /// [`ThresholdParameters`] type can be deserialized into the DTO
+    /// [`dtos::ThresholdParameters`] type and vice versa, producing identical
+    /// JSON in both directions.
+    #[test]
+    fn threshold_parameters_serde_is_compatible_with_dto() {
+        let internal =
+            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+        let json = serde_json::to_value(&internal).unwrap();
+
+        let dto: dtos::ThresholdParameters = serde_json::from_value(json.clone()).unwrap();
+
+        let dto_json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json, dto_json, "Internal and DTO JSON must be identical");
+
+        let roundtrip: ThresholdParameters = serde_json::from_value(dto_json).unwrap();
+        assert_eq!(internal, roundtrip);
+    }
+
+    /// Verify that [`IntoInterfaceType::into_dto_type`] produces a DTO whose
+    /// serialization matches the internal type's serialization.
+    #[test]
+    fn into_dto_type_preserves_serialization() {
+        let internal =
+            ThresholdParameters::new(test_participants(), Threshold::new(TEST_THRESHOLD)).unwrap();
+        let internal_json = serde_json::to_value(&internal).unwrap();
+
+        let dto: dtos::ThresholdParameters = internal.into_dto_type();
+        let dto_json = serde_json::to_value(&dto).unwrap();
+
+        assert_eq!(internal_json, dto_json);
+    }
+}
