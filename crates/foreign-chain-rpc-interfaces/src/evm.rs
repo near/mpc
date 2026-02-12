@@ -2,13 +2,14 @@ use crate::to_rpc_params_impl;
 
 use borsh::BorshSerialize;
 use derive_more::{Constructor, From};
-use ethereum_types::{H160, H256, U64};
 use jsonrpsee::core::traits::ToRpcParams;
 use serde::{Deserialize, Serialize};
 
+pub use ethereum_types::{H160, H256, U64};
+
 /// Partial RPC response for `eth_getTransactionReceipt`.
 /// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTransactionReceiptResponse {
     pub block_hash: H256,
@@ -25,7 +26,7 @@ pub struct GetTransactionReceiptARgs {
 
 /// Partial RPC response for `eth_getTransactionReceipt`.
 /// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetBlockByNumberResponse {
     /// the block number
     pub number: U64,
@@ -33,17 +34,19 @@ pub struct GetBlockByNumberResponse {
 
 /// Partial RPC arguments for `eth_getTransactionReceipt`.
 /// https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
-#[derive(Constructor, Serialize)]
+#[derive(
+    Constructor, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionObjects);
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FinalityTag {
     Safe,
     Finalized,
 }
 
-#[derive(From, Serialize)]
+#[derive(From, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ReturnFullTransactionObjects(bool);
 
 impl Serialize for GetTransactionReceiptARgs {
@@ -58,7 +61,7 @@ impl Serialize for GetTransactionReceiptARgs {
 
 /// An Ethereum log entry as defined in return
 /// section of https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactionreceipt
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
     pub removed: bool,
