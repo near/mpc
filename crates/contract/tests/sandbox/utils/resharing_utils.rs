@@ -3,13 +3,9 @@ use crate::sandbox::utils::{
     mpc_contract::get_state,
     transactions::execute_async_transactions,
 };
-use mpc_contract::{
-    primitives::{
-        key_state::{AttemptId, EpochId, KeyEventId},
-        thresholds::ThresholdParameters,
-    },
-    state::ProtocolContractState,
-};
+use contract_interface::types::{self as dtos, ProtocolContractState};
+use dtos::{AttemptId, EpochId, KeyEventId};
+use mpc_contract::primitives::thresholds::ThresholdParameters;
 use near_workspaces::{Account, Contract};
 use serde_json::json;
 
@@ -21,15 +17,19 @@ pub async fn conclude_resharing(
     let ProtocolContractState::Resharing(resharing_state) = get_state(contract).await else {
         anyhow::bail!("expected resharing state");
     };
-    if resharing_state.prospective_epoch_id() != prospective_epoch_id {
+    if resharing_state.resharing_key.epoch_id != prospective_epoch_id {
         anyhow::bail!("epoch id mismatch");
     }
-    let domain_configs = resharing_state.previous_running_state.domains.domains();
-    for domain_config in domain_configs {
+    let domain_configs = resharing_state
+        .previous_running_state
+        .domains
+        .domains
+        .clone();
+    for domain_config in &domain_configs {
         let key_event_id = KeyEventId {
             epoch_id: prospective_epoch_id,
             domain_id: domain_config.id,
-            attempt_id: AttemptId::new(),
+            attempt_id: AttemptId(0),
         };
         let state = get_state(contract).await;
         if !matches!(state, ProtocolContractState::Resharing(_)) {
@@ -93,10 +93,27 @@ pub async fn start_reshare_instance(
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
     let state = get_state(contract).await;
-    let participants = state.active_participants();
+    let active = match &state {
+        ProtocolContractState::Initializing(s) => {
+            &s.generating_key.parameters.participants.participants
+        }
+        ProtocolContractState::Running(s) => &s.parameters.participants.participants,
+        ProtocolContractState::Resharing(s) => {
+            &s.resharing_key.parameters.participants.participants
+        }
+        ProtocolContractState::NotInitialized => {
+            panic!("protocol state must be initialized")
+        }
+    };
     let leader = accounts
         .iter()
-        .min_by_key(|a| participants.id(a.id()).unwrap())
+        .min_by_key(|a| {
+            active
+                .iter()
+                .find(|(account_id, _, _)| account_id.0 == *a.id())
+                .map(|(_, pid, _)| *pid)
+                .unwrap()
+        })
         .unwrap();
     let result = leader
         .call(contract.id(), "start_reshare_instance")
@@ -135,7 +152,7 @@ pub async fn do_resharing(
 ) -> anyhow::Result<()> {
     vote_new_parameters(
         contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &new_threshold_parameters,
         remaining_accounts,
         &[],

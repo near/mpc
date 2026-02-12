@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 #[near(serializers=[borsh, json])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThresholdParametersVotes {
-    proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedAccountId, ThresholdParameters>,
 }
 
 impl ThresholdParametersVotes {

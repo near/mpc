@@ -1,12 +1,10 @@
 use std::collections::BTreeSet;
 
 use super::transactions::all_receipts_successful;
-use contract_interface::types::{Attestation, Ed25519PublicKey};
-use mpc_contract::{
-    primitives::{participants::Participants, thresholds::Threshold},
-    state::ProtocolContractState,
-    tee::tee_state::NodeId,
+use contract_interface::types::{
+    Attestation, Ed25519PublicKey, Participants, ProtocolContractState, Threshold,
 };
+use mpc_contract::tee::tee_state::NodeId;
 use mpc_primitives::hash::MpcDockerImageHash;
 use near_workspaces::{result::ExecutionFinalResult, Account, Contract};
 
@@ -20,7 +18,7 @@ pub async fn get_participants(contract: &Contract) -> anyhow::Result<Participant
         panic!("Expected running state")
     };
 
-    Ok(running.parameters.participants().clone())
+    Ok(running.parameters.participants)
 }
 
 /// Helper function to get TEE participants from contract.
@@ -81,7 +79,7 @@ pub async fn assert_running_return_participants(
             final_state
         );
     };
-    Ok(running_state.parameters.participants().clone())
+    Ok(running_state.parameters.participants)
 }
 
 pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
@@ -92,7 +90,7 @@ pub async fn assert_running_return_threshold(contract: &Contract) -> Threshold {
             final_state
         );
     };
-    running_state.parameters.threshold()
+    running_state.parameters.threshold
 }
 
 pub async fn vote_for_hash(

@@ -168,7 +168,7 @@ impl DomainRegistry {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
-    proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
+    pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
 }
 
 impl AddDomainsVotes {
