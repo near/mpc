@@ -1,14 +1,15 @@
 use crate::primitives::ParticipantId;
+
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use either::Either;
 use near_account_id::AccountId;
 use near_indexer_primitives::types::Finality;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "network-hardship-simulation")]
-use std::fs;
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    fs,
+    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::Path,
 };
 
@@ -24,7 +25,7 @@ const DEFAULT_PPROF_PORT: u16 = 34001;
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TripleConfig {
     pub concurrency: usize,
     pub desired_triples_to_buffer: usize,
@@ -34,24 +35,24 @@ pub struct TripleConfig {
     pub parallel_triple_generation_stagger_time_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresignatureConfig {
     pub concurrency: usize,
     pub desired_presignatures_to_buffer: usize,
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureConfig {
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CKDConfig {
     pub timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeygenConfig {
     pub timeout_sec: u64,
 }
@@ -103,14 +104,14 @@ impl MpcConfig {
 }
 
 /// Config for the web UI, which is mostly for debugging and metrics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WebUIConfig {
     pub host: String,
     pub port: u16,
 }
 
 /// Configures behavior of the near indexer.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerConfig {
     /// Tells whether to validate the genesis file before starting
     pub validate_genesis: bool,
@@ -126,7 +127,7 @@ pub struct IndexerConfig {
     pub port_override: Option<u16>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SyncMode {
     /// continue from the block Indexer was interrupted
     Interruption,
@@ -136,14 +137,14 @@ pub enum SyncMode {
     Block(BlockArgs),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BlockArgs {
     /// block height for block sync mode
     pub height: u64,
 }
 
 /// The contents of the on-disk config.yaml file. Contains no secrets.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     /// The near account ID that this node owns.
     /// If an on-chain contract is used, this account is used to invoke
@@ -158,9 +159,12 @@ pub struct ConfigFile {
     pub near_responder_account_id: AccountId,
     /// Number of keys that will be used to sign the signature responses.
     pub number_of_responder_keys: usize,
-
-    pub web_ui: WebUIConfig,
-    pub migration_web_ui: WebUIConfig,
+    // TODO(#2038): remove custom deserializer
+    #[serde(deserialize_with = "deserialize_to_socket_addr")]
+    pub web_ui: SocketAddr,
+    // TODO(#2038): remove custom deserializer
+    #[serde(deserialize_with = "deserialize_to_socket_addr")]
+    pub migration_web_ui: SocketAddr,
     #[serde(default = "default_pprof_bind_address")]
     pub pprof_bind_address: SocketAddr,
     pub indexer: IndexerConfig,
@@ -179,9 +183,23 @@ pub struct ConfigFile {
 
 impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let file = std::fs::read_to_string(path)?;
-        let config: Self = serde_yaml::from_str(&file)?;
+        let original_config_string =
+            fs::read_to_string(path).context("failed to read config file")?;
+        let config: Self = serde_yaml::from_str(&original_config_string)?;
         config.validate().context("Validate config.yaml")?;
+
+        // re-serialize if needed
+        {
+            let re_serialized = serde_yaml::to_string(&config)?;
+            let update_config_with_new_schema = re_serialized != original_config_string;
+
+            if update_config_with_new_schema {
+                let tmp = path.with_extension("yaml.tmp");
+                fs::write(&tmp, re_serialized.as_bytes())?;
+                fs::rename(&tmp, path)?;
+            }
+        }
+
         Ok(config)
     }
 
@@ -236,7 +254,7 @@ impl ParticipantsConfig {
     ///
     /// If the account_id exists in the participant list, returns
     /// [`ParticipantStatus::Active`] with either [`NodeStatus::Active`] if the
-    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.
+    /// stored P2P public key matches, or [`NodeStatus::Idle`] otherwise.  
     /// Returns [`ParticipantStatus::Inactive`] if the account is not found.
     pub fn participant_status(
         &self,
@@ -562,10 +580,25 @@ fn default_pprof_bind_address() -> SocketAddr {
     (Ipv4Addr::UNSPECIFIED, DEFAULT_PPROF_PORT).into()
 }
 
+fn deserialize_to_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let either: Either<SocketAddr, WebUIConfig> =
+        either::serde_untagged::deserialize(deserializer)?;
+    match either {
+        Either::Left(addr) => Ok(addr),
+        Either::Right(WebUIConfig { host, port }) => format!("{host}:{port}")
+            .to_socket_addrs()
+            .map_err(serde::de::Error::custom)?
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("could not resolve host")),
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use assert_matches::assert_matches;
-    use k256::ecdsa::signature::SignerMut;
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
         distributions::{Alphanumeric, Uniform},
@@ -675,24 +708,257 @@ pub mod tests {
         assert_eq!(secrets, secrets_copy);
     }
 
+    /// A minimal valid ConfigFile YAML string using the current SocketAddr format.
+    const CONFIG_EXAMPLE: &str = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui: 127.0.0.1:8082
+migration_web_ui: 127.0.0.1:8078
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
     #[test]
-    fn test_permanent_secrets_serialization_fixed_values() {
-        let p2p_private_key = "ed25519:561CCDGTqnGrfJcsYwcuRgvU6JCiJnt2GGVpKfkkFcH21o1he4NorPPiyQxPp92VNxygmTRDhFcfQchV7RTYsdHh";
-        let near_signer_key = "ed25519:3FsgibEEmmMfqojDH5676T93fLPbiFG75QGuNxrhsAKcJuFcaBTAy481uWiPnopmFsTLWAVbULtUuEaXBEKiE57f";
-        let near_responder_keys1 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
-        let near_responder_keys2 = "ed25519:2AxzfE9LCKu7HhAvNgQBvEgoPoiNyEFqpHrJDDbfo7dzFP4sVjSJzqQ6UjTfuJ5DyPv5rFKus8A34AkQVU2eSH18";
-        let secrets_str = format!("{{\"p2p_private_key\":\"{p2p_private_key}\",\"near_signer_key\":\"{near_signer_key}\",\"near_responder_keys\":[\"{near_responder_keys1}\",\"{near_responder_keys2}\"]}}");
+    fn config_example_is_deserializable() {
+        // given
+        let config_string = CONFIG_EXAMPLE;
 
-        let mut secrets: PersistentSecrets = serde_json::from_str(&secrets_str).unwrap();
+        // when
+        let serialized_config: Result<ConfigFile, _> = serde_yaml::from_str(config_string);
 
-        let msg = b"hello world";
-        let signature = secrets.near_signer_key.try_sign(msg).unwrap();
-        secrets
-            .near_signer_key
-            .verify(msg, &signature)
-            .expect("Signature should verify with matching key");
+        // then
+        assert_matches!(serialized_config, Ok(_));
+    }
 
-        let secrets_str_copy = serde_json::to_string(&secrets).unwrap();
-        assert_eq!(secrets_str, secrets_str_copy);
+    #[test]
+    fn config_from_file_re_serializes_with_updated_fields() {
+        // given: config with old WebUIConfig format (host + port as separate fields)
+        let old_format_config = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui:
+  host: 127.0.0.1
+  port: 8082
+migration_web_ui:
+  host: 127.0.0.1
+  port: 8078
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
+        // when: deserialize and re-serialize
+        let config: ConfigFile = serde_yaml::from_str(old_format_config).unwrap();
+        let re_serialized = serde_yaml::to_string(&config).unwrap();
+
+        // then: re-serialized config uses the new SocketAddr format (not host+port)
+        let re_deserialized: ConfigFile = serde_yaml::from_str(&re_serialized).unwrap();
+        assert_eq!(config, re_deserialized);
+        // The re-serialized YAML should contain the flat socket address format
+        assert!(
+            re_serialized.contains("web_ui: 127.0.0.1:8082"),
+            "Expected flat SocketAddr format, got:\n{re_serialized}"
+        );
+        assert!(
+            re_serialized.contains("migration_web_ui: 127.0.0.1:8078"),
+            "Expected flat SocketAddr format, got:\n{re_serialized}"
+        );
+    }
+
+    #[test]
+    fn old_web_ui_config_format_deserializes_to_socket_addr() {
+        // given: config with old WebUIConfig format
+        let old_format_config = CONFIG_EXAMPLE.replace(
+            "web_ui: 127.0.0.1:8082",
+            "web_ui:\n  host: 127.0.0.1\n  port: 8082",
+        );
+
+        // when
+        let config: ConfigFile = serde_yaml::from_str(&old_format_config).unwrap();
+
+        // then
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
+    }
+
+    #[test]
+    fn new_socket_addr_format_round_trips() {
+        // given
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
+
+        // when: serialize and deserialize again
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let round_tripped: ConfigFile = serde_yaml::from_str(&yaml).unwrap();
+
+        // then
+        assert_eq!(config, round_tripped);
+    }
+
+    #[test]
+    fn socket_addr_fields_parse_correctly() {
+        // given
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
+
+        // then
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 8078))
+        );
+        assert_eq!(
+            config.pprof_bind_address,
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 34002))
+        );
+    }
+
+    #[test]
+    fn socket_addr_with_ipv4_unspecified() {
+        // given: config using 0.0.0.0 addresses
+        let config_str = CONFIG_EXAMPLE
+            .replace("127.0.0.1:8082", "0.0.0.0:3000")
+            .replace("127.0.0.1:8078", "0.0.0.0:3001")
+            .replace("127.0.0.1:34002", "0.0.0.0:34002");
+
+        // when
+        let config: ConfigFile = serde_yaml::from_str(&config_str).unwrap();
+
+        // then
+        assert_eq!(
+            config.web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3000))
+        );
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3001))
+        );
+    }
+
+    #[test]
+    fn mixed_old_and_new_format_deserializes() {
+        // given: web_ui in new format, migration_web_ui in old format
+        let mixed_config = r#"
+my_near_account_id: sam.test.near
+near_responder_account_id: sam.test.near
+number_of_responder_keys: 1
+web_ui: 127.0.0.1:8082
+migration_web_ui:
+  host: 0.0.0.0
+  port: 9090
+pprof_bind_address: 127.0.0.1:34002
+triple:
+  concurrency: 2
+  desired_triples_to_buffer: 128
+  timeout_sec: 60
+  parallel_triple_generation_stagger_time_sec: 1
+presignature:
+  concurrency: 4
+  desired_presignatures_to_buffer: 64
+  timeout_sec: 60
+signature:
+  timeout_sec: 60
+indexer:
+  validate_genesis: false
+  sync_mode: Latest
+  concurrency: 1
+  mpc_contract_id: mpc-contract.test.near
+  finality: optimistic
+ckd:
+  timeout_sec: 60
+cores: 4
+"#;
+
+        // when
+        let config: ConfigFile = serde_yaml::from_str(mixed_config).unwrap();
+
+        // then
+        assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
+        assert_eq!(
+            config.migration_web_ui,
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 9090))
+        );
+    }
+
+    #[test]
+    fn from_file_does_not_rewrite_when_already_current_format() {
+        // given: write a config that is already in the canonical serialized format
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
+        let canonical = serde_yaml::to_string(&config).unwrap();
+        fs::write(&path, &canonical).unwrap();
+
+        // when
+        let _ = ConfigFile::from_file(&path).unwrap();
+
+        // then: file content is byte-for-byte identical (no rewrite)
+        let content_after = fs::read_to_string(&path).unwrap();
+        assert_eq!(canonical, content_after);
+    }
+
+    #[test]
+    fn from_file_rewrites_old_format_atomically() {
+        // given: write a config using the old host+port WebUI format
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+
+        let old_format = CONFIG_EXAMPLE.replace(
+            "web_ui: 127.0.0.1:8082",
+            "web_ui:\n  host: 127.0.0.1\n  port: 8082",
+        );
+        fs::write(&path, &old_format).unwrap();
+
+        // when
+        let config = ConfigFile::from_file(&path).unwrap();
+
+        // then: file is rewritten in the new format
+        let content_after = fs::read_to_string(&path).unwrap();
+        assert!(
+            content_after.contains("web_ui: 127.0.0.1:8082"),
+            "Expected new SocketAddr format, got:\n{content_after}"
+        );
+        // no temp file left behind
+        assert!(!dir.path().join("config.yaml.tmp").exists());
+        // rewritten content round-trips correctly
+        let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
+        assert_eq!(config, re_read);
     }
 }

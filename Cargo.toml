@@ -87,6 +87,7 @@ ed25519-dalek = { version = "2.2.0", features = [
     "pkcs8",
     "rand_core",
 ] }
+either = "1.15.0"
 elliptic-curve = "0.13.8"
 ethereum-types = "0.16.0"
 flume = "0.12.0"
@@ -101,12 +102,7 @@ hkdf = "0.12.4"
 http = "1.4.0"
 humantime = "2.3.0"
 # TODO(#1299): updating this brings considerable breaking changes
-hyper = { version = "0.14.32", features = [
-    "server",
-    "http1",
-    "tcp",
-    "stream",
-] } 
+hyper = { version = "0.14.32", features = ["server", "http1", "tcp", "stream"] }
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.14.0"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::foreign_chains::auth;
 use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
@@ -24,7 +24,7 @@ impl EthereumChainConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EthereumProviderConfig {
     pub rpc_url: String,
     pub api_variant: EthereumApiVariant,

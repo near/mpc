@@ -15,7 +15,7 @@ pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
 pub use solana::{SolanaApiVariant, SolanaChainConfig, SolanaProviderConfig};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ForeignChainsConfig {
     #[serde(default)]

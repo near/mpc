@@ -22,6 +22,7 @@ clap = { workspace = true }
 contract-interface = { workspace = true }
 derive_more = { workspace = true }
 ed25519-dalek = { workspace = true }
+either = { workspace = true }
 flume = { workspace = true }
 foreign-chain-inspector = { workspace = true }
 futures = { workspace = true }
