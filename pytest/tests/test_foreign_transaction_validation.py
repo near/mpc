@@ -142,11 +142,12 @@ def foreign_tx_validation_cluster():
         timeout_sec=60,
     )
 
-    yield cluster, mpc_nodes
-
-    cluster.kill_all()
-    mock_server.shutdown()
-    atexit._run_exitfuncs()
+    try:
+        yield cluster, mpc_nodes
+    finally:
+        cluster.kill_all()
+        mock_server.shutdown()
+        atexit._run_exitfuncs()
 
 
 
