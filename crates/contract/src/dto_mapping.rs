@@ -715,7 +715,6 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
             next_id: dtos::ParticipantId(self.next_id().get()),
             participants: self
                 .participants()
-                .iter()
                 .map(|(account_id, participant_id, info)| {
                     (
                         dtos::AccountId(account_id.to_string()),
