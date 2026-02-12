@@ -14,7 +14,7 @@ use crate::config::{ConfigFile, MpcConfig, ParticipantsConfig};
 use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
-use crate::primitives::{MpcTaskId, UniqueId};
+use crate::primitives::{MpcTaskId, ParticipantId, UniqueId};
 use crate::providers::SignatureProvider;
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -99,6 +99,14 @@ impl EcdsaSignatureProvider {
             .get(&domain_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No keyshare for domain {:?}", domain_id))
+    }
+
+    pub(super) fn new_channel_for_task(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+    ) -> anyhow::Result<NetworkTaskChannel> {
+        self.client.new_channel_for_task(task_id, participants)
     }
 }
 

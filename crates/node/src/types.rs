@@ -12,6 +12,7 @@ use contract_interface::types as dtos;
 pub enum RequestType {
     Signature,
     CKD,
+    VerifyForeignTx,
 }
 
 pub type RequestId = CryptoHash;
@@ -62,8 +63,25 @@ impl fmt::Display for RequestType {
         match self {
             RequestType::Signature => write!(f, "signature"),
             RequestType::CKD => write!(f, "ckd"),
+            RequestType::VerifyForeignTx => write!(f, "verify_foreign_tx"),
         }
     }
+}
+
+pub type VerifyForeignTxId = CryptoHash;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct VerifyForeignTxRequest {
+    /// The unique ID that identifies the verify_foreign_tx, and can also uniquely identify the response.
+    pub id: VerifyForeignTxId,
+    /// The receipt that generated the verify_foreign_tx request, which can be used to look up on chain.
+    pub receipt_id: CryptoHash,
+    pub request: dtos::ForeignChainRpcRequest,
+    pub tweak: dtos::Tweak,
+    pub payload_version: u8,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
+    pub domain_id: DomainId,
 }
 
 impl Request for CKDRequest {
@@ -118,4 +136,28 @@ impl Request for SignatureRequest {
     }
 }
 
-pub type VerifyForeignTxId = CryptoHash;
+impl Request for VerifyForeignTxRequest {
+    fn get_id(&self) -> RequestId {
+        self.id
+    }
+
+    fn get_receipt_id(&self) -> CryptoHash {
+        self.receipt_id
+    }
+
+    fn get_entropy(&self) -> [u8; 32] {
+        self.entropy
+    }
+
+    fn get_timestamp_nanosec(&self) -> u64 {
+        self.timestamp_nanosec
+    }
+
+    fn get_domain_id(&self) -> DomainId {
+        self.domain_id
+    }
+
+    fn get_type() -> RequestType {
+        RequestType::VerifyForeignTx
+    }
+}

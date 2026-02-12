@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
 use anyhow::Context;
+use foreign_chain_inspector::RpcAuthentication;
+use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
@@ -92,6 +94,35 @@ pub(crate) fn validate_auth_config(
                 "foreign_chains.{chain_label}.providers.{provider_name}.auth.name must be non-empty"
             );
             Ok(())
+        }
+    }
+}
+
+impl TryInto<RpcAuthentication> for AuthConfig {
+    type Error = anyhow::Error;
+
+    // TODO: implement all branches of the conversion here
+    fn try_into(self) -> Result<RpcAuthentication, Self::Error> {
+        match self {
+            AuthConfig::None => Ok(RpcAuthentication::KeyInUrl),
+            AuthConfig::Header {
+                name: header_name,
+                scheme,
+                token,
+            } => {
+                let scheme = scheme.unwrap_or_else(|| "Bearer".to_string());
+                let token_value = token.resolve()?;
+                let header_value = HeaderValue::from_str(&format!("{scheme} {token_value}"))?;
+                Ok(RpcAuthentication::CustomHeader {
+                    header_name,
+                    header_value,
+                })
+            }
+            AuthConfig::Path {
+                placeholder: _,
+                token: _,
+            } => Ok(RpcAuthentication::KeyInUrl),
+            AuthConfig::Query { name: _, token: _ } => anyhow::bail!("this is not supported yet"),
         }
     }
 }

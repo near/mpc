@@ -84,6 +84,7 @@ pub enum DebugRequestKind {
     RecentBlocks,
     RecentSignatures,
     RecentCKDs,
+    RecentVerifyForeignTxs,
 }
 
 async fn debug_request_from_node(
