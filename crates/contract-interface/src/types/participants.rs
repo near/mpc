@@ -47,6 +47,13 @@ pub struct ParticipantInfo {
     pub sign_pk: String,
 }
 
+/// DTO representation of the contract-internal `Participants` type.
+///
+/// It decouples the JSON wire format (used in view methods like `state()` via
+/// [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the
+/// internal `Participants` representation, allowing internal changes (e.g.,
+/// migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861))
+/// without breaking the public API.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -79,6 +86,26 @@ mod tests {
         assert_eq!(
             json,
             r#"{"next_id":1,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}]]}"#
+        );
+    }
+
+    #[test]
+    fn test_deserialize_vec_format() {
+        let json = r#"{"next_id":1,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}]]}"#;
+        let deserialized: ParticipantsJson = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            deserialized,
+            ParticipantsJson {
+                next_id: ParticipantId(1),
+                participants: vec![(
+                    AccountId("alice.near".to_string()),
+                    ParticipantId(0),
+                    ParticipantInfo {
+                        url: "https://alice.com".to_string(),
+                        sign_pk: "ed25519:abc".to_string(),
+                    },
+                )],
+            }
         );
     }
 }
