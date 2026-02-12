@@ -112,6 +112,16 @@ async fn test_keygen() -> anyhow::Result<()> {
     // assert that the epoch id did not change
     assert_eq!(running.keyset.epoch_id, epoch_id);
 
+    // verify that the contract's `public_key` view method returns the key for the new domain
+    let contract_public_key: dtos::PublicKey = contract
+        .view("public_key")
+        .args_json(json!({"domain_id": domain_id}))
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(contract_public_key, public_key);
+
     Ok(())
 }
 
@@ -185,6 +195,16 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             "No key should be registered for the cancelled domain"
         );
         assert_eq!(running.domains.domains.len(), ALL_SIGNATURE_SCHEMES.len());
+
+        // verify that the contract's `public_key` view method fails for the cancelled domain
+        let public_key_result = contract
+            .view("public_key")
+            .args_json(json!({"domain_id": next_domain_id}))
+            .await;
+        assert!(
+            public_key_result.is_err(),
+            "public_key should fail for cancelled domain {next_domain_id}"
+        );
 
         // assert that the epoch id did not change
         assert_eq!(running.keyset.epoch_id.0, epoch_id);
