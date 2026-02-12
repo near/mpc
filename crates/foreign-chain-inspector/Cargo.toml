@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+borsh = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 http = { workspace = true }
@@ -12,6 +13,7 @@ jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -50,6 +50,8 @@ pub enum ForeignChainInspectionError {
     #[error(
         "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
     )]
+    // TODO: return specific error types ber inspector type.
+    // EVM errors
     NotEnoughBlockConfirmations {
         expected: BlockConfirmations,
         got: BlockConfirmations,
@@ -60,6 +62,8 @@ pub enum ForeignChainInspectionError {
     TransactionFailed,
     #[error("provided log index is out of bounds")]
     LogIndexOutOfBounds,
+    #[error("failed to borsh serialize log event")]
+    EventLogFailedBorshSerialization(std::io::Error),
 }
 
 /// Builds an HTTP client with the specified authentication method.

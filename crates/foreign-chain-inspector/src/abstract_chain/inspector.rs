@@ -1,9 +1,9 @@
 use jsonrpsee::core::client::ClientT;
+use sha2::Digest;
 
 use crate::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
-    abstract_chain::{AbstractBlockHash, AbstractTransactionHash},
-    rpc_schema::ethereum::Log,
+    abstract_chain::{AbstractBlockHash, AbstractTransactionHash, LogHash},
 };
 
 use crate::rpc_schema::ethereum::{
@@ -93,7 +93,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractedValue {
     BlockHash(AbstractBlockHash),
-    Log(Log),
+    LogHash(LogHash),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -111,12 +111,19 @@ impl AbstractExtractor {
             AbstractExtractor::BlockHash => Ok(AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
             ))),
-            AbstractExtractor::LogIndex(index) => rpc_response
-                .logs
-                .get(*index)
-                .cloned()
-                .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)
-                .map(AbstractExtractedValue::Log),
+            AbstractExtractor::LogIndex(index) => {
+                let log = rpc_response
+                    .logs
+                    .get(*index)
+                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+
+                let borsh_encoding = borsh::to_vec(log)
+                    .map_err(ForeignChainInspectionError::EventLogFailedBorshSerialization)?;
+
+                let hash: [u8; 32] = sha2::Sha256::digest(borsh_encoding).into();
+
+                Ok(AbstractExtractedValue::LogHash(hash.into()))
+            }
         }
     }
 }

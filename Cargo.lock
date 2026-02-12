@@ -3277,6 +3277,7 @@ name = "foreign-chain-inspector"
 version = "3.4.1"
 dependencies = [
  "assert_matches",
+ "borsh",
  "derive_more 2.1.1",
  "ethereum-types",
  "http 1.4.0",
@@ -3286,6 +3287,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
  "tokio",
 ]
