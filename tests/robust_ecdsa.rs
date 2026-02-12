@@ -150,13 +150,13 @@ fn run_sign_with_rerandomization(
 }
 
 #[test]
-fn test_sign() {
+fn test_run_sign() {
     let participants = generate_participants(11);
     let max_malicious = 5;
     let threshold = max_malicious + 1;
     let keys = run_keygen(&participants, threshold.into());
-    assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
+    assert_eq!(keys.len(), participants.len());
     let presign_result = run_presign(keys.clone(), max_malicious.into());
 
     let msg_hash = *b"hello worldhello worldhello worl";

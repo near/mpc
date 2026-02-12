@@ -1,15 +1,22 @@
 //! This module wraps a signature generation functionality from `Frost` library
 //!  into `cait-sith::Protocol` representation.
 use super::{KeygenOutput, SignatureOption};
-use crate::errors::{InitializationError, ProtocolError};
-use crate::participants::{Participant, ParticipantList};
-use crate::protocol::helpers::recv_from_others;
-use crate::protocol::internal::{make_protocol, Comms, SharedChannel};
-use crate::protocol::Protocol;
-use crate::ReconstructionLowerBound;
+use crate::{
+    errors::{InitializationError, ProtocolError},
+    frost::assert_sign_inputs,
+    protocol::{
+        helpers::recv_from_others,
+        internal::{make_protocol, Comms, SharedChannel},
+        Protocol,
+    },
+    Participant, ParticipantList, ReconstructionLowerBound,
+};
 
-use frost_ed25519::keys::{KeyPackage, PublicKeyPackage, SigningShare};
-use frost_ed25519::{aggregate, rand_core, round1, round2, VerifyingKey};
+use frost_ed25519::{
+    aggregate,
+    keys::{KeyPackage, PublicKeyPackage, SigningShare},
+    rand_core, round1, round2, VerifyingKey,
+};
 use rand_core::CryptoRngCore;
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
@@ -34,38 +41,7 @@ pub fn sign(
     rng: impl CryptoRngCore + Send + 'static,
 ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
     let threshold = threshold.into();
-    if participants.len() < 2 {
-        return Err(InitializationError::NotEnoughParticipants {
-            participants: participants.len(),
-        });
-    }
-    let Some(participants) = ParticipantList::new(participants) else {
-        return Err(InitializationError::DuplicateParticipants);
-    };
-
-    // ensure my presence in the participant list
-    if !participants.contains(me) {
-        return Err(InitializationError::MissingParticipant {
-            role: "self",
-            participant: me,
-        });
-    }
-
-    // validate threshold
-    if threshold.value() > participants.len() {
-        return Err(InitializationError::ThresholdTooLarge {
-            threshold: threshold.value(),
-            max: participants.len(),
-        });
-    }
-
-    // ensure the coordinator is a participant
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
+    let participants = assert_sign_inputs(participants, threshold, me, coordinator)?;
 
     let comms = Comms::new();
     let chan = comms.shared_channel();
@@ -301,17 +277,19 @@ async fn fut_wrapper(
 
 #[cfg(test)]
 mod test {
-    use crate::crypto::hash::hash;
-    use crate::frost::eddsa::{
-        sign::sign,
-        test::{build_key_packages_with_dealer, test_run_signature_protocols},
-        KeygenOutput, SignatureOption,
-    };
-    use crate::participants::{Participant, ParticipantList};
-    use crate::protocol::Protocol;
     use crate::test_utils::{
         assert_public_key_invariant, generate_participants, generate_participants_with_random_ids,
         one_coordinator_output, run_keygen, run_refresh, run_reshare, MockCryptoRng,
+    };
+    use crate::{
+        crypto::hash::hash,
+        frost::eddsa::{
+            sign::sign,
+            test::{build_key_packages_with_dealer, run_sign},
+            SignatureOption,
+        },
+        participants::{Participant, ParticipantList},
+        Protocol,
     };
     use frost_core::{Field, Group, Scalar};
     use frost_ed25519::{Ed25519Group, Ed25519ScalarField, Ed25519Sha512, VerifyingKey};
@@ -329,20 +307,63 @@ mod test {
             for actual_signers in min_signers..=max_signers {
                 let key_packages =
                     build_key_packages_with_dealer(max_signers, min_signers, &mut rng);
-                let coordinators = vec![key_packages[0].0];
+                let coordinator = key_packages[0].0;
                 let min_signers: usize = min_signers.into();
-                let data = test_run_signature_protocols(
+                let data = run_sign(
                     &key_packages,
                     actual_signers.into(),
-                    &coordinators,
+                    coordinator,
                     min_signers,
                     msg_hash,
                     &mut rng,
                 )
                 .unwrap();
-                one_coordinator_output(data, coordinators[0]).unwrap();
+                one_coordinator_output(data, coordinator).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn test_signature_correctness() {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let threshold = 6;
+        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
+        let public_key = keys[0].1.public_key.to_element();
+
+        let msg = b"hello world with near".to_vec();
+        let index = rng.gen_range(0..keys.len());
+        let coordinator = keys[index as usize].0;
+
+        let participants_sign_builder = keys
+            .iter()
+            .map(|(p, keygen_output)| {
+                let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+                (*p, (keygen_output.clone(), rng_p))
+            })
+            .collect();
+
+        // This checks the output signature validity internally
+        let result = crate::test_utils::run_sign::<Ed25519Sha512, _, _, _>(
+            participants_sign_builder,
+            coordinator,
+            public_key,
+            Ed25519ScalarField::zero(),
+            |participants, coordinator, me, _, (keygen_output, p_rng), _| {
+                sign(
+                    participants,
+                    threshold as usize,
+                    me,
+                    coordinator,
+                    keygen_output,
+                    msg.clone(),
+                    p_rng,
+                )
+                .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
+            },
+        )
+        .unwrap();
+        let signature = one_coordinator_output(result, coordinator).unwrap();
+        insta::assert_json_snapshot!(signature);
     }
 
     #[test]
@@ -356,18 +377,18 @@ mod test {
             let msg = format!("hello_near_{i}");
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
-            let coordinators = vec![participants[0]];
+            let coordinator = participants[0];
             // This internally verifies with the public key
-            let data = test_run_signature_protocols(
+            let data = run_sign(
                 &key_packages,
                 actual_signers,
-                &coordinators,
+                coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
+            let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(key_packages[0]
@@ -407,18 +428,18 @@ mod test {
             let msg = format!("hello_near_{i}");
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
-            let coordinators = vec![participants[0]];
+            let coordinator = participants[0];
             // This internally verifies with the rerandomized public key
-            let data = test_run_signature_protocols(
+            let data = run_sign(
                 &key_packages,
                 participants.len(),
-                &coordinators,
+                coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
+            let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(key_packages[0]
@@ -468,19 +489,19 @@ mod test {
             let msg = format!("hello_near_{i}");
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
-            let coordinators = vec![participants[0]];
+            let coordinator = participants[0];
             // This internally verifies with the rerandomized public key
             // This internally verifies with the public key
-            let data = test_run_signature_protocols(
+            let data = run_sign(
                 &key_packages,
                 participants.len(),
-                &coordinators,
+                coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
             )
             .unwrap();
-            let signature = one_coordinator_output(data, coordinators[0]).unwrap();
+            let signature = one_coordinator_output(data, coordinator).unwrap();
 
             // externally verify with the signature
             assert!(key_packages[0]
@@ -514,50 +535,5 @@ mod test {
             // Test public key
             test_public_key(&participants, pub_key, &shares);
         }
-    }
-
-    #[test]
-    fn test_signature_correctness() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let threshold = 6;
-        let keys = build_key_packages_with_dealer(11, threshold, &mut rng);
-        let public_key = keys[0].1.public_key.to_element();
-
-        let msg = b"hello world with near".to_vec();
-        let index = rng.gen_range(0..keys.len());
-        let coordinator = keys[index as usize].0;
-
-        let participants_sign_builder = keys
-            .iter()
-            .map(|(p, keygen_output)| {
-                let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-                (*p, (keygen_output.clone(), rng_p))
-            })
-            .collect();
-
-        // This checks the output signature validity internally
-        let result =
-            crate::test_utils::run_sign::<Ed25519Sha512, (KeygenOutput, MockCryptoRng), _, _>(
-                participants_sign_builder,
-                coordinator,
-                public_key,
-                Ed25519ScalarField::zero(),
-                |participants, coordinator, me, _, (keygen_output, p_rng), _| {
-                    sign(
-                        participants,
-                        threshold as usize,
-                        me,
-                        coordinator,
-                        keygen_output,
-                        msg.clone(),
-                        p_rng,
-                    )
-                    .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = SignatureOption>>)
-                },
-            )
-            .unwrap();
-        let signature = one_coordinator_output(result, coordinator).unwrap();
-
-        insta::assert_json_snapshot!(signature);
     }
 }

@@ -34,7 +34,6 @@ fn test_ckd() {
     assert!(keys.len() == participants.len());
 
     let public_key = keys.get(&participants[0]).unwrap().public_key;
-
     let coordinator = choose_coordinator_at_random(&participants);
 
     let mut protocols: GenProtocol<CKDOutputOption> = Vec::with_capacity(participants.len());

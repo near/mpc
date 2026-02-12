@@ -46,14 +46,14 @@ fn run_sign(
 }
 
 #[test]
-fn test_sign() {
+fn test_run_sign() {
     let participants = generate_participants(5);
     let threshold = 4;
     let keys = run_keygen::<C>(&participants, threshold.into());
     assert_eq!(keys.len(), participants.len());
     let public_key = keys.get(&participants[0]).unwrap().public_key;
 
-    let msg_hash = *b"hello worldhello worldhello worlregerghwhrth";
+    let msg_hash = *b"hello world";
     let coordinator = choose_coordinator_at_random(&participants);
     let participant_keys = keys.into_iter().collect::<Vec<_>>();
     let all_sigs = run_sign(
