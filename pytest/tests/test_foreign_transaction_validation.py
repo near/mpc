@@ -33,6 +33,7 @@ from common_lib.shared import utils
 
 MOCK_BLOCK_HASH = "aa" * 32  # 64 hex chars, 32 bytes
 MOCK_TX_ID = "bb" * 32  # 64 hex chars, 32 bytes
+JSONRPC_METHOD_NOT_FOUND = -32601
 
 
 class _BitcoinRpcHandler(BaseHTTPRequestHandler):
@@ -58,7 +59,7 @@ class _BitcoinRpcHandler(BaseHTTPRequestHandler):
         else:
             response = {
                 "jsonrpc": "2.0",
-                "error": {"code": -32601, "message": f"Method not found: {method}"},
+                "error": {"code": JSONRPC_METHOD_NOT_FOUND, "message": f"Method not found: {method}"},
                 "id": request_id,
             }
 
