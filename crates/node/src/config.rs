@@ -708,9 +708,8 @@ pub mod tests {
         assert_eq!(secrets, secrets_copy);
     }
 
-    /// Helper to build a minimal valid ConfigFile YAML string.
-    /// `web_ui` and `migration_web_ui` are inserted verbatim as YAML values.
-    const OLD_CONFIG_EXAMPLE: &str = r#"
+    /// A minimal valid ConfigFile YAML string using the current SocketAddr format.
+    const CONFIG_EXAMPLE: &str = r#"
 my_near_account_id: sam.test.near
 near_responder_account_id: sam.test.near
 number_of_responder_keys: 1
@@ -740,9 +739,9 @@ cores: 4
 "#;
 
     #[test]
-    fn old_config_example_is_deserializable() {
+    fn config_example_is_deserializable() {
         // given
-        let config_string = OLD_CONFIG_EXAMPLE;
+        let config_string = CONFIG_EXAMPLE;
 
         // when
         let serialized_config: Result<ConfigFile, _> = serde_yaml::from_str(config_string);
@@ -808,7 +807,7 @@ cores: 4
     #[test]
     fn old_web_ui_config_format_deserializes_to_socket_addr() {
         // given: config with old WebUIConfig format
-        let old_format_config = OLD_CONFIG_EXAMPLE.replace(
+        let old_format_config = CONFIG_EXAMPLE.replace(
             "web_ui: 127.0.0.1:8082",
             "web_ui:\n  host: 127.0.0.1\n  port: 8082",
         );
@@ -823,7 +822,7 @@ cores: 4
     #[test]
     fn new_socket_addr_format_round_trips() {
         // given
-        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
 
         // when: serialize and deserialize again
         let yaml = serde_yaml::to_string(&config).unwrap();
@@ -836,7 +835,7 @@ cores: 4
     #[test]
     fn socket_addr_fields_parse_correctly() {
         // given
-        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
 
         // then
         assert_eq!(config.web_ui, SocketAddr::from((Ipv4Addr::LOCALHOST, 8082)));
@@ -853,7 +852,7 @@ cores: 4
     #[test]
     fn socket_addr_with_ipv4_unspecified() {
         // given: config using 0.0.0.0 addresses
-        let config_str = OLD_CONFIG_EXAMPLE
+        let config_str = CONFIG_EXAMPLE
             .replace("127.0.0.1:8082", "0.0.0.0:3000")
             .replace("127.0.0.1:8078", "0.0.0.0:3001")
             .replace("127.0.0.1:34002", "0.0.0.0:34002");
@@ -923,7 +922,7 @@ cores: 4
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
-        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+        let config: ConfigFile = serde_yaml::from_str(CONFIG_EXAMPLE).unwrap();
         let canonical = serde_yaml::to_string(&config).unwrap();
         fs::write(&path, &canonical).unwrap();
 
@@ -941,7 +940,7 @@ cores: 4
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
-        let old_format = OLD_CONFIG_EXAMPLE.replace(
+        let old_format = CONFIG_EXAMPLE.replace(
             "web_ui: 127.0.0.1:8082",
             "web_ui:\n  host: 127.0.0.1\n  port: 8082",
         );
