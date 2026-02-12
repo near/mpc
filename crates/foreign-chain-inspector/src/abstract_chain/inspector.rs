@@ -99,6 +99,7 @@ pub enum AbstractExtractedValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractor {
     BlockHash,
+    LogIndex(usize),
 }
 
 impl AbstractExtractor {
@@ -110,6 +111,9 @@ impl AbstractExtractor {
             AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
             )),
+            AbstractExtractor::LogIndex(index) => {
+                todo!()
+            }
         }
     }
 }
