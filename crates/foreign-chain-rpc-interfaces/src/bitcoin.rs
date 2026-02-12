@@ -14,7 +14,7 @@ pub type TransportBitcoinTransactionHash = Hash32<TransactionHashMarker>;
 
 /// Partial RPC response for `getrawtransaction`. See link below for full spec;
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html#result-if-verbose-is-set-to-true
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetRawTransactionVerboseResponse {
     // The block hash the transaction is in
     pub blockhash: TransportBitcoinBlockHash,
