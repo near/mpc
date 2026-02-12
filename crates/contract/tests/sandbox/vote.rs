@@ -58,14 +58,17 @@ async fn test_keygen() -> anyhow::Result<()> {
         panic!("expected initializing state");
     };
     assert_eq!(init.domains.next_domain_id, domain_id + 1);
+    let expected_domain = dtos::DomainConfig {
+        id: dtos::DomainId(domain_id),
+        scheme: scheme.into_interface_type(),
+    };
     let found = init
         .domains
         .domains
         .iter()
         .find(|d| d.id.0 == domain_id)
         .unwrap();
-    assert_eq!(scheme.into_interface_type(), found.scheme);
-    assert_eq!(domain_id, found.id.0);
+    assert_eq!(&expected_domain, found);
 
     // start the keygen instance and vote for a new public key
     let key_event_id = KeyEventId {
@@ -145,14 +148,17 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             panic!("expected initializing state");
         };
         assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
+        let expected_domain = dtos::DomainConfig {
+            id: dtos::DomainId(next_domain_id),
+            scheme: (*scheme).into_interface_type(),
+        };
         let found = init
             .domains
             .domains
             .iter()
             .find(|d| d.id.0 == next_domain_id)
             .unwrap();
-        assert_eq!(next_domain_id, found.id.0);
-        assert_eq!((*scheme).into_interface_type(), found.scheme);
+        assert_eq!(&expected_domain, found);
 
         // send threshold votes to abort key generation
         execute_async_transactions(
