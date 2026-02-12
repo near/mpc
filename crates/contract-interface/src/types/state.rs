@@ -9,9 +9,7 @@ use crate::types::primitives::AccountId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-// Re-export DomainId from primitives to avoid duplicate JsonSchema definitions
-// that cause non-deterministic ABI snapshots.
-pub use super::primitives::DomainId;
+use super::primitives::DomainId;
 
 // =============================================================================
 // Simple Wrapper Types (newtypes)

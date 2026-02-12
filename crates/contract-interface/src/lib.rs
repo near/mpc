@@ -13,14 +13,15 @@ pub mod types {
     pub use participants::{ParticipantId, ParticipantInfo, ParticipantsJson};
 
     pub use primitives::{
-        AccountId, CkdAppId, K256AffinePoint, K256Scalar, K256Signature, SignatureResponse, Tweak,
+        AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
+        SignatureResponse, Tweak,
     };
     pub use state::{
         AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
-        DomainConfig, DomainId, DomainRegistry, EpochId, InitializingContractState, KeyEvent,
-        KeyEventId, KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState,
-        PublicKeyExtended, ResharingContractState, RunningContractState, SignatureScheme,
-        Threshold, ThresholdParameters, ThresholdParametersVotes,
+        DomainConfig, DomainRegistry, EpochId, InitializingContractState, KeyEvent, KeyEventId,
+        KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState, PublicKeyExtended,
+        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
+        ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 
