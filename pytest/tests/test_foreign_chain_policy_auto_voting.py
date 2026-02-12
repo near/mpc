@@ -95,7 +95,9 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
     ]
     assert len(votes) == 2, "expected exactly two votes before unanimity"
     assert (
-        foreign_chains.normalize_policy(cluster.view_contract_function("get_foreign_chain_policy"))
+        foreign_chains.normalize_policy(
+            cluster.view_contract_function("get_foreign_chain_policy")
+        )
         == []
     ), "policy should not be applied before unanimous voting"
 
@@ -113,7 +115,8 @@ def test_foreign_chain_policy_auto_voting_requires_unanimity(
         ]
         policy = cluster.view_contract_function("get_foreign_chain_policy")
         return (
-            len(votes) == 0 and foreign_chains.normalize_policy(policy) == expected_normalized_policy
+            len(votes) == 0
+            and foreign_chains.normalize_policy(policy) == expected_normalized_policy
         )
 
     utils.wait_until(

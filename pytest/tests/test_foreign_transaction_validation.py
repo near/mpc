@@ -20,7 +20,11 @@ import pytest
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from common_lib import shared
-from common_lib.constants import GAS_FOR_VERIFY_FOREIGN_TX_CALL, TGAS, VERIFY_FOREIGN_TX_DEPOSIT
+from common_lib.constants import (
+    GAS_FOR_VERIFY_FOREIGN_TX_CALL,
+    TGAS,
+    VERIFY_FOREIGN_TX_DEPOSIT,
+)
 from common_lib.contract_state import ProtocolState
 from common_lib.contracts import load_mpc_contract
 from common_lib.shared import MpcCluster
@@ -29,7 +33,6 @@ from common_lib.shared import utils
 
 MOCK_BLOCK_HASH = "aa" * 32  # 64 hex chars, 32 bytes
 MOCK_TX_ID = "bb" * 32  # 64 hex chars, 32 bytes
-
 
 
 class _BitcoinRpcHandler(BaseHTTPRequestHandler):
@@ -78,7 +81,6 @@ def _start_mock_bitcoin_rpc() -> tuple[HTTPServer, int]:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, port
-
 
 
 @pytest.fixture(scope="module")
@@ -150,7 +152,6 @@ def foreign_tx_validation_cluster():
         atexit._run_exitfuncs()
 
 
-
 @pytest.mark.no_atexit_cleanup
 def test_verify_foreign_transaction_bitcoin(
     foreign_tx_validation_cluster: tuple[MpcCluster, list],
@@ -203,7 +204,9 @@ def test_verify_foreign_transaction_bitcoin(
         padded = success_value + "=" * ((4 - len(success_value) % 4) % 4)
         response = json.loads(base64.b64decode(padded))
 
-        print(f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m")
+        print(
+            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
+        )
 
         # Verify payload structure
         payload = response["payload"]
@@ -215,13 +218,17 @@ def test_verify_foreign_transaction_bitcoin(
         values = v1["values"]
         assert len(values) > 0, "Expected at least one extracted value"
         block_hash_value = values[0]
-        assert "Hash256" in block_hash_value, f"Expected Hash256, got: {block_hash_value}"
+        assert "Hash256" in block_hash_value, (
+            f"Expected Hash256, got: {block_hash_value}"
+        )
         assert block_hash_value["Hash256"] == MOCK_BLOCK_HASH, (
             f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['Hash256']}"
         )
 
         # Verify the request in the payload matches what we submitted
-        assert "Bitcoin" in v1["request"], f"Expected Bitcoin request, got: {v1['request']}"
+        assert "Bitcoin" in v1["request"], (
+            f"Expected Bitcoin request, got: {v1['request']}"
+        )
 
         # Verify signature is present and is Secp256k1
         signature = response["signature"]
