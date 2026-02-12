@@ -21,6 +21,7 @@ use mpc_contract::{
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
+use std::collections::HashSet;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
@@ -683,12 +684,12 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let final_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(final_participants.participants.len(), PARTICIPANT_COUNT - 1);
 
-    let final_accounts: Vec<String> = final_participants
+    let final_accounts: HashSet<String> = final_participants
         .participants
         .iter()
         .map(|(account_id, _, _)| account_id.0.clone())
         .collect();
-    let expected_accounts: Vec<String> = remaining_accounts
+    let expected_accounts: HashSet<String> = remaining_accounts
         .iter()
         .map(|a| a.id().to_string())
         .collect();
