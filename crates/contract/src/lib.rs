@@ -1596,7 +1596,6 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> contract_interface::types::ProtocolContractState {
-        use crate::dto_mapping::IntoInterfaceType;
         (&self.protocol_state).into_dto_type()
     }
 
