@@ -464,7 +464,6 @@ Function execution return value (printed to stdout):
 {
   "payload": {
     "V1": {
-      "observed_at_block": "0000000000000000000000000000000000000000000000000000000000000000",
       "request": {
         "Bitcoin": {
           "confirmations": 1,

@@ -147,8 +147,6 @@ pub struct VerifyForeignTransactionResponse {
     pub signature: SignatureResponse,
 }
 
-pub struct ForeignBlockId([u8; 32]); // Block hash for the observed transaction
-
 pub enum ExtractedValue {
     U64(u64),
     Hash256([u8; 32]),
@@ -168,7 +166,6 @@ pub enum ForeignTxSignPayload {
 
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
-    pub observed_at_block: ForeignBlockId,
     pub values: Vec<ExtractedValue>,
 }
 ```
