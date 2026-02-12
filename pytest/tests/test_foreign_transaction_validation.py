@@ -20,7 +20,7 @@ import pytest
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from common_lib import shared
-from common_lib.constants import TGAS
+from common_lib.constants import GAS_FOR_VERIFY_FOREIGN_TX_CALL, TGAS, VERIFY_FOREIGN_TX_DEPOSIT
 from common_lib.contract_state import ProtocolState
 from common_lib.contracts import load_mpc_contract
 from common_lib.shared import MpcCluster
@@ -185,8 +185,8 @@ def test_verify_foreign_transaction_bitcoin(
         cluster.mpc_contract_account(),
         "verify_foreign_transaction",
         args,
-        gas=15 * TGAS,
-        deposit=1,
+        gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
+        deposit=VERIFY_FOREIGN_TX_DEPOSIT,
     )
 
     # Send, await, and verify response
