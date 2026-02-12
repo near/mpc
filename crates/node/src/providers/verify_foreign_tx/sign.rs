@@ -1,9 +1,11 @@
-use anyhow::bail;
+use anyhow::{bail, Context};
+use foreign_chain_inspector;
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
 use foreign_chain_inspector::bitcoin::BitcoinExtractedValue;
 use foreign_chain_inspector::ForeignChainInspector;
 use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
+use tokio_util::time::FutureExt;
 
 use crate::metrics;
 use crate::providers::verify_foreign_tx::VerifyForeignTxTaskId;
@@ -17,7 +19,7 @@ use mpc_contract::primitives::signature::{Bytes, Payload, Tweak};
 use rand::seq::IteratorRandom;
 use tokio::time::{timeout, Duration};
 
-use foreign_chain_inspector;
+const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -139,7 +141,9 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
 
                 inspector
                     .extract(transaction_id, block_confirmations, extractors)
-                    .await?
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??
             }
             _ => bail!("unknown extractor found"),
         };
