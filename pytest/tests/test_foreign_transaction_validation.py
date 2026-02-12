@@ -141,7 +141,7 @@ def foreign_tx_validation_cluster():
     utils.wait_until(
         policy_applied,
         description="foreign chain policy applied after unanimous voting",
-        timeout_sec=60,
+        timeout_sec=30,
     )
 
     try:
@@ -200,9 +200,7 @@ def test_verify_foreign_transaction_bitcoin(
                 f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
             )
 
-        # Decode the base64-encoded JSON response
-        padded = success_value + "=" * ((4 - len(success_value) % 4) % 4)
-        response = json.loads(base64.b64decode(padded))
+        response = json.loads(base64.b64decode(success_value))
 
         print(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
