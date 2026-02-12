@@ -5,7 +5,7 @@ use rand_core::OsRng;
 use common::{choose_coordinator_at_random, generate_participants, run_keygen, run_reshare};
 use threshold_signatures::{
     confidential_key_derivation::{
-        ciphersuite::{verify_signature, Field, G1Projective, Group},
+        ciphersuite::{verify_signature, Field as _, G1Projective, Group as _},
         protocol::ckd,
         AppId, CKDOutputOption,
     },
