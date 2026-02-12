@@ -11,7 +11,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
-use contract_interface::types::{Attestation, MockAttestation};
+use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     primitives::{
         domain::SignatureScheme, participants::Participants,
@@ -108,7 +108,7 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
     )
     .unwrap();
 
-    let prospective_epoch_id = contract_interface::types::EpochId(6);
+    let prospective_epoch_id = dtos::EpochId(6);
 
     do_resharing(
         &mpc_signer_accounts[..threshold.0 as usize],
