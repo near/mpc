@@ -9,7 +9,6 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{Seek, Write},
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     path::Path,
 };
@@ -184,16 +183,22 @@ pub struct ConfigFile {
 
 impl ConfigFile {
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
-        let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
-
-        let config: Self = serde_yaml::from_reader(&file)?;
+        let original_config_string =
+            fs::read_to_string(path).context("failed to read config file")?;
+        let config: Self = serde_yaml::from_str(&original_config_string)?;
         config.validate().context("Validate config.yaml")?;
 
-        // write the file back to disk so it's serialized with the new format
-        file.rewind()?;
-        file.set_len(0)?;
-        serde_yaml::to_writer(&mut file, &config)?;
-        file.flush()?;
+        // re-serialize if needed
+        {
+            let re_serialized = serde_yaml::to_string(&config)?;
+            let update_config_with_new_schema = re_serialized != original_config_string;
+
+            if update_config_with_new_schema {
+                let tmp = path.with_extension("yaml.tmp");
+                fs::write(&tmp, re_serialized.as_bytes())?;
+                fs::rename(&tmp, path)?;
+            }
+        }
 
         Ok(config)
     }
@@ -910,5 +915,51 @@ cores: 4
             config.migration_web_ui,
             SocketAddr::from((Ipv4Addr::UNSPECIFIED, 9090))
         );
+    }
+
+    #[test]
+    fn from_file_does_not_rewrite_when_already_current_format() {
+        // given: write a config that is already in the canonical serialized format
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+
+        let config: ConfigFile = serde_yaml::from_str(OLD_CONFIG_EXAMPLE).unwrap();
+        let canonical = serde_yaml::to_string(&config).unwrap();
+        fs::write(&path, &canonical).unwrap();
+
+        // when
+        let _ = ConfigFile::from_file(&path).unwrap();
+
+        // then: file content is byte-for-byte identical (no rewrite)
+        let content_after = fs::read_to_string(&path).unwrap();
+        assert_eq!(canonical, content_after);
+    }
+
+    #[test]
+    fn from_file_rewrites_old_format_atomically() {
+        // given: write a config using the old host+port WebUI format
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+
+        let old_format = OLD_CONFIG_EXAMPLE.replace(
+            "web_ui: 127.0.0.1:8082",
+            "web_ui:\n  host: 127.0.0.1\n  port: 8082",
+        );
+        fs::write(&path, &old_format).unwrap();
+
+        // when
+        let config = ConfigFile::from_file(&path).unwrap();
+
+        // then: file is rewritten in the new format
+        let content_after = fs::read_to_string(&path).unwrap();
+        assert!(
+            content_after.contains("web_ui: 127.0.0.1:8082"),
+            "Expected new SocketAddr format, got:\n{content_after}"
+        );
+        // no temp file left behind
+        assert!(!dir.path().join("config.yaml.tmp").exists());
+        // rewritten content round-trips correctly
+        let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
+        assert_eq!(config, re_read);
     }
 }
