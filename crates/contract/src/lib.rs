@@ -388,7 +388,7 @@ impl MpcContract {
     /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
     /// to query across all protocols.
     pub fn latest_key_version(&self, signature_scheme: Option<SignatureScheme>) -> u32 {
-        self.state()
+        self.protocol_state
             .most_recent_domain_for_protocol(signature_scheme.unwrap_or_default())
             .unwrap()
             .0 as u32
@@ -746,7 +746,7 @@ impl MpcContract {
             return Err(TeeError::TeeValidationFailed.into());
         }
 
-        let domain = request.domain_id.clone();
+        let domain = request.domain_id;
         let public_key = self.public_key_extended(domain.0.into())?;
 
         let signature_is_valid = match (&response.signature, public_key) {
@@ -1326,7 +1326,7 @@ impl MpcContract {
         );
         self.voter_or_panic();
 
-        let threshold_parameters = match self.state().threshold_parameters() {
+        let threshold_parameters = match self.protocol_state.threshold_parameters() {
             Ok(threshold_parameters) => threshold_parameters,
             Err(ContractNotInitialized) => env::panic_str("Contract is not initialized. Can not vote for a new image hash before initialization."),
         };
@@ -1595,8 +1595,8 @@ impl MpcContract {
         }
     }
 
-    pub fn state(&self) -> &ProtocolContractState {
-        &self.protocol_state
+    pub fn state(&self) -> contract_interface::types::ProtocolContractState {
+        (&self.protocol_state).into_dto_type()
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
@@ -2039,7 +2039,8 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use contract_interface::types::{
-        BitcoinExtractor, BitcoinRpcRequest, ExtractedValue, ForeignTxSignPayloadV1,
+        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
+        ForeignTxSignPayloadV1,
     };
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
@@ -2438,9 +2439,10 @@ mod tests {
             .get_pending_verify_foreign_tx_request(&request)
             .unwrap();
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            observed_at_block: [0u8; 32].into(),
             request: request.request.clone(),
-            values: vec![ExtractedValue::U64(2)],
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
         // simulate signature and response to the request

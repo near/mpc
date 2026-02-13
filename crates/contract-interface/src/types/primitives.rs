@@ -70,6 +70,7 @@ pub struct Tweak(pub [u8; 32]);
 #[derive(
     Debug,
     Clone,
+    Copy,
     Eq,
     PartialEq,
     Ord,

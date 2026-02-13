@@ -7,7 +7,7 @@ use crate::sandbox::{
     utils::{
         consts::{ALL_SIGNATURE_SCHEMES, GAS_FOR_VOTE_CANCEL_KEYGEN, PARTICIPANT_LEN},
         initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
-        interface::IntoContractType,
+        interface::{IntoContractType, IntoInterfaceType, TryIntoContractType},
         mpc_contract::get_state,
         resharing_utils::{conclude_resharing, vote_cancel_reshaing, vote_new_parameters},
         transactions::execute_async_transactions,
@@ -15,14 +15,13 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use contract_interface::types as dtos;
+use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
-    errors::{DomainError, InvalidParameters},
+    errors::InvalidParameters,
     primitives::{
         domain::{DomainConfig, SignatureScheme},
-        key_state::{AttemptId, KeyEventId},
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::{running::RunningContractState, ProtocolContractState},
 };
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rstest::rstest;
@@ -36,8 +35,11 @@ async fn test_keygen() -> anyhow::Result<()> {
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
-    let epoch_id = init_state.current_epoch();
-    let domain_id = init_state.next_domain_id();
+    let ProtocolContractState::Running(ref init_running) = init_state else {
+        panic!("expected running state");
+    };
+    let epoch_id = init_running.keyset.epoch_id;
+    let domain_id = init_running.domains.next_domain_id;
     let scheme = SignatureScheme::Ed25519;
 
     // vote to add the domain and verify we enter initializing state
@@ -52,20 +54,27 @@ async fn test_keygen() -> anyhow::Result<()> {
     .await
     .unwrap();
     let state = get_state(&contract).await;
-    assert_eq!(state.next_domain_id(), domain_id + 1);
-    assert!(matches!(state, ProtocolContractState::Initializing(_)));
-    let expected_domain_config = DomainConfig {
-        id: domain_id.into(),
-        scheme,
+    let ProtocolContractState::Initializing(ref init) = state else {
+        panic!("expected initializing state");
     };
-    let found = state.get_domain_config(domain_id.into()).unwrap();
-    assert_eq!(expected_domain_config, found);
+    assert_eq!(init.domains.next_domain_id, domain_id + 1);
+    let expected_domain = dtos::DomainConfig {
+        id: dtos::DomainId(domain_id),
+        scheme: scheme.into_interface_type(),
+    };
+    let found = init
+        .domains
+        .domains
+        .iter()
+        .find(|d| d.id.0 == domain_id)
+        .unwrap();
+    assert_eq!(&expected_domain, found);
 
     // start the keygen instance and vote for a new public key
     let key_event_id = KeyEventId {
         epoch_id,
-        domain_id: domain_id.into(),
-        attempt_id: AttemptId::new(),
+        domain_id: dtos::DomainId(domain_id),
+        attempt_id: AttemptId(0),
     };
     start_keygen_instance(&contract, &mpc_signer_accounts, key_event_id)
         .await
@@ -84,19 +93,35 @@ async fn test_keygen() -> anyhow::Result<()> {
 
     // ensure the protocol resumed running state and the public key was added
     let state = get_state(&contract).await;
-    assert!(matches!(state, ProtocolContractState::Running(_)));
-    let found_key: near_sdk::PublicKey = state
-        .public_key(domain_id.into())
+    let ProtocolContractState::Running(ref running) = state else {
+        panic!("expected running state");
+    };
+    let found_key: near_sdk::PublicKey = running
+        .keyset
+        .domains
+        .iter()
+        .find(|k| k.domain_id.0 == domain_id)
+        .map(|k| &k.key)
         .unwrap()
-        .try_into()
+        .try_into_contract_type()
         .unwrap();
     assert_eq!(found_key, public_key.into_contract_type());
     assert_eq!(
-        state.domain_registry().unwrap().domains().len(),
+        running.domains.domains.len(),
         ALL_SIGNATURE_SCHEMES.len() + 1
     );
     // assert that the epoch id did not change
-    assert_eq!(state.current_epoch(), epoch_id);
+    assert_eq!(running.keyset.epoch_id, epoch_id);
+
+    // verify that the contract's `public_key` view method returns the key for the new domain
+    let contract_public_key: dtos::PublicKey = contract
+        .view("public_key")
+        .args_json(json!({"domain_id": domain_id}))
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(contract_public_key, public_key);
 
     Ok(())
 }
@@ -109,10 +134,13 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
     let init_state = get_state(&contract).await;
-    let epoch_id: u64 = init_state.current_epoch().get();
-    let mut next_domain_id: u64 = init_state.next_domain_id();
+    let ProtocolContractState::Running(ref init_running) = init_state else {
+        panic!("expected running state");
+    };
+    let epoch_id: u64 = init_running.keyset.epoch_id.0;
+    let mut next_domain_id: u64 = init_running.domains.next_domain_id;
     for scheme in ALL_SIGNATURE_SCHEMES {
-        let threshold = init_state.threshold().unwrap().value() as usize;
+        let threshold = init_running.parameters.threshold.0 as usize;
 
         // vote to start key generation
         vote_add_domains(
@@ -127,14 +155,21 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         .unwrap();
 
         let state = get_state(&contract).await;
-        assert_eq!(state.next_domain_id(), next_domain_id + 1);
-        assert!(matches!(state, ProtocolContractState::Initializing(_)));
-        let expected_domain_config = DomainConfig {
-            id: next_domain_id.into(),
-            scheme: *scheme,
+        let ProtocolContractState::Initializing(ref init) = state else {
+            panic!("expected initializing state");
         };
-        let found = state.get_domain_config(next_domain_id.into()).unwrap();
-        assert_eq!(expected_domain_config, found);
+        assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
+        let expected_domain = dtos::DomainConfig {
+            id: dtos::DomainId(next_domain_id),
+            scheme: (*scheme).into_interface_type(),
+        };
+        let found = init
+            .domains
+            .domains
+            .iter()
+            .find(|d| d.id.0 == next_domain_id)
+            .unwrap();
+        assert_eq!(&expected_domain, found);
 
         // send threshold votes to abort key generation
         execute_async_transactions(
@@ -149,19 +184,32 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
 
         // ensure we return to running state and that no key was registered
         let state = get_state(&contract).await;
-        assert_matches!(state, ProtocolContractState::Running(_));
-        assert_eq!(
-            state.public_key(next_domain_id.into()).unwrap_err(),
-            DomainError::NoSuchDomain.into()
+        let ProtocolContractState::Running(ref running) = state else {
+            panic!("expected running state");
+        };
+        assert!(
+            running
+                .keyset
+                .domains
+                .iter()
+                .all(|k| k.domain_id.0 != next_domain_id),
+            "No key should be registered for the cancelled domain"
         );
-        assert_eq!(
-            state.domain_registry().unwrap().domains().len(),
-            ALL_SIGNATURE_SCHEMES.len()
+        assert_eq!(running.domains.domains.len(), ALL_SIGNATURE_SCHEMES.len());
+
+        // verify that the contract's `public_key` view method fails for the cancelled domain
+        let public_key_result = contract
+            .view("public_key")
+            .args_json(json!({"domain_id": next_domain_id}))
+            .await;
+        assert!(
+            public_key_result.is_err(),
+            "public_key should fail for cancelled domain {next_domain_id}"
         );
 
         // assert that the epoch id did not change
-        assert_eq!(state.current_epoch().get(), epoch_id);
-        assert_eq!(state.next_domain_id(), next_domain_id + 1);
+        assert_eq!(running.keyset.epoch_id.0, epoch_id);
+        assert_eq!(running.domains.next_domain_id, next_domain_id + 1);
         next_domain_id += 1;
     }
     Ok(())
@@ -179,7 +227,13 @@ async fn test_resharing() -> anyhow::Result<()> {
 
     let mut all_accounts = persistent_participants.clone();
     all_accounts.extend_from_slice(&new_participant_accounts);
-    let prospective_epoch_id = initial_running_state.prospective_epoch_id();
+    let prospective_epoch_id = dtos::EpochId(
+        initial_running_state
+            .previously_cancelled_resharing_epoch_id
+            .unwrap_or(initial_running_state.keyset.epoch_id)
+            .0
+            + 1,
+    );
     conclude_resharing(&contract, &all_accounts, prospective_epoch_id)
         .await
         .unwrap();
@@ -187,7 +241,10 @@ async fn test_resharing() -> anyhow::Result<()> {
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Running(state) => {
-            assert_eq!(state.parameters.participants().len(), PARTICIPANT_LEN + 1);
+            assert_eq!(
+                state.parameters.participants.participants.len(),
+                PARTICIPANT_LEN + 1
+            );
             assert_eq!(state.keyset.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in running state"),
@@ -205,11 +262,18 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         ..
     } = setup_resharing_state(PARTICIPANT_LEN).await;
 
-    let prospective_epoch_id = initial_running_state.prospective_epoch_id().next();
-    let proposal = initial_running_state.parameters.clone();
+    let prospective_epoch_id = dtos::EpochId(
+        initial_running_state
+            .previously_cancelled_resharing_epoch_id
+            .unwrap_or(initial_running_state.keyset.epoch_id)
+            .0
+            + 1,
+    );
+    let prospective_epoch_id = dtos::EpochId(prospective_epoch_id.0 + 1);
+    let proposal: ThresholdParameters = (&initial_running_state.parameters).into_contract_type();
     vote_new_parameters(
         &contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &proposal,
         &persistent_participants,
         &[],
@@ -220,8 +284,10 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(state) => {
-            assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
-            assert_eq!(state.resharing_key.epoch_id(), prospective_epoch_id);
+            let state_params: ThresholdParameters =
+                (&state.resharing_key.parameters).into_contract_type();
+            assert_eq!(state_params, proposal);
+            assert_eq!(state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
     };
@@ -254,8 +320,9 @@ async fn setup_resharing_state(
         panic!("State is not running: {:#?}", state)
     };
 
-    let threshold = initial_running_state.parameters.threshold();
-    let mut new_participants = initial_running_state.parameters.participants().clone();
+    let threshold = initial_running_state.parameters.threshold;
+    let mut new_participants: mpc_contract::primitives::participants::Participants =
+        (&initial_running_state.parameters.participants).into_contract_type();
 
     // Add a new participant
     let (new_account, new_account_id, new_participant_info) =
@@ -266,12 +333,18 @@ async fn setup_resharing_state(
         .insert(new_account_id.clone(), new_participant_info)
         .unwrap();
     let proposal =
-        ThresholdParameters::new(new_participants, Threshold::new(threshold.value() + 1)).unwrap();
+        ThresholdParameters::new(new_participants, Threshold::new(threshold.0 + 1)).unwrap();
 
-    let prospective_epoch_id = initial_running_state.prospective_epoch_id();
+    let prospective_epoch_id = dtos::EpochId(
+        initial_running_state
+            .previously_cancelled_resharing_epoch_id
+            .unwrap_or(initial_running_state.keyset.epoch_id)
+            .0
+            + 1,
+    );
     vote_new_parameters(
         &contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &proposal,
         &mpc_signer_accounts,
         &new_accounts,
@@ -282,8 +355,11 @@ async fn setup_resharing_state(
     // Verify we're in resharing state
     match get_state(&contract).await {
         ProtocolContractState::Resharing(state) => {
-            assert_eq!(state.resharing_key.proposed_parameters(), &proposal);
-            assert_eq!(state.resharing_key.epoch_id(), prospective_epoch_id);
+            // Compare proposal parameters via JSON roundtrip (internal vs DTO types)
+            let proposal_json = serde_json::to_value(&proposal).unwrap();
+            let state_params_json = serde_json::to_value(&state.resharing_key.parameters).unwrap();
+            assert_eq!(state_params_json, proposal_json);
+            assert_eq!(state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
     }
@@ -311,7 +387,7 @@ async fn test_cancel_resharing_vote_is_idempotent(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold().value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
     assert_ne!(
         initial_threshold,
         1,
@@ -349,7 +425,13 @@ async fn test_cancel_resharing_vote_is_idempotent(
 
     assert_eq!(
         found.previously_cancelled_resharing_epoch_id,
-        Some(initial_running_state.prospective_epoch_id())
+        Some(dtos::EpochId(
+            initial_running_state
+                .previously_cancelled_resharing_epoch_id
+                .unwrap_or(initial_running_state.keyset.epoch_id)
+                .0
+                + 1
+        ))
     );
 
     found.previously_cancelled_resharing_epoch_id = None;
@@ -370,7 +452,7 @@ async fn test_cancel_resharing_requires_threshold_votes(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold().value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
 
     // Vote with less than threshold (threshold - 1)
     vote_cancel_reshaing(
@@ -444,7 +526,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold().value() as usize;
+    let initial_threshold = initial_running_state.parameters.threshold.0 as usize;
 
     // Vote for cancellation with threshold of previous running participants
     vote_cancel_reshaing(&contract, &persistent_participants[0..initial_threshold])
@@ -461,7 +543,7 @@ async fn test_cancel_resharing_reverts_to_previous_running_state(
     };
 
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
-    let cancelled_epoch_id = initial_epoch_id.next();
+    let cancelled_epoch_id = dtos::EpochId(initial_epoch_id.0 + 1);
     assert_eq!(
         new_running_state.previously_cancelled_resharing_epoch_id,
         Some(cancelled_epoch_id),
@@ -497,19 +579,19 @@ async fn test_cancelled_epoch_cannot_be_reused(
         ..
     } = setup_resharing_state.await;
 
-    let initial_threshold = initial_running_state.parameters.threshold();
+    let initial_threshold = initial_running_state.parameters.threshold;
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
 
     // Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.value() as usize],
+        &persistent_participants[0..initial_threshold.0 as usize],
     )
     .await
     .unwrap();
 
-    let cancelled_epoch_id = initial_epoch_id.next();
-    let prospective_epoch_id = cancelled_epoch_id.next();
+    let cancelled_epoch_id = dtos::EpochId(initial_epoch_id.0 + 1);
+    let prospective_epoch_id = dtos::EpochId(cancelled_epoch_id.0 + 1);
 
     // Verify state tracks cancelled epoch
     let state = get_state(&contract).await;
@@ -526,7 +608,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
             account
                 .call(contract.id(), "vote_new_parameters")
                 .args_json(json!({
-                    "prospective_epoch_id": cancelled_epoch_id.get(),
+                    "prospective_epoch_id": cancelled_epoch_id.0,
                     "proposal": threshold_parameters,
                 }))
                 .transact()
@@ -539,7 +621,7 @@ async fn test_cancelled_epoch_cannot_be_reused(
     // Verify we can initiate resharing with the next epoch ID
     vote_new_parameters(
         &contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &threshold_parameters,
         &persistent_participants,
         &new_participant_accounts,
@@ -552,12 +634,11 @@ async fn test_cancelled_epoch_cannot_be_reused(
     match state {
         ProtocolContractState::Resharing(resharing_contract_state) => {
             assert_eq!(
-                resharing_contract_state.resharing_key.proposed_parameters(),
-                &threshold_parameters
+                serde_json::to_value(&resharing_contract_state.resharing_key.parameters).unwrap(),
+                serde_json::to_value(&threshold_parameters).unwrap()
             );
             assert_eq!(
-                resharing_contract_state.prospective_epoch_id(),
-                prospective_epoch_id,
+                resharing_contract_state.resharing_key.epoch_id, prospective_epoch_id,
                 "Should skip cancelled epoch and use next available epoch ID"
             );
         }
@@ -581,19 +662,19 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         ..
     } = setup_resharing_state(PARTICIPANT_LEN).await;
 
-    let initial_threshold = initial_running_state.parameters.threshold();
+    let initial_threshold = initial_running_state.parameters.threshold;
     let initial_epoch_id = initial_running_state.keyset.epoch_id;
 
     // Step 1: Cancel the resharing
     vote_cancel_reshaing(
         &contract,
-        &persistent_participants[0..initial_threshold.value() as usize],
+        &persistent_participants[0..initial_threshold.0 as usize],
     )
     .await
     .unwrap();
 
-    let cancelled_epoch_id = initial_epoch_id.next();
-    let prospective_epoch_id = cancelled_epoch_id.next();
+    let cancelled_epoch_id = dtos::EpochId(initial_epoch_id.0 + 1);
+    let prospective_epoch_id = dtos::EpochId(cancelled_epoch_id.0 + 1);
 
     // Verify cancellation tracked
     let state: ProtocolContractState = get_state(&contract).await;
@@ -608,7 +689,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     // Step 2: Initiate new resharing with next epoch ID
     vote_new_parameters(
         &contract,
-        prospective_epoch_id.get(),
+        prospective_epoch_id.0,
         &threshold_parameters,
         &persistent_participants,
         &new_participant_accounts,
@@ -620,10 +701,7 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
     let state: ProtocolContractState = get_state(&contract).await;
     match state {
         ProtocolContractState::Resharing(resharing_state) => {
-            assert_eq!(
-                resharing_state.resharing_key.epoch_id(),
-                prospective_epoch_id
-            );
+            assert_eq!(resharing_state.resharing_key.epoch_id, prospective_epoch_id);
         }
         _ => panic!("should be in resharing state"),
     }
@@ -648,7 +726,8 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
                 "previously_cancelled_resharing_epoch_id should be None after successful resharing"
             );
             assert_eq!(
-                running_state.parameters, threshold_parameters,
+                serde_json::to_value(&running_state.parameters).unwrap(),
+                serde_json::to_value(&threshold_parameters).unwrap(),
                 "threshold parameters must match"
             );
         }
@@ -668,10 +747,13 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
     let state = get_state(&contract).await;
-    assert_matches!(state, ProtocolContractState::Running(_));
-    let threshold = state.threshold().unwrap();
-    let epoch_id = state.current_epoch();
-    let mut proposed_participants = state.active_participants().clone();
+    let ProtocolContractState::Running(ref running_state) = state else {
+        panic!("expected running state");
+    };
+    let threshold = running_state.parameters.threshold;
+    let epoch_id = running_state.keyset.epoch_id;
+    let mut proposed_participants: mpc_contract::primitives::participants::Participants =
+        (&running_state.parameters.participants).into_contract_type();
 
     let (new_account, new_account_id) = gen_account(&worker).await;
     let new_participant_info = gen_participant_info();
@@ -682,8 +764,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
         .unwrap();
 
     let threshold_parameters =
-        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.value() + 1))
-            .unwrap();
+        ThresholdParameters::new(proposed_participants, Threshold::new(threshold.0 + 1)).unwrap();
 
     mpc_signer_accounts.push(new_account.clone());
 
@@ -693,7 +774,7 @@ async fn vote_new_parameters_errors_if_new_participant_is_missing_valid_attestat
             .call(contract.id(), "vote_new_parameters")
             .max_gas()
             .args_json(json!({
-                "prospective_epoch_id": epoch_id.next(),
+                "prospective_epoch_id": dtos::EpochId(epoch_id.0 + 1),
                 "proposal": threshold_parameters,
             }))
             .transact()

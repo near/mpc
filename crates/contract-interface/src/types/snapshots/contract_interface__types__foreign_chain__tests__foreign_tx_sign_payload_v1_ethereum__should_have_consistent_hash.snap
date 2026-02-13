@@ -1,5 +1,5 @@
 ---
 source: crates/contract-interface/src/types/foreign_chain.rs
-expression: "hex::encode(payload.compute_msg_hash())"
+expression: "hex::encode(hash.0)"
 ---
-"0a0e06a45877d767f3b28b46a4491c0d9ac3bc3ed3ccc5a23af24509affcc9f6"
+"2ab97999d1e015730271c7d6cbb298af76fd1de7af81926b42a8877bc4f5794e"

@@ -107,32 +107,39 @@ pub struct VerifyForeignTransactionRequest {
 
 ```rust
 pub enum ForeignChainRpcRequest {
-    Ethereum(EthereumRpcRequest),
+    Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     // Future chains...
 }
 
-pub struct EthereumRpcRequest {
-    pub tx_id: EthereumTxId,
-    pub extractors: Vec<EthereumExtractor>,
+pub struct EvmRpcRequest {
+    pub tx_id: EvmTxId,
+    pub extractors: Vec<EvmExtractor>,
+    pub finality: EvmFinality,
 }
 
 pub struct SolanaRpcRequest {
     pub tx_id: SolanaTxId, // This is the payload we're signing
-    pub finality: Finality, // Optimistic or Final
+    pub finality: SolanaFinality, // Optimistic or Final
     pub extractors: Vec<SolanaExtractor>,
 }
 
 pub struct BitcoinRpcRequest {
     pub tx_id: BitcoinTxId, // This is the payload we're signing
-    pub confirmations: u64, // required confirmations before considering final
+    pub confirmations: BlockConfirmations, // required confirmations before considering final
     pub extractors: Vec<BitcoinExtractor>,
 }
 
-pub enum Finality {
-    Optimistic,
-    Final,
+pub enum EvmFinality {
+    Latest,
+    Safe,
+    Finalized,
+}
+pub enum SolanaFinality {
+    Processed,
+    Confirmed,
+    Finalized,
 }
 ```
 
@@ -147,12 +154,17 @@ pub struct VerifyForeignTransactionResponse {
     pub signature: SignatureResponse,
 }
 
-pub struct ForeignBlockId([u8; 32]); // Block hash for the observed transaction
-
 pub enum ExtractedValue {
-    U64(u64),
-    Hash256([u8; 32]),
+    BitcoinExtractedValue(BitcoinExtractedValue),
+    EvmExtractedValue(EvmExtractedValue),
 }
+pub enum BitcoinExtractedValue {
+    BlockHash(Hash256),
+}
+pub enum EvmExtractedValue {
+    BlockHash(Hash256),
+}
+
 ```
 
 ### Sign Payload Serialization
@@ -168,7 +180,6 @@ pub enum ForeignTxSignPayload {
 
 pub struct ForeignTxSignPayloadV1 {
     pub request: ForeignChainRpcRequest,
-    pub observed_at_block: ForeignBlockId,
     pub values: Vec<ExtractedValue>,
 }
 ```

@@ -10,9 +10,18 @@ pub mod types {
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
     pub use foreign_chain::*;
+    pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
     pub use primitives::{
-        AccountId, CkdAppId, K256AffinePoint, K256Scalar, K256Signature, SignatureResponse, Tweak,
+        AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
+        SignatureResponse, Tweak,
+    };
+    pub use state::{
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId,
+        DomainConfig, DomainRegistry, EpochId, InitializingContractState, KeyEvent, KeyEventId,
+        KeyEventInstance, KeyForDomain, Keyset, ProtocolContractState, PublicKeyExtended,
+        ResharingContractState, RunningContractState, SignatureScheme, Threshold,
+        ThresholdParameters, ThresholdParametersVotes,
     };
     pub use updates::{ProposedUpdates, UpdateHash};
 
@@ -20,6 +29,8 @@ pub mod types {
     mod config;
     mod crypto;
     mod foreign_chain;
+    mod participants;
     mod primitives;
+    mod state;
     mod updates;
 }

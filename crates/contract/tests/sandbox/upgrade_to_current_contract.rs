@@ -11,6 +11,7 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
+use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -20,7 +21,6 @@ use mpc_contract::{
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
     },
-    state::ProtocolContractState,
 };
 use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
@@ -254,7 +254,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
 
     let initial_participants = get_participants(&contract).await?;
-    let participant_set_is_not_empty = !initial_participants.participants().is_empty();
+    let participant_set_is_not_empty = !initial_participants.participants.is_empty();
     assert!(
         participant_set_is_not_empty,
         "Test must contain a contract with at least one participant"
@@ -275,10 +275,9 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants
-        .participants()
+        .participants
         .iter()
-        .map(|(account_id, _, _)| account_id)
-        .cloned()
+        .map(|(account_id, _, _)| account_id.0.parse::<near_account_id::AccountId>().unwrap())
         .collect();
 
     assert_eq!(

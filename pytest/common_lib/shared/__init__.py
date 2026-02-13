@@ -85,6 +85,7 @@ def create_mpc_function_call_access_key_action(
     mpc_methods_used_by_node = [
         "respond",
         "respond_ckd",
+        "respond_verify_foreign_tx",
         "vote_pk",
         "start_keygen_instance",
         "vote_reshared",
