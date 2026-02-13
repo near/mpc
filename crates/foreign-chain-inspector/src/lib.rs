@@ -6,8 +6,6 @@ use thiserror::Error;
 pub mod abstract_chain;
 pub mod bitcoin;
 
-pub(crate) mod rpc_schema;
-
 pub trait ForeignChainInspector {
     type TransactionId;
     type Finality;
@@ -50,6 +48,8 @@ pub enum ForeignChainInspectionError {
     #[error(
         "transaction did not have enough block confirmations associated with it, expected: {expected} got: {got}"
     )]
+    // TODO: return specific error types ber inspector type.
+    // EVM errors
     NotEnoughBlockConfirmations {
         expected: BlockConfirmations,
         got: BlockConfirmations,
@@ -58,6 +58,10 @@ pub enum ForeignChainInspectionError {
     NotFinalized,
     #[error("The transaction's status was not success")]
     TransactionFailed,
+    #[error("provided log index is out of bounds")]
+    LogIndexOutOfBounds,
+    #[error("failed to borsh serialize log event")]
+    EventLogFailedBorshSerialization(std::io::Error),
 }
 
 /// Builds an HTTP client with the specified authentication method.
