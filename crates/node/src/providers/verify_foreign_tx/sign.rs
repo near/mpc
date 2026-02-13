@@ -164,7 +164,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                 let Some(abstract_config) = &self.config.foreign_chains.abstract_chain else {
                     anyhow::bail!("abstract provider config is missing")
                 };
-                // TODO: implement a better algorithm here that guarantees that different nodes get different providers
+                // TODO(#2088): implement a better algorithm here that guarantees that different nodes get different providers
                 let abstract_provider_config =
                     abstract_config.providers.values().choose(&mut OsRng);
 
@@ -225,7 +225,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                                     block_number: log.block_number.as_u64(),
                                     address: log.address.0.into(),
                                     data: log.data.clone(),
-                                    // TODO: The topics occupy too much data, breaking the limit on near
+                                    // TODO(#2089): The topics occupy too much data, breaking the limit on near
                                     // promises and making the respond transaction fail
                                     // correct value: log.topics.iter().map(|topic| topic.0.into()).collect()
                                     topics: vec![],
