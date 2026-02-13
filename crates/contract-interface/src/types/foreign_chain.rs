@@ -305,6 +305,7 @@ pub enum ExtractedValue {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum EvmExtractedValue {
     BlockHash(Hash256),
 }
@@ -325,6 +326,7 @@ pub enum EvmExtractedValue {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+#[non_exhaustive]
 pub enum BitcoinExtractedValue {
     BlockHash(Hash256),
 }
