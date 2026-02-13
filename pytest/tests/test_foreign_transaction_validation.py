@@ -219,11 +219,16 @@ def test_verify_foreign_transaction_bitcoin(
         values = v1["values"]
         assert len(values) > 0, "Expected at least one extracted value"
         block_hash_value = values[0]
-        assert "Hash256" in block_hash_value, (
-            f"Expected Hash256, got: {block_hash_value}"
+        assert "BitcoinExtractedValue" in block_hash_value, (
+            f"Expected BitcoinExtractedValue, got: {block_hash_value}"
         )
-        assert block_hash_value["Hash256"] == MOCK_BLOCK_HASH, (
-            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['Hash256']}"
+        assert "BlockHash" in block_hash_value["BitcoinExtractedValue"], (
+            f"Expected BlockHash, got: {block_hash_value['BitcoinExtractedValue']}"
+        )
+        assert (
+            block_hash_value["BitcoinExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH
+        ), (
+            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['BitcoinExtractedValue']['BlockHash']}"
         )
 
         # Verify the request in the payload matches what we submitted
