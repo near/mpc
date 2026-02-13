@@ -11,8 +11,6 @@ foreign-chain-rpc-interfaces = { workspace = true }
 http = { workspace = true }
 jsonrpsee = { workspace = true }
 mpc-primitives = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -20,6 +18,8 @@ assert_matches = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
