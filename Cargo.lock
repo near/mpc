@@ -3277,7 +3277,6 @@ name = "foreign-chain-inspector"
 version = "3.4.1"
 dependencies = [
  "assert_matches",
- "borsh",
  "derive_more 2.1.1",
  "ethereum-types",
  "foreign-chain-rpc-interfaces",
@@ -3296,7 +3295,6 @@ dependencies = [
 name = "foreign-chain-rpc-interfaces"
 version = "3.4.1"
 dependencies = [
- "borsh",
  "derive_more 2.1.1",
  "ethereum-types",
  "jsonrpsee",
