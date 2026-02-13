@@ -20,6 +20,10 @@ GAS_FOR_CKD_CALL = 15
 SIGNATURE_DEPOSIT = 1
 # Deposit in Yoctonear required for a ckd call.
 CKD_DEPOSIT = 1
+# Tgas required by the contract for a verify_foreign_transaction call.
+GAS_FOR_VERIFY_FOREIGN_TX_CALL = 15
+# Deposit in Yoctonear required for a verify_foreign_transaction call.
+VERIFY_FOREIGN_TX_DEPOSIT = 1
 # maximum block delay an MPC node is allowed to communicated before being labeled offline
 # defined in https://github.com/near/mpc/blob/cf53eadb8a9a5ad73da07efc0e8cb206af6fb48f/node/src/network.rs#L103
 INDEXER_MAX_HEIGHT_DIFF = 50
