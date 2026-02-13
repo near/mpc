@@ -5,7 +5,7 @@ use crate::common::FixedResponseRpcClient;
 use foreign_chain_inspector::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector, RpcAuthentication,
     abstract_chain::{
-        AbstractBlockHash, AbstractTransactionHash, LogHash,
+        AbstractBlockHash, AbstractTransactionHash,
         inspector::{AbstractExtractedValue, AbstractExtractor, AbstractInspector},
     },
     build_http_client,
@@ -19,7 +19,6 @@ use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
-use sha2::Digest;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[rstest]
@@ -328,7 +327,7 @@ async fn extract_returns_correct_log_hash_for_specific_index() {
         data: "second_log".to_string(),
         topics: vec![H256([70; 32])],
     };
-    let expected_log_hash = compute_log_hash(&log_1);
+    let expected_log = log_1.clone();
 
     let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
@@ -354,7 +353,7 @@ async fn extract_returns_correct_log_hash_for_specific_index() {
         .unwrap();
 
     // then
-    let expected_extractions = vec![AbstractExtractedValue::Log(expected_log_hash)];
+    let expected_extractions = vec![AbstractExtractedValue::Log(expected_log)];
     assert_eq!(expected_extractions, extracted_values);
 }
 
@@ -383,15 +382,9 @@ fn expected_extracted_value(
             AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
         }
         AbstractExtractor::Log { log_index } => {
-            AbstractExtractedValue::Log(compute_log_hash(&tx_response.logs[*log_index]))
+            AbstractExtractedValue::Log(tx_response.logs[*log_index].clone())
         }
     }
-}
-
-fn compute_log_hash(log: &Log) -> LogHash {
-    let borsh_encoding = borsh::to_vec(log).expect("borsh serialization should not fail");
-    let hash: [u8; 32] = sha2::Sha256::digest(borsh_encoding).into();
-    LogHash::from(hash)
 }
 
 fn test_log() -> Log {
