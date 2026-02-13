@@ -17,9 +17,9 @@ thiserror = { workspace = true }
 assert_matches = { workspace = true }
 httpmock = { workspace = true }
 rstest = { workspace = true }
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true
