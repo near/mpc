@@ -147,12 +147,15 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
             }
             _ => bail!("unknown extractor found"),
         };
+
         let values = extracted_values
             .iter()
             .map(|extracted_value| match extracted_value {
                 BitcoinExtractedValue::BlockHash(value) => {
                     let value: [u8; 32] = **value;
-                    Ok(dtos::ExtractedValue::Hash256(value.into()))
+                    Ok(dtos::ExtractedValue::BitcoinExtractedValue(
+                        dtos::BitcoinExtractedValue::BlockHash(value.into()),
+                    ))
                 }
             })
             .collect::<anyhow::Result<_>>()?;
