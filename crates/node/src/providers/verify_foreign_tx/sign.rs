@@ -1,7 +1,6 @@
 use anyhow::{bail, Context};
 use foreign_chain_inspector;
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
-use foreign_chain_inspector::bitcoin::BitcoinExtractedValue;
 use foreign_chain_inspector::ForeignChainInspector;
 use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
@@ -129,15 +128,13 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                 let inspector = BitcoinInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0.into();
-                let block_confirmations = request.confirmations.0.into();
+                let block_confirmations = request.confirmations.clone().into();
                 let extractors = request
                     .extractors
                     .iter()
-                    .map(|extractor| match extractor {
-                        dtos::BitcoinExtractor::BlockHash => Ok(BitcoinExtractor::BlockHash),
-                        _ => bail!("unknown extractor found"),
-                    })
-                    .collect::<anyhow::Result<_>>()?;
+                    .cloned()
+                    .map(BitcoinExtractor::try_from)
+                    .collect::<Result<_, _>>()?;
 
                 inspector
                     .extract(transaction_id, block_confirmations, extractors)
@@ -148,17 +145,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
             _ => bail!("unknown extractor found"),
         };
 
-        let values = extracted_values
-            .iter()
-            .map(|extracted_value| match extracted_value {
-                BitcoinExtractedValue::BlockHash(value) => {
-                    let value: [u8; 32] = **value;
-                    Ok(dtos::ExtractedValue::BitcoinExtractedValue(
-                        dtos::BitcoinExtractedValue::BlockHash(value.into()),
-                    ))
-                }
-            })
-            .collect::<anyhow::Result<_>>()?;
+        let values = extracted_values.into_iter().map(Into::into).collect();
         Ok(dtos::ForeignTxSignPayload::V1(
             dtos::ForeignTxSignPayloadV1 {
                 request: request.clone(),

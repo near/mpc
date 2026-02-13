@@ -212,10 +212,39 @@ pub enum SolanaFinality {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
-#[repr(u8)]
 #[borsh(use_discriminant = true)]
 pub enum EvmExtractor {
-    BlockHash = 0,
+    BlockHash,
+    Log { log_index: u64 },
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct Log {
+    pub removed: bool,
+    pub log_index: u64,
+    pub transaction_index: u64,
+    pub transaction_hash: Hash256,
+    pub block_hash: Hash256,
+    pub block_number: u64,
+    pub address: [u8; 20],
+    pub data: String,
+    pub topics: Vec<Hash256>,
 }
 
 #[derive(
@@ -308,7 +337,9 @@ pub enum ExtractedValue {
 #[non_exhaustive]
 pub enum EvmExtractedValue {
     BlockHash(Hash256),
+    Log(Log),
 }
+
 #[derive(
     Debug,
     Clone,
