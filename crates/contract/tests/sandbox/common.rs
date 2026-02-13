@@ -395,7 +395,7 @@ pub async fn submit_tee_attestations(
     Ok(())
 }
 
-/// Submit mock attestations for all participants in parallel.
+/// Submit mock attestations for the given accounts in parallel.
 pub async fn submit_attestations(
     contract: &Contract,
     accounts: &[Account],
