@@ -1407,6 +1407,22 @@ expression: abi
             }
           }
         },
+        "BitcoinExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BlockHash"
+              ],
+              "properties": {
+                "BlockHash": {
+                  "$ref": "#/definitions/Hash256"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "BitcoinExtractor": {
           "type": "string",
           "enum": [
@@ -1787,34 +1803,6 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
-        "EthereumExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
-          ]
-        },
-        "EthereumRpcRequest": {
-          "type": "object",
-          "required": [
-            "extractors",
-            "tx_id"
-          ],
-          "properties": {
-            "extractors": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/EthereumExtractor"
-              }
-            },
-            "tx_id": {
-              "$ref": "#/definitions/EthereumTxId"
-            }
-          }
-        },
-        "EthereumTxId": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
         "EventLog": {
           "description": "Represents an event log entry in the system",
           "type": "object",
@@ -1852,29 +1840,15 @@ expression: abi
             }
           }
         },
-        "ExtractedValue": {
+        "EvmExtractedValue": {
           "oneOf": [
             {
               "type": "object",
               "required": [
-                "U64"
+                "BlockHash"
               ],
               "properties": {
-                "U64": {
-                  "type": "integer",
-                  "format": "uint64",
-                  "minimum": 0.0
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Hash256"
-              ],
-              "properties": {
-                "Hash256": {
+                "BlockHash": {
                   "$ref": "#/definitions/Hash256"
                 }
               },
@@ -1882,11 +1856,72 @@ expression: abi
             }
           ]
         },
-        "Finality": {
+        "EvmExtractor": {
           "type": "string",
           "enum": [
-            "Optimistic",
-            "Final"
+            "BlockHash"
+          ]
+        },
+        "EvmFinality": {
+          "type": "string",
+          "enum": [
+            "Latest",
+            "Safe",
+            "Finalized"
+          ]
+        },
+        "EvmRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EvmExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/EvmFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/EvmTxId"
+            }
+          }
+        },
+        "EvmTxId": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "ExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BitcoinExtractedValue"
+              ],
+              "properties": {
+                "BitcoinExtractedValue": {
+                  "$ref": "#/definitions/BitcoinExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "EvmExtractedValue"
+              ],
+              "properties": {
+                "EvmExtractedValue": {
+                  "$ref": "#/definitions/EvmExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            }
           ]
         },
         "ForeignChain": {
@@ -1953,11 +1988,23 @@ expression: abi
             {
               "type": "object",
               "required": [
+                "Abstract"
+              ],
+              "properties": {
+                "Abstract": {
+                  "$ref": "#/definitions/EvmRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
                 "Ethereum"
               ],
               "properties": {
                 "Ethereum": {
-                  "$ref": "#/definitions/EthereumRpcRequest"
+                  "$ref": "#/definitions/EvmRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -3336,6 +3383,14 @@ expression: abi
             }
           ]
         },
+        "SolanaFinality": {
+          "type": "string",
+          "enum": [
+            "Processed",
+            "Confirmed",
+            "Finalized"
+          ]
+        },
         "SolanaRpcRequest": {
           "type": "object",
           "required": [
@@ -3351,7 +3406,7 @@ expression: abi
               }
             },
             "finality": {
-              "$ref": "#/definitions/Finality"
+              "$ref": "#/definitions/SolanaFinality"
             },
             "tx_id": {
               "$ref": "#/definitions/SolanaTxId"

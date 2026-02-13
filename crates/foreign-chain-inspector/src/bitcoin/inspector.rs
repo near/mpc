@@ -1,10 +1,10 @@
 use jsonrpsee::core::client::ClientT;
 
 use crate::bitcoin::{BitcoinExtractedValue, BitcoinTransactionHash};
-use crate::rpc_schema::bitcoin::{
+use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
+use foreign_chain_rpc_interfaces::bitcoin::{
     GetRawTransactionArgs, GetRawTransactionVerboseResponse, TransportBitcoinTransactionHash,
 };
-use crate::{BlockConfirmations, ForeignChainInspectionError, ForeignChainInspector};
 
 /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
 const GET_RAW_TRANSACTION_METHOD: &str = "getrawtransaction";

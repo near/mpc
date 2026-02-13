@@ -12,10 +12,12 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
+use foreign_chain_rpc_interfaces::bitcoin::{
+    GetRawTransactionVerboseResponse, TransportBitcoinBlockHash,
+};
 use httpmock::prelude::*;
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
-use serde::{Deserialize, Serialize};
 
 #[rstest]
 #[tokio::test]
@@ -33,8 +35,8 @@ async fn extract_returns_block_hash_when_confirmations_sufficient(
     let expected_block_hash = BitcoinBlockHash::from([4; 32]);
 
     // Mock the JSON-RPC response
-    let mock_response = BitcoinTransactionResponse {
-        blockhash: expected_block_hash.clone(),
+    let mock_response = GetRawTransactionVerboseResponse {
+        blockhash: TransportBitcoinBlockHash::from(*expected_block_hash),
         confirmations: *confirmations,
     };
 
@@ -62,8 +64,8 @@ async fn extract_returns_error_when_confirmations_insufficient() {
     let confirmations = BlockConfirmations::from(2u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let mock_response = BitcoinTransactionResponse {
-        blockhash: expected_block_hash,
+    let mock_response = GetRawTransactionVerboseResponse {
+        blockhash: TransportBitcoinBlockHash::from(*expected_block_hash),
         confirmations: *confirmations,
     };
 
@@ -93,8 +95,8 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     let confirmations = BlockConfirmations::from(9u64);
     let threshold = BlockConfirmations::from(6u64);
 
-    let mock_response = BitcoinTransactionResponse {
-        blockhash: expected_block_hash,
+    let mock_response = GetRawTransactionVerboseResponse {
+        blockhash: TransportBitcoinBlockHash::from(*expected_block_hash),
         confirmations: *confirmations,
     };
 
@@ -150,8 +152,8 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
 
         let response = JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            result: BitcoinTransactionResponse {
-                blockhash: expected_block_hash.clone(),
+            result: GetRawTransactionVerboseResponse {
+                blockhash: TransportBitcoinBlockHash::from(*expected_block_hash),
                 confirmations,
             },
             id: 0,
@@ -174,10 +176,4 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     // then
     let expected_extractions = vec![BitcoinExtractedValue::BlockHash(expected_block_hash)];
     assert_eq!(expected_extractions, extracted_values);
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct BitcoinTransactionResponse {
-    blockhash: BitcoinBlockHash,
-    confirmations: u64,
 }

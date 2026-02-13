@@ -1,3 +1,4 @@
+pub use ethereum_types;
 use mpc_primitives::hash::Hash32;
 
 pub mod inspector;

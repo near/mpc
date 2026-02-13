@@ -5,9 +5,9 @@ use crate::{
     abstract_chain::{AbstractBlockHash, AbstractTransactionHash},
 };
 
-use crate::rpc_schema::ethereum::{
+use foreign_chain_rpc_interfaces::evm::{
     FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionReceiptARgs,
-    GetTransactionReceiptResponse, ReturnFullTransactionObjects,
+    GetTransactionReceiptResponse, Log, ReturnFullTransactionObjects,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
@@ -73,12 +73,10 @@ where
             return Err(ForeignChainInspectionError::TransactionFailed);
         }
 
-        let extracted_values = extractors
+        extractors
             .iter()
             .map(|extractor| extractor.extract_value(&transaction_receipt))
-            .collect();
-
-        Ok(extracted_values)
+            .collect()
     }
 }
 
@@ -94,22 +92,33 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractedValue {
     BlockHash(AbstractBlockHash),
+    Log(Log),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractor {
     BlockHash,
+    Log { log_index: usize },
 }
 
 impl AbstractExtractor {
     fn extract_value(
         &self,
         rpc_response: &GetTransactionReceiptResponse,
-    ) -> AbstractExtractedValue {
+    ) -> Result<AbstractExtractedValue, ForeignChainInspectionError> {
         match self {
-            AbstractExtractor::BlockHash => AbstractExtractedValue::BlockHash(From::from(
+            AbstractExtractor::BlockHash => Ok(AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
-            )),
+            ))),
+            AbstractExtractor::Log { log_index } => {
+                let log = rpc_response
+                    .logs
+                    .get(*log_index)
+                    .cloned()
+                    .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
+
+                Ok(AbstractExtractedValue::Log(log))
+            }
         }
     }
 }
