@@ -15,8 +15,8 @@ quote = { workspace = true }
 serde_json = { workspace = true }
 syn = { workspace = true }
 
-[lints]
-workspace = true
-
 [dev-dependencies]
 hex = { workspace = true }
+
+[lints]
+workspace = true
