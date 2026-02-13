@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[tokio::test]
 async fn extract_returns_correct_value_when_finalized(
     #[values(EthereumFinality::Finalized, EthereumFinality::Safe)] finality: EthereumFinality,
-    #[values(AbstractExtractor::LogHash { log_index: 0 }, AbstractExtractor::BlockHash)]
+    #[values(AbstractExtractor::Log { log_index: 0 }, AbstractExtractor::BlockHash)]
     extractor: AbstractExtractor,
 ) {
     // given
@@ -300,7 +300,7 @@ async fn extract_returns_error_when_log_index_out_of_bounds() {
         .extract(
             tx_id,
             EthereumFinality::Finalized,
-            vec![AbstractExtractor::LogHash { log_index: 5 }],
+            vec![AbstractExtractor::Log { log_index: 5 }],
         )
         .await;
 
@@ -348,13 +348,13 @@ async fn extract_returns_correct_log_hash_for_specific_index() {
         .extract(
             tx_id,
             EthereumFinality::Finalized,
-            vec![AbstractExtractor::LogHash { log_index: 1 }],
+            vec![AbstractExtractor::Log { log_index: 1 }],
         )
         .await
         .unwrap();
 
     // then
-    let expected_extractions = vec![AbstractExtractedValue::LogHash(expected_log_hash)];
+    let expected_extractions = vec![AbstractExtractedValue::Log(expected_log_hash)];
     assert_eq!(expected_extractions, extracted_values);
 }
 
@@ -382,8 +382,8 @@ fn expected_extracted_value(
         AbstractExtractor::BlockHash => {
             AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
         }
-        AbstractExtractor::LogHash { log_index } => {
-            AbstractExtractedValue::LogHash(compute_log_hash(&tx_response.logs[*log_index]))
+        AbstractExtractor::Log { log_index } => {
+            AbstractExtractedValue::Log(compute_log_hash(&tx_response.logs[*log_index]))
         }
     }
 }

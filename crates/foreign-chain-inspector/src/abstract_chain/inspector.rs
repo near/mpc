@@ -1,14 +1,13 @@
 use jsonrpsee::core::client::ClientT;
-use sha2::Digest;
 
 use crate::{
     EthereumFinality, ForeignChainInspectionError, ForeignChainInspector,
-    abstract_chain::{AbstractBlockHash, AbstractTransactionHash, LogHash},
+    abstract_chain::{AbstractBlockHash, AbstractTransactionHash},
 };
 
 use foreign_chain_rpc_interfaces::evm::{
     FinalityTag, GetBlockByNumberArgs, GetBlockByNumberResponse, GetTransactionReceiptARgs,
-    GetTransactionReceiptResponse, ReturnFullTransactionObjects,
+    GetTransactionReceiptResponse, Log, ReturnFullTransactionObjects,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "eth_getTransactionReceipt";
@@ -93,13 +92,13 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractedValue {
     BlockHash(AbstractBlockHash),
-    LogHash(LogHash),
+    Log(Log),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AbstractExtractor {
     BlockHash,
-    LogHash { log_index: usize },
+    Log { log_index: usize },
 }
 
 impl AbstractExtractor {
@@ -111,18 +110,14 @@ impl AbstractExtractor {
             AbstractExtractor::BlockHash => Ok(AbstractExtractedValue::BlockHash(From::from(
                 *rpc_response.block_hash.as_fixed_bytes(),
             ))),
-            AbstractExtractor::LogHash { log_index } => {
+            AbstractExtractor::Log { log_index } => {
                 let log = rpc_response
                     .logs
                     .get(*log_index)
+                    .cloned()
                     .ok_or(ForeignChainInspectionError::LogIndexOutOfBounds)?;
 
-                let borsh_encoding = borsh::to_vec(log)
-                    .map_err(ForeignChainInspectionError::EventLogFailedBorshSerialization)?;
-
-                let hash: [u8; 32] = sha2::Sha256::digest(borsh_encoding).into();
-
-                Ok(AbstractExtractedValue::LogHash(hash.into()))
+                Ok(AbstractExtractedValue::Log(log))
             }
         }
     }
