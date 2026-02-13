@@ -962,7 +962,7 @@ mod tests {
     use contract_interface::types as dtos;
 
     #[test]
-    fn is_supported_foreign_chain_supports_starknet() {
+    fn is_supported_foreign_chain__supports_starknet() {
         assert!(Coordinator::<
             MockTransactionSender,
             FakeForeignChainPolicyReader,
