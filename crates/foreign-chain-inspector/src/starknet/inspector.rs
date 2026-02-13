@@ -18,11 +18,6 @@ pub enum StarknetFinality {
     AcceptedOnL1,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StarknetExtractor {
-    BlockHash,
-}
-
 impl<Client> ForeignChainInspector for StarknetInspector<Client>
 where
     Client: ClientT + Send,
@@ -92,6 +87,11 @@ fn parse_finality_status(status: &str) -> Result<StarknetFinality, ForeignChainI
             )),
         )),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StarknetExtractor {
+    BlockHash,
 }
 
 impl StarknetExtractor {
