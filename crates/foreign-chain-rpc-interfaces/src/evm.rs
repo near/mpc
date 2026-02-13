@@ -1,6 +1,5 @@
 use crate::to_rpc_params_impl;
 
-use borsh::BorshSerialize;
 use derive_more::{Constructor, From};
 use jsonrpsee::core::traits::ToRpcParams;
 use serde::{Deserialize, Serialize};

@@ -53,5 +53,8 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         extracted_values[0],
         AbstractExtractedValue::BlockHash(expected_block_hash)
     );
-    assert!(matches!(extracted_values[1], AbstractExtractedValue::Log(_)));
+    assert!(matches!(
+        extracted_values[1],
+        AbstractExtractedValue::Log(_)
+    ));
 }
