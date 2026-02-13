@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetTransactionReceiptResponse {
     pub block_hash: String,
-    pub block_number: u64,
     pub finality_status: String,
     pub execution_status: String,
 }

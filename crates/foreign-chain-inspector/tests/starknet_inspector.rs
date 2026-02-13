@@ -20,7 +20,6 @@ use rstest::rstest;
 fn mock_receipt(finality_status: &str, execution_status: &str) -> GetTransactionReceiptResponse {
     GetTransactionReceiptResponse {
         block_hash: "0x04a5e07b39584018ec".to_string(),
-        block_number: 123456,
         finality_status: finality_status.to_string(),
         execution_status: execution_status.to_string(),
     }
@@ -166,7 +165,6 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
 
     let receipt = GetTransactionReceiptResponse {
         block_hash: "0x05".to_string(),
-        block_number: 100,
         finality_status: "ACCEPTED_ON_L1".to_string(),
         execution_status: "SUCCEEDED".to_string(),
     };
