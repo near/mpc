@@ -8,17 +8,10 @@ use foreign_chain_inspector::{
 use jsonrpsee::core::client::ClientT;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
-struct LatestBlockWithTxHashesResponse {
-    block_hash: String,
-    transactions: Vec<String>,
-}
-
 #[tokio::test]
 #[ignore = "manual test to sanity check against live RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    // Public Starknet mainnet endpoint
     const PUBLIC_NODE_URL: &str = "https://starknet-rpc.publicnode.com";
 
     let http_client = foreign_chain_inspector::build_http_client(
@@ -35,15 +28,10 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         .first()
         .expect("latest block should contain at least one transaction");
 
-    let transaction_id: StarknetTransactionHash = first_transaction_hash
-        .trim_start_matches("0x")
-        .parse()
-        .expect("transaction hash should be valid hex");
-    let block_hash: StarknetBlockHash = latest_block
-        .block_hash
-        .trim_start_matches("0x")
-        .parse()
-        .expect("block hash should be valid hex");
+    let transaction_id: StarknetTransactionHash = parse_starknet_felt_hash(first_transaction_hash)
+        .expect("transaction hash should be valid starknet felt hex");
+    let block_hash: StarknetBlockHash = parse_starknet_felt_hash(&latest_block.block_hash)
+        .expect("block hash should be valid starknet felt hex");
     let inspector = StarknetInspector::new(http_client);
 
     // when
@@ -61,4 +49,21 @@ async fn inspector_extracts_block_hash_against_live_rpc_provider() {
         vec![StarknetExtractedValue::BlockHash(block_hash)];
 
     assert_eq!(expected_extractions, extracted_values);
+}
+
+#[derive(Debug, Deserialize)]
+struct LatestBlockWithTxHashesResponse {
+    block_hash: String,
+    transactions: Vec<String>,
+}
+
+fn parse_starknet_felt_hash<T>(value: &str) -> Result<mpc_primitives::hash::Hash32<T>, String> {
+    let stripped = value.trim_start_matches("0x");
+    if stripped.len() > 64 {
+        return Err(format!("felt hash too long: {value}"));
+    }
+    let padded = format!("{stripped:0>64}");
+    padded
+        .parse()
+        .map_err(|e| format!("invalid felt hash {value}: {e}"))
 }
