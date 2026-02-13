@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 pub mod common;
 
 use crate::common::{FixedResponseRpcClient, mock_client_from_fixed_response};
@@ -11,33 +13,47 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
-use foreign_chain_rpc_interfaces::starknet::GetTransactionReceiptResponse;
+use foreign_chain_rpc_interfaces::starknet::{
+    GetTransactionReceiptResponse, StarknetExecutionStatus, StarknetFinalityStatus,
+};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
 
-fn mock_receipt(finality_status: &str, execution_status: &str) -> GetTransactionReceiptResponse {
+fn mock_receipt(
+    finality_status: StarknetFinalityStatus,
+    execution_status: StarknetExecutionStatus,
+) -> GetTransactionReceiptResponse {
     GetTransactionReceiptResponse {
-        block_hash: "0x04a5e07b39584018ec".to_string(),
-        finality_status: finality_status.to_string(),
-        execution_status: execution_status.to_string(),
+        block_hash: [4; 32].into(),
+        finality_status,
+        execution_status,
     }
 }
 
 #[rstest]
 #[tokio::test]
-#[case::requested_l2_actual_l2(StarknetFinality::AcceptedOnL2, "ACCEPTED_ON_L2")]
-#[case::requested_l2_actual_l1(StarknetFinality::AcceptedOnL2, "ACCEPTED_ON_L1")]
-#[case::requested_l1_actual_l1(StarknetFinality::AcceptedOnL1, "ACCEPTED_ON_L1")]
-async fn extract_returns_block_hash_when_finality_sufficient(
+#[case::requested_l2_actual_l2(
+    StarknetFinality::AcceptedOnL2,
+    StarknetFinalityStatus::AcceptedOnL2
+)]
+#[case::requested_l2_actual_l1(
+    StarknetFinality::AcceptedOnL2,
+    StarknetFinalityStatus::AcceptedOnL1
+)]
+#[case::requested_l1_actual_l1(
+    StarknetFinality::AcceptedOnL1,
+    StarknetFinalityStatus::AcceptedOnL1
+)]
+async fn extract__should_return_block_hash_when_finality_is_sufficient(
     #[case] requested_finality: StarknetFinality,
-    #[case] actual_finality_status: &str,
+    #[case] actual_finality_status: StarknetFinalityStatus,
 ) {
     // given
     let tx_id = StarknetTransactionHash::from([3; 32]);
 
-    let receipt = mock_receipt(actual_finality_status, "SUCCEEDED");
+    let receipt = mock_receipt(actual_finality_status, StarknetExecutionStatus::Succeeded);
     let mock_client = mock_client_from_fixed_response(receipt);
     let inspector = StarknetInspector::new(mock_client);
 
@@ -57,12 +73,15 @@ async fn extract_returns_block_hash_when_finality_sufficient(
 }
 
 #[tokio::test]
-async fn extract_returns_error_when_finality_insufficient() {
+async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
     // given
     let tx_id = StarknetTransactionHash::from([1; 32]);
 
     // Requested L1 but actual is only L2
-    let receipt = mock_receipt("ACCEPTED_ON_L2", "SUCCEEDED");
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL2,
+        StarknetExecutionStatus::Succeeded,
+    );
     let mock_client = mock_client_from_fixed_response(receipt);
     let inspector = StarknetInspector::new(mock_client);
 
@@ -80,11 +99,39 @@ async fn extract_returns_error_when_finality_insufficient() {
 }
 
 #[tokio::test]
-async fn extract_returns_error_when_execution_reverted() {
+async fn extract__should_return_client_error_for_received_finality() {
+    // given
+    let tx_id = StarknetTransactionHash::from([7; 32]);
+
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::Received,
+        StarknetExecutionStatus::Succeeded,
+    );
+    let mock_client = mock_client_from_fixed_response(receipt);
+    let inspector = StarknetInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            StarknetFinality::AcceptedOnL2,
+            vec![StarknetExtractor::BlockHash],
+        )
+        .await;
+
+    // then
+    assert_matches!(response, Err(ForeignChainInspectionError::ClientError(_)));
+}
+
+#[tokio::test]
+async fn extract__should_return_transaction_failed_when_execution_is_reverted() {
     // given
     let tx_id = StarknetTransactionHash::from([2; 32]);
 
-    let receipt = mock_receipt("ACCEPTED_ON_L2", "REVERTED");
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL2,
+        StarknetExecutionStatus::Reverted,
+    );
     let mock_client = mock_client_from_fixed_response(receipt);
     let inspector = StarknetInspector::new(mock_client);
 
@@ -105,11 +152,14 @@ async fn extract_returns_error_when_execution_reverted() {
 }
 
 #[tokio::test]
-async fn extract_returns_empty_when_no_extractors() {
+async fn extract__should_return_empty_when_no_extractors_are_requested() {
     // given
     let tx_id = StarknetTransactionHash::from([11; 32]);
 
-    let receipt = mock_receipt("ACCEPTED_ON_L1", "SUCCEEDED");
+    let receipt = mock_receipt(
+        StarknetFinalityStatus::AcceptedOnL1,
+        StarknetExecutionStatus::Succeeded,
+    );
     let mock_client = mock_client_from_fixed_response(receipt);
     let inspector = StarknetInspector::new(mock_client);
 
@@ -125,7 +175,7 @@ async fn extract_returns_empty_when_no_extractors() {
 }
 
 #[tokio::test]
-async fn extract_propagates_rpc_client_errors() {
+async fn extract__should_propagate_rpc_client_errors() {
     // given
     let tx_id = StarknetTransactionHash::from([9; 32]);
 
@@ -151,7 +201,7 @@ async fn extract_propagates_rpc_client_errors() {
 }
 
 #[tokio::test]
-async fn inspector_extracts_block_hash_via_http_rpc_client() {
+async fn extract__should_return_block_hash_via_http_rpc_client() {
     // given
     let server = MockServer::start();
 
@@ -164,9 +214,9 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     };
 
     let receipt = GetTransactionReceiptResponse {
-        block_hash: "0x05".to_string(),
-        finality_status: "ACCEPTED_ON_L1".to_string(),
-        execution_status: "SUCCEEDED".to_string(),
+        block_hash: expected_bytes.into(),
+        finality_status: StarknetFinalityStatus::AcceptedOnL1,
+        execution_status: StarknetExecutionStatus::Succeeded,
     };
 
     let expected_block_hash = StarknetBlockHash::from(expected_bytes);

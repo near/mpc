@@ -3,7 +3,8 @@ use jsonrpsee::core::client::ClientT;
 use crate::starknet::{StarknetExtractedValue, StarknetTransactionHash};
 use crate::{ForeignChainInspectionError, ForeignChainInspector};
 use foreign_chain_rpc_interfaces::starknet::{
-    GetTransactionReceiptArgs, GetTransactionReceiptResponse,
+    GetTransactionReceiptArgs, GetTransactionReceiptResponse, StarknetExecutionStatus,
+    StarknetFinalityStatus,
 };
 
 const GET_TRANSACTION_RECEIPT_METHOD: &str = "starknet_getTransactionReceipt";
@@ -44,7 +45,7 @@ where
             .request(GET_TRANSACTION_RECEIPT_METHOD, &request_parameters)
             .await?;
 
-        if rpc_response.execution_status != "SUCCEEDED" {
+        if rpc_response.execution_status != StarknetExecutionStatus::Succeeded {
             return Err(ForeignChainInspectionError::TransactionFailed);
         }
 
@@ -77,13 +78,15 @@ where
     }
 }
 
-fn parse_finality_status(status: &str) -> Result<StarknetFinality, ForeignChainInspectionError> {
+fn parse_finality_status(
+    status: &StarknetFinalityStatus,
+) -> Result<StarknetFinality, ForeignChainInspectionError> {
     match status {
-        "ACCEPTED_ON_L2" => Ok(StarknetFinality::AcceptedOnL2),
-        "ACCEPTED_ON_L1" => Ok(StarknetFinality::AcceptedOnL1),
-        other => Err(ForeignChainInspectionError::ClientError(
+        StarknetFinalityStatus::AcceptedOnL2 => Ok(StarknetFinality::AcceptedOnL2),
+        StarknetFinalityStatus::AcceptedOnL1 => Ok(StarknetFinality::AcceptedOnL1),
+        StarknetFinalityStatus::Received => Err(ForeignChainInspectionError::ClientError(
             jsonrpsee::core::client::error::Error::Custom(format!(
-                "unknown finality status: {other}"
+                "unsupported finality status: {status:?}"
             )),
         )),
     }
@@ -100,34 +103,9 @@ impl StarknetExtractor {
         rpc_response: &GetTransactionReceiptResponse,
     ) -> Result<StarknetExtractedValue, ForeignChainInspectionError> {
         match self {
-            StarknetExtractor::BlockHash => {
-                let bytes = parse_felt_hex(&rpc_response.block_hash)?;
-                Ok(StarknetExtractedValue::BlockHash(bytes.into()))
-            }
+            StarknetExtractor::BlockHash => Ok(StarknetExtractedValue::BlockHash(
+                (*rpc_response.block_hash.as_ref()).into(),
+            )),
         }
     }
-}
-
-/// Parse a 0x-prefixed variable-length hex string into a 32-byte array.
-/// Starknet field elements (felts) are 252-bit values, so the hex
-/// representation may have fewer than 64 hex characters. We left-pad
-/// with zeros to fill the 32-byte array.
-pub fn parse_felt_hex(hex_str: &str) -> Result<[u8; 32], ForeignChainInspectionError> {
-    let stripped = hex_str.strip_prefix("0x").unwrap_or(hex_str);
-    if stripped.len() > 64 {
-        return Err(ForeignChainInspectionError::ClientError(
-            jsonrpsee::core::client::error::Error::Custom(format!(
-                "felt hex string too long: {hex_str}"
-            )),
-        ));
-    }
-    let padded = format!("{:0>64}", stripped);
-    let bytes = hex::decode(&padded).map_err(|e| {
-        ForeignChainInspectionError::ClientError(jsonrpsee::core::client::error::Error::Custom(
-            format!("invalid hex in felt: {e}"),
-        ))
-    })?;
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&bytes);
-    Ok(result)
 }
