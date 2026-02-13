@@ -158,7 +158,7 @@ mod tests {
     use crate::config::ConfigFile;
 
     #[test]
-    fn config_parsing__should_succeed_when_foreign_chains_are_unset() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_unset() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -193,16 +193,18 @@ ckd:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
 
         // Then
-        config.validate()?;
+        config
+            .validate()
+            .expect("config without foreign_chains should be valid");
         assert!(config.foreign_chains.is_empty());
-        Ok(())
     }
 
     #[test]
-    fn config_parsing__should_succeed_when_foreign_chains_are_set() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_when_foreign_chains_are_set() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -302,14 +304,16 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
 
         // Then
-        config.validate()?;
+        config
+            .validate()
+            .expect("config with foreign_chains should be valid");
         assert!(config.foreign_chains.solana.is_some());
         assert!(config.foreign_chains.bitcoin.is_some());
         assert!(config.foreign_chains.ethereum.is_some());
-        Ok(())
     }
 
     #[test]
@@ -722,7 +726,7 @@ foreign_chains:
     }
 
     #[test]
-    fn config_parsing__should_succeed_with_starknet_section() -> anyhow::Result<()> {
+    fn config_parsing__should_succeed_with_starknet_section() {
         // Given
         let yaml = r#"
 my_near_account_id: test.near
@@ -767,12 +771,14 @@ foreign_chains:
 "#;
 
         // When
-        let config: ConfigFile = serde_yaml::from_str(yaml)?;
+        let config: ConfigFile =
+            serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
 
         // Then
-        config.validate()?;
+        config
+            .validate()
+            .expect("config with starknet section should be valid");
         assert!(config.foreign_chains.starknet.is_some());
-        Ok(())
     }
 
     #[test]
