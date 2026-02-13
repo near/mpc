@@ -90,13 +90,13 @@ async fn test_tee_cleanup_after_full_resharing_flow() -> Result<()> {
             .participants
             .iter()
             .take(threshold.0 as usize)
-            .cloned()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     };
     let selected_account_ids: std::collections::HashSet<String> = subset_dto
         .participants
-        .iter()
-        .map(|(a, _, _)| a.0.clone())
+        .keys()
+        .map(|a| a.0.clone())
         .collect();
     let new_participants: Participants = (&subset_dto).into_contract_type();
 

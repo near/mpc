@@ -2535,6 +2535,22 @@ expression: abi
             }
           }
         },
+        "ParticipantData2": {
+          "description": "The data stored for each participant.",
+          "type": "object",
+          "required": [
+            "id",
+            "info"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ParticipantId2"
+            },
+            "info": {
+              "$ref": "#/definitions/ParticipantInfo2"
+            }
+          }
+        },
         "ParticipantId": {
           "type": "integer",
           "format": "uint32",
@@ -2602,7 +2618,7 @@ expression: abi
           }
         },
         "Participants2": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt mirrors the contract-internal [`BTreeMap`]-based structure, mapping each [`AccountId`] to its [`ParticipantData`] (participant ID + connection info).\n\nDeserialization supports both the current BTreeMap format and the legacy Vec-of-tuples format (`[[account, id, info], ...]`) for backward compatibility with older contract versions.",
           "type": "object",
           "required": [
             "next_id",
@@ -2613,22 +2629,9 @@ expression: abi
               "$ref": "#/definitions/ParticipantId2"
             },
             "participants": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "$ref": "#/definitions/AccountId"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantId2"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantInfo2"
-                  }
-                ],
-                "maxItems": 3,
-                "minItems": 3
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ParticipantData2"
               }
             }
           }

@@ -718,10 +718,12 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
                 .map(|(account_id, participant_id, info)| {
                     (
                         dtos::AccountId(account_id.to_string()),
-                        dtos::ParticipantId(participant_id.get()),
-                        dtos::ParticipantInfo {
-                            url: info.url.clone(),
-                            sign_pk: String::from(&info.sign_pk),
+                        dtos::ParticipantData {
+                            id: dtos::ParticipantId(participant_id.get()),
+                            info: dtos::ParticipantInfo {
+                                url: info.url.clone(),
+                                sign_pk: String::from(&info.sign_pk),
+                            },
                         },
                     )
                 })
@@ -933,7 +935,7 @@ mod tests {
     }
 
     /// Verify that [`IntoInterfaceType::into_dto_type`] produces a DTO that
-    /// serializes as the expected Vec-of-tuples format and preserves all data.
+    /// serializes as the expected BTreeMap format and preserves all data.
     #[test]
     fn into_dto_type_produces_valid_dto() {
         let internal = test_participants();
@@ -944,13 +946,14 @@ mod tests {
 
         // Each internal participant must appear in the DTO.
         for (account_id, participant_id, info) in internal.participants() {
-            let found = dto.participants.iter().any(|(a, p, i)| {
-                a.0.as_str() == account_id.as_str()
-                    && p.0 == participant_id.get()
-                    && i.url == info.url
-                    && i.sign_pk == String::from(&info.sign_pk)
-            });
-            assert!(found, "participant {account_id} not found in DTO");
+            let dto_account = dtos::AccountId(account_id.to_string());
+            let data = dto
+                .participants
+                .get(&dto_account)
+                .unwrap_or_else(|| panic!("participant {account_id} not found in DTO"));
+            assert_eq!(data.id.0, participant_id.get());
+            assert_eq!(data.info.url, info.url);
+            assert_eq!(data.info.sign_pk, String::from(&info.sign_pk));
         }
 
         // DTO JSON must be deserializable back into the DTO type (round-trip).

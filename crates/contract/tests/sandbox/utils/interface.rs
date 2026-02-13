@@ -106,13 +106,13 @@ impl IntoContractType<Participants> for &dtos::Participants {
         let participants = self
             .participants
             .iter()
-            .map(|(a, p, i)| {
+            .map(|(a, data)| {
                 (
                     a.0.parse::<near_sdk::AccountId>().unwrap(),
-                    ParticipantId(p.0),
+                    ParticipantId(data.id.0),
                     ParticipantInfo {
-                        url: i.url.clone(),
-                        sign_pk: i.sign_pk.parse().unwrap(),
+                        url: data.info.url.clone(),
+                        sign_pk: data.info.sign_pk.parse().unwrap(),
                     },
                 )
             })

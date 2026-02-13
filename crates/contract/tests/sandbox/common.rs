@@ -510,19 +510,39 @@ pub async fn execute_key_generation_and_add_random_state(
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
-    const EPOCH_ID: u64 = 0;
     let threshold = assert_running_return_threshold(contract).await;
-
-    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": dummy_threshold_parameters,
     });
+    execute_key_generation_and_add_random_state_with_proposal(
+        accounts,
+        dummy_proposal,
+        contract,
+        worker,
+        rng,
+    )
+    .await
+}
+
+/// Like [`execute_key_generation_and_add_random_state`] but accepts a
+/// pre-built proposal JSON, useful when the target contract expects a
+/// different serialisation format (e.g. the legacy Vec-of-tuples).
+pub async fn execute_key_generation_and_add_random_state_with_proposal(
+    accounts: &[Account],
+    proposal: serde_json::Value,
+    contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl CryptoRngCore,
+) -> InjectedContractState {
+    const EPOCH_ID: u64 = 0;
+
+    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     accounts[0]
         .call(contract.id(), "vote_new_parameters")
-        .args_json(dummy_proposal)
+        .args_json(proposal)
         .max_gas()
         .transact()
         .await

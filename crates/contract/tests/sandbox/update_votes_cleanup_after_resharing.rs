@@ -76,8 +76,8 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         participants: initial_participants
             .participants
             .iter()
-            .filter(|(account_id, _, _)| account_id.0 != excluded_account)
-            .cloned()
+            .filter(|(account_id, _)| account_id.0 != excluded_account)
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     };
     let new_participants: Participants = (&subset_dto).into_contract_type();
@@ -127,8 +127,8 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
     assert!(final_participants
         .participants
-        .iter()
-        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
+        .keys()
+        .any(|a| a.0.as_str() == voter_id.as_str()));
 
     Ok(())
 }

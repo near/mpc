@@ -686,8 +686,8 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     let final_accounts: HashSet<String> = final_participants
         .participants
-        .iter()
-        .map(|(account_id, _, _)| account_id.0.clone())
+        .keys()
+        .map(|account_id| account_id.0.clone())
         .collect();
     let expected_accounts: HashSet<String> = remaining_accounts
         .iter()
