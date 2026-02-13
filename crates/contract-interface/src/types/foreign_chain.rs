@@ -326,7 +326,6 @@ pub enum EvmExtractedValue {
     derive(schemars::JsonSchema)
 )]
 pub enum BitcoinExtractedValue {
-    BlockNumber(u64),
     BlockHash(Hash256),
 }
 
@@ -689,7 +688,7 @@ mod tests {
                 extractors: vec![BitcoinExtractor::BlockHash],
             }),
             values: vec![ExtractedValue::BitcoinExtractedValue(
-                BitcoinExtractedValue::BlockNumber(42),
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
 

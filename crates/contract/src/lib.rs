@@ -2441,7 +2441,7 @@ mod tests {
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: request.request.clone(),
             values: vec![ExtractedValue::BitcoinExtractedValue(
-                BitcoinExtractedValue::BlockNumber(2),
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
             )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
