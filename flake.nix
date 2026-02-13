@@ -139,7 +139,6 @@
 
           miscTools = with pkgs; [
             git
-            zizmor
             binaryen
           ];
 
