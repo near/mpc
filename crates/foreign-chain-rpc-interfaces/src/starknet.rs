@@ -25,7 +25,7 @@ pub enum StarknetExecutionStatus {
 }
 
 /// Partial RPC response for `starknet_getTransactionReceipt`.
-/// https://docs.starknet.io/documentation/architecture_and_concepts/Network_Architecture/transactions/#transaction_receipt
+/// https://www.alchemy.com/docs/chains/starknet/starknet-api-endpoints/starknet-get-transaction-receipt
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GetTransactionReceiptResponse {
     #[serde(
