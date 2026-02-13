@@ -3969,7 +3969,8 @@ mod tests {
                 .iter()
                 .map(|e| (e.account_id.clone(), e.id, e.info.clone()))
                 .collect(),
-        );
+        )
+        .unwrap();
         let expected_params =
             ThresholdParameters::new(expected_participants, parameters.threshold()).unwrap();
 

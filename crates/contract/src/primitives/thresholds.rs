@@ -310,23 +310,43 @@ mod tests {
         let _ = result.unwrap_err();
     }
 
-    #[test]
-    fn test_proposal_invalid_next_id() {
-        let params = gen_threshold_params(10);
+    /// Returns tampered participants where `next_id` equals `max_id` instead of `max_id + 1`.
+    /// This violates the invariant that `next_id` must be strictly greater than all participant IDs.
+    /// Tamper with `next_id` via JSON round-trip to bypass `init()` validation.
+    fn participants_with_tampered_next_id(
+        participants: &Participants,
+        next_id: ParticipantId,
+    ) -> Participants {
+        let mut json = serde_json::to_value(participants).unwrap();
+        json["next_id"] = serde_json::to_value(next_id).unwrap();
+        serde_json::from_value(json).unwrap()
+    }
 
-        // Create a tampered Participants with an invalid next_id (lower than max participant id)
+    #[test]
+    fn test_init_rejects_invalid_next_id() {
+        let params = gen_threshold_params(10);
         let vec = participants_vec(&params.participants);
         let max_id = vec.iter().map(|e| e.id.get()).max().unwrap_or(0);
-        let tampered_participants = Participants::init(
+        let err = Participants::init(
             ParticipantId(max_id), // next_id should be max_id + 1, so this is invalid
             vec.into_iter()
                 .map(|e| (e.account_id, e.id, e.info))
                 .collect(),
         );
-        let _ = tampered_participants.validate().unwrap_err();
+        let _ = err.unwrap_err();
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_next_id() {
+        let params = gen_threshold_params(10);
+        let vec = participants_vec(&params.participants);
+        let max_id = vec.iter().map(|e| e.id.get()).max().unwrap_or(0);
+        let tampered =
+            participants_with_tampered_next_id(&params.participants, ParticipantId(max_id));
+        let _ = tampered.validate().unwrap_err();
 
         let tampered_params = ThresholdParameters {
-            participants: tampered_participants,
+            participants: tampered,
             threshold: params.threshold.clone(),
         };
         let _ = params
@@ -377,24 +397,21 @@ mod tests {
         result.unwrap();
     }
 
+    /// Tests that `next_id` must be greater than all participant IDs: values below are
+    /// rejected by `validate_incoming_proposal()`, values at or above `max_id + 1` pass.
     #[test]
-    fn test_new_participant_id_too_high() {
-        // Test the logic that `next_id` should only be equal to `max_id + 1`
-
+    fn test_validate_incoming_proposal_next_id_too_high() {
         let n = 5;
         let params = ThresholdParameters::new(gen_participants(n), Threshold::new(3)).unwrap();
 
         for i in 0..=params.participants.next_id().0 + 2 {
-            let new_participants = Participants::init(
-                ParticipantId(i),
-                participants_vec(&params.participants)
-                    .into_iter()
-                    .map(|e| (e.account_id, e.id, e.info))
-                    .collect(),
-            );
-            let new_params =
-                ThresholdParameters::new(new_participants, params.threshold.clone()).unwrap();
-            let result = params.validate_incoming_proposal(&new_params);
+            let tampered =
+                participants_with_tampered_next_id(&params.participants, ParticipantId(i));
+            let tampered_params = ThresholdParameters {
+                participants: tampered,
+                threshold: params.threshold.clone(),
+            };
+            let result = params.validate_incoming_proposal(&tampered_params);
             if i >= params.participants.next_id().0 {
                 result.unwrap();
             } else {

@@ -209,21 +209,21 @@ impl Participants {
     pub fn init(
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let expected_len = participants.len();
-        let map: BTreeMap<_, _> = participants
+        let by_account: BTreeMap<_, _> = participants
             .into_iter()
             .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
             .collect();
-        assert_eq!(
-            map.len(),
-            expected_len,
-            "Participants::init received duplicate AccountIds"
-        );
-        Self {
-            next_id,
-            participants: map,
+        if by_account.len() != expected_len {
+            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
+        let participants = Self {
+            next_id,
+            participants: by_account,
+        };
+        participants.validate()?;
+        Ok(participants)
     }
 
     /// O(log n) lookup to get [`ParticipantInfo`] by [`AccountId`].
@@ -313,11 +313,28 @@ pub mod tests {
     use crate::{
         errors::InvalidCandidateSet,
         primitives::{
-            participants::{ParticipantId, Participants},
+            participants::{ParticipantId, ParticipantInfo, Participants},
             test_utils::{gen_accounts_and_info, gen_participant},
         },
     };
+    use near_account_id::AccountId;
     use rand::Rng;
+
+    /// Helper: builds a participants `Vec` with a duplicate `ParticipantId`.
+    fn participants_with_duplicate_id()
+    -> (ParticipantId, Vec<(AccountId, ParticipantId, ParticipantInfo)>) {
+        let (acc0, info0) = gen_participant(0);
+        let (acc1, info1) = gen_participant(1);
+        let (acc2, info2) = gen_participant(2);
+        (
+            ParticipantId(3),
+            vec![
+                (acc0, ParticipantId(0), info0),
+                (acc1, ParticipantId(1), info1),
+                (acc2, ParticipantId(1), info2), // duplicate ID
+            ],
+        )
+    }
 
     #[test]
     fn test_participants() {
@@ -349,22 +366,26 @@ pub mod tests {
     }
 
     #[test]
+    fn test_init_rejects_duplicate_participant_ids() {
+        let (next_id, participants) = participants_with_duplicate_id();
+        let err = Participants::init(next_id, participants);
+        assert_eq!(err, Err(InvalidCandidateSet::IncoherentParticipantIds.into()));
+    }
+
+    #[test]
     fn test_validate_rejects_duplicate_participant_ids() {
-        let (acc0, info0) = gen_participant(0);
-        let (acc1, info1) = gen_participant(1);
-        let (acc2, info2) = gen_participant(2);
-        // Construct a Participants with two different accounts sharing the same ParticipantId
-        let participants = Participants::init(
-            ParticipantId(3),
-            vec![
-                (acc0, ParticipantId(0), info0),
-                (acc1, ParticipantId(1), info1),
-                (acc2, ParticipantId(1), info2), // duplicate ID
-            ],
-        );
-        assert_eq!(
-            participants.validate(),
-            Err(InvalidCandidateSet::IncoherentParticipantIds.into())
-        );
+        // Duplicate `ParticipantId`s can't be introduced through the public API (`insert`/`init`)
+        // because they enforce uniqueness. Tamper via JSON round-trip to bypass these checks
+        // and test `validate()` in isolation.
+        let mut participants = Participants::new();
+        for i in 0..3 {
+            let (acc, info) = gen_participant(i);
+            participants.insert(acc, info).unwrap();
+        }
+        let mut json = serde_json::to_value(&participants).unwrap();
+        // Set the third participant's ID to match the second's (both become 1)
+        json["participants"][2][1] = serde_json::json!(1);
+        let tampered: Participants = serde_json::from_value(json).unwrap();
+        assert_eq!(tampered.validate(), Err(InvalidCandidateSet::IncoherentParticipantIds.into()));
     }
 }

@@ -49,6 +49,7 @@ pub struct OldParticipants {
 impl From<OldParticipants> for crate::primitives::participants::Participants {
     fn from(old: OldParticipants) -> Self {
         crate::primitives::participants::Participants::init(old.next_id, old.participants)
+            .expect("Migrated participants should be valid")
     }
 }
 

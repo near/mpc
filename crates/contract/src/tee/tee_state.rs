@@ -232,7 +232,7 @@ impl TeeState {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
-        let participants_with_valid_attestation: Vec<_> = participants
+        let invalid_accounts: Vec<_> = participants
             .participants()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
@@ -252,14 +252,16 @@ impl TeeState {
                 let tee_status =
                     self.reverify_participants(&node_id, tee_upgrade_deadline_duration);
 
-                matches!(tee_status, TeeQuoteStatus::Valid)
+                !matches!(tee_status, TeeQuoteStatus::Valid)
             })
-            .map(|(a, p, i)| (a.clone(), *p, i.clone()))
+            .map(|(a, _, _)| a.clone())
             .collect();
 
-        if participants_with_valid_attestation.len() != participants.len() {
-            let participants_with_valid_attestation =
-                Participants::init(participants.next_id(), participants_with_valid_attestation);
+        if !invalid_accounts.is_empty() {
+            let mut participants_with_valid_attestation = participants.clone();
+            for account in &invalid_accounts {
+                participants_with_valid_attestation.remove(account);
+            }
 
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
