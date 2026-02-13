@@ -2,7 +2,10 @@
 // Once we complete the migration from near_sdk::PublicKey they should not be
 // needed anymore
 use contract_interface::types::{self as dtos};
-use mpc_contract::primitives::{domain::SignatureScheme, participants::Participants};
+use mpc_contract::primitives::{
+    domain::SignatureScheme,
+    participants::{ParticipantId, ParticipantInfo, Participants},
+};
 use threshold_signatures::confidential_key_derivation::{self as ckd};
 
 pub trait IntoInterfaceType<InterfaceType> {
@@ -100,7 +103,21 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
 
 impl IntoContractType<Participants> for &dtos::Participants {
     fn into_contract_type(self) -> Participants {
-        serde_json::from_value(serde_json::to_value(self).unwrap()).unwrap()
+        let participants = self
+            .participants
+            .iter()
+            .map(|(a, p, i)| {
+                (
+                    a.0.parse::<near_sdk::AccountId>().unwrap(),
+                    ParticipantId(p.0),
+                    ParticipantInfo {
+                        url: i.url.clone(),
+                        sign_pk: i.sign_pk.parse().unwrap(),
+                    },
+                )
+            })
+            .collect();
+        Participants::init(ParticipantId(self.next_id.0), participants).unwrap()
     }
 }
 

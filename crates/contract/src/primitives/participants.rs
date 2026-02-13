@@ -49,69 +49,9 @@ pub struct ParticipantData {
     pub info: ParticipantInfo,
 }
 
-/// Helper type for JSON serialization that matches the old Vec-based format.
-#[derive(Serialize)]
-struct ParticipantsJson {
-    next_id: ParticipantId,
-    participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
-}
-
-/// Helper enum for deserializing both old Vec and new Map formats.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ParticipantsField {
-    /// Old format: array of [AccountId, ParticipantId, ParticipantInfo] tuples
-    Vec(Vec<(AccountId, ParticipantId, ParticipantInfo)>),
-    /// New format: map of AccountId -> ParticipantData
-    Map(BTreeMap<AccountId, ParticipantData>),
-}
-
-/// Helper for deserializing Participants from either Vec or Map format.
-#[derive(Deserialize)]
-struct ParticipantsJsonDeserialize {
-    next_id: ParticipantId,
-    participants: ParticipantsField,
-}
-
-impl From<ParticipantsJsonDeserialize> for Participants {
-    fn from(json: ParticipantsJsonDeserialize) -> Self {
-        let participants = match json.participants {
-            ParticipantsField::Vec(vec) => vec
-                .into_iter()
-                .map(|(account_id, id, info)| (account_id, ParticipantData { id, info }))
-                .collect(),
-            ParticipantsField::Map(map) => map,
-        };
-        Participants {
-            next_id: json.next_id,
-            participants,
-        }
-    }
-}
-
-impl From<Participants> for ParticipantsJson {
-    fn from(p: Participants) -> Self {
-        let participants = p
-            .participants
-            .into_iter()
-            .map(|(account_id, data)| (account_id, data.id, data.info))
-            .collect();
-        ParticipantsJson {
-            next_id: p.next_id,
-            participants,
-        }
-    }
-}
-
 /// Stores participants indexed by [`AccountId`] for O(log n) lookups.
-///
-/// # Serialization
-/// For JSON backward compatibility with the old `Vec`-based format, this struct
-/// serializes `participants` as an array of `[AccountId, ParticipantId, ParticipantInfo]` tuples.
-/// Deserialization supports both the old Vec format and the new Map format.
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-#[serde(into = "ParticipantsJson", from = "ParticipantsJsonDeserialize")]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
@@ -388,8 +328,13 @@ pub mod tests {
             participants.insert(acc, info).unwrap();
         }
         let mut json = serde_json::to_value(&participants).unwrap();
-        // Set the third participant's ID to match the second's (both become 1)
-        json["participants"][2][1] = serde_json::json!(1);
+        // Force two participants to share the same ID
+        const DUPLICATE_ID: u32 = 99;
+        let map = json["participants"].as_object_mut().unwrap();
+        let keys: Vec<String> = map.keys().cloned().collect();
+        map.get_mut(&keys[0]).unwrap()["id"] = serde_json::json!(DUPLICATE_ID);
+        map.get_mut(&keys[1]).unwrap()["id"] = serde_json::json!(DUPLICATE_ID);
+        json["next_id"] = serde_json::json!(DUPLICATE_ID + 1);
         let tampered: Participants = serde_json::from_value(json).unwrap();
         assert_eq!(
             tampered.validate(),
