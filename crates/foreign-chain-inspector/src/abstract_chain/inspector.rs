@@ -36,6 +36,7 @@ where
         let finality_tag = match finality {
             EthereumFinality::Finalized => FinalityTag::Finalized,
             EthereumFinality::Safe => FinalityTag::Safe,
+            EthereumFinality::Latest => FinalityTag::Latest,
         };
         let get_latest_block_by_finality_args =
             GetBlockByNumberArgs::new(finality_tag, ReturnFullTransactionObjects::from(false));

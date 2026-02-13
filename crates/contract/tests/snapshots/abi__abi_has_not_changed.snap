@@ -1853,13 +1853,51 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "$ref": "#/definitions/EvmLog"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
         "EvmExtractor": {
-          "type": "string",
-          "enum": [
-            "BlockHash"
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "BlockHash"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "type": "object",
+                  "required": [
+                    "log_index"
+                  ],
+                  "properties": {
+                    "log_index": {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0.0
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
           ]
         },
         "EvmFinality": {
@@ -1869,6 +1907,58 @@ expression: abi
             "Safe",
             "Finalized"
           ]
+        },
+        "EvmLog": {
+          "type": "object",
+          "required": [
+            "address",
+            "block_hash",
+            "block_number",
+            "data",
+            "log_index",
+            "removed",
+            "topics",
+            "transaction_hash",
+            "transaction_index"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/Hash160"
+            },
+            "block_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "block_number": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "data": {
+              "type": "string"
+            },
+            "log_index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "removed": {
+              "type": "boolean"
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Hash256"
+              }
+            },
+            "transaction_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "transaction_index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
         },
         "EvmRpcRequest": {
           "type": "object",
@@ -1932,7 +2022,8 @@ expression: abi
             "Ethereum",
             "Base",
             "Bnb",
-            "Arbitrum"
+            "Arbitrum",
+            "Abstract"
           ]
         },
         "ForeignChainConfig": {
@@ -2069,6 +2160,10 @@ expression: abi
               }
             }
           }
+        },
+        "Hash160": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Hash256": {
           "type": "string",

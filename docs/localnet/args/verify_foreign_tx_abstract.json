@@ -1,0 +1,21 @@
+{
+    "request": {
+        "request": {
+            "Abstract": {
+                "tx_id": "497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
+                "extractors": [
+                    "BlockHash",
+                    {
+                        "Log": {
+                            "log_index": 1
+                        }
+                    }
+                ],
+                "finality": "Finalized"
+            }
+        },
+        "derivation_path": "some_example_path",
+        "domain_id": 0,
+        "payload_version": 1
+    }
+}

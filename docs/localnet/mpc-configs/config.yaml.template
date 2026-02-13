@@ -38,3 +38,12 @@ foreign_chains:
         rpc_url: "https://bitcoin-rpc.publicnode.com"
         auth:
           kind: none
+  abstract:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        api_variant: standard
+        rpc_url: "https://api.testnet.abs.xyz"
+        auth:
+          kind: none

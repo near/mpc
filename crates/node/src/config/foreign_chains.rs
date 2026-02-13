@@ -5,11 +5,13 @@ use anyhow::Context;
 use contract_interface::types as dtos;
 use serde::{Deserialize, Serialize};
 
+mod abstract_chain;
 mod auth;
 mod bitcoin;
 mod ethereum;
 mod solana;
 
+pub use abstract_chain::{AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig};
 pub use auth::{AuthConfig, TokenConfig};
 pub use bitcoin::{BitcoinApiVariant, BitcoinChainConfig, BitcoinProviderConfig};
 pub use ethereum::{EthereumApiVariant, EthereumChainConfig, EthereumProviderConfig};
@@ -24,11 +26,17 @@ pub struct ForeignChainsConfig {
     pub bitcoin: Option<BitcoinChainConfig>,
     #[serde(default)]
     pub ethereum: Option<EthereumChainConfig>,
+    #[serde(default)]
+    #[serde(rename = "abstract")]
+    pub abstract_chain: Option<AbstractChainConfig>,
 }
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.solana.is_none() && self.bitcoin.is_none() && self.ethereum.is_none()
+        self.solana.is_none()
+            && self.bitcoin.is_none()
+            && self.ethereum.is_none()
+            && self.abstract_chain.is_none()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -39,6 +47,9 @@ impl ForeignChainsConfig {
             config.validate()?;
         }
         if let Some(config) = &self.ethereum {
+            config.validate()?;
+        }
+        if let Some(config) = &self.abstract_chain {
             config.validate()?;
         }
         Ok(())
@@ -68,6 +79,13 @@ impl ForeignChainsConfig {
         if let Some(config) = &self.ethereum {
             chains.insert(dtos::ForeignChainConfig {
                 chain: dtos::ForeignChain::Ethereum,
+                providers: providers_to_set(&config.providers),
+            });
+        }
+
+        if let Some(config) = &self.abstract_chain {
+            chains.insert(dtos::ForeignChainConfig {
+                chain: dtos::ForeignChain::Abstract,
                 providers: providers_to_set(&config.providers),
             });
         }

@@ -566,7 +566,7 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
 
             for verify_foreign_tx_attempt in verify_foreign_tx_attempts {
                 let this = self.clone();
-                let chain_txn_sender_ckd = chain_txn_sender.clone();
+                let chain_txn_sender_verify_foreign_tx = chain_txn_sender.clone();
                 tasks.spawn_checked(
                     &format!(
                         "leader for verify_foreign_tx request {:?}",
@@ -639,7 +639,7 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                             }
                             Some(response) => response,
                         };
-                        let _ = chain_txn_sender_ckd
+                        let _ = chain_txn_sender_verify_foreign_tx
                             .send(
                                 ChainSendTransactionRequest::VerifyForeignTransactionRespond(
                                     response,

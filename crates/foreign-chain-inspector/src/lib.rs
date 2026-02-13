@@ -39,6 +39,7 @@ pub struct BlockConfirmations(u64);
 pub enum EthereumFinality {
     Finalized,
     Safe,
+    Latest,
 }
 
 #[derive(Error, Debug)]
