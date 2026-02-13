@@ -5,37 +5,52 @@ use foreign_chain_inspector::{
         inspector::{StarknetExtractor, StarknetFinality, StarknetInspector},
     },
 };
+use jsonrpsee::core::client::ClientT;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct LatestBlockWithTxHashesResponse {
+    block_hash: String,
+    transactions: Vec<String>,
+}
 
 #[tokio::test]
 #[ignore = "manual test to sanity check against live RPC provider"]
 async fn inspector_extracts_block_hash_against_live_rpc_provider() {
     // given
-    // Free Nethermind Starknet mainnet endpoint
-    const PUBLIC_NODE_URL: &str = "https://free-rpc.nethermind.io/mainnet-juno/";
-
-    // Transaction from Starknet mainnet
-    // https://starkscan.co/tx/0x06a0667e38abecc19e1443c5b82b46de8a80e69ee39025b9fb49aee6b97f52d2
-    let transaction_id: StarknetTransactionHash =
-        "06a0667e38abecc19e1443c5b82b46de8a80e69ee39025b9fb49aee6b97f52d2"
-            .parse()
-            .unwrap();
-    let block_hash: StarknetBlockHash =
-        "035120c1ce63c27f0e3e7f612e1b54b08c0c4b04c463a3a98a8e95fa9ee6b78e"
-            .parse()
-            .unwrap();
+    // Public Starknet mainnet endpoint
+    const PUBLIC_NODE_URL: &str = "https://starknet-rpc.publicnode.com";
 
     let http_client = foreign_chain_inspector::build_http_client(
         PUBLIC_NODE_URL.to_string(),
         RpcAuthentication::KeyInUrl,
     )
     .unwrap();
+    let latest_block: LatestBlockWithTxHashesResponse = http_client
+        .request("starknet_getBlockWithTxHashes", ("latest",))
+        .await
+        .expect("latest block should be fetched");
+    let first_transaction_hash = latest_block
+        .transactions
+        .first()
+        .expect("latest block should contain at least one transaction");
+
+    let transaction_id: StarknetTransactionHash = first_transaction_hash
+        .trim_start_matches("0x")
+        .parse()
+        .expect("transaction hash should be valid hex");
+    let block_hash: StarknetBlockHash = latest_block
+        .block_hash
+        .trim_start_matches("0x")
+        .parse()
+        .expect("block hash should be valid hex");
     let inspector = StarknetInspector::new(http_client);
 
     // when
     let extracted_values = inspector
         .extract(
             transaction_id,
-            StarknetFinality::AcceptedOnL1,
+            StarknetFinality::AcceptedOnL2,
             vec![StarknetExtractor::BlockHash],
         )
         .await
