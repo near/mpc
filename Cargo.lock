@@ -3279,6 +3279,7 @@ dependencies = [
  "assert_matches",
  "derive_more 2.1.1",
  "ethereum-types",
+ "foreign-chain-rpc-interfaces",
  "http 1.4.0",
  "httpmock",
  "jsonrpsee",
@@ -3288,6 +3289,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "foreign-chain-rpc-interfaces"
+version = "3.4.1"
+dependencies = [
+ "derive_more 2.1.1",
+ "ethereum-types",
+ "jsonrpsee",
+ "mpc-primitives",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

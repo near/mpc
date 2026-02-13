@@ -2036,7 +2036,8 @@ mod tests {
     use crate::tee::tee_state::NodeId;
     use assert_matches::assert_matches;
     use contract_interface::types::{
-        BitcoinExtractor, BitcoinRpcRequest, ExtractedValue, ForeignTxSignPayloadV1,
+        BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, ExtractedValue,
+        ForeignTxSignPayloadV1,
     };
     use dtos::{Attestation, Ed25519PublicKey, ForeignTxSignPayload, MockAttestation};
     use elliptic_curve::Field as _;
@@ -2435,7 +2436,9 @@ mod tests {
             .unwrap();
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: request.request.clone(),
-            values: vec![ExtractedValue::U64(2)],
+            values: vec![ExtractedValue::BitcoinExtractedValue(
+                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
         });
         let payload_hash = payload.compute_msg_hash().unwrap().0;
         // simulate signature and response to the request

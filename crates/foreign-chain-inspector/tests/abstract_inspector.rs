@@ -12,60 +12,64 @@ use foreign_chain_inspector::{
 };
 
 use assert_matches::assert_matches;
-use ethereum_types::{H256, U64};
+use foreign_chain_rpc_interfaces::evm::{
+    GetBlockByNumberResponse, GetTransactionReceiptResponse, H160, H256, Log, U64,
+};
 use httpmock::prelude::*;
 use httpmock::{HttpMockRequest, HttpMockResponse};
 use jsonrpsee::core::client::error::Error as RpcClientError;
 use rstest::rstest;
-use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[rstest]
 #[tokio::test]
-#[case::finalized(EthereumFinality::Finalized)]
-#[case::safe(EthereumFinality::Safe)]
-async fn extract_returns_block_hash_when_finalized(#[case] finality: EthereumFinality) {
+async fn extract_returns_correct_value_when_finalized(
+    #[values(EthereumFinality::Finalized, EthereumFinality::Safe)] finality: EthereumFinality,
+    #[values(AbstractExtractor::Log { log_index: 0 }, AbstractExtractor::BlockHash)]
+    extractor: AbstractExtractor,
+) {
     // given
     let tx_id = AbstractTransactionHash::from([3; 32]);
-    let expected_block_hash = AbstractBlockHash::from([4; 32]);
 
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
     };
-    let tx_response = TransactionReceiptResponse {
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([4; 32]),
         block_number: U64::from(90),
         status: U64::one(),
+        logs: vec![test_log()],
     };
 
+    let expected = expected_extracted_value(&extractor, &tx_response);
     let mock_client = mock_abstract_client(block_response, tx_response);
     let inspector = AbstractInspector::new(mock_client);
 
     // when
     let extracted_values = inspector
-        .extract(tx_id, finality, vec![AbstractExtractor::BlockHash])
+        .extract(tx_id, finality, vec![extractor])
         .await
         .unwrap();
 
     // then
-    let expected_extractions = vec![AbstractExtractedValue::BlockHash(expected_block_hash)];
-    assert_eq!(expected_extractions, extracted_values);
+    assert_eq!(vec![expected], extracted_values);
 }
 
 #[tokio::test]
-async fn extract_returns_block_hash_when_finality_block_equals_tx_block() {
+async fn extract_succeeds_when_finality_block_equals_tx_block() {
     // given
     let tx_id = AbstractTransactionHash::from([3; 32]);
     let expected_block_hash = AbstractBlockHash::from([4; 32]);
 
     let block_number = U64::from(50);
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: block_number,
     };
-    let tx_response = TransactionReceiptResponse {
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([4; 32]),
         block_number,
         status: U64::one(),
+        logs: vec![test_log()],
     };
 
     let mock_client = mock_abstract_client(block_response, tx_response);
@@ -91,13 +95,14 @@ async fn extract_returns_error_when_not_finalized() {
     // given
     let tx_id = AbstractTransactionHash::from([1; 32]);
 
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: U64::from(50),
     };
-    let tx_response = TransactionReceiptResponse {
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([2; 32]),
         block_number: U64::from(60), // tx block > finalized block
         status: U64::one(),
+        logs: vec![test_log()],
     };
 
     let mock_client = mock_abstract_client(block_response, tx_response);
@@ -121,13 +126,14 @@ async fn extract_returns_error_when_transaction_failed() {
     // given
     let tx_id = AbstractTransactionHash::from([1; 32]);
 
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
     };
-    let tx_response = TransactionReceiptResponse {
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([2; 32]),
         block_number: U64::from(90),
         status: U64::zero(), // failed transaction
+        logs: vec![test_log()],
     };
 
     let mock_client = mock_abstract_client(block_response, tx_response);
@@ -154,13 +160,14 @@ async fn extract_returns_empty_when_no_extractors_provided() {
     // given
     let tx_id = AbstractTransactionHash::from([11; 32]);
 
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
     };
-    let tx_response = TransactionReceiptResponse {
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([12; 32]),
         block_number: U64::from(90),
         status: U64::one(),
+        logs: vec![test_log()],
     };
 
     let mock_client = mock_abstract_client(block_response, tx_response);
@@ -211,13 +218,15 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     let tx_id = AbstractTransactionHash::from([9; 32]);
     let expected_block_hash = AbstractBlockHash::from([5; 32]);
 
-    let block_response = BlockByNumberResponse {
+    let block_response = GetBlockByNumberResponse {
         number: U64::from(100),
     };
-    let tx_response = TransactionReceiptResponse {
+
+    let tx_response = GetTransactionReceiptResponse {
         block_hash: H256::from([5; 32]),
         block_number: U64::from(90),
         status: U64::one(),
+        logs: vec![test_log()],
     };
 
     // Single mock that dispatches on the JSON-RPC method and echoes back the request ID.
@@ -267,10 +276,91 @@ async fn inspector_extracts_block_hash_via_http_rpc_client() {
     assert_eq!(expected_extractions, extracted_values);
 }
 
+#[tokio::test]
+async fn extract_returns_error_when_log_index_out_of_bounds() {
+    // given
+    let tx_id = AbstractTransactionHash::from([1; 32]);
+
+    let block_response = GetBlockByNumberResponse {
+        number: U64::from(100),
+    };
+    let tx_response = GetTransactionReceiptResponse {
+        block_hash: H256::from([2; 32]),
+        block_number: U64::from(90),
+        status: U64::one(),
+        logs: vec![test_log()],
+    };
+
+    let mock_client = mock_abstract_client(block_response, tx_response);
+    let inspector = AbstractInspector::new(mock_client);
+
+    // when
+    let response = inspector
+        .extract(
+            tx_id,
+            EthereumFinality::Finalized,
+            vec![AbstractExtractor::Log { log_index: 5 }],
+        )
+        .await;
+
+    // then
+    assert_matches!(
+        response,
+        Err(ForeignChainInspectionError::LogIndexOutOfBounds)
+    );
+}
+
+#[tokio::test]
+async fn extract_returns_correct_log_hash_for_specific_index() {
+    // given
+    let tx_id = AbstractTransactionHash::from([3; 32]);
+
+    let log_0 = test_log();
+    let log_1 = Log {
+        removed: false,
+        log_index: U64([10]),
+        transaction_index: U64([20]),
+        transaction_hash: H256([30; 32]),
+        block_hash: H256([4; 32]),
+        block_number: U64([5]),
+        address: H160([60; 20]),
+        data: "second_log".to_string(),
+        topics: vec![H256([70; 32])],
+    };
+    let expected_log = log_1.clone();
+
+    let block_response = GetBlockByNumberResponse {
+        number: U64::from(100),
+    };
+    let tx_response = GetTransactionReceiptResponse {
+        block_hash: H256::from([4; 32]),
+        block_number: U64::from(90),
+        status: U64::one(),
+        logs: vec![log_0, log_1],
+    };
+
+    let mock_client = mock_abstract_client(block_response, tx_response);
+    let inspector = AbstractInspector::new(mock_client);
+
+    // when
+    let extracted_values = inspector
+        .extract(
+            tx_id,
+            EthereumFinality::Finalized,
+            vec![AbstractExtractor::Log { log_index: 1 }],
+        )
+        .await
+        .unwrap();
+
+    // then
+    let expected_extractions = vec![AbstractExtractedValue::Log(expected_log)];
+    assert_eq!(expected_extractions, extracted_values);
+}
+
 // TODO(#2024): change FixedResponseRpcClient to support multiple expectations to avoid this hacky wrapper.
 fn mock_abstract_client(
-    block_response: BlockByNumberResponse,
-    tx_response: TransactionReceiptResponse,
+    block_response: GetBlockByNumberResponse,
+    tx_response: GetTransactionReceiptResponse,
 ) -> FixedResponseRpcClient<impl Fn() -> Result<serde_json::Value, RpcClientError>> {
     let call_count = AtomicUsize::new(0);
     FixedResponseRpcClient::new(move || {
@@ -282,14 +372,31 @@ fn mock_abstract_client(
         }
     })
 }
-#[derive(Debug, Clone, Serialize)]
-struct BlockByNumberResponse {
-    number: U64,
+
+fn expected_extracted_value(
+    extractor: &AbstractExtractor,
+    tx_response: &GetTransactionReceiptResponse,
+) -> AbstractExtractedValue {
+    match extractor {
+        AbstractExtractor::BlockHash => {
+            AbstractExtractedValue::BlockHash(From::from(*tx_response.block_hash.as_fixed_bytes()))
+        }
+        AbstractExtractor::Log { log_index } => {
+            AbstractExtractedValue::Log(tx_response.logs[*log_index].clone())
+        }
+    }
 }
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TransactionReceiptResponse {
-    block_hash: H256,
-    block_number: U64,
-    status: U64,
+
+fn test_log() -> Log {
+    Log {
+        removed: false,
+        log_index: U64([1]),
+        transaction_index: U64([2]),
+        transaction_hash: H256([3; 32]),
+        block_hash: H256([4; 32]),
+        block_number: U64([5]),
+        address: H160([6; 20]),
+        data: "test_log".to_string(),
+        topics: vec![H256([7; 32]), H256([8; 32])],
+    }
 }
