@@ -43,6 +43,7 @@ pub struct GetBlockByNumberArgs(FinalityTag, ReturnFullTransactionObjects);
 pub enum FinalityTag {
     Safe,
     Finalized,
+    Latest,
 }
 
 #[derive(From, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
