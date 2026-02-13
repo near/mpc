@@ -2,6 +2,10 @@ use anyhow::{bail, Context};
 use foreign_chain_inspector;
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
 use foreign_chain_inspector::bitcoin::BitcoinExtractedValue;
+use foreign_chain_inspector::starknet::inspector::{
+    StarknetExtractor, StarknetFinality, StarknetInspector,
+};
+use foreign_chain_inspector::starknet::StarknetExtractedValue;
 use foreign_chain_inspector::ForeignChainInspector;
 use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
@@ -101,7 +105,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
         &self,
         request: &dtos::ForeignChainRpcRequest,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        let extracted_values = match request {
+        let values: Vec<dtos::ExtractedValue> = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
             }
@@ -139,26 +143,80 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                     })
                     .collect::<anyhow::Result<_>>()?;
 
-                inspector
+                let extracted_values = inspector
                     .extract(transaction_id, block_confirmations, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
-                    .context("timed out during execution of foreign chain request")??
+                    .context("timed out during execution of foreign chain request")??;
+
+                extracted_values
+                    .iter()
+                    .map(|extracted_value| match extracted_value {
+                        BitcoinExtractedValue::BlockHash(value) => {
+                            let value: [u8; 32] = **value;
+                            Ok(dtos::ExtractedValue::BitcoinExtractedValue(
+                                dtos::BitcoinExtractedValue::BlockHash(value.into()),
+                            ))
+                        }
+                    })
+                    .collect::<anyhow::Result<_>>()?
             }
-            _ => bail!("unknown extractor found"),
+            dtos::ForeignChainRpcRequest::Starknet(request) => {
+                let Some(starknet_config) = &self.config.foreign_chains.starknet else {
+                    anyhow::bail!("starknet provider config is missing")
+                };
+
+                let starknet_provider_config =
+                    starknet_config.providers.values().choose(&mut OsRng);
+
+                let Some(starknet_provider_config) = starknet_provider_config else {
+                    anyhow::bail!("found empty list of providers for starknet")
+                };
+
+                let rpc_url = starknet_provider_config.rpc_url.clone();
+
+                let http_client = foreign_chain_inspector::build_http_client(
+                    rpc_url,
+                    starknet_provider_config.auth.clone().try_into()?,
+                )?;
+                let inspector = StarknetInspector::new(http_client);
+
+                let transaction_id = request.tx_id.0 .0.into();
+                let finality = match request.finality {
+                    dtos::StarknetFinality::AcceptedOnL2 => StarknetFinality::AcceptedOnL2,
+                    dtos::StarknetFinality::AcceptedOnL1 => StarknetFinality::AcceptedOnL1,
+                    _ => bail!("unknown starknet finality level"),
+                };
+                let extractors = request
+                    .extractors
+                    .iter()
+                    .map(|extractor| match extractor {
+                        dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
+                        _ => bail!("unknown extractor found"),
+                    })
+                    .collect::<anyhow::Result<_>>()?;
+
+                let extracted_values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                extracted_values
+                    .iter()
+                    .map(|extracted_value| match extracted_value {
+                        StarknetExtractedValue::BlockHash(value) => {
+                            let value: [u8; 32] = **value;
+                            Ok(dtos::ExtractedValue::StarknetExtractedValue(
+                                dtos::StarknetExtractedValue::BlockHash(dtos::StarknetFelt(value)),
+                            ))
+                        }
+                    })
+                    .collect::<anyhow::Result<_>>()?
+            }
+            _ => bail!("unsupported foreign chain request"),
         };
 
-        let values = extracted_values
-            .iter()
-            .map(|extracted_value| match extracted_value {
-                BitcoinExtractedValue::BlockHash(value) => {
-                    let value: [u8; 32] = **value;
-                    Ok(dtos::ExtractedValue::BitcoinExtractedValue(
-                        dtos::BitcoinExtractedValue::BlockHash(value.into()),
-                    ))
-                }
-            })
-            .collect::<anyhow::Result<_>>()?;
         Ok(dtos::ForeignTxSignPayload::V1(
             dtos::ForeignTxSignPayloadV1 {
                 request: request.clone(),
