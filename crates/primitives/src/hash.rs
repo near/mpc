@@ -53,6 +53,14 @@ impl<T> Hash32<T> {
     pub fn as_hex(&self) -> String {
         hex::encode(self.as_ref())
     }
+
+    /// Converts the hash to a hexadecimal string representation with a custom prefix.
+    pub fn as_hex_with_prefix(&self, prefix: &str) -> String {
+        let mut value = String::with_capacity(prefix.len() + 64);
+        value.push_str(prefix);
+        value.push_str(&self.as_hex());
+        value
+    }
 }
 
 #[derive(Error, Debug)]
@@ -190,6 +198,17 @@ mod tests {
 
         let expected_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
         assert_eq!(hash.as_hex(), expected_hex);
+    }
+
+    #[test]
+    fn test_as_hex_with_prefix() {
+        let bytes = [0xab; 32];
+        let hash = TestHash::from(bytes);
+
+        assert_eq!(
+            hash.as_hex_with_prefix("0x"),
+            format!("0x{}", "ab".repeat(32))
+        );
     }
 
     #[test]

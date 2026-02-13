@@ -38,7 +38,7 @@ where
         finality: StarknetFinality,
         extractors: Vec<StarknetExtractor>,
     ) -> Result<Vec<StarknetExtractedValue>, ForeignChainInspectionError> {
-        let tx_hash_hex = format!("0x{}", hex::encode(*transaction));
+        let tx_hash_hex = transaction.as_hex_with_prefix("0x");
 
         let request_parameters = GetTransactionReceiptArgs {
             transaction_hash: tx_hash_hex,
