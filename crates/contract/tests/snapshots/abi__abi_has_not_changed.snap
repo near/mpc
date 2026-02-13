@@ -1921,6 +1921,18 @@ expression: abi
                 }
               },
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "StarknetExtractedValue"
+              ],
+              "properties": {
+                "StarknetExtractedValue": {
+                  "$ref": "#/definitions/StarknetExtractedValue"
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },
@@ -1932,7 +1944,8 @@ expression: abi
             "Ethereum",
             "Base",
             "Bnb",
-            "Arbitrum"
+            "Arbitrum",
+            "Starknet"
           ]
         },
         "ForeignChainConfig": {
@@ -2029,6 +2042,18 @@ expression: abi
               "properties": {
                 "Bitcoin": {
                   "$ref": "#/definitions/BitcoinRpcRequest"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Starknet"
+              ],
+              "properties": {
+                "Starknet": {
+                  "$ref": "#/definitions/StarknetRpcRequest"
                 }
               },
               "additionalProperties": false
@@ -3420,6 +3445,64 @@ expression: abi
             "format": "uint8",
             "minimum": 0.0
           }
+        },
+        "StarknetExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BlockHash"
+              ],
+              "properties": {
+                "BlockHash": {
+                  "$ref": "#/definitions/StarknetFelt"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "StarknetExtractor": {
+          "type": "string",
+          "enum": [
+            "BlockHash"
+          ]
+        },
+        "StarknetFelt": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "StarknetFinality": {
+          "type": "string",
+          "enum": [
+            "AcceptedOnL2",
+            "AcceptedOnL1"
+          ]
+        },
+        "StarknetRpcRequest": {
+          "type": "object",
+          "required": [
+            "extractors",
+            "finality",
+            "tx_id"
+          ],
+          "properties": {
+            "extractors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StarknetExtractor"
+              }
+            },
+            "finality": {
+              "$ref": "#/definitions/StarknetFinality"
+            },
+            "tx_id": {
+              "$ref": "#/definitions/StarknetTxId"
+            }
+          }
+        },
+        "StarknetTxId": {
+          "$ref": "#/definitions/StarknetFelt"
         },
         "TcbInfo": {
           "description": "Trusted Computing Base information structure",
