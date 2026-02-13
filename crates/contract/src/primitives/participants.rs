@@ -321,8 +321,10 @@ pub mod tests {
     use rand::Rng;
 
     /// Helper: builds a participants `Vec` with a duplicate `ParticipantId`.
-    fn participants_with_duplicate_id()
-    -> (ParticipantId, Vec<(AccountId, ParticipantId, ParticipantInfo)>) {
+    fn participants_with_duplicate_id() -> (
+        ParticipantId,
+        Vec<(AccountId, ParticipantId, ParticipantInfo)>,
+    ) {
         let (acc0, info0) = gen_participant(0);
         let (acc1, info1) = gen_participant(1);
         let (acc2, info2) = gen_participant(2);
@@ -369,7 +371,10 @@ pub mod tests {
     fn test_init_rejects_duplicate_participant_ids() {
         let (next_id, participants) = participants_with_duplicate_id();
         let err = Participants::init(next_id, participants);
-        assert_eq!(err, Err(InvalidCandidateSet::IncoherentParticipantIds.into()));
+        assert_eq!(
+            err,
+            Err(InvalidCandidateSet::IncoherentParticipantIds.into())
+        );
     }
 
     #[test]
@@ -386,6 +391,9 @@ pub mod tests {
         // Set the third participant's ID to match the second's (both become 1)
         json["participants"][2][1] = serde_json::json!(1);
         let tampered: Participants = serde_json::from_value(json).unwrap();
-        assert_eq!(tampered.validate(), Err(InvalidCandidateSet::IncoherentParticipantIds.into()));
+        assert_eq!(
+            tampered.validate(),
+            Err(InvalidCandidateSet::IncoherentParticipantIds.into())
+        );
     }
 }
