@@ -148,12 +148,11 @@ def foreign_tx_validation_cluster():
         timeout_sec=30,
     )
 
-    try:
-        yield cluster, mpc_nodes
-    finally:
-        cluster.kill_all()
-        mock_server.shutdown()
-        atexit._run_exitfuncs()
+    yield cluster, mpc_nodes
+
+    cluster.kill_all()
+    mock_server.shutdown()
+    atexit._run_exitfuncs()
 
 
 @pytest.mark.no_atexit_cleanup

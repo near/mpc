@@ -65,11 +65,10 @@ def foreign_chain_policy_cluster():
     cluster.init_cluster(participants=mpc_nodes, threshold=2)
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
-    try:
-        yield cluster, mpc_nodes
-    finally:
-        cluster.kill_all()
-        atexit._run_exitfuncs()
+    yield cluster, mpc_nodes
+
+    cluster.kill_all()
+    atexit._run_exitfuncs()
 
 
 @pytest.mark.no_atexit_cleanup
