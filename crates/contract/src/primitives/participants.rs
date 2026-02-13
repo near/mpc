@@ -3,10 +3,11 @@ use crate::errors::{Error, InvalidCandidateSet, InvalidParameters};
 use near_account_id::AccountId;
 use near_sdk::{near, PublicKey};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, fmt::Display};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Display;
 
 #[cfg(any(test, feature = "test-utils"))]
-use {crate::tee::tee_state::NodeId, std::collections::BTreeSet};
+use crate::tee::tee_state::NodeId;
 
 pub mod hpke {
     pub type PublicKey = [u8; 32];
@@ -183,14 +184,19 @@ impl Participants {
 
     /// Validates that the fields are coherent:
     ///  - All account IDs are unique (enforced by [`BTreeMap`] key).
+    ///  - All participant IDs are unique.
     ///  - The next_id is greater than all participant IDs.
     pub fn validate(&self) -> Result<(), Error> {
         // Uniqueness of `AccountId` is guaranteed by `BTreeMap`
-        // Verify next_id invariant: `next_id` must be greater than all participant IDs
-        for data in self.participants.values() {
-            if self.next_id.get() <= data.id.get() {
-                return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
-            }
+        let ids: BTreeSet<ParticipantId> = self.participants.values().map(|d| d.id).collect();
+        if ids.len() != self.participants.len() {
+            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
+        }
+        if ids
+            .last()
+            .is_some_and(|max| self.next_id.get() <= max.get())
+        {
+            return Err(InvalidCandidateSet::IncoherentParticipantIds.into());
         }
         Ok(())
     }
@@ -304,9 +310,12 @@ impl Participants {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::{
-        participants::{ParticipantId, Participants},
-        test_utils::gen_accounts_and_info,
+    use crate::{
+        errors::InvalidCandidateSet,
+        primitives::{
+            participants::{ParticipantId, Participants},
+            test_utils::{gen_accounts_and_info, gen_participant},
+        },
     };
     use rand::Rng;
 
@@ -337,5 +346,25 @@ pub mod tests {
         participants
             .validate()
             .expect("Participants should validate after inserts");
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_participant_ids() {
+        let (acc0, info0) = gen_participant(0);
+        let (acc1, info1) = gen_participant(1);
+        let (acc2, info2) = gen_participant(2);
+        // Construct a Participants with two different accounts sharing the same ParticipantId
+        let participants = Participants::init(
+            ParticipantId(3),
+            vec![
+                (acc0, ParticipantId(0), info0),
+                (acc1, ParticipantId(1), info1),
+                (acc2, ParticipantId(1), info2), // duplicate ID
+            ],
+        );
+        assert_eq!(
+            participants.validate(),
+            Err(InvalidCandidateSet::IncoherentParticipantIds.into())
+        );
     }
 }
