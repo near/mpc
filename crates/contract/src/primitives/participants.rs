@@ -244,6 +244,10 @@ impl Participants {
             Err(crate::errors::InvalidState::NotParticipant.into())
         }
     }
+
+    pub fn remove(&mut self, account: &AccountId) {
+        self.participants.remove(account);
+    }
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -288,10 +292,6 @@ impl Participants {
                 crate::primitives::test_utils::gen_participant(rand::Rng::gen(&mut rng));
             self.insert(account, pinfo).unwrap();
         }
-    }
-
-    pub fn remove(&mut self, account: &AccountId) {
-        self.participants.remove(account);
     }
 
     /// Returns the set of [`NodeId`]s corresponding to the participants.
