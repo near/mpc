@@ -3,6 +3,7 @@
   rustPlatform,
   fetchCrate,
   pkgs,
+  stdenv,
 }:
 
 let
@@ -28,13 +29,6 @@ in
     version = "1.9.1";
     hash = "sha256-QRWYVmFCxntEFzC9iqEoZQ5sG57P2gpBUFu8A8aI+7g=";
     cargoHash = "sha256-yMUdZCIJTWCvi+07a1Erj6SD7i34opnvZ2CZ027PWzU=";
-  })
-
-  (buildTool {
-    pname = "cargo-nextest";
-    version = "0.9.126";
-    hash = "sha256-xnVw4P9U5t8WI74MnEvhsVYAXD+Ez+GjRh+aIYekM8g=";
-    cargoHash = "sha256-Tjlnl//DwYvO/ks5pxA5hXSBLpb/wyNiH7AuxvkdDf0=";
   })
 
   (buildTool {
@@ -82,5 +76,5 @@ in
   # --- STANDARD NIXPKGS VERSIONS ---
   pkgs.cargo-binstall
   pkgs.cargo-insta
-
+  pkgs.cargo-nextest
 ]
