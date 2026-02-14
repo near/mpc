@@ -64,12 +64,11 @@ impl KeyEvent {
     /// The leader is the one with the lowest participant ID.
     pub fn verify_leader(&self) -> Result<(), Error> {
         let signer_account_id = env::signer_account_id();
-        if self
+        if *self
             .parameters
             .participants()
             .participants()
-            .iter()
-            .min_by_key(|(_, participant_id, _)| participant_id)
+            .min_by_key(|(_, participant_id, _)| *participant_id)
             .unwrap()
             .0
             != signer_account_id
@@ -207,6 +206,24 @@ impl KeyEvent {
     pub fn next_attempt_id(&self) -> AttemptId {
         self.next_attempt_id
     }
+
+    /// Constructs a KeyEvent from its parts during migration.
+    /// This bypasses the normal initialization logic.
+    pub fn from_migration(
+        epoch_id: EpochId,
+        domain: DomainConfig,
+        parameters: ThresholdParameters,
+        instance: Option<KeyEventInstance>,
+        next_attempt_id: AttemptId,
+    ) -> Self {
+        KeyEvent {
+            epoch_id,
+            domain,
+            parameters,
+            instance,
+            next_attempt_id,
+        }
+    }
 }
 
 /// See KeyEventInstance::vote_success.
@@ -304,9 +321,8 @@ pub mod tests {
             .proposed_parameters()
             .participants()
             .participants()
-            .iter()
-            .min_by_key(|(_, id, _)| id)
+            .min_by_key(|(_, id, _)| *id)
             .unwrap();
-        (account_id.clone(), participant_id.clone())
+        (account_id.clone(), *participant_id)
     }
 }

@@ -106,7 +106,6 @@ impl TeeState {
 
         participants
             .participants()
-            .iter()
             .for_each(|(account_id, _, participant_info)| {
                 let node_id = NodeId {
                     account_id: account_id.clone(),
@@ -233,9 +232,8 @@ impl TeeState {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
-        let participants_with_valid_attestation: Vec<_> = participants
+        let invalid_accounts: Vec<_> = participants
             .participants()
-            .iter()
             .filter(|(account_id, _, participant_info)| {
                 let tls_public_key = participant_info.sign_pk.clone();
 
@@ -243,7 +241,7 @@ impl TeeState {
                 let maybe_node = self.find_node_id_by_tls_key(&tls_public_key);
 
                 let node_id = NodeId {
-                    account_id: account_id.clone(),
+                    account_id: (*account_id).clone(),
                     tls_public_key: tls_public_key.clone(),
 
                     // In transition (mock attestation) mode — try to reuse known key, else None.
@@ -254,14 +252,16 @@ impl TeeState {
                 let tee_status =
                     self.reverify_participants(&node_id, tee_upgrade_deadline_duration);
 
-                matches!(tee_status, TeeQuoteStatus::Valid)
+                !matches!(tee_status, TeeQuoteStatus::Valid)
             })
-            .cloned()
+            .map(|(a, _, _)| a.clone())
             .collect();
 
-        if participants_with_valid_attestation.len() != participants.len() {
-            let participants_with_valid_attestation =
-                Participants::init(participants.next_id(), participants_with_valid_attestation);
+        if !invalid_accounts.is_empty() {
+            let mut participants_with_valid_attestation = participants.clone();
+            for account in &invalid_accounts {
+                participants_with_valid_attestation.remove(account);
+            }
 
             TeeValidationResult::Partial {
                 participants_with_valid_attestation,
@@ -316,7 +316,6 @@ impl TeeState {
         // Collect all allowed TLS public keys from current participants
         let active_tls_keys: HashSet<&near_sdk::PublicKey> = participants
             .participants()
-            .iter()
             .map(|(_, _, p_info)| &p_info.sign_pk)
             .collect();
 
@@ -395,8 +394,9 @@ pub(crate) enum AttestationCheckError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::test_utils::bogus_ed25519_near_public_key;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::test_utils::{
+        bogus_ed25519_near_public_key, gen_participants, participants_vec,
+    };
     use crate::tee::test_utils::set_block_timestamp;
     use assert_matches::assert_matches;
     use mpc_attestation::attestation::{Attestation, MockAttestation};
@@ -427,7 +427,6 @@ mod tests {
         // Get participant account IDs for verification
         let participant_nodes: Vec<NodeId> = participants
             .participants()
-            .iter()
             .map(|(account_id, _, p_info)| NodeId {
                 account_id: account_id.clone(),
                 tls_public_key: p_info.sign_pk.clone(),
@@ -780,7 +779,7 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
         // Generate 1 participant
         let participants = gen_participants(1);
-        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let (account_id, _, participant_info) = participants.participants().next().unwrap();
 
         // 1. Define the Signer's NEAR Public Key (Wallet Key)
         let signer_pk = bogus_ed25519_near_public_key();
@@ -815,7 +814,7 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
         let mut tee_state = TeeState::default();
         let participants = gen_participants(1);
-        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let (account_id, _, participant_info) = participants.participants().next().unwrap();
 
         let signer_pk = bogus_ed25519_near_public_key();
         set_signer(account_id, &signer_pk);
@@ -857,7 +856,7 @@ mod tests {
     fn test_err_attestation_not_found() {
         let tee_state = TeeState::default();
         let participants = gen_participants(1);
-        let (account_id, _, _) = participants.participants().iter().next().unwrap();
+        let (account_id, _, _) = participants.participants().next().unwrap();
 
         let signer_pk = bogus_ed25519_near_public_key();
         set_signer(account_id, &signer_pk);
@@ -873,7 +872,7 @@ mod tests {
     fn test_err_attestation_owner_mismatch() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(1);
-        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let (account_id, _, participant_info) = participants.participants().next().unwrap();
         let tee_upgrade_duration = Duration::MAX;
 
         let signer_pk = bogus_ed25519_near_public_key();
@@ -907,7 +906,7 @@ mod tests {
         // given
         let mut tee_state = TeeState::default();
         let participants = gen_participants(1);
-        let (account_id, _, participant_info) = participants.participants().iter().next().unwrap();
+        let (account_id, _, participant_info) = participants.participants().next().unwrap();
         let tee_upgrade_duration = Duration::MAX;
 
         let signer_pk = bogus_ed25519_near_public_key();
@@ -958,7 +957,6 @@ mod tests {
     fn account_ids(participants: &Participants) -> Vec<AccountId> {
         participants
             .participants()
-            .iter()
             .map(|(acc, _, _)| acc.clone())
             .collect()
     }
@@ -970,7 +968,7 @@ mod tests {
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for all participants
-        for (account_id, _, participant_info) in participants.participants().iter() {
+        for (account_id, _, participant_info) in participants.participants() {
             let node_id = create_node_id(account_id, &participant_info.sign_pk);
             tee_state
                 .add_participant(
@@ -991,12 +989,12 @@ mod tests {
     fn validate_tee_returns_partial_when_participant_has_no_attestation() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let participant_list = participants_vec(&participants);
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for only first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1026,11 +1024,11 @@ mod tests {
 
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let participant_list = participants_vec(&participants);
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1041,8 +1039,8 @@ mod tests {
         }
 
         // Add expiring attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let entry = &participant_list[2];
+        let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
         let expiring_attestation = Attestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
@@ -1077,10 +1075,10 @@ mod tests {
         let participants = gen_participants(3);
 
         // Add attestations for all participants, third one with future expiry
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let participant_list = participants_vec(&participants);
 
-        for (i, (account_id, _, participant_info)) in participant_list.iter().enumerate() {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for (i, entry) in participant_list.iter().enumerate() {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             let attestation = if i == 2 {
                 Attestation::Mock(MockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
@@ -1112,12 +1110,12 @@ mod tests {
     fn add_participant_rejects_invalid_attestations() {
         let mut tee_state = TeeState::default();
         let participants = gen_participants(3);
-        let participant_list: Vec<_> = participants.participants().to_vec();
+        let participant_list = participants_vec(&participants);
         let tee_upgrade_duration = Duration::MAX;
 
         // Add valid attestations for first 2 participants
-        for (account_id, _, participant_info) in participant_list.iter().take(2) {
-            let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        for entry in participant_list.iter().take(2) {
+            let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
             tee_state
                 .add_participant(
                     node_id,
@@ -1128,8 +1126,8 @@ mod tests {
         }
 
         // Add invalid attestation for third participant
-        let (account_id, _, participant_info) = &participant_list[2];
-        let node_id = create_node_id(account_id, &participant_info.sign_pk);
+        let entry = &participant_list[2];
+        let node_id = create_node_id(&entry.account_id, &entry.info.sign_pk);
         let add_participant_result = tee_state.add_participant(
             node_id,
             Attestation::Mock(MockAttestation::Invalid),

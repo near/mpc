@@ -21,6 +21,7 @@ use mpc_contract::{
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, MpcDockerImageHash};
 use near_workspaces::Contract;
+use std::collections::HashSet;
 use test_utils::attestation::{image_digest, p2p_tls_key};
 
 /// Tests the basic code hash voting mechanism including threshold behavior and vote stability.
@@ -291,7 +292,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     let SandboxTestSetup {
         worker,
         contract,
-        mut mpc_signer_accounts,
+        mpc_signer_accounts,
         ..
     } = init_env(ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN).await;
 
@@ -300,17 +301,17 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
             (&assert_running_return_participants(&contract).await?).into_contract_type();
         p.get_node_ids()
     };
-    submit_tee_attestations(&contract, &mut mpc_signer_accounts, &participant_uids).await?;
+    submit_tee_attestations(&contract, &mpc_signer_accounts, &participant_uids).await?;
 
     // Verify current participants have TEE data
     assert_eq!(get_tee_accounts(&contract).await?, participant_uids);
 
     // Create additional accounts (non-participants) and submit TEE info for them
     const NUM_ADDITIONAL_ACCOUNTS: usize = 2;
-    let (mut additional_accounts, additional_participants) =
+    let (additional_accounts, additional_participants) =
         gen_accounts(&worker, NUM_ADDITIONAL_ACCOUNTS).await;
     let additional_uids = additional_participants.get_node_ids();
-    submit_tee_attestations(&contract, &mut additional_accounts, &additional_uids).await?;
+    submit_tee_attestations(&contract, &additional_accounts, &additional_uids).await?;
 
     // Verify we have TEE data for all accounts before cleanup
     let tee_participants_before = get_tee_accounts(&contract).await?;
@@ -683,12 +684,12 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
     let final_participants = assert_running_return_participants(&contract).await?;
     assert_eq!(final_participants.participants.len(), PARTICIPANT_COUNT - 1);
 
-    let final_accounts: Vec<String> = final_participants
+    let final_accounts: HashSet<String> = final_participants
         .participants
-        .iter()
-        .map(|(account_id, _, _)| account_id.0.clone())
+        .keys()
+        .map(|account_id| account_id.0.clone())
         .collect();
-    let expected_accounts: Vec<String> = remaining_accounts
+    let expected_accounts: HashSet<String> = remaining_accounts
         .iter()
         .map(|a| a.id().to_string())
         .collect();

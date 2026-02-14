@@ -110,8 +110,8 @@ pub async fn start_reshare_instance(
         .min_by_key(|a| {
             active
                 .iter()
-                .find(|(account_id, _, _)| account_id.0 == *a.id())
-                .map(|(_, pid, _)| *pid)
+                .find(|(account_id, _)| account_id.0 == *a.id())
+                .map(|(_, data)| data.id)
                 .unwrap()
         })
         .unwrap();

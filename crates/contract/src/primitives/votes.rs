@@ -19,7 +19,6 @@ impl ThresholdParametersVotes {
             .filter(|&(acc, prop)| {
                 participants
                     .participants()
-                    .iter()
                     .any(|(acc_id, _, _)| acc.get() == acc_id)
                     && prop == proposal
             })

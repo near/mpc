@@ -10,7 +10,7 @@ pub mod types {
         Bls12381G1PublicKey, Bls12381G2PublicKey, Ed25519PublicKey, PublicKey, Secp256k1PublicKey,
     };
     pub use foreign_chain::*;
-    pub use participants::{ParticipantId, ParticipantInfo, Participants};
+    pub use participants::{ParticipantData, ParticipantId, ParticipantInfo, Participants};
 
     pub use primitives::{
         AccountId, CkdAppId, DomainId, K256AffinePoint, K256Scalar, K256Signature,
