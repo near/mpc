@@ -13,6 +13,26 @@ on:
       - main
 
 jobs:
+  setup-nix:
+    name: "Setup Nix environment"
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
+
+      - name: Build Nix development environment
+        run: nix develop --command echo "Nix environment ready"
+
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
     runs-on: warp-ubuntu-2204-x64-16x
@@ -86,6 +106,7 @@ jobs:
     name: "Cargo test"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
+    needs: [setup-nix]
     permissions:
       contents: read
 
@@ -95,10 +116,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -106,37 +128,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: nextest@0.9.126
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install wasm-opt
-        run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run cargo-nextest
-        run: cargo nextest run --cargo-profile=test-release --locked
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --locked
 
   mpc-pytests:
     name: "MPC Node: pytests"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
+    needs: [setup-nix]
     permissions:
       contents: read
 
@@ -149,16 +148,17 @@ jobs:
       - name: Initialize submodules
         run: git submodule update --init --recursive
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblzma-dev
 
       - name: Download near core binary from S3
         id: download-neard
@@ -184,37 +184,12 @@ jobs:
 
       - name: Build near core as fallback
         if: steps.download-neard.outcome != 'success'
-        run: |
-          cd libs/nearcore
-          cargo build -p neard --release
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-binstall
-
-      - name: Install cargo-near
-        run: |
-          sudo apt-get update && sudo apt-get install --assume-yes libudev-dev
-          cargo binstall --force --no-confirm --locked cargo-near@0.19.1 --pkg-url="{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }.{ archive-format }"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install wasm-opt
-        run: |
-          cargo binstall --force --no-confirm --locked wasm-opt@0.116.1
-          echo "${HOME}/.cargo/bin" >> $GITHUB_PATH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
+        run: nix develop --command cargo build -p neard --release
+        working-directory: libs/nearcore
 
       - name: Setup virtualenv
         run: |
-          python3 -m venv pytest/venv
+          nix develop --command python3 -m venv pytest/venv
           source pytest/venv/bin/activate
           cd pytest
           pip install -r requirements.txt
@@ -224,7 +199,7 @@ jobs:
       - name: Run pytest
         run: |
           source pytest/venv/bin/activate
-          cd pytest 
+          cd pytest
           # `neard` is already downloaded in the step, `download-neard`, above
           pytest -m "not ci_excluded" -s -x --skip-nearcore-build
 
@@ -262,6 +237,7 @@ jobs:
   fast-ci-checks:
     name: "Fast CI checks"
     runs-on: warp-ubuntu-2404-x64-8x
+    needs: [setup-nix]
     permissions:
       contents: read
     steps:
@@ -269,6 +245,12 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -276,36 +258,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-provider: "warpbuild"
 
-      - name: Install ruff
-        uses: astral-sh/ruff-action@57714a7c8a2e59f32539362ba31877a1957dded1 # v3.5.1
-        with:
-          args: "--version" # workaround to avoid running ruff check here
-
-      - name: Install cargo-shear
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-shear@1.9.1
-
-      - name: Install cargo-sort
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-sort@2.0.2
-
-      - name: Install zizmor
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: zizmor@1.22.0
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
-
       - name: Run cargo-make fast checks
-        run: cargo make check-all-fast
+        run: nix develop --command cargo make check-all-fast
 
   ci-extra:
     name: "Extra CI checks"
     runs-on: warp-ubuntu-2404-x64-2x
+    needs: [setup-nix, fast-ci-checks]
     permissions:
       contents: read
     steps:
@@ -314,15 +273,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-deny@0.19.0
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
 
-      - name: Install cargo-make
-        uses: taiki-e/install-action@d4422f254e595ee762a758628fe4f16ce050fa2e # v2.67.28
-        with:
-          tool: cargo-make@0.37.24
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
 
       - name: Run cargo-make extra checks
-        run: cargo make check-extra
+        run: nix develop --command cargo make check-extra
