@@ -3,7 +3,6 @@
   rustPlatform,
   fetchCrate,
   pkgs,
-  stdenv,
 }:
 
 let
