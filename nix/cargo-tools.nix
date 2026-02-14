@@ -31,13 +31,6 @@ in
   })
 
   (buildTool {
-    pname = "cargo-nextest";
-    version = "0.9.126";
-    hash = "sha256-xnVw4P9U5t8WI74MnEvhsVYAXD+Ez+GjRh+aIYekM8g=";
-    cargoHash = "sha256-Tjlnl//DwYvO/ks5pxA5hXSBLpb/wyNiH7AuxvkdDf0=";
-  })
-
-  (buildTool {
     pname = "cargo-sort";
     version = "2.0.2";
     hash = "sha256-U/LakNUSPqj6FmYimi5ZNVJCRiS7zM4Vzvu4Gb3w38Q=";
@@ -82,5 +75,5 @@ in
   # --- STANDARD NIXPKGS VERSIONS ---
   pkgs.cargo-binstall
   pkgs.cargo-insta
-
+  pkgs.cargo-nextest
 ]
