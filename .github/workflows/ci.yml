@@ -13,6 +13,26 @@ on:
       - main
 
 jobs:
+  setup-nix:
+    name: "Setup Nix environment"
+    runs-on: warp-ubuntu-2404-x64-2x
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
+
+      - name: Build Nix development environment
+        run: nix develop --command echo "Nix environment ready"
+
   docker-tee-build:
     name: "Build MPC Node TEE Docker image"
     runs-on: warp-ubuntu-2204-x64-16x
@@ -86,6 +106,7 @@ jobs:
     name: "Cargo test"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
+    needs: [setup-nix]
     permissions:
       contents: read
 
@@ -114,6 +135,7 @@ jobs:
     name: "MPC Node: pytests"
     runs-on: warp-ubuntu-2404-x64-16x
     timeout-minutes: 60
+    needs: [setup-nix]
     permissions:
       contents: read
 
@@ -215,6 +237,7 @@ jobs:
   fast-ci-checks:
     name: "Fast CI checks"
     runs-on: warp-ubuntu-2404-x64-8x
+    needs: [setup-nix]
     permissions:
       contents: read
     steps:
@@ -241,7 +264,7 @@ jobs:
   ci-extra:
     name: "Extra CI checks"
     runs-on: warp-ubuntu-2404-x64-2x
-    needs: [fast-ci-checks]
+    needs: [setup-nix, fast-ci-checks]
     permissions:
       contents: read
     steps:
