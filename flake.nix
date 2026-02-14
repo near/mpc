@@ -140,6 +140,7 @@
           miscTools = with pkgs; [
             git
             binaryen
+            ruff
           ];
 
           buildLibs =
