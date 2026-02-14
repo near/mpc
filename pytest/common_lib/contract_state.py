@@ -98,16 +98,15 @@ class Participants:
 
     @staticmethod
     def from_json(data: dict):
-        raw_participants = data.get("participants", [])
+        raw_participants = data.get("participants", {})
         participants = []
-        for entry in raw_participants:
-            account_id, pid, meta = entry
+        for account_id, participant_data in raw_participants.items():
             participants.append(
                 Participant(
                     account_id=account_id,
-                    id=pid,
-                    url=meta.get("url", ""),
-                    sign_pk=meta.get("sign_pk", ""),
+                    id=participant_data.get("id", 0),
+                    url=participant_data.get("info", {}).get("url", ""),
+                    sign_pk=participant_data.get("info", {}).get("sign_pk", ""),
                 )
             )
         return Participants(
