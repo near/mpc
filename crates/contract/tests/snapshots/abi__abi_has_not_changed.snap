@@ -2510,7 +2510,6 @@ expression: abi
           }
         },
         "ParticipantData": {
-          "description": "The data stored for each participant.",
           "type": "object",
           "required": [
             "id",
@@ -2518,7 +2517,7 @@ expression: abi
           ],
           "properties": {
             "id": {
-              "description": "Unique identifier assigned to the participant, used for threshold signing.",
+              "description": "Unique, monotonically assigned identifier for this participant.",
               "allOf": [
                 {
                   "$ref": "#/definitions/ParticipantId"
@@ -2593,7 +2592,6 @@ expression: abi
           }
         },
         "Participants": {
-          "description": "Stores participants indexed by [`AccountId`] for O(log n) lookups.",
           "type": "object",
           "required": [
             "next_id",
@@ -2618,7 +2616,7 @@ expression: abi
           }
         },
         "Participants2": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt mirrors the contract-internal [`BTreeMap`]-based structure, mapping each [`AccountId`] to its [`ParticipantData`] (participant ID + connection info).\n\nDeserialization supports both the current BTreeMap format and the legacy Vec-of-tuples format (`[[account, id, info], ...]`) for backward compatibility with older contract versions.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt mirrors the contract-internal [`BTreeMap`]-based structure, mapping each [`AccountId`] to its [`ParticipantData`] (participant ID + connection info).\n\nDeserialization supports both the current BTreeMap format and the legacy Vec-of-tuples format (`[[account, id, info], ...]`) for backward compatibility with older contract versions. This can be removed once all deployed contracts have been upgraded past the `Vec`-based format.",
           "type": "object",
           "required": [
             "next_id",
