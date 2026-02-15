@@ -144,6 +144,10 @@ impl Participants {
         self.participants.contains_key(account_id)
     }
 
+    /// Constructs a [`Participants`] from a list of tuples.
+    ///
+    /// Duplicate [`AccountId`]s are detected by a length check after [`BTreeMap::collect`].
+    /// [`ParticipantId`] uniqueness and [`next_id`](Self::next_id) coherence are checked by [`validate`](Self::validate).
     pub fn init(
         next_id: ParticipantId,
         participants: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
