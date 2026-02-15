@@ -66,7 +66,8 @@ pub struct ParticipantData {
 ///
 /// Deserialization supports both the current BTreeMap format and the legacy
 /// Vec-of-tuples format (`[[account, id, info], ...]`) for backward
-/// compatibility with older contract versions.
+/// compatibility with older contract versions. This can be removed once all
+/// deployed contracts have been upgraded past the `Vec`-based format.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -107,89 +108,68 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_serialize_outputs_map_format() {
-        let mut participants = BTreeMap::new();
-        participants.insert(
-            AccountId("alice.near".to_string()),
+    fn participant(name: &str, id: u32) -> (AccountId, ParticipantData) {
+        (
+            AccountId(format!("{name}.near")),
             ParticipantData {
-                id: ParticipantId(0),
+                id: ParticipantId(id),
                 info: ParticipantInfo {
-                    url: "https://alice.com".to_string(),
-                    sign_pk: "ed25519:abc".to_string(),
+                    url: format!("https://{name}.com"),
+                    sign_pk: format!("ed25519:{name}"),
                 },
             },
-        );
+        )
+    }
+
+    #[test]
+    fn test_serialize_outputs_map_format() {
+        let (id, data) = participant("alice", 0);
         let p = Participants {
             next_id: ParticipantId(1),
-            participants,
+            participants: BTreeMap::from([(id.clone(), data.clone())]),
         };
 
         let json = serde_json::to_string(&p).unwrap();
-        assert_eq!(
-            json,
-            r#"{"next_id":1,"participants":{"alice.near":{"id":0,"info":{"url":"https://alice.com","sign_pk":"ed25519:abc"}}}}"#
+        let expected = format!(
+            r#"{{"next_id":1,"participants":{{"{}":{{"id":{},"info":{{"url":"{}","sign_pk":"{}"}}}}}}}}"#,
+            id.0, data.id.0, data.info.url, data.info.sign_pk,
         );
+        assert_eq!(json, expected);
     }
 
     #[test]
     fn test_deserialize_map_format() {
-        let json = r#"{"next_id":1,"participants":{"alice.near":{"id":0,"info":{"url":"https://alice.com","sign_pk":"ed25519:abc"}}}}"#;
-        let deserialized: Participants = serde_json::from_str(json).unwrap();
+        let expected = Participants {
+            next_id: ParticipantId(1),
+            participants: BTreeMap::from([participant("alice", 0)]),
+        };
 
-        let mut expected_participants = BTreeMap::new();
-        expected_participants.insert(
-            AccountId("alice.near".to_string()),
-            ParticipantData {
-                id: ParticipantId(0),
-                info: ParticipantInfo {
-                    url: "https://alice.com".to_string(),
-                    sign_pk: "ed25519:abc".to_string(),
-                },
-            },
-        );
-        assert_eq!(
-            deserialized,
-            Participants {
-                next_id: ParticipantId(1),
-                participants: expected_participants,
-            }
-        );
+        let json = serde_json::to_string(&expected).unwrap();
+        let deserialized: Participants = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, expected);
     }
 
     #[test]
     fn test_deserialize_legacy_vec_format() {
-        // Old contracts serialize participants as a Vec of (AccountId, ParticipantId, ParticipantInfo) tuples.
-        let json = r#"{"next_id":2,"participants":[["alice.near",0,{"url":"https://alice.com","sign_pk":"ed25519:abc"}],["bob.near",1,{"url":"https://bob.com","sign_pk":"ed25519:def"}]]}"#;
-        let deserialized: Participants = serde_json::from_str(json).unwrap();
+        let (alice_id, alice_data) = participant("alice", 0);
+        let (bob_id, bob_data) = participant("bob", 1);
+        let expected = Participants {
+            next_id: ParticipantId(2),
+            participants: BTreeMap::from([
+                (alice_id.clone(), alice_data.clone()),
+                (bob_id.clone(), bob_data.clone()),
+            ]),
+        };
 
-        let mut expected_participants = BTreeMap::new();
-        expected_participants.insert(
-            AccountId("alice.near".to_string()),
-            ParticipantData {
-                id: ParticipantId(0),
-                info: ParticipantInfo {
-                    url: "https://alice.com".to_string(),
-                    sign_pk: "ed25519:abc".to_string(),
-                },
-            },
-        );
-        expected_participants.insert(
-            AccountId("bob.near".to_string()),
-            ParticipantData {
-                id: ParticipantId(1),
-                info: ParticipantInfo {
-                    url: "https://bob.com".to_string(),
-                    sign_pk: "ed25519:def".to_string(),
-                },
-            },
-        );
-        assert_eq!(
-            deserialized,
-            Participants {
-                next_id: ParticipantId(2),
-                participants: expected_participants,
-            }
-        );
+        // Old contracts serialize participants as a Vec of (AccountId, ParticipantId, ParticipantInfo) tuples.
+        let legacy_json = serde_json::json!({
+            "next_id": 2,
+            "participants": [
+                [&alice_id, &alice_data.id, &alice_data.info],
+                [&bob_id, &bob_data.id, &bob_data.info],
+            ]
+        });
+        let deserialized: Participants = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(deserialized, expected);
     }
 }

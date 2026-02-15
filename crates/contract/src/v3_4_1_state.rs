@@ -7,11 +7,10 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 //!
-//! ## Changes in 3.3.2
+//! ## Changes since 3.4.1
 //! - `Participants` struct changed from serializing participants as
 //!   `Vec<(AccountId, ParticipantId, ParticipantInfo)>` to
 //!   `BTreeMap<AccountId, ParticipantData>` where `ParticipantData { id, info }`.
-//! - `StaleData` was cleaned up (participant_attestations field removed).
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types as dtos;
@@ -206,7 +205,7 @@ impl From<OldProtocolContractState> for crate::state::ProtocolContractState {
     }
 }
 
-/// StaleData in v3.4.1 is empty (participant_attestations was cleaned up in 3.3.2 → 3.4.0).
+/// StaleData in v3.4.1 is empty (participant_attestations was cleaned up in 3.4.0 → 3.4.1).
 #[derive(Debug, Default, BorshSerialize, BorshDeserialize)]
 struct StaleData {}
 

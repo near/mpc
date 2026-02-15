@@ -39,17 +39,15 @@ impl Display for ParticipantId {
     }
 }
 
-/// The data stored for each participant.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ParticipantData {
-    /// Unique identifier assigned to the participant, used for threshold signing.
+    /// Unique, monotonically assigned identifier for this participant.
     pub id: ParticipantId,
     /// Connection and verification info (URL and public key) for this participant.
     pub info: ParticipantInfo,
 }
 
-/// Stores participants indexed by [`AccountId`] for O(log n) lookups.
 #[near(serializers=[borsh])]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -210,7 +208,6 @@ impl Participants {
     }
 
     /// Returns a subset of the participants according to the given range of indices.
-    /// Note: Since [`BTreeMap`] iteration is by [`AccountId`] order, this may differ from [`Vec`] order.
     pub fn subset(&self, range: std::ops::Range<usize>) -> Participants {
         let map: BTreeMap<_, _> = self
             .participants
