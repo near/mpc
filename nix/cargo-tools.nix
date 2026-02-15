@@ -76,5 +76,4 @@ in
   pkgs.cargo-binstall
   pkgs.cargo-insta
   pkgs.cargo-nextest
-
 ]
