@@ -135,9 +135,11 @@
           ];
 
           pythonTools = with pkgs; [
-            python312 # Use Python 3.12 for compatibility with blspy
+            python312
             python312Packages.pip
             python312Packages.virtualenv
+            # runtime dependency of near-cli to save keys to keychain
+            python3Packages.keyring
           ];
 
           nearTools = with pkgs; [
