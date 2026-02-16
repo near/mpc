@@ -61,8 +61,8 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 test-utils = ["rand", "rand_chacha"]
 
 [dev-dependencies]
-criterion = { version = "0.8.1", features = ["html_reports"] }
-insta = { version = "1.46.2", features = ["json", "redactions"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
+insta = { version = "1.46.3", features = ["json", "redactions"] }
 rand = { version = "0.8.5" }
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 threshold-signatures = { path = ".", features = ["test-utils"] }
