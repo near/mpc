@@ -14,7 +14,7 @@ PRIORITY CHECKS (report only if found):
    - Backward compatibility issues with existing APIs/data formats
 
 2. Project Engineering Standards
-   - Enforce all standards defined in CONTRIBUTING.md (don't panic, local reasonability, safe arithmetic, separate business logic from I/O, tests required, etc.)
+   - Enforce all standards defined in [CONTRIBUTING.md] (don't panic, local reasonability, safe arithmetic, separate business logic from I/O, tests required, etc.)
 
 3. Production Safety
    - Breaking changes that could fail during rolling updates
@@ -48,5 +48,8 @@ REVIEW STYLE:
 - If no critical issues found: approve with a one-line summary
 - Sign off with: ✅ (approved) or ⚠️ (issues found)
 
-Consult the repository's [CLAUDE.md](../../CLAUDE.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md) for project-specific conventions.
+Consult the repository's [CLAUDE.md] and [CONTRIBUTING.md] for project-specific conventions.
 Use `gh pr comment` to post your review.
+
+[CLAUDE.md]: ../../CLAUDE.md
+[CONTRIBUTING.md]: ../../CONTRIBUTING.md
