@@ -30,7 +30,9 @@ use crate::{
     derive_foreign_tx_tweak,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+        domain::{
+            AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme,
+        },
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -634,6 +636,16 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
     }
 }
 
+impl IntoInterfaceType<dtos::DomainPurpose> for &DomainPurpose {
+    fn into_dto_type(self) -> dtos::DomainPurpose {
+        match self {
+            DomainPurpose::Sign => dtos::DomainPurpose::Sign,
+            DomainPurpose::ForeignTx => dtos::DomainPurpose::ForeignTx,
+            DomainPurpose::CKD => dtos::DomainPurpose::CKD,
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
     fn into_dto_type(self) -> dtos::DomainConfig {
         dtos::DomainConfig {
@@ -815,6 +827,7 @@ impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContrac
                 .iter()
                 .map(|p| p.into_dto_type())
                 .collect(),
+            domain_purposes: Default::default(),
         }
     }
 }
@@ -830,6 +843,7 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             previously_cancelled_resharing_epoch_id: self
                 .previously_cancelled_resharing_epoch_id
                 .map(|e| e.into_dto_type()),
+            domain_purposes: Default::default(),
         }
     }
 }

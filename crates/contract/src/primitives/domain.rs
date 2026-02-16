@@ -48,6 +48,30 @@ impl Default for SignatureScheme {
     }
 }
 
+/// The purpose of a domain. Provides defense-in-depth at the contract level by ensuring
+/// that domains intended for one purpose cannot be used for another.
+/// Cryptographic separation already exists via different tweak derivation prefixes in kdf.rs.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
+impl DomainPurpose {
+    /// Infer a domain's purpose from its signature scheme.
+    /// Used for backwards compatibility with domains created before DomainPurpose existed.
+    pub fn infer_from_scheme(scheme: SignatureScheme) -> Self {
+        match scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => Self::Sign,
+            SignatureScheme::Bls12381 => Self::CKD,
+        }
+    }
+}
+
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,7 +223,7 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+    use super::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
 
     #[test]
     fn test_add_domains() {
@@ -328,5 +352,38 @@ pub mod tests {
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+    }
+
+    #[test]
+    fn test_infer_from_scheme() {
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Ed25519),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::V2Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Bls12381),
+            DomainPurpose::CKD
+        );
+    }
+
+    #[test]
+    fn test_domain_purpose_serialization() {
+        let purpose = DomainPurpose::Sign;
+        let json = serde_json::to_string(&purpose).unwrap();
+        assert_eq!(json, r#""Sign""#);
+
+        let purpose: DomainPurpose = serde_json::from_str(r#""ForeignTx""#).unwrap();
+        assert_eq!(purpose, DomainPurpose::ForeignTx);
+
+        let purpose: DomainPurpose = serde_json::from_str(r#""CKD""#).unwrap();
+        assert_eq!(purpose, DomainPurpose::CKD);
     }
 }

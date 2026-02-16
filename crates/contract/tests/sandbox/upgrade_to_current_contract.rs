@@ -11,7 +11,7 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
-use contract_interface::types::ProtocolContractState;
+use contract_interface::types::{DomainPurpose, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -26,7 +26,48 @@ use near_account_id::AccountId;
 use near_workspaces::{network::Sandbox, Account, Contract, Worker};
 use rand_core::OsRng;
 use rstest::rstest;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+
+/// Infer and populate `domain_purposes` on a DTO state.
+/// The old contract doesn't include `domain_purposes` in its state() response, so
+/// pre-upgrade state will have it empty. This helper mirrors the migration logic
+/// so the test can compare states correctly.
+fn populate_domain_purposes(state: &mut ProtocolContractState) {
+    fn infer_purpose(
+        scheme: &contract_interface::types::SignatureScheme,
+    ) -> DomainPurpose {
+        match scheme {
+            contract_interface::types::SignatureScheme::Secp256k1
+            | contract_interface::types::SignatureScheme::Ed25519
+            | contract_interface::types::SignatureScheme::V2Secp256k1 => DomainPurpose::Sign,
+            contract_interface::types::SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        }
+    }
+
+    fn purposes_from_domains(
+        domains: &contract_interface::types::DomainRegistry,
+    ) -> BTreeMap<contract_interface::types::DomainId, DomainPurpose> {
+        domains
+            .domains
+            .iter()
+            .map(|d| (d.id, infer_purpose(&d.scheme)))
+            .collect()
+    }
+
+    match state {
+        ProtocolContractState::Running(s) => {
+            s.domain_purposes = purposes_from_domains(&s.domains);
+        }
+        ProtocolContractState::Resharing(s) => {
+            s.previous_running_state.domain_purposes =
+                purposes_from_domains(&s.previous_running_state.domains);
+        }
+        ProtocolContractState::Initializing(s) => {
+            s.domain_purposes = purposes_from_domains(&s.domains);
+        }
+        ProtocolContractState::NotInitialized => {}
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 enum Network {
@@ -169,11 +210,15 @@ async fn propose_upgrade_from_production_to_current_binary(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     propose_and_vote_contract_binary(&accounts, &contract, current_contract()).await;
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+
+    // Migration populates domain_purposes from existing domain schemes.
+    // Patch the pre-upgrade state (which didn't have this field) so we can compare.
+    populate_domain_purposes(&mut state_pre_upgrade);
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -216,7 +261,7 @@ async fn upgrade_preserves_state_and_requests(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -225,6 +270,10 @@ async fn upgrade_preserves_state_and_requests(
         .expect("❌ migration() failed");
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+
+    // Migration populates domain_purposes from existing domain schemes.
+    // Patch the pre-upgrade state (which didn't have this field) so we can compare.
+    populate_domain_purposes(&mut state_pre_upgrade);
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,
@@ -326,7 +375,7 @@ async fn upgrade_allows_new_request_types(
     )
     .await;
 
-    let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
+    let mut state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
     assert!(healthcheck(&contract).await.unwrap());
     let contract = upgrade_to_new(contract).await.unwrap();
@@ -335,6 +384,10 @@ async fn upgrade_allows_new_request_types(
         .expect("❌ migration() failed");
 
     let state_post_upgrade: ProtocolContractState = get_state(&contract).await;
+
+    // Migration populates domain_purposes from existing domain schemes.
+    // Patch the pre-upgrade state (which didn't have this field) so we can compare.
+    populate_domain_purposes(&mut state_pre_upgrade);
 
     assert_eq!(
         state_pre_upgrade, state_post_upgrade,

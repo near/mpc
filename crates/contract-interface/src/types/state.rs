@@ -160,6 +160,31 @@ pub enum SignatureScheme {
     V2Secp256k1,
 }
 
+/// The purpose of a domain.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
 /// Configuration for a signature domain.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -342,6 +367,8 @@ pub struct InitializingContractState {
     pub generated_keys: Vec<KeyForDomain>,
     pub generating_key: KeyEvent,
     pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+    #[serde(default)]
+    pub domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 
 /// State when the contract is ready for signature operations.
@@ -357,6 +384,8 @@ pub struct RunningContractState {
     pub parameters_votes: ThresholdParametersVotes,
     pub add_domains_votes: AddDomainsVotes,
     pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+    #[serde(default)]
+    pub domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 
 /// State when the contract is resharing keys to new participants.

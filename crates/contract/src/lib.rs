@@ -68,7 +68,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -112,6 +112,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -157,6 +158,32 @@ impl ForeignChainPolicyVotes {
 }
 
 impl MpcContract {
+    /// Returns the purpose of the given domain, falling back to inferring from the scheme
+    /// if the domain was created before `domain_purposes` was populated.
+    fn domain_purpose(&self, domain_id: DomainId, scheme: SignatureScheme) -> DomainPurpose {
+        self.domain_purposes
+            .get(&domain_id)
+            .copied()
+            .unwrap_or_else(|| DomainPurpose::infer_from_scheme(scheme))
+    }
+
+    /// Build a DTO-compatible domain purposes map.
+    fn dto_domain_purposes(&self) -> BTreeMap<dtos::DomainId, dtos::DomainPurpose> {
+        self.domain_purposes
+            .iter()
+            .map(|(id, purpose)| ((*id).into_dto_type(), purpose.into_dto_type()))
+            .collect()
+    }
+
+    /// Compute the initial domain_purposes from a domain registry by inferring from schemes.
+    fn infer_domain_purposes(domains: &DomainRegistry) -> BTreeMap<DomainId, DomainPurpose> {
+        domains
+            .domains()
+            .iter()
+            .map(|d| (d.id, DomainPurpose::infer_from_scheme(d.scheme)))
+            .collect()
+    }
+
     pub(crate) fn public_key_extended(
         &self,
         domain_id: DomainId,
@@ -238,6 +265,16 @@ impl MpcContract {
                 .to_string(),
             );
         };
+
+        // Check domain purpose: only Sign-purpose domains are allowed for sign()
+        let purpose = self.domain_purpose(request.domain_id, domain_config.scheme);
+        if purpose != DomainPurpose::Sign {
+            env::panic_str(
+                &InvalidParameters::InvalidDomainId
+                    .message("Domain purpose must be Sign for sign() requests")
+                    .to_string(),
+            );
+        }
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -417,10 +454,12 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        if domain_config.scheme != SignatureScheme::Bls12381 {
+        // Check domain purpose: only CKD-purpose domains are allowed for CKD requests
+        let purpose = self.domain_purpose(request.domain_id, domain_config.scheme);
+        if purpose != DomainPurpose::CKD {
             env::panic_str(
                 &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Bls12381")
+                    .message("Domain purpose must be CKD for request_app_private_key()")
                     .to_string(),
             );
         }
@@ -527,6 +566,10 @@ impl MpcContract {
             );
         };
 
+        // Note: We use a scheme-based check here rather than DomainPurpose::ForeignTx because
+        // no ForeignTx-purpose domains exist yet. Once ForeignTx domains are created via
+        // a dedicated vote, this should be tightened to check purpose == ForeignTx.
+        // Cryptographic separation is already ensured by different tweak derivation prefixes.
         if domain_config.scheme != SignatureScheme::Secp256k1 {
             env::panic_str(
                 &InvalidParameters::InvalidDomainId
@@ -972,8 +1015,17 @@ impl MpcContract {
             domains,
         );
 
+        // Store purposes for newly added domains before they're moved
+        let new_purposes: Vec<_> = domains
+            .iter()
+            .map(|d| (d.id, DomainPurpose::infer_from_scheme(d.scheme)))
+            .collect();
+
         if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
             self.protocol_state = new_state;
+            for (id, purpose) in new_purposes {
+                self.domain_purposes.insert(id, purpose);
+            }
         }
         Ok(())
     }
@@ -1505,6 +1557,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            domain_purposes: BTreeMap::new(),
         })
     }
 
@@ -1547,6 +1600,7 @@ impl MpcContract {
 
         let initial_participants = parameters.participants();
         let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
+        let domain_purposes = Self::infer_domain_purposes(&domains);
 
         Ok(MpcContract {
             config: init_config.map(Into::into).unwrap_or_default(),
@@ -1565,6 +1619,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            domain_purposes,
         })
     }
 
@@ -1596,7 +1651,21 @@ impl MpcContract {
     }
 
     pub fn state(&self) -> contract_interface::types::ProtocolContractState {
-        (&self.protocol_state).into_dto_type()
+        let mut dto = (&self.protocol_state).into_dto_type();
+        let purposes = self.dto_domain_purposes();
+        match &mut dto {
+            dtos::ProtocolContractState::Running(s) => {
+                s.domain_purposes = purposes;
+            }
+            dtos::ProtocolContractState::Resharing(s) => {
+                s.previous_running_state.domain_purposes = purposes;
+            }
+            dtos::ProtocolContractState::Initializing(s) => {
+                s.domain_purposes = purposes;
+            }
+            dtos::ProtocolContractState::NotInitialized => {}
+        }
+        dto
     }
 
     /// Returns all allowed code hashes in order from most recent to least recent allowed code hashes. The first element is the most recent allowed code hash.
@@ -2025,7 +2094,7 @@ mod tests {
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2903,6 +2972,7 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 stale_data: Default::default(),
+                domain_purposes: BTreeMap::new(),
             }
         }
     }
@@ -4350,5 +4420,66 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    #[test]
+    #[should_panic(expected = "Domain purpose must be Sign for sign() requests")]
+    fn sign__rejects_ckd_purpose_domain() {
+        let (_context, mut contract, _sk) =
+            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+
+        let request = SignRequestArgs {
+            payload_v2: Some(Payload::from_legacy_ecdsa([0u8; 32])),
+            path: "".to_string(),
+            domain_id: Some(DomainId::default()),
+            ..Default::default()
+        };
+        contract.sign(request);
+    }
+
+    #[test]
+    #[should_panic(expected = "Domain purpose must be CKD for request_app_private_key()")]
+    fn ckd__rejects_sign_purpose_domain() {
+        let (_context, mut contract, _sk) =
+            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+
+        let app_public_key: dtos::Bls12381G1PublicKey =
+            "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                .parse()
+                .unwrap();
+        let request = CKDRequestArgs {
+            derivation_path: "".to_string(),
+            app_public_key,
+            domain_id: DomainId::default(),
+        };
+        contract.request_app_private_key(request);
+    }
+
+    #[test]
+    fn init_running_populates_domain_purposes() {
+        let (_context, contract, _sk) =
+            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+
+        assert_eq!(
+            contract.domain_purposes.get(&DomainId(0)),
+            Some(&DomainPurpose::Sign)
+        );
+    }
+
+    #[test]
+    fn state_includes_domain_purposes() {
+        let (_context, contract, _sk) =
+            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+
+        let state = contract.state();
+        match state {
+            dtos::ProtocolContractState::Running(s) => {
+                assert_eq!(
+                    s.domain_purposes.get(&dtos::DomainId(0)),
+                    Some(&dtos::DomainPurpose::Sign)
+                );
+            }
+            _ => panic!("expected running state"),
+        }
     }
 }

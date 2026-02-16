@@ -1732,6 +1732,15 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "DomainPurpose": {
+          "description": "The purpose of a domain.",
+          "type": "string",
+          "enum": [
+            "Sign",
+            "ForeignTx",
+            "CKD"
+          ]
+        },
         "DomainRegistry": {
           "description": "Registry of all signature domains.",
           "type": "object",
@@ -2316,6 +2325,13 @@ expression: abi
                 "$ref": "#/definitions/AuthenticatedParticipantId"
               },
               "uniqueItems": true
+            },
+            "domain_purposes": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/DomainPurpose"
+              }
             },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
@@ -3181,6 +3197,13 @@ expression: abi
           "properties": {
             "add_domains_votes": {
               "$ref": "#/definitions/AddDomainsVotes"
+            },
+            "domain_purposes": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/DomainPurpose"
+              }
             },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
