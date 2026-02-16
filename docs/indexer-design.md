@@ -283,10 +283,6 @@ subgraph NEAR[Near Blockchain]
     direction TB
     
     subgraph MEMPOOL[Near Mempool]
-        %%direction LR
-        %%STREAMER[
-        %%<b>Near Block Stream</b>
-        %%]
     end
 
     subgraph CONTRACT[MPC Smart Contract]
@@ -311,27 +307,15 @@ CORE --> WRITE
 
 %% Orchestrator --> Chain Indexer
 VIEW --> CONTRACT_STATE_VIEWER
-%%CONTRACT_STATE_VIEWER --> CONTRACT_VIEW
-
 VIEW --> TX_SUBSCRIBER
-TX_SUBSCRIBER --> BLOCK_STREAMER
-
-%%|Monitor Blocks for<br/>Signature & CKD Requests| STREAMER
 WRITE --> TX_SENDER
-%%TX_SENDER --> CONTRACT_WRITE
 
-%% Chain Indexer --> Neard
+%% Chain Indexer --> Neard Node
+TX_SUBSCRIBER --> BLOCK_STREAMER
 CONTRACT_STATE_VIEWER --> VIEW_CLIENT
-
 TX_SENDER --> RPC_HANDLER
-TX_SENDER --> VIEW_CLIENT
-
-%%TX_SENDER --> BLOCK_STREAMER
-
 
 %% Neard --> Smart Contract
-
-%%RPC_HANDLER --> NEAR
 RPC_HANDLER --> MEMPOOL
 MEMPOOL -.-> CONTRACT_WRITE
 VIEW_CLIENT --> CONTRACT_VIEW
