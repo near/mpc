@@ -92,6 +92,9 @@
 
             PYTHONPATH = "./pytest:./nearcore_pytest:./tee_launcher";
 
+            # Ensure native Python extensions (greenlet, gevent, etc.) can find libstdc++
+            LD_LIBRARY_PATH = "${stdenv.cc.cc.lib}/lib";
+
             # OpenSSL
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -199,6 +202,20 @@
 
             shellHook = ''
               printf "\e[32m🦀 NEAR Dev Shell Active\e[0m\n"
+
+              # Auto-setup Python virtualenv for pytest
+              VENV_DIR="$PWD/pytest/venv"
+              if [ ! -d "$VENV_DIR" ]; then
+                printf "\e[33mCreating Python virtualenv in pytest/venv...\e[0m\n"
+                python3 -m venv "$VENV_DIR"
+              fi
+              source "$VENV_DIR/bin/activate"
+              if [ "$VENV_DIR/bin/pip" -nt "$VENV_DIR/.requirements-installed" ] || \
+                 [ "$PWD/pytest/requirements.txt" -nt "$VENV_DIR/.requirements-installed" ]; then
+                printf "\e[33mInstalling pytest requirements...\e[0m\n"
+                pip install -q -r "$PWD/pytest/requirements.txt"
+                touch "$VENV_DIR/.requirements-installed"
+              fi
             '';
           };
         }
