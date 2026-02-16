@@ -6,6 +6,7 @@ use thiserror::Error;
 pub mod abstract_chain;
 pub mod bitcoin;
 pub mod contract_interface_conversions;
+pub mod starknet;
 
 pub trait ForeignChainInspector {
     type TransactionId;
