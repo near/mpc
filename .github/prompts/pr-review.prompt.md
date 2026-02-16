@@ -48,8 +48,9 @@ REVIEW STYLE:
 - If no critical issues found: approve with a one-line summary
 - Sign off with: ✅ (approved) or ⚠️ (issues found)
 
-Consult the repository's [CLAUDE.md] and [CONTRIBUTING.md] for project-specific conventions.
+Consult the repository's [CLAUDE.md], [CONTRIBUTING.md], and [AGENTS.md] for project-specific conventions.
 Use `gh pr comment` to post your review.
 
 [CLAUDE.md]: ../../CLAUDE.md
 [CONTRIBUTING.md]: ../../CONTRIBUTING.md
+[AGENTS.md]: ../../AGENTS.md

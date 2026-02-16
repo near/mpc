@@ -95,23 +95,31 @@ jobs:
           export COMMENTS_JSON
           python3 .github/scripts/format_pr_comments.py > /tmp/pr_comments_context.txt
 
+      - name: Build review prompt
+        id: build-prompt
+        run: |
+          {
+            echo 'REVIEW_PROMPT<<PROMPT_EOF'
+            echo '<pr_context>'
+            echo "REPO: ${{ github.repository }}"
+            echo "PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}"
+            echo 'LANGUAGE: Rust'
+            echo '</pr_context>'
+            echo ''
+            echo '<existing_discussions>'
+            cat /tmp/pr_comments_context.txt
+            echo '</existing_discussions>'
+            echo ''
+            echo '<review_instructions>'
+            cat .github/prompts/pr-review.prompt.md
+            echo '</review_instructions>'
+            echo 'PROMPT_EOF'
+          } >> "$GITHUB_ENV"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@23ed4cb53d6eacddbc22ec16652c98bcc54e0476 #v1.0.48
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
-          prompt: |
-            <pr_context>
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-            LANGUAGE: Rust
-            </pr_context>
-
-            <existing_discussions>
-            $(cat /tmp/pr_comments_context.txt)
-            </existing_discussions>
-
-            <review_instructions>
-            $(cat .github/prompts/pr-review.prompt.md)
-            </review_instructions>
+          prompt: ${{ env.REVIEW_PROMPT }}
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
