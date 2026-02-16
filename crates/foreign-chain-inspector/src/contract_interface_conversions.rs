@@ -15,7 +15,6 @@ pub enum ConversionError {
     IntegerOverflow { context: &'static str },
 }
 
-// --- BlockConfirmations ---
 impl From<dtos::BlockConfirmations> for BlockConfirmations {
     fn from(value: dtos::BlockConfirmations) -> Self {
         BlockConfirmations::from(value.0)
@@ -27,8 +26,6 @@ impl From<BlockConfirmations> for dtos::BlockConfirmations {
         dtos::BlockConfirmations(*value)
     }
 }
-
-// --- EthereumFinality <-> EvmFinality ---
 
 impl From<EthereumFinality> for dtos::EvmFinality {
     fn from(value: EthereumFinality) -> Self {
@@ -54,7 +51,6 @@ impl TryFrom<dtos::EvmFinality> for EthereumFinality {
     }
 }
 
-// --- Log (RPC) <-> EvmLog (DTO) ---
 fn log_to_evm_log(value: Log) -> dtos::EvmLog {
     dtos::EvmLog {
         removed: value.removed,
@@ -95,7 +91,6 @@ fn evm_log_to_log(value: dtos::EvmLog) -> Log {
     }
 }
 
-// --- BitcoinExtractor ---
 impl From<BitcoinExtractor> for dtos::BitcoinExtractor {
     fn from(value: BitcoinExtractor) -> Self {
         match value {
@@ -115,8 +110,6 @@ impl TryFrom<dtos::BitcoinExtractor> for BitcoinExtractor {
         }
     }
 }
-
-// --- BitcoinExtractedValue ---
 
 impl From<BitcoinExtractedValue> for dtos::BitcoinExtractedValue {
     fn from(value: BitcoinExtractedValue) -> Self {
@@ -141,8 +134,6 @@ impl TryFrom<dtos::BitcoinExtractedValue> for BitcoinExtractedValue {
         }
     }
 }
-
-// --- AbstractExtractor <-> EvmExtractor ---
 
 impl TryFrom<AbstractExtractor> for dtos::EvmExtractor {
     type Error = ConversionError;
@@ -175,7 +166,6 @@ impl TryFrom<dtos::EvmExtractor> for AbstractExtractor {
     }
 }
 
-// --- AbstractExtractedValue <-> EvmExtractedValue ---
 impl From<AbstractExtractedValue> for dtos::EvmExtractedValue {
     fn from(value: AbstractExtractedValue) -> Self {
         match value {
@@ -204,15 +194,11 @@ impl TryFrom<dtos::EvmExtractedValue> for AbstractExtractedValue {
     }
 }
 
-// --- BitcoinExtractedValue -> ExtractedValue (wrapper) ---
-
 impl From<BitcoinExtractedValue> for dtos::ExtractedValue {
     fn from(value: BitcoinExtractedValue) -> Self {
         dtos::ExtractedValue::BitcoinExtractedValue(value.into())
     }
 }
-
-// --- AbstractExtractedValue -> ExtractedValue (wrapper via EvmExtractedValue) ---
 
 impl From<AbstractExtractedValue> for dtos::ExtractedValue {
     fn from(value: AbstractExtractedValue) -> Self {
@@ -230,8 +216,8 @@ mod tests {
     #[test]
     fn block_confirmations_roundtrip() {
         let contract = dtos::BlockConfirmations(42);
-        let inspector: BlockConfirmations = contract.clone().into();
-        let back: dtos::BlockConfirmations = inspector.into();
+        let inspector = BlockConfirmations::from(contract.clone());
+        let back = dtos::BlockConfirmations::from(inspector);
         assert_eq!(contract, back);
     }
 
@@ -270,7 +256,7 @@ mod tests {
     #[test]
     fn bitcoin_extractor_roundtrip() {
         let inspector = BitcoinExtractor::BlockHash;
-        let contract: dtos::BitcoinExtractor = inspector.clone().into();
+        let contract = dtos::BitcoinExtractor::from(inspector.clone());
         let back = BitcoinExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -279,7 +265,7 @@ mod tests {
     fn bitcoin_extracted_value_roundtrip() {
         let hash = BitcoinBlockHash::from([0xab; 32]);
         let inspector = BitcoinExtractedValue::BlockHash(hash);
-        let contract: dtos::BitcoinExtractedValue = inspector.clone().into();
+        let contract = dtos::BitcoinExtractedValue::from(inspector.clone());
         let back = BitcoinExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -287,7 +273,7 @@ mod tests {
     #[test]
     fn abstract_extractor_block_hash_roundtrip() {
         let inspector = AbstractExtractor::BlockHash;
-        let contract: dtos::EvmExtractor = inspector.clone().try_into().unwrap();
+        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -295,7 +281,7 @@ mod tests {
     #[test]
     fn abstract_extractor_log_roundtrip() {
         let inspector = AbstractExtractor::Log { log_index: 5 };
-        let contract: dtos::EvmExtractor = inspector.clone().try_into().unwrap();
+        let contract = dtos::EvmExtractor::try_from(inspector.clone()).unwrap();
         assert!(matches!(contract, dtos::EvmExtractor::Log { log_index: 5 }));
         let back = AbstractExtractor::try_from(contract).unwrap();
         assert_eq!(inspector, back);
@@ -305,7 +291,7 @@ mod tests {
     fn abstract_extracted_value_block_hash_roundtrip() {
         let hash = AbstractBlockHash::from([0xef; 32]);
         let inspector = AbstractExtractedValue::BlockHash(hash);
-        let contract: dtos::EvmExtractedValue = inspector.clone().into();
+        let contract = dtos::EvmExtractedValue::from(inspector.clone());
         let back = AbstractExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
@@ -345,7 +331,7 @@ mod tests {
             topics: vec![],
         };
         let inspector = AbstractExtractedValue::Log(log);
-        let contract: dtos::EvmExtractedValue = inspector.clone().into();
+        let contract = dtos::EvmExtractedValue::from(inspector.clone());
         assert!(matches!(contract, dtos::EvmExtractedValue::Log(_)));
         let back = AbstractExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
