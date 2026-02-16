@@ -1,6 +1,6 @@
 # MPC Indexer Breakout
 
-This documents outlines the design and efforts for breaking out the indexer into its own crate and potentially binary.
+This documents outlines the design and efforts for breaking out the indexer into its own crate.
 
 ## Background
 
