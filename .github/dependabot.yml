@@ -43,3 +43,8 @@ updates:
       - dependency-name: "rand_core"
       # Cannot be upgraded until we get MSVR 1.88
       - dependency-name: "time"
+      # TODO(#657): These are pinned to older versions in the devnet crate and cannot be upgraded
+      - dependency-name: "near-crypto"
+      - dependency-name: "near-jsonrpc-client"
+      - dependency-name: "near-jsonrpc-primitives"
+      - dependency-name: "near-primitives"
