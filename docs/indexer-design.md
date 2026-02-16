@@ -19,7 +19,7 @@ Additionally, an MPC node writes data to chain, such as:
 - its own TEE attestation
 - migration confirmation
 
-The MPC nodes monitor and intract with the NEAR blockchain by spawning a neard node in the same process (but in a different thread, with its own tokio runtime, c.f. [`spawn_real_indeer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49).
+The MPC nodes monitor and intract with the NEAR blockchain by spawning a neard node in the same process (but in a different thread, with its own tokio runtime, c.f. [`spawn_real_indexer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49).
 
 The part of the code that is responsible for spawning the neard node, fetching data from it and forwarding transactions to it, is what we currently refer to as _MPC Indexer_.
 
@@ -187,7 +187,7 @@ Currently, the MPC indexer tries to achieve two things:
     - informing the MPC node about jobs such as resharings, signature requests, ckd requests, etc.
     - informing the MPC node about relevant TEE information such as allowed docker images etc.
 
-The main concern with our current implementation is the lack of separation between abstraction layer 1 (neard-node-abstraction) and abstraction layer 2 (MPC orchestration). We would like to re-ues the chain-spcific abstraction layer for our backup service implementation (c.f.[#1891](https://github.com/near/mpc/issues/1891), as well as the HOT wallet TEE application (c.f. [#2062](https://github.com/near/mpc/issues/2062), but this is not easy to do with the current design.
+The main concern with our current implementation is the lack of separation between abstraction layer 1 (neard-node-abstraction) and abstraction layer 2 (MPC orchestration). We would like to re-use the chain-spcific abstraction layer for our backup service implementation (c.f.[#1891](https://github.com/near/mpc/issues/1891), as well as the HOT wallet TEE application (c.f. [#2062](https://github.com/near/mpc/issues/2062), but this is not easy to do with the current design.
 
 Additionally, the second abstraction layer is not enforced coherently. Looking at the `IndexerAPI` above, it reads pretty much verbatim like the corresponding contract endpoints. Additionally, the `TransactionSender` trait is relatively low-level.
 But there is _some_ abstraction happening, because the forwarded types are all node-internal and do not correspond to the types returned by the blockchain interface.
@@ -222,7 +222,7 @@ This component is responsible for:
     - forward transactions to the NEAR blockchain
     - monitor non-finalized blocks for transactions matching a user-specified pattern;
 
-This is the first step and primary goal. This abstraction is a huge enabler or migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
+This is the first step and primary goal. This abstraction is a huge enabler for migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
 
 As a secondary goal, we propose the **MPC Orchestrator**.
 This component is responsible for informing the MPC node about:
@@ -345,7 +345,7 @@ class CHAIN chain;
 
 ### Crate Dependencies
 
-Below is a graph depicting dependencies of the envisioned crate dependencies as it relates to NEAR indexr functionality.
+Below is a graph depicting dependencies of the envisioned crate dependencies as it relates to NEAR indexer functionality.
 
 ```mermaid
 ---
@@ -413,7 +413,7 @@ In this section, we propose API designs for the Chain Indexer and MPC Orchestrat
 
 The chain indexer consists of three functionalities, each one with their own API:
 
-- **Contract State subscriber:** subscribe to arbytrary view methods on arbitrary contracts on the NEAR blockchian.
+- **Contract State subscriber:** subscribe to arbitrary view methods on arbitrary contracts on the NEAR blockchain.
 - **Block Events:** Filter the mempool for transactions matching a specific pattern (receiptient or executor id and method names). Receive a stream of all matching transactions.
 - **Transaction Sender:** send transactions to the NEAR blockchain.
 
