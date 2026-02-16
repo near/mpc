@@ -4,7 +4,6 @@ use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspe
 use foreign_chain_inspector::starknet::inspector::{
     StarknetExtractor, StarknetFinality, StarknetInspector,
 };
-use foreign_chain_inspector::starknet::StarknetExtractedValue;
 use foreign_chain_inspector::ForeignChainInspector;
 use foreign_chain_inspector::{self, EthereumFinality};
 use rand::rngs::OsRng;
@@ -207,19 +206,13 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                 let inspector = StarknetInspector::new(http_client);
 
                 let transaction_id = request.tx_id.0 .0.into();
-                let finality = match request.finality {
-                    dtos::StarknetFinality::AcceptedOnL2 => StarknetFinality::AcceptedOnL2,
-                    dtos::StarknetFinality::AcceptedOnL1 => StarknetFinality::AcceptedOnL1,
-                    _ => bail!("unknown starknet finality level"),
-                };
-                let extractors = request
+                let finality: StarknetFinality = request.finality.clone().try_into()?;
+                let extractors: Vec<StarknetExtractor> = request
                     .extractors
                     .iter()
-                    .map(|extractor| match extractor {
-                        dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
-                        _ => bail!("unknown extractor found"),
-                    })
-                    .collect::<anyhow::Result<_>>()?;
+                    .cloned()
+                    .map(TryInto::try_into)
+                    .collect::<Result<_, _>>()?;
 
                 let extracted_values = inspector
                     .extract(transaction_id, finality, extractors)
@@ -227,17 +220,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                     .await
                     .context("timed out during execution of foreign chain request")??;
 
-                extracted_values
-                    .iter()
-                    .map(|extracted_value| match extracted_value {
-                        StarknetExtractedValue::BlockHash(value) => {
-                            let value: [u8; 32] = **value;
-                            Ok(dtos::ExtractedValue::StarknetExtractedValue(
-                                dtos::StarknetExtractedValue::BlockHash(dtos::StarknetFelt(value)),
-                            ))
-                        }
-                    })
-                    .collect::<anyhow::Result<_>>()?
+                extracted_values.into_iter().map(Into::into).collect()
             }
             _ => bail!("unsupported foreign chain request"),
         };

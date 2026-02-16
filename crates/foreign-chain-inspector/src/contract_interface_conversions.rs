@@ -6,6 +6,8 @@ use crate::EthereumFinality;
 use crate::abstract_chain::inspector::{AbstractExtractedValue, AbstractExtractor};
 use crate::bitcoin::BitcoinExtractedValue;
 use crate::bitcoin::inspector::BitcoinExtractor;
+use crate::starknet::StarknetExtractedValue;
+use crate::starknet::inspector::{StarknetExtractor, StarknetFinality};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
@@ -206,11 +208,84 @@ impl From<AbstractExtractedValue> for dtos::ExtractedValue {
     }
 }
 
+impl From<StarknetFinality> for dtos::StarknetFinality {
+    fn from(value: StarknetFinality) -> Self {
+        match value {
+            StarknetFinality::AcceptedOnL2 => dtos::StarknetFinality::AcceptedOnL2,
+            StarknetFinality::AcceptedOnL1 => dtos::StarknetFinality::AcceptedOnL1,
+        }
+    }
+}
+
+impl TryFrom<dtos::StarknetFinality> for StarknetFinality {
+    type Error = ConversionError;
+    fn try_from(value: dtos::StarknetFinality) -> Result<Self, Self::Error> {
+        match value {
+            dtos::StarknetFinality::AcceptedOnL2 => Ok(StarknetFinality::AcceptedOnL2),
+            dtos::StarknetFinality::AcceptedOnL1 => Ok(StarknetFinality::AcceptedOnL1),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "StarknetFinality",
+            }),
+        }
+    }
+}
+
+impl From<StarknetExtractor> for dtos::StarknetExtractor {
+    fn from(value: StarknetExtractor) -> Self {
+        match value {
+            StarknetExtractor::BlockHash => dtos::StarknetExtractor::BlockHash,
+        }
+    }
+}
+
+impl TryFrom<dtos::StarknetExtractor> for StarknetExtractor {
+    type Error = ConversionError;
+    fn try_from(value: dtos::StarknetExtractor) -> Result<Self, Self::Error> {
+        match value {
+            dtos::StarknetExtractor::BlockHash => Ok(StarknetExtractor::BlockHash),
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "StarknetExtractor",
+            }),
+        }
+    }
+}
+
+impl From<StarknetExtractedValue> for dtos::StarknetExtractedValue {
+    fn from(value: StarknetExtractedValue) -> Self {
+        match value {
+            StarknetExtractedValue::BlockHash(hash) => {
+                dtos::StarknetExtractedValue::BlockHash(dtos::StarknetFelt(hash.into()))
+            }
+        }
+    }
+}
+
+impl TryFrom<dtos::StarknetExtractedValue> for StarknetExtractedValue {
+    type Error = ConversionError;
+    fn try_from(value: dtos::StarknetExtractedValue) -> Result<Self, Self::Error> {
+        match value {
+            dtos::StarknetExtractedValue::BlockHash(felt) => {
+                Ok(StarknetExtractedValue::BlockHash(felt.0.into()))
+            }
+            _ => Err(ConversionError::UnsupportedVariant {
+                context: "StarknetExtractedValue",
+            }),
+        }
+    }
+}
+
+impl From<StarknetExtractedValue> for dtos::ExtractedValue {
+    fn from(value: StarknetExtractedValue) -> Self {
+        dtos::ExtractedValue::StarknetExtractedValue(value.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::abstract_chain::AbstractBlockHash;
     use crate::bitcoin::BitcoinBlockHash;
+    use crate::starknet::StarknetBlockHash;
     use foreign_chain_rpc_interfaces::evm::Log;
 
     #[test]
@@ -334,6 +409,43 @@ mod tests {
         let contract = dtos::EvmExtractedValue::from(inspector.clone());
         assert!(matches!(contract, dtos::EvmExtractedValue::Log(_)));
         let back = AbstractExtractedValue::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn starknet_finality_roundtrip() {
+        assert_eq!(
+            dtos::StarknetFinality::AcceptedOnL2,
+            dtos::StarknetFinality::from(StarknetFinality::AcceptedOnL2)
+        );
+        assert_eq!(
+            dtos::StarknetFinality::AcceptedOnL1,
+            dtos::StarknetFinality::from(StarknetFinality::AcceptedOnL1)
+        );
+        assert_eq!(
+            StarknetFinality::AcceptedOnL2,
+            StarknetFinality::try_from(dtos::StarknetFinality::AcceptedOnL2).unwrap()
+        );
+        assert_eq!(
+            StarknetFinality::AcceptedOnL1,
+            StarknetFinality::try_from(dtos::StarknetFinality::AcceptedOnL1).unwrap()
+        );
+    }
+
+    #[test]
+    fn starknet_extractor_roundtrip() {
+        let inspector = StarknetExtractor::BlockHash;
+        let contract = dtos::StarknetExtractor::from(inspector.clone());
+        let back = StarknetExtractor::try_from(contract).unwrap();
+        assert_eq!(inspector, back);
+    }
+
+    #[test]
+    fn starknet_extracted_value_roundtrip() {
+        let hash = StarknetBlockHash::from([0xab; 32]);
+        let inspector = StarknetExtractedValue::BlockHash(hash);
+        let contract = dtos::StarknetExtractedValue::from(inspector.clone());
+        let back = StarknetExtractedValue::try_from(contract).unwrap();
         assert_eq!(inspector, back);
     }
 }
