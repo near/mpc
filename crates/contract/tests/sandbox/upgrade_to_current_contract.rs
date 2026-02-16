@@ -33,9 +33,7 @@ use std::collections::{BTreeMap, HashSet};
 /// pre-upgrade state will have it empty. This helper mirrors the migration logic
 /// so the test can compare states correctly.
 fn populate_domain_purposes(state: &mut ProtocolContractState) {
-    fn infer_purpose(
-        scheme: &contract_interface::types::SignatureScheme,
-    ) -> DomainPurpose {
+    fn infer_purpose(scheme: &contract_interface::types::SignatureScheme) -> DomainPurpose {
         match scheme {
             contract_interface::types::SignatureScheme::Secp256k1
             | contract_interface::types::SignatureScheme::Ed25519

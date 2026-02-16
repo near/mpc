@@ -4425,8 +4425,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Domain purpose must be Sign for sign() requests")]
     fn sign__rejects_ckd_purpose_domain() {
-        let (_context, mut contract, _sk) =
-            basic_setup(SignatureScheme::Bls12381, &mut OsRng);
+        let (_context, mut contract, _sk) = basic_setup(SignatureScheme::Bls12381, &mut OsRng);
 
         let request = SignRequestArgs {
             payload_v2: Some(Payload::from_legacy_ecdsa([0u8; 32])),
@@ -4440,8 +4439,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Domain purpose must be CKD for request_app_private_key()")]
     fn ckd__rejects_sign_purpose_domain() {
-        let (_context, mut contract, _sk) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (_context, mut contract, _sk) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
 
         let app_public_key: dtos::Bls12381G1PublicKey =
             "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
@@ -4457,8 +4455,7 @@ mod tests {
 
     #[test]
     fn init_running_populates_domain_purposes() {
-        let (_context, contract, _sk) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (_context, contract, _sk) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
 
         assert_eq!(
             contract.domain_purposes.get(&DomainId(0)),
@@ -4468,8 +4465,7 @@ mod tests {
 
     #[test]
     fn state_includes_domain_purposes() {
-        let (_context, contract, _sk) =
-            basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
+        let (_context, contract, _sk) = basic_setup(SignatureScheme::Secp256k1, &mut OsRng);
 
         let state = contract.state();
         match state {
