@@ -249,6 +249,8 @@ subgraph ORCHESTRATOR[MPC Orchestrator]
     <b>MPC State View</b>
     ]
 
+    WRITE -.->|verify success| VIEW
+
 end
 
 subgraph CHAIN[Chain Indexer]
@@ -405,11 +407,19 @@ HOT_SERVICE --> TX_SENDER
 
 ### API Proposal
 
+In this section, we propose API designs for the Chain Indexer and MPC Orchestrator.
+
 #### Chain Indexer
+
+The chain indexer consists of three functionalities, each one with their own API:
+
+- **Contract State subscriber:** subscribe to arbytrary view methods on arbitrary contracts on the NEAR blockchian.
+- **Block Events:** Filter the mempool for transactions matching a specific pattern (receiptient or executor id and method names). Receive a stream of all matching transactions.
+- **Transaction Sender:** send transactions to the NEAR blockchain.
 
 ##### Contract State Subscriber
 
-The indexer should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
+The chain indexer should offer a convenient method for viewing and subscribing to contract state. We assume that contract state is seen through view methods in the contract implementation and propose the following interface:
 
 ```rust
 /// one-time call to `view_method` on the contract at `contract_id`
@@ -486,6 +496,8 @@ trait ContractStateSubscriber {
 
 ##### Block Event Subscriber
 
+###### Background
+
 The purpose of this intreface is to enable easy subscription to block events. In the MPC node, we use this to monitor the mempool for requests to the MPC network and responses from the MPC network. We do so by filtering all receipts for:
 1. signature and CKD requests, as well as foreign transaction verifications. We do so by:
     1. matching the `executor_id` of a receipt with the MPC contracts `AccountId`. This means that this receipt is executed by the MPC contract;
@@ -532,6 +544,7 @@ pub struct BlockViewLite {
 }
 ```
 
+###### Proposal
 
 There are a few questions for this API:
 - instead of bundling everything into one `BlockUpdate`, we could have one stream for each event type;
@@ -619,7 +632,6 @@ trait BlockEventSubscriber<T> {
 
 *Remark: can we actually bundle for different types <T>? We don't have to. We could return the json function call args as a string, as opposed to the deserialized type. Then we would have the receiver handle it, which would also help in recognizing if the interface broke.*
 
-
 Note: on the low-level, we want the indexer to parse efficently. if multiple ExecutorFunctionCallEvents have the same executor target, lets make sure we optimize internally.
 
 
@@ -635,7 +647,7 @@ let block_event_id : BlockEventId = BlockEventSubscriber.new().match_on_receiver
 
 ##### Transaction Sender
 
-*this still needs to be written. We could probably just forward the RPC handle or expose a generic API for signing and submitting arbitrary payload*
+*todo: this still needs to be written. We could probably just forward the RPC handle or expose a generic API for signing and submitting arbitrary payload*
 
 #### MPC Orchestrator
 
