@@ -131,8 +131,13 @@
             rustPlatform.bindgenHook
           ];
 
+          pythonTools = with pkgs; [
+            python312 # Use Python 3.12 for compatibility with blspy
+            python312Packages.pip
+            python312Packages.virtualenv
+          ];
+
           nearTools = with pkgs; [
-            python3Packages.keyring
             near-cli-rs
             cargo-near
           ];
@@ -177,7 +182,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools ++ llvmTools ++ rustTools ++ cargoTools ++ nearTools ++ miscTools ++ buildLibs;
+              dockerTools
+              ++ llvmTools
+              ++ rustTools
+              ++ cargoTools
+              ++ pythonTools
+              ++ nearTools
+              ++ miscTools
+              ++ buildLibs;
 
             env = envCommon // envDarwin;
 
