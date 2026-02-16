@@ -6,7 +6,7 @@ This documents outlines the design and efforts for breaking out the indexer into
 
 ### Current State
 
-The MPC node relies heavily on the Near blockchain for coordination. It fetches the following information from chain:
+The MPC node relies heavily on the NEAR blockchain for coordination. It fetches the following information from chain:
 - pending signature and CKD requests (read from non-finalized block state)
 - MPC protocol state (read from contract-state)
 - Node migration instructions and data
@@ -19,9 +19,9 @@ Additionally, an MPC node writes data to chain, such as:
 - its own TEE attestation
 - migration confirmation
 
-The nodes monitor and intract with the NEAR blockchain by spawning a neard node in the same process, but in a different thread, with its own tokio runtime (c.f. [`spawn_real_indeer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49). 
+The MPC nodes monitor and intract with the NEAR blockchain by spawning a neard node in the same process (but in a different thread, with its own tokio runtime, c.f. [`spawn_real_indeer`](https://github.com/near/mpc/blob/dacc610b92b8ef4d80b389d86e450a3488ae72ed/crates/node/src/indexer/real.rs#L49).
 
-We have an MPC indexer that interacts with the neard node (which, in turn, has an indexer interface)
+The part of the code that is responsible for spawning the neard node, fetching data from it and forwarding transactions to it, is what we currently refer to as _MPC Indexer_.
 
 Conceptually, the following graph depicts information flow:
 
@@ -145,7 +145,6 @@ class CONTRACT contract;
 class MEMPOOL mempool;
 ```
 
-
 The communication between the MPC Indexer currently offers the following API:
 
 ```rust
@@ -174,6 +173,27 @@ pub struct IndexerAPI<TransactionSender, ForeignChainPolicyReader> {
 
 ```
 
+##### Issues with the current design
+
+Currently, the MPC indexer tries to achieve two things:
+
+1. Interacting with the neard node:
+    - spawning the neard node
+    - generating and forwarding of transactions
+    - viewing contract state
+    - monitoring blocks and filtering for relevant events (signature requests, ckd requests, ...)
+2. Orchestration of the MPC network:
+    - Acting as an abstraction layer for the blockchain, ensuring no blockchain-internals are leaked to the node;
+    - informing the MPC node about jobs such as resharings, signature requests, ckd requests, etc.
+    - informing the MPC node about relevant TEE information such as allowed docker images etc.
+
+The main concern with our current implementation is the lack of separation between abstraction layer 1 (neard-node-abstraction) and abstraction layer 2 (MPC orchestration). We would like to re-ues the chain-spcific abstraction layer for our backup service implementation (c.f.[#1891](https://github.com/near/mpc/issues/1891), as well as the HOT wallet TEE application (c.f. [#2062](https://github.com/near/mpc/issues/2062), but this is not easy to do with the current design.
+
+Additionally, the second abstraction layer is not enforced coherently. Looking at the `IndexerAPI` above, it reads pretty much verbatim like the corresponding contract endpoints. Additionally, the `TransactionSender` trait is relatively low-level.
+But there is _some_ abstraction happening, because the forwarded types are all node-internal and do not correspond to the types returned by the blockchain interface.
+Overall, this interface makes testing the node non-trivial. We have a `FakeIndexer` implementation, which is a bit annoying to set-up with the chosen interface.
+
+
 ### Design Goals
 
 An improved indexer design should achieve the following goals:
@@ -190,18 +210,26 @@ An improved indexer design should achieve the following goals:
 
 ### Design Proposal
 
-We propose to add an abstraction layer (we call it **Chain Indexer**) between MPC indexer and Nearcore Indexer (the interface exposed by the neard node). This will be a library, allowing us to:
-- spin-up a neard node;
-- abstract the neard indexer interface such that no nearcore internals are exposed. The interface should be able to:
-    - call any view function on any contract and monitor for changes;
-    - forward transactions to the NEAR blockchain;
-    - monitor non-finalized blocks for transactions matching a user-specified pattern
+We propose to split the two functionalities of the current indexer (MPC orchestration and Chain Indexing) into two separate components:
 
-This is the first step and primary goal. That abstraction is a huge enabler or migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
+The **Chain Indexer**:
+This component is responsible for:
+- spinning-up a neard node;
+- abstracting the neard indexer interface such that no nearcore internals are exposed.
+- providing a convenient interface to:
+    - call arbitrary view methods on arbitrary contracts
+    - subscribe to view methods of contracts
+    - forward transactions to the NEAR blockchain
+    - monitor non-finalized blocks for transactions matching a user-specified pattern;
 
-As secondary goals, we might want to:
-- re-work the current indexer API between MPC node and MPC indexer
-- have a dedicatd library for transactions relevant to the MPC systems
+This is the first step and primary goal. This abstraction is a huge enabler or migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
+
+As a secondary goal, we propose the **MPC Orchestrator**.
+This component is responsible for informing the MPC node about:
+    - pending jobs (signature, CKD, forein chain verification requests)
+    - network state (peers)
+    - protoocl state (resharing)
+
 
 ```mermaid
 ---
@@ -211,7 +239,7 @@ flowchart TB
 
 CORE[MPC Node Core]
 
-subgraph INDEXER[MPC Indexer]
+subgraph ORCHESTRATOR[MPC Orchestrator]
     direction TB
     WRITE[
     <b>MPC State Write</b>
@@ -221,70 +249,93 @@ subgraph INDEXER[MPC Indexer]
     <b>MPC State View</b>
     ]
 
-
 end
 
 subgraph CHAIN[Chain Indexer]
     direction TB
     TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
-        **Parses** Monitors non-finalized NEAR blocks<br/>
-        **Forwards** transaction args matching a specified pattern
+        **Filters** non-finalized NEAR blocks for specific transactions
+        **Returns** matching args in a stream 
     ]
 
     CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>
         **Queries** view functions of smart contracts
-        **Forwards** the result
+        **Returns** the result to the MPC Orchestrator
     ]
 
     TX_SENDER[**Transaction Sender**<br/><br/>
         **Submits** transaction to the neard node
         **Returns** transaction result
     ]
+
+    subgraph NEARD[**Neard node**]
+        direction TB
+        BLOCK_STREAMER[**Streamer**]
+
+        VIEW_CLIENT[**View Client**]
+
+        RPC_HANDLER[**RPC Handler**]
+
+    end
 end
 
 subgraph NEAR[Near Blockchain]
-    direction LR
+    direction TB
     
-    subgraph MEMPOOL[Near Non-finalized blocks]
-        direction LR
-        STREAMER[
-        <b>Near Block Stream</b>
-        ]
+    subgraph MEMPOOL[Near Mempool]
+        %%direction LR
+        %%STREAMER[
+        %%<b>Near Block Stream</b>
+        %%]
     end
 
     subgraph CONTRACT[MPC Smart Contract]
         direction TB
+        CONTRACT_VIEW[
+        <b>Read Methods</b>
+        ]
 
         CONTRACT_WRITE[
         <b>Write Methods</b>
         ]
 
-        CONTRACT_VIEW[
-        <b>Read Methods</b>
-        ]
+
     end
 
 end
 
 
-
+%% CORE --> Orchestrator
 CORE --> VIEW
 CORE --> WRITE
 
-%% Indexer --> Near Blockchain
-%%VIEW --> CONTRACT_VIEW
-VIEW -->CONTRACT_STATE_VIEWER
-CONTRACT_STATE_VIEWER --> CONTRACT_VIEW
+%% Orchestrator --> Chain Indexer
+VIEW --> CONTRACT_STATE_VIEWER
+%%CONTRACT_STATE_VIEWER --> CONTRACT_VIEW
 
-%% VIEW -->STREAMER 
 VIEW --> TX_SUBSCRIBER
-TX_SUBSCRIBER --> STREAMER
-
+TX_SUBSCRIBER --> BLOCK_STREAMER
 
 %%|Monitor Blocks for<br/>Signature & CKD Requests| STREAMER
-%%WRITE --> CONTRACT_WRITE
 WRITE --> TX_SENDER
-TX_SENDER --> CONTRACT_WRITE
+%%TX_SENDER --> CONTRACT_WRITE
+
+%% Chain Indexer --> Neard
+CONTRACT_STATE_VIEWER --> VIEW_CLIENT
+
+TX_SENDER --> RPC_HANDLER
+TX_SENDER --> VIEW_CLIENT
+
+%%TX_SENDER --> BLOCK_STREAMER
+
+
+%% Neard --> Smart Contract
+
+%%RPC_HANDLER --> NEAR
+RPC_HANDLER --> MEMPOOL
+MEMPOOL -.-> CONTRACT_WRITE
+VIEW_CLIENT --> CONTRACT_VIEW
+BLOCK_STREAMER --> MEMPOOL
 
 %% ------------------------
 %% Styling
@@ -298,7 +349,7 @@ classDef mempool stroke:#0f766e,stroke-width:2px;
 classDef chain stroke-width:2px;
 
 class CORE core;
-class INDEXER indexer;
+class ORCHESTRATOR indexer;
 class NEAR near;
 class CONTRACT contract;
 class MEMPOOL mempool;
@@ -306,13 +357,66 @@ class CHAIN chain;
 ```
 
 
-todo: Transaction Sender shouldn't point to WriteMethods in the contract, rather, we should point to the specific dependencies of the NEAR Indexer to accurately depict what is happening (view client, streamer, rpc client etc.)
-Also, there is a typo with Parses Monitors non-finalized NEAR blocks
-
-
 ### Crate Dependencies
 
-todo: make a mermaid graph depicting how the different crates (backup-service, HOT migration), will depend on the ChainAPI
+Below is a graph depicting dependencies of the envisioned crate dependencies as it relates to NEAR indexr functionality.
+
+```mermaid
+---
+title: MPC Dependencies
+---
+flowchart TB
+
+
+subgraph SERVICES[MPC Services]
+    direction TB
+    subgraph MPC_NODE[MPC Node]
+        direction TB
+        CORE[MPC Node Core]
+        ORCHESTRATOR[MPC Orchestrator]
+        CORE --> ORCHESTRATOR
+    end
+
+    BACKUP_SERVICE[MPC Backup and Migration Service]
+
+    HOT_SERVICE[HOT MPC Service]
+end
+
+subgraph CHAIN[Chain Indexer]
+    direction TB
+    TX_SUBSCRIBER[**Block Event Subscriber**<br/><br/>
+        **Filters** non-finalized NEAR blocks for specific transactions
+        **Returns** matching args in a stream 
+    ]
+
+    CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>
+        **Queries** view functions of smart contracts
+        **Returns** stream for state
+    ]
+
+    TX_SENDER[**Transaction Sender**<br/><br/>
+        **Submits** transaction to the neard node
+        **Returns** transaction result
+    ]
+
+end
+
+subgraph NEAR[Near Blockchain]
+end
+
+CHAIN --> NEAR
+
+ORCHESTRATOR --> CONTRACT_STATE_VIEWER
+ORCHESTRATOR --> TX_SENDER
+ORCHESTRATOR --> TX_SUBSCRIBER
+
+BACKUP_SERVICE --> CONTRACT_STATE_VIEWER
+BACKUP_SERVICE --> TX_SENDER
+
+
+HOT_SERVICE --> CONTRACT_STATE_VIEWER
+HOT_SERVICE --> TX_SENDER
+```
 
 
 ### API Proposal
@@ -399,7 +503,6 @@ trait ContractStateSubscriber {
 ##### Block Event Subscriber
 
 The purpose of this intreface is to enable easy subscription to block events. In the MPC node, we use this to monitor the mempool for requests to the MPC network and responses from the MPC network. We do so by filtering all receipts for:
-
 1. signature and CKD requests, as well as foreign transaction verifications. We do so by:
     1. matching the `executor_id` of a receipt with the MPC contracts `AccountId`. This means that this receipt is executed by the MPC contract;
     2. matching the method called in the contract to one of the expected methods (in the case of the MPC network, we are looking for calls to `sign`, `request_app_private_key` and `verify_foreign_transaction`).
