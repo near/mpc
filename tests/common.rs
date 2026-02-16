@@ -1,8 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc
+)]
 
 use std::collections::HashMap;
 
-use rand::Rng;
+use rand::seq::SliceRandom as _;
 use rand_core::OsRng;
 
 use threshold_signatures::{
@@ -22,8 +26,9 @@ pub fn generate_participants(number: u32) -> Vec<Participant> {
 }
 
 pub fn choose_coordinator_at_random(participants: &[Participant]) -> Participant {
-    let index = rand::rngs::OsRng.gen_range(0..participants.len());
-    participants[index]
+    *participants
+        .choose(&mut OsRng)
+        .expect("participants list is not empty")
 }
 
 /// Run a protocol to completion, synchronously.

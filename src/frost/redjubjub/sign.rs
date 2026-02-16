@@ -273,7 +273,7 @@ mod test {
         Protocol,
     };
     use frost_core::Field;
-    use rand::{Rng, SeedableRng};
+    use rand::{seq::SliceRandom as _, SeedableRng};
     use rand_core::RngCore;
     use reddsa::frost::redjubjub::{
         round1::commit, JubjubBlake2b512, JubjubScalarField, Randomizer,
@@ -314,8 +314,7 @@ mod test {
         let public_key = keys[0].1.public_key.to_element();
 
         let msg = b"hello world".to_vec();
-        let index = rng.gen_range(0..keys.len());
-        let coordinator = keys[index as usize].0;
+        let coordinator = keys.choose(&mut rng).expect("keys list is not empty").0;
         let mut participants_sign_builder = keys
             .iter()
             .map(|(p, keygen_output)| {

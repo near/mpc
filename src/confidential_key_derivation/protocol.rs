@@ -192,7 +192,7 @@ mod test {
         check_one_coordinator_output, generate_participants, run_protocol, GenProtocol,
         MockCryptoRng,
     };
-    use rand::{Rng, RngCore, SeedableRng};
+    use rand::{seq::SliceRandom as _, RngCore, SeedableRng};
 
     #[test]
     fn test_hash2curve() {
@@ -219,8 +219,9 @@ mod test {
         let participants = generate_participants(3);
 
         // choose a coordinator at random
-        let index = rng.gen_range(0..participants.len());
-        let coordinator = participants[index as usize];
+        let coordinator = *participants
+            .choose(&mut rng)
+            .expect("participant list is not empty");
         let participant_list = ParticipantList::new(&participants).unwrap();
 
         // Manually compute signing keys

@@ -3,7 +3,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use frost_secp256k1::VerifyingKey;
-use rand::{Rng, RngCore};
+use rand::{seq::SliceRandom as _, Rng, RngCore};
 use rand_core::SeedableRng;
 
 mod bench_utils;
@@ -150,12 +150,17 @@ fn prepare_simulated_triples(participant_num: usize) -> PreparedSimulatedTriples
         .expect("Running protocol with snapshot should not have issues");
 
     // choose the real_participant at random
-    let index_real_participant = rng.gen_range(0..participant_num);
-    let real_participant = preps.participants[index_real_participant];
+    let real_participant = *preps
+        .participants
+        .choose(&mut rng)
+        .expect("participant list is not empty");
 
     // recreate rng using by real_participant to generate triples
     let mut rng_copy = MockCryptoRng::seed_from_u64(42);
-    for _ in 0..index_real_participant - 1 {
+    for p in &preps.participants {
+        if *p == real_participant {
+            break;
+        }
         rng_copy.next_u64();
     }
     let real_participant_rng = MockCryptoRng::seed_from_u64(rng_copy.next_u64());
