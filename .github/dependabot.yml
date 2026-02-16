@@ -1,17 +1,14 @@
 version: 2
-# /Cargo.toml
 updates:
+  # /Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
@@ -45,145 +42,99 @@ updates:
       # Cannot be upgraded until we get MSVR 1.88
       - dependency-name: "time"
 
-# crates/attestation/Cargo.toml
-updates:
+  # crates/attestation/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/attestation"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/backup-cli/Cargo.toml
-updates:
+  # crates/backup-cli/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/backup-cli"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/ckd-example-cli/Cargo.toml
-updates:
+  # crates/ckd-example-cli/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/ckd-example-cli"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/contract/Cargo.toml
-updates:
+  # crates/contract/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/contract"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/contract-history/Cargo.toml
-updates:
+  # crates/contract-history/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/contract-history"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/contract-interface/Cargo.toml
-updates:
+  # crates/contract-interface/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/contract-interface"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# crates/contract-interface/Cargo.toml
-updates:
-  - package-ecosystem: "cargo"
-    target-branch: "main"
-    directory: "/crates/contract-interface"
-    schedule:
-      interval: "weekly"
-
-    open-pull-requests-limit: 5
-
-    cooldown:
-      default-days: 7
-
-    groups:
-      rust-dependencies:
-        patterns:
-          - "*"
-
-# crates/devnet/Cargo.toml
-updates:
+  # crates/devnet/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/devnet"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
@@ -194,272 +145,254 @@ updates:
       # TODO(#657): use workspace versions
       - dependency-name: "near-crypto"
 
-# crates/foreign-chain-inspector/Cargo.toml
-updates:
+  # crates/foreign-chain-inspector/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/foreign-chain-inspector"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/foreign-chain-rpc-interfaces/Cargo.toml
-updates:
+  # crates/foreign-chain-rpc-interfaces/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/foreign-chain-rpc-interfaces"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/include-measurements/Cargo.toml
-updates:
+  # crates/include-measurements/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/include-measurements"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/mpc-attestation/Cargo.toml
-updates:
+  # crates/mpc-attestation/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/mpc-attestation"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/node/Cargo.toml
-updates:
+  # crates/node/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/node"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/node-types/Cargo.toml
-updates:
+  # crates/node-types/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/node-types"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/primitives/Cargo.toml
-updates:
+  # crates/primitives/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/primitives"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/tee-authority/Cargo.toml
-updates:
+  # crates/tee-authority/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/tee-authority"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/test-migration-contract/Cargo.toml
-updates:
+  # crates/test-migration-contract/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/test-migration-contract"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/test-parallel-contract/Cargo.toml
-updates:
+  # crates/test-parallel-contract/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/test-parallel-contract"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/test-utils/Cargo.toml
-updates:
+  # crates/test-utils/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/test-utils"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/tls/Cargo.toml
-updates:
+  # crates/tls/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/tls"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /crates/utilities/Cargo.toml
-updates:
+  # crates/utilities/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/crates/utilities"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /infra/scripts/generate_keys/Cargo.toml
-updates:
+  # infra/scripts/generate_keys/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/infra/scripts/generate_keys"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
         patterns:
           - "*"
 
-# /infra/scripts/keys/Cargo.toml
-updates:
+  # infra/scripts/keys/Cargo.toml
   - package-ecosystem: "cargo"
     target-branch: "main"
     directory: "/infra/scripts/keys"
     schedule:
       interval: "weekly"
-
     open-pull-requests-limit: 5
-
     cooldown:
       default-days: 7
-
     groups:
       rust-dependencies:
+        patterns:
+          - "*"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    target-branch: "main"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Python dependencies (pytest)
+  - package-ecosystem: "pip"
+    target-branch: "main"
+    directory: "/pytest"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  # Python dependencies (tee_launcher)
+  - package-ecosystem: "pip"
+    target-branch: "main"
+    directory: "/tee_launcher"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      python-dependencies:
         patterns:
           - "*"
