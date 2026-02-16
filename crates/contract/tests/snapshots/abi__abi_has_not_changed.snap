@@ -775,18 +775,1153 @@ expression: abi
         "name": "respond_verify_foreign_tx",
         "kind": "call",
         "params": {
-          "serialization_type": "json",
+          "serialization_type": "borsh",
           "args": [
             {
               "name": "request",
               "type_schema": {
-                "$ref": "#/definitions/VerifyForeignTransactionRequest"
+                "declaration": "VerifyForeignTransactionRequest",
+                "definitions": {
+                  "BitcoinExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "BitcoinExtractor__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "BitcoinExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "BitcoinRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "BitcoinTxId"
+                      ],
+                      [
+                        "confirmations",
+                        "BlockConfirmations"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<BitcoinExtractor>"
+                      ]
+                    ]
+                  },
+                  "BitcoinTxId": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "BlockConfirmations": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
+                  "DomainId": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
+                  "EvmExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "EvmExtractor__BlockHash"
+                        ],
+                        [
+                          1,
+                          "Log",
+                          "EvmExtractor__Log"
+                        ]
+                      ]
+                    }
+                  },
+                  "EvmExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "EvmExtractor__Log": {
+                    "Struct": [
+                      [
+                        "log_index",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "EvmFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Latest",
+                          "EvmFinality__Latest"
+                        ],
+                        [
+                          1,
+                          "Safe",
+                          "EvmFinality__Safe"
+                        ],
+                        [
+                          2,
+                          "Finalized",
+                          "EvmFinality__Finalized"
+                        ]
+                      ]
+                    }
+                  },
+                  "EvmFinality__Finalized": {
+                    "Struct": null
+                  },
+                  "EvmFinality__Latest": {
+                    "Struct": null
+                  },
+                  "EvmFinality__Safe": {
+                    "Struct": null
+                  },
+                  "EvmRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "EvmTxId"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<EvmExtractor>"
+                      ],
+                      [
+                        "finality",
+                        "EvmFinality"
+                      ]
+                    ]
+                  },
+                  "EvmTxId": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "ForeignChainRpcRequest": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Abstract",
+                          "ForeignChainRpcRequest__Abstract"
+                        ],
+                        [
+                          1,
+                          "Ethereum",
+                          "ForeignChainRpcRequest__Ethereum"
+                        ],
+                        [
+                          2,
+                          "Solana",
+                          "ForeignChainRpcRequest__Solana"
+                        ],
+                        [
+                          3,
+                          "Bitcoin",
+                          "ForeignChainRpcRequest__Bitcoin"
+                        ],
+                        [
+                          4,
+                          "Starknet",
+                          "ForeignChainRpcRequest__Starknet"
+                        ]
+                      ]
+                    }
+                  },
+                  "ForeignChainRpcRequest__Abstract": {
+                    "Struct": [
+                      "EvmRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Bitcoin": {
+                    "Struct": [
+                      "BitcoinRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Ethereum": {
+                    "Struct": [
+                      "EvmRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Solana": {
+                    "Struct": [
+                      "SolanaRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Starknet": {
+                    "Struct": [
+                      "StarknetRpcRequest"
+                    ]
+                  },
+                  "SolanaExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "SolanaProgramIdIndex",
+                          "SolanaExtractor__SolanaProgramIdIndex"
+                        ],
+                        [
+                          1,
+                          "SolanaDataHash",
+                          "SolanaExtractor__SolanaDataHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "SolanaExtractor__SolanaDataHash": {
+                    "Struct": [
+                      [
+                        "ix_index",
+                        "u32"
+                      ]
+                    ]
+                  },
+                  "SolanaExtractor__SolanaProgramIdIndex": {
+                    "Struct": [
+                      [
+                        "ix_index",
+                        "u32"
+                      ]
+                    ]
+                  },
+                  "SolanaFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Processed",
+                          "SolanaFinality__Processed"
+                        ],
+                        [
+                          1,
+                          "Confirmed",
+                          "SolanaFinality__Confirmed"
+                        ],
+                        [
+                          2,
+                          "Finalized",
+                          "SolanaFinality__Finalized"
+                        ]
+                      ]
+                    }
+                  },
+                  "SolanaFinality__Confirmed": {
+                    "Struct": null
+                  },
+                  "SolanaFinality__Finalized": {
+                    "Struct": null
+                  },
+                  "SolanaFinality__Processed": {
+                    "Struct": null
+                  },
+                  "SolanaRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "SolanaTxId"
+                      ],
+                      [
+                        "finality",
+                        "SolanaFinality"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<SolanaExtractor>"
+                      ]
+                    ]
+                  },
+                  "SolanaTxId": {
+                    "Struct": [
+                      "[u8; 64]"
+                    ]
+                  },
+                  "StarknetExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "StarknetExtractor__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "StarknetExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "StarknetFelt": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "StarknetFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "AcceptedOnL2",
+                          "StarknetFinality__AcceptedOnL2"
+                        ],
+                        [
+                          1,
+                          "AcceptedOnL1",
+                          "StarknetFinality__AcceptedOnL1"
+                        ]
+                      ]
+                    }
+                  },
+                  "StarknetFinality__AcceptedOnL1": {
+                    "Struct": null
+                  },
+                  "StarknetFinality__AcceptedOnL2": {
+                    "Struct": null
+                  },
+                  "StarknetRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "StarknetTxId"
+                      ],
+                      [
+                        "finality",
+                        "StarknetFinality"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<StarknetExtractor>"
+                      ]
+                    ]
+                  },
+                  "StarknetTxId": {
+                    "Struct": [
+                      "StarknetFelt"
+                    ]
+                  },
+                  "Tweak": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "Vec<BitcoinExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "BitcoinExtractor"
+                    }
+                  },
+                  "Vec<EvmExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "EvmExtractor"
+                    }
+                  },
+                  "Vec<SolanaExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "SolanaExtractor"
+                    }
+                  },
+                  "Vec<StarknetExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "StarknetExtractor"
+                    }
+                  },
+                  "VerifyForeignTransactionRequest": {
+                    "Struct": [
+                      [
+                        "request",
+                        "ForeignChainRpcRequest"
+                      ],
+                      [
+                        "tweak",
+                        "Tweak"
+                      ],
+                      [
+                        "domain_id",
+                        "DomainId"
+                      ],
+                      [
+                        "payload_version",
+                        "u8"
+                      ]
+                    ]
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 64]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 64,
+                        "end": 64
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "u32": {
+                    "Primitive": 4
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
               }
             },
             {
               "name": "response",
               "type_schema": {
-                "$ref": "#/definitions/VerifyForeignTransactionResponse"
+                "declaration": "VerifyForeignTransactionResponse",
+                "definitions": {
+                  "BitcoinExtractedValue": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "BitcoinExtractedValue__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "BitcoinExtractedValue__BlockHash": {
+                    "Struct": [
+                      "Hash256"
+                    ]
+                  },
+                  "BitcoinExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "BitcoinExtractor__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "BitcoinExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "BitcoinRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "BitcoinTxId"
+                      ],
+                      [
+                        "confirmations",
+                        "BlockConfirmations"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<BitcoinExtractor>"
+                      ]
+                    ]
+                  },
+                  "BitcoinTxId": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "BlockConfirmations": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
+                  "Ed25519Signature": {
+                    "Struct": [
+                      "[u8; 64]"
+                    ]
+                  },
+                  "EvmExtractedValue": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "EvmExtractedValue__BlockHash"
+                        ],
+                        [
+                          1,
+                          "Log",
+                          "EvmExtractedValue__Log"
+                        ]
+                      ]
+                    }
+                  },
+                  "EvmExtractedValue__BlockHash": {
+                    "Struct": [
+                      "Hash256"
+                    ]
+                  },
+                  "EvmExtractedValue__Log": {
+                    "Struct": [
+                      "EvmLog"
+                    ]
+                  },
+                  "EvmExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "EvmExtractor__BlockHash"
+                        ],
+                        [
+                          1,
+                          "Log",
+                          "EvmExtractor__Log"
+                        ]
+                      ]
+                    }
+                  },
+                  "EvmExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "EvmExtractor__Log": {
+                    "Struct": [
+                      [
+                        "log_index",
+                        "u64"
+                      ]
+                    ]
+                  },
+                  "EvmFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Latest",
+                          "EvmFinality__Latest"
+                        ],
+                        [
+                          1,
+                          "Safe",
+                          "EvmFinality__Safe"
+                        ],
+                        [
+                          2,
+                          "Finalized",
+                          "EvmFinality__Finalized"
+                        ]
+                      ]
+                    }
+                  },
+                  "EvmFinality__Finalized": {
+                    "Struct": null
+                  },
+                  "EvmFinality__Latest": {
+                    "Struct": null
+                  },
+                  "EvmFinality__Safe": {
+                    "Struct": null
+                  },
+                  "EvmLog": {
+                    "Struct": [
+                      [
+                        "removed",
+                        "bool"
+                      ],
+                      [
+                        "log_index",
+                        "u64"
+                      ],
+                      [
+                        "transaction_index",
+                        "u64"
+                      ],
+                      [
+                        "transaction_hash",
+                        "Hash256"
+                      ],
+                      [
+                        "block_hash",
+                        "Hash256"
+                      ],
+                      [
+                        "block_number",
+                        "u64"
+                      ],
+                      [
+                        "address",
+                        "Hash160"
+                      ],
+                      [
+                        "data",
+                        "String"
+                      ],
+                      [
+                        "topics",
+                        "Vec<Hash256>"
+                      ]
+                    ]
+                  },
+                  "EvmRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "EvmTxId"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<EvmExtractor>"
+                      ],
+                      [
+                        "finality",
+                        "EvmFinality"
+                      ]
+                    ]
+                  },
+                  "EvmTxId": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "ExtractedValue": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BitcoinExtractedValue",
+                          "ExtractedValue__BitcoinExtractedValue"
+                        ],
+                        [
+                          1,
+                          "EvmExtractedValue",
+                          "ExtractedValue__EvmExtractedValue"
+                        ],
+                        [
+                          2,
+                          "StarknetExtractedValue",
+                          "ExtractedValue__StarknetExtractedValue"
+                        ]
+                      ]
+                    }
+                  },
+                  "ExtractedValue__BitcoinExtractedValue": {
+                    "Struct": [
+                      "BitcoinExtractedValue"
+                    ]
+                  },
+                  "ExtractedValue__EvmExtractedValue": {
+                    "Struct": [
+                      "EvmExtractedValue"
+                    ]
+                  },
+                  "ExtractedValue__StarknetExtractedValue": {
+                    "Struct": [
+                      "StarknetExtractedValue"
+                    ]
+                  },
+                  "ForeignChainRpcRequest": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Abstract",
+                          "ForeignChainRpcRequest__Abstract"
+                        ],
+                        [
+                          1,
+                          "Ethereum",
+                          "ForeignChainRpcRequest__Ethereum"
+                        ],
+                        [
+                          2,
+                          "Solana",
+                          "ForeignChainRpcRequest__Solana"
+                        ],
+                        [
+                          3,
+                          "Bitcoin",
+                          "ForeignChainRpcRequest__Bitcoin"
+                        ],
+                        [
+                          4,
+                          "Starknet",
+                          "ForeignChainRpcRequest__Starknet"
+                        ]
+                      ]
+                    }
+                  },
+                  "ForeignChainRpcRequest__Abstract": {
+                    "Struct": [
+                      "EvmRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Bitcoin": {
+                    "Struct": [
+                      "BitcoinRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Ethereum": {
+                    "Struct": [
+                      "EvmRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Solana": {
+                    "Struct": [
+                      "SolanaRpcRequest"
+                    ]
+                  },
+                  "ForeignChainRpcRequest__Starknet": {
+                    "Struct": [
+                      "StarknetRpcRequest"
+                    ]
+                  },
+                  "ForeignTxSignPayload": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "V1",
+                          "ForeignTxSignPayload__V1"
+                        ]
+                      ]
+                    }
+                  },
+                  "ForeignTxSignPayloadV1": {
+                    "Struct": [
+                      [
+                        "request",
+                        "ForeignChainRpcRequest"
+                      ],
+                      [
+                        "values",
+                        "Vec<ExtractedValue>"
+                      ]
+                    ]
+                  },
+                  "ForeignTxSignPayload__V1": {
+                    "Struct": [
+                      "ForeignTxSignPayloadV1"
+                    ]
+                  },
+                  "Hash160": {
+                    "Struct": [
+                      "[u8; 20]"
+                    ]
+                  },
+                  "Hash256": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "K256AffinePoint": {
+                    "Struct": [
+                      [
+                        "affine_point",
+                        "[u8; 33]"
+                      ]
+                    ]
+                  },
+                  "K256Scalar": {
+                    "Struct": [
+                      [
+                        "scalar",
+                        "[u8; 32]"
+                      ]
+                    ]
+                  },
+                  "K256Signature": {
+                    "Struct": [
+                      [
+                        "big_r",
+                        "K256AffinePoint"
+                      ],
+                      [
+                        "s",
+                        "K256Scalar"
+                      ],
+                      [
+                        "recovery_id",
+                        "u8"
+                      ]
+                    ]
+                  },
+                  "SignatureResponse": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Secp256k1",
+                          "SignatureResponse__Secp256k1"
+                        ],
+                        [
+                          1,
+                          "Ed25519",
+                          "SignatureResponse__Ed25519"
+                        ]
+                      ]
+                    }
+                  },
+                  "SignatureResponse__Ed25519": {
+                    "Struct": [
+                      [
+                        "signature",
+                        "Ed25519Signature"
+                      ]
+                    ]
+                  },
+                  "SignatureResponse__Secp256k1": {
+                    "Struct": [
+                      "K256Signature"
+                    ]
+                  },
+                  "SolanaExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "SolanaProgramIdIndex",
+                          "SolanaExtractor__SolanaProgramIdIndex"
+                        ],
+                        [
+                          1,
+                          "SolanaDataHash",
+                          "SolanaExtractor__SolanaDataHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "SolanaExtractor__SolanaDataHash": {
+                    "Struct": [
+                      [
+                        "ix_index",
+                        "u32"
+                      ]
+                    ]
+                  },
+                  "SolanaExtractor__SolanaProgramIdIndex": {
+                    "Struct": [
+                      [
+                        "ix_index",
+                        "u32"
+                      ]
+                    ]
+                  },
+                  "SolanaFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "Processed",
+                          "SolanaFinality__Processed"
+                        ],
+                        [
+                          1,
+                          "Confirmed",
+                          "SolanaFinality__Confirmed"
+                        ],
+                        [
+                          2,
+                          "Finalized",
+                          "SolanaFinality__Finalized"
+                        ]
+                      ]
+                    }
+                  },
+                  "SolanaFinality__Confirmed": {
+                    "Struct": null
+                  },
+                  "SolanaFinality__Finalized": {
+                    "Struct": null
+                  },
+                  "SolanaFinality__Processed": {
+                    "Struct": null
+                  },
+                  "SolanaRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "SolanaTxId"
+                      ],
+                      [
+                        "finality",
+                        "SolanaFinality"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<SolanaExtractor>"
+                      ]
+                    ]
+                  },
+                  "SolanaTxId": {
+                    "Struct": [
+                      "[u8; 64]"
+                    ]
+                  },
+                  "StarknetExtractedValue": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "StarknetExtractedValue__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "StarknetExtractedValue__BlockHash": {
+                    "Struct": [
+                      "StarknetFelt"
+                    ]
+                  },
+                  "StarknetExtractor": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "BlockHash",
+                          "StarknetExtractor__BlockHash"
+                        ]
+                      ]
+                    }
+                  },
+                  "StarknetExtractor__BlockHash": {
+                    "Struct": null
+                  },
+                  "StarknetFelt": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "StarknetFinality": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "AcceptedOnL2",
+                          "StarknetFinality__AcceptedOnL2"
+                        ],
+                        [
+                          1,
+                          "AcceptedOnL1",
+                          "StarknetFinality__AcceptedOnL1"
+                        ]
+                      ]
+                    }
+                  },
+                  "StarknetFinality__AcceptedOnL1": {
+                    "Struct": null
+                  },
+                  "StarknetFinality__AcceptedOnL2": {
+                    "Struct": null
+                  },
+                  "StarknetRpcRequest": {
+                    "Struct": [
+                      [
+                        "tx_id",
+                        "StarknetTxId"
+                      ],
+                      [
+                        "finality",
+                        "StarknetFinality"
+                      ],
+                      [
+                        "extractors",
+                        "Vec<StarknetExtractor>"
+                      ]
+                    ]
+                  },
+                  "StarknetTxId": {
+                    "Struct": [
+                      "StarknetFelt"
+                    ]
+                  },
+                  "String": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "Vec<BitcoinExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "BitcoinExtractor"
+                    }
+                  },
+                  "Vec<EvmExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "EvmExtractor"
+                    }
+                  },
+                  "Vec<ExtractedValue>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "ExtractedValue"
+                    }
+                  },
+                  "Vec<Hash256>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "Hash256"
+                    }
+                  },
+                  "Vec<SolanaExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "SolanaExtractor"
+                    }
+                  },
+                  "Vec<StarknetExtractor>": {
+                    "Sequence": {
+                      "length_width": 4,
+                      "length_range": {
+                        "start": 0,
+                        "end": 4294967295
+                      },
+                      "elements": "StarknetExtractor"
+                    }
+                  },
+                  "VerifyForeignTransactionResponse": {
+                    "Struct": [
+                      [
+                        "payload",
+                        "ForeignTxSignPayload"
+                      ],
+                      [
+                        "signature",
+                        "SignatureResponse"
+                      ]
+                    ]
+                  },
+                  "[u8; 20]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 20,
+                        "end": 20
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 33]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 33,
+                        "end": 33
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 64]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 64,
+                        "end": 64
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "bool": {
+                    "Primitive": 1
+                  },
+                  "u32": {
+                    "Primitive": 4
+                  },
+                  "u64": {
+                    "Primitive": 8
+                  },
+                  "u8": {
+                    "Primitive": 1
+                  }
+                }
               }
             }
           ]
