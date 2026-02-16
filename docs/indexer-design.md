@@ -653,94 +653,9 @@ let block_event_id : BlockEventId = BlockEventSubscriber.new().match_on_receiver
 
 *this still needs to be written. We could probably just forward the RPC handle or expose a generic API for signing and submitting arbitrary payload*
 
-#### MPC Indexer
+#### MPC Orchestrator
 
-*Remark: This needs to be reworked, as it is inconsistent right now.*
-
-
-##### State View
-
-todo 
-The MPC indexer should offer a convenient method for viewing and subscribing to MPC contract state.
-
-
-##### BlockStream
-
-todo 
-
-Q: do we really need this? This is more MPC Indexer API. We could just forward the handle:
-```rust
-
-    pub fn streamer(&self) -> mpsc::Receiver<StreamerMessage> {
-```
-
-For the next few months, the only expected user of block streams is the MPC node. This might change in the future if we use the indexer crate for monitoring and testing our MPC code, but for now, it seems safe to just port the existing design to the indexer until we have a better idea of what changes we would want from it.
-
-```Rust
-// c.f. https://github.com/near/mpc/issues/236 for start_block_height
-trait MpcEventSubscriber {
-    async fn subscribe(interval: Duration, channel_size: usize, start_block_height: BlockHeight) -> anyhow::Result<mpsc::Receiver<ChainBlockUpdate>>;
-}
-
-pub struct ChainBlockUpdate {
-    pub block: BlockViewLite,
-    pub signature_requests: Vec<SignatureRequestFromChain>,
-    pub completed_signatures: Vec<SignatureId>,
-    pub ckd_requests: Vec<CKDRequestFromChain>,
-    pub completed_ckds: Vec<CKDId>,
-}
-```
-
-##### Transaction Sender
-
-todo 
-It's probably fine for the first iteration to keep the existing `TransactionSender` trait and have the indexer return a Transaction Processor Handle that implements those traits:
-
-```rust
-impl TransactionProcessorHandle {
-    pub(crate) fn start_transaction_processor(
-        owner_account_id: AccountId,
-        owner_secret_key: SigningKey,
-        config: RespondConfig,
-        indexer_state: Arc<IndexerState>,
-    ) -> anyhow::Result<impl TransactionSender>;
-}
-
-pub trait TransactionSender: Clone + Send + Sync {
-    fn send(
-        &self,
-        transaction: ChainSendTransactionRequest,
-    ) -> impl Future<Output = Result<(), TransactionProcessorError>> + Send;
-
-    fn send_and_wait(
-        &self,
-        transaction: ChainSendTransactionRequest,
-    ) -> impl Future<Output = Result<TransactionStatus, TransactionProcessorError>> + Send;
-}
-```
-
-```rust
-pub enum ChainSendTransactionRequest {
-        Respond(ChainSignatureRespondArgs),
-        CKDRespond(ChainCKDRespondArgs),
-        VotePk(ChainVotePkArgs),
-        StartKeygen(ChainStartKeygenArgs),
-        VoteReshared(ChainVoteResharedArgs),
-        StartReshare(ChainStartReshareArgs),
-        VoteAbortKeyEventInstance(ChainVoteAbortKeyEventInstanceArgs),
-        VerifyTee(),
-        // Boxed as this variant is big, 2168 bytes.
-        // Big discrepancies in variant sizes will lead to memory fragmentation
-        // due to rust's memory layout for enums.
-        //
-        // For more info see clippy lint:
-        // https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-        SubmitParticipantInfo(Box<SubmitParticipantInfoArgs>),
-        ConcludeNodeMigration(ConcludeNodeMigrationArgs),
-        VerifyForeignTransactionRespond(ChainVerifyForeignTransactionRespondArgs),
-}
-```
-
+TODO: handle in a separate discussion. This is not of priority right now.
 
 
 ## related issues
@@ -757,8 +672,4 @@ https://github.com/near/mpc/issues/236
 
 potentialy:
 https://github.com/near/mpc/issues/1643
-
-## Smart contract & Backup service changes
-
-Note: WIP
 
