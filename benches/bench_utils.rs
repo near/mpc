@@ -12,8 +12,8 @@ use threshold_signatures::{
         self as ckd,
         ciphersuite::{Field as _, Group as _},
     },
-    ecdsa,
     ecdsa::{
+        self,
         ot_based_ecdsa::{
             self,
             triples::{generate_triple_many, TriplePub, TripleShare},
@@ -24,8 +24,8 @@ use threshold_signatures::{
     participants::Participant,
     protocol::Protocol,
     test_utils::{
-        create_rngs, ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids,
-        run_keygen, Simulator,
+        ecdsa_generate_rerandpresig_args, generate_participants_with_random_ids, run_keygen,
+        MockCryptoRng, Simulator,
     },
     MaxMalicious, ReconstructionLowerBound,
 };
@@ -124,11 +124,11 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
 ) -> OTECDSAPreparedTriples {
     let mut protocols: Vec<(_, Box<dyn Protocol<Output = _>>)> =
         Vec::with_capacity(participant_num);
-    let rngs = create_rngs(participant_num, rng);
     let participants = generate_participants_with_random_ids(participant_num, rng);
 
-    for (i, p) in participants.iter().enumerate() {
-        let protocol = generate_triple_many::<2>(&participants, *p, threshold, rngs[i].clone())
+    for p in &participants {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = generate_triple_many::<2>(&participants, *p, threshold, rng_p)
             .expect("Triple generation should succeed");
         protocols.push((*p, Box::new(protocol)));
     }
@@ -282,7 +282,6 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
     num_participants: usize,
     rng: &mut R,
 ) -> RobustECDSAPreparedPresig {
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
     let mut protocols: Vec<(
@@ -290,7 +289,8 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
         Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>,
     )> = Vec::with_capacity(participants.len());
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = robust_ecdsa::presign::presign(
             &participants,
             *p,
@@ -298,7 +298,7 @@ pub fn robust_ecdsa_prepare_presign<R: CryptoRngCore + SeedableRng + Send + 'sta
                 keygen_out: keygen_out.clone(),
                 max_malicious: (*MAX_MALICIOUS).into(),
             },
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|presig| Box::new(presig) as Box<dyn Protocol<Output = robust_ecdsa::PresignOutput>>)
         .expect("Presignature should succeed");
@@ -383,8 +383,6 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     rng: &mut R,
 ) -> FrostEd25519Sig {
     let num_participants = threshold.value();
-    // collect all participants
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
 
@@ -401,7 +399,8 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     rng.fill_bytes(&mut message);
     let message = message.to_vec();
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = eddsa::sign::sign(
             &participants,
             threshold,
@@ -409,7 +408,7 @@ pub fn ed25519_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
             coordinator,
             keygen_out.clone(),
             message.clone(),
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = eddsa::SignatureOption>>)
         .expect("Signing should succeed");
@@ -440,7 +439,6 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
 ) -> PreparedCkdPackage {
     let num_participants = threshold.value();
     // collect all participants
-    let rngs = create_rngs(num_participants, rng);
     let participants = generate_participants_with_random_ids(num_participants, rng);
     let key_packages = run_keygen(&participants, *MAX_MALICIOUS + 1, rng);
 
@@ -457,10 +455,12 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
     rng.fill_bytes(&mut app_id);
     let app_id = ckd::AppId::try_new(app_id).expect("cannot fail");
 
-    let app_sk = ckd::Scalar::random(rng);
+    let scalar_rng = MockCryptoRng::seed_from_u64(rng.next_u64());
+    let app_sk = ckd::Scalar::random(scalar_rng);
     let app_pk = ckd::ElementG1::generator() * app_sk;
 
-    for (i, (p, keygen_out)) in key_packages.iter().enumerate() {
+    for (p, keygen_out) in &key_packages {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
         let protocol = ckd::protocol::ckd(
             &participants,
             coordinator,
@@ -468,7 +468,7 @@ pub fn prepare_ckd<R: CryptoRngCore + SeedableRng + Send + 'static>(
             keygen_out.clone(),
             app_id.clone(),
             app_pk,
-            rngs[i].clone(),
+            rng_p,
         )
         .map(|ckd| Box::new(ckd) as Box<dyn Protocol<Output = ckd::CKDOutputOption>>)
         .expect("Ckd should succeed");
