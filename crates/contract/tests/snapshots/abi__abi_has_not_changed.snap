@@ -2019,16 +2019,1430 @@ expression: abi
         },
         "callbacks": [
           {
-            "serialization_type": "json",
+            "serialization_type": "borsh",
             "type_schema": {
-              "$ref": "#/definitions/VerifyForeignTransactionResponse"
+              "declaration": "VerifyForeignTransactionResponse",
+              "definitions": {
+                "BitcoinExtractedValue": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "BitcoinExtractedValue__BlockHash"
+                      ]
+                    ]
+                  }
+                },
+                "BitcoinExtractedValue__BlockHash": {
+                  "Struct": [
+                    "Hash256"
+                  ]
+                },
+                "BitcoinExtractor": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "BitcoinExtractor__BlockHash"
+                      ]
+                    ]
+                  }
+                },
+                "BitcoinExtractor__BlockHash": {
+                  "Struct": null
+                },
+                "BitcoinRpcRequest": {
+                  "Struct": [
+                    [
+                      "tx_id",
+                      "BitcoinTxId"
+                    ],
+                    [
+                      "confirmations",
+                      "BlockConfirmations"
+                    ],
+                    [
+                      "extractors",
+                      "Vec<BitcoinExtractor>"
+                    ]
+                  ]
+                },
+                "BitcoinTxId": {
+                  "Struct": [
+                    "[u8; 32]"
+                  ]
+                },
+                "BlockConfirmations": {
+                  "Struct": [
+                    "u64"
+                  ]
+                },
+                "Ed25519Signature": {
+                  "Struct": [
+                    "[u8; 64]"
+                  ]
+                },
+                "EvmExtractedValue": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "EvmExtractedValue__BlockHash"
+                      ],
+                      [
+                        1,
+                        "Log",
+                        "EvmExtractedValue__Log"
+                      ]
+                    ]
+                  }
+                },
+                "EvmExtractedValue__BlockHash": {
+                  "Struct": [
+                    "Hash256"
+                  ]
+                },
+                "EvmExtractedValue__Log": {
+                  "Struct": [
+                    "EvmLog"
+                  ]
+                },
+                "EvmExtractor": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "EvmExtractor__BlockHash"
+                      ],
+                      [
+                        1,
+                        "Log",
+                        "EvmExtractor__Log"
+                      ]
+                    ]
+                  }
+                },
+                "EvmExtractor__BlockHash": {
+                  "Struct": null
+                },
+                "EvmExtractor__Log": {
+                  "Struct": [
+                    [
+                      "log_index",
+                      "u64"
+                    ]
+                  ]
+                },
+                "EvmFinality": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Latest",
+                        "EvmFinality__Latest"
+                      ],
+                      [
+                        1,
+                        "Safe",
+                        "EvmFinality__Safe"
+                      ],
+                      [
+                        2,
+                        "Finalized",
+                        "EvmFinality__Finalized"
+                      ]
+                    ]
+                  }
+                },
+                "EvmFinality__Finalized": {
+                  "Struct": null
+                },
+                "EvmFinality__Latest": {
+                  "Struct": null
+                },
+                "EvmFinality__Safe": {
+                  "Struct": null
+                },
+                "EvmLog": {
+                  "Struct": [
+                    [
+                      "removed",
+                      "bool"
+                    ],
+                    [
+                      "log_index",
+                      "u64"
+                    ],
+                    [
+                      "transaction_index",
+                      "u64"
+                    ],
+                    [
+                      "transaction_hash",
+                      "Hash256"
+                    ],
+                    [
+                      "block_hash",
+                      "Hash256"
+                    ],
+                    [
+                      "block_number",
+                      "u64"
+                    ],
+                    [
+                      "address",
+                      "Hash160"
+                    ],
+                    [
+                      "data",
+                      "String"
+                    ],
+                    [
+                      "topics",
+                      "Vec<Hash256>"
+                    ]
+                  ]
+                },
+                "EvmRpcRequest": {
+                  "Struct": [
+                    [
+                      "tx_id",
+                      "EvmTxId"
+                    ],
+                    [
+                      "extractors",
+                      "Vec<EvmExtractor>"
+                    ],
+                    [
+                      "finality",
+                      "EvmFinality"
+                    ]
+                  ]
+                },
+                "EvmTxId": {
+                  "Struct": [
+                    "[u8; 32]"
+                  ]
+                },
+                "ExtractedValue": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BitcoinExtractedValue",
+                        "ExtractedValue__BitcoinExtractedValue"
+                      ],
+                      [
+                        1,
+                        "EvmExtractedValue",
+                        "ExtractedValue__EvmExtractedValue"
+                      ],
+                      [
+                        2,
+                        "StarknetExtractedValue",
+                        "ExtractedValue__StarknetExtractedValue"
+                      ]
+                    ]
+                  }
+                },
+                "ExtractedValue__BitcoinExtractedValue": {
+                  "Struct": [
+                    "BitcoinExtractedValue"
+                  ]
+                },
+                "ExtractedValue__EvmExtractedValue": {
+                  "Struct": [
+                    "EvmExtractedValue"
+                  ]
+                },
+                "ExtractedValue__StarknetExtractedValue": {
+                  "Struct": [
+                    "StarknetExtractedValue"
+                  ]
+                },
+                "ForeignChainRpcRequest": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Abstract",
+                        "ForeignChainRpcRequest__Abstract"
+                      ],
+                      [
+                        1,
+                        "Ethereum",
+                        "ForeignChainRpcRequest__Ethereum"
+                      ],
+                      [
+                        2,
+                        "Solana",
+                        "ForeignChainRpcRequest__Solana"
+                      ],
+                      [
+                        3,
+                        "Bitcoin",
+                        "ForeignChainRpcRequest__Bitcoin"
+                      ],
+                      [
+                        4,
+                        "Starknet",
+                        "ForeignChainRpcRequest__Starknet"
+                      ]
+                    ]
+                  }
+                },
+                "ForeignChainRpcRequest__Abstract": {
+                  "Struct": [
+                    "EvmRpcRequest"
+                  ]
+                },
+                "ForeignChainRpcRequest__Bitcoin": {
+                  "Struct": [
+                    "BitcoinRpcRequest"
+                  ]
+                },
+                "ForeignChainRpcRequest__Ethereum": {
+                  "Struct": [
+                    "EvmRpcRequest"
+                  ]
+                },
+                "ForeignChainRpcRequest__Solana": {
+                  "Struct": [
+                    "SolanaRpcRequest"
+                  ]
+                },
+                "ForeignChainRpcRequest__Starknet": {
+                  "Struct": [
+                    "StarknetRpcRequest"
+                  ]
+                },
+                "ForeignTxSignPayload": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "V1",
+                        "ForeignTxSignPayload__V1"
+                      ]
+                    ]
+                  }
+                },
+                "ForeignTxSignPayloadV1": {
+                  "Struct": [
+                    [
+                      "request",
+                      "ForeignChainRpcRequest"
+                    ],
+                    [
+                      "values",
+                      "Vec<ExtractedValue>"
+                    ]
+                  ]
+                },
+                "ForeignTxSignPayload__V1": {
+                  "Struct": [
+                    "ForeignTxSignPayloadV1"
+                  ]
+                },
+                "Hash160": {
+                  "Struct": [
+                    "[u8; 20]"
+                  ]
+                },
+                "Hash256": {
+                  "Struct": [
+                    "[u8; 32]"
+                  ]
+                },
+                "K256AffinePoint": {
+                  "Struct": [
+                    [
+                      "affine_point",
+                      "[u8; 33]"
+                    ]
+                  ]
+                },
+                "K256Scalar": {
+                  "Struct": [
+                    [
+                      "scalar",
+                      "[u8; 32]"
+                    ]
+                  ]
+                },
+                "K256Signature": {
+                  "Struct": [
+                    [
+                      "big_r",
+                      "K256AffinePoint"
+                    ],
+                    [
+                      "s",
+                      "K256Scalar"
+                    ],
+                    [
+                      "recovery_id",
+                      "u8"
+                    ]
+                  ]
+                },
+                "SignatureResponse": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Secp256k1",
+                        "SignatureResponse__Secp256k1"
+                      ],
+                      [
+                        1,
+                        "Ed25519",
+                        "SignatureResponse__Ed25519"
+                      ]
+                    ]
+                  }
+                },
+                "SignatureResponse__Ed25519": {
+                  "Struct": [
+                    [
+                      "signature",
+                      "Ed25519Signature"
+                    ]
+                  ]
+                },
+                "SignatureResponse__Secp256k1": {
+                  "Struct": [
+                    "K256Signature"
+                  ]
+                },
+                "SolanaExtractor": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "SolanaProgramIdIndex",
+                        "SolanaExtractor__SolanaProgramIdIndex"
+                      ],
+                      [
+                        1,
+                        "SolanaDataHash",
+                        "SolanaExtractor__SolanaDataHash"
+                      ]
+                    ]
+                  }
+                },
+                "SolanaExtractor__SolanaDataHash": {
+                  "Struct": [
+                    [
+                      "ix_index",
+                      "u32"
+                    ]
+                  ]
+                },
+                "SolanaExtractor__SolanaProgramIdIndex": {
+                  "Struct": [
+                    [
+                      "ix_index",
+                      "u32"
+                    ]
+                  ]
+                },
+                "SolanaFinality": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "Processed",
+                        "SolanaFinality__Processed"
+                      ],
+                      [
+                        1,
+                        "Confirmed",
+                        "SolanaFinality__Confirmed"
+                      ],
+                      [
+                        2,
+                        "Finalized",
+                        "SolanaFinality__Finalized"
+                      ]
+                    ]
+                  }
+                },
+                "SolanaFinality__Confirmed": {
+                  "Struct": null
+                },
+                "SolanaFinality__Finalized": {
+                  "Struct": null
+                },
+                "SolanaFinality__Processed": {
+                  "Struct": null
+                },
+                "SolanaRpcRequest": {
+                  "Struct": [
+                    [
+                      "tx_id",
+                      "SolanaTxId"
+                    ],
+                    [
+                      "finality",
+                      "SolanaFinality"
+                    ],
+                    [
+                      "extractors",
+                      "Vec<SolanaExtractor>"
+                    ]
+                  ]
+                },
+                "SolanaTxId": {
+                  "Struct": [
+                    "[u8; 64]"
+                  ]
+                },
+                "StarknetExtractedValue": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "StarknetExtractedValue__BlockHash"
+                      ]
+                    ]
+                  }
+                },
+                "StarknetExtractedValue__BlockHash": {
+                  "Struct": [
+                    "StarknetFelt"
+                  ]
+                },
+                "StarknetExtractor": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "BlockHash",
+                        "StarknetExtractor__BlockHash"
+                      ]
+                    ]
+                  }
+                },
+                "StarknetExtractor__BlockHash": {
+                  "Struct": null
+                },
+                "StarknetFelt": {
+                  "Struct": [
+                    "[u8; 32]"
+                  ]
+                },
+                "StarknetFinality": {
+                  "Enum": {
+                    "tag_width": 1,
+                    "variants": [
+                      [
+                        0,
+                        "AcceptedOnL2",
+                        "StarknetFinality__AcceptedOnL2"
+                      ],
+                      [
+                        1,
+                        "AcceptedOnL1",
+                        "StarknetFinality__AcceptedOnL1"
+                      ]
+                    ]
+                  }
+                },
+                "StarknetFinality__AcceptedOnL1": {
+                  "Struct": null
+                },
+                "StarknetFinality__AcceptedOnL2": {
+                  "Struct": null
+                },
+                "StarknetRpcRequest": {
+                  "Struct": [
+                    [
+                      "tx_id",
+                      "StarknetTxId"
+                    ],
+                    [
+                      "finality",
+                      "StarknetFinality"
+                    ],
+                    [
+                      "extractors",
+                      "Vec<StarknetExtractor>"
+                    ]
+                  ]
+                },
+                "StarknetTxId": {
+                  "Struct": [
+                    "StarknetFelt"
+                  ]
+                },
+                "String": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "Vec<BitcoinExtractor>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "BitcoinExtractor"
+                  }
+                },
+                "Vec<EvmExtractor>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "EvmExtractor"
+                  }
+                },
+                "Vec<ExtractedValue>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "ExtractedValue"
+                  }
+                },
+                "Vec<Hash256>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "Hash256"
+                  }
+                },
+                "Vec<SolanaExtractor>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "SolanaExtractor"
+                  }
+                },
+                "Vec<StarknetExtractor>": {
+                  "Sequence": {
+                    "length_width": 4,
+                    "length_range": {
+                      "start": 0,
+                      "end": 4294967295
+                    },
+                    "elements": "StarknetExtractor"
+                  }
+                },
+                "VerifyForeignTransactionResponse": {
+                  "Struct": [
+                    [
+                      "payload",
+                      "ForeignTxSignPayload"
+                    ],
+                    [
+                      "signature",
+                      "SignatureResponse"
+                    ]
+                  ]
+                },
+                "[u8; 20]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 20,
+                      "end": 20
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 32]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 32,
+                      "end": 32
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 33]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 33,
+                      "end": 33
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "[u8; 64]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 64,
+                      "end": 64
+                    },
+                    "elements": "u8"
+                  }
+                },
+                "bool": {
+                  "Primitive": 1
+                },
+                "u32": {
+                  "Primitive": 4
+                },
+                "u64": {
+                  "Primitive": 8
+                },
+                "u8": {
+                  "Primitive": 1
+                }
+              }
             }
           }
         ],
         "result": {
-          "serialization_type": "json",
+          "serialization_type": "borsh",
           "type_schema": {
-            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
+            "declaration": "VerifyForeignTransactionResponse",
+            "definitions": {
+              "BitcoinExtractedValue": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "BitcoinExtractedValue__BlockHash"
+                    ]
+                  ]
+                }
+              },
+              "BitcoinExtractedValue__BlockHash": {
+                "Struct": [
+                  "Hash256"
+                ]
+              },
+              "BitcoinExtractor": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "BitcoinExtractor__BlockHash"
+                    ]
+                  ]
+                }
+              },
+              "BitcoinExtractor__BlockHash": {
+                "Struct": null
+              },
+              "BitcoinRpcRequest": {
+                "Struct": [
+                  [
+                    "tx_id",
+                    "BitcoinTxId"
+                  ],
+                  [
+                    "confirmations",
+                    "BlockConfirmations"
+                  ],
+                  [
+                    "extractors",
+                    "Vec<BitcoinExtractor>"
+                  ]
+                ]
+              },
+              "BitcoinTxId": {
+                "Struct": [
+                  "[u8; 32]"
+                ]
+              },
+              "BlockConfirmations": {
+                "Struct": [
+                  "u64"
+                ]
+              },
+              "Ed25519Signature": {
+                "Struct": [
+                  "[u8; 64]"
+                ]
+              },
+              "EvmExtractedValue": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "EvmExtractedValue__BlockHash"
+                    ],
+                    [
+                      1,
+                      "Log",
+                      "EvmExtractedValue__Log"
+                    ]
+                  ]
+                }
+              },
+              "EvmExtractedValue__BlockHash": {
+                "Struct": [
+                  "Hash256"
+                ]
+              },
+              "EvmExtractedValue__Log": {
+                "Struct": [
+                  "EvmLog"
+                ]
+              },
+              "EvmExtractor": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "EvmExtractor__BlockHash"
+                    ],
+                    [
+                      1,
+                      "Log",
+                      "EvmExtractor__Log"
+                    ]
+                  ]
+                }
+              },
+              "EvmExtractor__BlockHash": {
+                "Struct": null
+              },
+              "EvmExtractor__Log": {
+                "Struct": [
+                  [
+                    "log_index",
+                    "u64"
+                  ]
+                ]
+              },
+              "EvmFinality": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Latest",
+                      "EvmFinality__Latest"
+                    ],
+                    [
+                      1,
+                      "Safe",
+                      "EvmFinality__Safe"
+                    ],
+                    [
+                      2,
+                      "Finalized",
+                      "EvmFinality__Finalized"
+                    ]
+                  ]
+                }
+              },
+              "EvmFinality__Finalized": {
+                "Struct": null
+              },
+              "EvmFinality__Latest": {
+                "Struct": null
+              },
+              "EvmFinality__Safe": {
+                "Struct": null
+              },
+              "EvmLog": {
+                "Struct": [
+                  [
+                    "removed",
+                    "bool"
+                  ],
+                  [
+                    "log_index",
+                    "u64"
+                  ],
+                  [
+                    "transaction_index",
+                    "u64"
+                  ],
+                  [
+                    "transaction_hash",
+                    "Hash256"
+                  ],
+                  [
+                    "block_hash",
+                    "Hash256"
+                  ],
+                  [
+                    "block_number",
+                    "u64"
+                  ],
+                  [
+                    "address",
+                    "Hash160"
+                  ],
+                  [
+                    "data",
+                    "String"
+                  ],
+                  [
+                    "topics",
+                    "Vec<Hash256>"
+                  ]
+                ]
+              },
+              "EvmRpcRequest": {
+                "Struct": [
+                  [
+                    "tx_id",
+                    "EvmTxId"
+                  ],
+                  [
+                    "extractors",
+                    "Vec<EvmExtractor>"
+                  ],
+                  [
+                    "finality",
+                    "EvmFinality"
+                  ]
+                ]
+              },
+              "EvmTxId": {
+                "Struct": [
+                  "[u8; 32]"
+                ]
+              },
+              "ExtractedValue": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BitcoinExtractedValue",
+                      "ExtractedValue__BitcoinExtractedValue"
+                    ],
+                    [
+                      1,
+                      "EvmExtractedValue",
+                      "ExtractedValue__EvmExtractedValue"
+                    ],
+                    [
+                      2,
+                      "StarknetExtractedValue",
+                      "ExtractedValue__StarknetExtractedValue"
+                    ]
+                  ]
+                }
+              },
+              "ExtractedValue__BitcoinExtractedValue": {
+                "Struct": [
+                  "BitcoinExtractedValue"
+                ]
+              },
+              "ExtractedValue__EvmExtractedValue": {
+                "Struct": [
+                  "EvmExtractedValue"
+                ]
+              },
+              "ExtractedValue__StarknetExtractedValue": {
+                "Struct": [
+                  "StarknetExtractedValue"
+                ]
+              },
+              "ForeignChainRpcRequest": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Abstract",
+                      "ForeignChainRpcRequest__Abstract"
+                    ],
+                    [
+                      1,
+                      "Ethereum",
+                      "ForeignChainRpcRequest__Ethereum"
+                    ],
+                    [
+                      2,
+                      "Solana",
+                      "ForeignChainRpcRequest__Solana"
+                    ],
+                    [
+                      3,
+                      "Bitcoin",
+                      "ForeignChainRpcRequest__Bitcoin"
+                    ],
+                    [
+                      4,
+                      "Starknet",
+                      "ForeignChainRpcRequest__Starknet"
+                    ]
+                  ]
+                }
+              },
+              "ForeignChainRpcRequest__Abstract": {
+                "Struct": [
+                  "EvmRpcRequest"
+                ]
+              },
+              "ForeignChainRpcRequest__Bitcoin": {
+                "Struct": [
+                  "BitcoinRpcRequest"
+                ]
+              },
+              "ForeignChainRpcRequest__Ethereum": {
+                "Struct": [
+                  "EvmRpcRequest"
+                ]
+              },
+              "ForeignChainRpcRequest__Solana": {
+                "Struct": [
+                  "SolanaRpcRequest"
+                ]
+              },
+              "ForeignChainRpcRequest__Starknet": {
+                "Struct": [
+                  "StarknetRpcRequest"
+                ]
+              },
+              "ForeignTxSignPayload": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "V1",
+                      "ForeignTxSignPayload__V1"
+                    ]
+                  ]
+                }
+              },
+              "ForeignTxSignPayloadV1": {
+                "Struct": [
+                  [
+                    "request",
+                    "ForeignChainRpcRequest"
+                  ],
+                  [
+                    "values",
+                    "Vec<ExtractedValue>"
+                  ]
+                ]
+              },
+              "ForeignTxSignPayload__V1": {
+                "Struct": [
+                  "ForeignTxSignPayloadV1"
+                ]
+              },
+              "Hash160": {
+                "Struct": [
+                  "[u8; 20]"
+                ]
+              },
+              "Hash256": {
+                "Struct": [
+                  "[u8; 32]"
+                ]
+              },
+              "K256AffinePoint": {
+                "Struct": [
+                  [
+                    "affine_point",
+                    "[u8; 33]"
+                  ]
+                ]
+              },
+              "K256Scalar": {
+                "Struct": [
+                  [
+                    "scalar",
+                    "[u8; 32]"
+                  ]
+                ]
+              },
+              "K256Signature": {
+                "Struct": [
+                  [
+                    "big_r",
+                    "K256AffinePoint"
+                  ],
+                  [
+                    "s",
+                    "K256Scalar"
+                  ],
+                  [
+                    "recovery_id",
+                    "u8"
+                  ]
+                ]
+              },
+              "SignatureResponse": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Secp256k1",
+                      "SignatureResponse__Secp256k1"
+                    ],
+                    [
+                      1,
+                      "Ed25519",
+                      "SignatureResponse__Ed25519"
+                    ]
+                  ]
+                }
+              },
+              "SignatureResponse__Ed25519": {
+                "Struct": [
+                  [
+                    "signature",
+                    "Ed25519Signature"
+                  ]
+                ]
+              },
+              "SignatureResponse__Secp256k1": {
+                "Struct": [
+                  "K256Signature"
+                ]
+              },
+              "SolanaExtractor": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "SolanaProgramIdIndex",
+                      "SolanaExtractor__SolanaProgramIdIndex"
+                    ],
+                    [
+                      1,
+                      "SolanaDataHash",
+                      "SolanaExtractor__SolanaDataHash"
+                    ]
+                  ]
+                }
+              },
+              "SolanaExtractor__SolanaDataHash": {
+                "Struct": [
+                  [
+                    "ix_index",
+                    "u32"
+                  ]
+                ]
+              },
+              "SolanaExtractor__SolanaProgramIdIndex": {
+                "Struct": [
+                  [
+                    "ix_index",
+                    "u32"
+                  ]
+                ]
+              },
+              "SolanaFinality": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "Processed",
+                      "SolanaFinality__Processed"
+                    ],
+                    [
+                      1,
+                      "Confirmed",
+                      "SolanaFinality__Confirmed"
+                    ],
+                    [
+                      2,
+                      "Finalized",
+                      "SolanaFinality__Finalized"
+                    ]
+                  ]
+                }
+              },
+              "SolanaFinality__Confirmed": {
+                "Struct": null
+              },
+              "SolanaFinality__Finalized": {
+                "Struct": null
+              },
+              "SolanaFinality__Processed": {
+                "Struct": null
+              },
+              "SolanaRpcRequest": {
+                "Struct": [
+                  [
+                    "tx_id",
+                    "SolanaTxId"
+                  ],
+                  [
+                    "finality",
+                    "SolanaFinality"
+                  ],
+                  [
+                    "extractors",
+                    "Vec<SolanaExtractor>"
+                  ]
+                ]
+              },
+              "SolanaTxId": {
+                "Struct": [
+                  "[u8; 64]"
+                ]
+              },
+              "StarknetExtractedValue": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "StarknetExtractedValue__BlockHash"
+                    ]
+                  ]
+                }
+              },
+              "StarknetExtractedValue__BlockHash": {
+                "Struct": [
+                  "StarknetFelt"
+                ]
+              },
+              "StarknetExtractor": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "BlockHash",
+                      "StarknetExtractor__BlockHash"
+                    ]
+                  ]
+                }
+              },
+              "StarknetExtractor__BlockHash": {
+                "Struct": null
+              },
+              "StarknetFelt": {
+                "Struct": [
+                  "[u8; 32]"
+                ]
+              },
+              "StarknetFinality": {
+                "Enum": {
+                  "tag_width": 1,
+                  "variants": [
+                    [
+                      0,
+                      "AcceptedOnL2",
+                      "StarknetFinality__AcceptedOnL2"
+                    ],
+                    [
+                      1,
+                      "AcceptedOnL1",
+                      "StarknetFinality__AcceptedOnL1"
+                    ]
+                  ]
+                }
+              },
+              "StarknetFinality__AcceptedOnL1": {
+                "Struct": null
+              },
+              "StarknetFinality__AcceptedOnL2": {
+                "Struct": null
+              },
+              "StarknetRpcRequest": {
+                "Struct": [
+                  [
+                    "tx_id",
+                    "StarknetTxId"
+                  ],
+                  [
+                    "finality",
+                    "StarknetFinality"
+                  ],
+                  [
+                    "extractors",
+                    "Vec<StarknetExtractor>"
+                  ]
+                ]
+              },
+              "StarknetTxId": {
+                "Struct": [
+                  "StarknetFelt"
+                ]
+              },
+              "String": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "u8"
+                }
+              },
+              "Vec<BitcoinExtractor>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "BitcoinExtractor"
+                }
+              },
+              "Vec<EvmExtractor>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "EvmExtractor"
+                }
+              },
+              "Vec<ExtractedValue>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "ExtractedValue"
+                }
+              },
+              "Vec<Hash256>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "Hash256"
+                }
+              },
+              "Vec<SolanaExtractor>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "SolanaExtractor"
+                }
+              },
+              "Vec<StarknetExtractor>": {
+                "Sequence": {
+                  "length_width": 4,
+                  "length_range": {
+                    "start": 0,
+                    "end": 4294967295
+                  },
+                  "elements": "StarknetExtractor"
+                }
+              },
+              "VerifyForeignTransactionResponse": {
+                "Struct": [
+                  [
+                    "payload",
+                    "ForeignTxSignPayload"
+                  ],
+                  [
+                    "signature",
+                    "SignatureResponse"
+                  ]
+                ]
+              },
+              "[u8; 20]": {
+                "Sequence": {
+                  "length_width": 0,
+                  "length_range": {
+                    "start": 20,
+                    "end": 20
+                  },
+                  "elements": "u8"
+                }
+              },
+              "[u8; 32]": {
+                "Sequence": {
+                  "length_width": 0,
+                  "length_range": {
+                    "start": 32,
+                    "end": 32
+                  },
+                  "elements": "u8"
+                }
+              },
+              "[u8; 33]": {
+                "Sequence": {
+                  "length_width": 0,
+                  "length_range": {
+                    "start": 33,
+                    "end": 33
+                  },
+                  "elements": "u8"
+                }
+              },
+              "[u8; 64]": {
+                "Sequence": {
+                  "length_width": 0,
+                  "length_range": {
+                    "start": 64,
+                    "end": 64
+                  },
+                  "elements": "u8"
+                }
+              },
+              "bool": {
+                "Primitive": 1
+              },
+              "u32": {
+                "Primitive": 4
+              },
+              "u64": {
+                "Primitive": 8
+              },
+              "u8": {
+                "Primitive": 1
+              }
+            }
           }
         }
       },
@@ -2542,22 +3956,6 @@ expression: abi
             }
           }
         },
-        "BitcoinExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/Hash256"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "BitcoinExtractor": {
           "type": "string",
           "enum": [
@@ -2918,14 +4316,6 @@ expression: abi
           "maxItems": 32,
           "minItems": 32
         },
-        "Ed25519Signature": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0.0
-          }
-        },
         "EpochId": {
           "description": "An EpochId uniquely identifies a ThresholdParameters (but not vice-versa). Every time we change the ThresholdParameters (participants and threshold), we increment EpochId. Locally on each node, each keyshare is uniquely identified by the tuple (EpochId, DomainId, AttemptId).",
           "type": "integer",
@@ -2975,34 +4365,6 @@ expression: abi
             }
           }
         },
-        "EvmExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/Hash256"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Log"
-              ],
-              "properties": {
-                "Log": {
-                  "$ref": "#/definitions/EvmLog"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "EvmExtractor": {
           "oneOf": [
             {
@@ -3043,58 +4405,6 @@ expression: abi
             "Finalized"
           ]
         },
-        "EvmLog": {
-          "type": "object",
-          "required": [
-            "address",
-            "block_hash",
-            "block_number",
-            "data",
-            "log_index",
-            "removed",
-            "topics",
-            "transaction_hash",
-            "transaction_index"
-          ],
-          "properties": {
-            "address": {
-              "$ref": "#/definitions/Hash160"
-            },
-            "block_hash": {
-              "$ref": "#/definitions/Hash256"
-            },
-            "block_number": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "data": {
-              "type": "string"
-            },
-            "log_index": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "removed": {
-              "type": "boolean"
-            },
-            "topics": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/Hash256"
-              }
-            },
-            "transaction_hash": {
-              "$ref": "#/definitions/Hash256"
-            },
-            "transaction_index": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
-        },
         "EvmRpcRequest": {
           "type": "object",
           "required": [
@@ -3120,46 +4430,6 @@ expression: abi
         "EvmTxId": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
-        "ExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BitcoinExtractedValue"
-              ],
-              "properties": {
-                "BitcoinExtractedValue": {
-                  "$ref": "#/definitions/BitcoinExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "EvmExtractedValue"
-              ],
-              "properties": {
-                "EvmExtractedValue": {
-                  "$ref": "#/definitions/EvmExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "StarknetExtractedValue"
-              ],
-              "properties": {
-                "StarknetExtractedValue": {
-                  "$ref": "#/definitions/StarknetExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
         },
         "ForeignChain": {
           "type": "string",
@@ -3285,49 +4555,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "ForeignTxSignPayload": {
-          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "V1"
-              ],
-              "properties": {
-                "V1": {
-                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "ForeignTxSignPayloadV1": {
-          "type": "object",
-          "required": [
-            "request",
-            "values"
-          ],
-          "properties": {
-            "request": {
-              "$ref": "#/definitions/ForeignChainRpcRequest"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
-            }
-          }
-        },
-        "Hash160": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
-        "Hash256": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "InitConfig": {
           "description": "The initial configuration parameters for when initializing the contract. All fields are optional, as the contract can fill in defaults for any missing fields.",
@@ -3466,31 +4693,6 @@ expression: abi
             },
             "generating_key": {
               "$ref": "#/definitions/KeyEvent"
-            }
-          }
-        },
-        "K256AffinePoint": {
-          "description": "AffinePoint on the Secp256k1 curve",
-          "type": "object",
-          "required": [
-            "affine_point"
-          ],
-          "properties": {
-            "affine_point": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-            }
-          }
-        },
-        "K256Scalar": {
-          "type": "object",
-          "required": [
-            "scalar"
-          ],
-          "properties": {
-            "scalar": {
-              "type": "string",
-              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
             }
           }
         },
@@ -3974,21 +5176,6 @@ expression: abi
               }
             }
           ]
-        },
-        "PromiseOrValueVerifyForeignTransactionResponse": {
-          "type": "object",
-          "required": [
-            "payload",
-            "signature"
-          ],
-          "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
-            },
-            "signature": {
-              "$ref": "#/definitions/SignatureResponse2"
-            }
-          }
         },
         "ProposedUpdates": {
           "type": "object",
@@ -4510,56 +5697,6 @@ expression: abi
             }
           ]
         },
-        "SignatureResponse2": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "big_r",
-                "recovery_id",
-                "s",
-                "scheme"
-              ],
-              "properties": {
-                "big_r": {
-                  "$ref": "#/definitions/K256AffinePoint"
-                },
-                "recovery_id": {
-                  "type": "integer",
-                  "format": "uint8",
-                  "minimum": 0.0
-                },
-                "s": {
-                  "$ref": "#/definitions/K256Scalar"
-                },
-                "scheme": {
-                  "type": "string",
-                  "enum": [
-                    "Secp256k1"
-                  ]
-                }
-              }
-            },
-            {
-              "type": "object",
-              "required": [
-                "scheme",
-                "signature"
-              ],
-              "properties": {
-                "scheme": {
-                  "type": "string",
-                  "enum": [
-                    "Ed25519"
-                  ]
-                },
-                "signature": {
-                  "$ref": "#/definitions/Ed25519Signature"
-                }
-              }
-            }
-          ]
-        },
         "SignatureScheme": {
           "description": "Uniquely identifies a specific request algorithm. More protocols may be added in the future. When adding new protocols, both Borsh *and* JSON serialization must be kept compatible.",
           "type": "string",
@@ -4675,22 +5812,6 @@ expression: abi
             "format": "uint8",
             "minimum": 0.0
           }
-        },
-        "StarknetExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/StarknetFelt"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
         },
         "StarknetExtractor": {
           "type": "string",
@@ -5023,21 +6144,6 @@ expression: abi
             },
             "request": {
               "$ref": "#/definitions/ForeignChainRpcRequest"
-            }
-          }
-        },
-        "VerifyForeignTransactionResponse": {
-          "type": "object",
-          "required": [
-            "payload",
-            "signature"
-          ],
-          "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
-            },
-            "signature": {
-              "$ref": "#/definitions/SignatureResponse2"
             }
           }
         },
