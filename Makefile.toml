@@ -8,6 +8,7 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
+  "cargo-deny-no-advisories",
   "zizmor",
   "check",
   "clippy",
@@ -24,6 +25,7 @@ dependencies = [
   "fmt",
   "cargo-sort",
   "cargo-shear",
+  "cargo-deny-no-advisories",
   "zizmor",
   "check",
   "clippy",
@@ -103,6 +105,11 @@ args = ["scripts/check-todo-format.sh"]
 description = "Run cargo deny"
 command = "cargo"
 args = ["deny", "--all-features", "check"]
+
+[tasks.cargo-deny-no-advisories]
+description = "Run cargo deny without advisories"
+command = "cargo"
+args = ["deny", "--all-features", "check", "licenses", "bans", "sources"]
 
 [tasks.license-file]
 command = "bash"
