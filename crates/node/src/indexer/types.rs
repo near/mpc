@@ -1,5 +1,6 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
+use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
@@ -134,7 +135,7 @@ pub struct ChainCKDRespondArgs {
 
 impl ChainRespondArgs for ChainCKDRespondArgs {}
 
-#[derive(Serialize, Debug, Deserialize, Clone)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, Clone)]
 pub struct ChainVerifyForeignTransactionRespondArgs {
     pub request: ChainVerifyForeignTransactionRequest,
     response: ChainVerifyForeignTransactionResponse,
@@ -204,8 +205,7 @@ pub struct ConcludeNodeMigrationArgs {
     pub keyset: Keyset,
 }
 /// Request to send a transaction to the contract on chain.
-#[derive(Serialize, Debug)]
-#[serde(untagged)]
+#[derive(Debug)]
 pub enum ChainSendTransactionRequest {
     Respond(ChainSignatureRespondArgs),
     CKDRespond(ChainCKDRespondArgs),
@@ -229,6 +229,26 @@ pub enum ChainSendTransactionRequest {
 }
 
 impl ChainSendTransactionRequest {
+    /// Serializes the inner args for the contract function call.
+    pub fn serialize_args(&self) -> anyhow::Result<Vec<u8>> {
+        match self {
+            Self::Respond(args) => Ok(serde_json::to_vec(args)?),
+            Self::CKDRespond(args) => Ok(serde_json::to_vec(args)?),
+            Self::VotePk(args) => Ok(serde_json::to_vec(args)?),
+            Self::StartKeygen(args) => Ok(serde_json::to_vec(args)?),
+            Self::VoteReshared(args) => Ok(serde_json::to_vec(args)?),
+            Self::VoteForeignChainPolicy(args) => Ok(serde_json::to_vec(args)?),
+            Self::StartReshare(args) => Ok(serde_json::to_vec(args)?),
+            Self::VoteAbortKeyEventInstance(args) => Ok(serde_json::to_vec(args)?),
+            Self::VerifyTee() => Ok(serde_json::to_vec(&serde_json::Value::Object(
+                Default::default(),
+            ))?),
+            Self::SubmitParticipantInfo(args) => Ok(serde_json::to_vec(args.as_ref())?),
+            Self::ConcludeNodeMigration(args) => Ok(serde_json::to_vec(args)?),
+            Self::VerifyForeignTransactionRespond(args) => Ok(borsh::to_vec(args)?),
+        }
+    }
+
     pub fn method(&self) -> &'static str {
         match self {
             ChainSendTransactionRequest::Respond(_) => "respond",

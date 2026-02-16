@@ -63,16 +63,16 @@ impl TransactionProcessorHandle {
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
                 tokio::spawn(async move {
-                    let Ok(txn_json) = serde_json::to_string(&tx_request) else {
+                    let Ok(params_ser) = tx_request.serialize_args() else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
                         return;
                     };
-                    tracing::debug!(target = "mpc", "tx args {:?}", txn_json);
+                    tracing::debug!(target = "mpc", "tx method={} args_len={}", tx_request.method(), params_ser.len());
                     let transaction_status = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
-                        txn_json,
+                        params_ser,
                     )
                     .await;
 
@@ -138,7 +138,7 @@ async fn submit_tx(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     method: String,
-    params_ser: String,
+    params_ser: Vec<u8>,
     gas: Gas,
 ) -> anyhow::Result<()> {
     let block = indexer_state.view_client.latest_final_block().await?;
@@ -146,7 +146,7 @@ async fn submit_tx(
     let transaction = tx_signer.create_and_sign_function_call_tx(
         indexer_state.mpc_contract_id.clone(),
         method,
-        params_ser.into(),
+        params_ser,
         gas,
         block.header.hash,
         block.header.height,
@@ -309,7 +309,7 @@ async fn ensure_send_transaction(
     tx_signer: Arc<TransactionSigner>,
     indexer_state: Arc<IndexerState>,
     request: ChainSendTransactionRequest,
-    params_ser: String,
+    params_ser: Vec<u8>,
 ) -> TransactionStatus {
     if let Err(err) = submit_tx(
         tx_signer.clone(),

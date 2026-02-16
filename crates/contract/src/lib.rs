@@ -725,8 +725,8 @@ impl MpcContract {
     #[handle_result]
     pub fn respond_verify_foreign_tx(
         &mut self,
-        request: VerifyForeignTransactionRequest,
-        response: VerifyForeignTransactionResponse,
+        #[serializer(borsh)] request: VerifyForeignTransactionRequest,
+        #[serializer(borsh)] response: VerifyForeignTransactionResponse,
     ) -> Result<(), Error> {
         let signer = Self::assert_caller_is_signer();
 

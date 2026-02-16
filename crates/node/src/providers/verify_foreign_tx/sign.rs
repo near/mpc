@@ -229,10 +229,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                                     block_number: log.block_number.as_u64(),
                                     address: log.address.0.into(),
                                     data: log.data.clone(),
-                                    // TODO(#2089): The topics occupy too much data, breaking the limit on near
-                                    // promises and making the respond transaction fail
-                                    // correct value: log.topics.iter().map(|topic| topic.0.into()).collect()
-                                    topics: vec![],
+                                    topics: log.topics.iter().map(|topic| topic.0.into()).collect(),
                                 }),
                             ))
                         }

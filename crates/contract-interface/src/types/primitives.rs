@@ -18,7 +18,7 @@ use serde_with::{hex::Hex, serde_as};
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct AccountId(pub String);
 
@@ -90,10 +90,22 @@ pub struct Tweak(pub [u8; 32]);
 )]
 pub struct DomainId(pub u64);
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshDeserialize,
+    BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 #[serde(tag = "scheme")]
 pub enum SignatureResponse {
@@ -102,10 +114,22 @@ pub enum SignatureResponse {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshDeserialize,
+    BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct Ed25519Signature(
     #[cfg_attr(
@@ -117,10 +141,22 @@ pub struct Ed25519Signature(
 );
 
 #[serde_as]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshDeserialize,
+    BorshSerialize,
+)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct K256Signature {
     pub big_r: K256AffinePoint,
@@ -142,10 +178,12 @@ pub struct K256Signature {
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    BorshDeserialize,
+    BorshSerialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 /// AffinePoint on the Secp256k1 curve
 pub struct K256AffinePoint {
@@ -167,10 +205,12 @@ pub struct K256AffinePoint {
     derive_more::From,
     derive_more::Into,
     derive_more::AsRef,
+    BorshDeserialize,
+    BorshSerialize,
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub struct K256Scalar {
     #[serde_as(as = "Hex")]
