@@ -216,6 +216,36 @@ pub enum SolanaFinality {
 #[borsh(use_discriminant = true)]
 pub enum EvmExtractor {
     BlockHash = 0,
+    Log { log_index: u64 } = 1,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct EvmLog {
+    pub removed: bool,
+    pub log_index: u64,
+    pub transaction_index: u64,
+    pub transaction_hash: Hash256,
+    pub block_hash: Hash256,
+    pub block_number: u64,
+    pub address: Hash160,
+    pub data: String,
+    pub topics: Vec<Hash256>,
 }
 
 #[derive(
@@ -308,6 +338,7 @@ pub enum ExtractedValue {
 #[non_exhaustive]
 pub enum EvmExtractedValue {
     BlockHash(Hash256),
+    Log(EvmLog),
 }
 #[derive(
     Debug,
@@ -356,6 +387,7 @@ pub enum ForeignChain {
     Base,
     Bnb,
     Arbitrum,
+    Abstract,
 }
 
 #[derive(
@@ -489,6 +521,29 @@ pub struct BlockConfirmations(pub u64);
     derive(schemars::JsonSchema)
 )]
 pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct Hash160(#[serde_as(as = "Hex")] pub [u8; 20]);
 
 #[serde_as]
 #[derive(

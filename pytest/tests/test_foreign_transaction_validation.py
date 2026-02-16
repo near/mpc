@@ -3,7 +3,7 @@
 End-to-end system test for the foreign transaction validation flow.
 
 Exercises: user submits verify_foreign_transaction() -> MPC nodes fetch from
-a mock Bitcoin JSON-RPC server -> nodes collaboratively sign -> response
+a mock Bitcoin/Abstract JSON-RPC server -> nodes collaboratively sign -> response
 returned to caller.
 """
 
@@ -78,9 +78,80 @@ class _BitcoinRpcHandler(BaseHTTPRequestHandler):
         pass
 
 
-def _start_mock_bitcoin_rpc() -> tuple[HTTPServer, int]:
+class _EvmRpcHandler(BaseHTTPRequestHandler):
+    """Handles JSON-RPC 2.0 requests pretending to be a Evm compatible node."""
+
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        request = json.loads(body)
+
+        request_id = request.get("id")
+        method = request.get("method")
+
+        if method == "eth_getBlockByNumber":
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "number": "0x16740f3",
+                },
+                "id": request_id,
+            }
+        elif method == "eth_getTransactionReceipt":
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "blockHash": "0x" + MOCK_BLOCK_HASH,
+                    "blockNumber": "0xa",
+                    "status": "0x1",
+                    "logs": [
+                        {
+                            "address": "0x000000000000000000000000000000000000800a",
+                            "topics": [
+                                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                                "0x000000000000000000000000edaf4083f29753753d0cd6c3c50aceb08c87b5bd",
+                                "0x0000000000000000000000000000000000000000000000000000000000008001",
+                            ],
+                            "data": "0x000000000000000000000000000000000000000000000000000006e4b5898a00",
+                            "blockHash": "0x4c93dd4a8f347e6480b0a44f8c2b7eecdfb31d711e8d542fd60112ea5d98fb02",
+                            "blockNumber": "0xfbf4b1",
+                            "l1BatchNumber": "0x4f3c",
+                            "transactionHash": "0x497fc5f5b5d81d6bc15cccc6d4d8be8ef6ad19376233b944a60dc435593f7234",
+                            "transactionIndex": "0x0",
+                            "logIndex": "0x0",
+                            "transactionLogIndex": "0x0",
+                            "removed": False,
+                            "blockTimestamp": "0x69864dd4",
+                        },
+                    ],
+                },
+                "id": request_id,
+            }
+        else:
+            response = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": JSONRPC_METHOD_NOT_FOUND,
+                    "message": f"Method not found: {method}",
+                },
+                "id": request_id,
+            }
+
+        payload = json.dumps(response).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    # Silence per-request log lines
+    def log_message(self, format, *args):
+        pass
+
+
+def _start_mock_rpc(_RpcHandler) -> tuple[HTTPServer, int]:
     """Start a mock Bitcoin RPC server on an OS-assigned port. Returns (server, port)."""
-    server = HTTPServer(("127.0.0.1", 0), _BitcoinRpcHandler)
+    server = HTTPServer(("127.0.0.1", 0), _RpcHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -93,37 +164,53 @@ def foreign_tx_validation_cluster():
     Spin up a 2-node MPC cluster with a mock Bitcoin RPC provider,
     wait for the foreign chain policy to be applied, and yield.
     """
-    mock_server, mock_port = _start_mock_bitcoin_rpc()
-    mock_rpc_url = f"http://127.0.0.1:{mock_port}"
+    bitcoin_mock_server, bitcoin_mock_port = _start_mock_rpc(_BitcoinRpcHandler)
+    bitcoin_mock_rpc_url = f"http://127.0.0.1:{bitcoin_mock_port}"
+
+    abstract_mock_server, abstract_mock_port = _start_mock_rpc(_EvmRpcHandler)
+    abstract_mock_rpc_url = f"http://127.0.0.1:{abstract_mock_port}"
 
     contract = load_mpc_contract()
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
         2, 1, contract, start_mpc_nodes=False
     )
 
-    bitcoin_config = {
+    foreign_chains_config = {
         "bitcoin": {
             "timeout_sec": 30,
             "max_retries": 3,
             "providers": {
                 "mock": {
                     "api_variant": "standard",
-                    "rpc_url": mock_rpc_url,
+                    "rpc_url": bitcoin_mock_rpc_url,
                     "auth": {
                         "kind": "none",
                     },
                 }
             },
-        }
+        },
+        "abstract": {
+            "timeout_sec": 30,
+            "max_retries": 3,
+            "providers": {
+                "mock": {
+                    "api_variant": "standard",
+                    "rpc_url": abstract_mock_rpc_url,
+                    "auth": {
+                        "kind": "none",
+                    },
+                }
+            },
+        },
     }
 
     for node in mpc_nodes:
-        foreign_chains.set_foreign_chains_config(node, bitcoin_config)
+        foreign_chains.set_foreign_chains_config(node, foreign_chains_config)
 
     for node in mpc_nodes:
         node.run()
 
-    cluster.init_cluster(participants=mpc_nodes, threshold=2)
+    cluster.init_cluster(participants=mpc_nodes, threshold=2, domains=["Secp256k1"])
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
@@ -132,8 +219,12 @@ def foreign_tx_validation_cluster():
             "chains": [
                 {
                     "chain": "Bitcoin",
-                    "providers": [{"rpc_url": mock_rpc_url}],
-                }
+                    "providers": [{"rpc_url": bitcoin_mock_rpc_url}],
+                },
+                {
+                    "chain": "Abstract",
+                    "providers": [{"rpc_url": abstract_mock_rpc_url}],
+                },
             ]
         }
     )
@@ -151,7 +242,8 @@ def foreign_tx_validation_cluster():
     yield cluster, mpc_nodes
 
     cluster.kill_all()
-    mock_server.shutdown()
+    bitcoin_mock_server.shutdown()
+    abstract_mock_server.shutdown()
     atexit._run_exitfuncs()
 
 
@@ -234,6 +326,113 @@ def test_verify_foreign_transaction_bitcoin(
         # Verify the request in the payload matches what we submitted
         assert "Bitcoin" in v1["request"], (
             f"Expected Bitcoin request, got: {v1['request']}"
+        )
+
+        # Verify signature is present and is Secp256k1
+        signature = response["signature"]
+        assert signature["scheme"] == "Secp256k1", (
+            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        )
+        assert "big_r" in signature, "Expected big_r in signature"
+        assert "s" in signature, "Expected s in signature"
+        assert "recovery_id" in signature, "Expected recovery_id in signature"
+
+        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
+
+    cluster.request_node.send_await_check_txs_parallel(
+        "verify_foreign_transaction", [tx], verify_response
+    )
+
+
+@pytest.mark.no_atexit_cleanup
+def test_verify_foreign_transaction_abstract(
+    foreign_tx_validation_cluster: tuple[MpcCluster, list],
+):
+    """
+    Submit a verify_foreign_transaction request for Abstract and verify
+    the MPC nodes return a valid signed response with the expected payload.
+    """
+    cluster, _mpc_nodes = foreign_tx_validation_cluster
+
+    # Find the Secp256k1 domain
+    contract_state = cluster.contract_state()
+    domains = contract_state.get_running_domains()
+    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+
+    # Build the verify_foreign_transaction args
+    args = {
+        "request": {
+            "request": {
+                "Abstract": {
+                    "tx_id": MOCK_TX_ID,
+                    "finality": "Finalized",
+                    "extractors": ["BlockHash", {"Log": {"log_index": 0}}],
+                }
+            },
+            "derivation_path": "test",
+            "domain_id": secp_domain.id,
+            "payload_version": 1,
+        }
+    }
+
+    tx = cluster.request_node.sign_tx(
+        cluster.mpc_contract_account(),
+        "verify_foreign_transaction",
+        args,
+        gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
+        deposit=VERIFY_FOREIGN_TX_DEPOSIT,
+    )
+
+    # Send, await, and verify response
+    def verify_response(res):
+        try:
+            success_value = res["result"]["status"]["SuccessValue"]
+        except KeyError:
+            raise AssertionError(
+                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
+            )
+
+        response = json.loads(base64.b64decode(success_value))
+
+        print(
+            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
+        )
+
+        # Verify payload structure
+        payload = response["payload"]
+        assert "V1" in payload, f"Expected V1 payload, got: {payload}"
+
+        v1 = payload["V1"]
+
+        # Verify extracted values contain the mock block hash
+        values = v1["values"]
+        assert len(values) > 1, "Expected at least two extracted values"
+
+        block_hash_value = values[0]
+        assert "EvmExtractedValue" in block_hash_value, (
+            f"Expected EvmExtractedValue, got: {block_hash_value}"
+        )
+        assert "BlockHash" in block_hash_value["EvmExtractedValue"], (
+            f"Expected BlockHash, got: {block_hash_value['EvmExtractedValue']}"
+        )
+        assert block_hash_value["EvmExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH, (
+            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['EvmExtractedValue']['BlockHash']}"
+        )
+
+        log_value = values[1]
+        assert "EvmExtractedValue" in log_value, (
+            f"Expected EvmExtractedValue, got: {log_value}"
+        )
+        assert "Log" in log_value["EvmExtractedValue"], (
+            f"Expected Log, got: {log_value['EvmExtractedValue']}"
+        )
+        assert len(log_value["EvmExtractedValue"]["Log"]) > 0, (
+            f"Expected non-empty log, got {log_value['EvmExtractedValue']['Log']}"
+        )
+
+        # Verify the request in the payload matches what we submitted
+        assert "Abstract" in v1["request"], (
+            f"Expected Abstract request, got: {v1['request']}"
         )
 
         # Verify signature is present and is Secp256k1

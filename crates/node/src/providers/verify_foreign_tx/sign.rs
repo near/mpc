@@ -1,8 +1,11 @@
 use anyhow::{bail, Context};
-use foreign_chain_inspector;
+use foreign_chain_inspector::abstract_chain::inspector::{
+    AbstractExtractedValue, AbstractExtractor, AbstractInspector,
+};
 use foreign_chain_inspector::bitcoin::inspector::{BitcoinExtractor, BitcoinInspector};
 use foreign_chain_inspector::bitcoin::BitcoinExtractedValue;
 use foreign_chain_inspector::ForeignChainInspector;
+use foreign_chain_inspector::{self, EthereumFinality};
 use rand::rngs::OsRng;
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 use tokio_util::time::FutureExt;
@@ -101,7 +104,7 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
         &self,
         request: &dtos::ForeignChainRpcRequest,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        let extracted_values = match request {
+        let values = match request {
             dtos::ForeignChainRpcRequest::Ethereum(_request) => {
                 bail!("ForeignChainRpcRequest::Ethereum is unsupported")
             }
@@ -139,26 +142,101 @@ impl<ForeignChainPolicyReader: Send + Sync> VerifyForeignTxProvider<ForeignChain
                     })
                     .collect::<anyhow::Result<_>>()?;
 
-                inspector
+                let values = inspector
                     .extract(transaction_id, block_confirmations, extractors)
                     .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
                     .await
-                    .context("timed out during execution of foreign chain request")??
+                    .context("timed out during execution of foreign chain request")??;
+
+                values
+                    .iter()
+                    .map(|extracted_value| match extracted_value {
+                        BitcoinExtractedValue::BlockHash(value) => {
+                            let value: [u8; 32] = **value;
+                            Ok(dtos::ExtractedValue::BitcoinExtractedValue(
+                                dtos::BitcoinExtractedValue::BlockHash(value.into()),
+                            ))
+                        }
+                    })
+                    .collect::<anyhow::Result<_>>()?
+            }
+            dtos::ForeignChainRpcRequest::Abstract(request) => {
+                let Some(abstract_config) = &self.config.foreign_chains.abstract_chain else {
+                    anyhow::bail!("abstract provider config is missing")
+                };
+                // TODO(#2088): implement a better algorithm here that guarantees that different nodes get different providers
+                let abstract_provider_config =
+                    abstract_config.providers.values().choose(&mut OsRng);
+
+                let Some(abstract_provider_config) = abstract_provider_config else {
+                    anyhow::bail!("found empty list of providers for abstract")
+                };
+
+                let public_node_url = abstract_provider_config.rpc_url.clone();
+
+                let http_client = foreign_chain_inspector::build_http_client(
+                    public_node_url,
+                    abstract_provider_config.auth.clone().try_into()?,
+                )?;
+                let inspector = AbstractInspector::new(http_client);
+
+                let transaction_id = request.tx_id.0.into();
+                let finality = match request.finality {
+                    dtos::EvmFinality::Latest => EthereumFinality::Latest,
+                    dtos::EvmFinality::Safe => EthereumFinality::Safe,
+                    dtos::EvmFinality::Finalized => EthereumFinality::Finalized,
+                    _ => bail!("unknown EvmFinality variant"),
+                };
+                let extractors = request
+                    .extractors
+                    .iter()
+                    .map(|extractor| match extractor {
+                        dtos::EvmExtractor::BlockHash => Ok(AbstractExtractor::BlockHash),
+                        dtos::EvmExtractor::Log { log_index } => Ok(AbstractExtractor::Log {
+                            log_index: usize::try_from(*log_index)?,
+                        }),
+                        _ => bail!("unknown extractor found"),
+                    })
+                    .collect::<anyhow::Result<_>>()?;
+
+                let values = inspector
+                    .extract(transaction_id, finality, extractors)
+                    .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
+                    .await
+                    .context("timed out during execution of foreign chain request")??;
+
+                values
+                    .iter()
+                    .map(|extracted_value| match extracted_value {
+                        AbstractExtractedValue::BlockHash(value) => {
+                            let value: [u8; 32] = **value;
+                            Ok(dtos::ExtractedValue::EvmExtractedValue(
+                                dtos::EvmExtractedValue::BlockHash(value.into()),
+                            ))
+                        }
+                        AbstractExtractedValue::Log(log) => {
+                            Ok(dtos::ExtractedValue::EvmExtractedValue(
+                                dtos::EvmExtractedValue::Log(dtos::EvmLog {
+                                    removed: log.removed,
+                                    log_index: log.log_index.as_u64(),
+                                    transaction_index: log.transaction_index.as_u64(),
+                                    transaction_hash: log.transaction_hash.0.into(),
+                                    block_hash: log.block_hash.0.into(),
+                                    block_number: log.block_number.as_u64(),
+                                    address: log.address.0.into(),
+                                    data: log.data.clone(),
+                                    // TODO(#2089): The topics occupy too much data, breaking the limit on near
+                                    // promises and making the respond transaction fail
+                                    // correct value: log.topics.iter().map(|topic| topic.0.into()).collect()
+                                    topics: vec![],
+                                }),
+                            ))
+                        }
+                    })
+                    .collect::<anyhow::Result<_>>()?
             }
             _ => bail!("unknown extractor found"),
         };
-
-        let values = extracted_values
-            .iter()
-            .map(|extracted_value| match extracted_value {
-                BitcoinExtractedValue::BlockHash(value) => {
-                    let value: [u8; 32] = **value;
-                    Ok(dtos::ExtractedValue::BitcoinExtractedValue(
-                        dtos::BitcoinExtractedValue::BlockHash(value.into()),
-                    ))
-                }
-            })
-            .collect::<anyhow::Result<_>>()?;
         Ok(dtos::ForeignTxSignPayload::V1(
             dtos::ForeignTxSignPayloadV1 {
                 request: request.clone(),
