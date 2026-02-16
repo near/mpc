@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+contract-interface = { workspace = true }
 derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
