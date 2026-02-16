@@ -20,6 +20,7 @@ import pytest
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
 from common_lib import shared
+from common_lib.borsh import deserialize_verify_foreign_tx_response
 from common_lib.constants import (
     GAS_FOR_VERIFY_FOREIGN_TX_CALL,
     TGAS,
@@ -295,7 +296,9 @@ def test_verify_foreign_transaction_bitcoin(
                 f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
             )
 
-        response = json.loads(base64.b64decode(success_value))
+        response = deserialize_verify_foreign_tx_response(
+            base64.b64decode(success_value)
+        )
 
         print(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
@@ -392,7 +395,9 @@ def test_verify_foreign_transaction_abstract(
                 f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
             )
 
-        response = json.loads(base64.b64decode(success_value))
+        response = deserialize_verify_foreign_tx_response(
+            base64.b64decode(success_value)
+        )
 
         print(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
