@@ -16,16 +16,30 @@ updates:
         patterns:
           - "*"
     ignore:
+      # TODO(#1299): updating this brings considerable breaking changes
       - dependency-name: "hyper"
+      # TODO(#2051): updating this brings considerable breaking changes
       - dependency-name: "rcgen"
+      # TODO(#2053): upgrading this leads to errors
       - dependency-name: "reqwest"
+      ## Outdated dependencies we cannot upgrade ##
+      # Version 0.8.3 requires rustc 1.88
       - dependency-name: "httpmock"
+      # This cannot be upgraded because it conflicts the prometheus version required by nearcore
       - dependency-name: "prometheus"
+      # TODO(#690): This cannot be upgraded until nearcore does
       - dependency-name: "rocksdb"
+      # This version needs to be exactly the same as in `near_sdk::schemars`
       - dependency-name: "schemars"
+      # This is deprecated, we should find an alterantive
       - dependency-name: "serde_yaml"
+      # TODO(#1907): These dependencies need to be upgraded in tandem
       - dependency-name: "getrandom"
+      # TODO(#1907): These dependencies need to be upgraded in tandem
       - dependency-name: "rand"
+      # TODO(#1907): These dependencies need to be upgraded in tandem
       - dependency-name: "rand_chacha"
+      # TODO(#1907): These dependencies need to be upgraded in tandem
       - dependency-name: "rand_core"
+      # Cannot be upgraded until we get MSVR 1.88
       - dependency-name: "time"
