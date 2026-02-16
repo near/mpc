@@ -794,7 +794,7 @@ impl MpcContract {
             self.pending_verify_foreign_tx_requests.remove(&request)
         {
             // Finally, resolve the promise. This will have no effect if the request already timed.
-            env::promise_yield_resume(&data_id, serde_json::to_vec(&response).unwrap());
+            env::promise_yield_resume(&data_id, borsh::to_vec(&response).unwrap());
             Ok(())
         } else {
             Err(InvalidParameters::RequestNotFound.into())
@@ -1706,10 +1706,13 @@ impl MpcContract {
     /// If the verify foreign tx request times out, removes the verify foreign tx request from state and panics to fail the
     /// original transaction
     #[private]
+    #[result_serializer(borsh)]
     pub fn return_verify_foreign_tx_and_clean_state_on_success(
         &mut self,
         request: VerifyForeignTransactionRequest,
-        #[callback_result] response: Result<VerifyForeignTransactionResponse, PromiseError>,
+        #[callback_result]
+        #[serializer(borsh)]
+        response: Result<VerifyForeignTransactionResponse, PromiseError>,
     ) -> PromiseOrValue<VerifyForeignTransactionResponse> {
         match response {
             Ok(response) => PromiseOrValue::Value(response),
