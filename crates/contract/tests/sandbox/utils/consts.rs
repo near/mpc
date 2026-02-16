@@ -39,7 +39,7 @@ pub const GAS_FOR_VOTE_BEFORE_THRESHOLD: Gas = Gas::from_tgas(5);
 /// Maximum gas expected for the threshold vote that triggers the contract update.
 /// This vote is more expensive because it deploys the new contract code and executes
 /// the migration function.
-pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(166);
+pub const MAX_GAS_FOR_THRESHOLD_VOTE: Gas = Gas::from_tgas(167);
 
 /* --- Deposit constants --- */
 /// This is the current deposit required for a contract deploy. This is subject to change but make
