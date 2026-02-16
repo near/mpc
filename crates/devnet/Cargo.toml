@@ -30,9 +30,9 @@ utilities = { workspace = true }
 
 # TODO(#657): use workspace versions
 near-crypto = "0.28.0"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
+near-jsonrpc-client = "0.20.0"
+near-jsonrpc-primitives = "0.34.6"
+near-primitives = "0.34.6"
 
 [lints]
 workspace = true
