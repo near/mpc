@@ -132,7 +132,8 @@
           ];
 
           nearTools = with pkgs; [
-            python3Packages.keyring
+            python312
+            python312Packages.keyring
             near-cli-rs
             cargo-near
           ];
