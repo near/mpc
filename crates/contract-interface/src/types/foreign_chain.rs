@@ -75,6 +75,7 @@ pub enum ForeignChainRpcRequest {
     Ethereum(EvmRpcRequest),
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
+    Starknet(StarknetRpcRequest),
 }
 
 #[derive(
@@ -163,6 +164,29 @@ pub struct BitcoinRpcRequest {
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema)
 )]
+pub struct StarknetRpcRequest {
+    pub tx_id: StarknetTxId,
+    pub finality: StarknetFinality,
+    pub extractors: Vec<StarknetExtractor>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
 #[non_exhaustive]
 pub enum EvmFinality {
     Latest,
@@ -192,6 +216,29 @@ pub enum SolanaFinality {
     Processed,
     Confirmed,
     Finalized,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
+pub enum StarknetFinality {
+    AcceptedOnL2,
+    AcceptedOnL1,
 }
 
 #[derive(
@@ -313,9 +360,34 @@ pub enum BitcoinExtractor {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
+#[repr(u8)]
+#[borsh(use_discriminant = true)]
+pub enum StarknetExtractor {
+    BlockHash = 0,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
 pub enum ExtractedValue {
     BitcoinExtractedValue(BitcoinExtractedValue),
     EvmExtractedValue(EvmExtractedValue),
+    StarknetExtractedValue(StarknetExtractedValue),
 }
 
 #[derive(
@@ -380,6 +452,28 @@ pub enum BitcoinExtractedValue {
     derive(schemars::JsonSchema)
 )]
 #[non_exhaustive]
+pub enum StarknetExtractedValue {
+    BlockHash(StarknetFelt),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+#[non_exhaustive]
 pub enum ForeignChain {
     Solana,
     Bitcoin,
@@ -388,6 +482,7 @@ pub enum ForeignChain {
     Bnb,
     Arbitrum,
     Abstract,
+    Starknet,
 }
 
 #[derive(
@@ -621,6 +716,51 @@ pub struct SolanaTxId(
 )]
 pub struct BitcoinTxId(#[serde_as(as = "Hex")] pub [u8; 32]);
 
+#[serde_as]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StarknetFelt(#[serde_as(as = "Hex")] pub [u8; 32]);
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    derive_more::Into,
+    derive_more::From,
+    derive_more::AsRef,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub struct StarknetTxId(pub StarknetFelt);
+
 /// Canonical payload for foreign-chain transaction verification signatures.
 ///
 /// This enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte
@@ -746,6 +886,27 @@ mod tests {
             }),
             values: vec![ExtractedValue::BitcoinExtractedValue(
                 BitcoinExtractedValue::BlockHash([42u8; 32].into()),
+            )],
+        });
+
+        // When
+        let hash = payload.compute_msg_hash().unwrap();
+
+        // Then
+        insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[test]
+    fn foreign_tx_sign_payload_v1_starknet__should_have_consistent_hash() {
+        // Given
+        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+                tx_id: StarknetTxId(StarknetFelt([0x77; 32])),
+                finality: StarknetFinality::AcceptedOnL1,
+                extractors: vec![StarknetExtractor::BlockHash],
+            }),
+            values: vec![ExtractedValue::StarknetExtractedValue(
+                StarknetExtractedValue::BlockHash(StarknetFelt([0x88; 32])),
             )],
         });
 

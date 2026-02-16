@@ -18,7 +18,8 @@ pub use foreign_chains::{
     AbstractApiVariant, AbstractChainConfig, AbstractProviderConfig, AuthConfig, BitcoinApiVariant,
     BitcoinChainConfig, BitcoinProviderConfig, EthereumApiVariant, EthereumChainConfig,
     EthereumProviderConfig, ForeignChainsConfig, SolanaApiVariant, SolanaChainConfig,
-    SolanaProviderConfig, TokenConfig,
+    SolanaProviderConfig, StarknetApiVariant, StarknetChainConfig, StarknetProviderConfig,
+    TokenConfig,
 };
 
 const DEFAULT_PPROF_PORT: u16 = 34001;
