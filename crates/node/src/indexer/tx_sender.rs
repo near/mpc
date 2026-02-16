@@ -63,16 +63,16 @@ impl TransactionProcessorHandle {
                 let tx_signer = signers.signer_for(&tx_request);
                 let indexer_state = indexer_state.clone();
                 tokio::spawn(async move {
-                    let Ok(params_ser) = tx_request.serialize_args() else {
+                    let Ok(parameters_serialized) = tx_request.serialize_args() else {
                         tracing::error!(target: "mpc", "Failed to serialize response args");
                         return;
                     };
-                    tracing::debug!(target = "mpc", "tx method={} args_len={}", tx_request.method(), params_ser.len());
+                    tracing::debug!(target = "mpc", ?parameters_serialized);
                     let transaction_status = ensure_send_transaction(
                         tx_signer.clone(),
                         indexer_state,
                         tx_request,
-                        params_ser,
+                        parameters_serialized,
                     )
                     .await;
 
