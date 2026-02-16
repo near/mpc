@@ -213,7 +213,7 @@
               if [ "$VENV_DIR/bin/pip" -nt "$VENV_DIR/.requirements-installed" ] || \
                  [ "$PWD/pytest/requirements.txt" -nt "$VENV_DIR/.requirements-installed" ]; then
                 printf "\e[33mInstalling pytest requirements...\e[0m\n"
-                pip install -q -r "$PWD/pytest/requirements.txt"
+                (cd "$PWD/pytest" && pip install -q -r requirements.txt)
                 touch "$VENV_DIR/.requirements-installed"
               fi
             '';
