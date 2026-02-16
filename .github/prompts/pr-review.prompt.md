@@ -35,7 +35,6 @@ PRIORITY CHECKS (report only if found):
 
 6. Code Quality
    - Poor modularity (functions >100 lines, god objects)
-   - Unclear naming or missing documentation for public APIs
    - Violated Single Responsibility Principle
    - Security vulnerabilities (injection, hardcoded secrets)
 
