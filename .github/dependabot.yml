@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    target-branch: "main"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    open-pull-requests-limit: 5
+
+    cooldown:
+      default-days: 7
+
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "hyper"
+      - dependency-name: "rcgen"
+      - dependency-name: "reqwest"
+      - dependency-name: "httpmock"
+      - dependency-name: "prometheus"
+      - dependency-name: "rocksdb"
+      - dependency-name: "schemars"
+      - dependency-name: "serde_yaml"
+      - dependency-name: "getrandom"
+      - dependency-name: "rand"
+      - dependency-name: "rand_chacha"
+      - dependency-name: "rand_core"
+      - dependency-name: "time"
