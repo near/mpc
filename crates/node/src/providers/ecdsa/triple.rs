@@ -117,7 +117,7 @@ impl EcdsaSignatureProvider {
                     start: id_start,
                     count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
                 };
-                let channel = match client.new_channel_for_task(task_id, participants.clone()) {
+                let channel = match client.new_channel_for_task(task_id, participants) {
                     Ok(channel) => channel,
                     Err(err) => {
                         tracing::warn!(
