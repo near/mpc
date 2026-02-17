@@ -359,7 +359,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
         let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             &signature,
-            &payload_hash.0,
+            payload_hash.as_ref(),
         )?;
 
         // TODO: this code should be elsewhere

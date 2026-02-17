@@ -630,6 +630,7 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
