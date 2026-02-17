@@ -301,7 +301,7 @@ def test_verify_foreign_transaction_bitcoin(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
         )
 
-        # Verify payload_hash is present (full payload is no longer returned, only its hash)
+        # Verify payload_hash is present
         payload_hash = response["payload_hash"]
         assert isinstance(payload_hash, str), (
             f"Expected hex string payload_hash, got: {type(payload_hash)}"
@@ -380,7 +380,7 @@ def test_verify_foreign_transaction_abstract(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
         )
 
-        # Verify payload_hash is present (full payload is no longer returned, only its hash)
+        # Verify payload_hash is present
         payload_hash = response["payload_hash"]
         assert isinstance(payload_hash, str), (
             f"Expected hex string payload_hash, got: {type(payload_hash)}"
