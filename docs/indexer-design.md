@@ -503,102 +503,143 @@ trait ContractStateSubscriber {
 ##### Block Event Subscriber
 
 The purpose of this intreface is to enable easy subscription to block events. In the MPC node, we use this to monitor the mempool for requests to the MPC network and responses from the MPC network.
-Specifically, we filter for transactions that match specific combinations of `executor_id`, `contract_method` as well as `receipt_receiver_id` and `contract_method` (c.f. [Appendix](current-block-update)).
 
-**Proposal A - Known Pattern API:**
 
-This is a simple proposal, trying to stay close to what we currently have.
-It allows to subscribe to filter for transactions matching patterns that are currently relevant to us:
+Specifically, we filter for receipts that match one of the following pattern:
+- They are executed on a specific contract and call a specific method of that contract. We will call this `ExecutorFunctionCall`:
+    - in case of our MPC node, we are looking for any calls to `sign`, `request_app_private_key` or `verify_foreign_chain_transaction` of our MPC contract.
+- They are addressed to a specfic contract and call a specefic method of that contract. We call those `ReceiverFunctionCall`:
+    - in the case of our MPC node, we are looking for calls to  `return_signature_and_clean_state_on_success`, `return_ck_and_clean_state_on_success` or `return_verify_foreign_tx_and_clean_state_on_success` that originate from the contract.
+
+If we want this interface to be re-usable in othe parts of our code, we can create a more or less generic filter interface:
 
 ```rust
-/// This event is associated to a transaction that matched a specific (transaction_outcome_executor_id: AccountId, method_name: String) pattern.
-struct ExecutorFunctionCallEventDefinition {
-    /// the executor of the transaction outcome
-    transaction_outcome_executor: AccountId,
-    /// the method called on `transaction_outocme_executor`
-    method_name: String,
+impl BlockEventSubscriberBuilder {
+    pub fn new(subscription_replay: SubscriptionReplay) -> Self;
+    
+    /// Configure queue size between producer and consumer.
+    /// we can define overflow behavior later, by default we could just stop producing (neard indexer will consume unlimited amount of memory).
+    pub fn buffer_size(self, n: usize) -> Self;
+
+    /// Add a subscription and get a unique identifier for it.
+    /// Can be called multiple times before build().
+    /// the identifier can be used to match a return value to the given subscription id.
+    pub fn add_subscription(&mut self, filter: SubscriptionFilter) -> SubscriptionId;
+
+    /// Finalise and start streaming.
+    pub async fn build(self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BlockUpdate>>;
 }
 
-/// This event is associated to a transaction that matched a specific (transaction_outcome_executor_id: AccountId, method_name: String) pattern.
-struct ExecutorFunctionCallEvent {
-    /// the receipt_id of the recipt this event came from
-    receipt_id: CryptoHash,
-    // predecessor_id who signed the transaction
-    predecessor_id : AcccountId,
-    // the receipt that will hold the outcome of this receipt
-    next_receipt_id: CryptoHash,
-    /// block randomness
-    pub block_entropy: [u8; 32],
-    /// block timestamp
-    pub block_timestamp_nanosec: u64,
-    /// serialized function call args (verbatim from the blockchain)
-    args: String,
+/// an identifier for a subscription
+pub struct SubscriptionId(pub u64);
+
+/// Filter - can be easily extended later
+pub enum SubscriptionFilter {
+    /// Filter for events where a receipt outcome was executed by `transaction_outcome_executor_id` and called `method_name`.
+    ExecutorFunctionCall {
+        transaction_outcome_executor_id: AccountId,
+        method_name: String,
+    },
+    /// Filter for events where a receipt was addressed to `receipt_receiver_id` and called `method_name`.
+    ReceiverFunctionCall {
+        receipt_receiver_id: AccountId,
+        method_name: String,
+    },
 }
 
-/// defines an event to watch out for
-struct ReceiverFunctionCallEventDefinition {
-    // the receiver recepit id this transaction must match
-    receipt_receiver_id: AccountId,
-    /// the method name this transaction must match
-    method_name: String,
+/// we want to offer the possibility to re-play blocks if necessary (c.f. [#236](https://github.com/near/mpc/issues/236))
+pub enum SubscriptionReplay {
+    /// no replay, start once indexer has catched up to the current block height
+    None,
+    /// Start at a specific height
+    BlockHeight(u64),
 }
 
-/// This event is associated to a transaction that matched a specific ReeiverEventDefinition
-struct ReceiverFunctionCallEvent {
-    // the receipt id for the matched trasaction
-    receipt_id: CrpytoHash,
-}
 ```
 
-
-If we want a per-event stream, we can have this:
-
+Example usage:
 ```rust
-trait BlockEventSubscriber {
-    fn subscribe_executor(event_definiton: ExecutorFunctionCallEventDefinition) -> tokio::channel:receiver<(ExecutorFunctionCallEvent, BlockViewLite)>;
-    fn subscribe_reciver(event_definition: ReceiverFunctionCallEventDefinition) -> tokio::channel::receiver<(ReceiverFunctionCallEvent, BlockViewLite)>;
+
+let mut builder = BlockEventSubscriberBuilder::new(SubscriptionReplay::None);
+
+let signature_requests_id = builder.add_subscription(
+    SubscriptionFilter::ExecutorFunctionCall {
+        transaction_outcome_executor_id: "v1.signer".parse()?,
+        method_name: "sign".to_string(),
+    }
+);
+
+let ckd_request_id = builder.add_subscription(
+    SubscriptionFilter::ExecutorFunctionCall {
+        transaction_outcome_executor_id: "v1.signer".parse()?,
+        method_name: "request_app_private_key".to_string(),
+    }
+);
+
+let mut block_stream_receiver : tokio::sync::mpsc::Receiver<BlockUpdate> = builder.build().await?;
+
+while let Some(update) = block_stream_receiver.recv().await {
+    for matched in update.events {
+        match matched.id {
+            id if id == signature_requests_id => { /* handle signature request */ }
+            id if id == ckd_request_id => { /* handle ckd request */ }
+            _ => {}
+        }
+    }
 }
 
-pub struct BlockViewLite {
+```
+
+Specific types (c.f. [Appendix](current-block-update) and `indexer/handler.rs` for justification).
+```rust
+/// The BlockUpdate returned by the Chain indexer. Similar to the current `BlockUpdate`
+pub struct BlockUpdate {
+    pub ctx: BlockContext,
+    pub events: Vec<MatchedEvent>,
+}
+
+/// Context for a single block
+pub struct BlockContext {
     pub hash: CryptoHash,
     pub height: u64,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
+    pub block_entropy: [u8; 32],
+    pub block_timestamp_nanosec: u64,
+}
+
+pub struct MatchedEvent {
+    /// this is needed such that the caller can identify the filter
+    pub id: SubscriptionId,
+    /// any data associated with that event
+    pub event_data: EventData,
+}
+
+/// this can be extended if required
+pub enum EventData {
+    ExecutorFunctionCall(ExecutorFunctionCallEventData),
+    ReceiverFunctionCall(ReceiverFunctionCallEventData),
+}
+
+/// This event is associated to a transaction that matched a specific (transaction_outcome_executor_id: AccountId, method_name: String) pattern.
+struct ExecutorFunctionCallEventData {
+    /// the receipt_id of the recipt this event came from
+    receipt_id: CryptoHash,
+    /// predecessor_id who signed the transaction
+    predecessor_id : AcccountId,
+    /// the receipt that will hold the outcome of this receipt
+    next_receipt_id: CryptoHash,
+    /// raw bytes used for function call. Could probably also be a String.
+    args_raw: Vec<u8>,
+}
+
+/// This event is associated to a transaction that matched a specific ReeiverEventDefinition
+struct ReceiverFunctionCallEventData {
+    // the receipt id for the matched transaction
+    receipt_id: CrpytoHash,
 }
 ```
 
-or if we want to stick with the current `BlockUpdate` design, we can return:
-
-```rust
-pub struct BlockUpdate {
-    block_view: BlockViewLite,
-    executor_events: Vec<(ExecutorFunctionCallId, ExecutorFunctionCallEvent)>,
-    receiver_events: Vec<(ReceiverFunctionCallId, ReceiverFunctionCallEvent)>,
-}
-
-trait BlockEventSubscriber {
-    /// returning the id for this event, used to match the events from `BlockUpdate`
-    fn subscribe(executor_events: ExecutorFunctionCallEventDefinition) -> ExecutorFunctionCallId;
-    /// returning the id for this event
-    fn subscribe(receiver_events: ReceiverfunctionCallEventDefinitoin) -> ReceiverFunctionCallId;
-}
-
-```
-
-
-Note: on the low-level, we want the indexer to parse efficently. if multiple ExecutorFunctionCallEvents have the same executor target, lets make sure we optimize internally.
-
-
-**Proposal B - generic API**
-
-*to follow, but the idea is to use some sort of builder pattern, where we specify what to match on. Ie. something like*
-
-```rust
-let block_event_id : BlockEventId = BlockEventSubscriber.new::<RETURN_TYPE>().match_on_receiver(contract_id).match_on_executor(contract_id).match_on_method(contract_method).build() -> EventId; // returning uid fort the event in case we want a BlockUpdate
-// maybe we can have it return a channel, but we would need more generics, because the return types are different.
-```
-
-Note that not all `RETURN_TYPE` might be supported for this.
 
 ##### Transaction Sender
 
@@ -606,7 +647,7 @@ Note that not all `RETURN_TYPE` might be supported for this.
 
 #### MPC Context
 
-TODO: handle in a separate discussion. This is not of priority right now.
+TODO(#2138): handle in a separate discussion. This is not of priority right now.
 
 ## Appendix
 ### Current Block Update
