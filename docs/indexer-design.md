@@ -475,13 +475,19 @@ pub enum BackoffStrategy {
 Alternatively, if we are concerned about having `tokio::watch` and `oneshot` channels in our API, we could return rely on a `latest()` and `next()` subscription interface:
 
 ```rust
-trait ContractStateView<T> {
+trait ContractStateSnapshot<T> {
     /// is synchronous, contains the last value
     fn latest(&self) -> Result<(BlockHeight, &T), Error>;
+}
+
+trait ContractStateStream<T> {
     /// must be cancellation safe
     /// returned BlockHeight is monotonically increasing
     async fn next(&mut self) -> Result<(BlockHeight, &T), Error>;
 }
+
+trait ContractStateView<T>:
+    ContractStateSnapshot<T> + ContractStateStream<T> {}
 
 trait ContractStateSubscriber {
     async fn subscribe<T: DeserializeOwned + PartialEq + Send + 'static>(
