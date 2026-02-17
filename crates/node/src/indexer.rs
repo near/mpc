@@ -366,6 +366,7 @@ impl IndexerViewClient {
     }
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub(crate) trait ReadForeignChainPolicy: Send + Sync {
     fn get_foreign_chain_policy(
         &self,
