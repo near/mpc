@@ -24,6 +24,8 @@ pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE: &str = "vote_update";
+pub const REMOVE_UPDATE_VOTE: &str = "remove_update_vote";
+pub const REMOVE_NON_PARTICIPANT_UPDATE_VOTES: &str = "remove_non_participant_update_votes";
 
 // Protocol management
 pub const INIT: &str = "init";
@@ -32,11 +34,16 @@ pub const MIGRATE: &str = "migrate";
 pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
 pub const PROPOSE_UPDATE: &str = "propose_update";
+pub const UPDATE_CONFIG: &str = "update_config";
+pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
 // TEE / Participant
 pub const SUBMIT_PARTICIPANT_INFO: &str = "submit_participant_info";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
+pub const START_NODE_MIGRATION: &str = "start_node_migration";
+pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
+pub const CLEANUP_ORPHANED_NODE_MIGRATIONS: &str = "cleanup_orphaned_node_migrations";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
@@ -51,6 +58,7 @@ pub const STATE: &str = "state";
 pub const CONFIG: &str = "config";
 pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
+pub const VERSION: &str = "version";
 pub const LATEST_KEY_VERSION: &str = "latest_key_version";
 pub const PROPOSED_UPDATES: &str = "proposed_updates";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";

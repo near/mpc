@@ -5,7 +5,11 @@ use crate::types::CKDId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
-use contract_interface::method_names;
+use contract_interface::method_names::{
+    REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+};
 use contract_interface::types as dtos;
 use contract_interface::types::VerifyForeignTransactionRequest;
 use contract_interface::types::VerifyForeignTransactionRequestArgs;
@@ -181,7 +185,7 @@ async fn handle_message(
             {
                 if let Some((args, method_name)) = try_extract_function_call_args(&receipt) {
                     match method_name.as_str() {
-                        method_names::SIGN => {
+                        SIGN => {
                             if let Some((signature_id, sign_args)) =
                                 try_get_sign_args(&receipt, next_receipt_id, args, method_name)
                             {
@@ -199,7 +203,7 @@ async fn handle_message(
                                 metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                             }
                         }
-                        method_names::REQUEST_APP_PRIVATE_KEY => {
+                        REQUEST_APP_PRIVATE_KEY => {
                             if let Some((ckd_id, ckd_args)) =
                                 try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
                             {
@@ -217,7 +221,7 @@ async fn handle_message(
                                 metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
                             }
                         }
-                        method_names::VERIFY_FOREIGN_TRANSACTION => {
+                        VERIFY_FOREIGN_TRANSACTION => {
                             if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
                                 try_get_verify_foreign_tx_args(
                                     &receipt,
@@ -248,16 +252,16 @@ async fn handle_message(
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id) {
                 if let Some((_, method_name)) = try_extract_function_call_args(&receipt) {
                     match method_name.as_str() {
-                        method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_signatures.push(request_id);
                             metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                         }
-                        method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_ckds.push(request_id);
                             metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
                         }
                         // TODO(#1959): add this function to the contract
-                        method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
+                        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                             completed_verify_foreign_txs.push(request_id);
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
                         }

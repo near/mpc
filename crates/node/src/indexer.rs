@@ -12,7 +12,12 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
-use contract_interface::method_names;
+use contract_interface::method_names::{
+    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_LAUNCHER_COMPOSE_HASHES, GET_ATTESTATION,
+    GET_FOREIGN_CHAIN_POLICY, GET_FOREIGN_CHAIN_POLICY_PROPOSALS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, MIGRATION_INFO,
+    STATE,
+};
 use contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
@@ -114,7 +119,7 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: method_names::GET_PENDING_REQUEST.to_string(),
+            method_name: GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -155,7 +160,7 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: method_names::GET_PENDING_CKD_REQUEST.to_string(),
+            method_name: GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -197,7 +202,7 @@ impl IndexerViewClient {
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
             // TODO(#1959): add this function in the contract
-            method_name: method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
+            method_name: GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -412,16 +417,14 @@ struct IndexerClient {
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
-const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = method_names::ALLOWED_DOCKER_IMAGE_HASHES;
-const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str =
-    method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES;
-const TEE_ACCOUNTS_ENDPOINT: &str = method_names::GET_TEE_ACCOUNTS;
-pub const MIGRATION_INFO_ENDPOINT: &str = method_names::MIGRATION_INFO;
-const CONTRACT_STATE_ENDPOINT: &str = method_names::STATE;
-const GET_TEE_ATTESTATION_ENDPOINT: &str = method_names::GET_ATTESTATION;
-const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = method_names::GET_FOREIGN_CHAIN_POLICY;
-const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str =
-    method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
+const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = ALLOWED_DOCKER_IMAGE_HASHES;
+const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = ALLOWED_LAUNCHER_COMPOSE_HASHES;
+const TEE_ACCOUNTS_ENDPOINT: &str = GET_TEE_ACCOUNTS;
+pub const MIGRATION_INFO_ENDPOINT: &str = MIGRATION_INFO;
+const CONTRACT_STATE_ENDPOINT: &str = STATE;
+const GET_TEE_ATTESTATION_ENDPOINT: &str = GET_ATTESTATION;
+const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = GET_FOREIGN_CHAIN_POLICY;
+const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str = GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
