@@ -220,7 +220,7 @@ never appear on-chain. The hash function is fixed by the extractor definition an
 ## Domain Separation
 
 To prevent callers from using plain `sign()` requests that could be mistaken for validated foreign-chain
-transactions, we enforce domain separation by extending `DomainConfig` with a `DomainPurpose` enum.
+transactions, we enforce domain separation with a `DomainPurpose` enum.
 Requests are only accepted for domains matching the purpose:
 
 * `sign()` may only target domains with purpose `Sign`.
@@ -232,17 +232,51 @@ pub enum DomainPurpose {
     ForeignTx,
     CKD,
 }
+```
 
+### Storage: Separate purpose map
+
+Rather than adding `purpose` to `DomainConfig` (which would break Borsh serialization compatibility),
+the contract stores a **separate** `BTreeMap<DomainId, DomainPurpose>` at the top-level `MpcContract`
+struct. This keeps `DomainConfig` unchanged and avoids breaking old nodes that don't know about the
+new field.
+
+```rust
+// Unchanged — no new fields
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
-    pub purpose: DomainPurpose,
+}
+
+// New field on MpcContract (not inside RunningContractState)
+pub struct MpcContract {
+    // ... existing fields ...
+    domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 ```
 
-Compatibility note: legacy contract state does not include `DomainPurpose`. New nodes reading old state
-must infer the purpose (e.g., treat existing Secp256k1/Ed25519/V2Secp256k1 domains as `Sign` and
-Bls12381 domains as `CKD`) until a migration writes explicit purposes.
+### Backwards compatibility
+
+* **Old nodes + new contract**: Old nodes never query the purpose map and continue to work without
+  purpose enforcement.
+* **New nodes + old contract**: The map is empty. New nodes infer purpose from the signature scheme
+  (Secp256k1/Ed25519/V2Secp256k1 → `Sign`, Bls12381 → `CKD`). Since no `ForeignTx` domains exist
+  on old contracts, inference is always correct.
+* **Mixed nodes during rolling upgrade**: Old nodes won't enforce purpose checks, but `ForeignTx`
+  domains won't exist until all nodes upgrade and vote to add them.
+* **Domain lookup**: When resolving purpose for a domain, check the map first; if absent, fall back
+  to inference from the domain's `SignatureScheme`.
+
+### Domain creation
+
+When new domains are added via `vote_add_domains`, the purpose is set atomically with the domain
+creation. The voting proposal includes purpose alongside the domain config:
+
+```rust
+pub struct AddDomainsVotes {
+    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<(DomainConfig, DomainPurpose)>>,
+}
+```
 
 ## Tweak Derivation (Sign vs ForeignTx)
 
