@@ -3,8 +3,8 @@
 End-to-end system test for the foreign transaction validation flow.
 
 Exercises: user submits verify_foreign_transaction() -> MPC nodes fetch from
-a mock Bitcoin/Abstract JSON-RPC server -> nodes collaboratively sign -> response
-returned to caller.
+a mock Bitcoin/Abstract/Starknet JSON-RPC server -> nodes collaboratively sign ->
+response returned to caller.
 """
 
 import base64
@@ -149,8 +149,113 @@ class _EvmRpcHandler(BaseHTTPRequestHandler):
         pass
 
 
+class _StarknetRpcHandler(BaseHTTPRequestHandler):
+    """Handles JSON-RPC 2.0 requests pretending to be a Starknet node."""
+
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        request = json.loads(body)
+
+        request_id = request.get("id")
+        method = request.get("method")
+
+        if method == "starknet_getTransactionReceipt":
+            response = {
+                "result": {
+                    "type": "INVOKE",
+                    "transaction_hash": "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
+                    "actual_fee": {"amount": "0xe97d3e61059940", "unit": "FRI"},
+                    "execution_status": "SUCCEEDED",
+                    "finality_status": "ACCEPTED_ON_L1",
+                    "block_hash": "0x" + MOCK_BLOCK_HASH,
+                    "block_number": 6868546,
+                    "messages_sent": [],
+                    "events": [
+                        {
+                            "from_address": "0x377c2d65debb3978ea81904e7d59740da1f07412e30d01c5ded1c5d6f1ddc43",
+                            "keys": [
+                                "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9",
+                                "0x0",
+                                "0x42ec39c9e6f0598af2f3e94f9f94e32710af47921da7989875d6fe1a6bebdf4",
+                                "0xa890956905f240e4b50eccc026d6f5ed",
+                                "0x0",
+                            ],
+                            "data": [],
+                        },
+                        {
+                            "from_address": "0x42ec39c9e6f0598af2f3e94f9f94e32710af47921da7989875d6fe1a6bebdf4",
+                            "keys": [
+                                "0x1dcde06aabdbca2f80aa51392b345d7549d7757aa855f7e37f5d335ac8243b1",
+                                "0x29ccfaa9597a35ee361a95470a8df3ec7e817bcb0ce264ef6c903d295c47757",
+                            ],
+                            "data": ["0x1", "0x0"],
+                        },
+                        {
+                            "from_address": "0x127021a1b5a52d3174c2ab077c2b043c80369250d29428cee956d76ee51584f",
+                            "keys": [
+                                "0x2495e87dbfae534a775dc432ffb2b4c64cd5b8e42a9dd1984ee7f424e46feb9"
+                            ],
+                            "data": [
+                                "0x42ec39c9e6f0598af2f3e94f9f94e32710af47921da7989875d6fe1a6bebdf4",
+                                "0x1",
+                                "0x1e8ad5efb5efdbd97f9f5ce49e5efb6279b5e05bb79b488edd836ce614e2ef4",
+                            ],
+                        },
+                        {
+                            "from_address": "0x7c183208cf2fc08503ed1edb44694295a07d0adc25bb6dad1b40f4540a427fa",
+                            "keys": [
+                                "0x1dcde06aabdbca2f80aa51392b345d7549d7757aa855f7e37f5d335ac8243b1",
+                                "0x52a6c2b9d1d1b77dbc322b298fd91f39e3cca9bf1db4a7aa79f14a90efa633e",
+                            ],
+                            "data": ["0x1", "0x1", "0x1"],
+                        },
+                        {
+                            "from_address": "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+                            "keys": [
+                                "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e6196e9"
+                            ],
+                            "data": [
+                                "0x7c183208cf2fc08503ed1edb44694295a07d0adc25bb6dad1b40f4540a427fa",
+                                "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                                "0xe97d3e61059940",
+                                "0x0",
+                            ],
+                        },
+                    ],
+                    "execution_resources": {
+                        "l1_gas": 0,
+                        "l2_gas": 3159360,
+                        "l1_data_gas": 512,
+                    },
+                },
+                "jsonrpc": "2.0",
+                "id": request_id,
+            }
+        else:
+            response = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": JSONRPC_METHOD_NOT_FOUND,
+                    "message": f"Method not found: {method}",
+                },
+                "id": request_id,
+            }
+
+        payload = json.dumps(response).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    # Silence per-request log lines
+    def log_message(self, format, *args):
+        pass
+
+
 def _start_mock_rpc(_RpcHandler) -> tuple[HTTPServer, int]:
-    """Start a mock Bitcoin RPC server on an OS-assigned port. Returns (server, port)."""
+    """Start a mock RPC server on an OS-assigned port. Returns (server, port)."""
     server = HTTPServer(("127.0.0.1", 0), _RpcHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -169,6 +274,9 @@ def foreign_tx_validation_cluster():
 
     abstract_mock_server, abstract_mock_port = _start_mock_rpc(_EvmRpcHandler)
     abstract_mock_rpc_url = f"http://127.0.0.1:{abstract_mock_port}"
+
+    starknet_mock_server, starknet_mock_port = _start_mock_rpc(_StarknetRpcHandler)
+    starknet_mock_rpc_url = f"http://127.0.0.1:{starknet_mock_port}"
 
     contract = load_mpc_contract()
     cluster, mpc_nodes = shared.start_cluster_with_mpc(
@@ -202,6 +310,19 @@ def foreign_tx_validation_cluster():
                 }
             },
         },
+        "starknet": {
+            "timeout_sec": 30,
+            "max_retries": 3,
+            "providers": {
+                "mock": {
+                    "api_variant": "standard",
+                    "rpc_url": starknet_mock_rpc_url,
+                    "auth": {
+                        "kind": "none",
+                    },
+                }
+            },
+        },
     }
 
     for node in mpc_nodes:
@@ -225,6 +346,10 @@ def foreign_tx_validation_cluster():
                     "chain": "Abstract",
                     "providers": [{"rpc_url": abstract_mock_rpc_url}],
                 },
+                {
+                    "chain": "Starknet",
+                    "providers": [{"rpc_url": starknet_mock_rpc_url}],
+                },
             ]
         }
     )
@@ -244,6 +369,7 @@ def foreign_tx_validation_cluster():
     cluster.kill_all()
     bitcoin_mock_server.shutdown()
     abstract_mock_server.shutdown()
+    starknet_mock_server.shutdown()
     atexit._run_exitfuncs()
 
 
@@ -433,6 +559,103 @@ def test_verify_foreign_transaction_abstract(
         # Verify the request in the payload matches what we submitted
         assert "Abstract" in v1["request"], (
             f"Expected Abstract request, got: {v1['request']}"
+        )
+
+        # Verify signature is present and is Secp256k1
+        signature = response["signature"]
+        assert signature["scheme"] == "Secp256k1", (
+            f"Expected Secp256k1 signature scheme, got: {signature.get('scheme')}"
+        )
+        assert "big_r" in signature, "Expected big_r in signature"
+        assert "s" in signature, "Expected s in signature"
+        assert "recovery_id" in signature, "Expected recovery_id in signature"
+
+        print("\033[96mVerify Foreign Tx Response \u2713\033[0m")
+
+    cluster.request_node.send_await_check_txs_parallel(
+        "verify_foreign_transaction", [tx], verify_response
+    )
+
+
+@pytest.mark.no_atexit_cleanup
+def test_verify_foreign_transaction_starknet(
+    foreign_tx_validation_cluster: tuple[MpcCluster, list],
+):
+    """
+    Submit a verify_foreign_transaction request for Starknet and verify
+    the MPC nodes return a valid signed response with the expected payload.
+    """
+    cluster, _mpc_nodes = foreign_tx_validation_cluster
+
+    # Find the Secp256k1 domain
+    contract_state = cluster.contract_state()
+    domains = contract_state.get_running_domains()
+    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+
+    # Build the verify_foreign_transaction args
+    args = {
+        "request": {
+            "request": {
+                "Starknet": {
+                    "tx_id": MOCK_TX_ID,
+                    "finality": "AcceptedOnL1",
+                    "extractors": ["BlockHash"],
+                }
+            },
+            "derivation_path": "test",
+            "domain_id": secp_domain.id,
+            "payload_version": 1,
+        }
+    }
+
+    tx = cluster.request_node.sign_tx(
+        cluster.mpc_contract_account(),
+        "verify_foreign_transaction",
+        args,
+        gas=GAS_FOR_VERIFY_FOREIGN_TX_CALL * TGAS,
+        deposit=VERIFY_FOREIGN_TX_DEPOSIT,
+    )
+
+    # Send, await, and verify response
+    def verify_response(res):
+        try:
+            success_value = res["result"]["status"]["SuccessValue"]
+        except KeyError:
+            raise AssertionError(
+                f"Expected SuccessValue in response: {json.dumps(res, indent=2)}"
+            )
+
+        response = json.loads(base64.b64decode(success_value))
+
+        print(
+            f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
+        )
+
+        # Verify payload structure
+        payload = response["payload"]
+        assert "V1" in payload, f"Expected V1 payload, got: {payload}"
+
+        v1 = payload["V1"]
+
+        # Verify extracted values contain the mock block hash
+        values = v1["values"]
+        assert len(values) > 0, "Expected at least one extracted value"
+        block_hash_value = values[0]
+        assert "StarknetExtractedValue" in block_hash_value, (
+            f"Expected StarknetExtractedValue, got: {block_hash_value}"
+        )
+        assert "BlockHash" in block_hash_value["StarknetExtractedValue"], (
+            f"Expected BlockHash, got: {block_hash_value['StarknetExtractedValue']}"
+        )
+        assert (
+            block_hash_value["StarknetExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH
+        ), (
+            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['StarknetExtractedValue']['BlockHash']}"
+        )
+
+        # Verify the request in the payload matches what we submitted
+        assert "Starknet" in v1["request"], (
+            f"Expected Starknet request, got: {v1['request']}"
         )
 
         # Verify signature is present and is Secp256k1
