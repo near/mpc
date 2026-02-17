@@ -70,7 +70,7 @@ impl EcdsaSignatureProvider {
         domain_id: DomainId,
         presignature_store: Arc<PresignatureStorage>,
         keygen_out: KeygenOutput,
-    ) -> anyhow::Result<()> {
+    ) {
         let in_flight_generations = InFlightGenerationTracker::new();
         let progress_tracker = Arc::new(PresignatureGenerationProgressTracker {
             desired_presignatures_to_buffer: config.desired_presignatures_to_buffer,
@@ -106,7 +106,17 @@ impl EcdsaSignatureProvider {
                     domain_id,
                     paired_triple_id,
                 };
-                let channel = client.new_channel_for_task(task_id, participants.clone())?;
+                let channel = match client.new_channel_for_task(task_id, participants.clone()) {
+                    Ok(channel) => channel,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to create new channel for task {:?} with error: {}",
+                            task_id,
+                            err
+                        );
+                        continue;
+                    }
+                };
                 let in_flight = in_flight_generations.in_flight(1);
                 let parallelism_limiter = parallelism_limiter.clone();
                 let presignature_store = presignature_store.clone();

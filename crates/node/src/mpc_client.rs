@@ -8,6 +8,7 @@ use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
     ChainVerifyForeignTransactionRespondArgs,
 };
+use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -59,7 +60,10 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
-impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPolicyReader> {
+impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
+where
+    ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
+{
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
@@ -602,10 +606,11 @@ impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPoli
                                         )
                                         .await??;
 
+                                        let payload_hash = response.0 .0.compute_msg_hash()?;
                                         let response =
                                             ChainVerifyForeignTransactionRespondArgs::new(
                                                 verify_foreign_tx_attempt.request.clone(),
-                                                response.0 .0,
+                                                payload_hash,
                                                 response.0 .1,
                                                 response.1,
                                             )?;

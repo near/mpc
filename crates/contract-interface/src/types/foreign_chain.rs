@@ -51,7 +51,7 @@ pub struct VerifyForeignTransactionRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
-    pub payload: ForeignTxSignPayload,
+    pub payload_hash: Hash256,
     pub signature: SignatureResponse,
 }
 
@@ -79,6 +79,18 @@ pub enum ForeignChainRpcRequest {
     Solana(SolanaRpcRequest),
     Bitcoin(BitcoinRpcRequest),
     Starknet(StarknetRpcRequest),
+}
+
+impl ForeignChainRpcRequest {
+    pub fn chain(&self) -> ForeignChain {
+        match self {
+            Self::Abstract(_) => ForeignChain::Abstract,
+            Self::Ethereum(_) => ForeignChain::Ethereum,
+            Self::Solana(_) => ForeignChain::Solana,
+            Self::Bitcoin(_) => ForeignChain::Bitcoin,
+            Self::Starknet(_) => ForeignChain::Starknet,
+        }
+    }
 }
 
 #[derive(
@@ -611,6 +623,7 @@ pub struct Hash256(#[serde_as(as = "Hex")] pub [u8; 32]);
     Deserialize,
     BorshSerialize,
     BorshDeserialize,
+    derive_more::Deref,
     derive_more::Into,
     derive_more::From,
     derive_more::AsRef,
@@ -805,6 +818,7 @@ impl ForeignTxSignPayload {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn foreign_tx_sign_payload_v1_ethereum__should_have_consistent_hash() {
@@ -896,6 +910,54 @@ mod tests {
 
         // Then
         insta::assert_json_snapshot!(hex::encode(hash.0));
+    }
+
+    #[rstest]
+    #[case::abstract_(
+        ForeignChainRpcRequest::Abstract(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Abstract,
+    )]
+    #[case::ethereum(
+        ForeignChainRpcRequest::Ethereum(EvmRpcRequest {
+            tx_id: EvmTxId([0; 32]),
+            extractors: vec![],
+            finality: EvmFinality::Finalized,
+        }),
+        ForeignChain::Ethereum,
+    )]
+    #[case::solana(
+        ForeignChainRpcRequest::Solana(SolanaRpcRequest {
+            tx_id: SolanaTxId([0; 64]),
+            finality: SolanaFinality::Finalized,
+            extractors: vec![],
+        }),
+        ForeignChain::Solana,
+    )]
+    #[case::bitcoin(
+        ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+            tx_id: BitcoinTxId([0; 32]),
+            confirmations: BlockConfirmations(1),
+            extractors: vec![],
+        }),
+        ForeignChain::Bitcoin,
+    )]
+    #[case::starknet(
+        ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
+            tx_id: StarknetTxId(StarknetFelt([0; 32])),
+            finality: StarknetFinality::AcceptedOnL1,
+            extractors: vec![],
+        }),
+        ForeignChain::Starknet,
+    )]
+    fn foreign_chain_rpc_request_chain__should_return_correct_chain(
+        #[case] request: ForeignChainRpcRequest,
+        #[case] expected_chain: ForeignChain,
+    ) {
+        assert_eq!(request.chain(), expected_chain);
     }
 
     #[test]

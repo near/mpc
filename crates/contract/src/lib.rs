@@ -743,11 +743,7 @@ impl MpcContract {
                 )
                 .map_err(RespondError::from)?;
 
-                let payload_hash: [u8; 32] = response
-                    .payload
-                    .compute_msg_hash()
-                    .map_err(|_| RespondError::InvalidSignature)?
-                    .into();
+                let payload_hash: [u8; 32] = response.payload_hash.0;
 
                 // Check the signature is correct
                 check_ec_signature(
@@ -2447,7 +2443,11 @@ mod tests {
             recovery_id: recovery_id.to_byte(),
         });
 
-        let response = VerifyForeignTransactionResponse { payload, signature };
+        let payload_hash = payload.compute_msg_hash().unwrap();
+        let response = VerifyForeignTransactionResponse {
+            payload_hash,
+            signature,
+        };
 
         with_active_participant_and_attested_context(&contract);
 
