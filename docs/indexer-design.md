@@ -428,7 +428,7 @@ trait ContractStateView {
         &self,
         contract_id: AccountId,
         contract_method: String,
-    ) -> anyhow::Result<(BlockHeight, T)>;
+    ) -> Result<(BlockHeight, T)>;
 }
 
 /// subscriber for state view - the receiver passed trough the Oneshot channel is used to pass the latest output of the view method.
@@ -439,7 +439,7 @@ trait ContractStateSubscriber {
         contract_id: AccountId,
         contract_method: String,
         poll_strategy: PollStrategy,
-    ) -> Result<Oneshot<watch::Receiver<anyhow::Result<(BlockHeight,T), Error>>>>;
+    ) -> Result<Oneshot<watch::Receiver<Result<(BlockHeight,T), Error>>>>;
 }
 ```
 
