@@ -14,7 +14,6 @@ from common_lib.constants import TGAS
 from common_lib.contract_state import (
     ContractState,
     ProtocolState,
-    SignatureScheme,
     RunningProtocolState,
 )
 from common_lib.contracts import ContractMethod
