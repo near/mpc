@@ -224,7 +224,7 @@ This component is responsible for:
 
 This is the first step and primary goal. This abstraction is a huge enabler for migrating the backup service into a TEE [(#1891)](https://github.com/near/mpc/issues/1891) and for the our long-term support of legacy keys [(#2062)](https://github.com/near/mpc/issues/2062)
 
-As a secondary goal, we propose the **MPC Orchestrator**.
+As a secondary goal, we propose the **MPC Context**.
 This component is responsible for informing the MPC node about:
     - pending jobs (signature, CKD, forein chain verification requests)
     - network state (peers)
@@ -239,7 +239,7 @@ flowchart TB
 
 CORE[MPC Node Core]
 
-subgraph ORCHESTRATOR[MPC Orchestrator]
+subgraph CONTEXT[MPC Context]
     direction TB
     WRITE[
     <b>MPC State Write</b>
@@ -262,7 +262,7 @@ subgraph CHAIN[Chain Indexer]
 
     CONTRACT_STATE_VIEWER[**Contract State Subscriber**<br/><br/>
         **Queries** view functions of smart contracts
-        **Returns** the result to the MPC Orchestrator
+        **Returns** the result to the MPC Context
     ]
 
     TX_SENDER[**Transaction Sender**<br/><br/>
@@ -303,11 +303,11 @@ subgraph NEAR[Near Blockchain]
 end
 
 
-%% CORE --> Orchestrator
+%% CORE --> Context
 CORE --> VIEW
 CORE --> WRITE
 
-%% Orchestrator --> Chain Indexer
+%% Context --> Chain Indexer
 VIEW --> CONTRACT_STATE_VIEWER
 VIEW --> TX_SUBSCRIBER
 WRITE --> TX_SENDER
@@ -335,7 +335,7 @@ classDef mempool stroke:#0f766e,stroke-width:2px;
 classDef chain stroke-width:2px;
 
 class CORE core;
-class ORCHESTRATOR indexer;
+class CONTEXT indexer;
 class NEAR near;
 class CONTRACT contract;
 class MEMPOOL mempool;
@@ -359,8 +359,8 @@ subgraph SERVICES[MPC Services]
     subgraph MPC_NODE[MPC Node]
         direction TB
         CORE[MPC Node Core]
-        ORCHESTRATOR[MPC Orchestrator]
-        CORE --> ORCHESTRATOR
+        CONTEXT[MPC Context]
+        CORE --> CONTEXT
     end
 
     BACKUP_SERVICE[MPC Backup and Migration Service]
@@ -392,9 +392,9 @@ end
 
 CHAIN --> NEAR
 
-ORCHESTRATOR --> CONTRACT_STATE_VIEWER
-ORCHESTRATOR --> TX_SENDER
-ORCHESTRATOR --> TX_SUBSCRIBER
+CONTEXT --> CONTRACT_STATE_VIEWER
+CONTEXT --> TX_SENDER
+CONTEXT --> TX_SUBSCRIBER
 
 BACKUP_SERVICE --> CONTRACT_STATE_VIEWER
 BACKUP_SERVICE --> TX_SENDER
@@ -407,7 +407,7 @@ HOT_SERVICE --> TX_SENDER
 
 ### API Proposal
 
-In this section, we propose API designs for the Chain Indexer and MPC Orchestrator.
+In this section, we propose API designs for the Chain Indexer and MPC Context.
 
 #### Chain Indexer
 
@@ -604,7 +604,7 @@ Note that not all `RETURN_TYPE` might be supported for this.
 
 *todo: this still needs to be written. We could probably just forward the RPC handle and maintain a shared transaction library.*
 
-#### MPC Orchestrator
+#### MPC Context
 
 TODO: handle in a separate discussion. This is not of priority right now.
 
