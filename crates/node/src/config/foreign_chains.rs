@@ -71,23 +71,38 @@ impl ForeignChainsConfig {
         let mut chains = BTreeMap::new();
 
         if let Some(config) = &self.solana {
-            chains.insert(dtos::ForeignChain::Solana, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Solana,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.bitcoin {
-            chains.insert(dtos::ForeignChain::Bitcoin, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Bitcoin,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.ethereum {
-            chains.insert(dtos::ForeignChain::Ethereum, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Ethereum,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.abstract_chain {
-            chains.insert(dtos::ForeignChain::Abstract, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Abstract,
+                providers_to_set(&config.providers),
+            );
         }
 
         if let Some(config) = &self.starknet {
-            chains.insert(dtos::ForeignChain::Starknet, providers_to_set(&config.providers));
+            chains.insert(
+                dtos::ForeignChain::Starknet,
+                providers_to_set(&config.providers),
+            );
         }
 
         Some(dtos::ForeignChainPolicy { chains })

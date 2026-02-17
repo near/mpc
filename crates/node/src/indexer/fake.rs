@@ -326,7 +326,6 @@ impl FakeMpcContractState {
         }
     }
 
-
     pub fn update_participant_info(
         &mut self,
         account_id: AccountId,
