@@ -302,7 +302,7 @@ pub async fn propose_and_vote_contract_binary(
     new_contract_binary: &[u8],
 ) {
     let propose_update_execution = accounts[0]
-        .call(contract.id(), "propose_update")
+        .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(ProposeUpdateArgs {
             code: Some(new_contract_binary.to_vec()),
             config: None,

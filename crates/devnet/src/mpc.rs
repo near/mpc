@@ -476,7 +476,7 @@ impl MpcProposeUpdateContractCmd {
             .await
             .submit_tx_to_call_function(
                 &contract,
-                "propose_update",
+                method_names::PROPOSE_UPDATE,
                 &borsh::to_vec(&ProposeUpdateArgs {
                     contract: Some(contract_code),
                     config: None,
