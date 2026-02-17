@@ -576,7 +576,7 @@ pub struct BlockUpdate {
     receiver_events: Vec<(ReceiverFunctionCallId, ReceiverFunctionCallEvent)>,
 }
 
-trait BlockEventSubscriber<T> {
+trait BlockEventSubscriber {
     /// returning the id for this event, used to match the events from `BlockUpdate`
     fn subscribe(executor_events: ExecutorFunctionCallEventDefinition) -> ExecutorFunctionCallId;
     /// returning the id for this event
