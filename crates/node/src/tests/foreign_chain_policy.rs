@@ -5,7 +5,6 @@ use crate::p2p::testing::PortSeed;
 use crate::tests::{IntegrationTestSetup, DEFAULT_BLOCK_TIME};
 use crate::tracking::AutoAbortTask;
 use near_time::Clock;
-use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[tokio::test]
@@ -27,15 +26,18 @@ async fn foreign_chain_policy_auto_vote_on_startup__should_apply_local_policy() 
         DEFAULT_BLOCK_TIME,
     );
 
-    let mut providers = BTreeMap::new();
-    providers.insert(
-        "public".to_string(),
-        SolanaProviderConfig {
-            rpc_url: "https://rpc.public.example.com".to_string(),
-            api_variant: SolanaApiVariant::Standard,
-            auth: AuthConfig::None,
-        },
-    );
+    let providers = non_empty_collections::NonEmptyBTreeMap::new(
+        [(
+            "public".to_string(),
+            SolanaProviderConfig {
+                rpc_url: "https://rpc.public.example.com".to_string(),
+                api_variant: SolanaApiVariant::Standard,
+                auth: AuthConfig::None,
+            },
+        )]
+        .into(),
+    )
+    .unwrap();
 
     let foreign_chains = ForeignChainsConfig {
         solana: Some(SolanaChainConfig {

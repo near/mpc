@@ -38,6 +38,7 @@ mpc-attestation = { workspace = true }
 mpc-contract = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
+non-empty-collections = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }

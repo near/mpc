@@ -1,8 +1,9 @@
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use anyhow::Context;
 use contract_interface::types as dtos;
+use non_empty_collections::{NonEmptyBTreeMap, NonEmptyBTreeSet};
 use serde::{Deserialize, Serialize};
 
 mod abstract_chain;
@@ -110,8 +111,8 @@ impl ForeignChainsConfig {
 }
 
 fn providers_to_set<P: ForeignChainProviderConfig>(
-    providers: &BTreeMap<String, P>,
-) -> anyhow::Result<dtos::collections::NonEmptyBTreeSet<dtos::RpcProvider>> {
+    providers: &NonEmptyBTreeMap<String, P>,
+) -> NonEmptyBTreeSet<dtos::RpcProvider> {
     let set: BTreeSet<dtos::RpcProvider> = providers
         .values()
         .map(|provider| dtos::RpcProvider {
@@ -131,7 +132,7 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
     chain_label: &str,
     timeout_sec: u64,
     max_retries: u64,
-    providers: &BTreeMap<String, P>,
+    providers: &NonEmptyBTreeMap<String, P>,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
         timeout_sec > 0,
@@ -141,13 +142,9 @@ pub(crate) fn validate_chain_config<P: ForeignChainProviderConfig>(
         max_retries > 0,
         "foreign_chains.{chain_label}.max_retries must be > 0"
     );
-    anyhow::ensure!(
-        !providers.is_empty(),
-        "foreign_chains.{chain_label} must include at least one provider"
-    );
 
     let mut seen_rpc_urls = BTreeSet::new();
-    for (provider_name, provider) in providers {
+    for (provider_name, provider) in providers.iter() {
         let provider_rpc_url = provider.rpc_url();
         anyhow::ensure!(
             !provider_rpc_url.trim().is_empty(),
