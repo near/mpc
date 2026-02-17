@@ -37,6 +37,14 @@ if [ -n "$MPC_RESPONDER_ID" ]; then
   require_clean_env "MPC_RESPONDER_ID"
 fi
 
+# In TEE (dstack), do NOT allow raw private keys to be provided via env.
+if [ -n "$DSTACK_ENDPOINT" ]; then
+  if [ -n "$MPC_P2P_PRIVATE_KEY" ] || [ -n "$MPC_ACCOUNT_SK" ]; then
+    echo "ERROR: MPC_P2P_PRIVATE_KEY / MPC_ACCOUNT_SK must not be provided when running in TEE (DSTACK_ENDPOINT is set)" >&2
+    exit 1
+  fi
+fi
+
 MPC_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.yaml"
 NEAR_NODE_CONFIG_FILE="$MPC_HOME_DIR/config.json"
 
@@ -263,15 +271,6 @@ if [ -n "$DSTACK_ENDPOINT" ]; then
     tee_authority=dstack
 else
     tee_authority=local
-fi
-
-# In TEE (dstack), do NOT allow raw private keys to be provided via env.
-# In non-TEE mode, we allow them (used by some GCP nodes / migration paths).
-if [ -n "$DSTACK_ENDPOINT" ]; then
-  if [ -n "$MPC_P2P_PRIVATE_KEY" ] || [ -n "$MPC_ACCOUNT_SK" ]; then
-    echo "ERROR: MPC_P2P_PRIVATE_KEY / MPC_ACCOUNT_SK must not be provided when running in TEE (DSTACK_ENDPOINT is set)" >&2
-    exit 1
-  fi
 fi
 
 echo "Starting mpc node..."
