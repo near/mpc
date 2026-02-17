@@ -725,7 +725,7 @@ where
         foreign_chain_policy_reader: &ForeignChainPolicyReader,
         chain_txn_sender: &TransactionSender,
     ) -> anyhow::Result<()> {
-        let Some(local_policy) = config_file.foreign_chains.to_policy() else {
+        let Some(local_policy) = config_file.foreign_chains.to_policy()? else {
             tracing::info!(
                 "foreign_chains config is empty; skipping foreign chain policy auto-vote"
             );

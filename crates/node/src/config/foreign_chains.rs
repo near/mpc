@@ -63,9 +63,9 @@ impl ForeignChainsConfig {
         Ok(())
     }
 
-    pub fn to_policy(&self) -> Option<dtos::ForeignChainPolicy> {
+    pub fn to_policy(&self) -> anyhow::Result<Option<dtos::ForeignChainPolicy>> {
         if self.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let mut chains = BTreeMap::new();
@@ -73,45 +73,45 @@ impl ForeignChainsConfig {
         if let Some(config) = &self.solana {
             chains.insert(
                 dtos::ForeignChain::Solana,
-                providers_to_set(&config.providers),
+                providers_to_set(&config.providers).context("solana providers")?,
             );
         }
 
         if let Some(config) = &self.bitcoin {
             chains.insert(
                 dtos::ForeignChain::Bitcoin,
-                providers_to_set(&config.providers),
+                providers_to_set(&config.providers).context("bitcoin providers")?,
             );
         }
 
         if let Some(config) = &self.ethereum {
             chains.insert(
                 dtos::ForeignChain::Ethereum,
-                providers_to_set(&config.providers),
+                providers_to_set(&config.providers).context("ethereum providers")?,
             );
         }
 
         if let Some(config) = &self.abstract_chain {
             chains.insert(
                 dtos::ForeignChain::Abstract,
-                providers_to_set(&config.providers),
+                providers_to_set(&config.providers).context("abstract providers")?,
             );
         }
 
         if let Some(config) = &self.starknet {
             chains.insert(
                 dtos::ForeignChain::Starknet,
-                providers_to_set(&config.providers),
+                providers_to_set(&config.providers).context("starknet providers")?,
             );
         }
 
-        Some(dtos::ForeignChainPolicy { chains })
+        Ok(Some(dtos::ForeignChainPolicy { chains }))
     }
 }
 
 fn providers_to_set<P: ForeignChainProviderConfig>(
     providers: &BTreeMap<String, P>,
-) -> dtos::collections::NonEmptyBTreeSet<dtos::RpcProvider> {
+) -> anyhow::Result<dtos::collections::NonEmptyBTreeSet<dtos::RpcProvider>> {
     let set: BTreeSet<dtos::RpcProvider> = providers
         .values()
         .map(|provider| dtos::RpcProvider {
@@ -119,7 +119,7 @@ fn providers_to_set<P: ForeignChainProviderConfig>(
         })
         .collect();
     dtos::collections::NonEmptyBTreeSet::new(set)
-        .expect("providers must be non-empty (validated by validate_chain_config)")
+        .map_err(|_| anyhow::anyhow!("providers must be non-empty"))
 }
 
 pub(crate) trait ForeignChainProviderConfig {
@@ -731,7 +731,7 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let policy = config.foreign_chains.to_policy().unwrap().unwrap();
 
         // Then
         let solana_providers = policy
@@ -906,7 +906,7 @@ foreign_chains:
         let config: ConfigFile =
             serde_yaml::from_str(yaml).expect("yaml fixture should be correct");
         config.validate().expect("config should be valid");
-        let policy = config.foreign_chains.to_policy().unwrap();
+        let policy = config.foreign_chains.to_policy().unwrap().unwrap();
 
         // Then
         let eth_providers = policy

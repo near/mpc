@@ -34,5 +34,5 @@ pub mod types {
     mod state;
     mod updates;
 
-    pub mod collections;
+    pub use non_empty_collections as collections;
 }
