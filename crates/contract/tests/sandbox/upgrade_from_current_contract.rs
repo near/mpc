@@ -128,8 +128,12 @@ async fn test_propose_update_config() {
         proposals.push(proposal_id);
     }
 
-    let old_config: contract_interface::types::Config =
-        contract.view(method_names::CONFIG).await.unwrap().json().unwrap();
+    let old_config: contract_interface::types::Config = contract
+        .view(method_names::CONFIG)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
     let state: ProtocolContractState = get_state(&contract).await;
 
     // check that each participant can vote on a singular proposal and have it reflect changes:
@@ -161,8 +165,12 @@ async fn test_propose_update_config() {
         }
     }
     // check that the proposal executed since the threshold got changed.
-    let config: contract_interface::types::Config =
-        contract.view(method_names::CONFIG).await.unwrap().json().unwrap();
+    let config: contract_interface::types::Config = contract
+        .view(method_names::CONFIG)
+        .await
+        .unwrap()
+        .json()
+        .unwrap();
 
     assert_ne!(config, old_config);
     assert_eq!(config, new_config);

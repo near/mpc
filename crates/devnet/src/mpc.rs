@@ -15,6 +15,7 @@ use crate::terraform::get_urls;
 use crate::tx::IntoReturnValueExt;
 use crate::types::{MpcNetworkSetup, MpcParticipantSetup, NearAccount, ParsedConfig};
 use borsh::{BorshDeserialize, BorshSerialize};
+use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::SigningKey;
 use contract_interface::method_names;
@@ -847,7 +848,7 @@ pub async fn read_contract_state(
         block_reference: BlockReference::Finality(Finality::Final),
         request: QueryRequest::CallFunction {
             account_id: contract.as_v1_account_id(),
-            method_name: contract_interface::method_names::STATE.to_string(),
+            method_name: method_names::STATE.to_string(),
             args: FunctionArgs::from(b"{}".to_vec()),
         },
     };

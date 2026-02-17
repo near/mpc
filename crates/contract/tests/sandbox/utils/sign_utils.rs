@@ -283,7 +283,13 @@ async fn submit_sign_request(
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, contract_interface::method_names::SIGN, request).await
+    submit_request(
+        account,
+        contract,
+        contract_interface::method_names::SIGN,
+        request,
+    )
+    .await
 }
 
 async fn submit_ckd_request(
@@ -291,7 +297,13 @@ async fn submit_ckd_request(
     request: &CKDRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, contract_interface::method_names::REQUEST_APP_PRIVATE_KEY, request).await
+    submit_request(
+        account,
+        contract,
+        contract_interface::method_names::REQUEST_APP_PRIVATE_KEY,
+        request,
+    )
+    .await
 }
 
 async fn submit_response(
@@ -316,7 +328,13 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, contract_interface::method_names::RESPOND, response).await
+    submit_response(
+        contract,
+        attested_account,
+        contract_interface::method_names::RESPOND,
+        response,
+    )
+    .await
 }
 
 pub async fn submit_ckd_response(
@@ -324,7 +342,13 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, contract_interface::method_names::RESPOND_CKD, response).await
+    submit_response(
+        contract,
+        attested_account,
+        contract_interface::method_names::RESPOND_CKD,
+        response,
+    )
+    .await
 }
 
 trait ContractQueueRequest: serde::Serialize + Sync {

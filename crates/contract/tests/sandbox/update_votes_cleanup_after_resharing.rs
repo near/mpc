@@ -38,7 +38,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     // Propose update and have first 2 participants vote on it
     let code = vec![1u8; 1000];
     let update_id: UpdateId = mpc_signer_accounts[0]
-        .call(contract.id(), "propose_update")
+        .call(contract.id(), method_names::PROPOSE_UPDATE)
         .args_borsh(ProposeUpdateArgs {
             code: Some(code.clone()),
             config: None,
@@ -57,8 +57,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     )
     .await?;
 
-    let proposals_before: dtos::ProposedUpdates =
-        contract.view(method_names::PROPOSED_UPDATES).await?.json()?;
+    let proposals_before: dtos::ProposedUpdates = contract
+        .view(method_names::PROPOSED_UPDATES)
+        .await?
+        .json()?;
 
     assert_expected_proposed_update(
         &proposals_before,
@@ -106,7 +108,10 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // then: the cleanup promise removes participant 0's vote from storage
     let final_participants = assert_running_return_participants(&contract).await?;
-    let proposals_after: dtos::ProposedUpdates = contract.view(method_names::PROPOSED_UPDATES).await?.json()?;
+    let proposals_after: dtos::ProposedUpdates = contract
+        .view(method_names::PROPOSED_UPDATES)
+        .await?
+        .json()?;
 
     assert_expected_proposed_update(
         &proposals_after,

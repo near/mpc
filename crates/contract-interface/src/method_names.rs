@@ -41,8 +41,7 @@ pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_signature_and_clean_state_on_success";
-pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str =
-    "return_ck_and_clean_state_on_success";
+pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
 

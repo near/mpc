@@ -93,7 +93,11 @@ async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
 async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
-    contract.call(method_names::MIGRATE).transact().await?.into_result()?;
+    contract
+        .call(method_names::MIGRATE)
+        .transact()
+        .await?
+        .into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 
