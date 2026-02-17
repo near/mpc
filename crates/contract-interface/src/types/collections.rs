@@ -76,35 +76,36 @@ impl<T: Ord + schemars::JsonSchema> schemars::JsonSchema for NonEmptyBTreeSet<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use rstest::rstest;
 
     #[rstest]
     #[case::single_element(BTreeSet::from([1]))]
     #[case::multiple_elements(BTreeSet::from([1, 2, 3]))]
-    fn new_succeeds_for_non_empty_set(#[case] set: BTreeSet<i32>) {
-        // Given: a non-empty BTreeSet
-        // When: constructing a NonEmptyBTreeSet
-        let result = NonEmptyBTreeSet::new(set.clone());
-        // Then: it succeeds and wraps the original set
-        let ne = result.unwrap();
-        assert_eq!(*ne, set);
+    fn new_succeeds_for_non_empty_set(#[case] non_empty_set: BTreeSet<i32>) {
+        // Given
+        // When
+        let result = NonEmptyBTreeSet::new(non_empty_set.clone());
+        // Then
+        let non_empty_btree_set = result.unwrap();
+        assert_eq!(*non_empty_btree_set, non_empty_set);
     }
 
     #[test]
     fn new_fails_for_empty_set() {
-        // Given: an empty BTreeSet
-        let set: BTreeSet<i32> = BTreeSet::new();
-        // When: constructing a NonEmptyBTreeSet
-        let result = NonEmptyBTreeSet::new(set);
-        // Then: it returns an EmptySetError
+        // Given
+        let empty_set: BTreeSet<i32> = BTreeSet::new();
+        // When
+        let result = NonEmptyBTreeSet::new(empty_set);
+        // Then
         assert_eq!(result.unwrap_err(), EmptySetError);
     }
 
     #[test]
     fn empty_set_error_displays_message() {
-        // Given: an EmptySetError
-        // When: formatting it as a string
-        // Then: it produces a human-readable message
+        // Given
+        // When
+        // Then
         assert_eq!(
             EmptySetError.to_string(),
             "set must contain at least one element"
@@ -113,111 +114,107 @@ mod tests {
 
     #[test]
     fn deref_exposes_btreeset_methods() {
-        // Given: a NonEmptyBTreeSet with elements [1, 2, 3]
-        let ne = NonEmptyBTreeSet::new(BTreeSet::from([1, 2, 3])).unwrap();
-        // When: using BTreeSet methods via Deref
-        // Then: they behave as expected
-        assert!(ne.contains(&1));
-        assert!(!ne.contains(&4));
-        assert_eq!(ne.len(), 3);
+        // Given
+        let non_empty_btree_set = NonEmptyBTreeSet::new(BTreeSet::from([1, 2, 3])).unwrap();
+        // When / Then
+        assert!(non_empty_btree_set.contains(&1));
+        assert!(!non_empty_btree_set.contains(&4));
+        assert_eq!(non_empty_btree_set.len(), 3);
     }
 
     #[test]
     fn into_converts_back_to_btreeset() {
-        // Given: a NonEmptyBTreeSet
-        let original = BTreeSet::from([1, 2, 3]);
-        let ne = NonEmptyBTreeSet::new(original.clone()).unwrap();
-        // When: converting into a BTreeSet
-        let converted: BTreeSet<i32> = ne.into();
-        // Then: the result equals the original set
-        assert_eq!(converted, original);
+        // Given
+        let original_set = BTreeSet::from([1, 2, 3]);
+        let non_empty_btree_set = NonEmptyBTreeSet::new(original_set.clone()).unwrap();
+        // When
+        let converted: BTreeSet<i32> = non_empty_btree_set.into();
+        // Then
+        assert_eq!(converted, original_set);
     }
 
     #[rstest]
     #[case::single(BTreeSet::from([42]))]
     #[case::multiple(BTreeSet::from([1, 2, 3]))]
     fn serde_json_roundtrip_preserves_data(#[case] set: BTreeSet<i32>) {
-        // Given: a NonEmptyBTreeSet
-        let ne = NonEmptyBTreeSet::new(set).unwrap();
-        // When: serializing to JSON and deserializing back
-        let json = serde_json::to_string(&ne).unwrap();
+        // Given
+        let original = NonEmptyBTreeSet::new(set).unwrap();
+        // When
+        let json = serde_json::to_string(&original).unwrap();
         let deserialized: NonEmptyBTreeSet<i32> = serde_json::from_str(&json).unwrap();
-        // Then: the result equals the original
-        assert_eq!(deserialized, ne);
+        // Then
+        assert_eq!(deserialized, original);
     }
 
     #[test]
     fn serde_json_deserialize_rejects_empty_array() {
-        // Given: a JSON empty array
-        let json = "[]";
-        // When: deserializing as NonEmptyBTreeSet
-        let result: Result<NonEmptyBTreeSet<i32>, _> = serde_json::from_str(json);
-        // Then: deserialization fails
-        assert!(result.is_err());
+        // Given
+        let empty_json_array = "[]";
+        // When
+        let result: Result<NonEmptyBTreeSet<i32>, _> = serde_json::from_str(empty_json_array);
+        // Then
+        assert_matches!(result, Err(_));
     }
 
     #[rstest]
     #[case::single(BTreeSet::from([42u32]))]
     #[case::multiple(BTreeSet::from([1u32, 2, 3]))]
     fn borsh_roundtrip_preserves_data(#[case] set: BTreeSet<u32>) {
-        // Given: a NonEmptyBTreeSet
-        let ne = NonEmptyBTreeSet::new(set).unwrap();
-        // When: serializing to borsh and deserializing back
-        let bytes = borsh::to_vec(&ne).unwrap();
+        // Given
+        let original = NonEmptyBTreeSet::new(set).unwrap();
+        // When
+        let bytes = borsh::to_vec(&original).unwrap();
         let deserialized: NonEmptyBTreeSet<u32> = BorshDeserialize::try_from_slice(&bytes).unwrap();
-        // Then: the result equals the original
-        assert_eq!(deserialized, ne);
+        // Then
+        assert_eq!(deserialized, original);
     }
 
     #[test]
     fn borsh_deserialize_rejects_empty_set() {
-        // Given: borsh bytes encoding an empty BTreeSet
-        let empty: BTreeSet<u32> = BTreeSet::new();
-        let bytes = borsh::to_vec(&empty).unwrap();
-        // When: deserializing as NonEmptyBTreeSet
-        let result: Result<NonEmptyBTreeSet<u32>, _> = BorshDeserialize::try_from_slice(&bytes);
-        // Then: deserialization fails with InvalidData
+        // Given
+        let empty_set_bytes = borsh::to_vec(&BTreeSet::<u32>::new()).unwrap();
+        // When
+        let result: Result<NonEmptyBTreeSet<u32>, _> =
+            BorshDeserialize::try_from_slice(&empty_set_bytes);
+        // Then
         let err = result.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[test]
     fn eq_returns_true_for_identical_sets() {
-        // Given: two NonEmptyBTreeSets with the same elements
-        let a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let b = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        // When: comparing for equality
-        // Then: they are equal
-        assert_eq!(a, b);
+        // Given
+        let set_a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        let set_b = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        // When / Then
+        assert_eq!(set_a, set_b);
     }
 
     #[test]
     fn eq_returns_false_for_different_sets() {
-        // Given: two NonEmptyBTreeSets with different elements
-        let a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let b = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
-        // When: comparing for equality
-        // Then: they are not equal
-        assert_ne!(a, b);
+        // Given
+        let set_a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        let set_b = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
+        // When / Then
+        assert_ne!(set_a, set_b);
     }
 
     #[test]
     fn ord_compares_by_btreeset_ordering() {
-        // Given: two NonEmptyBTreeSets where one is lexicographically smaller
-        let smaller = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let larger = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
-        // When: comparing their order
-        // Then: the set with smaller elements comes first
-        assert!(smaller < larger);
+        // Given
+        let smaller_set = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        let larger_set = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
+        // When / Then
+        assert!(smaller_set < larger_set);
     }
 
     #[test]
     fn clone_produces_equal_independent_copy() {
-        // Given: a NonEmptyBTreeSet
-        let ne = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        // When: cloning it
-        let cloned = ne.clone();
-        // Then: the clone is equal to the original
-        assert_eq!(ne, cloned);
+        // Given
+        let original = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        // When
+        let cloned = original.clone();
+        // Then
+        assert_eq!(original, cloned);
     }
 }

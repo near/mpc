@@ -1904,6 +1904,7 @@ dependencies = [
 name = "contract-interface"
 version = "3.4.1"
 dependencies = [
+ "assert_matches",
  "borsh",
  "bs58 0.5.1",
  "derive_more 2.1.1",
