@@ -8,6 +8,7 @@ use crate::indexer::types::{
     ChainCKDRespondArgs, ChainSendTransactionRequest, ChainSignatureRespondArgs,
     ChainVerifyForeignTransactionRespondArgs,
 };
+use crate::indexer::ReadForeignChainPolicy;
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::MpcTaskId;
@@ -61,7 +62,7 @@ pub struct MpcClient<ForeignChainPolicyReader> {
 
 impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
 where
-    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy + 'static,
+    ForeignChainPolicyReader: ReadForeignChainPolicy + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
