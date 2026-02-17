@@ -785,6 +785,8 @@ def get_bare_digest(full_digest: str) -> str:
 
 
 def _is_allowed_container_env_key(key: str) -> bool:
+    if key in DENIED_CONTAINER_ENV_KEYS:
+        return False
     # Allow MPC_* keys with strict regex (feature request).
     if MPC_ENV_KEY_RE.match(key):
         return True
