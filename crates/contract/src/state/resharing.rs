@@ -190,7 +190,7 @@ impl ResharingContractState {
 }
 #[cfg(test)]
 pub mod tests {
-    use crate::primitives::test_utils::NUM_PROTOCOLS;
+    use crate::primitives::test_utils::{participants_vec, NUM_PROTOCOLS};
     use crate::state::{key_event::tests::find_leader, running::RunningContractState};
     use crate::{
         primitives::{
@@ -214,7 +214,6 @@ pub mod tests {
             .proposed_parameters()
             .participants()
             .participants()
-            .iter()
             .map(|(aid, _, _)| aid.clone())
             .collect();
 
@@ -374,34 +373,35 @@ pub mod tests {
             .participants()
             .clone();
         {
-            let new_participants = state
-                .resharing_key
-                .proposed_parameters()
-                .participants()
-                .participants()
-                .clone();
-            for (account, _, _) in new_participants {
-                env.set_signer(&account);
+            let new_participants =
+                participants_vec(state.resharing_key.proposed_parameters().participants());
+            for entry in new_participants {
+                env.set_signer(&entry.account_id);
                 state.vote_reshared(first_key_event_id).unwrap();
             }
         }
         assert!(state.reshared_keys.len() == 1);
 
-        // Generate two sets of params:
-        //  - old params -> new_params_1 is a valid proposal.
-        //  - new_params_1 -> new_params_2 is a valid proposal.
-        //  - old params -> new_params_2 is NOT a valid proposal.
+        // Generate two sets of params where:
+        //  - old params -> new_params_1 is valid
+        //  - new_params_1 -> new_params_2 is valid
+        //  - old params -> new_params_2 is NOT valid (no old participants retained)
         //
-        // Reproposing with new_params_1 should succeed, but then reproposing with new_params_2
-        // should be rejected, since all re-proposals must be valid against the original.
+        // Triple the participants: new_params_1 = old + 2*old new participants.
+        // This ensures new_params_2 (only new participants) can meet the 60% threshold requirement.
         let mut new_participants_1 = old_participants.clone();
-        let new_threshold = Threshold::new(old_participants.len() as u64);
-        new_participants_1.add_random_participants_till_n((old_participants.len() * 3).div_ceil(2));
-        let new_participants_2 = new_participants_1
-            .subset(new_participants_1.len() - old_participants.len()..new_participants_1.len());
+        new_participants_1.add_random_participants_till_n(old_participants.len() * 3);
+        let new_threshold = Threshold::new((new_participants_1.len() as u64 * 6).div_ceil(10));
+
+        // new_participants_2 = only the newly added participants (exclude all old ones)
+        let mut new_participants_2 = new_participants_1.clone();
+        for (account, _, _) in old_participants.participants() {
+            new_participants_2.remove(account);
+        }
+        let new_threshold_2 = Threshold::new((new_participants_2.len() as u64 * 6).div_ceil(10));
         let new_params_1 =
             ThresholdParameters::new(new_participants_1, new_threshold.clone()).unwrap();
-        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold).unwrap();
+        let new_params_2 = ThresholdParameters::new(new_participants_2, new_threshold_2).unwrap();
         state
             .previous_running_state
             .parameters
@@ -418,7 +418,7 @@ pub mod tests {
 
         // Reproposing with invalid epoch ID should fail.
         {
-            env.set_signer(&old_participants.participants()[0].0);
+            env.set_signer(old_participants.participants().next().unwrap().0);
             let _ = state
                 .vote_new_parameters(state.prospective_epoch_id(), &new_params_1)
                 .unwrap_err();
@@ -427,17 +427,31 @@ pub mod tests {
                 .unwrap_err();
         }
 
-        // Repropose with new_params_1.
+        // Repropose with new_params_1. Current participants must vote before new candidates.
         let mut new_state = None;
-        for (account, _, _) in new_params_1.participants().participants() {
+        let is_current = |a: &AccountId| old_participants.is_participant(a);
+        for (account, _, _) in new_params_1
+            .participants()
+            .participants()
+            .filter(|(a, _, _)| is_current(a))
+        {
             env.set_signer(account);
             assert!(new_state.is_none());
             new_state = state
                 .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
                 .unwrap();
         }
-        // We should've gotten a new resharing state.
-        assert!(new_state.is_some());
+        for (account, _, _) in new_params_1
+            .participants()
+            .participants()
+            .filter(|(a, _, _)| !is_current(a))
+        {
+            env.set_signer(account);
+            assert!(new_state.is_none());
+            new_state = state
+                .vote_new_parameters(state.prospective_epoch_id().next(), &new_params_1)
+                .unwrap();
+        }
         let mut new_state = new_state.unwrap();
         // New state should start from the beginning, with the epoch ID bumped.
         assert_eq!(new_state.reshared_keys.len(), 0);
@@ -457,7 +471,7 @@ pub mod tests {
         );
 
         // Repropose with new_params_2. That should fail.
-        env.set_signer(&old_participants.participants()[0].0);
+        env.set_signer(old_participants.participants().next().unwrap().0);
         let _ = new_state
             .vote_new_parameters(new_state.prospective_epoch_id().next(), &new_params_2)
             .unwrap_err();

@@ -369,12 +369,19 @@ pub async fn vote_update_till_completion(
 
 pub async fn submit_tee_attestations(
     contract: &Contract,
-    env_accounts: &mut [Account],
+    env_accounts: &[Account],
     node_ids: &BTreeSet<NodeId>,
 ) -> anyhow::Result<()> {
-    env_accounts.sort_by(|left, right| left.id().cmp(right.id()));
-    for (account, node_id) in env_accounts.iter().zip(node_ids) {
-        assert_eq!(*account.id(), node_id.account_id, "AccountId mismatch");
+    // Build a lookup map from AccountId to NodeId
+    let node_id_map: std::collections::HashMap<_, _> = node_ids
+        .iter()
+        .map(|node_id| (&node_id.account_id, node_id))
+        .collect();
+
+    for account in env_accounts {
+        let node_id = node_id_map
+            .get(account.id())
+            .unwrap_or_else(|| panic!("Account {} not found in node_ids", account.id()));
         let attestation = Attestation::Mock(MockAttestation::Valid); // TODO(#1109): add TLS key.
         let result = submit_participant_info(
             account,
@@ -388,18 +395,18 @@ pub async fn submit_tee_attestations(
     Ok(())
 }
 
-/// Submit mock attestations for all participants in parallel.
+/// Submit mock attestations for the given accounts in parallel.
 pub async fn submit_attestations(
     contract: &Contract,
     accounts: &[Account],
     participants: &Participants,
 ) {
-    let futures: Vec<_> = participants
-        .participants()
+    let futures: Vec<_> = accounts
         .iter()
-        .zip(accounts)
-        .enumerate()
-        .map(|(i, ((_, _, participant), account))| async move {
+        .map(|account| async move {
+            let participant = participants
+                .info(account.id())
+                .unwrap_or_else(|| panic!("Account {} not found in participants", account.id()));
             let attestation = Attestation::Mock(MockAttestation::Valid);
             let tls_key = (&participant.sign_pk).into_interface_type();
             let success = submit_participant_info(account, contract, &attestation, &tls_key)
@@ -408,8 +415,8 @@ pub async fn submit_attestations(
                 .is_success();
             assert!(
                 success,
-                "submit_participant_info failed for participant {}",
-                i
+                "submit_participant_info failed for account {}",
+                account.id()
             );
         })
         .collect();
@@ -503,19 +510,39 @@ pub async fn execute_key_generation_and_add_random_state(
     worker: &Worker<Sandbox>,
     rng: &mut impl CryptoRngCore,
 ) -> InjectedContractState {
-    const EPOCH_ID: u64 = 0;
     let threshold = assert_running_return_threshold(contract).await;
-
-    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     let dummy_threshold_parameters =
         ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
     let dummy_proposal = json!({
         "prospective_epoch_id": 1,
         "proposal": dummy_threshold_parameters,
     });
+    execute_key_generation_and_add_random_state_with_proposal(
+        accounts,
+        dummy_proposal,
+        contract,
+        worker,
+        rng,
+    )
+    .await
+}
+
+/// Like [`execute_key_generation_and_add_random_state`] but accepts a
+/// pre-built proposal JSON, useful when the target contract expects a
+/// different serialisation format (e.g. the legacy Vec-of-tuples).
+pub async fn execute_key_generation_and_add_random_state_with_proposal(
+    accounts: &[Account],
+    proposal: serde_json::Value,
+    contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl CryptoRngCore,
+) -> InjectedContractState {
+    const EPOCH_ID: u64 = 0;
+
+    // 1. Submit a threshold proposal (raise threshold to threshold + 1).
     accounts[0]
         .call(contract.id(), "vote_new_parameters")
-        .args_json(dummy_proposal)
+        .args_json(proposal)
         .max_gas()
         .transact()
         .await

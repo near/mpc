@@ -1,12 +1,12 @@
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary,
+        call_contract_key_generation, execute_key_generation_and_add_random_state_with_proposal,
+        gen_accounts, init, propose_and_vote_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
         contract_build::current_contract,
-        mpc_contract::{get_participants, get_state, get_tee_accounts},
+        mpc_contract::{assert_running_return_threshold, get_state, get_tee_accounts},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
@@ -41,6 +41,52 @@ fn contract_code(network: Network) -> &'static [u8] {
     }
 }
 
+/// Builds a JSON representation of [`ThresholdParameters`] in the legacy
+/// Vec-of-tuples format expected by old contract versions:
+/// `{"participants": {"next_id": N, "participants": [[account, id, info], ...]}, "threshold": T}`
+fn threshold_parameters_to_old_json(params: &ThresholdParameters) -> serde_json::Value {
+    let participants_vec: Vec<serde_json::Value> = params
+        .participants()
+        .participants()
+        .map(|(account_id, participant_id, info)| {
+            serde_json::json!([account_id, participant_id, info])
+        })
+        .collect();
+    serde_json::json!({
+        "participants": {
+            "next_id": params.participants().next_id(),
+            "participants": participants_vec
+        },
+        "threshold": params.threshold()
+    })
+}
+
+/// Wrapper around [`execute_key_generation_and_add_random_state_with_proposal`]
+/// that serialises the threshold proposal in the legacy Vec-of-tuples format
+/// expected by old contract binaries.
+async fn add_random_state_to_old_contract(
+    accounts: &[Account],
+    participants: Participants,
+    contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl rand_core::CryptoRngCore,
+) -> crate::sandbox::common::InjectedContractState {
+    let threshold = assert_running_return_threshold(contract).await;
+    let params = ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
+    let old_proposal = serde_json::json!({
+        "prospective_epoch_id": 1,
+        "proposal": threshold_parameters_to_old_json(&params),
+    });
+    execute_key_generation_and_add_random_state_with_proposal(
+        accounts,
+        old_proposal,
+        contract,
+        worker,
+        rng,
+    )
+    .await
+}
+
 async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &Contract,
@@ -52,10 +98,12 @@ async fn init_old_contract(
     let threshold = Threshold::new(threshold);
     let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
+    let old_params_json = threshold_parameters_to_old_json(&threshold_parameters);
+
     contract
         .call("init")
         .args_json(serde_json::json!({
-            "parameters": threshold_parameters,
+            "parameters": old_params_json,
         }))
         .transact()
         .await?
@@ -160,14 +208,7 @@ async fn propose_upgrade_from_production_to_current_binary(
         .unwrap();
 
     // Add state so migration logic is exercised
-    execute_key_generation_and_add_random_state(
-        &accounts,
-        participants,
-        &contract,
-        &worker,
-        &mut OsRng,
-    )
-    .await;
+    add_random_state_to_old_contract(&accounts, participants, &contract, &worker, &mut OsRng).await;
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
@@ -207,14 +248,9 @@ async fn upgrade_preserves_state_and_requests(
 
     let attested_account = &accounts[0];
 
-    let injected_contract_state = execute_key_generation_and_add_random_state(
-        &accounts,
-        participants,
-        &contract,
-        &worker,
-        &mut OsRng,
-    )
-    .await;
+    let injected_contract_state =
+        add_random_state_to_old_contract(&accounts, participants, &contract, &worker, &mut OsRng)
+            .await;
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 
@@ -251,10 +287,10 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let worker = near_workspaces::sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
-
-    let initial_participants = get_participants(&contract).await?;
-    let participant_set_is_not_empty = !initial_participants.participants.is_empty();
+    // Store the participants from init, don't query old contract (different JSON format)
+    let (_accounts, initial_participants) =
+        init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+    let participant_set_is_not_empty = initial_participants.len() > 0;
     assert!(
         participant_set_is_not_empty,
         "Test must contain a contract with at least one participant"
@@ -275,9 +311,9 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
             .collect();
 
     let participant_set: HashSet<AccountId> = initial_participants
-        .participants
-        .iter()
-        .map(|(account_id, _, _)| account_id.0.parse::<near_account_id::AccountId>().unwrap())
+        .participants()
+        .map(|(account_id, _, _)| account_id)
+        .cloned()
         .collect();
 
     assert_eq!(
@@ -317,14 +353,8 @@ async fn upgrade_allows_new_request_types(
         .unwrap();
     let attested_account = &accounts[0];
 
-    let injected_contract_state = execute_key_generation_and_add_random_state(
-        &accounts,
-        participants,
-        &contract,
-        &worker,
-        rng,
-    )
-    .await;
+    let injected_contract_state =
+        add_random_state_to_old_contract(&accounts, participants, &contract, &worker, rng).await;
 
     let state_pre_upgrade: ProtocolContractState = get_state(&contract).await;
 

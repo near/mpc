@@ -480,9 +480,8 @@ mod tests {
             );
             let expected = chain_infos
                 .participants()
-                .iter()
-                .find(|(a_id, _, _)| a_id == &account_ids[i])
-                .map(|(_, p_id, _)| p_id.clone())
+                .find(|(a_id, _, _)| *a_id == &account_ids[i])
+                .map(|(_, p_id, _)| *p_id)
                 .unwrap();
             assert!(p.id.raw() == expected.get());
         }

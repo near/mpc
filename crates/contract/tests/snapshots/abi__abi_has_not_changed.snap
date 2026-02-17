@@ -2454,6 +2454,47 @@ expression: abi
             }
           }
         },
+        "ParticipantData": {
+          "type": "object",
+          "required": [
+            "id",
+            "info"
+          ],
+          "properties": {
+            "id": {
+              "description": "Unique, monotonically assigned identifier for this participant.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantId"
+                }
+              ]
+            },
+            "info": {
+              "description": "Connection and verification info (URL and public key) for this participant.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantInfo"
+                }
+              ]
+            }
+          }
+        },
+        "ParticipantData2": {
+          "description": "The data stored for each participant.",
+          "type": "object",
+          "required": [
+            "id",
+            "info"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/ParticipantId2"
+            },
+            "info": {
+              "$ref": "#/definitions/ParticipantInfo2"
+            }
+          }
+        },
         "ParticipantId": {
           "type": "integer",
           "format": "uint32",
@@ -2503,32 +2544,24 @@ expression: abi
           ],
           "properties": {
             "next_id": {
-              "$ref": "#/definitions/ParticipantId"
+              "description": "The next [`ParticipantId`] to assign when inserting a new participant. Always greater than all existing participant IDs.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ParticipantId"
+                }
+              ]
             },
             "participants": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
-                    "type": "string"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantId"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantInfo"
-                  }
-                ],
-                "maxItems": 3,
-                "minItems": 3
+              "description": "Primary storage mapping [`AccountId`] to [`ParticipantData`].",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ParticipantData"
               }
             }
           }
         },
         "Participants2": {
-          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt decouples the JSON wire format (used in view methods like `state()` via [`ThresholdParameters`](crate::types::state::ThresholdParameters)) from the internal `Participants` representation, allowing internal changes (e.g., migrating to [`BTreeMap`](std::collections::BTreeMap) in [#1861](https://github.com/near/mpc/pull/1861)) without breaking the public API.",
+          "description": "DTO representation of the contract-internal `Participants` type.\n\nIt mirrors the contract-internal [`BTreeMap`]-based structure, mapping each [`AccountId`] to its [`ParticipantData`] (participant ID + connection info).\n\nDeserialization supports both the current BTreeMap format and the legacy Vec-of-tuples format (`[[account, id, info], ...]`) for backward compatibility with older contract versions. This can be removed once all deployed contracts have been upgraded past the `Vec`-based format.",
           "type": "object",
           "required": [
             "next_id",
@@ -2539,22 +2572,9 @@ expression: abi
               "$ref": "#/definitions/ParticipantId2"
             },
             "participants": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "$ref": "#/definitions/AccountId"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantId2"
-                  },
-                  {
-                    "$ref": "#/definitions/ParticipantInfo2"
-                  }
-                ],
-                "maxItems": 3,
-                "minItems": 3
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/ParticipantData2"
               }
             }
           }

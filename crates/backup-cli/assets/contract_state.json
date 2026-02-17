@@ -73,88 +73,78 @@
     "parameters": {
       "participants": {
         "next_id": 12,
-        "participants": [
-          [
-            "blacksandtech.near",
-            0,
-            {
+        "participants": {
+          "blacksandtech.near": {
+            "id": 0,
+            "info": {
               "url": "https://multichain-mainnet-0.near.blksnd.xyz",
               "sign_pk": "ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2"
             }
-          ],
-          [
-            "lifted-mainnet.near",
-            3,
-            {
+          },
+          "lifted-mainnet.near": {
+            "id": 3,
+            "info": {
               "url": "https://near-mpc.liftedinit.org",
               "sign_pk": "ed25519:JBjY7yjbfQ51na3bStPPYMyfModUTFHco5xUNEem3uu6"
             }
-          ],
-          [
-            "mpc-lgns.near",
-            4,
-            {
+          },
+          "mpc-lgns.near": {
+            "id": 4,
+            "info": {
               "url": "https://near.mpc.lgns.net",
               "sign_pk": "ed25519:EFW6528i4iU1XK3Q53r6kyHEjjA7puJLhHLH3mG1YRZd"
             }
-          ],
-          [
-            "multichain-mainnet-aurora.near",
-            5,
-            {
+          },
+          "multichain-mainnet-aurora.near": {
+            "id": 5,
+            "info": {
               "url": "https://multichain-mainnet.aurora.dev",
               "sign_pk": "ed25519:9QAvLjfjDX7GYwJaT7Wzz9bjS4NzniaXukx8vYKaZZLG"
             }
-          ],
-          [
-            "n1-multichain.near",
-            8,
-            {
+          },
+          "n1-multichain.near": {
+            "id": 8,
+            "info": {
               "url": "https://multichain-mainnet-0.nearone.org",
               "sign_pk": "ed25519:8kjdkEUAD7kXc5aCYJdcSwNQESanvpbqSm325o7uSUQH"
             }
-          ],
-          [
-            "near-mpc-staking4all-01.near",
-            6,
-            {
+          },
+          "near-mpc-staking4all-01.near": {
+            "id": 6,
+            "info": {
               "url": "https://multichain-mainnet-0.staking4all.org",
               "sign_pk": "ed25519:2CbEnbBQ9RA2oocc9a89Eck5d9ighfL7FGiEkMyQ7YB9"
             }
-          ],
-          [
-            "nodemonster.near",
-            7,
-            {
+          },
+          "nodemonster.near": {
+            "id": 7,
+            "info": {
               "url": "https://near.node.monster",
               "sign_pk": "ed25519:9mix9iNfMMtSAhzgHCisnjMJtiofn8cFkprgUTkRtPN"
             }
-          ],
-          [
-            "chain-signatures-hot.near",
-            9,
-            {
+          },
+          "chain-signatures-hot.near": {
+            "id": 9,
+            "info": {
               "url": "http://chain-signature-mainnet.hotdao.ai",
               "sign_pk": "ed25519:6DRZqoWxdYiKEhmF391pdC8L4VUXY1S5AMHYBsVHSyYm"
             }
-          ],
-          [
-            "everstake-mpc-1.near",
-            10,
-            {
+          },
+          "everstake-mpc-1.near": {
+            "id": 10,
+            "info": {
               "url": "http://nearmpc-mainnet.everstake.one",
               "sign_pk": "ed25519:3TJzrbiwgZeTEDHk3yZqCFvAzYs9xfYEkUcpx2dMD7Qq"
             }
-          ],
-          [
-            "stakin-mpc.near",
-            11,
-            {
+          },
+          "stakin-mpc.near": {
+            "id": 11,
+            "info": {
               "url": "http://near-mpc-mainnet-1.stakin-nodes.com",
               "sign_pk": "ed25519:9WiRNJ8Ci1RxfjdyGVdZHxUt5JJBgbfK87bZzgMd7ec4"
             }
-          ]
-        ]
+          }
+        }
       },
       "threshold": 7
     },

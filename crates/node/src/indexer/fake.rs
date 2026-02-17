@@ -296,7 +296,6 @@ impl FakeMpcContractState {
             .parameters
             .participants()
             .participants()
-            .iter()
             .any(|(participant_id, _, _)| participant_id == &account_id);
 
         if !is_participant {
@@ -316,7 +315,6 @@ impl FakeMpcContractState {
             .parameters
             .participants()
             .participants()
-            .iter()
             .filter(|(participant_id, _, _)| {
                 self.foreign_chain_policy_votes
                     .proposal_by_account

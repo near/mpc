@@ -2,6 +2,7 @@ use crate::sandbox::{
     common::{init_env, SandboxTestSetup},
     utils::{
         consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_VOTE_UPDATE, PARTICIPANT_LEN},
+        interface::IntoContractType,
         mpc_contract::{assert_running_return_participants, assert_running_return_threshold},
         resharing_utils::do_resharing,
         transactions::execute_async_transactions,
@@ -66,26 +67,27 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
         &mpc_signer_accounts[0..2],
     );
 
-    // when: resharing completes with new participants that exclude participant 0
-    // Reshare with threshold participants, excluding participant 0 who voted
-    let mut new_participants = Participants::new();
-    for (account_id, participant_id, participant_info) in initial_participants
-        .participants
+    // when: resharing completes with new participants that exclude mpc_signer_accounts[0]
+    // Build new_participants from all participants except the first account (by creation order)
+    let excluded_account = mpc_signer_accounts[0].id().to_string();
+    // Build new participants: all except mpc_signer_accounts[0]
+    let subset_dto = dtos::Participants {
+        next_id: initial_participants.next_id,
+        participants: initial_participants
+            .participants
+            .iter()
+            .filter(|(account_id, _)| account_id.0 != excluded_account)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    };
+    let new_participants: Participants = (&subset_dto).into_contract_type();
+
+    // Filter mpc_signer_accounts to only include accounts in new_participants
+    let remaining_accounts: Vec<Account> = mpc_signer_accounts
         .iter()
-        .skip(1) // Skip participant 0, so participant 1-6 are included
-        .take(threshold.0 as usize)
-    {
-        new_participants
-            .insert_with_id(
-                account_id.0.parse::<near_account_id::AccountId>().unwrap(),
-                mpc_contract::primitives::participants::ParticipantInfo {
-                    url: participant_info.url.clone(),
-                    sign_pk: participant_info.sign_pk.parse().unwrap(),
-                },
-                mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to insert participant: {}", e))?;
-    }
+        .filter(|a| *a.id() != excluded_account)
+        .cloned()
+        .collect();
 
     let new_threshold_parameters = ThresholdParameters::new(
         new_participants,
@@ -96,7 +98,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // when: resharing completes with new participants that exclude participant 0
     do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
+        &remaining_accounts,
         &contract,
         new_threshold_parameters,
         prospective_epoch_id,
@@ -125,8 +127,8 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     let voter_id: AccountId = votes_for_update[0].0.parse().unwrap();
     assert!(final_participants
         .participants
-        .iter()
-        .any(|(a, _, _)| a.0.as_str() == voter_id.as_str()));
+        .keys()
+        .any(|a| a.0.as_str() == voter_id.as_str()));
 
     Ok(())
 }

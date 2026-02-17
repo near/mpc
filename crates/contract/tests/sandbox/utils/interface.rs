@@ -4,7 +4,7 @@
 use contract_interface::types::{self as dtos};
 use mpc_contract::primitives::{
     domain::SignatureScheme,
-    participants::{ParticipantInfo, Participants},
+    participants::{ParticipantId, ParticipantInfo, Participants},
 };
 use threshold_signatures::confidential_key_derivation::{self as ckd};
 
@@ -103,20 +103,21 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
 
 impl IntoContractType<Participants> for &dtos::Participants {
     fn into_contract_type(self) -> Participants {
-        let mut participants = Participants::new();
-        for (account_id, participant_id, info) in &self.participants {
-            participants
-                .insert_with_id(
-                    account_id.0.parse().unwrap(),
+        let participants = self
+            .participants
+            .iter()
+            .map(|(a, data)| {
+                (
+                    a.0.parse::<near_sdk::AccountId>().unwrap(),
+                    ParticipantId(data.id.0),
                     ParticipantInfo {
-                        url: info.url.clone(),
-                        sign_pk: info.sign_pk.parse().unwrap(),
+                        url: data.info.url.clone(),
+                        sign_pk: data.info.sign_pk.parse().unwrap(),
                     },
-                    mpc_contract::primitives::participants::ParticipantId((*participant_id).into()),
                 )
-                .unwrap();
-        }
-        participants
+            })
+            .collect();
+        Participants::init(ParticipantId(self.next_id.0), participants).unwrap()
     }
 }
 
