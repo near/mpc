@@ -1019,9 +1019,9 @@ impl MpcContract {
             domains,
         );
 
-        if let Some((new_state, purposes)) = self.protocol_state.vote_add_domains(domains)? {
-            self.protocol_state = new_state;
-            for (domain_id, purpose) in purposes {
+        if let Some(outcome) = self.protocol_state.vote_add_domains(domains)? {
+            self.protocol_state = ProtocolContractState::Initializing(outcome.new_state);
+            for (domain_id, purpose) in outcome.purposes {
                 self.domain_purposes.insert(domain_id, purpose);
             }
         }

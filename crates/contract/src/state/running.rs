@@ -150,11 +150,10 @@ impl RunningContractState {
     /// If the number of votes for the same set of new domains reaches the number of participants,
     /// returns the InitializingContractState we should transition into to generate keys for these
     /// new domains, along with the purposes for each new domain.
-    #[allow(clippy::type_complexity)]
     pub fn vote_add_domains(
         &mut self,
         domains: Vec<(DomainConfig, DomainPurpose)>,
-    ) -> Result<Option<(InitializingContractState, Vec<(DomainId, DomainPurpose)>)>, Error> {
+    ) -> Result<Option<AddDomainsOutcome>, Error> {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
@@ -166,8 +165,8 @@ impl RunningContractState {
             let purposes: Vec<(DomainId, DomainPurpose)> =
                 domains.iter().map(|(d, p)| (d.id, *p)).collect();
             let new_domains = self.domains.add_domains(domain_configs.clone())?;
-            Ok(Some((
-                InitializingContractState {
+            Ok(Some(AddDomainsOutcome {
+                new_state: InitializingContractState {
                     generated_keys: self.keyset.domains.clone(),
                     domains: new_domains,
                     epoch_id: self.keyset.epoch_id,
@@ -179,7 +178,7 @@ impl RunningContractState {
                     cancel_votes: BTreeSet::new(),
                 },
                 purposes,
-            )))
+            }))
         } else {
             Ok(None)
         }
@@ -188,6 +187,12 @@ impl RunningContractState {
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.parameters.participants().is_participant(account_id)
     }
+}
+
+/// Result of a successful `vote_add_domains` that reached threshold.
+pub struct AddDomainsOutcome {
+    pub new_state: InitializingContractState,
+    pub purposes: Vec<(DomainId, DomainPurpose)>,
 }
 
 #[cfg(test)]

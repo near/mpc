@@ -116,7 +116,7 @@ pub fn gen_initializing_state(
         initializing_state = running
             .vote_add_domains(domains_to_add.clone())
             .unwrap()
-            .map(|(state, _purposes)| state);
+            .map(|outcome| outcome.new_state);
     }
     let initializing_state = initializing_state
         .expect("Enough votes to add domains should transition into initializing");
