@@ -242,7 +242,7 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: GET_TEE_ATTESTATION_ENDPOINT.to_string(),
+            method_name: GET_ATTESTATION.to_string(),
             args: get_attestation_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -274,7 +274,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
     ) -> anyhow::Result<dtos::ForeignChainPolicy> {
         let (_height, policy) = self
-            .get_mpc_state(mpc_contract_id.clone(), FOREIGN_CHAIN_POLICY_ENDPOINT)
+            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY)
             .await?;
         Ok(policy)
     }
@@ -284,10 +284,7 @@ impl IndexerViewClient {
         mpc_contract_id: &AccountId,
     ) -> anyhow::Result<dtos::ForeignChainPolicyVotes> {
         let (_height, proposals) = self
-            .get_mpc_state(
-                mpc_contract_id.clone(),
-                FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT,
-            )
+            .get_mpc_state(mpc_contract_id.clone(), GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
             .await?;
         Ok(proposals)
     }
@@ -304,22 +301,21 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ProtocolContractState)> {
-        self.get_mpc_state(mpc_contract_id, CONTRACT_STATE_ENDPOINT)
-            .await
+        self.get_mpc_state(mpc_contract_id, STATE).await
     }
 
     pub(crate) async fn get_mpc_allowed_image_hashes(
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<MpcDockerImageHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_IMAGE_HASHES_ENDPOINT)
+        self.get_mpc_state(mpc_contract_id, ALLOWED_DOCKER_IMAGE_HASHES)
             .await
     }
     pub(crate) async fn get_mpc_allowed_launcher_compose_hashes(
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<LauncherDockerComposeHash>)> {
-        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT)
+        self.get_mpc_state(mpc_contract_id, ALLOWED_LAUNCHER_COMPOSE_HASHES)
             .await
     }
 
@@ -327,16 +323,14 @@ impl IndexerViewClient {
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, Vec<NodeId>)> {
-        self.get_mpc_state(mpc_contract_id, TEE_ACCOUNTS_ENDPOINT)
-            .await
+        self.get_mpc_state(mpc_contract_id, GET_TEE_ACCOUNTS).await
     }
 
     pub(crate) async fn get_mpc_migration_info(
         &self,
         mpc_contract_id: AccountId,
     ) -> anyhow::Result<(u64, ContractMigrationInfo)> {
-        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO_ENDPOINT)
-            .await
+        self.get_mpc_state(mpc_contract_id, MIGRATION_INFO).await
     }
 
     async fn get_mpc_state<State>(
@@ -417,14 +411,6 @@ struct IndexerClient {
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
-const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = ALLOWED_DOCKER_IMAGE_HASHES;
-const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = ALLOWED_LAUNCHER_COMPOSE_HASHES;
-const TEE_ACCOUNTS_ENDPOINT: &str = GET_TEE_ACCOUNTS;
-pub const MIGRATION_INFO_ENDPOINT: &str = MIGRATION_INFO;
-const CONTRACT_STATE_ENDPOINT: &str = STATE;
-const GET_TEE_ATTESTATION_ENDPOINT: &str = GET_ATTESTATION;
-const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = GET_FOREIGN_CHAIN_POLICY;
-const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str = GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {
