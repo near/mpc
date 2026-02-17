@@ -66,38 +66,27 @@ initialize_near_node() {
 }
 
 update_near_node_config() {
-    # Avoid bash interpolation into Python. Read needed values from os.environ.
-    export NEAR_NODE_CONFIG_FILE
-    export MPC_ENV
-    export MPC_CONTRACT_ID
-
     python3 <<'EOF'
 import json
-import os
-import sys
 
-near_node_config_file = os.environ["NEAR_NODE_CONFIG_FILE"]
-mpc_env = os.environ.get("MPC_ENV", "")
-mpc_contract_id = os.environ.get("MPC_CONTRACT_ID", "")
-
-config = json.load(open(near_node_config_file))
+config = json.load(open("$NEAR_NODE_CONFIG_FILE"))
 
 # boot nodes must be filled in or else the node will not have any peers.
 config['store']['load_mem_tries_for_tracked_shards'] = True
 
-if mpc_env == "mpc-localnet":
+if "$MPC_ENV" == "mpc-localnet":
     config['state_sync_enabled'] = False
 else:
-    if 'state_sync' in config and 'sync' in config['state_sync']:
-        config['state_sync']['sync'].setdefault('ExternalStorage', {})
-        config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
+    # FAIL-FAST: crash if expected keys are missing (same behavior as before)
+    config['state_sync']['sync']['ExternalStorage']['external_storage_fallback_threshold'] = 0
 
 # Track whichever shard the contract account is on.
-config['tracked_shards_config'] = {'Accounts': [mpc_contract_id]}
+config['tracked_shards_config'] = {'Accounts': ["$MPC_CONTRACT_ID"]}
 
-json.dump(config, open(near_node_config_file, 'w'), indent=2)
+json.dump(config, open("$NEAR_NODE_CONFIG_FILE", 'w'), indent=2)
 EOF
 }
+
 
 create_secrets_json_file() {
     local secrets_file="$1"
