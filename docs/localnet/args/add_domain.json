@@ -1,16 +1,8 @@
 {
   "domains": [
-    {
-      "id": 0,
-      "scheme": "Secp256k1"
-    },
-    {
-      "id": 1,
-      "scheme": "Ed25519"
-    },
-    {
-      "id": 2,
-      "scheme": "Bls12381"
-    }
+    [{"id": 0, "scheme": "Secp256k1"}, "Sign"],
+    [{"id": 1, "scheme": "Ed25519"}, "Sign"],
+    [{"id": 2, "scheme": "Bls12381"}, "CKD"],
+    [{"id": 3, "scheme": "Secp256k1"}, "ForeignTx"]
   ]
 }

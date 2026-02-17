@@ -8,7 +8,7 @@ pub mod test_utils;
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
     participants::Participants,
     thresholds::{Threshold, ThresholdParameters},
@@ -138,15 +138,20 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Resharing))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn vote_add_domains(
         &mut self,
-        domains: Vec<DomainConfig>,
-    ) -> Result<Option<ProtocolContractState>, Error> {
+        domains: Vec<(DomainConfig, DomainPurpose)>,
+    ) -> Result<Option<(ProtocolContractState, Vec<(DomainId, DomainPurpose)>)>, Error> {
         match self {
             ProtocolContractState::Running(state) => state.vote_add_domains(domains),
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
-        .map(|x| x.map(ProtocolContractState::Initializing))
+        .map(|x| {
+            x.map(|(init_state, purposes)| {
+                (ProtocolContractState::Initializing(init_state), purposes)
+            })
+        })
     }
 
     pub fn vote_abort_key_event_instance(&mut self, key_event_id: KeyEventId) -> Result<(), Error> {

@@ -124,6 +124,8 @@ pub enum InvalidParameters {
     InvalidTlsPublicKey,
     #[error("Caller is not the signer account.")]
     CallerNotSigner,
+    #[error("Domain purpose mismatch for domain {domain_id}.")]
+    DomainPurposeMismatch { domain_id: DomainId },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

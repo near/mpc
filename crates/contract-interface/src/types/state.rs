@@ -160,6 +160,31 @@ pub enum SignatureScheme {
     V2Secp256k1,
 }
 
+/// The intended purpose of a domain.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
 /// Configuration for a signature domain.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -291,7 +316,8 @@ pub struct ThresholdParametersVotes {
     derive(schemars::JsonSchema)
 )]
 pub struct AddDomainsVotes {
-    pub proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
+    pub proposal_by_account:
+        BTreeMap<AuthenticatedParticipantId, Vec<(DomainConfig, DomainPurpose)>>,
 }
 
 // =============================================================================

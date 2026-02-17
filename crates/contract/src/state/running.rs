@@ -3,7 +3,7 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainRegistry},
+    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
@@ -149,29 +149,37 @@ impl RunningContractState {
     /// Casts a vote for the signer participant to add new domains, replacing any previous vote.
     /// If the number of votes for the same set of new domains reaches the number of participants,
     /// returns the InitializingContractState we should transition into to generate keys for these
-    /// new domains.
+    /// new domains, along with the purposes for each new domain.
+    #[allow(clippy::type_complexity)]
     pub fn vote_add_domains(
         &mut self,
-        domains: Vec<DomainConfig>,
-    ) -> Result<Option<InitializingContractState>, Error> {
+        domains: Vec<(DomainConfig, DomainPurpose)>,
+    ) -> Result<Option<(InitializingContractState, Vec<(DomainId, DomainPurpose)>)>, Error> {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
-            let new_domains = self.domains.add_domains(domains.clone())?;
-            Ok(Some(InitializingContractState {
-                generated_keys: self.keyset.domains.clone(),
-                domains: new_domains,
-                epoch_id: self.keyset.epoch_id,
-                generating_key: KeyEvent::new(
-                    self.keyset.epoch_id,
-                    domains[0].clone(),
-                    self.parameters.clone(),
-                ),
-                cancel_votes: BTreeSet::new(),
-            }))
+            let domain_configs: Vec<DomainConfig> =
+                domains.iter().map(|(d, _)| d.clone()).collect();
+            let purposes: Vec<(DomainId, DomainPurpose)> =
+                domains.iter().map(|(d, p)| (d.id, *p)).collect();
+            let new_domains = self.domains.add_domains(domain_configs.clone())?;
+            Ok(Some((
+                InitializingContractState {
+                    generated_keys: self.keyset.domains.clone(),
+                    domains: new_domains,
+                    epoch_id: self.keyset.epoch_id,
+                    generating_key: KeyEvent::new(
+                        self.keyset.epoch_id,
+                        domain_configs[0].clone(),
+                        self.parameters.clone(),
+                    ),
+                    cancel_votes: BTreeSet::new(),
+                },
+                purposes,
+            )))
         } else {
             Ok(None)
         }

@@ -2,7 +2,7 @@ use contract_interface::types::{Attestation, InitConfig, MockAttestation, Protoc
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantId, ParticipantInfo},
         test_utils::{bogus_ed25519_near_public_key, gen_participants},
@@ -117,9 +117,15 @@ impl TestSetupBuilder {
         testing_env!(context);
 
         let init_config = self.init_config;
-        let contract =
-            MpcContract::init_running(domains, 1, keyset, parameters.clone(), init_config.clone())
-                .unwrap();
+        let contract = MpcContract::init_running(
+            domains,
+            1,
+            keyset,
+            parameters.clone(),
+            init_config.clone(),
+            None,
+        )
+        .unwrap();
 
         let mut setup = TestSetup {
             contract,
@@ -147,10 +153,13 @@ impl TestSetupBuilder {
 
                     setup
                         .contract
-                        .vote_add_domains(vec![DomainConfig {
-                            id: DomainId(1),
-                            scheme: SignatureScheme::Ed25519,
-                        }])
+                        .vote_add_domains(vec![(
+                            DomainConfig {
+                                id: DomainId(1),
+                                scheme: SignatureScheme::Ed25519,
+                            },
+                            DomainPurpose::Sign,
+                        )])
                         .unwrap();
                 }
 

@@ -1,7 +1,9 @@
 use crate::sandbox::utils::{
     consts::{CURRENT_CONTRACT_DEPLOY_DEPOSIT, GAS_FOR_INIT, GAS_FOR_VOTE_UPDATE},
     contract_build::current_contract,
-    initializing_utils::{start_keygen_instance, vote_add_domains, vote_public_key},
+    initializing_utils::{
+        start_keygen_instance, vote_add_domains, vote_add_domains_legacy, vote_public_key,
+    },
     interface::IntoInterfaceType,
     mpc_contract::{assert_running_return_threshold, get_state, submit_participant_info},
     shared_key_utils::{make_key_for_domain, DomainKey},
@@ -421,7 +423,7 @@ pub async fn submit_attestations(
 /// Returns the shared_secret_key in the same order as
 /// the corresponding domain configs supplied.
 pub async fn call_contract_key_generation<const N: usize>(
-    domains_to_add: &[DomainConfig; N],
+    domains_to_add: &[(DomainConfig, dtos::DomainPurpose); N],
     accounts: &[Account],
     contract: &Contract,
     expected_epoch_id: u64,
@@ -451,7 +453,7 @@ pub async fn call_contract_key_generation<const N: usize>(
         _ => panic!("should be in initializing state"),
     };
 
-    for domain in domains_to_add.iter() {
+    for (domain, _purpose) in domains_to_add.iter() {
         let key_event_id = dtos::KeyEventId {
             epoch_id: dtos::EpochId(expected_epoch_id),
             domain_id: dtos::DomainId(*domain.id),
@@ -525,6 +527,139 @@ pub async fn execute_key_generation_and_add_random_state(
 
     // 2. Add multiple domains.
     let domains_to_add = [
+        (
+            DomainConfig {
+                id: 0.into(),
+                scheme: SignatureScheme::Ed25519,
+            },
+            dtos::DomainPurpose::Sign,
+        ),
+        (
+            DomainConfig {
+                id: 1.into(),
+                scheme: SignatureScheme::Secp256k1,
+            },
+            dtos::DomainPurpose::Sign,
+        ),
+        (
+            DomainConfig {
+                id: 2.into(),
+                scheme: SignatureScheme::Ed25519,
+            },
+            dtos::DomainPurpose::Sign,
+        ),
+    ];
+    let domain_keys =
+        call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
+
+    // 3. Submit pending sign requests.
+    let (pending_sign_requests, _) =
+        make_and_submit_requests(&domain_keys, contract, worker, rng).await;
+
+    InjectedContractState {
+        pending_sign_requests,
+        domain_keys: domain_keys.to_vec(),
+    }
+}
+
+/// Legacy version of `call_contract_key_generation` for old contracts that don't
+/// have `DomainPurpose` in the `vote_add_domains` API.
+pub async fn call_contract_key_generation_legacy<const N: usize>(
+    domains_to_add: &[DomainConfig; N],
+    accounts: &[Account],
+    contract: &Contract,
+    expected_epoch_id: u64,
+) -> [DomainKey; N] {
+    let mut domain_keys = vec![];
+
+    let existing_domains = {
+        let state: ProtocolContractState = get_state(contract).await;
+        match state {
+            ProtocolContractState::Running(state) => state.domains.domains.len(),
+            _ => panic!("ProtocolContractState must be Running"),
+        }
+    };
+
+    vote_add_domains_legacy(contract, accounts, domains_to_add)
+        .await
+        .unwrap();
+
+    let state: ProtocolContractState = get_state(contract).await;
+    match state {
+        ProtocolContractState::Initializing(state) => {
+            assert_eq!(
+                state.domains.domains.len(),
+                existing_domains + domains_to_add.len()
+            );
+        }
+        _ => panic!("should be in initializing state"),
+    };
+
+    for domain in domains_to_add.iter() {
+        let key_event_id = dtos::KeyEventId {
+            epoch_id: dtos::EpochId(expected_epoch_id),
+            domain_id: dtos::DomainId(*domain.id),
+            attempt_id: dtos::AttemptId(0),
+        };
+        start_keygen_instance(contract, accounts, key_event_id)
+            .await
+            .unwrap();
+        let (public_key, shared_secret_key) = make_key_for_domain(domain.scheme);
+
+        domain_keys.push(DomainKey {
+            domain_config: domain.clone(),
+            domain_secret_key: shared_secret_key,
+            domain_public_key: public_key.clone().try_into().unwrap(),
+        });
+
+        vote_public_key(contract, accounts, key_event_id, public_key)
+            .await
+            .unwrap();
+    }
+
+    let state: ProtocolContractState = get_state(contract).await;
+    match state {
+        ProtocolContractState::Running(state) => {
+            assert_eq!(state.keyset.epoch_id.0, expected_epoch_id);
+            assert_eq!(
+                state.domains.domains.len(),
+                domains_to_add.len() + existing_domains
+            );
+        }
+        state => panic!("should be in running state. Actual state: {state:#?}"),
+    };
+
+    domain_keys.try_into().unwrap()
+}
+
+/// Legacy version of `execute_key_generation_and_add_random_state` for old contracts
+/// that don't have `DomainPurpose` in the `vote_add_domains` API.
+pub async fn execute_key_generation_and_add_random_state_legacy(
+    accounts: &[Account],
+    participants: Participants,
+    contract: &Contract,
+    worker: &Worker<Sandbox>,
+    rng: &mut impl CryptoRngCore,
+) -> InjectedContractState {
+    const EPOCH_ID: u64 = 0;
+    let threshold = assert_running_return_threshold(contract).await;
+
+    let dummy_threshold_parameters =
+        ThresholdParameters::new(participants, Threshold::new(threshold.0 + 1)).unwrap();
+    let dummy_proposal = json!({
+        "prospective_epoch_id": 1,
+        "proposal": dummy_threshold_parameters,
+    });
+    accounts[0]
+        .call(contract.id(), "vote_new_parameters")
+        .args_json(dummy_proposal)
+        .max_gas()
+        .transact()
+        .await
+        .unwrap()
+        .unwrap();
+
+    let domains_to_add = [
         DomainConfig {
             id: 0.into(),
             scheme: SignatureScheme::Ed25519,
@@ -539,9 +674,8 @@ pub async fn execute_key_generation_and_add_random_state(
         },
     ];
     let domain_keys =
-        call_contract_key_generation(&domains_to_add, accounts, contract, EPOCH_ID).await;
+        call_contract_key_generation_legacy(&domains_to_add, accounts, contract, EPOCH_ID).await;
 
-    // 3. Submit pending sign requests.
     let (pending_sign_requests, _) =
         make_and_submit_requests(&domain_keys, contract, worker, rng).await;
 

@@ -1,6 +1,6 @@
 use contract_interface::method_names;
 use contract_interface::types::{self as dtos};
-use dtos::KeyEventId;
+use dtos::{DomainPurpose, KeyEventId};
 use mpc_contract::primitives::domain::DomainConfig;
 use near_workspaces::{Account, Contract};
 use serde_json::json;
@@ -12,6 +12,26 @@ use super::{
 };
 
 pub async fn vote_add_domains(
+    contract: &Contract,
+    accounts: &[Account],
+    domains: &[(DomainConfig, DomainPurpose)],
+) -> anyhow::Result<()> {
+    let args = json!({
+        "domains": domains,
+    });
+    execute_async_transactions(
+        accounts,
+        contract,
+        "vote_add_domains",
+        &args,
+        GAS_FOR_VOTE_NEW_DOMAIN,
+    )
+    .await
+}
+
+/// Legacy version of `vote_add_domains` for old contracts that don't have
+/// `DomainPurpose` in the `vote_add_domains` API.
+pub async fn vote_add_domains_legacy(
     contract: &Contract,
     accounts: &[Account],
     domains: &[DomainConfig],

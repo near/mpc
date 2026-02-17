@@ -48,6 +48,28 @@ impl Default for SignatureScheme {
     }
 }
 
+/// The intended purpose of a domain, used to enforce that `sign()`, `verify_foreign_transaction()`,
+/// and `request_app_private_key()` are each called only on domains created for that purpose.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DomainPurpose {
+    Sign,
+    ForeignTx,
+    CKD,
+}
+
+impl DomainPurpose {
+    /// Infer purpose from scheme for legacy domains not in the purpose map.
+    pub fn infer_from_scheme(scheme: SignatureScheme) -> Self {
+        match scheme {
+            SignatureScheme::Secp256k1
+            | SignatureScheme::Ed25519
+            | SignatureScheme::V2Secp256k1 => DomainPurpose::Sign,
+            SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        }
+    }
+}
+
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,7 +190,8 @@ impl DomainRegistry {
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AddDomainsVotes {
-    pub(crate) proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>,
+    pub(crate) proposal_by_account:
+        BTreeMap<AuthenticatedParticipantId, Vec<(DomainConfig, DomainPurpose)>>,
 }
 
 impl AddDomainsVotes {
@@ -177,7 +200,7 @@ impl AddDomainsVotes {
     /// If the participant had voted already, this replaces the existing vote.
     pub fn vote(
         &mut self,
-        proposal: Vec<DomainConfig>,
+        proposal: Vec<(DomainConfig, DomainPurpose)>,
         participant: &AuthenticatedParticipantId,
     ) -> u64 {
         if self
@@ -199,7 +222,7 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+    use super::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
 
     #[test]
     fn test_add_domains() {
@@ -328,5 +351,34 @@ pub mod tests {
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+    }
+
+    #[test]
+    fn test_infer_domain_purpose_from_scheme() {
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Ed25519),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::V2Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Bls12381),
+            DomainPurpose::CKD
+        );
+    }
+
+    #[test]
+    fn test_domain_purpose_json_serialization() {
+        let purpose = DomainPurpose::ForeignTx;
+        let json = serde_json::to_string(&purpose).unwrap();
+        assert_eq!(json, r#""ForeignTx""#);
+        let parsed: DomainPurpose = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, DomainPurpose::ForeignTx);
     }
 }

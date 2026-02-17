@@ -1,7 +1,7 @@
 use crate::sandbox::{
     common::{
-        call_contract_key_generation, execute_key_generation_and_add_random_state, gen_accounts,
-        init, propose_and_vote_contract_binary,
+        call_contract_key_generation, execute_key_generation_and_add_random_state_legacy,
+        gen_accounts, init, propose_and_vote_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -12,7 +12,7 @@ use crate::sandbox::{
     },
 };
 use contract_interface::method_names;
-use contract_interface::types::ProtocolContractState;
+use contract_interface::types::{self as dtos, ProtocolContractState};
 use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
@@ -165,7 +165,7 @@ async fn propose_upgrade_from_production_to_current_binary(
         .unwrap();
 
     // Add state so migration logic is exercised
-    execute_key_generation_and_add_random_state(
+    execute_key_generation_and_add_random_state_legacy(
         &accounts,
         participants,
         &contract,
@@ -212,7 +212,7 @@ async fn upgrade_preserves_state_and_requests(
 
     let attested_account = &accounts[0];
 
-    let injected_contract_state = execute_key_generation_and_add_random_state(
+    let injected_contract_state = execute_key_generation_and_add_random_state_legacy(
         &accounts,
         participants,
         &contract,
@@ -322,7 +322,7 @@ async fn upgrade_allows_new_request_types(
         .unwrap();
     let attested_account = &accounts[0];
 
-    let injected_contract_state = execute_key_generation_and_add_random_state(
+    let injected_contract_state = execute_key_generation_and_add_random_state_legacy(
         &accounts,
         participants,
         &contract,
@@ -350,14 +350,20 @@ async fn upgrade_allows_new_request_types(
 
     // 2. Add new domains
     let domains_to_add = [
-        DomainConfig {
-            id: first_available_domain_id.into(),
-            scheme: SignatureScheme::Bls12381,
-        },
-        DomainConfig {
-            id: (first_available_domain_id + 1).into(),
-            scheme: SignatureScheme::Ed25519,
-        },
+        (
+            DomainConfig {
+                id: first_available_domain_id.into(),
+                scheme: SignatureScheme::Bls12381,
+            },
+            dtos::DomainPurpose::CKD,
+        ),
+        (
+            DomainConfig {
+                id: (first_available_domain_id + 1).into(),
+                scheme: SignatureScheme::Ed25519,
+            },
+            dtos::DomainPurpose::Sign,
+        ),
     ];
 
     const EPOCH_ID: u64 = 0;

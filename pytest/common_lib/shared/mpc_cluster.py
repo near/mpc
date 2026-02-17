@@ -159,11 +159,12 @@ class MpcCluster:
         self,
         participants: List[MpcNode],
         threshold: int,
-        domains=["Secp256k1", "Ed25519", "Bls12381"],
+        domains=[("Secp256k1", "Sign"), ("Ed25519", "Sign"), ("Bls12381", "CKD")],
     ):
         """
         initializes the contract with `participants` and `threshold`.
-        Adds `Secp256k1`, `Ed25519` and `Bls12381` to the contract domains.
+        Adds domains with their purposes.
+        Each entry is a (scheme, purpose) tuple, e.g. ("Secp256k1", "Sign").
         """
         self.define_candidate_set(participants)
         self.update_participant_status(
@@ -279,9 +280,14 @@ class MpcCluster:
 
     def add_domains(
         self,
-        schemes: List[SignatureScheme],
+        schemes,
         wait_for_running=True,
     ):
+        """
+        Add domains to the contract. `schemes` is a list of either:
+        - (scheme, purpose) tuples, e.g. [("Secp256k1", "Sign"), ("Bls12381", "CKD")]
+        - plain scheme strings for backwards compatibility, e.g. ["Secp256k1"] (purpose inferred)
+        """
         print(f"\033[91m(Vote Domains) Adding domains: \033[93m{schemes}\033[0m")
         state = self.contract_state()
         state.print()
@@ -289,12 +295,17 @@ class MpcCluster:
         assert isinstance(state.protocol_state, RunningProtocolState)
         domains_to_add = []
         next_domain_id = state.protocol_state.next_domain_id()
-        for scheme in schemes:
+        for entry in schemes:
+            if isinstance(entry, tuple):
+                scheme, purpose = entry
+            else:
+                scheme = entry
+                purpose = "CKD" if scheme == "Bls12381" else "Sign"
             domains_to_add.append(
-                {
-                    "id": next_domain_id,
-                    "scheme": scheme,
-                }
+                [
+                    {"id": next_domain_id, "scheme": scheme},
+                    purpose,
+                ]
             )
             next_domain_id += 1
         args = {

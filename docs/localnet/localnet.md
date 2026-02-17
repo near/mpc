@@ -387,7 +387,8 @@ Now the contract should be initialized and both nodes are running.
 To verify that the network is working let's request a singature from it.
 To do this, we first need to add a domain.
 
-Let's have Frodo and Sam both vote to add secp256k1, ed25519 and bls12381 domains.
+Let's have Frodo and Sam both vote to add secp256k1, ed25519, bls12381, and a ForeignTx (secp256k1) domain.
+The ForeignTx domain is used for foreign chain transaction verification.
 
 ```shell
 near contract call-function as-transaction mpc-contract.test.near vote_add_domains file-args docs/localnet/args/add_domain.json prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
@@ -455,6 +456,9 @@ Tadaaa! Now you should have a fully functioning MPC network running on your
 machine ready to produce signatures.
 
 ### Foreign transaction validation request
+
+This uses the ForeignTx domain (domain_id 3) which was created for this purpose.
+
 ```shell
 near contract call-function as-transaction mpc-contract.test.near verify_foreign_transaction file-args docs/localnet/args/verify_foreign_tx.json prepaid-gas '300.0 Tgas' attached-deposit '100 yoctoNEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```

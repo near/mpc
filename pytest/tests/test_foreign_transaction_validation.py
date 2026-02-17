@@ -331,7 +331,11 @@ def foreign_tx_validation_cluster():
     for node in mpc_nodes:
         node.run()
 
-    cluster.init_cluster(participants=mpc_nodes, threshold=2, domains=["Secp256k1"])
+    cluster.init_cluster(
+        participants=mpc_nodes,
+        threshold=2,
+        domains=[("Secp256k1", "Sign"), ("Secp256k1", "ForeignTx")],
+    )
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
@@ -383,10 +387,11 @@ def test_verify_foreign_transaction_bitcoin(
     """
     cluster, _mpc_nodes = foreign_tx_validation_cluster
 
-    # Find the Secp256k1 domain
-    contract_state = cluster.contract_state()
-    domains = contract_state.get_running_domains()
-    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+    # Find the ForeignTx domain via the domain_purposes view
+    domain_purposes = cluster.view_contract_function("get_domain_purposes")
+    foreign_tx_domain_id = next(
+        int(did) for did, purpose in domain_purposes.items() if purpose == "ForeignTx"
+    )
 
     # Build the verify_foreign_transaction args
     args = {
@@ -399,7 +404,7 @@ def test_verify_foreign_transaction_bitcoin(
                 }
             },
             "derivation_path": "test",
-            "domain_id": secp_domain.id,
+            "domain_id": foreign_tx_domain_id,
             "payload_version": 1,
         }
     }
@@ -462,10 +467,11 @@ def test_verify_foreign_transaction_abstract(
     """
     cluster, _mpc_nodes = foreign_tx_validation_cluster
 
-    # Find the Secp256k1 domain
-    contract_state = cluster.contract_state()
-    domains = contract_state.get_running_domains()
-    secp_domain = next(d for d in domains if d.scheme == "Secp256k1")
+    # Find the ForeignTx domain via the domain_purposes view
+    domain_purposes = cluster.view_contract_function("get_domain_purposes")
+    foreign_tx_domain_id = next(
+        int(did) for did, purpose in domain_purposes.items() if purpose == "ForeignTx"
+    )
 
     # Build the verify_foreign_transaction args
     args = {
@@ -478,7 +484,7 @@ def test_verify_foreign_transaction_abstract(
                 }
             },
             "derivation_path": "test",
-            "domain_id": secp_domain.id,
+            "domain_id": foreign_tx_domain_id,
             "payload_version": 1,
         }
     }

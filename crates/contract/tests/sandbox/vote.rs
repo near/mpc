@@ -15,7 +15,7 @@ use crate::sandbox::{
 };
 use assert_matches::assert_matches;
 use contract_interface::{method_names, types as dtos};
-use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
+use dtos::{AttemptId, DomainPurpose, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
@@ -46,10 +46,13 @@ async fn test_keygen() -> anyhow::Result<()> {
     vote_add_domains(
         &contract,
         &mpc_signer_accounts,
-        &[DomainConfig {
-            id: domain_id.into(),
-            scheme,
-        }],
+        &[(
+            DomainConfig {
+                id: domain_id.into(),
+                scheme,
+            },
+            DomainPurpose::Sign,
+        )],
     )
     .await
     .unwrap();
@@ -143,13 +146,20 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
         let threshold = init_running.parameters.threshold.0 as usize;
 
         // vote to start key generation
+        let purpose = match scheme {
+            SignatureScheme::Bls12381 => DomainPurpose::CKD,
+            _ => DomainPurpose::Sign,
+        };
         vote_add_domains(
             &contract,
             &mpc_signer_accounts,
-            &[DomainConfig {
-                id: next_domain_id.into(),
-                scheme: *scheme,
-            }],
+            &[(
+                DomainConfig {
+                    id: next_domain_id.into(),
+                    scheme: *scheme,
+                },
+                purpose,
+            )],
         )
         .await
         .unwrap();

@@ -1,4 +1,4 @@
-use super::domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+use super::domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -42,6 +42,20 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
         });
     }
     new_domains
+}
+
+/// Generates a valid list of (DomainConfig, DomainPurpose) to add to the given registry.
+pub fn gen_domains_to_add_with_purposes(
+    registry: &DomainRegistry,
+    num_domains: usize,
+) -> Vec<(DomainConfig, DomainPurpose)> {
+    gen_domains_to_add(registry, num_domains)
+        .into_iter()
+        .map(|d| {
+            let purpose = DomainPurpose::infer_from_scheme(d.scheme);
+            (d, purpose)
+        })
+        .collect()
 }
 fn gen_random_edwards_point() -> (SerializableEdwardsPoint, CompressedEdwardsY) {
     let rng = rand::thread_rng();

@@ -1,5 +1,6 @@
 ---
 source: crates/contract/tests/abi.rs
+assertion_line: 49
 expression: abi
 ---
 {
@@ -196,6 +197,19 @@ expression: abi
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      {
+        "name": "get_domain_purposes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/DomainPurpose2"
+            }
           }
         }
       },
@@ -398,6 +412,18 @@ expression: abi
                     "type": "null"
                   }
                 ]
+              }
+            },
+            {
+              "name": "domain_purposes",
+              "type_schema": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": {
+                  "$ref": "#/definitions/DomainPurpose"
+                }
               }
             }
           ]
@@ -1105,7 +1131,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().\n Each domain must be accompanied by a `DomainPurpose` that determines which endpoints\n can use the domain.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1115,7 +1141,17 @@ expression: abi
               "type_schema": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/DomainConfig"
+                  "type": "array",
+                  "items": [
+                    {
+                      "$ref": "#/definitions/DomainConfig"
+                    },
+                    {
+                      "$ref": "#/definitions/DomainPurpose"
+                    }
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2
                 }
               }
             }
@@ -1335,7 +1371,17 @@ expression: abi
               "additionalProperties": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/DomainConfig2"
+                  "type": "array",
+                  "items": [
+                    {
+                      "$ref": "#/definitions/DomainConfig2"
+                    },
+                    {
+                      "$ref": "#/definitions/DomainPurpose2"
+                    }
+                  ],
+                  "maxItems": 2,
+                  "minItems": 2
                 }
               }
             }
@@ -1715,6 +1761,24 @@ expression: abi
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "DomainPurpose": {
+          "description": "The intended purpose of a domain, used to enforce that `sign()`, `verify_foreign_transaction()`, and `request_app_private_key()` are each called only on domains created for that purpose.",
+          "type": "string",
+          "enum": [
+            "Sign",
+            "ForeignTx",
+            "CKD"
+          ]
+        },
+        "DomainPurpose2": {
+          "description": "The intended purpose of a domain.",
+          "type": "string",
+          "enum": [
+            "Sign",
+            "ForeignTx",
+            "CKD"
+          ]
         },
         "DomainRegistry": {
           "description": "Registry of all signature domains.",

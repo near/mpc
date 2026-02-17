@@ -7,6 +7,8 @@
 //! However, this approach (a) requires manual effort from a developer and (b) increases the binary size.
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::types as dtos;
 use near_sdk::{env, store::LookupMap};
@@ -23,6 +25,8 @@ use crate::{
     Config, ForeignChainPolicyVotes, StaleData, StorageKey,
 };
 
+/// The contract state layout of the current production contract.
+/// This does not have `pending_verify_foreign_tx_requests` or `domain_purposes`.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct MpcContract {
     protocol_state: ProtocolContractState,
@@ -61,6 +65,7 @@ impl From<MpcContract> for crate::MpcContract {
             accept_requests: value.accept_requests,
             node_migrations: value.node_migrations,
             stale_data: crate::StaleData {},
+            domain_purposes: BTreeMap::new(),
         }
     }
 }

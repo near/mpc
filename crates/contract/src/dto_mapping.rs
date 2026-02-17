@@ -30,7 +30,9 @@ use crate::{
     derive_foreign_tx_tweak,
     errors::{ConversionError, Error},
     primitives::{
-        domain::{AddDomainsVotes, DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+        domain::{
+            AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme,
+        },
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId,
             KeyForDomain, Keyset,
@@ -634,6 +636,26 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
     }
 }
 
+impl IntoInterfaceType<dtos::DomainPurpose> for DomainPurpose {
+    fn into_dto_type(self) -> dtos::DomainPurpose {
+        match self {
+            DomainPurpose::Sign => dtos::DomainPurpose::Sign,
+            DomainPurpose::ForeignTx => dtos::DomainPurpose::ForeignTx,
+            DomainPurpose::CKD => dtos::DomainPurpose::CKD,
+        }
+    }
+}
+
+impl IntoContractType<DomainPurpose> for dtos::DomainPurpose {
+    fn into_contract_type(self) -> DomainPurpose {
+        match self {
+            dtos::DomainPurpose::Sign => DomainPurpose::Sign,
+            dtos::DomainPurpose::ForeignTx => DomainPurpose::ForeignTx,
+            dtos::DomainPurpose::CKD => DomainPurpose::CKD,
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
     fn into_dto_type(self) -> dtos::DomainConfig {
         dtos::DomainConfig {
@@ -763,7 +785,10 @@ impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
                 .map(|(participant, domains)| {
                     (
                         participant.into_dto_type(),
-                        domains.iter().map(|d| d.into_dto_type()).collect(),
+                        domains
+                            .iter()
+                            .map(|(d, p)| (d.into_dto_type(), p.into_dto_type()))
+                            .collect(),
                     )
                 })
                 .collect(),

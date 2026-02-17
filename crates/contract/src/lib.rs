@@ -69,7 +69,7 @@ use near_sdk::{
 };
 use node_migrations::{BackupServiceInfo, DestinationNodeInfo, NodeMigrations};
 use primitives::{
-    domain::{DomainConfig, DomainId, DomainRegistry, SignatureScheme},
+    domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme},
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     signature::{SignRequest, SignRequestArgs, SignatureRequest, YieldIndex},
     thresholds::{Threshold, ThresholdParameters},
@@ -113,6 +113,7 @@ pub struct MpcContract {
     accept_requests: bool,
     node_migrations: NodeMigrations,
     stale_data: StaleData,
+    domain_purposes: BTreeMap<DomainId, DomainPurpose>,
 }
 
 /// A container for "orphaned" state that persists across contract migrations.
@@ -158,6 +159,17 @@ impl ForeignChainPolicyVotes {
 }
 
 impl MpcContract {
+    fn effective_domain_purpose(
+        &self,
+        domain_id: DomainId,
+        scheme: SignatureScheme,
+    ) -> DomainPurpose {
+        self.domain_purposes
+            .get(&domain_id)
+            .copied()
+            .unwrap_or_else(|| DomainPurpose::infer_from_scheme(scheme))
+    }
+
     pub(crate) fn public_key_extended(
         &self,
         domain_id: DomainId,
@@ -239,6 +251,17 @@ impl MpcContract {
                 .to_string(),
             );
         };
+
+        let purpose = self.effective_domain_purpose(domain_config.id, domain_config.scheme);
+        if purpose != DomainPurpose::Sign {
+            env::panic_str(
+                &InvalidParameters::DomainPurposeMismatch {
+                    domain_id: request.domain_id,
+                }
+                .message("sign() requires a domain with purpose Sign")
+                .to_string(),
+            );
+        }
 
         // ensure the signer sent a valid signature request
         // It's important we fail here because the MPC nodes will fail in an identical way.
@@ -418,6 +441,17 @@ impl MpcContract {
                 .to_string(),
             );
         };
+        let purpose = self.effective_domain_purpose(domain_config.id, domain_config.scheme);
+        if purpose != DomainPurpose::CKD {
+            env::panic_str(
+                &InvalidParameters::DomainPurposeMismatch {
+                    domain_id: request.domain_id,
+                }
+                .message("request_app_private_key() requires a domain with purpose CKD")
+                .to_string(),
+            );
+        }
+
         if domain_config.scheme != SignatureScheme::Bls12381 {
             env::panic_str(
                 &InvalidParameters::InvalidDomainId
@@ -527,6 +561,17 @@ impl MpcContract {
                 .to_string(),
             );
         };
+
+        let purpose = self.effective_domain_purpose(domain_config.id, domain_config.scheme);
+        if purpose != DomainPurpose::ForeignTx {
+            env::panic_str(
+                &InvalidParameters::DomainPurposeMismatch {
+                    domain_id: request.domain_id.0.into(),
+                }
+                .message("verify_foreign_transaction() requires a domain with purpose ForeignTx")
+                .to_string(),
+            );
+        }
 
         if domain_config.scheme != SignatureScheme::Secp256k1 {
             env::panic_str(
@@ -961,16 +1006,24 @@ impl MpcContract {
     ///
     /// The specified list of domains must have increasing and contiguous IDs, and the first ID
     /// must be the same as the `next_domain_id` returned by state().
+    /// Each domain must be accompanied by a `DomainPurpose` that determines which endpoints
+    /// can use the domain.
     #[handle_result]
-    pub fn vote_add_domains(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+    pub fn vote_add_domains(
+        &mut self,
+        domains: Vec<(DomainConfig, DomainPurpose)>,
+    ) -> Result<(), Error> {
         log!(
             "vote_add_domains: signer={}, domains={:?}",
             env::signer_account_id(),
             domains,
         );
 
-        if let Some(new_state) = self.protocol_state.vote_add_domains(domains)? {
+        if let Some((new_state, purposes)) = self.protocol_state.vote_add_domains(domains)? {
             self.protocol_state = new_state;
+            for (domain_id, purpose) in purposes {
+                self.domain_purposes.insert(domain_id, purpose);
+            }
         }
         Ok(())
     }
@@ -1502,6 +1555,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            domain_purposes: BTreeMap::new(),
         })
     }
 
@@ -1515,6 +1569,7 @@ impl MpcContract {
         keyset: Keyset,
         parameters: ThresholdParameters,
         init_config: Option<dtos::InitConfig>,
+        domain_purposes: Option<BTreeMap<DomainId, DomainPurpose>>,
     ) -> Result<Self, Error> {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
@@ -1562,6 +1617,7 @@ impl MpcContract {
             accept_requests: true,
             node_migrations: NodeMigrations::default(),
             stale_data: Default::default(),
+            domain_purposes: domain_purposes.unwrap_or_default(),
         })
     }
 
@@ -1642,6 +1698,13 @@ impl MpcContract {
 
     pub fn get_foreign_chain_policy_proposals(&self) -> dtos::ForeignChainPolicyVotes {
         self.foreign_chain_policy_votes.to_dto()
+    }
+
+    pub fn get_domain_purposes(&self) -> BTreeMap<dtos::DomainId, dtos::DomainPurpose> {
+        self.domain_purposes
+            .iter()
+            .map(|(id, purpose)| (id.into_dto_type(), purpose.into_dto_type()))
+            .collect()
     }
 
     // contract version
@@ -2158,6 +2221,14 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
+        basic_setup_with_purpose(scheme, None, rng)
+    }
+
+    fn basic_setup_with_purpose(
+        scheme: SignatureScheme,
+        purpose: Option<DomainPurpose>,
+        rng: &mut impl CryptoRngCore,
+    ) -> (VMContext, MpcContract, SharedSecretKey) {
         let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
         let context = VMContextBuilder::new()
             .attached_deposit(NearToken::from_yoctonear(1))
@@ -2179,7 +2250,10 @@ mod tests {
         };
         let keyset = Keyset::new(epoch_id, vec![key_for_domain]);
         let parameters = ThresholdParameters::new(gen_participants(4), Threshold::new(3)).unwrap();
-        let contract = MpcContract::init_running(domains, 1, keyset, parameters, None).unwrap();
+        let domain_purposes = purpose.map(|p| BTreeMap::from([(domain_id, p)]));
+        let contract =
+            MpcContract::init_running(domains, 1, keyset, parameters, None, domain_purposes)
+                .unwrap();
         (context, contract, sk)
     }
 
@@ -2412,7 +2486,11 @@ mod tests {
     fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) = basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            Some(DomainPurpose::ForeignTx),
+            &mut rng,
+        );
         let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
             unreachable!();
         };
@@ -2494,8 +2572,11 @@ mod tests {
     fn test_verify_foreign_tx_timeout() {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _secret_key) =
-            basic_setup(SignatureScheme::Secp256k1, &mut rng);
+        let (context, mut contract, _secret_key) = basic_setup_with_purpose(
+            SignatureScheme::Secp256k1,
+            Some(DomainPurpose::ForeignTx),
+            &mut rng,
+        );
         let request_args = VerifyForeignTransactionRequestArgs {
             derivation_path: "".to_string(),
             domain_id: DomainId::default().0.into(),
@@ -2904,6 +2985,7 @@ mod tests {
                 tee_state: Default::default(),
                 node_migrations: Default::default(),
                 stale_data: Default::default(),
+                domain_purposes: BTreeMap::new(),
             }
         }
     }
@@ -3908,9 +3990,15 @@ mod tests {
         };
         let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
 
-        let mut contract =
-            MpcContract::init_running(domains.clone(), 1, keyset.clone(), parameters.clone(), None)
-                .unwrap();
+        let mut contract = MpcContract::init_running(
+            domains.clone(),
+            1,
+            keyset.clone(),
+            parameters.clone(),
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(matches!(
             contract.protocol_state,
