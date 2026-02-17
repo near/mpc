@@ -8,6 +8,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
+use contract_interface::method_names;
 use contract_interface::types as dtos;
 use mpc_contract::{
     primitives::{
@@ -50,14 +51,14 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
     execute_async_transactions(
         &mpc_signer_accounts[0..2],
         &contract,
-        "vote_update",
+        method_names::VOTE_UPDATE,
         &json!({"id": update_id}),
         GAS_FOR_VOTE_UPDATE,
     )
     .await?;
 
     let proposals_before: dtos::ProposedUpdates =
-        contract.view("proposed_updates").await?.json()?;
+        contract.view(method_names::PROPOSED_UPDATES).await?.json()?;
 
     assert_expected_proposed_update(
         &proposals_before,
@@ -105,7 +106,7 @@ async fn update_votes_from_kicked_out_participants_are_cleared_after_resharing()
 
     // then: the cleanup promise removes participant 0's vote from storage
     let final_participants = assert_running_return_participants(&contract).await?;
-    let proposals_after: dtos::ProposedUpdates = contract.view("proposed_updates").await?.json()?;
+    let proposals_after: dtos::ProposedUpdates = contract.view(method_names::PROPOSED_UPDATES).await?.json()?;
 
     assert_expected_proposed_update(
         &proposals_after,

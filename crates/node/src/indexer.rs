@@ -12,6 +12,7 @@ use crate::{
 
 use self::stats::IndexerStats;
 use anyhow::Context;
+use contract_interface::method_names;
 use contract_interface::types as dtos;
 use handler::ChainBlockUpdate;
 use mpc_contract::{
@@ -411,14 +412,16 @@ struct IndexerClient {
 }
 
 const INTERVAL: Duration = Duration::from_millis(500);
-const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = "allowed_docker_image_hashes";
-const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str = "allowed_launcher_compose_hashes";
-const TEE_ACCOUNTS_ENDPOINT: &str = "get_tee_accounts";
-pub const MIGRATION_INFO_ENDPOINT: &str = "migration_info";
-const CONTRACT_STATE_ENDPOINT: &str = "state";
-const GET_TEE_ATTESTATION_ENDPOINT: &str = "get_attestation";
-const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = "get_foreign_chain_policy";
-const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str = "get_foreign_chain_policy_proposals";
+const ALLOWED_IMAGE_HASHES_ENDPOINT: &str = method_names::ALLOWED_DOCKER_IMAGE_HASHES;
+const ALLOWED_LAUNCHER_COMPOSE_HASHES_ENDPOINT: &str =
+    method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES;
+const TEE_ACCOUNTS_ENDPOINT: &str = method_names::GET_TEE_ACCOUNTS;
+pub const MIGRATION_INFO_ENDPOINT: &str = method_names::MIGRATION_INFO;
+const CONTRACT_STATE_ENDPOINT: &str = method_names::STATE;
+const GET_TEE_ATTESTATION_ENDPOINT: &str = method_names::GET_ATTESTATION;
+const FOREIGN_CHAIN_POLICY_ENDPOINT: &str = method_names::GET_FOREIGN_CHAIN_POLICY;
+const FOREIGN_CHAIN_POLICY_PROPOSALS_ENDPOINT: &str =
+    method_names::GET_FOREIGN_CHAIN_POLICY_PROPOSALS;
 
 impl IndexerClient {
     async fn wait_for_full_sync(&self) {

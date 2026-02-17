@@ -12,6 +12,7 @@ use crate::sandbox::{
     },
 };
 use anyhow::Result;
+use contract_interface::method_names;
 use contract_interface::types::{self as dtos, Attestation, MockAttestation};
 use mpc_contract::{
     errors::InvalidState,
@@ -152,7 +153,7 @@ async fn test_vote_code_hash_doesnt_accept_account_id_not_in_participant_list() 
     let allowed_mpc_image_digest = image_digest();
 
     let res = random_account
-        .call(contract.id(), "vote_code_hash")
+        .call(contract.id(), method_names::VOTE_CODE_HASH)
         .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
         .transact()
         .await?;
@@ -180,7 +181,7 @@ async fn test_vote_code_hash_accepts_allowed_mpc_image_digest_hex_parameter() ->
     let res = mpc_signer_accounts
         .first()
         .unwrap()
-        .call(contract.id(), "vote_code_hash")
+        .call(contract.id(), method_names::VOTE_CODE_HASH)
         .args_json(serde_json::json!({"code_hash": allowed_mpc_image_digest}))
         .transact()
         .await?;
@@ -192,7 +193,7 @@ async fn get_allowed_launcher_compose_hashes(
     contract: &Contract,
 ) -> Result<Vec<LauncherDockerComposeHash>> {
     Ok(contract
-        .call("allowed_launcher_compose_hashes")
+        .call(method_names::ALLOWED_LAUNCHER_COMPOSE_HASHES)
         .args_json(serde_json::json!(""))
         .max_gas()
         .transact()
@@ -202,7 +203,7 @@ async fn get_allowed_launcher_compose_hashes(
 
 async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
     contract
-        .call("allowed_docker_image_hashes")
+        .call(method_names::ALLOWED_DOCKER_IMAGE_HASHES)
         .args_json(serde_json::json!(""))
         .max_gas()
         .transact()
@@ -214,7 +215,7 @@ async fn get_allowed_hashes(contract: &Contract) -> Vec<MpcDockerImageHash> {
 
 pub async fn get_participants(contract: &Contract) -> Result<usize> {
     let state = contract
-        .call("state")
+        .call(method_names::STATE)
         .args_json(serde_json::json!(""))
         .max_gas()
         .transact()
@@ -654,7 +655,7 @@ async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> 
 
     // Call verify_tee() to trigger resharing
     let verify_result = mpc_signer_accounts[0]
-        .call(contract.id(), "verify_tee")
+        .call(contract.id(), method_names::VERIFY_TEE)
         .args_json(serde_json::json!({}))
         .max_gas()
         .transact()

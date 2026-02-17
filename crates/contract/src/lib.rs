@@ -44,6 +44,7 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use config::Config;
+use contract_interface::method_names;
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
     VerifyForeignTransactionResponse,
@@ -314,7 +315,7 @@ impl MpcContract {
         );
 
         let promise_index = env::promise_yield_create(
-            "return_signature_and_clean_state_on_success",
+            method_names::RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
@@ -482,7 +483,7 @@ impl MpcContract {
         );
 
         let promise_index = env::promise_yield_create(
-            "return_ck_and_clean_state_on_success",
+            method_names::RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),
@@ -587,7 +588,7 @@ impl MpcContract {
         let request = args_into_verify_foreign_tx_request(request, &predecessor);
 
         let promise_index = env::promise_yield_create(
-            "return_verify_foreign_tx_and_clean_state_on_success",
+            method_names::RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
             serde_json::to_vec(&(&request,)).unwrap(),
             callback_gas,
             GasWeight(0),

@@ -11,6 +11,7 @@ use crate::sandbox::{
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
     },
 };
+use contract_interface::method_names;
 use contract_interface::types::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::CKDResponse,
@@ -53,7 +54,7 @@ async fn init_old_contract(
     let threshold_parameters = ThresholdParameters::new(participants.clone(), threshold).unwrap();
 
     contract
-        .call("init")
+        .call(method_names::INIT)
         .args_json(serde_json::json!({
             "parameters": threshold_parameters,
         }))
@@ -65,7 +66,7 @@ async fn init_old_contract(
 
 async fn healthcheck(contract: &Contract) -> anyhow::Result<bool> {
     let status = contract
-        .call("state")
+        .call(method_names::STATE)
         .transact()
         .await?
         .into_result()
@@ -92,7 +93,7 @@ async fn upgrade_to_new(old_contract: Contract) -> anyhow::Result<Contract> {
 /// Migrates the contract to a current contract build
 /// and sanity checks that the upgraded code matches compiled contract bytes.
 async fn migrate_and_assert_contract_code(contract: &Contract) -> anyhow::Result<()> {
-    contract.call("migrate").transact().await?.into_result()?;
+    contract.call(method_names::MIGRATE).transact().await?.into_result()?;
     let code_hash_post_upgrade = contract.view_code().await.unwrap();
     let current_code_hash = current_contract();
 
@@ -423,7 +424,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
     });
 
     let execution_error = accounts[0]
-        .call(contract.id(), "init_running")
+        .call(contract.id(), method_names::INIT_RUNNING)
         .max_gas()
         .args_json(init_running_args)
         .transact()

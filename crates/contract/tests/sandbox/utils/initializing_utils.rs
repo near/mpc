@@ -1,3 +1,4 @@
+use contract_interface::method_names;
 use contract_interface::types::{self as dtos};
 use dtos::KeyEventId;
 use mpc_contract::primitives::domain::DomainConfig;
@@ -21,7 +22,7 @@ pub async fn vote_add_domains(
     execute_async_transactions(
         accounts,
         contract,
-        "vote_add_domains",
+        method_names::VOTE_ADD_DOMAINS,
         &args,
         GAS_FOR_VOTE_NEW_DOMAIN,
     )
@@ -57,7 +58,7 @@ pub async fn start_keygen_instance(
         })
         .unwrap();
     let result = leader
-        .call(contract.id(), "start_keygen_instance")
+        .call(contract.id(), method_names::START_KEYGEN_INSTANCE)
         .args_json(json!({"key_event_id": key_event_id}))
         .transact()
         .await?;
@@ -81,7 +82,7 @@ pub async fn vote_public_key(
     execute_async_transactions(
         accounts,
         contract,
-        "vote_pk",
+        method_names::VOTE_PK,
         &vote_pk_args,
         GAS_FOR_VOTE_PK,
     )

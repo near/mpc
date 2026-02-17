@@ -283,7 +283,7 @@ async fn submit_sign_request(
     request: &SignRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, "sign", request).await
+    submit_request(account, contract, contract_interface::method_names::SIGN, request).await
 }
 
 async fn submit_ckd_request(
@@ -291,7 +291,7 @@ async fn submit_ckd_request(
     request: &CKDRequestArgs,
     contract: &Contract,
 ) -> anyhow::Result<TransactionStatus> {
-    submit_request(account, contract, "request_app_private_key", request).await
+    submit_request(account, contract, contract_interface::method_names::REQUEST_APP_PRIVATE_KEY, request).await
 }
 
 async fn submit_response(
@@ -316,7 +316,7 @@ pub async fn submit_signature_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, "respond", response).await
+    submit_response(contract, attested_account, contract_interface::method_names::RESPOND, response).await
 }
 
 pub async fn submit_ckd_response(
@@ -324,7 +324,7 @@ pub async fn submit_ckd_response(
     contract: &Contract,
     attested_account: &Account,
 ) -> anyhow::Result<()> {
-    submit_response(contract, attested_account, "respond_ckd", response).await
+    submit_response(contract, attested_account, contract_interface::method_names::RESPOND_CKD, response).await
 }
 
 trait ContractQueueRequest: serde::Serialize + Sync {
@@ -334,7 +334,7 @@ trait ContractQueueRequest: serde::Serialize + Sync {
 impl ContractQueueRequest for CKDRequest {
     async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
         contract
-            .view("get_pending_ckd_request")
+            .view(contract_interface::method_names::GET_PENDING_CKD_REQUEST)
             .args_json(serde_json::json!({ "request": self }))
             .await
             .unwrap()
@@ -346,7 +346,7 @@ impl ContractQueueRequest for CKDRequest {
 impl ContractQueueRequest for SignatureRequest {
     async fn is_in_queue(&self, contract: &Contract) -> Option<YieldIndex> {
         contract
-            .view("get_pending_request")
+            .view(contract_interface::method_names::GET_PENDING_REQUEST)
             .args_json(serde_json::json!({ "request": self }))
             .await
             .unwrap()

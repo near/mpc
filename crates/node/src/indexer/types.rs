@@ -1,5 +1,6 @@
 use crate::types::{CKDRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
+use contract_interface::method_names;
 use contract_interface::types::{
     self as dtos, VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
 };
@@ -231,21 +232,27 @@ pub enum ChainSendTransactionRequest {
 impl ChainSendTransactionRequest {
     pub fn method(&self) -> &'static str {
         match self {
-            ChainSendTransactionRequest::Respond(_) => "respond",
-            ChainSendTransactionRequest::CKDRespond(_) => "respond_ckd",
-            ChainSendTransactionRequest::VotePk(_) => "vote_pk",
-            ChainSendTransactionRequest::VoteReshared(_) => "vote_reshared",
-            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => "vote_foreign_chain_policy",
-            ChainSendTransactionRequest::StartReshare(_) => "start_reshare_instance",
-            ChainSendTransactionRequest::StartKeygen(_) => "start_keygen_instance",
-            ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
-                "vote_abort_key_event_instance"
+            ChainSendTransactionRequest::Respond(_) => method_names::RESPOND,
+            ChainSendTransactionRequest::CKDRespond(_) => method_names::RESPOND_CKD,
+            ChainSendTransactionRequest::VotePk(_) => method_names::VOTE_PK,
+            ChainSendTransactionRequest::VoteReshared(_) => method_names::VOTE_RESHARED,
+            ChainSendTransactionRequest::VoteForeignChainPolicy(_) => {
+                method_names::VOTE_FOREIGN_CHAIN_POLICY
             }
-            ChainSendTransactionRequest::VerifyTee() => "verify_tee",
-            ChainSendTransactionRequest::SubmitParticipantInfo(_) => "submit_participant_info",
-            ChainSendTransactionRequest::ConcludeNodeMigration(_) => "conclude_node_migration",
+            ChainSendTransactionRequest::StartReshare(_) => method_names::START_RESHARE_INSTANCE,
+            ChainSendTransactionRequest::StartKeygen(_) => method_names::START_KEYGEN_INSTANCE,
+            ChainSendTransactionRequest::VoteAbortKeyEventInstance(_) => {
+                method_names::VOTE_ABORT_KEY_EVENT_INSTANCE
+            }
+            ChainSendTransactionRequest::VerifyTee() => method_names::VERIFY_TEE,
+            ChainSendTransactionRequest::SubmitParticipantInfo(_) => {
+                method_names::SUBMIT_PARTICIPANT_INFO
+            }
+            ChainSendTransactionRequest::ConcludeNodeMigration(_) => {
+                method_names::CONCLUDE_NODE_MIGRATION
+            }
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
-                "respond_verify_foreign_tx"
+                method_names::RESPOND_VERIFY_FOREIGN_TX
             }
         }
     }
