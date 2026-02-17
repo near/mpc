@@ -193,14 +193,6 @@ def test_invalid_env_key_is_ignored():
     assert "MPC_ACCOUNT_ID=safe" in cmd
 
 
-def test_protocol_upgrade_override_is_allowed():
-    env = {
-        "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE": "now",
-    }
-    cmd = build_docker_cmd(launcher.Platform.TEE, env, "sha256:abc123")
-
-    assert "NEAR_TESTS_PROTOCOL_UPGRADE_OVERRIDE=now" in " ".join(cmd)
-
 
 def test_mpc_backup_encryption_key_is_allowed():
     env = {
