@@ -15,7 +15,6 @@ use threshold_signatures::frost_secp256k1::VerifyingKey;
 
 pub struct VerifyForeignTxProvider<ForeignChainPolicyReader> {
     config: Arc<ConfigFile>,
-    #[allow(dead_code)]
     foreign_chain_policy_reader: ForeignChainPolicyReader,
     // TODO(#2076): This field might become useful when domain separation is implemented
     #[allow(dead_code)]
@@ -56,8 +55,10 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
     }
 }
 
-impl<ForeignChainPolicyReader: Send + Sync> SignatureProvider
+impl<ForeignChainPolicyReader> SignatureProvider
     for VerifyForeignTxProvider<ForeignChainPolicyReader>
+where
+    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy,
 {
     type PublicKey = VerifyingKey;
     type SecretShare = SigningShare;
