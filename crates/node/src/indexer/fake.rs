@@ -336,9 +336,6 @@ impl FakeMpcContractState {
     ) -> Result<(), &'static str> {
         let mut seen_chains = BTreeSet::new();
         for config in &policy.chains {
-            if config.providers.is_empty() {
-                return Err("foreign chain config must include at least one provider");
-            }
             if !seen_chains.insert(config.chain.clone()) {
                 return Err("duplicate foreign chain entries in policy");
             }
@@ -1178,32 +1175,9 @@ mod tests {
     use rand::SeedableRng as _;
 
     #[test]
-    fn vote_foreign_chain_policy__should_reject_empty_providers() {
-        // Given
-        let account_id: AccountId = "test0.near".parse().unwrap();
-        let participants = participants_config_with_signer(account_id.clone());
-        let mut contract = FakeMpcContractState::new();
-        contract.initialize(participants);
-
-        let malformed_policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::new(),
-            }]),
-        };
-
-        // When
-        contract.vote_foreign_chain_policy(account_id.clone(), malformed_policy);
-
-        // Then
-        assert_eq!(
-            contract.foreign_chain_policy(),
-            &dtos::ForeignChainPolicy::default()
-        );
-        assert!(!contract
-            .foreign_chain_policy_votes()
-            .proposal_by_account
-            .contains_key(&dtos::AccountId(account_id.to_string())));
+    fn non_empty_btree_set__should_reject_empty_set() {
+        let result = dtos::NonEmptyBTreeSet::<dtos::RpcProvider>::new(BTreeSet::new());
+        assert!(result.is_err());
     }
 
     fn participants_config_with_signer(account_id: AccountId) -> ParticipantsConfig {

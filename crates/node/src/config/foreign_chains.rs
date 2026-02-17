@@ -111,13 +111,15 @@ impl ForeignChainsConfig {
 
 fn providers_to_set<P: ForeignChainProviderConfig>(
     providers: &BTreeMap<String, P>,
-) -> BTreeSet<dtos::RpcProvider> {
-    providers
+) -> dtos::NonEmptyBTreeSet<dtos::RpcProvider> {
+    let set: BTreeSet<dtos::RpcProvider> = providers
         .values()
         .map(|provider| dtos::RpcProvider {
             rpc_url: provider.rpc_url().trim().to_string(),
         })
-        .collect()
+        .collect();
+    dtos::NonEmptyBTreeSet::new(set)
+        .expect("providers must be non-empty (validated by validate_chain_config)")
 }
 
 pub(crate) trait ForeignChainProviderConfig {

@@ -3,8 +3,96 @@ use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
 
 use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
+
+/// A `BTreeSet` that is guaranteed to contain at least one element.
+/// Deserialization fails if the set is empty.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct NonEmptyBTreeSet<T: Ord>(BTreeSet<T>);
+
+impl<T: Ord> NonEmptyBTreeSet<T> {
+    pub fn new(set: BTreeSet<T>) -> Result<Self, EmptySetError> {
+        if set.is_empty() {
+            Err(EmptySetError)
+        } else {
+            Ok(Self(set))
+        }
+    }
+
+    pub fn into_inner(self) -> BTreeSet<T> {
+        self.0
+    }
+}
+
+impl<T: Ord> Deref for NonEmptyBTreeSet<T> {
+    type Target = BTreeSet<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Ord> From<NonEmptyBTreeSet<T>> for BTreeSet<T> {
+    fn from(set: NonEmptyBTreeSet<T>) -> Self {
+        set.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmptySetError;
+
+impl std::fmt::Display for EmptySetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "set must contain at least one element")
+    }
+}
+
+impl<T: Ord + Serialize> Serialize for NonEmptyBTreeSet<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de, T: Ord + Deserialize<'de>> Deserialize<'de> for NonEmptyBTreeSet<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let set = BTreeSet::<T>::deserialize(deserializer)?;
+        NonEmptyBTreeSet::new(set).map_err(|e| serde::de::Error::custom(e))
+    }
+}
+
+impl<T: Ord + BorshSerialize> BorshSerialize for NonEmptyBTreeSet<T> {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.0.serialize(writer)
+    }
+}
+
+impl<T: Ord + BorshDeserialize> BorshDeserialize for NonEmptyBTreeSet<T> {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let set = BTreeSet::<T>::deserialize_reader(reader)?;
+        NonEmptyBTreeSet::new(set)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+    }
+}
+
+#[cfg(all(feature = "abi", not(target_arch = "wasm32")))]
+impl<T: Ord + schemars::JsonSchema> schemars::JsonSchema for NonEmptyBTreeSet<T> {
+    fn schema_name() -> String {
+        format!("NonEmptyBTreeSet_{}", T::schema_name())
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        // Reuse BTreeSet's schema with minItems: 1
+        let mut schema = <BTreeSet<T>>::json_schema(generator);
+        if let schemars::schema::Schema::Object(ref mut obj) = schema {
+            if let Some(ref mut array) = obj.array {
+                array.min_items = Some(1);
+            }
+        }
+        schema
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[cfg_attr(
@@ -526,7 +614,7 @@ pub struct ForeignChainPolicy {
 )]
 pub struct ForeignChainConfig {
     pub chain: ForeignChain,
-    pub providers: BTreeSet<RpcProvider>,
+    pub providers: NonEmptyBTreeSet<RpcProvider>,
 }
 
 #[derive(

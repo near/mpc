@@ -196,10 +196,6 @@ impl MpcContract {
     fn validate_foreign_chain_policy(policy: &dtos::ForeignChainPolicy) -> Result<(), Error> {
         let mut seen_chains = BTreeSet::new();
         for config in &policy.chains {
-            if config.providers.is_empty() {
-                return Err(InvalidParameters::MalformedPayload
-                    .message("foreign chain config must include at least one provider"));
-            }
             if !seen_chains.insert(config.chain.clone()) {
                 return Err(InvalidParameters::MalformedPayload
                     .message("duplicate foreign chain entries in policy"));
@@ -4170,36 +4166,31 @@ mod tests {
     }
 
     #[test]
-    fn validate_foreign_chain_policy__should_reject_empty_providers() {
-        // Given
-        let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::new(),
-            }]),
-        };
+    fn non_empty_btree_set__should_reject_empty_set() {
+        // NonEmptyBTreeSet::new rejects empty sets
+        let result = dtos::NonEmptyBTreeSet::<dtos::RpcProvider>::new(BTreeSet::new());
+        assert!(result.is_err());
+    }
 
-        // When
-        let result = MpcContract::validate_foreign_chain_policy(&policy);
-
-        // Then
-        let err = result.expect_err("expected validation to fail");
-        let kind = err.kind().clone();
-        assert_matches!(
-            kind,
-            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
-        );
+    #[test]
+    fn non_empty_btree_set__should_reject_empty_on_json_deserialization() {
+        // Deserializing an empty providers set from JSON should fail
+        let json = r#"{"chain":"Solana","providers":[]}"#;
+        let result = serde_json::from_str::<dtos::ForeignChainConfig>(json);
+        assert!(result.is_err());
     }
 
     #[test]
     fn validate_foreign_chain_policy__should_reject_duplicate_chains() {
         // Given
-        let providers_a = BTreeSet::from([dtos::RpcProvider {
+        let providers_a = dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
             rpc_url: "https://example-a".to_string(),
-        }]);
-        let providers_b = BTreeSet::from([dtos::RpcProvider {
+        }]))
+        .unwrap();
+        let providers_b = dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
             rpc_url: "https://example-b".to_string(),
-        }]);
+        }]))
+        .unwrap();
 
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeSet::from([
@@ -4241,9 +4232,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeSet::from([dtos::ForeignChainConfig {
                 chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+                providers: dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
+                }])).unwrap(),
             }]),
         };
         let _env = Environment::new(None, Some(first_account.clone()), None);
@@ -4283,9 +4274,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeSet::from([dtos::ForeignChainConfig {
                 chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+                providers: dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
+                }])).unwrap(),
             }]),
         };
         let mut env = Environment::new(None, Some(first_account.clone()), None);
@@ -4321,9 +4312,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeSet::from([dtos::ForeignChainConfig {
                 chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+                providers: dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
+                }])).unwrap(),
             }]),
         };
         let non_participant = gen_account_id();
