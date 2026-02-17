@@ -1407,22 +1407,6 @@ expression: abi
             }
           }
         },
-        "BitcoinExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/Hash256"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "BitcoinExtractor": {
           "type": "string",
           "enum": [
@@ -1840,34 +1824,6 @@ expression: abi
             }
           }
         },
-        "EvmExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/Hash256"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Log"
-              ],
-              "properties": {
-                "Log": {
-                  "$ref": "#/definitions/EvmLog"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "EvmExtractor": {
           "oneOf": [
             {
@@ -1908,58 +1864,6 @@ expression: abi
             "Finalized"
           ]
         },
-        "EvmLog": {
-          "type": "object",
-          "required": [
-            "address",
-            "block_hash",
-            "block_number",
-            "data",
-            "log_index",
-            "removed",
-            "topics",
-            "transaction_hash",
-            "transaction_index"
-          ],
-          "properties": {
-            "address": {
-              "$ref": "#/definitions/Hash160"
-            },
-            "block_hash": {
-              "$ref": "#/definitions/Hash256"
-            },
-            "block_number": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "data": {
-              "type": "string"
-            },
-            "log_index": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            },
-            "removed": {
-              "type": "boolean"
-            },
-            "topics": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/Hash256"
-              }
-            },
-            "transaction_hash": {
-              "$ref": "#/definitions/Hash256"
-            },
-            "transaction_index": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
-        },
         "EvmRpcRequest": {
           "type": "object",
           "required": [
@@ -1985,46 +1889,6 @@ expression: abi
         "EvmTxId": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
-        },
-        "ExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BitcoinExtractedValue"
-              ],
-              "properties": {
-                "BitcoinExtractedValue": {
-                  "$ref": "#/definitions/BitcoinExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "EvmExtractedValue"
-              ],
-              "properties": {
-                "EvmExtractedValue": {
-                  "$ref": "#/definitions/EvmExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "StarknetExtractedValue"
-              ],
-              "properties": {
-                "StarknetExtractedValue": {
-                  "$ref": "#/definitions/StarknetExtractedValue"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
         },
         "ForeignChain": {
           "type": "string",
@@ -2150,45 +2014,6 @@ expression: abi
               "additionalProperties": false
             }
           ]
-        },
-        "ForeignTxSignPayload": {
-          "description": "Canonical payload for foreign-chain transaction verification signatures.\n\nThis enum is Borsh-serialized and SHA-256 hashed to produce the 32-byte `msg_hash` that the MPC network signs. Callers select the payload version via `VerifyForeignTransactionRequestArgs::payload_version`.\n\nIMPORTANT: Never reorder existing enum variants or struct fields, as this would change the Borsh encoding and break signature verification.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "V1"
-              ],
-              "properties": {
-                "V1": {
-                  "$ref": "#/definitions/ForeignTxSignPayloadV1"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "ForeignTxSignPayloadV1": {
-          "type": "object",
-          "required": [
-            "request",
-            "values"
-          ],
-          "properties": {
-            "request": {
-              "$ref": "#/definitions/ForeignChainRpcRequest"
-            },
-            "values": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ExtractedValue"
-              }
-            }
-          }
-        },
-        "Hash160": {
-          "type": "string",
-          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Hash256": {
           "type": "string",
@@ -2843,12 +2668,12 @@ expression: abi
         "PromiseOrValueVerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "payload",
+            "payload_hash",
             "signature"
           ],
           "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"
@@ -3541,22 +3366,6 @@ expression: abi
             "minimum": 0.0
           }
         },
-        "StarknetExtractedValue": {
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "BlockHash"
-              ],
-              "properties": {
-                "BlockHash": {
-                  "$ref": "#/definitions/StarknetFelt"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
         "StarknetExtractor": {
           "type": "string",
           "enum": [
@@ -3894,12 +3703,12 @@ expression: abi
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
-            "payload",
+            "payload_hash",
             "signature"
           ],
           "properties": {
-            "payload": {
-              "$ref": "#/definitions/ForeignTxSignPayload"
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
             },
             "signature": {
               "$ref": "#/definitions/SignatureResponse2"

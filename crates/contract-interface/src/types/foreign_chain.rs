@@ -48,7 +48,7 @@ pub struct VerifyForeignTransactionRequest {
     derive(schemars::JsonSchema)
 )]
 pub struct VerifyForeignTransactionResponse {
-    pub payload: ForeignTxSignPayload,
+    pub payload_hash: Hash256,
     pub signature: SignatureResponse,
 }
 

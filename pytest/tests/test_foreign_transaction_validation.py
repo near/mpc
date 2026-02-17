@@ -301,31 +301,13 @@ def test_verify_foreign_transaction_bitcoin(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
         )
 
-        # Verify payload structure
-        payload = response["payload"]
-        assert "V1" in payload, f"Expected V1 payload, got: {payload}"
-
-        v1 = payload["V1"]
-
-        # Verify extracted values contain the mock block hash
-        values = v1["values"]
-        assert len(values) > 0, "Expected at least one extracted value"
-        block_hash_value = values[0]
-        assert "BitcoinExtractedValue" in block_hash_value, (
-            f"Expected BitcoinExtractedValue, got: {block_hash_value}"
+        # Verify payload_hash is present (full payload is no longer returned, only its hash)
+        payload_hash = response["payload_hash"]
+        assert isinstance(payload_hash, str), (
+            f"Expected hex string payload_hash, got: {type(payload_hash)}"
         )
-        assert "BlockHash" in block_hash_value["BitcoinExtractedValue"], (
-            f"Expected BlockHash, got: {block_hash_value['BitcoinExtractedValue']}"
-        )
-        assert (
-            block_hash_value["BitcoinExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH
-        ), (
-            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['BitcoinExtractedValue']['BlockHash']}"
-        )
-
-        # Verify the request in the payload matches what we submitted
-        assert "Bitcoin" in v1["request"], (
-            f"Expected Bitcoin request, got: {v1['request']}"
+        assert len(payload_hash) == 64, (
+            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
         # Verify signature is present and is Secp256k1
@@ -398,41 +380,13 @@ def test_verify_foreign_transaction_abstract(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
         )
 
-        # Verify payload structure
-        payload = response["payload"]
-        assert "V1" in payload, f"Expected V1 payload, got: {payload}"
-
-        v1 = payload["V1"]
-
-        # Verify extracted values contain the mock block hash
-        values = v1["values"]
-        assert len(values) > 1, "Expected at least two extracted values"
-
-        block_hash_value = values[0]
-        assert "EvmExtractedValue" in block_hash_value, (
-            f"Expected EvmExtractedValue, got: {block_hash_value}"
+        # Verify payload_hash is present (full payload is no longer returned, only its hash)
+        payload_hash = response["payload_hash"]
+        assert isinstance(payload_hash, str), (
+            f"Expected hex string payload_hash, got: {type(payload_hash)}"
         )
-        assert "BlockHash" in block_hash_value["EvmExtractedValue"], (
-            f"Expected BlockHash, got: {block_hash_value['EvmExtractedValue']}"
-        )
-        assert block_hash_value["EvmExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH, (
-            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['EvmExtractedValue']['BlockHash']}"
-        )
-
-        log_value = values[1]
-        assert "EvmExtractedValue" in log_value, (
-            f"Expected EvmExtractedValue, got: {log_value}"
-        )
-        assert "Log" in log_value["EvmExtractedValue"], (
-            f"Expected Log, got: {log_value['EvmExtractedValue']}"
-        )
-        assert len(log_value["EvmExtractedValue"]["Log"]) > 0, (
-            f"Expected non-empty log, got {log_value['EvmExtractedValue']['Log']}"
-        )
-
-        # Verify the request in the payload matches what we submitted
-        assert "Abstract" in v1["request"], (
-            f"Expected Abstract request, got: {v1['request']}"
+        assert len(payload_hash) == 64, (
+            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
         # Verify signature is present and is Secp256k1

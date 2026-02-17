@@ -63,15 +63,11 @@ fn log_to_evm_log(value: Log) -> dtos::EvmLog {
         block_number: value.block_number.as_u64(),
         address: dtos::Hash160(value.address.0),
         data: value.data,
-        // TODO(#2089):The topics occupy too much data, breaking the limit on near
-        // promises and making the respond transaction fail
-        topics: vec![],
-        // correct value:
-        // topics: value
-        //     .topics
-        //     .into_iter()
-        //     .map(|t| dtos::Hash256(t.0))
-        //     .collect(),
+        topics: value
+            .topics
+            .into_iter()
+            .map(|t| dtos::Hash256(t.0))
+            .collect(),
     }
 }
 
@@ -372,7 +368,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "TODO(#2089): the topics are currently not converted"]
     fn log_to_evm_log_roundtrip() {
         let log = Log {
             removed: false,

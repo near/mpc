@@ -352,14 +352,14 @@ impl ChainCKDRespondArgs {
 impl ChainVerifyForeignTransactionRespondArgs {
     pub fn new(
         request: VerifyForeignTxRequest,
-        response_payload: dtos::ForeignTxSignPayload,
+        payload_hash: dtos::Hash256,
         signature: Signature,
         public_key: VerifyingKey,
     ) -> anyhow::Result<Self> {
         let recovery_id = ChainSignatureRespondArgs::brute_force_recovery_id(
             &public_key.to_element().to_affine(),
             &signature,
-            &response_payload.compute_msg_hash()?.0,
+            &payload_hash.0,
         )?;
 
         // TODO: this code should be elsewhere
@@ -381,7 +381,7 @@ impl ChainVerifyForeignTransactionRespondArgs {
                 payload_version: request.payload_version,
             },
             response: VerifyForeignTransactionResponse {
-                payload: response_payload,
+                payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
         })
