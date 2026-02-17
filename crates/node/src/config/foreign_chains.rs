@@ -68,41 +68,26 @@ impl ForeignChainsConfig {
             return None;
         }
 
-        let mut chains = BTreeSet::new();
+        let mut chains = BTreeMap::new();
 
         if let Some(config) = &self.solana {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(dtos::ForeignChain::Solana, providers_to_set(&config.providers));
         }
 
         if let Some(config) = &self.bitcoin {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(dtos::ForeignChain::Bitcoin, providers_to_set(&config.providers));
         }
 
         if let Some(config) = &self.ethereum {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Ethereum,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(dtos::ForeignChain::Ethereum, providers_to_set(&config.providers));
         }
 
         if let Some(config) = &self.abstract_chain {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Abstract,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(dtos::ForeignChain::Abstract, providers_to_set(&config.providers));
         }
 
         if let Some(config) = &self.starknet {
-            chains.insert(dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Starknet,
-                providers: providers_to_set(&config.providers),
-            });
+            chains.insert(dtos::ForeignChain::Starknet, providers_to_set(&config.providers));
         }
 
         Some(dtos::ForeignChainPolicy { chains })
@@ -734,12 +719,11 @@ foreign_chains:
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
-        let solana_chain = policy
+        let solana_providers = policy
             .chains
-            .iter()
-            .find(|c| c.chain == contract_interface::types::ForeignChain::Solana)
+            .get(&contract_interface::types::ForeignChain::Solana)
             .unwrap();
-        let provider = solana_chain.providers.iter().next().unwrap();
+        let provider = solana_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://rpc.ankr.com/solana/");
     }
 
@@ -910,12 +894,11 @@ foreign_chains:
         let policy = config.foreign_chains.to_policy().unwrap();
 
         // Then
-        let eth_chain = policy
+        let eth_providers = policy
             .chains
-            .iter()
-            .find(|c| c.chain == contract_interface::types::ForeignChain::Ethereum)
+            .get(&contract_interface::types::ForeignChain::Ethereum)
             .unwrap();
-        let provider = eth_chain.providers.iter().next().unwrap();
+        let provider = eth_providers.iter().next().unwrap();
         assert_eq!(provider.rpc_url, "https://eth-mainnet.g.alchemy.com/v2/");
     }
 }

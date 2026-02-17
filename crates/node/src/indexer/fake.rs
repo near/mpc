@@ -287,11 +287,6 @@ impl FakeMpcContractState {
             return;
         };
 
-        if let Err(e) = Self::validate_foreign_chain_policy(&policy) {
-            tracing::info!("vote_foreign_chain_policy transaction failed: {}", e);
-            return;
-        }
-
         let is_participant = state
             .parameters
             .participants()
@@ -331,17 +326,6 @@ impl FakeMpcContractState {
         }
     }
 
-    fn validate_foreign_chain_policy(
-        policy: &dtos::ForeignChainPolicy,
-    ) -> Result<(), &'static str> {
-        let mut seen_chains = BTreeSet::new();
-        for config in &policy.chains {
-            if !seen_chains.insert(config.chain.clone()) {
-                return Err("duplicate foreign chain entries in policy");
-            }
-        }
-        Ok(())
-    }
 
     pub fn update_participant_info(
         &mut self,
