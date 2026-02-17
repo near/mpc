@@ -114,7 +114,7 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: "get_pending_request".to_string(),
+            method_name: method_names::GET_PENDING_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -155,7 +155,7 @@ impl IndexerViewClient {
 
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
-            method_name: "get_pending_ckd_request".to_string(),
+            method_name: method_names::GET_PENDING_CKD_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);
@@ -197,7 +197,7 @@ impl IndexerViewClient {
         let request = QueryRequest::CallFunction {
             account_id: mpc_contract_id.clone(),
             // TODO(#1959): add this function in the contract
-            method_name: "get_pending_verify_foreign_tx_request".to_string(),
+            method_name: method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST.to_string(),
             args: get_pending_request_args.into(),
         };
         let block_reference = BlockReference::Finality(Finality::Final);

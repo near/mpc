@@ -1131,7 +1131,7 @@ impl MpcContract {
             // Spawn a promise to clean up TEE information for non-participants
             Promise::new(env::current_account_id())
                 .function_call(
-                    "clean_tee_status".to_string(),
+                    method_names::CLEAN_TEE_STATUS.to_string(),
                     vec![],
                     NearToken::from_yoctonear(0),
                     Gas::from_tgas(self.config.clean_tee_status_tera_gas),

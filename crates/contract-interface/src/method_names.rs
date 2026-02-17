@@ -37,6 +37,7 @@ pub const PROPOSE_UPDATE: &str = "propose_update";
 pub const SUBMIT_PARTICIPANT_INFO: &str = "submit_participant_info";
 pub const VERIFY_TEE: &str = "verify_tee";
 pub const CONCLUDE_NODE_MIGRATION: &str = "conclude_node_migration";
+pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
@@ -54,6 +55,7 @@ pub const LATEST_KEY_VERSION: &str = "latest_key_version";
 pub const PROPOSED_UPDATES: &str = "proposed_updates";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
+pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const GET_ATTESTATION: &str = "get_attestation";
 pub const GET_FOREIGN_CHAIN_POLICY: &str = "get_foreign_chain_policy";

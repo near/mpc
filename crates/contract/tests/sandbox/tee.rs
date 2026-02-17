@@ -264,7 +264,7 @@ async fn test_clean_tee_status_denies_external_account_access() -> Result<()> {
 
     // Try to call clean_tee_status from external account - should fail
     let result = external_account
-        .call(contract.id(), "clean_tee_status")
+        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
         .args_json(serde_json::json!({}))
         .transact()
         .await?;
@@ -323,7 +323,7 @@ async fn test_clean_tee_status_succeeds_when_contract_calls_itself() -> Result<(
     // Contract should be able to call clean_tee_status on itself
     let result = contract
         .as_account()
-        .call(contract.id(), "clean_tee_status")
+        .call(contract.id(), method_names::CLEAN_TEE_STATUS)
         .args_json(serde_json::json!({}))
         .transact()
         .await?;

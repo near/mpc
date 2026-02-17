@@ -8,6 +8,7 @@ use crate::{
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use contract_interface::method_names;
 use contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
@@ -200,7 +201,7 @@ impl ProposedUpdates {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
                 promise = promise.deploy_contract(code).function_call(
-                    "migrate",
+                    method_names::MIGRATE,
                     Vec::new(),
                     NearToken::from_near(0),
                     gas,
