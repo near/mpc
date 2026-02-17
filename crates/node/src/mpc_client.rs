@@ -59,7 +59,10 @@ pub struct MpcClient<ForeignChainPolicyReader> {
     domain_to_scheme: HashMap<DomainId, SignatureScheme>,
 }
 
-impl<ForeignChainPolicyReader: Send + Sync + 'static> MpcClient<ForeignChainPolicyReader> {
+impl<ForeignChainPolicyReader> MpcClient<ForeignChainPolicyReader>
+where
+    ForeignChainPolicyReader: crate::indexer::ReadForeignChainPolicy + 'static,
+{
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<ConfigFile>,
