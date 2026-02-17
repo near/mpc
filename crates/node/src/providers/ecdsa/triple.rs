@@ -67,7 +67,7 @@ impl EcdsaSignatureProvider {
         mpc_config: Arc<MpcConfig>,
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
-    ) -> anyhow::Result<()> {
+    ) {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
@@ -117,7 +117,17 @@ impl EcdsaSignatureProvider {
                     start: id_start,
                     count: SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE as u32,
                 };
-                let channel = client.new_channel_for_task(task_id, participants)?;
+                let channel = match client.new_channel_for_task(task_id, participants.clone()) {
+                    Ok(channel) => channel,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to create new channel for task {:?} with error: {}",
+                            task_id,
+                            err
+                        );
+                        continue;
+                    }
+                };
                 let in_flight =
                     in_flight_generations.in_flight(SUPPORTED_TRIPLE_GENERATION_BATCH_SIZE);
                 let parallelism_limiter = parallelism_limiter.clone();
