@@ -585,31 +585,13 @@ def test_verify_foreign_transaction_starknet(
             f"\033[96mVerify Foreign Tx Response: {json.dumps(response, indent=2)}\033[0m"
         )
 
-        # Verify payload structure
-        payload = response["payload"]
-        assert "V1" in payload, f"Expected V1 payload, got: {payload}"
-
-        v1 = payload["V1"]
-
-        # Verify extracted values contain the mock block hash
-        values = v1["values"]
-        assert len(values) > 0, "Expected at least one extracted value"
-        block_hash_value = values[0]
-        assert "StarknetExtractedValue" in block_hash_value, (
-            f"Expected StarknetExtractedValue, got: {block_hash_value}"
+        # Verify payload_hash is present
+        payload_hash = response["payload_hash"]
+        assert isinstance(payload_hash, str), (
+            f"Expected hex string payload_hash, got: {type(payload_hash)}"
         )
-        assert "BlockHash" in block_hash_value["StarknetExtractedValue"], (
-            f"Expected BlockHash, got: {block_hash_value['StarknetExtractedValue']}"
-        )
-        assert (
-            block_hash_value["StarknetExtractedValue"]["BlockHash"] == MOCK_BLOCK_HASH
-        ), (
-            f"Expected block hash {MOCK_BLOCK_HASH}, got {block_hash_value['StarknetExtractedValue']['BlockHash']}"
-        )
-
-        # Verify the request in the payload matches what we submitted
-        assert "Starknet" in v1["request"], (
-            f"Expected Starknet request, got: {v1['request']}"
+        assert len(payload_hash) == 64, (
+            f"Expected 64 hex chars in payload_hash, got: {len(payload_hash)}"
         )
 
         # Verify signature is present and is Secp256k1
