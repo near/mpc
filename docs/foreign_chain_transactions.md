@@ -145,33 +145,21 @@ pub enum SolanaFinality {
 
 ### Response DTOs
 
-The response embeds the sign payload directly, so callers can verify the signature
-by calling `response.payload.compute_msg_hash()` without reconstructing the payload.
+The response contains the hash of the sign payload, so callers can verify the signature
+by checking it against the expected hash they reconstruct locally.
 
 ```rust
 pub struct VerifyForeignTransactionResponse {
-    pub payload: ForeignTxSignPayload,
+    pub payload_hash: Hash256,
     pub signature: SignatureResponse,
 }
-
-pub enum ExtractedValue {
-    BitcoinExtractedValue(BitcoinExtractedValue),
-    EvmExtractedValue(EvmExtractedValue),
-}
-pub enum BitcoinExtractedValue {
-    BlockHash(Hash256),
-}
-pub enum EvmExtractedValue {
-    BlockHash(Hash256),
-}
-
 ```
 
 ### Sign Payload Serialization
 
 The MPC network signs a canonical hash derived from the request and its observed results.
 The payload is versioned to allow future format changes without breaking existing verifiers.
-It is embedded in the response so there is no duplication between payload and response fields.
+Only the hash is included in the response to stay within NEAR's promise data limits.
 
 ```rust
 pub enum ForeignTxSignPayload {

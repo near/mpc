@@ -377,6 +377,36 @@ enum SenderOrNewChannel {
     NewChannel(NetworkTaskChannel),
 }
 
+async fn run_receive_message(
+    client: Arc<MeshNetworkClient>,
+    receiver: &mut Box<dyn MeshNetworkTransportReceiver>,
+    new_channel_sender: &mpsc::UnboundedSender<NetworkTaskChannel>,
+    indexer_heights: Arc<IndexerHeightTracker>,
+) -> anyhow::Result<()> {
+    let message = receiver.receive().await?;
+    match message {
+        PeerMessage::Mpc(message) => {
+            let channel_id = message.message.channel_id;
+            let start_msg = match &message.message.kind {
+                MpcMessageKind::Start(start_msg) => Some(start_msg),
+                _ => None,
+            };
+            match client.sender_for(channel_id, start_msg, message.from) {
+                SenderOrNewChannel::Sender(sender) => {
+                    sender.send(message)?;
+                }
+                SenderOrNewChannel::NewChannel(channel) => {
+                    new_channel_sender.send(channel)?;
+                }
+            }
+        }
+        PeerMessage::IndexerHeight(message) => {
+            indexer_heights.set_height(message.from, message.message.height);
+        }
+    }
+    Ok(())
+}
+
 /// Runs the loop of receiving messages from the transport and dispatching them to the
 /// appropriate MPC task channels. Any new MPC tasks that are triggered due to receiving
 /// a message for an unknown MPC task would be notified via `new_channel_sender`.
@@ -385,28 +415,17 @@ async fn run_receive_messages_loop(
     mut receiver: Box<dyn MeshNetworkTransportReceiver>,
     new_channel_sender: mpsc::UnboundedSender<NetworkTaskChannel>,
     indexer_heights: Arc<IndexerHeightTracker>,
-) -> anyhow::Result<()> {
+) {
     loop {
-        let message = receiver.receive().await?;
-        match message {
-            PeerMessage::Mpc(message) => {
-                let channel_id = message.message.channel_id;
-                let start_msg = match &message.message.kind {
-                    MpcMessageKind::Start(start_msg) => Some(start_msg),
-                    _ => None,
-                };
-                match client.sender_for(channel_id, start_msg, message.from) {
-                    SenderOrNewChannel::Sender(sender) => {
-                        sender.send(message)?;
-                    }
-                    SenderOrNewChannel::NewChannel(channel) => {
-                        new_channel_sender.send(channel)?;
-                    }
-                }
-            }
-            PeerMessage::IndexerHeight(message) => {
-                indexer_heights.set_height(message.from, message.message.height);
-            }
+        if let Err(err) = run_receive_message(
+            client.clone(),
+            &mut receiver,
+            &new_channel_sender,
+            indexer_heights.clone(),
+        )
+        .await
+        {
+            tracing::warn!("run_receive_message failed with error: {err}");
         }
     }
 }
@@ -431,7 +450,7 @@ pub fn run_network_client(
         indexer_heights.clone(),
     ));
     let (new_channel_sender, new_channel_receiver) = mpsc::unbounded_channel();
-    let handle = tracking::spawn_checked(
+    let handle = tracking::spawn(
         "Network receive message loop",
         run_receive_messages_loop(
             client.clone(),
