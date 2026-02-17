@@ -18,7 +18,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use contract_interface::method_names;
 use ed25519_dalek::ed25519::signature::rand_core::OsRng;
 use ed25519_dalek::SigningKey;
-use contract_interface::method_names;
 use mpc_contract::tee::proposal::MpcDockerImageHash;
 use mpc_contract::{
     primitives::{
