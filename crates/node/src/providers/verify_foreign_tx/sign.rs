@@ -287,7 +287,7 @@ async fn validate_foreign_chain_policy(
     if !on_chain_policy
         .chains
         .iter()
-        .any(|c| c.chain == requested_chain)
+        .any(|(chain, _)| *chain == requested_chain)
     {
         return Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
             requested: requested_chain,

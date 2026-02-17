@@ -17,6 +17,12 @@ impl<T: Ord> NonEmptyBTreeSet<T> {
             Ok(Self(set))
         }
     }
+
+    /// Constructs without checking emptiness. Caller must guarantee non-emptiness.
+    pub(crate) fn new_unchecked(set: BTreeSet<T>) -> Self {
+        debug_assert!(!set.is_empty());
+        Self(set)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

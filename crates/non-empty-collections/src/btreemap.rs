@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+use crate::NonEmptyBTreeSet;
+
 /// A `BTreeMap` that is guaranteed to contain at least one entry.
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
@@ -16,6 +18,31 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         } else {
             Ok(Self(map))
         }
+    }
+
+    /// Transforms both keys and values of this map, producing a new `NonEmptyBTreeMap`.
+    ///
+    /// Note: if `f` maps multiple keys to the same new key, later entries (by
+    /// the original key ordering) will overwrite earlier ones.
+    pub fn map<K2, V2, F>(self, mut f: F) -> NonEmptyBTreeMap<K2, V2>
+    where
+        K2: Ord,
+        F: FnMut(K, V) -> (K2, V2),
+    {
+        let map = self.0.into_iter().map(|(k, v)| f(k, v)).collect();
+        // SAFETY: self was non-empty, so the resulting map has at least one entry.
+        NonEmptyBTreeMap(map)
+    }
+
+    /// Maps each entry to a value and collects into a `NonEmptyBTreeSet`.
+    pub fn map_to_set<T, F>(&self, mut f: F) -> NonEmptyBTreeSet<T>
+    where
+        T: Ord,
+        F: FnMut(&K, &V) -> T,
+    {
+        let set = self.0.iter().map(|(k, v)| f(k, v)).collect();
+        // SAFETY: self was non-empty, so the resulting set has at least one element.
+        NonEmptyBTreeSet::new_unchecked(set)
     }
 }
 
@@ -79,6 +106,8 @@ impl<K: Ord + schemars::JsonSchema, V: schemars::JsonSchema> schemars::JsonSchem
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use assert_matches::assert_matches;
     use rstest::rstest;
@@ -190,6 +219,61 @@ mod tests {
         // Then
         let err = result.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn map_transforms_keys_and_values() {
+        // Given
+        let original = NonEmptyBTreeMap::new(BTreeMap::from([(1, 10), (2, 20), (3, 30)])).unwrap();
+        // When
+        let mapped = original.map(|k, v| (k * 10, v * 2));
+        // Then
+        assert_eq!(*mapped, BTreeMap::from([(10, 20), (20, 40), (30, 60)]));
+    }
+
+    #[test]
+    fn map_changes_key_and_value_types() {
+        // Given
+        let original = NonEmptyBTreeMap::new(BTreeMap::from([(1, 10), (2, 20)])).unwrap();
+        // When
+        let mapped: NonEmptyBTreeMap<String, String> =
+            original.map(|k, v| (k.to_string(), v.to_string()));
+        // Then
+        assert_eq!(
+            *mapped,
+            BTreeMap::from([
+                ("1".to_string(), "10".to_string()),
+                ("2".to_string(), "20".to_string())
+            ])
+        );
+    }
+
+    #[test]
+    fn map_preserves_values_only() {
+        // Given
+        let original = NonEmptyBTreeMap::new(BTreeMap::from([(1, 10), (2, 20), (3, 30)])).unwrap();
+        // When
+        let mapped = original.map(|k, v| (k, v * 2));
+        // Then
+        assert_eq!(*mapped, BTreeMap::from([(1, 20), (2, 40), (3, 60)]));
+    }
+
+    #[test]
+    fn map_to_set_collects_into_non_empty_set() {
+        // Given
+        let original =
+            NonEmptyBTreeMap::new(BTreeMap::from([(1, "a"), (2, "b"), (3, "c")])).unwrap();
+        // When
+        let set = original.map_to_set(|k, v| format!("{k}:{v}"));
+        // Then
+        assert_eq!(
+            *set,
+            BTreeSet::from([
+                "1:a".to_string(),
+                "2:b".to_string(),
+                "3:c".to_string()
+            ])
+        );
     }
 
     #[test]
