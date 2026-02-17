@@ -189,7 +189,6 @@ impl MpcContract {
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
     }
-
 }
 
 // User contract API
@@ -4151,21 +4150,6 @@ mod tests {
     }
 
     #[test]
-    fn non_empty_btree_set__should_reject_empty_set() {
-        // NonEmptyBTreeSet::new rejects empty sets
-        let result = dtos::NonEmptyBTreeSet::<dtos::RpcProvider>::new(BTreeSet::new());
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn non_empty_btree_set__should_reject_empty_on_json_deserialization() {
-        // Deserializing a ForeignChainPolicy with empty providers from JSON should fail
-        let json = r#"{"chains":{"Solana":[]}}"#;
-        let result = serde_json::from_str::<dtos::ForeignChainPolicy>(json);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -4180,7 +4164,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }]))
                 .unwrap(),
@@ -4223,7 +4207,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }]))
                 .unwrap(),
@@ -4262,7 +4246,7 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
                 }]))
                 .unwrap(),

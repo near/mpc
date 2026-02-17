@@ -20,9 +20,11 @@ thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
+borsh = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
 near-sdk = { workspace = true }
+rstest = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

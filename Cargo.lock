@@ -1910,6 +1910,7 @@ dependencies = [
  "hex",
  "insta",
  "near-sdk",
+ "rstest",
  "schemars 0.8.22",
  "serde",
  "serde_json",

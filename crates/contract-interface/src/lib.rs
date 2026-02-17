@@ -33,4 +33,6 @@ pub mod types {
     mod primitives;
     mod state;
     mod updates;
+
+    pub mod collections;
 }
