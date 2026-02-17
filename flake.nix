@@ -135,11 +135,11 @@
           ];
 
           pythonTools = with pkgs; [
-            python312
-            python312Packages.pip
-            python312Packages.virtualenv
+            python311
+            python311Packages.pip
+            python311Packages.virtualenv
             # runtime dependency of near-cli to save keys to keychain
-            python3Packages.keyring
+            python311Packages.keyring
           ];
 
           nearTools = with pkgs; [
