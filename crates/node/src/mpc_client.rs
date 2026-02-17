@@ -606,10 +606,11 @@ where
                                         )
                                         .await??;
 
+                                        let payload_hash = response.0 .0.compute_msg_hash()?;
                                         let response =
                                             ChainVerifyForeignTransactionRespondArgs::new(
                                                 verify_foreign_tx_attempt.request.clone(),
-                                                response.0 .0,
+                                                payload_hash,
                                                 response.0 .1,
                                                 response.1,
                                             )?;
