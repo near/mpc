@@ -116,6 +116,12 @@ pub enum InvalidParameters {
     NextDomainIdMismatch,
     #[error("Invalid domain ID.")]
     InvalidDomainId,
+    #[error("Domain {domain_id} has purpose {actual:?}, but this method requires {expected:?}.")]
+    WrongDomainPurpose {
+        domain_id: DomainId,
+        expected: crate::primitives::domain::DomainPurpose,
+        actual: crate::primitives::domain::DomainPurpose,
+    },
     #[error("Invalid TEE Remote Attestation.")]
     InvalidTeeRemoteAttestation,
     #[error("Invalid app public key.")]

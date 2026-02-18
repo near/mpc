@@ -223,7 +223,15 @@ impl MpcContract {
         };
 
         if domain_config.purpose != DomainPurpose::Sign {
-            env::panic_str("sign() may only target domains with purpose Sign");
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::Sign,
+                    actual: domain_config.purpose,
+                }
+                .message("sign() may only target domains with purpose Sign")
+                .to_string(),
+            );
         }
 
         // ensure the signer sent a valid signature request
@@ -405,13 +413,14 @@ impl MpcContract {
             );
         };
         if domain_config.purpose != DomainPurpose::CKD {
-            env::panic_str("request_app_private_key() may only target domains with purpose CKD");
-        }
-        if domain_config.scheme != SignatureScheme::Bls12381 {
             env::panic_str(
-                &InvalidParameters::InvalidDomainId
-                    .message("Provided domain ID key type is not Bls12381")
-                    .to_string(),
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::CKD,
+                    actual: domain_config.purpose,
+                }
+                .message("request_app_private_key() may only target domains with purpose CKD")
+                .to_string(),
             );
         }
 
@@ -518,7 +527,17 @@ impl MpcContract {
         };
 
         if domain_config.purpose != DomainPurpose::ForeignTx {
-            env::panic_str("verify_foreign_transaction() requires a domain with purpose ForeignTx");
+            env::panic_str(
+                &InvalidParameters::WrongDomainPurpose {
+                    domain_id: domain_config.id,
+                    expected: DomainPurpose::ForeignTx,
+                    actual: domain_config.purpose,
+                }
+                .message(
+                    "verify_foreign_transaction() requires a domain with purpose ForeignTx",
+                )
+                .to_string(),
+            );
         }
 
         let gas_required =
