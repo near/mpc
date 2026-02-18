@@ -647,22 +647,37 @@ struct ReceiverFunctionCallEventData {
 
 We propose the following API for the transaction sender:
 ```rust
+
+pub struct TransactionSender {
+    /// rpc handler for sending txs to the chain (internal type, c.f. indexer.rs)
+    rpc_handler: IndexerRpcHandler,
+    /// method to the view client to query the latest final block (needed for nonce computation)
+    view_client: impl LatestFinalBlock
+}
+
+/// we could probably make this a trait for testing?
 impl TransactionSender {
     /// creates a function call transaction for contract `receiver_id` with method `method_name` and args `args`
     /// returns the CryptoHash for the receipt, such that the execution outcome can be tracked
     pub async fn submit_function_call_tx(
         &self,
+        /// Key with which this transaction should be signed
         signer: TransactionSigner,
+        /// contract on which this method should be called
         receiver_id: AccountId,
+        /// method name to call
         method_name: String,
+        /// arguments for the method
         args: Vec<u8>,
-        // potentially, add deposit
+        /// deposit amount
+        deposit: Near,
+        /// gas to attach
         gas: Gas,
     ) -> Result<CryptoHash, TxSignerError>;
 }
 ```
 
-Additonally, we will expose the following types (copied verbatim from tx_signer.rs)
+Additonally, we will expose the following types and methods (omitting internals, c.f. tx_signer.rs)
 ```rust
 pub struct TransactionSigner {
     signing_key: SigningKey,
@@ -671,63 +686,15 @@ pub struct TransactionSigner {
 }
 
 impl TransactionSigner {
-    pub(crate) fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
+    pub fn from_key(account_id: AccountId, signing_key: SigningKey) -> Self {
         TransactionSigner {
             account_id,
             signing_key,
             nonce: Mutex::new(0),
         }
     }
-
-    /// Atomically increments the nonce and returns the previous value
-    fn make_nonce(&self, last_known_block_height: u64) -> u64 {
-        let min_nonce = AccessKey::ACCESS_KEY_NONCE_RANGE_MULTIPLIER * last_known_block_height;
-        let mut nonce = self.nonce.lock().unwrap();
-        let new_nonce = std::cmp::max(min_nonce, *nonce + 1);
-        *nonce = new_nonce;
-        new_nonce
-    }
-
-    pub(crate) fn create_and_sign_function_call_tx(
-        &self,
-        receiver_id: AccountId,
-        method_name: String,
-        args: Vec<u8>,
-        gas: Gas,
-        block_hash: CryptoHash,
-        block_height: u64,
-    ) -> SignedTransaction {
-        let action = FunctionCallAction {
-            method_name,
-            args,
-            gas,
-            deposit: Balance::from_near(0),
-        };
-
-        let verifying_key = self.signing_key.verifying_key();
-        let verifying_key_bytes: &[u8; 32] = verifying_key.as_bytes();
-        #[allow(clippy::disallowed_methods)]
-        let near_core_public_key = near_crypto::ED25519PublicKey(*verifying_key_bytes).into();
-
-        let transaction = Transaction::V0(TransactionV0 {
-            signer_id: self.account_id.clone(),
-            public_key: near_core_public_key,
-            nonce: self.make_nonce(block_height),
-            receiver_id,
-            block_hash,
-            actions: vec![action.into()],
-        });
-
-        let tx_hash = transaction.get_hash_and_size().0;
-
-        let signature: ed25519_dalek::Signature = self.signing_key.sign(&tx_hash.0);
-        let near_crypto_signature: near_crypto::Signature =
-            near_crypto::Signature::ED25519(signature);
-
-        SignedTransaction::new(near_crypto_signature, transaction.clone())
-    }
-
-    pub(crate) fn public_key(&self) -> VerifyingKey {
+    /// might be good to expose
+    pub fn public_key(&self) -> VerifyingKey {
         self.signing_key.verifying_key()
     }
 }
