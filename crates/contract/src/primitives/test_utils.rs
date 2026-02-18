@@ -1,4 +1,6 @@
-use super::domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
+use super::domain::{
+    DomainConfig, DomainId, DomainPurpose, DomainRegistry, InferFromScheme, SignatureScheme,
+};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{

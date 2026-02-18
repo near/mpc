@@ -1,5 +1,6 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
+pub use contract_interface::types::DomainPurpose;
 use derive_more::{Deref, From};
 use near_sdk::{log, near};
 use std::collections::BTreeMap;
@@ -48,19 +49,13 @@ impl Default for SignatureScheme {
     }
 }
 
-/// The intended purpose of a domain, used to enforce that `sign()`, `verify_foreign_transaction()`,
-/// and `request_app_private_key()` are each called only on domains created for that purpose.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum DomainPurpose {
-    Sign,
-    ForeignTx,
-    CKD,
+pub trait InferFromScheme {
+    /// Infer purpose from scheme for legacy domains not in the purpose map.
+    fn infer_from_scheme(scheme: SignatureScheme) -> Self;
 }
 
-impl DomainPurpose {
-    /// Infer purpose from scheme for legacy domains not in the purpose map.
-    pub fn infer_from_scheme(scheme: SignatureScheme) -> Self {
+impl InferFromScheme for DomainPurpose {
+    fn infer_from_scheme(scheme: SignatureScheme) -> Self {
         match scheme {
             SignatureScheme::Secp256k1
             | SignatureScheme::Ed25519
@@ -222,7 +217,9 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
+    use super::{
+        DomainConfig, DomainId, DomainPurpose, DomainRegistry, InferFromScheme, SignatureScheme,
+    };
 
     #[test]
     fn test_add_domains() {

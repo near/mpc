@@ -17,7 +17,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::{DomainConfig, DomainPurpose, DomainRegistry},
+        domain::{DomainConfig, DomainPurpose, DomainRegistry, InferFromScheme},
         key_state::{
             AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain, Keyset,
         },
@@ -175,7 +175,8 @@ mod tests {
 
     use super::{AddDomainsVotes, ProtocolContractState, RunningContractState};
     use crate::primitives::{
-        domain::DomainPurpose, key_state::AuthenticatedParticipantId,
+        domain::{DomainPurpose, InferFromScheme},
+        key_state::AuthenticatedParticipantId,
         test_utils::gen_domains_to_add,
     };
     use crate::state::test_utils::gen_running_state;
