@@ -1890,38 +1890,6 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
-        "ForeignChain": {
-          "type": "string",
-          "enum": [
-            "Solana",
-            "Bitcoin",
-            "Ethereum",
-            "Base",
-            "Bnb",
-            "Arbitrum",
-            "Abstract",
-            "Starknet"
-          ]
-        },
-        "ForeignChainConfig": {
-          "type": "object",
-          "required": [
-            "chain",
-            "providers"
-          ],
-          "properties": {
-            "chain": {
-              "$ref": "#/definitions/ForeignChain"
-            },
-            "providers": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/RpcProvider"
-              },
-              "uniqueItems": true
-            }
-          }
-        },
         "ForeignChainPolicy": {
           "type": "object",
           "required": [
@@ -1929,11 +1897,10 @@ expression: abi
           ],
           "properties": {
             "chains": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/ForeignChainConfig"
-              },
-              "uniqueItems": true
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/NonEmptyBTreeSet_RpcProvider"
+              }
             }
           }
         },
@@ -2453,6 +2420,14 @@ expression: abi
               "type": "string"
             }
           }
+        },
+        "NonEmptyBTreeSet_RpcProvider": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RpcProvider"
+          },
+          "minItems": 1,
+          "uniqueItems": true
         },
         "ParticipantId": {
           "type": "integer",

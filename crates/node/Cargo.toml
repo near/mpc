@@ -48,6 +48,7 @@ near-o11y = { workspace = true }
 near-sdk = { workspace = true }
 near-time = { workspace = true }
 node-types = { workspace = true }
+non-empty-collections = { workspace = true }
 num_enum = { workspace = true }
 pprof = { workspace = true }
 prometheus = { workspace = true }

@@ -24,10 +24,7 @@ pub mod v3_4_1_state;
 mod bench;
 mod dto_mapping;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 
 use crate::{
     crypto_shared::{near_public_key_to_affine_point, types::CKDResponse},
@@ -192,21 +189,6 @@ impl MpcContract {
         self.pending_verify_foreign_tx_requests
             .insert(request.clone(), YieldIndex { data_id })
             .is_some()
-    }
-
-    fn validate_foreign_chain_policy(policy: &dtos::ForeignChainPolicy) -> Result<(), Error> {
-        let mut seen_chains = BTreeSet::new();
-        for config in &policy.chains {
-            if config.providers.is_empty() {
-                return Err(InvalidParameters::MalformedPayload
-                    .message("foreign chain config must include at least one provider"));
-            }
-            if !seen_chains.insert(config.chain.clone()) {
-                return Err(InvalidParameters::MalformedPayload
-                    .message("duplicate foreign chain entries in policy"));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -985,8 +967,6 @@ impl MpcContract {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             env::panic_str("protocol must be in running state");
         };
-
-        Self::validate_foreign_chain_policy(&policy)?;
 
         let voter = AuthenticatedAccountId::new(running_state.parameters.participants())?;
         let voter = dtos::AccountId(voter.get().to_string());
@@ -2009,7 +1989,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[allow(non_snake_case)]
 mod tests {
     use std::{
-        collections::{BTreeSet, HashSet},
+        collections::{BTreeMap, HashSet},
         str::FromStr,
     };
 
@@ -2054,6 +2034,7 @@ mod tests {
     };
     use mpc_primitives::hash::{Hash32, Image};
     use near_sdk::{test_utils::VMContextBuilder, testing_env, NearToken, VMContext};
+    use non_empty_collections::NonEmptyBTreeSet;
     use primitives::key_state::{AttemptId, KeyForDomain};
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
@@ -4171,63 +4152,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_foreign_chain_policy__should_reject_empty_providers() {
-        // Given
-        let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::new(),
-            }]),
-        };
-
-        // When
-        let result = MpcContract::validate_foreign_chain_policy(&policy);
-
-        // Then
-        let err = result.expect_err("expected validation to fail");
-        let kind = err.kind().clone();
-        assert_matches!(
-            kind,
-            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
-        );
-    }
-
-    #[test]
-    fn validate_foreign_chain_policy__should_reject_duplicate_chains() {
-        // Given
-        let providers_a = BTreeSet::from([dtos::RpcProvider {
-            rpc_url: "https://example-a".to_string(),
-        }]);
-        let providers_b = BTreeSet::from([dtos::RpcProvider {
-            rpc_url: "https://example-b".to_string(),
-        }]);
-
-        let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([
-                dtos::ForeignChainConfig {
-                    chain: dtos::ForeignChain::Solana,
-                    providers: providers_a,
-                },
-                dtos::ForeignChainConfig {
-                    chain: dtos::ForeignChain::Solana,
-                    providers: providers_b,
-                },
-            ]),
-        };
-
-        // When
-        let result = MpcContract::validate_foreign_chain_policy(&policy);
-
-        // Then
-        let err = result.expect_err("expected validation to fail");
-        let kind = err.kind().clone();
-        assert_matches!(
-            kind,
-            ErrorKind::InvalidParameters(InvalidParameters::MalformedPayload)
-        );
-    }
-
-    #[test]
     fn vote_foreign_chain_policy__should_store_vote_for_participant() {
         // Given
         let running_state = gen_running_state(1);
@@ -4240,12 +4164,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let _env = Environment::new(None, Some(first_account.clone()), None);
 
@@ -4282,12 +4206,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let mut env = Environment::new(None, Some(first_account.clone()), None);
 
@@ -4320,12 +4244,12 @@ mod tests {
         let mut contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         let policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Solana,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         };
         let non_participant = gen_account_id();
         contract

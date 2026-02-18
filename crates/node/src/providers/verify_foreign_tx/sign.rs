@@ -287,7 +287,7 @@ async fn validate_foreign_chain_policy(
     if !on_chain_policy
         .chains
         .iter()
-        .any(|c| c.chain == requested_chain)
+        .any(|(chain, _)| *chain == requested_chain)
     {
         return Err(ValidateForeignChainPolicyError::ChainNotInPolicy {
             requested: requested_chain,
@@ -306,7 +306,8 @@ mod tests {
     };
     use crate::indexer::MockReadForeignChainPolicy;
     use assert_matches::assert_matches;
-    use std::collections::{BTreeMap, BTreeSet};
+    use non_empty_collections::NonEmptyBTreeSet;
+    use std::collections::BTreeMap;
 
     fn bitcoin_request() -> dtos::ForeignChainRpcRequest {
         dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -317,8 +318,7 @@ mod tests {
     }
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
-        let mut providers = BTreeMap::new();
-        providers.insert(
+        let providers = non_empty_collections::NonEmptyBTreeMap::new(
             "public".to_string(),
             BitcoinProviderConfig {
                 rpc_url: "https://blockstream.info/api".to_string(),
@@ -338,12 +338,12 @@ mod tests {
 
     fn bitcoin_chain_policy() -> dtos::ForeignChainPolicy {
         dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://blockstream.info/api".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         }
     }
 
@@ -390,12 +390,12 @@ mod tests {
         let config = bitcoin_foreign_chains_config();
         // On-chain policy differs (different RPC URL)
         let reader = mock_policy_reader(dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Bitcoin,
-                providers: BTreeSet::from([dtos::RpcProvider {
+            chains: BTreeMap::from([(
+                dtos::ForeignChain::Bitcoin,
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://different-provider.example.com/api".to_string(),
-                }]),
-            }]),
+                }),
+            )]),
         });
 
         let result = validate_foreign_chain_policy(&config, &reader, &bitcoin_request()).await;

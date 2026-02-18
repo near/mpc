@@ -132,14 +132,20 @@
           ];
 
           nearTools = with pkgs; [
-            python3Packages.keyring
             near-cli-rs
             cargo-near
+          ];
+
+          pythonTools = with pkgs; [
+            python311
+            python311Packages.keyring
+            ruff # linter and formatter
           ];
 
           miscTools = with pkgs; [
             git
             binaryen
+            jq
           ];
 
           buildLibs =
@@ -177,7 +183,14 @@
             strictDeps = true;
 
             packages =
-              dockerTools ++ llvmTools ++ rustTools ++ cargoTools ++ nearTools ++ miscTools ++ buildLibs;
+              dockerTools ++
+              llvmTools ++
+              rustTools ++
+              cargoTools ++
+              pythonTools ++
+              nearTools ++
+              miscTools ++
+              buildLibs;
 
             env = envCommon // envDarwin;
 

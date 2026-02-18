@@ -5,12 +5,13 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-abi = ["borsh/unstable__schema", "schemars"]
+abi = ["borsh/unstable__schema", "schemars", "non-empty-collections/abi"]
 
 [dependencies]
 borsh = { workspace = true }
 bs58 = { workspace = true }
 derive_more = { workspace = true }
+non-empty-collections = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 sha2 = { workspace = true }
@@ -20,6 +21,7 @@ thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
+borsh = { workspace = true }
 hex = { workspace = true }
 insta = { workspace = true }
 near-sdk = { workspace = true }

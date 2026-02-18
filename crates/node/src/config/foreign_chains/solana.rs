@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
+use non_empty_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::foreign_chains::auth;
@@ -10,7 +10,7 @@ use crate::config::foreign_chains::{self, ForeignChainProviderConfig};
 pub struct SolanaChainConfig {
     pub timeout_sec: u64,
     pub max_retries: u64,
-    pub providers: BTreeMap<String, SolanaProviderConfig>,
+    pub providers: NonEmptyBTreeMap<String, SolanaProviderConfig>,
 }
 
 impl SolanaChainConfig {
