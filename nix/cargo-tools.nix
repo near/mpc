@@ -12,9 +12,10 @@ let
       version,
       hash,
       cargoHash,
+      postPatch ? "",
     }:
     rustPlatform.buildRustPackage {
-      inherit pname version;
+      inherit pname version postPatch;
       src = fetchCrate {
         inherit pname version hash;
       };
@@ -70,6 +71,19 @@ in
     version = "0.37.24";
     hash = "sha256-POMi8k8vLL3ZMWmGkSBg3BWSO6d8A4xoDawWDZXHpmk=";
     cargoHash = "sha256-ml/OW4S4fIMLmm7vVPgsXB7CigDYORGFpN3jZRp1f8c=";
+  })
+
+  (buildTool {
+    pname = "lychee";
+    version = "0.23.0";
+    hash = "sha256-cl2AeeisWO9co5PIqWlvFUubmjZOBjGYK6Xb7lga5Rg=";
+    cargoHash = "sha256-SgOKU0RMaof3b4oaBs8vTUCQe+9iPJG9656qP4mFT9c=";
+    # build.rs unconditionally runs `git show` to embed the commit date into the
+    # binary (used only for `lychee --man` output). There is no git repo inside the
+    # Nix sandbox, so we replace build.rs with a stub that hardcodes the release date.
+    postPatch = ''
+      echo 'fn main() { println!("cargo:rustc-env=GIT_DATE=2026-02-13"); }' > build.rs
+    '';
   })
 
   # --- STANDARD NIXPKGS VERSIONS ---
