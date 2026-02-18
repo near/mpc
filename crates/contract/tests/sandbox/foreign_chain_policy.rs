@@ -4,7 +4,7 @@ use assert_matches::assert_matches;
 use serde_json::json;
 
 #[tokio::test]
-async fn vote_foreign_chain_policy_rejects_empty_rpc_providers() {
+async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
     // Given: a running contract with participants
     let SandboxTestSetup {
         contract,
