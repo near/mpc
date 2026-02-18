@@ -50,7 +50,6 @@ impl Default for SignatureScheme {
 }
 
 pub trait InferFromScheme {
-    /// Infer purpose from scheme for legacy domains not in the purpose map.
     fn infer_from_scheme(scheme: SignatureScheme) -> Self;
 }
 
