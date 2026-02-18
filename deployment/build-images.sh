@@ -98,7 +98,8 @@ buildkit_version="0.27.1"
 buildkit_image_name="buildkit_${buildkit_version}"
 
 if ! docker buildx inspect ${buildkit_image_name} &>/dev/null; then
-    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name}
+    docker buildx create --use --driver-opt image=moby/buildkit:v${buildkit_version} --name ${buildkit_image_name} \
+        --buildkitd-flags '--oci-worker-no-process-sandbox'
 fi
 
 
