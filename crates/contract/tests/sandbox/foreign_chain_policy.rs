@@ -3,6 +3,9 @@
 use crate::sandbox::common::{init_env, SandboxTestSetup};
 use crate::sandbox::utils::consts::{ALL_SIGNATURE_SCHEMES, PARTICIPANT_LEN};
 use assert_matches::assert_matches;
+use contract_interface::method_names::{
+    GET_FOREIGN_CHAIN_POLICY_PROPOSALS, VOTE_FOREIGN_CHAIN_POLICY,
+};
 use serde_json::json;
 
 #[tokio::test]
@@ -16,7 +19,7 @@ async fn vote_foreign_chain_policy__should_reject_empty_rpc_providers() {
 
     // When: a participant votes with a policy containing an empty RPC providers set
     let transaction_result = mpc_signer_accounts[0]
-        .call(contract.id(), "vote_foreign_chain_policy")
+        .call(contract.id(), VOTE_FOREIGN_CHAIN_POLICY)
         .args_json(json!({
             "policy": {
                 "chains": {
@@ -48,7 +51,7 @@ async fn vote_foreign_chain_policy_accepts_valid_policy() {
 
     // When: a participant votes with a valid policy containing non-empty RPC providers
     let transaction_result = mpc_signer_accounts[0]
-        .call(contract.id(), "vote_foreign_chain_policy")
+        .call(contract.id(), VOTE_FOREIGN_CHAIN_POLICY)
         .args_json(json!({
             "policy": {
                 "chains": {
@@ -80,7 +83,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_rpc_providers() {
 
     // When: a participant votes with a policy containing duplicate RPC providers
     let transaction_result = mpc_signer_accounts[0]
-        .call(contract.id(), "vote_foreign_chain_policy")
+        .call(contract.id(), VOTE_FOREIGN_CHAIN_POLICY)
         .args_json(json!({
             "policy": {
                 "chains": {
@@ -143,7 +146,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
         }
     }"#;
     let transaction_result = mpc_signer_accounts[0]
-        .call(contract.id(), "vote_foreign_chain_policy")
+        .call(contract.id(), VOTE_FOREIGN_CHAIN_POLICY)
         .args(raw_json.to_vec())
         .transact()
         .await
@@ -160,7 +163,7 @@ async fn vote_foreign_chain_policy_deduplicates_duplicate_chain_keys() {
     // And: only one Ethereum entry is stored (the last value wins).
     // Deserialize as raw JSON to avoid client-side BTreeMap deduplication hiding the result.
     let votes: serde_json::Value = contract
-        .view("get_foreign_chain_policy_proposals")
+        .view(GET_FOREIGN_CHAIN_POLICY_PROPOSALS)
         .await
         .unwrap()
         .json()
