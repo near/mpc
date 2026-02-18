@@ -12,16 +12,21 @@ let
       version,
       hash,
       cargoHash,
-      postPatch ? "",
+      postPatch ? null,
     }:
-    rustPlatform.buildRustPackage {
-      inherit pname version postPatch;
-      src = fetchCrate {
-        inherit pname version hash;
-      };
-      inherit cargoHash;
-      doCheck = false;
-    };
+    rustPlatform.buildRustPackage (
+      {
+        inherit pname version;
+        src = fetchCrate {
+          inherit pname version hash;
+        };
+        inherit cargoHash;
+        doCheck = false;
+      }
+      // lib.optionalAttrs (postPatch != null) {
+        inherit postPatch;
+      }
+    );
 in
 [
   (buildTool {
