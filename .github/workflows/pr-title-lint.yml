@@ -34,9 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
-      id-token: write
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     steps:
       - name: Checkout repository
@@ -55,8 +54,8 @@ jobs:
           FILES=$(gh pr diff "$PR_NUMBER" --name-only)
           {
             echo 'TITLE_CHECK_PROMPT<<PROMPT_EOF'
-            echo "PR TITLE: $PR_TITLE"
-            echo "PR NUMBER: $PR_NUMBER"
+            printf 'PR TITLE: %s\n' "$PR_TITLE"
+            printf 'PR NUMBER: %s\n' "$PR_NUMBER"
             echo ""
             echo "CHANGED FILES:"
             echo "$FILES"
