@@ -331,7 +331,9 @@ def foreign_tx_validation_cluster():
     for node in mpc_nodes:
         node.run()
 
-    cluster.init_cluster(participants=mpc_nodes, threshold=2, domains=[("Secp256k1", "ForeignTx")])
+    cluster.init_cluster(
+        participants=mpc_nodes, threshold=2, domains=[("Secp256k1", "ForeignTx")]
+    )
     assert cluster.wait_for_state(ProtocolState.RUNNING), "expected running state"
 
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
