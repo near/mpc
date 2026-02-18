@@ -1,8 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use non_empty_collections::NonEmptyBTreeSet;
 use serde::{Deserialize, Serialize};
 use serde_with::{hex::Hex, serde_as};
 use sha2::Digest;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::types::primitives::{AccountId, DomainId, SignatureResponse, Tweak};
 
@@ -516,29 +517,7 @@ pub enum ForeignChain {
     derive(schemars::JsonSchema)
 )]
 pub struct ForeignChainPolicy {
-    pub chains: BTreeSet<ForeignChainConfig>,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(
-    all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
-)]
-pub struct ForeignChainConfig {
-    pub chain: ForeignChain,
-    pub providers: BTreeSet<RpcProvider>,
+    pub chains: BTreeMap<ForeignChain, NonEmptyBTreeSet<RpcProvider>>,
 }
 
 #[derive(

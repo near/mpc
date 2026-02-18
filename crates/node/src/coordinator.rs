@@ -744,9 +744,9 @@ where
 
         let unsupported_chains: Vec<dtos::ForeignChain> = on_chain_policy
             .chains
-            .iter()
-            .filter(|chain_config| !Self::is_supported_foreign_chain(&chain_config.chain))
-            .map(|chain_config| chain_config.chain.clone())
+            .keys()
+            .filter(|chain| !Self::is_supported_foreign_chain(chain))
+            .cloned()
             .collect();
 
         if !unsupported_chains.is_empty() {

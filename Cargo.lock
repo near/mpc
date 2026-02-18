@@ -1910,6 +1910,7 @@ dependencies = [
  "hex",
  "insta",
  "near-sdk",
+ "non-empty-collections",
  "rstest",
  "schemars 0.8.22",
  "serde",
@@ -5273,6 +5274,7 @@ dependencies = [
  "near-account-id 2.5.0",
  "near-sdk",
  "near-workspaces",
+ "non-empty-collections",
  "rand 0.8.5",
  "rand_core 0.6.4",
  "rstest",
@@ -5367,6 +5369,7 @@ dependencies = [
  "near-sdk",
  "near-time 2.10.6",
  "node-types",
+ "non-empty-collections",
  "num_enum",
  "pprof",
  "prometheus",
@@ -7222,6 +7225,20 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "non-empty-collections"
+version = "3.4.1"
+dependencies = [
+ "assert_matches",
+ "borsh",
+ "derive_more 2.1.1",
+ "rstest",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
