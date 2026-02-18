@@ -10,22 +10,14 @@ use serde::{Deserialize, Serialize};
 pub struct NonEmptyBTreeSet<T: Ord>(BTreeSet<T>);
 
 impl<T: Ord> NonEmptyBTreeSet<T> {
-    pub fn new(set: BTreeSet<T>) -> Result<Self, EmptySetError> {
-        if set.is_empty() {
-            Err(EmptySetError)
-        } else {
-            Ok(Self(set))
-        }
+    pub fn new(item: T) -> Self {
+        Self(BTreeSet::from([item]))
     }
 
     /// Constructs without checking emptiness. Caller must guarantee non-emptiness.
     pub(crate) fn new_unchecked(set: BTreeSet<T>) -> Self {
         debug_assert!(!set.is_empty());
         Self(set)
-    }
-
-    pub fn with(item: T) -> Self {
-        Self(BTreeSet::from([item]))
     }
 
     /// Adds a value to the set.
@@ -38,6 +30,18 @@ impl<T: Ord> NonEmptyBTreeSet<T> {
     ///   the entry is not updated.
     pub fn insert(&mut self, item: T) -> bool {
         self.0.insert(item)
+    }
+}
+
+impl<T: Ord> TryFrom<BTreeSet<T>> for NonEmptyBTreeSet<T> {
+    type Error = EmptySetError;
+
+    fn try_from(set: BTreeSet<T>) -> Result<Self, Self::Error> {
+        if set.is_empty() {
+            Err(EmptySetError)
+        } else {
+            Ok(Self(set))
+        }
     }
 }
 
@@ -59,7 +63,7 @@ impl<T: Ord + Serialize> Serialize for NonEmptyBTreeSet<T> {
 impl<'de, T: Ord + Deserialize<'de>> Deserialize<'de> for NonEmptyBTreeSet<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let set = BTreeSet::<T>::deserialize(deserializer)?;
-        NonEmptyBTreeSet::new(set).map_err(serde::de::Error::custom)
+        NonEmptyBTreeSet::try_from(set).map_err(serde::de::Error::custom)
     }
 }
 
@@ -72,7 +76,7 @@ impl<T: Ord + BorshSerialize> BorshSerialize for NonEmptyBTreeSet<T> {
 impl<T: Ord + BorshDeserialize> BorshDeserialize for NonEmptyBTreeSet<T> {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let set = BTreeSet::<T>::deserialize_reader(reader)?;
-        NonEmptyBTreeSet::new(set)
+        NonEmptyBTreeSet::try_from(set)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 }
@@ -101,24 +105,32 @@ mod tests {
     use assert_matches::assert_matches;
     use rstest::rstest;
 
-    #[rstest]
-    #[case::single_element(BTreeSet::from([1]))]
-    #[case::multiple_elements(BTreeSet::from([1, 2, 3]))]
-    fn new_succeeds_for_non_empty_set(#[case] non_empty_set: BTreeSet<i32>) {
-        // Given
-        // When
-        let result = NonEmptyBTreeSet::new(non_empty_set.clone());
+    #[test]
+    fn new_creates_single_element_set() {
+        // Given / When
+        let set = NonEmptyBTreeSet::new(42);
         // Then
-        let non_empty_btree_set = result.unwrap();
-        assert_eq!(*non_empty_btree_set, non_empty_set);
+        assert_eq!(set.len(), 1);
+        assert!(set.contains(&42));
     }
 
     #[test]
-    fn new_fails_for_empty_set() {
+    fn try_from_succeeds_for_non_empty_set() {
         // Given
-        let empty_set: BTreeSet<i32> = BTreeSet::new();
+        let btree = BTreeSet::from([1, 2, 3]);
         // When
-        let result = NonEmptyBTreeSet::new(empty_set);
+        let result = NonEmptyBTreeSet::try_from(btree.clone());
+        // Then
+        let set = result.unwrap();
+        assert_eq!(*set, btree);
+    }
+
+    #[test]
+    fn try_from_fails_for_empty_set() {
+        // Given
+        let empty: BTreeSet<i32> = BTreeSet::new();
+        // When
+        let result = NonEmptyBTreeSet::try_from(empty);
         // Then
         assert_eq!(result.unwrap_err(), EmptySetError);
     }
@@ -137,30 +149,37 @@ mod tests {
     #[test]
     fn deref_exposes_btreeset_methods() {
         // Given
-        let non_empty_btree_set = NonEmptyBTreeSet::new(BTreeSet::from([1, 2, 3])).unwrap();
+        let mut set = NonEmptyBTreeSet::new(1);
+        set.insert(2);
+        set.insert(3);
         // When / Then
-        assert!(non_empty_btree_set.contains(&1));
-        assert!(!non_empty_btree_set.contains(&4));
-        assert_eq!(non_empty_btree_set.len(), 3);
+        assert!(set.contains(&1));
+        assert!(!set.contains(&4));
+        assert_eq!(set.len(), 3);
     }
 
     #[test]
     fn into_converts_back_to_btreeset() {
         // Given
-        let original_set = BTreeSet::from([1, 2, 3]);
-        let non_empty_btree_set = NonEmptyBTreeSet::new(original_set.clone()).unwrap();
+        let mut set = NonEmptyBTreeSet::new(1);
+        set.insert(2);
+        set.insert(3);
         // When
-        let converted: BTreeSet<i32> = non_empty_btree_set.into();
+        let converted: BTreeSet<i32> = set.into();
         // Then
-        assert_eq!(converted, original_set);
+        assert_eq!(converted, BTreeSet::from([1, 2, 3]));
     }
 
     #[rstest]
-    #[case::single(BTreeSet::from([42]))]
-    #[case::multiple(BTreeSet::from([1, 2, 3]))]
-    fn serde_json_roundtrip_preserves_data(#[case] set: BTreeSet<i32>) {
+    #[case::single(42)]
+    #[case::multiple(1)]
+    fn serde_json_roundtrip_preserves_data(#[case] first: i32) {
         // Given
-        let original = NonEmptyBTreeSet::new(set).unwrap();
+        let mut original = NonEmptyBTreeSet::new(first);
+        if first == 1 {
+            original.insert(2);
+            original.insert(3);
+        }
         // When
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: NonEmptyBTreeSet<i32> = serde_json::from_str(&json).unwrap();
@@ -179,11 +198,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::single(BTreeSet::from([42u32]))]
-    #[case::multiple(BTreeSet::from([1u32, 2, 3]))]
-    fn borsh_roundtrip_preserves_data(#[case] set: BTreeSet<u32>) {
+    #[case::single(42u32)]
+    #[case::multiple(1u32)]
+    fn borsh_roundtrip_preserves_data(#[case] first: u32) {
         // Given
-        let original = NonEmptyBTreeSet::new(set).unwrap();
+        let mut original = NonEmptyBTreeSet::new(first);
+        if first == 1 {
+            original.insert(2);
+            original.insert(3);
+        }
         // When
         let bytes = borsh::to_vec(&original).unwrap();
         let deserialized: NonEmptyBTreeSet<u32> = BorshDeserialize::try_from_slice(&bytes).unwrap();
@@ -206,8 +229,10 @@ mod tests {
     #[test]
     fn eq_returns_true_for_identical_sets() {
         // Given
-        let set_a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let set_b = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        let mut set_a = NonEmptyBTreeSet::new(1);
+        set_a.insert(2);
+        let mut set_b = NonEmptyBTreeSet::new(1);
+        set_b.insert(2);
         // When / Then
         assert_eq!(set_a, set_b);
     }
@@ -215,8 +240,10 @@ mod tests {
     #[test]
     fn eq_returns_false_for_different_sets() {
         // Given
-        let set_a = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let set_b = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
+        let mut set_a = NonEmptyBTreeSet::new(1);
+        set_a.insert(2);
+        let mut set_b = NonEmptyBTreeSet::new(3);
+        set_b.insert(4);
         // When / Then
         assert_ne!(set_a, set_b);
     }
@@ -224,8 +251,10 @@ mod tests {
     #[test]
     fn ord_compares_by_btreeset_ordering() {
         // Given
-        let smaller_set = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
-        let larger_set = NonEmptyBTreeSet::new(BTreeSet::from([3, 4])).unwrap();
+        let mut smaller_set = NonEmptyBTreeSet::new(1);
+        smaller_set.insert(2);
+        let mut larger_set = NonEmptyBTreeSet::new(3);
+        larger_set.insert(4);
         // When / Then
         assert!(smaller_set < larger_set);
     }
@@ -233,7 +262,8 @@ mod tests {
     #[test]
     fn clone_produces_equal_independent_copy() {
         // Given
-        let original = NonEmptyBTreeSet::new(BTreeSet::from([1, 2])).unwrap();
+        let mut original = NonEmptyBTreeSet::new(1);
+        original.insert(2);
         // When
         let cloned = original.clone();
         // Then

@@ -319,17 +319,13 @@ mod tests {
 
     fn bitcoin_foreign_chains_config() -> ForeignChainsConfig {
         let providers = non_empty_collections::NonEmptyBTreeMap::new(
-            [(
-                "public".to_string(),
-                BitcoinProviderConfig {
-                    rpc_url: "https://blockstream.info/api".to_string(),
-                    api_variant: BitcoinApiVariant::Esplora,
-                    auth: Default::default(),
-                },
-            )]
-            .into(),
-        )
-        .unwrap();
+            "public".to_string(),
+            BitcoinProviderConfig {
+                rpc_url: "https://blockstream.info/api".to_string(),
+                api_variant: BitcoinApiVariant::Esplora,
+                auth: Default::default(),
+            },
+        );
         ForeignChainsConfig {
             bitcoin: Some(BitcoinChainConfig {
                 timeout_sec: 30,
@@ -344,7 +340,7 @@ mod tests {
         dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::with(dtos::RpcProvider {
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://blockstream.info/api".to_string(),
                 }),
             )]),
@@ -396,7 +392,7 @@ mod tests {
         let reader = mock_policy_reader(dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Bitcoin,
-                NonEmptyBTreeSet::with(dtos::RpcProvider {
+                NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://different-provider.example.com/api".to_string(),
                 }),
             )]),

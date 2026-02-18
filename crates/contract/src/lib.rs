@@ -1988,7 +1988,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[allow(non_snake_case)]
 mod tests {
     use std::{
-        collections::{BTreeMap, BTreeSet, HashSet},
+        collections::{BTreeMap, HashSet},
         str::FromStr,
     };
 
@@ -4164,10 +4164,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]))
-                .unwrap(),
+                }),
             )]),
         };
         let _env = Environment::new(None, Some(first_account.clone()), None);
@@ -4207,10 +4206,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]))
-                .unwrap(),
+                }),
             )]),
         };
         let mut env = Environment::new(None, Some(first_account.clone()), None);
@@ -4246,10 +4244,9 @@ mod tests {
         let policy = dtos::ForeignChainPolicy {
             chains: BTreeMap::from([(
                 dtos::ForeignChain::Solana,
-                dtos::collections::NonEmptyBTreeSet::new(BTreeSet::from([dtos::RpcProvider {
+                dtos::collections::NonEmptyBTreeSet::new(dtos::RpcProvider {
                     rpc_url: "https://example.com".to_string(),
-                }]))
-                .unwrap(),
+                }),
             )]),
         };
         let non_participant = gen_account_id();
