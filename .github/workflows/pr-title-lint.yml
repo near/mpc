@@ -6,7 +6,7 @@ on:
 
 jobs:
   lint-pr-title:
-    name: "Lint PR title for Conventional Commits"
+    name: "Check PR title format"
     runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
@@ -30,8 +30,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   check-pr-title-type:
-    name: "Validate PR title type matches changed files"
-    runs-on: ubuntu-latest
+    name: "Validate title type matches changes"
+    runs-on: warp-ubuntu-2404-x64-2x
     permissions:
       contents: read
       pull-requests: write
@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Build prompt
+      - name: Build prompt with PR title and changed files
         id: build-prompt
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -64,7 +64,7 @@ jobs:
             echo 'PROMPT_EOF'
           } >> "$GITHUB_ENV"
 
-      - name: Check PR title type
+      - name: Validate title type matches changes
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
