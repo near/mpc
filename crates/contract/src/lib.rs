@@ -1705,7 +1705,7 @@ impl MpcContract {
     pub fn get_domain_purposes(&self) -> BTreeMap<dtos::DomainId, dtos::DomainPurpose> {
         self.domain_purposes
             .iter()
-            .map(|(id, purpose)| (id.into_dto_type(), purpose.into_dto_type()))
+            .map(|(id, purpose)| (id.into_dto_type(), *purpose))
             .collect()
     }
 
