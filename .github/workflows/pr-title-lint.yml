@@ -27,4 +27,47 @@ jobs:
             ci
             revert
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  check-pr-title-type:
+    name: "Validate PR title type matches changed files"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Build prompt
+        id: build-prompt
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES=$(gh pr diff "$PR_NUMBER" --name-only)
+          {
+            echo 'TITLE_CHECK_PROMPT<<PROMPT_EOF'
+            echo "PR TITLE: $PR_TITLE"
+            echo "PR NUMBER: $PR_NUMBER"
+            echo ""
+            echo "CHANGED FILES:"
+            echo "$FILES"
+            echo ""
+            cat .github/prompts/pr-title-check.prompt.md
+            echo 'PROMPT_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Check PR title type
+        uses: anthropics/claude-code-action@23ed4cb53d6eacddbc22ec16652c98bcc54e0476 #v1.0.48
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
+          prompt: ${{ env.TITLE_CHECK_PROMPT }}
+          claude_args: '--model claude-haiku-4-5-20251001 --allowed-tools "Bash(gh pr comment:*)"'
