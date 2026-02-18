@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]
-pub struct NonEmptyBTreeSet<T: Ord>(BTreeSet<T>);
+pub struct NonEmptyBTreeSet<T>(BTreeSet<T>);
 
 impl<T: Ord> NonEmptyBTreeSet<T> {
     pub fn new(item: T) -> Self {

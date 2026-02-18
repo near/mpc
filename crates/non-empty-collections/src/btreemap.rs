@@ -13,7 +13,7 @@ use crate::NonEmptyBTreeSet;
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]
-pub struct NonEmptyBTreeMap<K: Ord, V>(BTreeMap<K, V>);
+pub struct NonEmptyBTreeMap<K, V>(BTreeMap<K, V>);
 
 impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
     pub fn new(key: K, value: V) -> Self {
