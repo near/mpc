@@ -208,7 +208,7 @@ expression: abi
           "type_schema": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/definitions/DomainPurpose2"
+              "$ref": "#/definitions/DomainPurpose"
             }
           }
         }
@@ -1377,7 +1377,7 @@ expression: abi
                       "$ref": "#/definitions/DomainConfig2"
                     },
                     {
-                      "$ref": "#/definitions/DomainPurpose2"
+                      "$ref": "#/definitions/DomainPurpose"
                     }
                   ],
                   "maxItems": 2,
@@ -1763,15 +1763,6 @@ expression: abi
           "minimum": 0.0
         },
         "DomainPurpose": {
-          "description": "The intended purpose of a domain, used to enforce that `sign()`, `verify_foreign_transaction()`, and `request_app_private_key()` are each called only on domains created for that purpose.",
-          "type": "string",
-          "enum": [
-            "Sign",
-            "ForeignTx",
-            "CKD"
-          ]
-        },
-        "DomainPurpose2": {
           "description": "The intended purpose of a domain.",
           "type": "string",
           "enum": [

@@ -177,7 +177,7 @@ pub enum SignatureScheme {
 )]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
-    derive(schemars::JsonSchema)
+    derive(schemars::JsonSchema, borsh::BorshSchema)
 )]
 pub enum DomainPurpose {
     Sign,
