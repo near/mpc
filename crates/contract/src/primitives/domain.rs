@@ -67,7 +67,6 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
             | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
             | (DomainPurpose::Sign, SignatureScheme::Ed25519)
             | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
-            | (DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1)
             | (DomainPurpose::CKD, SignatureScheme::Bls12381)
     )
 }
@@ -394,12 +393,12 @@ pub mod tests {
     #[case(DomainPurpose::Sign, SignatureScheme::V2Secp256k1, true)]
     #[case(DomainPurpose::Sign, SignatureScheme::Ed25519, true)]
     #[case(DomainPurpose::ForeignTx, SignatureScheme::Secp256k1, true)]
-    #[case(DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1, true)]
     #[case(DomainPurpose::CKD, SignatureScheme::Bls12381, true)]
     // Invalid combinations
     #[case(DomainPurpose::Sign, SignatureScheme::Bls12381, false)]
     #[case(DomainPurpose::ForeignTx, SignatureScheme::Ed25519, false)]
     #[case(DomainPurpose::ForeignTx, SignatureScheme::Bls12381, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1, false)]
     #[case(DomainPurpose::CKD, SignatureScheme::Secp256k1, false)]
     fn test_valid_scheme_purpose_combinations(
         #[case] purpose: DomainPurpose,
