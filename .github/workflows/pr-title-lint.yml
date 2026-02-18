@@ -65,6 +65,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Validate title type matches changes
+        id: validate
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,3 +74,10 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           prompt: ${{ env.TITLE_CHECK_PROMPT }}
           claude_args: '--model claude-haiku-4-5 --allowed-tools "Bash(gh pr comment:*)"'
+
+      - name: Report validation failure
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo "::warning::PR title type validation failed to run. Check the logs above for details."
+          echo "## ⚠️ PR title type validation failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "The claude-code-action step failed (likely an API/auth issue). The PR title was **not** validated against changed files." >> "$GITHUB_STEP_SUMMARY"
