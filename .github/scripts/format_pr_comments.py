@@ -268,7 +268,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        with open(args.json_file) as f:
+        with open(args.json_file, encoding="utf-8") as f:
             comments_json = f.read()
     except OSError as e:
         print(f"⚠️ Failed to read input file: {e}", file=sys.stderr)
