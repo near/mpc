@@ -228,7 +228,7 @@ mod tests {
 
         // Then
         // Current-state decode fails on legacy `Vec<DomainConfig>` vote payloads.
-        assert!(crate::state::ProtocolContractState::try_from_slice(&serialized).is_err());
+        let _ = crate::state::ProtocolContractState::try_from_slice(&serialized).unwrap_err();
 
         let migrated_vote = migrated_running
             .add_domains_votes
