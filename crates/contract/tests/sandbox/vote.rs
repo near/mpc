@@ -19,7 +19,7 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{DomainConfig, SignatureScheme},
+        domain::{DomainConfig, DomainPurpose, SignatureScheme},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -49,6 +49,7 @@ async fn test_keygen() -> anyhow::Result<()> {
         &[DomainConfig {
             id: domain_id.into(),
             scheme,
+            purpose: DomainPurpose::Sign,
         }],
     )
     .await
@@ -61,6 +62,7 @@ async fn test_keygen() -> anyhow::Result<()> {
     let expected_domain = dtos::DomainConfig {
         id: dtos::DomainId(domain_id),
         scheme: scheme.into_interface_type(),
+        purpose: dtos::DomainPurpose::Sign,
     };
     let found = init
         .domains
@@ -149,6 +151,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &[DomainConfig {
                 id: next_domain_id.into(),
                 scheme: *scheme,
+                purpose: DomainPurpose::infer_from_scheme(*scheme),
             }],
         )
         .await
@@ -159,9 +162,14 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             panic!("expected initializing state");
         };
         assert_eq!(init.domains.next_domain_id, next_domain_id + 1);
+        let expected_purpose = match scheme {
+            SignatureScheme::Bls12381 => dtos::DomainPurpose::CKD,
+            _ => dtos::DomainPurpose::Sign,
+        };
         let expected_domain = dtos::DomainConfig {
             id: dtos::DomainId(next_domain_id),
             scheme: (*scheme).into_interface_type(),
+            purpose: expected_purpose,
         };
         let found = init
             .domains

@@ -157,6 +157,15 @@ impl RunningContractState {
         if domains.is_empty() {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
+        for domain in &domains {
+            if !domain.purpose.is_valid_for_scheme(domain.scheme) {
+                return Err(DomainError::InvalidSchemePurposeCombination {
+                    scheme: domain.scheme,
+                    purpose: domain.purpose,
+                }
+                .into());
+            }
+        }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
@@ -317,5 +326,53 @@ pub mod running_tests {
     #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
+    }
+
+    #[test]
+    fn test_vote_add_domains_rejects_invalid_scheme_purpose() {
+        use crate::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+        let mut state = gen_running_state(1);
+        let mut env = Environment::new(None, None, None);
+        let next_id = state.domains.next_domain_id();
+
+        // Bls12381 + Sign is invalid
+        let invalid_domain = vec![DomainConfig {
+            id: DomainId(next_id),
+            scheme: SignatureScheme::Bls12381,
+            purpose: DomainPurpose::Sign,
+        }];
+        env.set_signer(&state.parameters.participants().participants()[0].0);
+        let err = state.vote_add_domains(invalid_domain).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Invalid scheme-purpose combination"),
+            "Expected InvalidSchemePurposeCombination, got: {err}"
+        );
+
+        // Ed25519 + ForeignTx is invalid
+        let invalid_domain2 = vec![DomainConfig {
+            id: DomainId(next_id),
+            scheme: SignatureScheme::Ed25519,
+            purpose: DomainPurpose::ForeignTx,
+        }];
+        let err2 = state.vote_add_domains(invalid_domain2).unwrap_err();
+        assert!(
+            err2.to_string()
+                .contains("Invalid scheme-purpose combination"),
+            "Expected InvalidSchemePurposeCombination, got: {err2}"
+        );
+
+        // Secp256k1 + CKD is invalid
+        let invalid_domain3 = vec![DomainConfig {
+            id: DomainId(next_id),
+            scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::CKD,
+        }];
+        let err3 = state.vote_add_domains(invalid_domain3).unwrap_err();
+        assert!(
+            err3.to_string()
+                .contains("Invalid scheme-purpose combination"),
+            "Expected InvalidSchemePurposeCombination, got: {err3}"
+        );
     }
 }

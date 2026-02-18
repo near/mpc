@@ -17,7 +17,7 @@ use mpc_contract::{
     crypto_shared::CKDResponse,
     crypto_shared::SignatureResponse,
     primitives::{
-        domain::{DomainConfig, SignatureScheme},
+        domain::{DomainConfig, DomainPurpose, SignatureScheme},
         key_state::{EpochId, Keyset},
         participants::Participants,
         thresholds::{Threshold, ThresholdParameters},
@@ -353,10 +353,12 @@ async fn upgrade_allows_new_request_types(
         DomainConfig {
             id: first_available_domain_id.into(),
             scheme: SignatureScheme::Bls12381,
+            purpose: DomainPurpose::CKD,
         },
         DomainConfig {
             id: (first_available_domain_id + 1).into(),
             scheme: SignatureScheme::Ed25519,
+            purpose: DomainPurpose::Sign,
         },
     ];
 

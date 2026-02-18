@@ -6,7 +6,7 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
@@ -49,6 +49,7 @@ async fn test_key_resharing_simple(
     let domain = DomainConfig {
         id: DomainId(0),
         scheme,
+        purpose: DomainPurpose::infer_from_scheme(scheme),
     };
 
     {
@@ -170,6 +171,7 @@ async fn test_key_resharing_multistage() {
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: DomainPurpose::Sign,
     };
 
     {
@@ -374,6 +376,7 @@ async fn test_signature_requests_in_resharing_are_processed() {
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: DomainPurpose::Sign,
     };
 
     {

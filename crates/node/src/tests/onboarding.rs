@@ -17,7 +17,7 @@ use crate::tracking::AutoAbortTask;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::node_migrations::{BackupServiceInfo, DestinationNodeInfo};
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, SignatureScheme};
+use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
 use mpc_contract::state::ProtocolContractState;
 use near_time::Clock;
 use rand::rngs::OsRng;
@@ -104,6 +104,7 @@ async fn test_onboarding() {
     let domain = DomainConfig {
         id: DomainId(0),
         scheme: SignatureScheme::Secp256k1,
+        purpose: DomainPurpose::Sign,
     };
 
     {

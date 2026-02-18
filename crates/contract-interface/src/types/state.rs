@@ -160,6 +160,40 @@ pub enum SignatureScheme {
     V2Secp256k1,
 }
 
+/// The purpose that a domain serves.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema)
+)]
+pub enum DomainPurpose {
+    /// Domain is used by `sign()`.
+    Sign,
+    /// Domain is used by `verify_foreign_transaction()`.
+    ForeignTx,
+    /// Domain is used by `request_app_private_key()` (Confidential Key Derivation).
+    CKD,
+}
+
+impl Default for DomainPurpose {
+    fn default() -> Self {
+        Self::Sign
+    }
+}
+
 /// Configuration for a signature domain.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -171,6 +205,10 @@ pub enum SignatureScheme {
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
+    /// The purpose of this domain. Defaults to `Sign` for backward compatibility
+    /// when a new node reads old contract JSON that lacks this field.
+    #[serde(default)]
+    pub purpose: DomainPurpose,
 }
 
 /// Registry of all signature domains.

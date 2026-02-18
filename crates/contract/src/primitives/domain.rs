@@ -48,12 +48,58 @@ impl Default for SignatureScheme {
     }
 }
 
+/// The purpose that a domain serves. This controls which contract methods may target the domain.
+#[near(serializers=[borsh, json])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainPurpose {
+    /// Domain is used by `sign()`.
+    Sign,
+    /// Domain is used by `verify_foreign_transaction()`.
+    ForeignTx,
+    /// Domain is used by `request_app_private_key()` (Confidential Key Derivation).
+    CKD,
+}
+
+impl Default for DomainPurpose {
+    fn default() -> Self {
+        Self::Sign
+    }
+}
+
+impl DomainPurpose {
+    /// Infer a default purpose from the signature scheme.
+    /// Used during migration from old state that lacks the `purpose` field.
+    pub fn infer_from_scheme(scheme: SignatureScheme) -> Self {
+        match scheme {
+            SignatureScheme::Bls12381 => DomainPurpose::CKD,
+            _ => DomainPurpose::Sign,
+        }
+    }
+
+    /// Returns whether the given scheme is valid for this purpose.
+    pub fn is_valid_for_scheme(self, scheme: SignatureScheme) -> bool {
+        matches!(
+            (self, scheme),
+            (DomainPurpose::Sign, SignatureScheme::Secp256k1)
+                | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
+                | (DomainPurpose::Sign, SignatureScheme::Ed25519)
+                | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
+                | (DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1)
+                | (DomainPurpose::CKD, SignatureScheme::Bls12381)
+        )
+    }
+}
+
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
 #[near(serializers=[borsh, json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
+    /// The purpose of this domain. Defaults to `Sign` for backward compatibility
+    /// when deserializing old contract state that lacks this field.
+    #[serde(default)]
+    pub purpose: DomainPurpose,
 }
 
 /// All the domains present in the contract, as well as the next domain ID which is kept to ensure
@@ -74,16 +120,17 @@ impl DomainRegistry {
     /// Migration from legacy: creates a DomainRegistry with a single ecdsa key.
     pub fn new_single_ecdsa_key_from_legacy() -> Self {
         let mut registry = Self::default();
-        registry.add_domain(SignatureScheme::Secp256k1);
+        registry.add_domain(SignatureScheme::Secp256k1, DomainPurpose::Sign);
         registry
     }
 
-    /// Add a single domain with the given protocol, returning the DomainId of the added
-    /// domain.
-    fn add_domain(&mut self, scheme: SignatureScheme) -> DomainId {
+    /// Add a single domain with the given protocol and purpose, returning the DomainId of the
+    /// added domain.
+    fn add_domain(&mut self, scheme: SignatureScheme, purpose: DomainPurpose) -> DomainId {
         let domain = DomainConfig {
             id: DomainId(self.next_domain_id),
             scheme,
+            purpose,
         };
         self.next_domain_id += 1;
         self.domains.push(domain.clone());
@@ -96,7 +143,7 @@ impl DomainRegistry {
     pub fn add_domains(&self, domains: Vec<DomainConfig>) -> Result<DomainRegistry, Error> {
         let mut new_registry = self.clone();
         for domain in domains {
-            let new_domain_id = new_registry.add_domain(domain.scheme);
+            let new_domain_id = new_registry.add_domain(domain.scheme, domain.purpose);
             if new_domain_id != domain.id {
                 return Err(DomainError::NewDomainIdsNotContiguous {
                     expected_id: new_domain_id,
@@ -199,7 +246,7 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainRegistry, SignatureScheme};
+    use super::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
 
     #[test]
     fn test_add_domains() {
@@ -208,10 +255,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(1),
                 scheme: SignatureScheme::Ed25519,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let new_registry = registry.add_domains(domains1.clone()).unwrap();
@@ -221,10 +270,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(2),
                 scheme: SignatureScheme::Bls12381,
+                purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(3),
                 scheme: SignatureScheme::V2Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let new_registry = new_registry.add_domains(domains2.clone()).unwrap();
@@ -235,6 +286,7 @@ pub mod tests {
         let domains3 = vec![DomainConfig {
             id: DomainId(5),
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         }];
         let _ = new_registry.add_domains(domains3).unwrap_err();
 
@@ -243,10 +295,12 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(5),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(4),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let _ = new_registry.add_domains(domains4).unwrap_err();
@@ -258,18 +312,22 @@ pub mod tests {
             DomainConfig {
                 id: DomainId(0),
                 scheme: SignatureScheme::Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(2),
                 scheme: SignatureScheme::Ed25519,
+                purpose: DomainPurpose::Sign,
             },
             DomainConfig {
                 id: DomainId(3),
                 scheme: SignatureScheme::Bls12381,
+                purpose: DomainPurpose::CKD,
             },
             DomainConfig {
                 id: DomainId(4),
                 scheme: SignatureScheme::V2Secp256k1,
+                purpose: DomainPurpose::Sign,
             },
         ];
         let mut registry = DomainRegistry::from_raw_validated(expected.clone(), 6).unwrap();
@@ -293,14 +351,17 @@ pub mod tests {
                 DomainConfig {
                     id: DomainId(0),
                     scheme: SignatureScheme::Secp256k1,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(2),
                     scheme: SignatureScheme::Ed25519,
+                    purpose: DomainPurpose::Sign,
                 },
                 DomainConfig {
                     id: DomainId(3),
                     scheme: SignatureScheme::Secp256k1,
+                    purpose: DomainPurpose::Sign,
                 },
             ],
             6,
@@ -321,12 +382,63 @@ pub mod tests {
         let domain_config = DomainConfig {
             id: DomainId(3),
             scheme: SignatureScheme::Secp256k1,
+            purpose: DomainPurpose::Sign,
         };
         let json = serde_json::to_string(&domain_config).unwrap();
-        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1"}"#);
+        assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+    }
+
+    /// Backward compatibility: old JSON without `purpose` field defaults to `Sign`.
+    #[test]
+    fn test_json_backward_compat_no_purpose() {
+        let json = r#"{"id":3,"scheme":"Secp256k1"}"#;
+        let domain_config: DomainConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(domain_config.id, DomainId(3));
+        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
+        assert_eq!(domain_config.purpose, DomainPurpose::Sign);
+    }
+
+    #[test]
+    fn test_infer_purpose_from_scheme() {
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Ed25519),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::V2Secp256k1),
+            DomainPurpose::Sign
+        );
+        assert_eq!(
+            DomainPurpose::infer_from_scheme(SignatureScheme::Bls12381),
+            DomainPurpose::CKD
+        );
+    }
+
+    #[test]
+    fn test_valid_scheme_purpose_combinations() {
+        // Sign purpose
+        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Secp256k1));
+        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::V2Secp256k1));
+        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Ed25519));
+        assert!(!DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Bls12381));
+
+        // ForeignTx purpose
+        assert!(DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Secp256k1));
+        assert!(DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::V2Secp256k1));
+        assert!(!DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Ed25519));
+        assert!(!DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Bls12381));
+
+        // CKD purpose
+        assert!(!DomainPurpose::CKD.is_valid_for_scheme(SignatureScheme::Secp256k1));
+        assert!(DomainPurpose::CKD.is_valid_for_scheme(SignatureScheme::Bls12381));
     }
 }

@@ -190,6 +190,11 @@ pub enum DomainError {
     InvalidDomains,
     #[error("Domains from keyset do not match the provided domains")]
     DomainsMismatch,
+    #[error("Invalid scheme-purpose combination: scheme {scheme:?} is not compatible with purpose {purpose:?}")]
+    InvalidSchemePurposeCombination {
+        scheme: crate::primitives::domain::SignatureScheme,
+        purpose: crate::primitives::domain::DomainPurpose,
+    },
 }
 
 /// A list specifying general categories of MPC Contract errors.
