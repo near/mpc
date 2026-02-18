@@ -122,14 +122,14 @@ near account create-account sponsor-by-faucet-service $SAM_ACCOUNT autogenerate-
 
 ### Update Bootnodes and IPs
 
-Run this command to get the current testnet bootnodes:
-
+Run this command to get the current testnet bootnodes.
+**Important:** Boot nodes must not contain duplicate addresses or peer IDs, as duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
-export BOOTNODES=$(curl -X POST https://rpc.testnet.near.org \
+export BOOTNODES=$(curl -s -X POST https://rpc.testnet.near.org \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "network_info", "params": [], "id": "dontcare"}' |
-  jq -r '.result.active_peers[] as $p | "\($p.id)@\($p.addr)"' |
+  jq -r '.result.active_peers | unique_by(.addr) | unique_by(.id) | map("\(.id)@\(.addr)") | .[]' |
   paste -sd',' -)
 ```
 Define 2 external IPs available on the server that will be used by each MPC node:
