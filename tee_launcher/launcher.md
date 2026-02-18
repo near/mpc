@@ -65,11 +65,10 @@ RPC_MAX_ATTEMPTS =20
 from: tee_launcher folder run:
 docker build -t barakeinavnear/launcher:latest -f development/Dockerfile.launcher .
 
-- [Makefile](Makefile): use this to build the mpc binary in a reproducible manner
-- [deployment/Dockerfile](deployment/Dockerfile) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
-- [deployment/build-image.sh](deployment/build-image.sh) drives the build process
+- [Dockerfile-node](../deployment/Dockerfile-node) Dockerfile with all dependencies pinned to specific versions, e.g., other Dockerfile via sha256 digests and Linux distribution packages via explicit version strings
+- [build-images.sh](../deployment/build-images.sh) drives the build process
 
-For example, I ran `deployment/build-image.sh` on the git commit [ef3f1e7...](https://github.com/Near-One/mpc/commit/ef3f1e7f862d447de60e91d32dadf68696eb6a58). The resulting Docker image digest was
+For example, I ran `../deployment/build-images.sh` on the git commit [ef3f1e7...](https://github.com/Near-One/mpc/commit/ef3f1e7f862d447de60e91d32dadf68696eb6a58). The resulting Docker image digest was
 
 ```
 sha256:dcbd3b8c8ae35d2ba63b25d6b617ce8b7faabb0af96ffa2e35b08a50258ebfa4
