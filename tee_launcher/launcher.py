@@ -822,7 +822,7 @@ def build_docker_cmd(
         if key in DENIED_CONTAINER_ENV_KEYS:
             logging.warning(f"Ignoring denied secret env var: {key}")
             continue
-            
+
         if key == "EXTRA_HOSTS":
             for host_entry in value.split(","):
                 clean_host = host_entry.strip()
