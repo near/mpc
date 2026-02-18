@@ -19,7 +19,7 @@ use dtos::{AttemptId, KeyEventId, ProtocolContractState, RunningContractState};
 use mpc_contract::{
     errors::InvalidParameters,
     primitives::{
-        domain::{DomainConfig, DomainPurpose, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainConfig, DomainPurpose, SignatureScheme},
         thresholds::{Threshold, ThresholdParameters},
     },
 };
@@ -151,7 +151,7 @@ async fn test_cancel_keygen() -> anyhow::Result<()> {
             &[DomainConfig {
                 id: next_domain_id.into(),
                 scheme: *scheme,
-                purpose: DomainPurpose::infer_from_scheme(*scheme),
+                purpose: infer_purpose_from_scheme(*scheme),
             }],
         )
         .await

@@ -14,7 +14,9 @@ use dtos::ProtocolContractState;
 use mpc_contract::{
     crypto_shared::types::PublicKeyExtended,
     primitives::{
-        domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme},
+        domain::{
+            infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
+        },
         key_state::{AttemptId, EpochId, KeyForDomain, Keyset},
         participants::{ParticipantInfo, Participants},
         test_utils::bogus_ed25519_near_public_key,
@@ -209,7 +211,7 @@ pub async fn init_with_candidates(
                     dtos::PublicKey::Bls12381(_) => SignatureScheme::Bls12381,
                 };
                 let key: PublicKeyExtended = pk.try_into().unwrap();
-                let purpose = DomainPurpose::infer_from_scheme(scheme);
+                let purpose = infer_purpose_from_scheme(scheme);
                 ret_domains.push(DomainPublicKey {
                     public_key: key.clone(),
                     config: DomainConfig {

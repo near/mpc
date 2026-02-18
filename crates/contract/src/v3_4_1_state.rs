@@ -16,7 +16,7 @@ use crate::{
     node_migrations::NodeMigrations,
     primitives::{
         ckd::CKDRequest,
-        domain::{DomainId, DomainPurpose, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainId, SignatureScheme},
         key_state::{
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
@@ -234,7 +234,7 @@ pub struct DomainConfig {
 impl DomainConfig {
     fn into_current(self) -> crate::primitives::domain::DomainConfig {
         crate::primitives::domain::DomainConfig {
-            purpose: DomainPurpose::infer_from_scheme(self.scheme),
+            purpose: infer_purpose_from_scheme(self.scheme),
             id: self.id,
             scheme: self.scheme,
         }

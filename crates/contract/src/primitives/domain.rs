@@ -5,6 +5,8 @@ use near_sdk::{log, near};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+pub use contract_interface::types::DomainPurpose;
+
 /// Each domain corresponds to a specific root key in a specific signature scheme. There may be
 /// multiple domains per signature scheme. The domain ID uniquely identifies a domain.
 #[near(serializers=[borsh, json])]
@@ -48,46 +50,26 @@ impl Default for SignatureScheme {
     }
 }
 
-/// The purpose that a domain serves. This controls which contract methods may target the domain.
-#[near(serializers=[borsh, json])]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DomainPurpose {
-    /// Domain is used by `sign()`.
-    Sign,
-    /// Domain is used by `verify_foreign_transaction()`.
-    ForeignTx,
-    /// Domain is used by `request_app_private_key()` (Confidential Key Derivation).
-    CKD,
-}
-
-impl Default for DomainPurpose {
-    fn default() -> Self {
-        Self::Sign
+/// Infer a default purpose from the signature scheme.
+/// Used during migration from old state that lacks the `purpose` field.
+pub fn infer_purpose_from_scheme(scheme: SignatureScheme) -> DomainPurpose {
+    match scheme {
+        SignatureScheme::Bls12381 => DomainPurpose::CKD,
+        _ => DomainPurpose::Sign,
     }
 }
 
-impl DomainPurpose {
-    /// Infer a default purpose from the signature scheme.
-    /// Used during migration from old state that lacks the `purpose` field.
-    pub fn infer_from_scheme(scheme: SignatureScheme) -> Self {
-        match scheme {
-            SignatureScheme::Bls12381 => DomainPurpose::CKD,
-            _ => DomainPurpose::Sign,
-        }
-    }
-
-    /// Returns whether the given scheme is valid for this purpose.
-    pub fn is_valid_for_scheme(self, scheme: SignatureScheme) -> bool {
-        matches!(
-            (self, scheme),
-            (DomainPurpose::Sign, SignatureScheme::Secp256k1)
-                | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
-                | (DomainPurpose::Sign, SignatureScheme::Ed25519)
-                | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
-                | (DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1)
-                | (DomainPurpose::CKD, SignatureScheme::Bls12381)
-        )
-    }
+/// Returns whether the given scheme is valid for the given purpose.
+pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureScheme) -> bool {
+    matches!(
+        (purpose, scheme),
+        (DomainPurpose::Sign, SignatureScheme::Secp256k1)
+            | (DomainPurpose::Sign, SignatureScheme::V2Secp256k1)
+            | (DomainPurpose::Sign, SignatureScheme::Ed25519)
+            | (DomainPurpose::ForeignTx, SignatureScheme::Secp256k1)
+            | (DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1)
+            | (DomainPurpose::CKD, SignatureScheme::Bls12381)
+    )
 }
 
 /// Describes the configuration of a domain: the domain ID and the protocol it uses.
@@ -246,7 +228,10 @@ impl AddDomainsVotes {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
+    use super::{
+        infer_purpose_from_scheme, is_valid_scheme_for_purpose, DomainConfig, DomainId,
+        DomainPurpose, DomainRegistry, SignatureScheme,
+    };
 
     #[test]
     fn test_add_domains() {
@@ -406,19 +391,19 @@ pub mod tests {
     #[test]
     fn test_infer_purpose_from_scheme() {
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Secp256k1),
+            infer_purpose_from_scheme(SignatureScheme::Secp256k1),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Ed25519),
+            infer_purpose_from_scheme(SignatureScheme::Ed25519),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::V2Secp256k1),
+            infer_purpose_from_scheme(SignatureScheme::V2Secp256k1),
             DomainPurpose::Sign
         );
         assert_eq!(
-            DomainPurpose::infer_from_scheme(SignatureScheme::Bls12381),
+            infer_purpose_from_scheme(SignatureScheme::Bls12381),
             DomainPurpose::CKD
         );
     }
@@ -426,19 +411,49 @@ pub mod tests {
     #[test]
     fn test_valid_scheme_purpose_combinations() {
         // Sign purpose
-        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Secp256k1));
-        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::V2Secp256k1));
-        assert!(DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Ed25519));
-        assert!(!DomainPurpose::Sign.is_valid_for_scheme(SignatureScheme::Bls12381));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::Sign,
+            SignatureScheme::Secp256k1
+        ));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::Sign,
+            SignatureScheme::V2Secp256k1
+        ));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::Sign,
+            SignatureScheme::Ed25519
+        ));
+        assert!(!is_valid_scheme_for_purpose(
+            DomainPurpose::Sign,
+            SignatureScheme::Bls12381
+        ));
 
         // ForeignTx purpose
-        assert!(DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Secp256k1));
-        assert!(DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::V2Secp256k1));
-        assert!(!DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Ed25519));
-        assert!(!DomainPurpose::ForeignTx.is_valid_for_scheme(SignatureScheme::Bls12381));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::ForeignTx,
+            SignatureScheme::Secp256k1
+        ));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::ForeignTx,
+            SignatureScheme::V2Secp256k1
+        ));
+        assert!(!is_valid_scheme_for_purpose(
+            DomainPurpose::ForeignTx,
+            SignatureScheme::Ed25519
+        ));
+        assert!(!is_valid_scheme_for_purpose(
+            DomainPurpose::ForeignTx,
+            SignatureScheme::Bls12381
+        ));
 
         // CKD purpose
-        assert!(!DomainPurpose::CKD.is_valid_for_scheme(SignatureScheme::Secp256k1));
-        assert!(DomainPurpose::CKD.is_valid_for_scheme(SignatureScheme::Bls12381));
+        assert!(!is_valid_scheme_for_purpose(
+            DomainPurpose::CKD,
+            SignatureScheme::Secp256k1
+        ));
+        assert!(is_valid_scheme_for_purpose(
+            DomainPurpose::CKD,
+            SignatureScheme::Bls12381
+        ));
     }
 }

@@ -6,7 +6,9 @@ use crate::tests::{
     DEFAULT_MAX_PROTOCOL_WAIT_TIME, DEFAULT_MAX_SIGNATURE_WAIT_TIME,
 };
 use crate::tracking::AutoAbortTask;
-use mpc_contract::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
+use mpc_contract::primitives::domain::{
+    infer_purpose_from_scheme, DomainConfig, DomainId, DomainPurpose, SignatureScheme,
+};
 use near_time::Clock;
 use rstest::rstest;
 use serial_test::serial;
@@ -49,7 +51,7 @@ async fn test_key_resharing_simple(
     let domain = DomainConfig {
         id: DomainId(0),
         scheme,
-        purpose: DomainPurpose::infer_from_scheme(scheme),
+        purpose: infer_purpose_from_scheme(scheme),
     };
 
     {

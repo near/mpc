@@ -634,22 +634,12 @@ impl IntoInterfaceType<dtos::SignatureScheme> for SignatureScheme {
     }
 }
 
-impl IntoInterfaceType<dtos::DomainPurpose> for crate::primitives::domain::DomainPurpose {
-    fn into_dto_type(self) -> dtos::DomainPurpose {
-        match self {
-            crate::primitives::domain::DomainPurpose::Sign => dtos::DomainPurpose::Sign,
-            crate::primitives::domain::DomainPurpose::ForeignTx => dtos::DomainPurpose::ForeignTx,
-            crate::primitives::domain::DomainPurpose::CKD => dtos::DomainPurpose::CKD,
-        }
-    }
-}
-
 impl IntoInterfaceType<dtos::DomainConfig> for &DomainConfig {
     fn into_dto_type(self) -> dtos::DomainConfig {
         dtos::DomainConfig {
             id: self.id.into_dto_type(),
             scheme: self.scheme.into_dto_type(),
-            purpose: self.purpose.into_dto_type(),
+            purpose: self.purpose,
         }
     }
 }

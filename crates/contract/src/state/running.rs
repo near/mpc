@@ -158,7 +158,10 @@ impl RunningContractState {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         for domain in &domains {
-            if !domain.purpose.is_valid_for_scheme(domain.scheme) {
+            if !crate::primitives::domain::is_valid_scheme_for_purpose(
+                domain.purpose,
+                domain.scheme,
+            ) {
                 return Err(DomainError::InvalidSchemePurposeCombination {
                     scheme: domain.scheme,
                     purpose: domain.purpose,

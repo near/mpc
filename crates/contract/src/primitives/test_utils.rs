@@ -1,4 +1,6 @@
-use super::domain::{DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme};
+use super::domain::{
+    infer_purpose_from_scheme, DomainConfig, DomainId, DomainRegistry, SignatureScheme,
+};
 use crate::{
     crypto_shared::types::{serializable::SerializableEdwardsPoint, PublicKeyExtended},
     primitives::{
@@ -28,7 +30,7 @@ pub fn gen_domain_registry(num_domains: usize) -> DomainRegistry {
         domains.push(DomainConfig {
             id: DomainId(i as u64 * 2),
             scheme,
-            purpose: DomainPurpose::infer_from_scheme(scheme),
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     DomainRegistry::from_raw_validated(domains, num_domains as u64 * 2).unwrap()
@@ -42,7 +44,7 @@ pub fn gen_domains_to_add(registry: &DomainRegistry, num_domains: usize) -> Vec<
         new_domains.push(DomainConfig {
             id: DomainId(registry.next_domain_id() + i as u64),
             scheme,
-            purpose: DomainPurpose::infer_from_scheme(scheme),
+            purpose: infer_purpose_from_scheme(scheme),
         });
     }
     new_domains

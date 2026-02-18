@@ -1564,10 +1564,7 @@ impl MpcContract {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!(
-                    "failed to deserialize state into v3.4.1 state: {:?}",
-                    err
-                );
+                log!("failed to deserialize state into v3.4.1 state: {:?}", err);
             }
         };
 
@@ -2008,7 +2005,7 @@ mod tests {
         NUM_PROTOCOLS,
     };
     use crate::primitives::{
-        domain::{DomainConfig, DomainId, SignatureScheme},
+        domain::{infer_purpose_from_scheme, DomainConfig, DomainId, SignatureScheme},
         participants::Participants,
         signature::{Payload, Tweak},
         test_utils::gen_participants,
@@ -2145,7 +2142,7 @@ mod tests {
         scheme: SignatureScheme,
         rng: &mut impl CryptoRngCore,
     ) -> (VMContext, MpcContract, SharedSecretKey) {
-        basic_setup_with_purpose(scheme, DomainPurpose::infer_from_scheme(scheme), rng)
+        basic_setup_with_purpose(scheme, infer_purpose_from_scheme(scheme), rng)
     }
 
     fn basic_setup_with_purpose(
