@@ -337,20 +337,11 @@ def foreign_tx_validation_cluster():
     # Wait for the foreign chain policy to be applied (unanimous auto-vote).
     expected_policy = foreign_chains.normalize_policy(
         {
-            "chains": [
-                {
-                    "chain": "Bitcoin",
-                    "providers": [{"rpc_url": bitcoin_mock_rpc_url}],
-                },
-                {
-                    "chain": "Abstract",
-                    "providers": [{"rpc_url": abstract_mock_rpc_url}],
-                },
-                {
-                    "chain": "Starknet",
-                    "providers": [{"rpc_url": starknet_mock_rpc_url}],
-                },
-            ]
+            "chains": {
+                "Bitcoin": [{"rpc_url": bitcoin_mock_rpc_url}],
+                "Abstract": [{"rpc_url": abstract_mock_rpc_url}],
+                "Starknet": [{"rpc_url": starknet_mock_rpc_url}],
+            }
         }
     )
 
