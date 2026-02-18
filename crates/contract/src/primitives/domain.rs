@@ -229,6 +229,7 @@ pub mod tests {
         infer_purpose_from_scheme, is_valid_scheme_for_purpose, DomainConfig, DomainId,
         DomainPurpose, DomainRegistry, SignatureScheme,
     };
+    use rstest::rstest;
 
     #[test]
     fn test_add_domains() {
@@ -375,72 +376,36 @@ pub mod tests {
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
     }
 
-    #[test]
-    fn test_infer_purpose_from_scheme() {
-        assert_eq!(
-            infer_purpose_from_scheme(SignatureScheme::Secp256k1),
-            DomainPurpose::Sign
-        );
-        assert_eq!(
-            infer_purpose_from_scheme(SignatureScheme::Ed25519),
-            DomainPurpose::Sign
-        );
-        assert_eq!(
-            infer_purpose_from_scheme(SignatureScheme::V2Secp256k1),
-            DomainPurpose::Sign
-        );
-        assert_eq!(
-            infer_purpose_from_scheme(SignatureScheme::Bls12381),
-            DomainPurpose::CKD
-        );
+    #[rstest]
+    #[case(SignatureScheme::Secp256k1, DomainPurpose::Sign)]
+    #[case(SignatureScheme::Ed25519, DomainPurpose::Sign)]
+    #[case(SignatureScheme::V2Secp256k1, DomainPurpose::Sign)]
+    #[case(SignatureScheme::Bls12381, DomainPurpose::CKD)]
+    fn test_infer_purpose_from_scheme(
+        #[case] scheme: SignatureScheme,
+        #[case] expected: DomainPurpose,
+    ) {
+        assert_eq!(infer_purpose_from_scheme(scheme), expected);
     }
 
-    #[test]
-    fn test_valid_scheme_purpose_combinations() {
-        // Sign purpose
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::Sign,
-            SignatureScheme::Secp256k1
-        ));
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::Sign,
-            SignatureScheme::V2Secp256k1
-        ));
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::Sign,
-            SignatureScheme::Ed25519
-        ));
-        assert!(!is_valid_scheme_for_purpose(
-            DomainPurpose::Sign,
-            SignatureScheme::Bls12381
-        ));
-
-        // ForeignTx purpose
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::ForeignTx,
-            SignatureScheme::Secp256k1
-        ));
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::ForeignTx,
-            SignatureScheme::V2Secp256k1
-        ));
-        assert!(!is_valid_scheme_for_purpose(
-            DomainPurpose::ForeignTx,
-            SignatureScheme::Ed25519
-        ));
-        assert!(!is_valid_scheme_for_purpose(
-            DomainPurpose::ForeignTx,
-            SignatureScheme::Bls12381
-        ));
-
-        // CKD purpose
-        assert!(!is_valid_scheme_for_purpose(
-            DomainPurpose::CKD,
-            SignatureScheme::Secp256k1
-        ));
-        assert!(is_valid_scheme_for_purpose(
-            DomainPurpose::CKD,
-            SignatureScheme::Bls12381
-        ));
+    #[rstest]
+    // Valid combinations
+    #[case(DomainPurpose::Sign, SignatureScheme::Secp256k1, true)]
+    #[case(DomainPurpose::Sign, SignatureScheme::V2Secp256k1, true)]
+    #[case(DomainPurpose::Sign, SignatureScheme::Ed25519, true)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::Secp256k1, true)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::V2Secp256k1, true)]
+    #[case(DomainPurpose::CKD, SignatureScheme::Bls12381, true)]
+    // Invalid combinations
+    #[case(DomainPurpose::Sign, SignatureScheme::Bls12381, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::Ed25519, false)]
+    #[case(DomainPurpose::ForeignTx, SignatureScheme::Bls12381, false)]
+    #[case(DomainPurpose::CKD, SignatureScheme::Secp256k1, false)]
+    fn test_valid_scheme_purpose_combinations(
+        #[case] purpose: DomainPurpose,
+        #[case] scheme: SignatureScheme,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_valid_scheme_for_purpose(purpose, scheme), expected);
     }
 }
