@@ -160,10 +160,11 @@ impl RunningContractState {
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
-            let domain_configs: Vec<DomainConfig> =
-                domains.iter().map(|(d, _)| d.clone()).collect();
-            let purposes: Vec<(DomainId, DomainPurpose)> =
-                domains.iter().map(|(d, p)| (d.id, *p)).collect();
+            let (domain_configs, purposes): (Vec<DomainConfig>, Vec<(DomainId, DomainPurpose)>) =
+                domains
+                    .iter()
+                    .map(|(domain, purpose)| (domain.clone(), (domain.id, *purpose)))
+                    .unzip();
             let new_domains = self.domains.add_domains(domain_configs.clone())?;
             Ok(Some(AddDomainsOutcome {
                 new_state: InitializingContractState {
