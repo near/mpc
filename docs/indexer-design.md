@@ -527,7 +527,7 @@ impl BlockEventSubscriberBuilder {
     pub fn add_subscription(&mut self, filter: SubscriptionFilter) -> SubscriptionId;
 
     /// Finalise and start streaming.
-    pub async fn build(self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BlockUpdate>>;
+    pub async fn build(self) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, BuilderError>;
 }
 
 /// an identifier for a subscription
