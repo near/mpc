@@ -8,6 +8,7 @@ use crate::{
     storage_keys::StorageKey,
 };
 use borsh::{self, BorshDeserialize, BorshSerialize};
+use contract_interface::method_names;
 use contract_interface::types::UpdateHash;
 use derive_more::Deref;
 use near_account_id::AccountId;
@@ -200,7 +201,7 @@ impl ProposedUpdates {
             Update::Contract(code) => {
                 // deploy contract then do a `migrate` call to migrate state.
                 promise = promise.deploy_contract(code).function_call(
-                    "migrate",
+                    method_names::MIGRATE,
                     Vec::new(),
                     NearToken::from_near(0),
                     gas,
@@ -212,7 +213,7 @@ impl ProposedUpdates {
                 // as the new gas value
                 let new_config_gas_value = Gas::from_tgas(config.contract_upgrade_deposit_tera_gas);
                 promise = promise.function_call(
-                    "update_config",
+                    method_names::UPDATE_CONFIG,
                     serde_json::to_vec(&(&config,)).unwrap(),
                     NearToken::from_near(0),
                     new_config_gas_value,
