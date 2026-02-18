@@ -182,7 +182,7 @@ Currently, the MPC indexer tries to achieve two things:
     - generating and forwarding of transactions
     - viewing contract state
     - monitoring blocks and filtering for relevant events (signature requests, ckd requests, ...)
-2. Orchestration of the MPC network:
+2. Providing context to the MPC network:
     - Acting as an abstraction layer for the blockchain, ensuring no blockchain-internals are leaked to the node;
     - informing the MPC node about jobs such as resharings, signature requests, ckd requests, etc.
     - informing the MPC node about relevant TEE information such as allowed docker images etc.
