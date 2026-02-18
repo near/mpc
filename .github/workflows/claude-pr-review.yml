@@ -93,8 +93,13 @@ jobs:
 
           # Format comments for Claude using external Python script
           # Write to file instead of env var to avoid E2BIG on large PRs
-          echo "$COMMENTS_JSON" > /tmp/pr_comments_json.txt
-          python3 .github/scripts/format_pr_comments.py /tmp/pr_comments_json.txt > /tmp/pr_comments_context.txt
+          if [ -n "$COMMENTS_JSON" ]; then
+            echo "$COMMENTS_JSON" > /tmp/pr_comments_json.txt
+            python3 .github/scripts/format_pr_comments.py /tmp/pr_comments_json.txt > /tmp/pr_comments_context.txt
+          else
+            echo "⚠️ No comments data to process." > /tmp/pr_comments_context.txt
+            exit 0
+          fi
 
       - name: Build review prompt
         id: build-prompt
