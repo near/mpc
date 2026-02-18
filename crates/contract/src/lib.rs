@@ -236,6 +236,18 @@ impl MpcContract {
             .copied()
             .unwrap_or_else(|| DomainPurpose::infer_from_scheme(domain_config.scheme))
     }
+
+    fn prune_domain_purposes_to_current_domains(&mut self) {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            return;
+        };
+        self.domain_purposes.retain(|domain_id, _| {
+            running_state
+                .domains
+                .get_domain_by_domain_id(*domain_id)
+                .is_some()
+        });
+    }
 }
 
 // User contract API
@@ -1240,6 +1252,7 @@ impl MpcContract {
 
         if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
             self.protocol_state = new_state;
+            self.prune_domain_purposes_to_current_domains();
         }
         Ok(())
     }
@@ -4440,5 +4453,70 @@ mod tests {
         assert!(votes
             .proposal_by_account
             .contains_key(&dtos::AccountId(first_account.to_string())));
+    }
+
+    #[test]
+    fn vote_cancel_keygen__should_prune_domain_purposes_for_deleted_domains_when_keygen_is_cancelled(
+    ) {
+        // Given
+        let (mut env, initializing_state) = gen_initializing_state(4, 1);
+        let next_domain_id = initializing_state.domains.next_domain_id();
+        let generated_len = initializing_state.generated_keys.len();
+        let participants = initializing_state
+            .generating_key
+            .proposed_parameters()
+            .participants()
+            .clone();
+        let required_votes = initializing_state
+            .generating_key
+            .proposed_parameters()
+            .threshold()
+            .value() as usize;
+
+        let retained_domain_ids: BTreeSet<_> = initializing_state
+            .domains
+            .domains()
+            .iter()
+            .take(generated_len)
+            .map(|domain| domain.id)
+            .collect();
+        let removed_domain_ids: BTreeSet<_> = initializing_state
+            .domains
+            .domains()
+            .iter()
+            .skip(generated_len)
+            .map(|domain| domain.id)
+            .collect();
+
+        let mut contract = MpcContract::new_from_protocol_state(
+            ProtocolContractState::Initializing(initializing_state),
+        );
+        for domain_id in retained_domain_ids
+            .iter()
+            .chain(removed_domain_ids.iter())
+            .copied()
+        {
+            contract
+                .domain_purposes
+                .insert(domain_id, DomainPurpose::Sign);
+        }
+
+        // When
+        for (account_id, _, _) in participants.participants().iter().take(required_votes) {
+            env.set_signer(account_id);
+            contract.vote_cancel_keygen(next_domain_id).unwrap();
+        }
+
+        // Then
+        let ProtocolContractState::Running(running_state) = &contract.protocol_state else {
+            panic!("expected running state after enough cancel votes");
+        };
+        assert_eq!(running_state.domains.domains().len(), generated_len);
+
+        let purpose_domain_ids: BTreeSet<_> = contract.domain_purposes.keys().copied().collect();
+        assert_eq!(purpose_domain_ids, retained_domain_ids);
+        for removed_domain_id in removed_domain_ids {
+            assert!(!contract.domain_purposes.contains_key(&removed_domain_id));
+        }
     }
 }

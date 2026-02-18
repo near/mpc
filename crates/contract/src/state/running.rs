@@ -3,7 +3,9 @@ use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
 use crate::primitives::{
-    domain::{AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry},
+    domain::{
+        AddDomainsVotes, DomainConfig, DomainId, DomainPurpose, DomainRegistry, SignatureScheme,
+    },
     key_state::{AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, Keyset},
     thresholds::ThresholdParameters,
     votes::ThresholdParametersVotes,
@@ -158,6 +160,7 @@ impl RunningContractState {
             return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
         }
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
+        Self::validate_domain_purpose_compatibility(&domains)?;
         let n_votes = self.add_domains_votes.vote(domains.clone(), &participant);
         if self.parameters.participants().len() as u64 == n_votes {
             let (domain_configs, purposes): (Vec<DomainConfig>, Vec<(DomainId, DomainPurpose)>) =
@@ -188,6 +191,33 @@ impl RunningContractState {
     pub fn is_participant(&self, account_id: &AccountId) -> bool {
         self.parameters.participants().is_participant(account_id)
     }
+
+    fn validate_domain_purpose_compatibility(
+        domains: &[(DomainConfig, DomainPurpose)],
+    ) -> Result<(), Error> {
+        for (domain, purpose) in domains {
+            let compatible = match purpose {
+                DomainPurpose::Sign => matches!(
+                    domain.scheme,
+                    SignatureScheme::Secp256k1
+                        | SignatureScheme::Ed25519
+                        | SignatureScheme::V2Secp256k1
+                ),
+                DomainPurpose::ForeignTx => domain.scheme == SignatureScheme::Secp256k1,
+                DomainPurpose::CKD => domain.scheme == SignatureScheme::Bls12381,
+            };
+            if !compatible {
+                return Err(InvalidParameters::DomainPurposeMismatch {
+                    domain_id: domain.id,
+                }
+                .message(format!(
+                    "purpose {purpose:?} is incompatible with scheme {:?}",
+                    domain.scheme
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Result of a successful `vote_add_domains` that reached threshold.
@@ -197,10 +227,13 @@ pub struct AddDomainsOutcome {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 pub mod running_tests {
     use rstest::rstest;
 
+    use crate::errors::{ErrorKind, InvalidParameters};
     use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::domain::{DomainConfig, DomainId, DomainPurpose, SignatureScheme};
     use crate::primitives::test_utils::{gen_threshold_params, NUM_PROTOCOLS};
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::gen_valid_params_proposal;
@@ -331,5 +364,40 @@ pub mod running_tests {
     #[case(2*NUM_PROTOCOLS)]
     fn test_running(#[case] n: usize) {
         test_running_for(n);
+    }
+
+    #[rstest]
+    #[case(SignatureScheme::Bls12381, DomainPurpose::ForeignTx)]
+    #[case(SignatureScheme::Secp256k1, DomainPurpose::CKD)]
+    #[allow(non_snake_case)]
+    fn vote_add_domains__should_reject_incompatible_purpose_scheme_pairs_when_purpose_does_not_match_scheme(
+        #[case] scheme: SignatureScheme,
+        #[case] purpose: DomainPurpose,
+    ) {
+        // Given
+        let mut state = gen_running_state(1);
+        let participant = state.parameters.participants().participants()[0].0.clone();
+        let mut env = Environment::new(None, None, None);
+        env.set_signer(&participant);
+
+        let invalid_domain = DomainConfig {
+            id: DomainId(state.domains.next_domain_id()),
+            scheme,
+        };
+
+        // When
+        let err = match state.vote_add_domains(vec![(invalid_domain.clone(), purpose)]) {
+            Ok(_) => panic!("expected incompatible purpose/scheme pair to fail"),
+            Err(err) => err,
+        };
+
+        // Then
+        assert_eq!(
+            err.kind(),
+            &ErrorKind::InvalidParameters(InvalidParameters::DomainPurposeMismatch {
+                domain_id: invalid_domain.id,
+            })
+        );
+        assert!(err.to_string().contains("incompatible with scheme"));
     }
 }
