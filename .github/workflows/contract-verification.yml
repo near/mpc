@@ -25,6 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Cache Rust dependencies
+        if: false
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
