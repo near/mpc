@@ -287,11 +287,6 @@ impl FakeMpcContractState {
             return;
         };
 
-        if let Err(e) = Self::validate_foreign_chain_policy(&policy) {
-            tracing::info!("vote_foreign_chain_policy transaction failed: {}", e);
-            return;
-        }
-
         let is_participant = state
             .parameters
             .participants()
@@ -329,21 +324,6 @@ impl FakeMpcContractState {
             self.foreign_chain_policy = policy;
             self.foreign_chain_policy_votes.proposal_by_account.clear();
         }
-    }
-
-    fn validate_foreign_chain_policy(
-        policy: &dtos::ForeignChainPolicy,
-    ) -> Result<(), &'static str> {
-        let mut seen_chains = BTreeSet::new();
-        for config in &policy.chains {
-            if config.providers.is_empty() {
-                return Err("foreign chain config must include at least one provider");
-            }
-            if !seen_chains.insert(config.chain.clone()) {
-                return Err("duplicate foreign chain entries in policy");
-            }
-        }
-        Ok(())
     }
 
     pub fn update_participant_info(
@@ -1166,66 +1146,5 @@ impl FakeIndexerManager {
 
     pub async fn contract_mut(&self) -> tokio::sync::MutexGuard<'_, FakeMpcContractState> {
         self.contract.lock().await
-    }
-}
-
-#[cfg(test)]
-#[allow(non_snake_case)]
-mod tests {
-    use super::*;
-    use crate::config::{ParticipantInfo as ConfigParticipantInfo, ParticipantsConfig};
-    use ed25519_dalek::SigningKey;
-    use rand::SeedableRng as _;
-
-    #[test]
-    fn vote_foreign_chain_policy__should_reject_empty_providers() {
-        // Given
-        let account_id: AccountId = "test0.near".parse().unwrap();
-        let participants = participants_config_with_signer(account_id.clone());
-        let mut contract = FakeMpcContractState::new();
-        contract.initialize(participants);
-
-        let malformed_policy = dtos::ForeignChainPolicy {
-            chains: BTreeSet::from([dtos::ForeignChainConfig {
-                chain: dtos::ForeignChain::Solana,
-                providers: BTreeSet::new(),
-            }]),
-        };
-
-        // When
-        contract.vote_foreign_chain_policy(account_id.clone(), malformed_policy);
-
-        // Then
-        assert_eq!(
-            contract.foreign_chain_policy(),
-            &dtos::ForeignChainPolicy::default()
-        );
-        assert!(!contract
-            .foreign_chain_policy_votes()
-            .proposal_by_account
-            .contains_key(&dtos::AccountId(account_id.to_string())));
-    }
-
-    fn participants_config_with_signer(account_id: AccountId) -> ParticipantsConfig {
-        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        ParticipantsConfig {
-            threshold: 2,
-            participants: vec![
-                ConfigParticipantInfo {
-                    id: crate::primitives::ParticipantId::from_raw(0),
-                    address: "127.0.0.1".to_string(),
-                    port: 3030,
-                    p2p_public_key: SigningKey::generate(&mut rng).verifying_key(),
-                    near_account_id: account_id,
-                },
-                ConfigParticipantInfo {
-                    id: crate::primitives::ParticipantId::from_raw(1),
-                    address: "127.0.0.1".to_string(),
-                    port: 3031,
-                    p2p_public_key: SigningKey::generate(&mut rng).verifying_key(),
-                    near_account_id: "test1.near".parse().unwrap(),
-                },
-            ],
-        }
     }
 }
