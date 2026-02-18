@@ -212,7 +212,7 @@ impl MpcContract {
         Ok(())
     }
 
-    fn effective_domain_purpose(&self, domain_config: &DomainConfig) -> DomainPurpose {
+    fn domain_purpose(&self, domain_config: &DomainConfig) -> DomainPurpose {
         self.domain_purposes
             .get(&domain_config.id)
             .copied()
@@ -250,7 +250,7 @@ impl MpcContract {
             );
         };
 
-        let purpose = self.effective_domain_purpose(&domain_config);
+        let purpose = self.domain_purpose(&domain_config);
         if purpose != DomainPurpose::Sign {
             env::panic_str(
                 &InvalidParameters::DomainPurposeMismatch {
@@ -439,7 +439,7 @@ impl MpcContract {
                 .to_string(),
             );
         };
-        let purpose = self.effective_domain_purpose(&domain_config);
+        let purpose = self.domain_purpose(&domain_config);
         if purpose != DomainPurpose::CKD {
             env::panic_str(
                 &InvalidParameters::DomainPurposeMismatch {
@@ -560,7 +560,7 @@ impl MpcContract {
             );
         };
 
-        let purpose = self.effective_domain_purpose(&domain_config);
+        let purpose = self.domain_purpose(&domain_config);
         if purpose != DomainPurpose::ForeignTx {
             env::panic_str(
                 &InvalidParameters::DomainPurposeMismatch {
