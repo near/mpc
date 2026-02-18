@@ -587,10 +587,11 @@ Adjust the variables as per your environment.
 * MPC_ACCOUNT_ID `-` use the near account ID that was created in the previous step  
   MPC\_CONTRACT\_ID is **v1.signer-prod.testnet** for testnet and **v1.signer** for mainnet
 * PORTS: Those are the port forwarding rules for the MPC container. Those should be a subset of the port forwarding for the CVM that are defined [Port Mapping](https://github.com/near/mpc/blob/main/docs/running_an_mpc_node_in_tdx_external_guide.md#using-the-web-interface)
-* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_NOOT\_NODES variable:
+* A fresh set of boot nodes can be selected using Testnet/Mainnet RPC endpoints. Copy at least 4-5 nodes from curl results into NEAR\_BOOT\_NODES variable.
+  **Important:** Boot nodes must not contain duplicate addresses or peer IDs. Duplicates will cause the node to crash on startup. The command below deduplicates automatically:
 
 ```bash
-curl -X POST https://rpc.[testnet|mainnet].near.org \
+curl -s -X POST https://rpc.[testnet|mainnet].near.org \
   -H "Content-Type: application/json" \
   -d '{
         "jsonrpc": "2.0",
@@ -598,7 +599,7 @@ curl -X POST https://rpc.[testnet|mainnet].near.org \
         "params": [],
         "id": "dontcare"
       }'| \
-jq -r '.result.active_peers[]  as $active_peer  | "\($active_peer.id)@\($active_peer.addr)"' |\
+jq -r '.result.active_peers | unique_by(.addr) | unique_by(.id) | map("\(.id)@\(.addr)") | .[]' |\
 paste -sd',' -
 ```
 
