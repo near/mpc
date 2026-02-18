@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::NonEmptyBTreeSet;
 
 /// A `BTreeMap` that is guaranteed to contain at least one entry.
+///
+/// Implements `Deref<Target = BTreeMap<K, V>>` for read access but intentionally
+/// does not implement `DerefMut` to prevent callers from breaking the non-empty
+/// invariant (e.g. via `clear()` or `remove()`).
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]
@@ -14,6 +18,15 @@ pub struct NonEmptyBTreeMap<K: Ord, V>(BTreeMap<K, V>);
 impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
     pub fn new(key: K, value: V) -> Self {
         Self(BTreeMap::from([(key, value)]))
+    }
+
+    /// Inserts a key-value pair into the map.
+    ///
+    /// If the map did not have this key present, `None` is returned.
+    /// If the map did have this key present, the value is updated, and the old
+    /// value is returned.
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.0.insert(key, value)
     }
 
     /// Transforms both keys and values of this map, producing a new `NonEmptyBTreeMap`.
@@ -26,7 +39,7 @@ impl<K: Ord, V> NonEmptyBTreeMap<K, V> {
         F: FnMut(K, V) -> (K2, V2),
     {
         let map = self.0.into_iter().map(|(k, v)| f(k, v)).collect();
-        // SAFETY: self was non-empty, so the resulting map has at least one entry.
+        // self was non-empty, so the resulting map has at least one entry.
         NonEmptyBTreeMap(map)
     }
 
@@ -62,6 +75,8 @@ impl std::fmt::Display for EmptyMapError {
         write!(f, "map must contain at least one entry")
     }
 }
+
+impl std::error::Error for EmptyMapError {}
 
 impl<K: Ord + Serialize, V: Serialize> Serialize for NonEmptyBTreeMap<K, V> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -177,8 +192,8 @@ mod tests {
     fn into_converts_back_to_btreemap() {
         // Given
         let mut map = NonEmptyBTreeMap::new(1, "a");
-        map.0.insert(2, "b");
-        map.0.insert(3, "c");
+        map.insert(2, "b");
+        map.insert(3, "c");
         let expected = BTreeMap::from([(1, "a"), (2, "b"), (3, "c")]);
         // When
         let converted: BTreeMap<i32, &str> = map.into();
@@ -193,8 +208,8 @@ mod tests {
         // Given
         let mut original = NonEmptyBTreeMap::new(first_key, first_val.to_string());
         if first_key == 1 {
-            original.0.insert(2, "b".to_string());
-            original.0.insert(3, "c".to_string());
+            original.insert(2, "b".to_string());
+            original.insert(3, "c".to_string());
         }
         // When
         let json = serde_json::to_string(&original).unwrap();
@@ -221,8 +236,8 @@ mod tests {
         // Given
         let mut original = NonEmptyBTreeMap::new(first_key, first_val);
         if first_key == 1 {
-            original.0.insert(2, 20);
-            original.0.insert(3, 30);
+            original.insert(2, 20);
+            original.insert(3, 30);
         }
         // When
         let bytes = borsh::to_vec(&original).unwrap();
@@ -301,9 +316,9 @@ mod tests {
     fn eq_returns_true_for_identical_maps() {
         // Given
         let mut map_a = NonEmptyBTreeMap::new(1, "a");
-        map_a.0.insert(2, "b");
+        map_a.insert(2, "b");
         let mut map_b = NonEmptyBTreeMap::new(1, "a");
-        map_b.0.insert(2, "b");
+        map_b.insert(2, "b");
         // When / Then
         assert_eq!(map_a, map_b);
     }
@@ -312,9 +327,9 @@ mod tests {
     fn eq_returns_false_for_different_maps() {
         // Given
         let mut map_a = NonEmptyBTreeMap::new(1, "a");
-        map_a.0.insert(2, "b");
+        map_a.insert(2, "b");
         let mut map_b = NonEmptyBTreeMap::new(3, "c");
-        map_b.0.insert(4, "d");
+        map_b.insert(4, "d");
         // When / Then
         assert_ne!(map_a, map_b);
     }
@@ -323,9 +338,9 @@ mod tests {
     fn ord_compares_by_btreemap_ordering() {
         // Given
         let mut smaller_map = NonEmptyBTreeMap::new(1, "a");
-        smaller_map.0.insert(2, "b");
+        smaller_map.insert(2, "b");
         let mut larger_map = NonEmptyBTreeMap::new(3, "c");
-        larger_map.0.insert(4, "d");
+        larger_map.insert(4, "d");
         // When / Then
         assert!(smaller_map < larger_map);
     }
@@ -334,7 +349,7 @@ mod tests {
     fn clone_produces_equal_independent_copy() {
         // Given
         let mut original = NonEmptyBTreeMap::new(1, "a");
-        original.0.insert(2, "b");
+        original.insert(2, "b");
         // When
         let cloned = original.clone();
         // Then

@@ -1,5 +1,5 @@
 mod btreemap;
 mod btreeset;
 
-pub use btreemap::NonEmptyBTreeMap;
-pub use btreeset::NonEmptyBTreeSet;
+pub use btreemap::{EmptyMapError, NonEmptyBTreeMap};
+pub use btreeset::{EmptySetError, NonEmptyBTreeSet};

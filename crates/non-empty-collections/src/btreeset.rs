@@ -4,6 +4,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 /// A `BTreeSet` that is guaranteed to contain at least one element.
+///
+/// Implements `Deref<Target = BTreeSet<T>>` for read access but intentionally
+/// does not implement `DerefMut` to prevent callers from breaking the non-empty
+/// invariant (e.g. via `clear()` or `remove()`).
 #[derive(
     Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, derive_more::Deref, derive_more::Into,
 )]
@@ -53,6 +57,8 @@ impl std::fmt::Display for EmptySetError {
         write!(f, "set must contain at least one element")
     }
 }
+
+impl std::error::Error for EmptySetError {}
 
 impl<T: Ord + Serialize> Serialize for NonEmptyBTreeSet<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
