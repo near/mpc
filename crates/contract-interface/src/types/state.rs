@@ -188,12 +188,6 @@ pub enum DomainPurpose {
     CKD,
 }
 
-impl Default for DomainPurpose {
-    fn default() -> Self {
-        Self::Sign
-    }
-}
-
 /// Configuration for a signature domain.
 #[derive(
     Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -205,9 +199,6 @@ impl Default for DomainPurpose {
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
-    /// The purpose of this domain. Defaults to `Sign` for backward compatibility
-    /// when a new node reads old contract JSON that lacks this field.
-    #[serde(default)]
     pub purpose: DomainPurpose,
 }
 

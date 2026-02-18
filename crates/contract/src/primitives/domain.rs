@@ -78,9 +78,6 @@ pub fn is_valid_scheme_for_purpose(purpose: DomainPurpose, scheme: SignatureSche
 pub struct DomainConfig {
     pub id: DomainId,
     pub scheme: SignatureScheme,
-    /// The purpose of this domain. Defaults to `Sign` for backward compatibility
-    /// when deserializing old contract state that lacks this field.
-    #[serde(default)]
     pub purpose: DomainPurpose,
 }
 
@@ -373,16 +370,6 @@ pub mod tests {
         assert_eq!(json, r#"{"id":3,"scheme":"Secp256k1","purpose":"Sign"}"#);
 
         let domain_config: DomainConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(domain_config.id, DomainId(3));
-        assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
-        assert_eq!(domain_config.purpose, DomainPurpose::Sign);
-    }
-
-    /// Backward compatibility: old JSON without `purpose` field defaults to `Sign`.
-    #[test]
-    fn test_json_backward_compat_no_purpose() {
-        let json = r#"{"id":3,"scheme":"Secp256k1"}"#;
-        let domain_config: DomainConfig = serde_json::from_str(json).unwrap();
         assert_eq!(domain_config.id, DomainId(3));
         assert_eq!(domain_config.scheme, SignatureScheme::Secp256k1);
         assert_eq!(domain_config.purpose, DomainPurpose::Sign);
