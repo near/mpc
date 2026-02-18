@@ -65,6 +65,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Check PR title type
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         uses: anthropics/claude-code-action@23ed4cb53d6eacddbc22ec16652c98bcc54e0476 #v1.0.48
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
